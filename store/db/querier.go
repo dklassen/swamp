@@ -12,6 +12,7 @@ type Querier interface {
 	AddTagToPosting(ctx context.Context, arg AddTagToPostingParams) error
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
 	CreateCompanyFilter(ctx context.Context, arg CreateCompanyFilterParams) (CompanyFilter, error)
+	CreateInterviewStage(ctx context.Context, arg CreateInterviewStageParams) (InterviewStage, error)
 	CreatePosting(ctx context.Context, arg CreatePostingParams) (Posting, error)
 	CreatePostingHistory(ctx context.Context, arg CreatePostingHistoryParams) (PostingHistory, error)
 	// Not exposed directly on the Store API: every posting must have exactly
@@ -21,6 +22,7 @@ type Querier interface {
 	CreatePostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
 	CreateTag(ctx context.Context, name string) (Tag, error)
 	DeleteCompanyFilters(ctx context.Context, companyID int64) error
+	DeleteInterviewStage(ctx context.Context, id int64) error
 	GetCompany(ctx context.Context, id int64) (Company, error)
 	GetPosting(ctx context.Context, id int64) (Posting, error)
 	GetPostingBySourceAndSourceID(ctx context.Context, arg GetPostingBySourceAndSourceIDParams) (Posting, error)
@@ -31,6 +33,7 @@ type Querier interface {
 	GetTagByName(ctx context.Context, name string) (Tag, error)
 	ListActiveCompanies(ctx context.Context) ([]Company, error)
 	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)
+	ListInterviewStagesByPosting(ctx context.Context, postingID int64) ([]InterviewStage, error)
 	ListPostingHistoryByPosting(ctx context.Context, postingID int64) ([]PostingHistory, error)
 	ListPostingsByCompany(ctx context.Context, companyID int64) ([]Posting, error)
 	// Active tags only: this is the pick list for tagging postings, and a
@@ -46,6 +49,8 @@ type Querier interface {
 	RestoreCompany(ctx context.Context, id int64) error
 	SoftDeleteCompany(ctx context.Context, id int64) error
 	SoftDeleteTag(ctx context.Context, id int64) error
+	UpdateInterviewStage(ctx context.Context, arg UpdateInterviewStageParams) (InterviewStage, error)
+	UpdateInterviewStageOutcome(ctx context.Context, arg UpdateInterviewStageOutcomeParams) (InterviewStage, error)
 	// Updates ingested content fields only. Deliberately does not touch
 	// listing_status: transitions between open/closed are explicit domain
 	// decisions (see MarkPostingClosed/MarkPostingReopened), not a side effect
