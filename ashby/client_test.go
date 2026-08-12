@@ -21,7 +21,9 @@ func newTestServer(t *testing.T, fixturePath string) *httptest.Server {
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.Write(body)
+		if _, err := w.Write(body); err != nil {
+			t.Errorf("write response: %v", err)
+		}
 	}))
 	t.Cleanup(server.Close)
 	return server

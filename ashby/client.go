@@ -88,7 +88,7 @@ func (c *Client) FetchPostings(ctx context.Context, boardSlug string) ([]Posting
 	if err != nil {
 		return nil, fmt.Errorf("ashby: fetch job board: %w", err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("ashby: unexpected status %d fetching job board %q", resp.StatusCode, boardSlug)
