@@ -252,11 +252,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		switch a.screen {
 		case screenCompanyList:
 			switch {
-			case msg.Type == tea.KeyDown:
+			case msg.Type == tea.KeyDown, msg.String() == "j":
 				if a.cursor < len(a.companies)-1 {
 					a.cursor++
 				}
-			case msg.Type == tea.KeyUp:
+			case msg.Type == tea.KeyUp, msg.String() == "k":
 				if a.cursor > 0 {
 					a.cursor--
 				}
@@ -288,11 +288,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case screenPostingList:
 			switch {
-			case msg.Type == tea.KeyDown:
+			case msg.Type == tea.KeyDown, msg.String() == "j":
 				if a.postingCursor < len(a.postings)-1 {
 					a.postingCursor++
 				}
-			case msg.Type == tea.KeyUp:
+			case msg.Type == tea.KeyUp, msg.String() == "k":
 				if a.postingCursor > 0 {
 					a.postingCursor--
 				}
@@ -313,12 +313,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		case screenPostingDetail:
 			switch {
-			case msg.Type == tea.KeyRight:
+			case msg.Type == tea.KeyRight, msg.String() == "l":
 				if a.postingCursor < len(a.postings)-1 {
 					a.postingCursor++
 					a.showPostingDetail()
 				}
-			case msg.Type == tea.KeyLeft:
+			case msg.Type == tea.KeyLeft, msg.String() == "h":
 				if a.postingCursor > 0 {
 					a.postingCursor--
 					a.showPostingDetail()
@@ -400,13 +400,13 @@ func (a *App) View() string {
 				b.WriteString("  " + line + "\n")
 			}
 		}
-		b.WriteString(helpStyle.Render("↑/↓: select  enter: view detail  o: open in browser  esc/b: back"))
+		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  esc/b: back"))
 	case screenPostingDetail:
 		if a.postingCursor < len(a.postings) {
 			b.WriteString(titleStyle.Render(a.postings[a.postingCursor].Title) + "\n")
 		}
 		b.WriteString(a.detailViewport.View() + "\n")
-		b.WriteString(helpStyle.Render("↑/↓: scroll  ←/→: prev/next posting  o: open in browser  esc/b: back"))
+		b.WriteString(helpStyle.Render("↑/↓ (j/k): scroll  ←/→ (h/l): prev/next posting  o: open in browser  esc/b: back"))
 	default:
 		b.WriteString(titleStyle.Render("Companies") + "\n")
 		if len(a.companies) == 0 {
@@ -422,7 +422,7 @@ func (a *App) View() string {
 				b.WriteString("  " + line + "\n")
 			}
 		}
-		b.WriteString(helpStyle.Render("↑/↓: select  enter: view postings  a: add  p: pause  r: refresh  q: quit"))
+		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view postings  a: add  p: pause  r: refresh  q: quit"))
 	}
 
 	return b.String()

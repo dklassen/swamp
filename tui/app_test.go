@@ -430,6 +430,93 @@ func TestApp_PostingDetail_DownScrollsLongDescription(t *testing.T) {
 	}
 }
 
+func TestApp_PostingDetail_VimJ_ScrollsLikeDown(t *testing.T) {
+	// bubbles/viewport's DefaultKeyMap already binds j/k/h/l alongside the
+	// arrow keys, so this should work with no changes on our side --
+	// verifying that rather than assuming it.
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	longDescription := strings.Repeat("line\n", 100)
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", DescriptionText: longDescription}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	app = openPostingDetail(app)
+
+	app, _ = sendKey(app, runeKey('j'))
+
+	if app.detailViewport.YOffset == 0 {
+		t.Fatal("YOffset after 'j' on a long description should have scrolled past 0")
+	}
+}
+
+func TestApp_CompanyList_VimJK_MoveCursorLikeArrows(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustCreateCompany(t, s, "Globex", "ashby", "globex")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, runeKey('j'))
+	if app.cursor != 1 {
+		t.Fatalf("cursor after 'j' = %d, want 1", app.cursor)
+	}
+	app, _ = sendKey(app, runeKey('k'))
+	if app.cursor != 0 {
+		t.Fatalf("cursor after 'k' = %d, want 0", app.cursor)
+	}
+}
+
+func TestApp_PostingList_VimJK_MoveCursorLikeArrows(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {
+			{SourceID: "job-1", Title: "Engineer"},
+			{SourceID: "job-2", Title: "Designer"},
+		},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+
+	app, _ = sendKey(app, runeKey('j'))
+	if app.postingCursor != 1 {
+		t.Fatalf("postingCursor after 'j' = %d, want 1", app.postingCursor)
+	}
+	app, _ = sendKey(app, runeKey('k'))
+	if app.postingCursor != 0 {
+		t.Fatalf("postingCursor after 'k' = %d, want 0", app.postingCursor)
+	}
+}
+
+func TestApp_PostingDetail_VimHL_MovesBetweenPostingsLikeArrows(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {
+			{SourceID: "job-1", Title: "Engineer"},
+			{SourceID: "job-2", Title: "Designer"},
+		},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	app = openPostingDetail(app)
+
+	app, _ = sendKey(app, runeKey('l'))
+	if app.postingCursor != 1 {
+		t.Fatalf("postingCursor after 'l' = %d, want 1", app.postingCursor)
+	}
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after 'l' = %v, want screenPostingDetail (stay in detail)", app.screen)
+	}
+
+	app, _ = sendKey(app, runeKey('h'))
+	if app.postingCursor != 0 {
+		t.Fatalf("postingCursor after 'h' = %d, want 0", app.postingCursor)
+	}
+}
+
 func TestApp_PostingDetail_LongLine_WrapsToViewportWidth(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
