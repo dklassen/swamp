@@ -13,6 +13,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
+	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -35,6 +36,7 @@ const (
 	screenCompanyList screen = iota
 	screenCompanyForm
 	screenPostingList
+	screenPostingDetail
 )
 
 // formInputs indices: name, then source ref. Source is fixed to "ashby"
@@ -58,6 +60,29 @@ type App struct {
 	selectedCompany store.Company
 	postings        []store.Posting
 	postingCursor   int
+	detailViewport  viewport.Model
+	width           int
+	height          int
+}
+
+// chromeRows is the number of lines View() spends on title/help text
+// around a list, reserved when computing how many rows are free for the
+// list itself.
+const chromeRows = 3
+
+func (a *App) listRows() int {
+	rows := a.height - chromeRows
+	if rows < 0 {
+		rows = 0
+	}
+	return rows
+}
+
+func derefOr(s *string, fallback string) string {
+	if s == nil {
+		return fallback
+	}
+	return *s
 }
 
 func New(s *store.Store, syncer *sync.Syncer) *App {
@@ -65,7 +90,47 @@ func New(s *store.Store, syncer *sync.Syncer) *App {
 	for i := range inputs {
 		inputs[i] = textinput.New()
 	}
-	return &App{store: s, syncer: syncer, formInputs: inputs}
+	return &App{store: s, syncer: syncer, formInputs: inputs, detailViewport: viewport.New(0, 0)}
+}
+
+// postingDetailContent renders a posting's fields and description as the
+// scrollable body of the detail view (title is rendered separately, as a
+// fixed header outside the viewport).
+func postingDetailContent(p store.Posting) string {
+	var b strings.Builder
+	fields := []struct{ label, value string }{
+		{"Department", derefOr(p.Department, "")},
+		{"Team", derefOr(p.Team, "")},
+		{"Location", derefOr(p.Location, "")},
+		{"Employment type", derefOr(p.EmploymentType, "")},
+		{"Workplace type", derefOr(p.WorkplaceType, "")},
+		{"Status", p.ListingStatus},
+		{"Job URL", derefOr(p.JobURL, "")},
+		{"Application URL", derefOr(p.ApplicationURL, "")},
+	}
+	for _, f := range fields {
+		if f.value == "" {
+			continue
+		}
+		b.WriteString(fieldLabel.Render(f.label+":") + " " + f.value + "\n")
+	}
+	if desc := derefOr(p.DescriptionText, ""); desc != "" {
+		b.WriteString("\n" + desc + "\n")
+	}
+	return b.String()
+}
+
+// showPostingDetail (re)sizes the detail viewport from the current window
+// dimensions and loads the currently-selected posting's content into it,
+// resetting scroll to the top -- called both when first entering the
+// detail screen and when moving to a different posting within it.
+func (a *App) showPostingDetail() {
+	a.detailViewport.Width = a.width
+	a.detailViewport.Height = a.listRows()
+	if a.postingCursor < len(a.postings) {
+		a.detailViewport.SetContent(postingDetailContent(a.postings[a.postingCursor]))
+	}
+	a.detailViewport.GotoTop()
 }
 
 type companiesLoadedMsg struct {
@@ -168,6 +233,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		a.postings = msg.postings
 		a.postingCursor = 0
+	case browserOpenedMsg:
+		a.err = msg.err
+	case tea.WindowSizeMsg:
+		a.width = msg.Width
+		a.height = msg.Height
+		a.detailViewport.Width = msg.Width
+		a.detailViewport.Height = a.listRows()
 	case tea.KeyMsg:
 		switch a.screen {
 		case screenCompanyList:
@@ -218,6 +290,37 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case msg.Type == tea.KeyEsc, msg.String() == "b":
 				a.screen = screenCompanyList
+			case msg.Type == tea.KeyEnter:
+				if a.postingCursor < len(a.postings) {
+					a.screen = screenPostingDetail
+					a.showPostingDetail()
+				}
+			}
+		case screenPostingDetail:
+			switch {
+			case msg.Type == tea.KeyRight:
+				if a.postingCursor < len(a.postings)-1 {
+					a.postingCursor++
+					a.showPostingDetail()
+				}
+			case msg.Type == tea.KeyLeft:
+				if a.postingCursor > 0 {
+					a.postingCursor--
+					a.showPostingDetail()
+				}
+			case msg.Type == tea.KeyEsc, msg.String() == "b":
+				a.screen = screenPostingList
+			case msg.String() == "o":
+				if a.postingCursor < len(a.postings) {
+					url := a.postings[a.postingCursor].JobURL
+					if url != nil && *url != "" {
+						return a, openInBrowser(*url)
+					}
+				}
+			default:
+				var cmd tea.Cmd
+				a.detailViewport, cmd = a.detailViewport.Update(msg)
+				return a, cmd
 			}
 		case screenCompanyForm:
 			if msg.Type == tea.KeyEsc {
@@ -272,29 +375,31 @@ func (a *App) View() string {
 		if len(a.postings) == 0 {
 			b.WriteString("No postings yet. Press 'r' from the company list to refresh.\n")
 		}
-		for i, p := range a.postings {
-			dept := ""
-			if p.Department != nil {
-				dept = *p.Department
-			}
-			loc := ""
-			if p.Location != nil {
-				loc = *p.Location
-			}
-			line := fmt.Sprintf("%s | %s | %s | %s", p.Title, dept, loc, p.ListingStatus)
+		start, end := visibleWindow(a.postingCursor, len(a.postings), a.listRows())
+		for i := start; i < end; i++ {
+			p := a.postings[i]
+			line := fmt.Sprintf("%s | %s | %s | %s", p.Title, derefOr(p.Department, ""), derefOr(p.Location, ""), p.ListingStatus)
 			if i == a.postingCursor {
 				b.WriteString(cursorStyle.Render("> "+line) + "\n")
 			} else {
 				b.WriteString("  " + line + "\n")
 			}
 		}
-		b.WriteString(helpStyle.Render("↑/↓: select  esc/b: back"))
+		b.WriteString(helpStyle.Render("↑/↓: select  enter: view detail  esc/b: back"))
+	case screenPostingDetail:
+		if a.postingCursor < len(a.postings) {
+			b.WriteString(titleStyle.Render(a.postings[a.postingCursor].Title) + "\n")
+		}
+		b.WriteString(a.detailViewport.View() + "\n")
+		b.WriteString(helpStyle.Render("↑/↓: scroll  ←/→: prev/next posting  o: open in browser  esc/b: back"))
 	default:
 		b.WriteString(titleStyle.Render("Companies") + "\n")
 		if len(a.companies) == 0 {
 			b.WriteString("No companies yet. Press 'a' to add one.\n")
 		}
-		for i, c := range a.companies {
+		start, end := visibleWindow(a.cursor, len(a.companies), a.listRows())
+		for i := start; i < end; i++ {
+			c := a.companies[i]
 			line := fmt.Sprintf("%s (%s)", c.Name, c.SourceRef)
 			if i == a.cursor {
 				b.WriteString(cursorStyle.Render("> "+line) + "\n")

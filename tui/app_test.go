@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -32,6 +33,31 @@ func sendKey(app *App, msg tea.Msg) (*App, tea.Cmd) {
 
 func runeKey(r ...rune) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: r}
+}
+
+// openPostingList drives app from the company list into the posting list
+// for the currently selected company: refresh, then enter.
+func openPostingList(t *testing.T, app *App) *App {
+	t.Helper()
+	app, cmd := sendKey(app, runeKey('r'))
+	if cmd == nil {
+		t.Fatal("Update on 'r' returned nil Cmd")
+	}
+	app, _ = sendKey(app, cmd())
+
+	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Update on enter returned nil Cmd")
+	}
+	app, _ = sendKey(app, cmd())
+	return app
+}
+
+// openPostingDetail drives app (already on screenPostingList) into the
+// detail view for the currently selected posting.
+func openPostingDetail(app *App) *App {
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	return app
 }
 
 func TestApp_Init_LoadsCompanies(t *testing.T) {
@@ -249,14 +275,7 @@ func TestApp_PressEnter_OpensPostingListForSelectedCompany(t *testing.T) {
 	})
 	app := newTestApp(t, s, syncer)
 
-	app, cmd := sendKey(app, runeKey('r'))
-	app, _ = sendKey(app, cmd())
-
-	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("Update on enter returned nil Cmd, want a command that loads postings")
-	}
-	app, _ = sendKey(app, cmd())
+	app = openPostingList(t, app)
 
 	if app.screen != screenPostingList {
 		t.Fatalf("screen after enter = %v, want screenPostingList", app.screen)
@@ -279,11 +298,7 @@ func TestApp_PressEsc_OnPostingList_ReturnsToCompanyList(t *testing.T) {
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
-
-	app, cmd := sendKey(app, runeKey('r'))
-	app, _ = sendKey(app, cmd())
-	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
-	app, _ = sendKey(app, cmd())
+	app = openPostingList(t, app)
 
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
 
@@ -302,11 +317,7 @@ func TestApp_PostingListCursor_MovesWithinBounds(t *testing.T) {
 		},
 	})
 	app := newTestApp(t, s, syncer)
-
-	app, cmd := sendKey(app, runeKey('r'))
-	app, _ = sendKey(app, cmd())
-	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
-	app, _ = sendKey(app, cmd())
+	app = openPostingList(t, app)
 
 	if app.postingCursor != 0 {
 		t.Fatalf("initial postingCursor = %d, want 0", app.postingCursor)
@@ -322,5 +333,125 @@ func TestApp_PostingListCursor_MovesWithinBounds(t *testing.T) {
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyUp})
 	if app.postingCursor != 0 {
 		t.Fatalf("postingCursor after up = %d, want 0", app.postingCursor)
+	}
+}
+
+func TestApp_PressEnter_OnPostingList_OpensDetailForSelectedPosting(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+
+	app = openPostingDetail(app)
+
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after enter on posting list = %v, want screenPostingDetail", app.screen)
+	}
+}
+
+func TestApp_PressEsc_OnPostingDetail_ReturnsToPostingList(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	app = openPostingDetail(app)
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+
+	if app.screen != screenPostingList {
+		t.Fatalf("screen after esc on detail = %v, want screenPostingList", app.screen)
+	}
+}
+
+func TestApp_PostingDetail_RightMovesToNextPostingStayingInDetail(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {
+			{SourceID: "job-1", Title: "Engineer"},
+			{SourceID: "job-2", Title: "Designer"},
+		},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	app = openPostingDetail(app)
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyRight})
+
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after right on detail = %v, want screenPostingDetail (stay in detail)", app.screen)
+	}
+	if app.postingCursor != 1 {
+		t.Fatalf("postingCursor after right on detail = %d, want 1", app.postingCursor)
+	}
+
+	// Clamped at the last posting.
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyRight})
+	if app.postingCursor != 1 {
+		t.Fatalf("postingCursor after right at last posting = %d, want 1 (clamped)", app.postingCursor)
+	}
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyLeft})
+	if app.postingCursor != 0 {
+		t.Fatalf("postingCursor after left on detail = %d, want 0", app.postingCursor)
+	}
+}
+
+func TestApp_PostingDetail_DownScrollsLongDescription(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	longDescription := strings.Repeat("line\n", 100)
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", DescriptionText: longDescription}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	app = openPostingDetail(app)
+
+	if app.detailViewport.YOffset != 0 {
+		t.Fatalf("initial YOffset = %d, want 0", app.detailViewport.YOffset)
+	}
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
+
+	if app.detailViewport.YOffset == 0 {
+		t.Fatal("YOffset after down on a long description should have scrolled past 0")
+	}
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after down on detail = %v, want screenPostingDetail", app.screen)
+	}
+}
+
+func TestApp_WindowSizeMsg_UpdatesDimensions(t *testing.T) {
+	s := newTestStore(t)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 24})
+
+	if app.width != 80 || app.height != 24 {
+		t.Fatalf("app.width, app.height = %d, %d, want 80, 24", app.width, app.height)
+	}
+}
+
+func TestApp_PressO_OnPostingDetail_OpensJobURLInBrowser(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", JobURL: "https://jobs.ashbyhq.com/acme/job-1"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	app = openPostingDetail(app)
+
+	_, cmd := sendKey(app, runeKey('o'))
+	if cmd == nil {
+		t.Fatal("Update on 'o' returned nil Cmd, want a command that opens the browser")
 	}
 }
