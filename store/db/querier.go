@@ -9,6 +9,7 @@ import (
 )
 
 type Querier interface {
+	AddTagToPosting(ctx context.Context, arg AddTagToPostingParams) error
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
 	CreateCompanyFilter(ctx context.Context, arg CreateCompanyFilterParams) (CompanyFilter, error)
 	CreatePosting(ctx context.Context, arg CreatePostingParams) (Posting, error)
@@ -18,19 +19,33 @@ type Querier interface {
 	// leaving callers to remember a second call. Relies on column defaults
 	// (user_status='new', notes='').
 	CreatePostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
+	CreateTag(ctx context.Context, name string) (Tag, error)
 	DeleteCompanyFilters(ctx context.Context, companyID int64) error
 	GetCompany(ctx context.Context, id int64) (Company, error)
 	GetPosting(ctx context.Context, id int64) (Posting, error)
 	GetPostingBySourceAndSourceID(ctx context.Context, arg GetPostingBySourceAndSourceIDParams) (Posting, error)
 	GetPostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
+	// Not filtered on deleted_at: used for existence checks (e.g. before
+	// creating) where callers need to know about a soft-deleted tag too, not
+	// just active ones.
+	GetTagByName(ctx context.Context, name string) (Tag, error)
 	ListActiveCompanies(ctx context.Context) ([]Company, error)
 	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)
 	ListPostingHistoryByPosting(ctx context.Context, postingID int64) ([]PostingHistory, error)
 	ListPostingsByCompany(ctx context.Context, companyID int64) ([]Posting, error)
+	// Active tags only: this is the pick list for tagging postings, and a
+	// soft-deleted tag shouldn't be offered for new use.
+	ListTags(ctx context.Context) ([]Tag, error)
+	// Not filtered on deleted_at: a posting's existing tag associations are
+	// historical record and should keep showing even if the tag itself was
+	// later soft-deleted (see schema comment on posting_tags).
+	ListTagsForPosting(ctx context.Context, postingID int64) ([]Tag, error)
 	MarkPostingClosed(ctx context.Context, id int64) error
 	MarkPostingReopened(ctx context.Context, id int64) error
+	RemoveTagFromPosting(ctx context.Context, arg RemoveTagFromPostingParams) error
 	RestoreCompany(ctx context.Context, id int64) error
 	SoftDeleteCompany(ctx context.Context, id int64) error
+	SoftDeleteTag(ctx context.Context, id int64) error
 	// Updates ingested content fields only. Deliberately does not touch
 	// listing_status: transitions between open/closed are explicit domain
 	// decisions (see MarkPostingClosed/MarkPostingReopened), not a side effect

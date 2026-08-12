@@ -45,6 +45,15 @@ func mustCreateCompany(t *testing.T, s *Store, name, source, sourceRef string) C
 	return c
 }
 
+func mustCreateTag(t *testing.T, s *Store, name string) Tag {
+	t.Helper()
+	tag, err := s.CreateTag(context.Background(), name)
+	if err != nil {
+		t.Fatalf("CreateTag: %v", err)
+	}
+	return tag
+}
+
 func mustUpsertPosting(t *testing.T, s *Store, companyID int64, sourceID, title string) Posting {
 	t.Helper()
 	p, err := s.UpsertPosting(context.Background(), CreatePostingParams{
