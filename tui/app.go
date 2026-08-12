@@ -1,6 +1,7 @@
 // Package tui is the terminal UI: Bubble Tea models for browsing and
-// managing companies (and, in later increments, their postings). Update
-// stays side-effect-free -- store calls are wrapped in tea.Cmd so the
+// managing companies and their postings. Markup editing (status, notes,
+// tags, interview stages) is a later increment. Update stays
+// side-effect-free -- store calls are wrapped in tea.Cmd so the
 // message-passing logic is testable without a real terminal; View
 // (rendering) is not held to automated test coverage, per this project's
 // testing decisions.
@@ -33,6 +34,7 @@ type screen int
 const (
 	screenCompanyList screen = iota
 	screenCompanyForm
+	screenPostingList
 )
 
 // formInputs indices: name, then source ref. Source is fixed to "ashby"
@@ -44,15 +46,18 @@ const (
 )
 
 type App struct {
-	store      *store.Store
-	syncer     *sync.Syncer
-	companies  []store.Company
-	cursor     int
-	screen     screen
-	formInputs []textinput.Model
-	formFocus  int
-	status     string
-	err        error
+	store           *store.Store
+	syncer          *sync.Syncer
+	companies       []store.Company
+	cursor          int
+	screen          screen
+	formInputs      []textinput.Model
+	formFocus       int
+	status          string
+	err             error
+	selectedCompany store.Company
+	postings        []store.Posting
+	postingCursor   int
 }
 
 func New(s *store.Store, syncer *sync.Syncer) *App {
@@ -116,6 +121,18 @@ func refreshCompany(syncer *sync.Syncer, companyID int64, companyName string) te
 	}
 }
 
+type postingsLoadedMsg struct {
+	postings []store.Posting
+	err      error
+}
+
+func loadPostings(s *store.Store, companyID int64) tea.Cmd {
+	return func() tea.Msg {
+		postings, err := s.ListPostingsByCompany(context.Background(), companyID)
+		return postingsLoadedMsg{postings: postings, err: err}
+	}
+}
+
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case companiesLoadedMsg:
@@ -147,6 +164,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.status = fmt.Sprintf("%s: fetched %d, created %d, updated %d, closed %d, reopened %d",
 				msg.companyName, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
 		}
+	case postingsLoadedMsg:
+		a.err = msg.err
+		a.postings = msg.postings
+		a.postingCursor = 0
 	case tea.KeyMsg:
 		switch a.screen {
 		case screenCompanyList:
@@ -178,6 +199,25 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					a.formInputs[i].Blur()
 				}
 				a.formInputs[0].Focus()
+			case msg.Type == tea.KeyEnter:
+				if a.cursor < len(a.companies) {
+					a.selectedCompany = a.companies[a.cursor]
+					a.screen = screenPostingList
+					return a, loadPostings(a.store, a.selectedCompany.ID)
+				}
+			}
+		case screenPostingList:
+			switch {
+			case msg.Type == tea.KeyDown:
+				if a.postingCursor < len(a.postings)-1 {
+					a.postingCursor++
+				}
+			case msg.Type == tea.KeyUp:
+				if a.postingCursor > 0 {
+					a.postingCursor--
+				}
+			case msg.Type == tea.KeyEsc, msg.String() == "b":
+				a.screen = screenCompanyList
 			}
 		case screenCompanyForm:
 			if msg.Type == tea.KeyEsc {
@@ -227,6 +267,28 @@ func (a *App) View() string {
 			b.WriteString(label.Render(labels[i]+":") + " " + input.View() + "\n")
 		}
 		b.WriteString(helpStyle.Render("tab: next field  enter: save  esc: cancel"))
+	case screenPostingList:
+		b.WriteString(titleStyle.Render(fmt.Sprintf("Postings: %s", a.selectedCompany.Name)) + "\n")
+		if len(a.postings) == 0 {
+			b.WriteString("No postings yet. Press 'r' from the company list to refresh.\n")
+		}
+		for i, p := range a.postings {
+			dept := ""
+			if p.Department != nil {
+				dept = *p.Department
+			}
+			loc := ""
+			if p.Location != nil {
+				loc = *p.Location
+			}
+			line := fmt.Sprintf("%s | %s | %s | %s", p.Title, dept, loc, p.ListingStatus)
+			if i == a.postingCursor {
+				b.WriteString(cursorStyle.Render("> "+line) + "\n")
+			} else {
+				b.WriteString("  " + line + "\n")
+			}
+		}
+		b.WriteString(helpStyle.Render("↑/↓: select  esc/b: back"))
 	default:
 		b.WriteString(titleStyle.Render("Companies") + "\n")
 		if len(a.companies) == 0 {
@@ -240,7 +302,7 @@ func (a *App) View() string {
 				b.WriteString("  " + line + "\n")
 			}
 		}
-		b.WriteString(helpStyle.Render("↑/↓: select  a: add  p: pause  r: refresh  q: quit"))
+		b.WriteString(helpStyle.Render("↑/↓: select  enter: view postings  a: add  p: pause  r: refresh  q: quit"))
 	}
 
 	return b.String()
