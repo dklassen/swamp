@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/store"
@@ -426,6 +427,57 @@ func TestApp_PostingDetail_DownScrollsLongDescription(t *testing.T) {
 	}
 	if app.screen != screenPostingDetail {
 		t.Fatalf("screen after down on detail = %v, want screenPostingDetail", app.screen)
+	}
+}
+
+func TestApp_PostingDetail_LongLine_WrapsToViewportWidth(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	longLine := strings.Repeat("word ", 40)
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", DescriptionText: longLine}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 20, Height: 20})
+	app = openPostingList(t, app)
+	app = openPostingDetail(app)
+
+	for _, line := range strings.Split(app.detailViewport.View(), "\n") {
+		if w := lipgloss.Width(line); w > 20 {
+			t.Fatalf("rendered line %q has width %d, want <= 20", line, w)
+		}
+	}
+}
+
+func TestApp_WindowResize_OnPostingDetail_ReWraps(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	// A distinctive marker at the end: if resize truncates instead of
+	// re-wrapping, this gets silently cut off rather than pushed onto a
+	// new line -- catches truncation that a mere "no line exceeds width"
+	// check would miss (viewport.View() uses lipgloss MaxWidth, which
+	// truncates already-wrapped content instead of re-wrapping it).
+	longLine := strings.Repeat("word ", 40) + "LASTWORD"
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", DescriptionText: longLine}},
+	})
+	app := newTestApp(t, s, syncer)
+	// Tall viewport (200 rows) so every wrapped line is visible in View()
+	// at once -- isolates the width re-wrap behavior from scroll/height.
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 200})
+	app = openPostingList(t, app)
+	app = openPostingDetail(app)
+
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 15, Height: 200})
+
+	view := app.detailViewport.View()
+	for _, line := range strings.Split(view, "\n") {
+		if w := lipgloss.Width(line); w > 15 {
+			t.Fatalf("rendered line %q has width %d, want <= 15 after resize", line, w)
+		}
+	}
+	if !strings.Contains(view, "LASTWORD") {
+		t.Fatal("LASTWORD missing after resize -- content was truncated, not re-wrapped")
 	}
 }
 

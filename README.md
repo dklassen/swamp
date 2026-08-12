@@ -6,7 +6,7 @@ This README is the living product doc for the project. It reflects the decisions
 
 ## Problem Statement
 
-Job hunting across multiple companies' Ashby boards means manually re-checking each company's careers page, losing track of what's changed, and re-reading postings from scratch to figure out if/how to tailor a resume and cover letter to them. There's no single place to collect postings from companies of interest, filter down to relevant roles, and keep notes/status on where things stand.
+Job hunting across multiple companies' Ashby boards means manually re-checking each company's careers page, losing track of what's changed, and re-reading postings from scratch to figure out if/how to tailor a resume and cover letter to them. There's no single place to collect postings from companies of interest, filter down to relevant roles, and keep notes/status on where things stand. Or worse using LinkedIn....
 
 ## Solution
 
@@ -45,6 +45,8 @@ Resume/cover-letter generation and autonomous agents (see original vision below)
 15. As a user, I want to pause a company (stop fetching new postings) without losing its stored postings or my markup on them, so that I can deprioritize without losing history.
 
 ## Implementation Decisions
+
+> **Every non-trivial decision also gets an entry in [`decisions.log`](decisions.log)** — chronological, includes the "why" and alternatives considered, and survives independent of git history shape (unlike commit messages, which can get squashed away). This section is a current-state summary; `decisions.log` is the trail of how we got here. Don't forget to append to it.
 
 - **Language/runtime**: Go.
 - **Storage**: SQLite, accessed via `database/sql` + [sqlc](https://sqlc.dev/) (hand-written SQL, generated type-safe Go — chosen over an ORM like GORM to keep queries explicit and testable, matching Go idioms rather than ActiveRecord-style abstraction).

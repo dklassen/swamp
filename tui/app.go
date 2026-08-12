@@ -128,7 +128,8 @@ func (a *App) showPostingDetail() {
 	a.detailViewport.Width = a.width
 	a.detailViewport.Height = a.listRows()
 	if a.postingCursor < len(a.postings) {
-		a.detailViewport.SetContent(postingDetailContent(a.postings[a.postingCursor]))
+		content := postingDetailContent(a.postings[a.postingCursor])
+		a.detailViewport.SetContent(wrapToWidth(content, a.detailViewport.Width))
 	}
 	a.detailViewport.GotoTop()
 }
@@ -238,8 +239,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
-		a.detailViewport.Width = msg.Width
-		a.detailViewport.Height = a.listRows()
+		if a.screen == screenPostingDetail {
+			// Re-wrap at the new width: viewport.View() truncates rather
+			// than re-wrapping already-set content when Width shrinks, so
+			// just resizing the fields isn't enough. showPostingDetail
+			// also resizes detailViewport itself from a.width/a.height.
+			// When not on the detail screen, sizing happens fresh the
+			// next time it's entered, so nothing to do here.
+			a.showPostingDetail()
+		}
 	case tea.KeyMsg:
 		switch a.screen {
 		case screenCompanyList:

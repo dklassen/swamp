@@ -1,0 +1,457 @@
+# Decisions Log
+
+Append-only, chronological record of non-obvious project decisions: what
+was decided, why, and what alternatives were considered. README.md is
+the current-state summary; this file is the trail of how we got there.
+Every new non-trivial decision gets an entry here, appended at the
+bottom, at the time it's made.
+
+Format:
+
+## YYYY-MM-DD — Title
+Context: what prompted the decision.
+Decision: what was decided.
+Why: the reasoning.
+Alternatives considered: (optional) what else was on the table and why
+it lost.
+
+---
+
+## 2026-08-10 — v1 scope: Ashby scraping + TUI curation only
+Context: README's original vision includes multi-board scraping,
+scheduled refresh, AI-generated resumes/cover letters, and autonomous
+agents.
+Decision: this phase covers only Ashby ingestion, storage, fetch-time
+filtering, and a TUI to browse/curate what's stored. Everything else is
+explicitly deferred, not designed against yet.
+Why: keep the data layer and curation workflow solid before building
+anything that depends on it (resume generation needs good data first).
+
+## 2026-08-10 — Company config lives in the database, not YAML
+Context: README originally specified "configuration via yaml for
+interesting companies."
+Decision: companies and their filters are stored in the database,
+added/edited via the TUI.
+Why: user explicitly redirected away from YAML during the PRD
+interview toward DB-backed config managed in-app.
+
+## 2026-08-10 — Filter semantics: multi-value OR within a field, AND across fields
+Context: needed to decide how multiple filter values combine.
+Decision: multiple company_filters rows for the same field (e.g.
+department) are OR'd together; distinct fields are AND'd together. A
+field with no configured rows imposes no constraint.
+Why: matches how a user naturally thinks about "Engineering OR Data
+Engineering, AND Remote OR Canada" -- confirmed directly with the user
+via concrete examples.
+
+## 2026-08-10 — Filters gate ingestion, not storage queries
+Context: whether filtering should happen as a SQL WHERE clause over
+stored postings or in application code before storage.
+Decision: filter.Match runs in Go, in memory, on postings fetched from
+Ashby, before any store write. Non-matching postings are never
+inserted.
+Why: there's no row to filter yet at decision time -- it's an ingest
+gate, not a query. Also keeps the matching logic pure/dependency-free
+(microsecond tests, no DB fixture) versus dynamic per-company SQL
+generation, which would need runtime WHERE-clause construction per
+company's arbitrary filter set.
+
+## 2026-08-10 — Changing a company's filters triggers a full re-fetch
+Context: what should happen to already-fetched data when filters
+change.
+Decision: editing a company's filters triggers a fresh fetch against
+current filters.
+Why: user's explicit call; keeps filter changes from silently going
+stale until the next scheduled/manual refresh.
+
+## 2026-08-10 — Refresh is manual only in v1, no scheduler/daemon
+Context: README's long-term vision includes scheduled refresh.
+Decision: v1 only supports manual refresh (CLI `swamp fetch`, later
+also a TUI keybinding). No background scheduling.
+Why: smaller surface area for the first working version; scheduling is
+additive later without reshaping anything already built.
+
+## 2026-08-10 — Posting changes are tracked with history, never deleted
+Context: how to handle a posting disappearing from a company's board,
+or its content changing between fetches.
+Decision: postings get a listing_status (open/closed) instead of being
+deleted, and content/status changes are recorded as posting_history
+snapshots.
+Why: preserves markup/notes tied to a posting even after it closes, and
+gives a real change trail instead of silently overwriting data.
+
+## 2026-08-10 — Company lifecycle: soft pause only, no hard delete
+Context: whether companies should support deletion.
+Decision: companies can be paused (stop fetching) but never hard
+deleted at the application level.
+Why: user's explicit call -- avoids losing postings/markup tied to a
+company by accident.
+
+## 2026-08-10 — sqlc + database/sql over an ORM (GORM)
+Context: user's prior experience was Rails/ActiveRecord, raised
+"why not just use an ORM" directly.
+Decision: hand-written SQL + sqlc-generated typed Go, not GORM.
+Why: Go's ORM ecosystem doesn't have ActiveRecord's maturity -- GORM
+leans on reflection/hidden magic in a language culturally averse to
+that (silent N+1s via associations, surprising zero-value handling).
+sqlc keeps SQL visible and testable against a real sqlite file, no
+runtime query-building layer to debug. Schema here is small enough that
+an ORM's abstraction isn't buying much.
+Alternatives considered: GORM (more ActiveRecord-like ergonomics, but
+less idiomatic and riskier as schema grows).
+
+## 2026-08-10 — goose over golang-migrate for migrations
+Context: needed a migration tool to pair with sqlc (which doesn't
+handle migrations itself).
+Decision: goose, with migration files embedded via go:embed.
+Why: simpler/less config than golang-migrate for a solo sqlite-backed
+tool, and embeds cleanly into the binary.
+
+## 2026-08-10 — Bubble Tea (+ Bubbles/Lipgloss) for the TUI
+Context: needed a TUI framework.
+Decision: Bubble Tea, using Bubbles for components (textinput, viewport)
+and Lipgloss for styling.
+Why: de facto standard for Go TUIs, Elm-architecture model is naturally
+testable (Update is a pure function over messages), large component
+ecosystem.
+
+## 2026-08-10 — go.mod: minimum-version directive only, no explicit toolchain pin
+Context: initially added an explicit `toolchain go1.26.1` line to
+go.mod to pin the Go version. `go get`/`go mod tidy` kept silently
+stripping it, and a Taskfile task was added to re-pin it after every
+tidy.
+Decision: removed the re-pinning entirely; go.mod carries only the `go
+1.26.1` minimum-version directive, letting Go's own tooling manage the
+rest.
+Why: user called this out as fighting the tool -- go mod tidy dropping
+a redundant toolchain line is intentional design (Go 1.21+ auto-selects
+a compatible toolchain from the minimum version), not a bug to patch
+around.
+Alternatives considered: keep re-pinning via a wrapper Taskfile task
+(rejected -- actively worked against the toolchain's own design).
+
+## 2026-08-10 — No ON DELETE CASCADE except tags -> posting_tags
+Context: default instinct was to add ON DELETE CASCADE on FKs.
+Decision: every FK defaults to SQLite's NO ACTION (delete fails loudly
+if dependents exist) except posting_tags.tag_id -> tags, which cascades.
+Why: companies/postings are never hard-deleted by the app, so cascades
+would only ever fire by accident and could silently wipe owned data
+(notes, tags, interview history). The one exception is justified:
+deleting a tag you created should remove its associations -- that's an
+explicit, expected user action, not a surprise side effect.
+Alternatives considered: cascade everywhere (the SQL default reflex;
+rejected as exactly the kind of silent-data-loss risk this project
+wanted to avoid).
+
+## 2026-08-10 — Ingested vs. owned tables never share columns
+Context: risk of naming collisions/confusion between data pulled from a
+job board and data the user enters (e.g. a "status" field meaning two
+different things).
+Decision: postings/posting_history are ingested-only (never written by
+the user); posting_markup/tags/posting_tags/interview_stages are
+owned-only (never touched by sync). No table mixes both.
+Why: user's explicit call for a clean architectural separation, so
+there's no ambiguity about which subsystem owns a given column.
+
+## 2026-08-10 — Source-agnostic companies/postings (source + source_ref/source_id)
+Context: even though only Ashby is implemented, more job boards are a
+stated future goal.
+Decision: companies and postings key off (source, source_ref) /
+(source, source_id) rather than Ashby-specific fields; postings.
+raw_payload preserves the full source response for fields not yet
+promoted to canonical columns.
+Why: adding a second board later means a new adapter + new rows, not a
+schema change. raw_payload means no data is lost even before a field
+is canonicalized.
+
+## 2026-08-10 — Soft-delete via deleted_at, not an active boolean
+Context: companies originally had an `active` boolean for pause/resume.
+Decision: replaced with `deleted_at` (null = active); tags also gained
+`deleted_at` instead of supporting hard delete.
+Why: on companies, "paused" and "deleted-by-mistake" are different
+intents that shouldn't be conflated in one boolean. On tags, soft-delete
+means deleting a tag doesn't cascade-destroy historical posting_tags
+associations -- a tag's `ON DELETE CASCADE` becomes a fallback the app
+shouldn't normally trigger, since the app always soft-deletes.
+
+## 2026-08-10 — created_at/updated_at/deleted_at as a standard convention
+Context: these are operational/audit metadata, not business fields.
+Decision: applied consistently across owned tables (fixed two gaps:
+tags and posting_markup were initially missing full created_at/
+updated_at).
+Why: consistency, and these fields exist to answer "when did this
+happen," not to carry domain meaning.
+
+## 2026-08-10 — gofmt: auto-format pre-commit hook, not just a check
+Context: wanted formatting enforced automatically.
+Decision: `.githooks/pre-commit` (version-controlled, activated via
+`task hooks:install` since `core.hooksPath` can't itself be version
+controlled -- .git/config is local, untracked, per-clone state by
+git's own design) gofmt's staged .go files and re-stages them before
+each commit.
+Why: unformatted code should never be possible to commit, not just
+flagged after the fact.
+
+## 2026-08-10 — golangci-lint: explicit "standard" linter set, findings fixed not suppressed
+Context: first lint run found 3 errcheck findings (unchecked Close()/
+Write() errors on defer/cleanup paths) -- a commonly-debated pattern
+some teams exclude.
+Decision: pinned `linters.default: standard` explicitly in .golangci.yml
+(rather than relying on golangci-lint's implicit default, which can
+shift between versions) and fixed all 3 findings by explicitly
+discarding/asserting on the errors, rather than adding an exclude rule.
+Why: user's explicit call to keep the strict default rather than carve
+out an exception for a pattern that's rarely actionable but still worth
+the discipline.
+
+## 2026-08-11 — Ashby client: verified live API before writing fixtures
+Context: had a prior model of the response shape from documentation
+summaries only.
+Decision: fetched the real public endpoint before writing any decode
+code, which corrected two assumptions (field is `descriptionPlain` not
+`descriptionText`; there's a top-level `apiVersion`). Confirmed the
+endpoint returns all postings in one call, no pagination.
+Why: don't build against a remembered/summarized API shape when the
+real one is one curl away.
+
+## 2026-08-11 — Ashby decode structs: forgiving types for API evolution
+Context: how much resilience to build against future Ashby API changes.
+Decision: string types (not enums) for fields like employmentType/
+workplaceType, raw JSON preserved via json.RawMessage (byte-exact, not
+re-marshaled) per posting. Deliberately did *not* build a pluggable
+multi-version API strategy.
+Why: additive API changes cost nothing with Go's default
+unknown-field-tolerant JSON decoding. A full version-switching
+abstraction would be premature -- exactly one API version exists to
+design it against.
+
+## 2026-08-11 — filter.Posting is its own minimal type, not ashby.Posting
+Context: whether the filter package should depend on ashby's posting
+shape.
+Decision: filter defines a small local Posting{Department, Location}
+type; callers convert at the call site.
+Why: keeps filter dependency-free and decoupled from any one board's
+client shape (ashby.Posting carries many irrelevant fields --
+descriptions, URLs, raw payload). store.Company/postings may become the
+real match target once sync exists, so binding to ashby's shape now
+would need unwinding later.
+
+## 2026-08-11 — filter.Match: case-insensitive exact match; unsupported field errors
+Context: two behavioral choices without an obvious default.
+Decision: value comparison is case-insensitive but still exact (not
+substring/fuzzy). An unrecognized filter Field returns an error rather
+than being silently ignored or treated as never-matching.
+Why: job board data casing is inconsistent in practice, so
+case-sensitivity would silently miss real matches. On the error path:
+filter has no dependency on store's company_filters CHECK constraint,
+so it can't assume filters were validated upstream -- fail loud instead
+of masking a caller bug (typo'd field, schema/code drift).
+
+## 2026-08-11 — store.UpsertPosting creates the markup row transactionally
+Context: every posting should always have exactly one posting_markup
+row (default status 'new').
+Decision: UpsertPosting wraps the existence check + create/update +
+(on insert only) markup creation in one transaction via
+Queries.WithTx, rather than requiring callers to remember a second
+call.
+Why: deep-module preference -- hide the plumbing behind a simple
+interface rather than leaking a two-step protocol callers can forget.
+
+## 2026-08-11 — UpsertPosting never touches listing_status
+Context: whether re-ingesting a posting's content should implicitly
+affect its open/closed state.
+Decision: listing_status changes only via explicit
+MarkPostingClosed/MarkPostingReopened calls, never as a side effect of
+UpsertPosting.
+Why: open/closed is a domain transition sync decides deliberately
+(based on presence in a fetch), not an incidental side effect of
+content refresh.
+
+## 2026-08-11 — Tags soft-delete; list queries differ by purpose
+Context: tag deletion needs to not destroy historical tagging data.
+Decision: ListTagsForPosting includes soft-deleted tags (a posting's
+tag history shouldn't vanish when a tag is retired); ListTags excludes
+them (it's the pick-list for applying new tags).
+Why: follows directly from why tags soft-delete in the first place --
+the two query use cases genuinely want different visibility.
+
+## 2026-08-11 — sync.PostingFetcher: sync's own interface, not ashby's
+Context: wanted sync decoupled from any one job board client for
+testability and future multi-board support.
+Decision: sync defines its own minimal PostingFetcher interface;
+*ashby.Client satisfies it structurally.
+Why: lets tests use a fake instead of real HTTP. Later found via
+self-review that the interface still returns []ashby.Posting
+concretely, so it doesn't yet provide true multi-source pluggability --
+corrected the doc comment to say so rather than build a speculative
+fix with only one real implementation to design against.
+
+## 2026-08-11 — Filter re-match: non-matching postings are left untouched, not kept fresh
+Context: if a previously-stored posting stops matching a company's
+current filters, should sync still keep its content up to date?
+Decision: no -- filters gate whether a posting is touched *at all* on
+each fetch, including updates to already-tracked postings. A posting
+that stops matching just goes stale (though it's still closed normally
+if it disappears from the board, since that check is filter-independent).
+Why: literal reading of the README's "non-matching postings are never
+stored" -- confirmed directly with the user rather than assumed.
+Alternatives considered: keep tracked postings' content fresh
+regardless of current filter match (rejected -- inconsistent with the
+literal filter contract).
+
+## 2026-08-11 — SyncAll continues past a single company's failure
+Context: one company's fetch failing shouldn't block refreshing others.
+Decision: SyncAll processes every active company regardless of earlier
+failures; each Result carries its own Err.
+Why: user's explicit call, and matches how a personal tool should
+degrade -- one bad slug or network blip shouldn't stall the whole
+batch.
+
+## 2026-08-11 — SyncAll: sequential, not a goroutine fan-out/fan-in pipeline
+Context: whether refreshing multiple companies should fetch
+concurrently.
+Decision: sequential per company.
+Why: sqlite writes serialize regardless of fetch concurrency (single
+writer without WAL/busy-timeout tuning), so a concurrent pipeline would
+mostly just overlap network calls -- real complexity (channels, error
+aggregation, non-deterministic test ordering) for a benefit that's
+disproportionate at this data scale (a handful of companies). Revisited
+directly with the user (who proposed fan-out/collect) and both agreed
+sequential is right for now; easy retrofit later since SyncCompany is
+already a clean per-company unit.
+
+## 2026-08-11 — Content-change detection: full field comparison, history only on real diff
+Context: how to decide when a re-fetched posting counts as "changed."
+Decision: compare every ingested field between existing and incoming;
+only write a content_updated history snapshot and call UpsertPosting
+if something actually differs. An unchanged re-fetch touches the
+database not at all.
+Why: avoids updated_at churn and pointless writes on a no-op sync,
+verified directly (a second identical sync produces an all-zero
+Result).
+
+## 2026-08-11 — Posting closure is filter-independent
+Context: how to decide when a previously-open posting should be marked
+closed.
+Decision: any previously-open posting not present in the current
+fetch's full (unfiltered) result set gets closed, regardless of
+whether it would currently match the company's filters.
+Why: a posting disappearing from the board is unconditional fact,
+independent of whether this app chose to track it.
+
+## 2026-08-11 — TUI: company management is the first increment, not the full README scope
+Context: store initially only supported companies; postings/markup
+came later.
+Decision: scoped the first TUI increment to company list/add/pause,
+deferred posting browsing until store supported it.
+Why: matched what was actually buildable at the time rather than
+building UI against not-yet-existing data access.
+
+## 2026-08-11 — TUI Update stays side-effect-free; I/O wrapped in tea.Cmd
+Context: Bubble Tea's Elm architecture convention.
+Decision: every store/sync call happens inside a tea.Cmd, producing a
+typed message that Update handles on a later call -- never a direct
+call inside Update itself.
+Why: this is what makes Update testable without a real terminal: tests
+call Update directly, manually execute any returned Cmd, and feed the
+result back in.
+
+## 2026-08-11 — TUI list scrolling: custom visibleWindow(), not bubbles/viewport
+Context: company/posting lists didn't scroll -- the cursor could move
+off-screen with no way to see it.
+Decision: a pure visibleWindow(cursor, n, rows) function (centers the
+cursor, clamped at the edges) used by both list screens, not
+bubbles/viewport.
+Why: these are rows of discrete items with their own cursor logic
+already built -- viewport is designed for one block of pre-rendered
+text, and layering it under an existing cursor system would mean two
+overlapping scroll mechanisms instead of one simpler purpose-built one.
+
+## 2026-08-11 — TUI posting detail: bubbles/viewport, unlike the lists
+Context: the description text had no scroll mechanism and ran off the
+bottom of the terminal.
+Decision: the detail body (fields + description) is a viewport.Model;
+up/down scroll it. Left/right, previously up/down, now move to the
+prev/next posting.
+Why: this genuinely is one long scrollable text blob -- exactly
+viewport's designed use case, unlike the lists. Freed up/down (the more
+natural scroll keys) by moving posting-to-posting navigation to
+left/right.
+
+## 2026-08-11 — Browser-open: pure command-selection function, OS process is unverified
+Context: needed to open a posting's URL cross-platform (open/xdg-open/
+rundll32) without adding a dependency for one exec call.
+Decision: split into browserCommand(goos, url) -- a pure function
+returning which command/args to use, fully unit tested for all three
+platforms plus the unsupported-OS error path -- wrapped by a thin
+tea.Cmd that actually spawns the process (not unit tested, same
+category as View() rendering).
+Why: separates the genuinely testable branching logic from the
+actually-untestable-without-a-real-OS side effect, rather than leaving
+the whole thing unverified.
+
+## 2026-08-11 — ListPostingsByCompany ordering: added id DESC tiebreaker
+Context: user spot-checked posting details against the database and
+found apparent mismatches; investigation found ORDER BY first_seen_at
+DESC had no tiebreaker, and sqlite's CURRENT_TIMESTAMP has only
+second resolution -- a single sync inserts ~130 rows in one loop, so
+most share an identical first_seen_at.
+Decision: added `id DESC` as a secondary sort key.
+Why: verified concretely that ties exist in practice (inserted 3 rows
+with identical timestamps, confirmed the query plan uses a temp
+b-tree for the sort, not a naturally-ordered scan) -- the observed
+order was stable across repeated test runs, but nothing in SQL
+semantics guarantees that holds as data volume or the SQLite version
+changes. The original mismatch report turned out to not be caused by
+this (user later said the bug seemed resolved on its own), but the
+missing tiebreaker was a real latent correctness gap worth fixing
+regardless.
+
+## 2026-08-12 — Posting detail long lines: word-wrap by default, no toggle, no horizontal scroll
+Context: description/URL fields longer than the terminal width ran
+off-screen; viewport has latent horizontal-pan support but it's not
+wired up (left/right are already claimed for prev/next posting).
+Decision: word-wrap content to the viewport's width before
+SetContent, re-wrapping on resize. No wrap/raw toggle, no horizontal
+scroll.
+Why: description text is prose, not tabular/fixed-width content --
+wrapping is simply correct for that and needs no new keybinding to
+discover. A toggle would add a mode for a need (viewing raw
+fixed-width content) that doesn't exist in this data. Horizontal
+scroll is the right tool only for genuinely wide fixed-format content,
+which doesn't apply here; noted as an easy option to add later
+without conflicting with this if that ever changes.
+Alternatives considered: wrap/raw toggle keybinding; horizontal
+scroll via viewport's native pan (would require moving posting
+navigation off left/right).
+
+## 2026-08-12 — Decision history: decisions.log, backfilled from project start
+Context: wanted traceable history of project decisions beyond what's
+implicit in commit messages.
+Decision: this file. Append-only, one entry per non-trivial decision,
+going forward from now -- and, per explicit request, backfilled for
+the major decisions already made this session rather than starting
+empty.
+Why: commit messages capture the "why" for what shipped, but don't
+give a single browsable chronological trail across the whole project,
+and can get lost/summarized away in a squash or rebase. This file is
+the durable record independent of git history shape.
+
+## 2026-08-12 — Word-wrap implementation: cellbuf.Wrap directly, not lipgloss.Style.Width()
+Context: implementing the word-wrap decision above.
+Decision: wrapToWidth uses github.com/charmbracelet/x/cellbuf's Wrap
+function directly, not lipgloss.NewStyle().Width(w).Render(). Also:
+re-wrap explicitly on every tea.WindowSizeMsg while viewing detail,
+by re-calling showPostingDetail() (which re-wraps from the posting's
+original content), rather than just updating detailViewport.Width.
+Why: two things were verified empirically, not assumed. First,
+lipgloss's Width() also pads short lines to fill the width (it's a
+box-layout primitive, not pure text wrapping) -- confirmed by a
+failing test expecting unchanged short content. Second,
+viewport.View() renders via lipgloss MaxWidth, which *truncates*
+content wider than the current Width rather than re-wrapping it --
+so just resizing detailViewport.Width on a window resize would
+silently cut off text instead of reflowing it. Confirmed with a test
+that specifically checks a marker word survives a resize (a
+weaker "no line exceeds width" check alone doesn't catch truncation,
+since truncated lines also satisfy that property).
