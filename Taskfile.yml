@@ -21,6 +21,11 @@ tasks:
           exit 1
         fi
 
+  lint:
+    desc: Run golangci-lint
+    cmds:
+      - ./bin/golangci-lint run ./...
+
   hooks:install:
     desc: Point git at the repo's version-controlled hooks (run once per clone)
     cmds:
