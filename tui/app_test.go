@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/store"
@@ -607,5 +608,224 @@ func TestApp_PressO_OnPostingList_OpensSelectedPostingJobURLInBrowser(t *testing
 	_, cmd := sendKey(app, runeKey('o'))
 	if cmd == nil {
 		t.Fatal("Update on 'o' returned nil Cmd, want a command that opens the browser")
+	}
+}
+
+func TestApp_PressF_OnPostingList_OpensFilterSelectAndLoadsOptions(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+
+	app, cmd := sendKey(app, runeKey('f'))
+	if cmd == nil {
+		t.Fatal("Update on 'f' returned nil Cmd, want a command that loads filter options")
+	}
+	if app.screen != screenFilterSelect {
+		t.Fatalf("screen after 'f' = %v, want screenFilterSelect", app.screen)
+	}
+
+	app, _ = sendKey(app, cmd())
+
+	if diff := cmp.Diff([]string{"Engineering"}, app.filterDepartmentOptions); diff != "" {
+		t.Fatalf("filterDepartmentOptions mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"Remote"}, app.filterLocationOptions); diff != "" {
+		t.Fatalf("filterLocationOptions mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestApp_FilterSelect_SpaceTogglesSelection(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	app, cmd := sendKey(app, runeKey('f'))
+	app, _ = sendKey(app, cmd())
+
+	if app.filterSelectedDepartments["Engineering"] {
+		t.Fatal("Engineering should not be selected initially")
+	}
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
+	if !app.filterSelectedDepartments["Engineering"] {
+		t.Fatal("Engineering should be selected after space")
+	}
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
+	if app.filterSelectedDepartments["Engineering"] {
+		t.Fatal("Engineering should be deselected after second space")
+	}
+}
+
+func TestApp_FilterSelect_Esc_CancelsWithoutSaving(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	app, cmd := sendKey(app, runeKey('f'))
+	app, _ = sendKey(app, cmd())
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+
+	if app.screen != screenPostingList {
+		t.Fatalf("screen after esc = %v, want screenPostingList", app.screen)
+	}
+
+	saved, err := s.ListCompanyFilters(context.Background(), acme.ID)
+	if err != nil {
+		t.Fatalf("ListCompanyFilters: %v", err)
+	}
+	if len(saved) != 0 {
+		t.Fatalf("saved filters = %+v, want none (esc should not persist selection)", saved)
+	}
+}
+
+func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {
+			{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"},
+			{SourceID: "job-2", Title: "Salesperson", Department: "Sales", Location: "Remote"},
+		},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	if len(app.postings) != 2 {
+		t.Fatalf("initial postings = %+v, want 2", app.postings)
+	}
+
+	app, cmd := sendKey(app, runeKey('f'))
+	app, _ = sendKey(app, cmd())
+
+	// Cursor starts at filterDepartmentOptions[0]. Confirm which
+	// department that is before toggling, so the assertion below isn't
+	// order-dependent.
+	wantDept := app.filterDepartmentOptions[0]
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
+
+	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Update on enter (save) returned nil Cmd, want a command that saves filters")
+	}
+	app, cmd = sendKey(app, cmd())
+	if app.screen != screenPostingList {
+		t.Fatalf("screen after save = %v, want screenPostingList", app.screen)
+	}
+	if cmd == nil {
+		t.Fatal("Update on companyFiltersSavedMsg returned nil Cmd, want a command that re-syncs")
+	}
+
+	// Narrowed immediately, before the re-sync Cmd even runs.
+	if len(app.postings) != 1 {
+		t.Fatalf("postings after save = %+v, want 1 (narrowed to %s)", app.postings, wantDept)
+	}
+	if derefOr(app.postings[0].Department, "") != wantDept {
+		t.Fatalf("remaining posting department = %q, want %q", derefOr(app.postings[0].Department, ""), wantDept)
+	}
+
+	saved, err := s.ListCompanyFilters(context.Background(), acme.ID)
+	if err != nil {
+		t.Fatalf("ListCompanyFilters: %v", err)
+	}
+	if len(saved) != 1 || saved[0].Field != "department" || saved[0].Value != wantDept {
+		t.Fatalf("saved filters = %+v, want one department=%s filter", saved, wantDept)
+	}
+
+	// Drive the rest of the chain: the re-sync Cmd runs (hits the fake
+	// fetcher again, no new data), producing companyRefreshedMsg, whose
+	// handler reloads postings from the DB since this is the company
+	// currently being viewed. That reload must NOT silently undo the
+	// narrowing by loading everything unfiltered -- ListPostingsByCompany
+	// itself has no notion of company_filters, so the reload has to
+	// re-apply them, not just re-fetch.
+	app, cmd = sendKey(app, cmd())
+	if cmd == nil {
+		t.Fatal("Update on companyRefreshedMsg returned nil Cmd, want a command that reloads postings")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if len(app.postings) != 1 {
+		t.Fatalf("postings after post-sync reload = %+v, want still 1 (filter should survive the reload)", app.postings)
+	}
+	if derefOr(app.postings[0].Department, "") != wantDept {
+		t.Fatalf("posting department after reload = %q, want %q", derefOr(app.postings[0].Department, ""), wantDept)
+	}
+}
+
+func TestApp_CompanyRefreshed_ForCurrentlyViewedCompany_ReloadsPostings(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+
+	// Simulate the background re-sync (triggered by saving a filter)
+	// completing for the company currently being viewed.
+	app, cmd := sendKey(app, companyRefreshedMsg{
+		companyName: acme.Name,
+		result:      sync.Result{CompanyID: acme.ID},
+	})
+	if cmd == nil {
+		t.Fatal("Update on companyRefreshedMsg for the viewed company returned nil Cmd, want a command that reloads postings")
+	}
+
+	app, _ = sendKey(app, cmd())
+	if len(app.postings) != 1 {
+		t.Fatalf("postings after reload = %+v, want 1", app.postings)
+	}
+}
+
+func TestApp_CompanyRefreshed_ForDifferentCompany_DoesNotReloadPostings(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+
+	_, cmd := sendKey(app, companyRefreshedMsg{
+		companyName: "SomeOtherCompany",
+		result:      sync.Result{CompanyID: 999999},
+	})
+	if cmd != nil {
+		t.Fatal("Update on companyRefreshedMsg for a different company returned a non-nil Cmd, want nil (shouldn't reload)")
+	}
+}
+
+func TestApp_OpenPostingList_WithPreExistingSavedFilters_NarrowsOnFirstLoad(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	if _, err := s.CreateCompanyFilter(context.Background(), acme.ID, "department", "Engineering"); err != nil {
+		t.Fatalf("CreateCompanyFilter: %v", err)
+	}
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {
+			{SourceID: "job-1", Title: "Engineer", Department: "Engineering"},
+			{SourceID: "job-2", Title: "Salesperson", Department: "Sales"},
+		},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+
+	if len(app.postings) != 1 {
+		t.Fatalf("postings on first load = %+v, want 1 (narrowed by pre-existing saved filter, simulating a prior session)", app.postings)
+	}
+	if derefOr(app.postings[0].Department, "") != "Engineering" {
+		t.Fatalf("posting department = %q, want %q", derefOr(app.postings[0].Department, ""), "Engineering")
 	}
 }
