@@ -55,3 +55,16 @@ WHERE id = ?;
 UPDATE postings
 SET listing_status = 'open', updated_at = CURRENT_TIMESTAMP
 WHERE id = ?;
+
+-- name: ListDistinctDepartmentsForCompany :many
+-- Keyspace discovery for filter selection: department is a company-
+-- specific vocabulary (not a fixed enum), so filter values are offered
+-- from what's actually been ingested, not guessed at.
+SELECT DISTINCT department FROM postings
+WHERE company_id = ? AND department IS NOT NULL AND department != ''
+ORDER BY department;
+
+-- name: ListDistinctLocationsForCompany :many
+SELECT DISTINCT location FROM postings
+WHERE company_id = ? AND location IS NOT NULL AND location != ''
+ORDER BY location;

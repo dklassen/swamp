@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -289,5 +290,67 @@ func TestUpdatePostingMarkupNotes_UpdatesNotes(t *testing.T) {
 	}
 	if updated.Notes != "Looks like a great fit" {
 		t.Fatalf("Notes = %q, want %q", updated.Notes, "Looks like a great fit")
+	}
+}
+
+func TestListDistinctDepartmentsForCompany_ReturnsSortedUniqueValues(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	eng := "Engineering"
+	sales := "Sales"
+	for i, dept := range []*string{&eng, &sales, &eng} {
+		_, err := s.UpsertPosting(ctx, CreatePostingParams{
+			CompanyID:  acme.ID,
+			Source:     "ashby",
+			SourceID:   fmt.Sprintf("job-%d", i),
+			Title:      "Role",
+			Department: dept,
+			RawPayload: "{}",
+		})
+		if err != nil {
+			t.Fatalf("UpsertPosting: %v", err)
+		}
+	}
+
+	got, err := s.ListDistinctDepartmentsForCompany(ctx, acme.ID)
+	if err != nil {
+		t.Fatalf("ListDistinctDepartmentsForCompany: %v", err)
+	}
+	want := []string{"Engineering", "Sales"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("ListDistinctDepartmentsForCompany mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestListDistinctLocationsForCompany_ReturnsSortedUniqueValues(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	remote := "Remote"
+	nyc := "New York"
+	for i, loc := range []*string{&nyc, &remote, &remote} {
+		_, err := s.UpsertPosting(ctx, CreatePostingParams{
+			CompanyID:  acme.ID,
+			Source:     "ashby",
+			SourceID:   fmt.Sprintf("job-%d", i),
+			Title:      "Role",
+			Location:   loc,
+			RawPayload: "{}",
+		})
+		if err != nil {
+			t.Fatalf("UpsertPosting: %v", err)
+		}
+	}
+
+	got, err := s.ListDistinctLocationsForCompany(ctx, acme.ID)
+	if err != nil {
+		t.Fatalf("ListDistinctLocationsForCompany: %v", err)
+	}
+	want := []string{"New York", "Remote"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Fatalf("ListDistinctLocationsForCompany mismatch (-want +got):\n%s", diff)
 	}
 }

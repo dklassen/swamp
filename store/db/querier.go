@@ -6,6 +6,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 type Querier interface {
@@ -33,6 +34,11 @@ type Querier interface {
 	GetTagByName(ctx context.Context, name string) (Tag, error)
 	ListActiveCompanies(ctx context.Context) ([]Company, error)
 	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)
+	// Keyspace discovery for filter selection: department is a company-
+	// specific vocabulary (not a fixed enum), so filter values are offered
+	// from what's actually been ingested, not guessed at.
+	ListDistinctDepartmentsForCompany(ctx context.Context, companyID int64) ([]sql.NullString, error)
+	ListDistinctLocationsForCompany(ctx context.Context, companyID int64) ([]sql.NullString, error)
 	ListInterviewStagesByPosting(ctx context.Context, postingID int64) ([]InterviewStage, error)
 	ListPostingHistoryByPosting(ctx context.Context, postingID int64) ([]PostingHistory, error)
 	// id DESC is a tiebreaker: a single sync inserts many rows within the same

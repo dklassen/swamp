@@ -246,3 +246,37 @@ func (s *Store) MarkPostingClosed(ctx context.Context, id int64) error {
 func (s *Store) MarkPostingReopened(ctx context.Context, id int64) error {
 	return s.queries.MarkPostingReopened(ctx, id)
 }
+
+// ListDistinctDepartmentsForCompany returns the distinct, non-empty
+// department values seen across a company's ingested postings -- the
+// keyspace to offer when picking department filter values, since
+// department is a company-specific vocabulary, not a fixed enum.
+func (s *Store) ListDistinctDepartmentsForCompany(ctx context.Context, companyID int64) ([]string, error) {
+	rows, err := s.queries.ListDistinctDepartmentsForCompany(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	values := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r.Valid {
+			values = append(values, r.String)
+		}
+	}
+	return values, nil
+}
+
+// ListDistinctLocationsForCompany is ListDistinctDepartmentsForCompany
+// for location values.
+func (s *Store) ListDistinctLocationsForCompany(ctx context.Context, companyID int64) ([]string, error) {
+	rows, err := s.queries.ListDistinctLocationsForCompany(ctx, companyID)
+	if err != nil {
+		return nil, err
+	}
+	values := make([]string, 0, len(rows))
+	for _, r := range rows {
+		if r.Valid {
+			values = append(values, r.String)
+		}
+	}
+	return values, nil
+}
