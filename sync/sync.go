@@ -12,9 +12,13 @@ import (
 	"github.com/dklassen/swamp/store"
 )
 
-// PostingFetcher is sync's own minimal view of a job board client.
-// *ashby.Client satisfies this structurally; tests use a fake instead of
-// making real HTTP calls.
+// PostingFetcher is sync's own minimal view of a job board client:
+// *ashby.Client satisfies it structurally, so tests use a fake instead of
+// making real HTTP calls. Note this does not yet decouple sync from Ashby
+// specifically -- the return type is ashby.Posting, since Ashby is the
+// only source implemented so far. A second job board would need its own
+// posting type and a real translation layer here; that's deliberately not
+// built ahead of having a second real example to design it against.
 type PostingFetcher interface {
 	FetchPostings(ctx context.Context, boardSlug string) ([]ashby.Posting, error)
 }
