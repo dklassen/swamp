@@ -10,8 +10,11 @@ import (
 
 type Querier interface {
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
+	CreateCompanyFilter(ctx context.Context, arg CreateCompanyFilterParams) (CompanyFilter, error)
+	DeleteCompanyFilters(ctx context.Context, companyID int64) error
 	GetCompany(ctx context.Context, id int64) (Company, error)
 	ListActiveCompanies(ctx context.Context) ([]Company, error)
+	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)
 	RestoreCompany(ctx context.Context, id int64) error
 	SoftDeleteCompany(ctx context.Context, id int64) error
 }
