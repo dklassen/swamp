@@ -5,6 +5,27 @@ vars:
   DB_PATH: '${SWAMP_DB_PATH:-./swamp.db}'
 
 tasks:
+  fmt:
+    desc: Format all Go source files
+    cmds:
+      - gofmt -l -w .
+
+  fmt:check:
+    desc: Fail if any Go source file is not gofmt-formatted
+    cmds:
+      - |
+        unformatted=$(gofmt -l .)
+        if [ -n "$unformatted" ]; then
+          echo "Not gofmt-formatted:"
+          echo "$unformatted"
+          exit 1
+        fi
+
+  hooks:install:
+    desc: Point git at the repo's version-controlled hooks (run once per clone)
+    cmds:
+      - git config core.hooksPath .githooks
+
   sqlc:generate:
     desc: Regenerate store/db from db/queries + db/migrations
     cmds:

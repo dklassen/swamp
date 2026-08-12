@@ -1,0 +1,15 @@
+#!/bin/sh
+# Auto-formats staged Go files with gofmt before each commit, then
+# re-stages the formatted result so the commit includes clean code.
+# Installed via `task hooks:install` (sets core.hooksPath to .githooks).
+
+set -e
+
+files=$(git diff --cached --name-only --diff-filter=ACM -- '*.go')
+
+if [ -z "$files" ]; then
+    exit 0
+fi
+
+echo "$files" | xargs gofmt -w
+echo "$files" | xargs git add
