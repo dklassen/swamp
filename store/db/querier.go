@@ -12,6 +12,7 @@ type Querier interface {
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
 	CreateCompanyFilter(ctx context.Context, arg CreateCompanyFilterParams) (CompanyFilter, error)
 	CreatePosting(ctx context.Context, arg CreatePostingParams) (Posting, error)
+	CreatePostingHistory(ctx context.Context, arg CreatePostingHistoryParams) (PostingHistory, error)
 	// Not exposed directly on the Store API: every posting must have exactly
 	// one markup row, so Store creates it as part of UpsertPosting rather than
 	// leaving callers to remember a second call. Relies on column defaults
@@ -24,6 +25,7 @@ type Querier interface {
 	GetPostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
 	ListActiveCompanies(ctx context.Context) ([]Company, error)
 	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)
+	ListPostingHistoryByPosting(ctx context.Context, postingID int64) ([]PostingHistory, error)
 	ListPostingsByCompany(ctx context.Context, companyID int64) ([]Posting, error)
 	MarkPostingClosed(ctx context.Context, id int64) error
 	MarkPostingReopened(ctx context.Context, id int64) error
