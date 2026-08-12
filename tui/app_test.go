@@ -240,3 +240,87 @@ func TestApp_PressR_RefreshesSelectedCompanyAndShowsStatus(t *testing.T) {
 		t.Fatalf("stored postings = %+v, want 1", postings)
 	}
 }
+
+func TestApp_PressEnter_OpensPostingListForSelectedCompany(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering"}},
+	})
+	app := newTestApp(t, s, syncer)
+
+	app, cmd := sendKey(app, runeKey('r'))
+	app, _ = sendKey(app, cmd())
+
+	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Update on enter returned nil Cmd, want a command that loads postings")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if app.screen != screenPostingList {
+		t.Fatalf("screen after enter = %v, want screenPostingList", app.screen)
+	}
+	if len(app.postings) != 1 {
+		t.Fatalf("app.postings = %+v, want 1", app.postings)
+	}
+	if app.postings[0].Title != "Engineer" {
+		t.Fatalf("app.postings[0].Title = %q, want %q", app.postings[0].Title, "Engineer")
+	}
+	if app.selectedCompany.ID != acme.ID {
+		t.Fatalf("app.selectedCompany.ID = %d, want %d", app.selectedCompany.ID, acme.ID)
+	}
+}
+
+func TestApp_PressEsc_OnPostingList_ReturnsToCompanyList(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+
+	app, cmd := sendKey(app, runeKey('r'))
+	app, _ = sendKey(app, cmd())
+	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, _ = sendKey(app, cmd())
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+
+	if app.screen != screenCompanyList {
+		t.Fatalf("screen after esc = %v, want screenCompanyList", app.screen)
+	}
+}
+
+func TestApp_PostingListCursor_MovesWithinBounds(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {
+			{SourceID: "job-1", Title: "Engineer"},
+			{SourceID: "job-2", Title: "Designer"},
+		},
+	})
+	app := newTestApp(t, s, syncer)
+
+	app, cmd := sendKey(app, runeKey('r'))
+	app, _ = sendKey(app, cmd())
+	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, _ = sendKey(app, cmd())
+
+	if app.postingCursor != 0 {
+		t.Fatalf("initial postingCursor = %d, want 0", app.postingCursor)
+	}
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
+	if app.postingCursor != 1 {
+		t.Fatalf("postingCursor after down = %d, want 1", app.postingCursor)
+	}
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
+	if app.postingCursor != 1 {
+		t.Fatalf("postingCursor after down at bottom = %d, want 1 (clamped)", app.postingCursor)
+	}
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyUp})
+	if app.postingCursor != 0 {
+		t.Fatalf("postingCursor after up = %d, want 0", app.postingCursor)
+	}
+}
