@@ -35,6 +35,9 @@ type Querier interface {
 	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)
 	ListInterviewStagesByPosting(ctx context.Context, postingID int64) ([]InterviewStage, error)
 	ListPostingHistoryByPosting(ctx context.Context, postingID int64) ([]PostingHistory, error)
+	// id DESC is a tiebreaker: a single sync inserts many rows within the same
+	// CURRENT_TIMESTAMP second (sqlite has only second resolution), so
+	// first_seen_at alone leaves ties with no guaranteed order.
 	ListPostingsByCompany(ctx context.Context, companyID int64) ([]Posting, error)
 	// Active tags only: this is the pick list for tagging postings, and a
 	// soft-deleted tag shouldn't be offered for new use.

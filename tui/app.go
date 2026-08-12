@@ -295,6 +295,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					a.screen = screenPostingDetail
 					a.showPostingDetail()
 				}
+			case msg.String() == "o":
+				if a.postingCursor < len(a.postings) {
+					url := a.postings[a.postingCursor].JobURL
+					if url != nil && *url != "" {
+						return a, openInBrowser(*url)
+					}
+				}
 			}
 		case screenPostingDetail:
 			switch {
@@ -385,7 +392,7 @@ func (a *App) View() string {
 				b.WriteString("  " + line + "\n")
 			}
 		}
-		b.WriteString(helpStyle.Render("↑/↓: select  enter: view detail  esc/b: back"))
+		b.WriteString(helpStyle.Render("↑/↓: select  enter: view detail  o: open in browser  esc/b: back"))
 	case screenPostingDetail:
 		if a.postingCursor < len(a.postings) {
 			b.WriteString(titleStyle.Render(a.postings[a.postingCursor].Title) + "\n")

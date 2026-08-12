@@ -39,9 +39,12 @@ SELECT * FROM postings
 WHERE source = ? AND source_id = ?;
 
 -- name: ListPostingsByCompany :many
+-- id DESC is a tiebreaker: a single sync inserts many rows within the same
+-- CURRENT_TIMESTAMP second (sqlite has only second resolution), so
+-- first_seen_at alone leaves ties with no guaranteed order.
 SELECT * FROM postings
 WHERE company_id = ?
-ORDER BY first_seen_at DESC;
+ORDER BY first_seen_at DESC, id DESC;
 
 -- name: MarkPostingClosed :exec
 UPDATE postings
