@@ -1,0 +1,52 @@
+{
+  "jobs": [
+    {
+      "id": "34413f8d-26bf-4bbc-8ade-eb309a0e2245",
+      "title": "Security Engineer, Cloud",
+      "department": "Engineering",
+      "team": "Backend",
+      "employmentType": "FullTime",
+      "location": "New York, NY (HQ)",
+      "secondaryLocations": [
+        {
+          "location": "Remote (Canada)",
+          "address": { "postalAddress": { "addressCountry": "Canada" } }
+        }
+      ],
+      "publishedAt": "2026-04-07T17:12:35.753+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Hybrid",
+      "address": {
+        "postalAddress": {
+          "addressRegion": "NY",
+          "addressCountry": "USA",
+          "addressLocality": "New York City"
+        }
+      },
+      "jobUrl": "https://jobs.ashbyhq.com/acme/34413f8d-26bf-4bbc-8ade-eb309a0e2245",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/34413f8d-26bf-4bbc-8ade-eb309a0e2245/application",
+      "descriptionHtml": "<h1>About the role</h1><p>Join our security team.</p>",
+      "descriptionPlain": "About the role\nJoin our security team."
+    },
+    {
+      "id": "8b1c2e3a-9f4d-4a2b-8c1e-2d3f4a5b6c7d",
+      "title": "Product Designer",
+      "department": "Design",
+      "team": "Product",
+      "employmentType": "Contract",
+      "location": "Remote (US)",
+      "secondaryLocations": [],
+      "publishedAt": "2026-05-12T09:00:00.000+00:00",
+      "isListed": true,
+      "isRemote": true,
+      "workplaceType": "Remote",
+      "address": { "postalAddress": { "addressCountry": "USA" } },
+      "jobUrl": "https://jobs.ashbyhq.com/acme/8b1c2e3a-9f4d-4a2b-8c1e-2d3f4a5b6c7d",
+      "applyUrl": "https://jobs.ashbyhq.com/acme/8b1c2e3a-9f4d-4a2b-8c1e-2d3f4a5b6c7d/application",
+      "descriptionHtml": "<h1>About the role</h1><p>Design delightful products.</p>",
+      "descriptionPlain": "About the role\nDesign delightful products."
+    }
+  ],
+  "apiVersion": 1
+}
