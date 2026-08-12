@@ -455,3 +455,17 @@ silently cut off text instead of reflowing it. Confirmed with a test
 that specifically checks a marker word survives a resize (a
 weaker "no line exceeds width" check alone doesn't catch truncation,
 since truncated lines also satisfy that property).
+
+## 2026-08-12 — Vim keys (h/j/k/l) added alongside arrow keys, not replacing them
+Context: wanted vim-style navigation throughout the TUI.
+Decision: j/k added as equivalents to down/up on both list screens;
+h/l added as equivalents to left/right for prev/next-posting in the
+detail view. Arrow keys keep working unchanged. Scrolling in the
+detail view needed no changes at all -- verified that
+bubbles/viewport's DefaultKeyMap already binds j/k/h/l alongside the
+arrow keys.
+Why: additive, not a replacement -- matches near-universal convention
+in vim-inspired TUIs (lazygit, k9s, fzf, less all support both), and
+there's no real cost to keeping arrows working for anyone who doesn't
+use vim bindings. No key collisions with existing single-letter
+bindings (a/p/r/o/q/b).
