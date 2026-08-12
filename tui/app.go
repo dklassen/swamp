@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/sync"
 )
 
 var (
@@ -44,20 +45,22 @@ const (
 
 type App struct {
 	store      *store.Store
+	syncer     *sync.Syncer
 	companies  []store.Company
 	cursor     int
 	screen     screen
 	formInputs []textinput.Model
 	formFocus  int
+	status     string
 	err        error
 }
 
-func New(s *store.Store) *App {
+func New(s *store.Store, syncer *sync.Syncer) *App {
 	inputs := make([]textinput.Model, formFieldCount)
 	for i := range inputs {
 		inputs[i] = textinput.New()
 	}
-	return &App{store: s, formInputs: inputs}
+	return &App{store: s, syncer: syncer, formInputs: inputs}
 }
 
 type companiesLoadedMsg struct {
@@ -100,6 +103,19 @@ func pauseCompany(s *store.Store, companyID int64) tea.Cmd {
 	}
 }
 
+type companyRefreshedMsg struct {
+	companyName string
+	result      sync.Result
+	err         error
+}
+
+func refreshCompany(syncer *sync.Syncer, companyID int64, companyName string) tea.Cmd {
+	return func() tea.Msg {
+		result, err := syncer.SyncCompany(context.Background(), companyID)
+		return companyRefreshedMsg{companyName: companyName, result: result, err: err}
+	}
+}
+
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case companiesLoadedMsg:
@@ -124,6 +140,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.cursor = len(a.companies) - 1
 			}
 		}
+	case companyRefreshedMsg:
+		a.err = msg.err
+		if msg.err == nil {
+			r := msg.result
+			a.status = fmt.Sprintf("%s: fetched %d, created %d, updated %d, closed %d, reopened %d",
+				msg.companyName, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
+		}
 	case tea.KeyMsg:
 		switch a.screen {
 		case screenCompanyList:
@@ -141,6 +164,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case msg.String() == "p":
 				if a.cursor < len(a.companies) {
 					return a, pauseCompany(a.store, a.companies[a.cursor].ID)
+				}
+			case msg.String() == "r":
+				if a.cursor < len(a.companies) {
+					c := a.companies[a.cursor]
+					return a, refreshCompany(a.syncer, c.ID, c.Name)
 				}
 			case msg.String() == "a":
 				a.screen = screenCompanyForm
@@ -183,6 +211,8 @@ func (a *App) View() string {
 
 	if a.err != nil {
 		b.WriteString(errStyle.Render(fmt.Sprintf("error: %v", a.err)) + "\n\n")
+	} else if a.status != "" {
+		b.WriteString(helpStyle.Render(a.status) + "\n\n")
 	}
 
 	switch a.screen {
@@ -210,7 +240,7 @@ func (a *App) View() string {
 				b.WriteString("  " + line + "\n")
 			}
 		}
-		b.WriteString(helpStyle.Render("↑/↓: select  a: add  p: pause  q: quit"))
+		b.WriteString(helpStyle.Render("↑/↓: select  a: add  p: pause  r: refresh  q: quit"))
 	}
 
 	return b.String()
