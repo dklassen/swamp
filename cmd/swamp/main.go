@@ -59,7 +59,7 @@ func main() {
 		}
 	}
 
-	if _, err := tea.NewProgram(tui.New(s)).Run(); err != nil {
+	if _, err := tea.NewProgram(tui.New(s), tea.WithAltScreen()).Run(); err != nil {
 		log.Fatalf("run tui: %v", err)
 	}
 }
