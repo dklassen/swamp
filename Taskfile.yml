@@ -1,0 +1,36 @@
+version: '3'
+
+vars:
+  MIGRATIONS_DIR: db/migrations
+  DB_PATH: '${SWAMP_DB_PATH:-./swamp.db}'
+
+tasks:
+  sqlc:generate:
+    desc: Regenerate store/db from db/queries + db/migrations
+    cmds:
+      - ./bin/sqlc generate
+
+  migrate:up:
+    desc: Apply all pending migrations to the local sqlite db
+    cmds:
+      - ./bin/goose -dir {{.MIGRATIONS_DIR}} sqlite3 "{{.DB_PATH}}" up
+
+  migrate:down:
+    desc: Roll back the most recently applied migration
+    cmds:
+      - ./bin/goose -dir {{.MIGRATIONS_DIR}} sqlite3 "{{.DB_PATH}}" down
+
+  migrate:status:
+    desc: Show migration status for the local sqlite db
+    cmds:
+      - ./bin/goose -dir {{.MIGRATIONS_DIR}} sqlite3 "{{.DB_PATH}}" status
+
+  test:
+    desc: Run the Go test suite
+    cmds:
+      - go test ./...
+
+  build:
+    desc: Build the swamp binary to ./bin/swamp
+    cmds:
+      - go build -o bin/swamp ./cmd/swamp
