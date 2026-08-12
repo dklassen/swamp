@@ -11,12 +11,32 @@ import (
 type Querier interface {
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
 	CreateCompanyFilter(ctx context.Context, arg CreateCompanyFilterParams) (CompanyFilter, error)
+	CreatePosting(ctx context.Context, arg CreatePostingParams) (Posting, error)
+	// Not exposed directly on the Store API: every posting must have exactly
+	// one markup row, so Store creates it as part of UpsertPosting rather than
+	// leaving callers to remember a second call. Relies on column defaults
+	// (user_status='new', notes='').
+	CreatePostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
 	DeleteCompanyFilters(ctx context.Context, companyID int64) error
 	GetCompany(ctx context.Context, id int64) (Company, error)
+	GetPosting(ctx context.Context, id int64) (Posting, error)
+	GetPostingBySourceAndSourceID(ctx context.Context, arg GetPostingBySourceAndSourceIDParams) (Posting, error)
+	GetPostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
 	ListActiveCompanies(ctx context.Context) ([]Company, error)
 	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)
+	ListPostingsByCompany(ctx context.Context, companyID int64) ([]Posting, error)
+	MarkPostingClosed(ctx context.Context, id int64) error
+	MarkPostingReopened(ctx context.Context, id int64) error
 	RestoreCompany(ctx context.Context, id int64) error
 	SoftDeleteCompany(ctx context.Context, id int64) error
+	// Updates ingested content fields only. Deliberately does not touch
+	// listing_status: transitions between open/closed are explicit domain
+	// decisions (see MarkPostingClosed/MarkPostingReopened), not a side effect
+	// of re-ingesting content. Does not touch company_id: a given (source,
+	// source_id) is assumed to belong to the same company for its lifetime.
+	UpdatePosting(ctx context.Context, arg UpdatePostingParams) (Posting, error)
+	UpdatePostingMarkupNotes(ctx context.Context, arg UpdatePostingMarkupNotesParams) (PostingMarkup, error)
+	UpdatePostingMarkupStatus(ctx context.Context, arg UpdatePostingMarkupStatusParams) (PostingMarkup, error)
 }
 
 var _ Querier = (*Queries)(nil)

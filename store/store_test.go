@@ -44,3 +44,18 @@ func mustCreateCompany(t *testing.T, s *Store, name, source, sourceRef string) C
 	}
 	return c
 }
+
+func mustUpsertPosting(t *testing.T, s *Store, companyID int64, sourceID, title string) Posting {
+	t.Helper()
+	p, err := s.UpsertPosting(context.Background(), CreatePostingParams{
+		CompanyID:  companyID,
+		Source:     "ashby",
+		SourceID:   sourceID,
+		Title:      title,
+		RawPayload: `{"id":"` + sourceID + `"}`,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPosting: %v", err)
+	}
+	return p
+}

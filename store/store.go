@@ -11,9 +11,10 @@ import (
 )
 
 type Store struct {
+	sqlDB   *sql.DB
 	queries *db.Queries
 }
 
 func New(sqlDB *sql.DB) *Store {
-	return &Store{queries: db.New(sqlDB)}
+	return &Store{sqlDB: sqlDB, queries: db.New(sqlDB)}
 }
