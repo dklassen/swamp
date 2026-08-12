@@ -7,14 +7,17 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/sync"
 )
 
 // newTestApp creates an App and drives it through Init, returning the
-// model with its initial companies already loaded.
-func newTestApp(t *testing.T, s *store.Store) *App {
+// model with its initial companies already loaded. Tests that don't care
+// about refresh behavior can pass a syncer with no configured postings.
+func newTestApp(t *testing.T, s *store.Store, syncer *sync.Syncer) *App {
 	t.Helper()
-	app := New(s)
+	app := New(s, syncer)
 	model, _ := app.Update(app.Init()())
 	return model.(*App)
 }
@@ -35,7 +38,7 @@ func TestApp_Init_LoadsCompanies(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 
-	app := newTestApp(t, s)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	if len(app.companies) != 1 {
 		t.Fatalf("app.companies = %+v, want 1 company", app.companies)
@@ -49,7 +52,7 @@ func TestApp_CursorDown_MovesSelectionWithinBounds(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustCreateCompany(t, s, "Globex", "ashby", "globex")
-	app := newTestApp(t, s)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	if app.cursor != 0 {
 		t.Fatalf("initial cursor = %d, want 0", app.cursor)
@@ -74,7 +77,7 @@ func TestApp_CursorDown_MovesSelectionWithinBounds(t *testing.T) {
 
 func TestApp_PressA_EntersCompanyForm(t *testing.T) {
 	s := newTestStore(t)
-	app := newTestApp(t, s)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	if app.screen != screenCompanyList {
 		t.Fatalf("initial screen = %v, want screenCompanyList", app.screen)
@@ -89,7 +92,7 @@ func TestApp_PressA_EntersCompanyForm(t *testing.T) {
 
 func TestApp_TypingInForm_UpdatesFocusedField(t *testing.T) {
 	s := newTestStore(t)
-	app := newTestApp(t, s)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	app, _ = sendKey(app, runeKey('a'))
 	app, _ = sendKey(app, runeKey('A', 'c', 'm', 'e'))
@@ -101,7 +104,7 @@ func TestApp_TypingInForm_UpdatesFocusedField(t *testing.T) {
 
 func TestApp_Tab_MovesFocusToNextField(t *testing.T) {
 	s := newTestStore(t)
-	app := newTestApp(t, s)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	app, _ = sendKey(app, runeKey('a'))
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
@@ -124,7 +127,7 @@ func TestApp_Tab_MovesFocusToNextField(t *testing.T) {
 
 func TestApp_SubmitForm_CreatesCompanyAndReturnsToList(t *testing.T) {
 	s := newTestStore(t)
-	app := newTestApp(t, s)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	app, _ = sendKey(app, runeKey('a'))
 	app, _ = sendKey(app, runeKey('A', 'c', 'm', 'e'))
@@ -159,7 +162,7 @@ func TestApp_SubmitForm_CreatesCompanyAndReturnsToList(t *testing.T) {
 func TestApp_PressP_TogglesPauseOnSelectedCompany(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	app := newTestApp(t, s)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	app, cmd := sendKey(app, runeKey('p'))
 	if cmd == nil {
@@ -179,7 +182,7 @@ func TestApp_PressP_TogglesPauseOnSelectedCompany(t *testing.T) {
 
 func TestApp_PressQ_ReturnsQuitCmd(t *testing.T) {
 	s := newTestStore(t)
-	app := newTestApp(t, s)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	_, cmd := sendKey(app, runeKey('q'))
 	if cmd == nil {
@@ -194,7 +197,7 @@ func TestApp_PressQ_ReturnsQuitCmd(t *testing.T) {
 
 func TestApp_PressEsc_CancelsFormBackToList(t *testing.T) {
 	s := newTestStore(t)
-	app := newTestApp(t, s)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	app, _ = sendKey(app, runeKey('a'))
 	app, _ = sendKey(app, runeKey('A', 'c', 'm', 'e'))
@@ -205,5 +208,35 @@ func TestApp_PressEsc_CancelsFormBackToList(t *testing.T) {
 	}
 	if len(app.companies) != 0 {
 		t.Fatalf("app.companies after cancel = %+v, want empty (nothing submitted)", app.companies)
+	}
+}
+
+func TestApp_PressR_RefreshesSelectedCompanyAndShowsStatus(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+
+	app, cmd := sendKey(app, runeKey('r'))
+	if cmd == nil {
+		t.Fatal("Update on 'r' returned nil Cmd, want a command that refreshes the company")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if app.status == "" {
+		t.Fatal("app.status should be set after refresh")
+	}
+	if app.err != nil {
+		t.Fatalf("app.err = %v, want nil", app.err)
+	}
+
+	postings, err := s.ListPostingsByCompany(context.Background(), app.companies[0].ID)
+	if err != nil {
+		t.Fatalf("ListPostingsByCompany: %v", err)
+	}
+	if len(postings) != 1 {
+		t.Fatalf("stored postings = %+v, want 1", postings)
 	}
 }

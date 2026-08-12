@@ -59,7 +59,8 @@ func main() {
 		}
 	}
 
-	if _, err := tea.NewProgram(tui.New(s), tea.WithAltScreen()).Run(); err != nil {
+	syncer := sync.New(s, ashby.NewClient())
+	if _, err := tea.NewProgram(tui.New(s, syncer), tea.WithAltScreen()).Run(); err != nil {
 		log.Fatalf("run tui: %v", err)
 	}
 }
