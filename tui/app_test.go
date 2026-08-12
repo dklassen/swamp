@@ -455,3 +455,18 @@ func TestApp_PressO_OnPostingDetail_OpensJobURLInBrowser(t *testing.T) {
 		t.Fatal("Update on 'o' returned nil Cmd, want a command that opens the browser")
 	}
 }
+
+func TestApp_PressO_OnPostingList_OpensSelectedPostingJobURLInBrowser(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", JobURL: "https://jobs.ashbyhq.com/acme/job-1"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+
+	_, cmd := sendKey(app, runeKey('o'))
+	if cmd == nil {
+		t.Fatal("Update on 'o' returned nil Cmd, want a command that opens the browser")
+	}
+}

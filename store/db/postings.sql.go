@@ -158,9 +158,12 @@ func (q *Queries) GetPostingBySourceAndSourceID(ctx context.Context, arg GetPost
 const listPostingsByCompany = `-- name: ListPostingsByCompany :many
 SELECT id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at FROM postings
 WHERE company_id = ?
-ORDER BY first_seen_at DESC
+ORDER BY first_seen_at DESC, id DESC
 `
 
+// id DESC is a tiebreaker: a single sync inserts many rows within the same
+// CURRENT_TIMESTAMP second (sqlite has only second resolution), so
+// first_seen_at alone leaves ties with no guaranteed order.
 func (q *Queries) ListPostingsByCompany(ctx context.Context, companyID int64) ([]Posting, error) {
 	rows, err := q.db.QueryContext(ctx, listPostingsByCompany, companyID)
 	if err != nil {
