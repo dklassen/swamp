@@ -829,3 +829,72 @@ func TestApp_OpenPostingList_WithPreExistingSavedFilters_NarrowsOnFirstLoad(t *t
 		t.Fatalf("posting department = %q, want %q", derefOr(app.postings[0].Department, ""), "Engineering")
 	}
 }
+
+func TestApp_OpenPostingList_TracksActiveFiltersFromExisting(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	if _, err := s.CreateCompanyFilter(context.Background(), acme.ID, "department", "Engineering"); err != nil {
+		t.Fatalf("CreateCompanyFilter: %v", err)
+	}
+	if _, err := s.CreateCompanyFilter(context.Background(), acme.ID, "location", "Remote"); err != nil {
+		t.Fatalf("CreateCompanyFilter: %v", err)
+	}
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+
+	if diff := cmp.Diff([]string{"Engineering"}, app.activeFilterDepartments); diff != "" {
+		t.Fatalf("activeFilterDepartments mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"Remote"}, app.activeFilterLocations); diff != "" {
+		t.Fatalf("activeFilterLocations mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestApp_FilterSelect_Enter_UpdatesActiveFiltersImmediately(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	if len(app.activeFilterDepartments) != 0 {
+		t.Fatalf("initial activeFilterDepartments = %+v, want empty", app.activeFilterDepartments)
+	}
+
+	app, cmd := sendKey(app, runeKey('f'))
+	app, _ = sendKey(app, cmd())
+	wantDept := app.filterDepartmentOptions[0]
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
+	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, _ = sendKey(app, cmd()) // companyFiltersSavedMsg
+
+	if diff := cmp.Diff([]string{wantDept}, app.activeFilterDepartments); diff != "" {
+		t.Fatalf("activeFilterDepartments after save mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestFilterSummaryLine_NoFilters_ReturnsEmpty(t *testing.T) {
+	if got := filterSummaryLine(nil, nil); got != "" {
+		t.Fatalf("filterSummaryLine(nil, nil) = %q, want empty", got)
+	}
+}
+
+func TestFilterSummaryLine_DepartmentsOnly(t *testing.T) {
+	got := filterSummaryLine([]string{"Engineering", "Sales"}, nil)
+	want := "Filtering: Department: Engineering, Sales"
+	if got != want {
+		t.Fatalf("filterSummaryLine = %q, want %q", got, want)
+	}
+}
+
+func TestFilterSummaryLine_DepartmentsAndLocations(t *testing.T) {
+	got := filterSummaryLine([]string{"Engineering"}, []string{"Remote"})
+	want := "Filtering: Department: Engineering | Location: Remote"
+	if got != want {
+		t.Fatalf("filterSummaryLine = %q, want %q", got, want)
+	}
+}

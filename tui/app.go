@@ -71,6 +71,14 @@ type App struct {
 	filterCursor              int
 	filterSelectedDepartments map[string]bool
 	filterSelectedLocations   map[string]bool
+
+	// activeFilterDepartments/activeFilterLocations are the company's
+	// currently-applied filter values, kept in sync with whatever
+	// loadPostings last applied (or, immediately on save, what was just
+	// saved) -- displayed in the posting list so the filter state isn't
+	// invisible.
+	activeFilterDepartments []string
+	activeFilterLocations   []string
 }
 
 // chromeRows is the number of lines View() spends on title/help text
@@ -106,6 +114,24 @@ func derefOr(s *string, fallback string) string {
 		return fallback
 	}
 	return *s
+}
+
+// filterSummaryLine renders the currently-active filters as a one-line
+// summary (e.g. "Filtering: Department: Engineering | Location:
+// Remote"), or "" if no filters are active -- so the filter state isn't
+// invisible in the posting list.
+func filterSummaryLine(departments, locations []string) string {
+	if len(departments) == 0 && len(locations) == 0 {
+		return ""
+	}
+	var parts []string
+	if len(departments) > 0 {
+		parts = append(parts, "Department: "+strings.Join(departments, ", "))
+	}
+	if len(locations) > 0 {
+		parts = append(parts, "Location: "+strings.Join(locations, ", "))
+	}
+	return "Filtering: " + strings.Join(parts, " | ")
 }
 
 func renderFilterOption(label string, checked, isCursor bool) string {
@@ -223,8 +249,10 @@ func refreshCompany(syncer *sync.Syncer, companyID int64, companyName string) te
 }
 
 type postingsLoadedMsg struct {
-	postings []store.Posting
-	err      error
+	postings    []store.Posting
+	departments []string
+	locations   []string
+	err         error
 }
 
 // loadPostings re-applies the company's currently-saved filters after
@@ -247,7 +275,7 @@ func loadPostings(s *store.Store, companyID int64) tea.Cmd {
 		}
 		departments, locations := splitCompanyFilters(companyFilters)
 		postings = narrowPostingsToFilters(postings, departments, locations)
-		return postingsLoadedMsg{postings: postings}
+		return postingsLoadedMsg{postings: postings, departments: departments, locations: locations}
 	}
 }
 
@@ -409,6 +437,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		a.postings = msg.postings
 		a.postingCursor = 0
+		a.activeFilterDepartments = msg.departments
+		a.activeFilterLocations = msg.locations
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
 		a.filterDepartmentOptions = msg.departments
@@ -422,6 +452,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			a.screen = screenPostingList
 			a.postings = narrowPostingsToFilters(a.postings, msg.departments, msg.locations)
+			a.activeFilterDepartments = msg.departments
+			a.activeFilterLocations = msg.locations
 			if a.postingCursor >= len(a.postings) {
 				a.postingCursor = 0
 			}
@@ -610,6 +642,9 @@ func (a *App) View() string {
 		b.WriteString(helpStyle.Render("tab: next field  enter: save  esc: cancel"))
 	case screenPostingList:
 		b.WriteString(titleStyle.Render(fmt.Sprintf("Postings: %s", a.selectedCompany.Name)) + "\n")
+		if summary := filterSummaryLine(a.activeFilterDepartments, a.activeFilterLocations); summary != "" {
+			b.WriteString(helpStyle.Render(summary) + "\n")
+		}
 		if len(a.postings) == 0 {
 			b.WriteString("No postings yet. Press 'r' from the company list to refresh.\n")
 		}
