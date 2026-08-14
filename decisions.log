@@ -551,3 +551,111 @@ checking the immediate optimistic-narrow state; a second test confirms
 first-load narrowing for filters that already existed before the
 session started (not just just-saved ones), since that's the literal
 "persisting across runs" requirement and wasn't otherwise exercised.
+
+## 2026-08-14 — application lifecycle expansion, take 1: enum-only (superseded)
+Context: user wants to track application progress (interested ->
+application started -> submitted -> interviewing (loops) -> offer
+received/accepted/declined) beyond the original 6-value
+posting_markup.user_status enum, partly to support future coordination
+with external services (e.g. triggering cover-letter/resume generation
+off application state).
+First attempt: just widen posting_markup.user_status's CHECK constraint
+to the new value set. Built (migration 00002, tests, all green) but
+scrapped before merging -- see next entry.
+
+## 2026-08-14 — split Application out of posting_markup as its own entity
+Context: mid-build of the enum-only change above, recognized (user
+prompted "I think we are conflating job postings with job applications")
+that a posting (Ashby's ingested listing, own lifecycle: open/closed,
+tracked in postings.listing_status) and an application (the user's own
+pursuit of that posting) are different artifacts with different states.
+posting_markup was originally the user's only markup surface and had
+absorbed both concerns onto one 1-row-per-posting table.
+Decision: split into two tables/entities.
+- posting_markup keeps a narrow, always-present, posting-level triage
+  status: new / interested / archived. No application-specific values.
+- New applications table holds the pursuit lifecycle: application_started
+  -> application_submitted -> interviewing -> rejected, and
+  interviewing -> offer_received -> offer_accepted / offer_declined.
+  Not auto-created (unlike posting_markup) -- only exists once the user
+  takes an explicit "start application" action.
+- interview_stages now hangs off application_id, not posting_id (an
+  interview round belongs to a specific application attempt).
+Cardinality: applications.posting_id is a PRIMARY KEY (1:1), same
+pattern as posting_markup, not a plain FK. Considered 1:many to support
+reapplying to a posting that closes and reopens under the same
+source_id (confirmed possible, since MarkPostingReopened already
+assumes source_id stability across a close/reopen cycle) but decided
+against it for now: every read path (TUI, sync, store) would need a
+"which application is current" resolution rule for a case with zero
+observed occurrences so far, and 1:1 -> 1:many later is a cheap,
+additive migration (drop the PRIMARY KEY for a surrogate id), whereas
+building 1:many now and finding it unneeded would mean unwinding
+"pick the current one" logic spread across every call site. If/when
+reapplication is actually needed, will revisit then.
+Migration (00002_split_application_from_posting.sql) backfills:
+existing posting_markup rows with user_status in
+(applied/interviewing/rejected) produce a corresponding applications
+row (translated to application_submitted/interviewing/rejected) and
+posting_markup's own status narrows to 'interested'; existing
+interview_stages rows re-point to the backfilled application.
+Existing posting_markup.notes deliberately stay on posting_markup as-is
+rather than being guessed apart between posting- and application-level
+notes.
+Not yet done: wiring any of this into the TUI (no keybinding exists yet
+to start an application, change its status, or view it) -- schema and
+store layer only, same pattern as the original interview_stages build.
+
+## 2026-08-14 — applications gets a real surrogate id, not posting_id reused
+Context: initial split (previous entry) gave applications the same
+"reuse the parent's id as PK" shape as posting_markup
+(posting_id INTEGER PRIMARY KEY). User caught it during review ("check
+your IDs, PostingID mixed up with ApplicationID"): unlike posting_markup,
+applications is now itself a parent table (interview_stages references
+it), so reusing posting_id as its identity meant
+interview_stages.application_id was storing posting_id values under an
+application_id name, and code like CreateInterviewStage(ctx,
+application.PostingID, ...) read as passing the wrong field even though
+the value happened to be numerically correct today.
+Decision: applications gets its own surrogate id (id INTEGER PRIMARY
+KEY, posting_id INTEGER NOT NULL UNIQUE) instead. interview_stages.
+application_id now references applications(id), matching the
+established pattern elsewhere in the schema (interview_stages
+originally referenced postings(id), not postings' own natural key).
+Caught before merge, not after -- migration, sqlc queries, store layer,
+and both test files updated together; no shipped data affected.
+
+## 2026-08-14 — applications.posting_id: 1:1, not 1:many (expanded rationale)
+Context: the previous entry's "Cardinality" paragraph summarizes this
+tersely; expanding here since it was a real fork with a full pros/cons
+discussion, not an obvious call. Prompted by user question: "stop and
+think about my questions on is this a one to one or a many to one
+relationship. What are the cons of representing as a one to many
+relationship in the near term?"
+The scenario motivating 1:many: a posting can close and later reopen
+under the same source_id (sync already supports this via
+MarkPostingReopened), so in principle a user could apply, get rejected,
+and later reapply when the same req reopens -- two genuinely distinct
+application attempts against one posting row.
+Cons of building 1:many now, weighed before deciding:
+- Every read path that looks up "the application for this posting"
+  (TUI posting detail, sync, any future coordination hook) would need
+  a "which one is current" rule -- e.g. most-recent-by-created_at --
+  for a case with zero observed occurrences so far.
+- interview_stages inherits the ambiguity: "show interview stages for
+  this posting" would need to pick an application first if more than
+  one exists.
+- No real signal yet that reapplication is something a user actually
+  wants captured as two independent records rather than just resetting
+  status on the existing application when they choose to reapply.
+- Direction of cheap correction is asymmetric: 1:1 -> 1:many later is
+  additive (drop a UNIQUE constraint); building 1:many now and finding
+  it unneeded means unwinding "pick the current one" logic spread
+  across every call site that would have accumulated in the meantime.
+Decision: 1:1 (posting_id UNIQUE on applications) for now, per
+CLAUDE.md's "need 3 real examples before abstracting" standard --
+reopening-with-reapplication is a single hypothetical scenario, not an
+observed need. If a posting does reopen while an old application
+exists, handle it as an explicit user decision at that moment (reset
+the existing application, or revisit the schema then) rather than
+pre-building for it.

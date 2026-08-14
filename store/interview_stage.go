@@ -9,31 +9,31 @@ import (
 	"github.com/dklassen/swamp/store/db"
 )
 
-// InterviewStage is one round in a posting's interview process (e.g.
+// InterviewStage is one round in an application's interview process (e.g.
 // recruiter screen, technical, onsite), owned by the user and ordered by
-// Sequence within a posting.
+// Sequence within an application.
 type InterviewStage struct {
-	ID        int64
-	PostingID int64
-	Sequence  int64
-	Name      string
-	StageDate *time.Time
-	Outcome   string
-	Notes     string
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID            int64
+	ApplicationID int64
+	Sequence      int64
+	Name          string
+	StageDate     *time.Time
+	Outcome       string
+	Notes         string
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 func interviewStageFromRow(row db.InterviewStage) InterviewStage {
 	s := InterviewStage{
-		ID:        row.ID,
-		PostingID: row.PostingID,
-		Sequence:  row.Sequence,
-		Name:      row.Name,
-		Outcome:   row.Outcome,
-		Notes:     row.Notes,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+		ID:            row.ID,
+		ApplicationID: row.ApplicationID,
+		Sequence:      row.Sequence,
+		Name:          row.Name,
+		Outcome:       row.Outcome,
+		Notes:         row.Notes,
+		CreatedAt:     row.CreatedAt,
+		UpdatedAt:     row.UpdatedAt,
 	}
 	if row.StageDate.Valid {
 		s.StageDate = &row.StageDate.Time
@@ -41,13 +41,13 @@ func interviewStageFromRow(row db.InterviewStage) InterviewStage {
 	return s
 }
 
-func (s *Store) CreateInterviewStage(ctx context.Context, postingID int64, sequence int64, name string, stageDate *time.Time, notes string) (InterviewStage, error) {
+func (s *Store) CreateInterviewStage(ctx context.Context, applicationID int64, sequence int64, name string, stageDate *time.Time, notes string) (InterviewStage, error) {
 	row, err := s.queries.CreateInterviewStage(ctx, db.CreateInterviewStageParams{
-		PostingID: postingID,
-		Sequence:  sequence,
-		Name:      name,
-		StageDate: nullTime(stageDate),
-		Notes:     notes,
+		ApplicationID: applicationID,
+		Sequence:      sequence,
+		Name:          name,
+		StageDate:     nullTime(stageDate),
+		Notes:         notes,
 	})
 	if err != nil {
 		return InterviewStage{}, err
@@ -55,8 +55,8 @@ func (s *Store) CreateInterviewStage(ctx context.Context, postingID int64, seque
 	return interviewStageFromRow(row), nil
 }
 
-func (s *Store) ListInterviewStages(ctx context.Context, postingID int64) ([]InterviewStage, error) {
-	rows, err := s.queries.ListInterviewStagesByPosting(ctx, postingID)
+func (s *Store) ListInterviewStages(ctx context.Context, applicationID int64) ([]InterviewStage, error) {
+	rows, err := s.queries.ListInterviewStagesByApplication(ctx, applicationID)
 	if err != nil {
 		return nil, err
 	}

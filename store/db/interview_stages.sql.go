@@ -11,22 +11,22 @@ import (
 )
 
 const createInterviewStage = `-- name: CreateInterviewStage :one
-INSERT INTO interview_stages (posting_id, sequence, name, stage_date, notes)
+INSERT INTO interview_stages (application_id, sequence, name, stage_date, notes)
 VALUES (?, ?, ?, ?, ?)
-RETURNING id, posting_id, sequence, name, stage_date, outcome, notes, created_at, updated_at
+RETURNING id, application_id, sequence, name, stage_date, outcome, notes, created_at, updated_at
 `
 
 type CreateInterviewStageParams struct {
-	PostingID int64        `json:"posting_id"`
-	Sequence  int64        `json:"sequence"`
-	Name      string       `json:"name"`
-	StageDate sql.NullTime `json:"stage_date"`
-	Notes     string       `json:"notes"`
+	ApplicationID int64        `json:"application_id"`
+	Sequence      int64        `json:"sequence"`
+	Name          string       `json:"name"`
+	StageDate     sql.NullTime `json:"stage_date"`
+	Notes         string       `json:"notes"`
 }
 
 func (q *Queries) CreateInterviewStage(ctx context.Context, arg CreateInterviewStageParams) (InterviewStage, error) {
 	row := q.db.QueryRowContext(ctx, createInterviewStage,
-		arg.PostingID,
+		arg.ApplicationID,
 		arg.Sequence,
 		arg.Name,
 		arg.StageDate,
@@ -35,7 +35,7 @@ func (q *Queries) CreateInterviewStage(ctx context.Context, arg CreateInterviewS
 	var i InterviewStage
 	err := row.Scan(
 		&i.ID,
-		&i.PostingID,
+		&i.ApplicationID,
 		&i.Sequence,
 		&i.Name,
 		&i.StageDate,
@@ -57,14 +57,14 @@ func (q *Queries) DeleteInterviewStage(ctx context.Context, id int64) error {
 	return err
 }
 
-const listInterviewStagesByPosting = `-- name: ListInterviewStagesByPosting :many
-SELECT id, posting_id, sequence, name, stage_date, outcome, notes, created_at, updated_at FROM interview_stages
-WHERE posting_id = ?
+const listInterviewStagesByApplication = `-- name: ListInterviewStagesByApplication :many
+SELECT id, application_id, sequence, name, stage_date, outcome, notes, created_at, updated_at FROM interview_stages
+WHERE application_id = ?
 ORDER BY sequence
 `
 
-func (q *Queries) ListInterviewStagesByPosting(ctx context.Context, postingID int64) ([]InterviewStage, error) {
-	rows, err := q.db.QueryContext(ctx, listInterviewStagesByPosting, postingID)
+func (q *Queries) ListInterviewStagesByApplication(ctx context.Context, applicationID int64) ([]InterviewStage, error) {
+	rows, err := q.db.QueryContext(ctx, listInterviewStagesByApplication, applicationID)
 	if err != nil {
 		return nil, err
 	}
@@ -74,7 +74,7 @@ func (q *Queries) ListInterviewStagesByPosting(ctx context.Context, postingID in
 		var i InterviewStage
 		if err := rows.Scan(
 			&i.ID,
-			&i.PostingID,
+			&i.ApplicationID,
 			&i.Sequence,
 			&i.Name,
 			&i.StageDate,
@@ -105,7 +105,7 @@ SET sequence = ?,
     notes = ?,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, posting_id, sequence, name, stage_date, outcome, notes, created_at, updated_at
+RETURNING id, application_id, sequence, name, stage_date, outcome, notes, created_at, updated_at
 `
 
 type UpdateInterviewStageParams struct {
@@ -129,7 +129,7 @@ func (q *Queries) UpdateInterviewStage(ctx context.Context, arg UpdateInterviewS
 	var i InterviewStage
 	err := row.Scan(
 		&i.ID,
-		&i.PostingID,
+		&i.ApplicationID,
 		&i.Sequence,
 		&i.Name,
 		&i.StageDate,
@@ -145,7 +145,7 @@ const updateInterviewStageOutcome = `-- name: UpdateInterviewStageOutcome :one
 UPDATE interview_stages
 SET outcome = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, posting_id, sequence, name, stage_date, outcome, notes, created_at, updated_at
+RETURNING id, application_id, sequence, name, stage_date, outcome, notes, created_at, updated_at
 `
 
 type UpdateInterviewStageOutcomeParams struct {
@@ -158,7 +158,7 @@ func (q *Queries) UpdateInterviewStageOutcome(ctx context.Context, arg UpdateInt
 	var i InterviewStage
 	err := row.Scan(
 		&i.ID,
-		&i.PostingID,
+		&i.ApplicationID,
 		&i.Sequence,
 		&i.Name,
 		&i.StageDate,

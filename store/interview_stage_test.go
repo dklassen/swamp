@@ -15,13 +15,14 @@ func TestCreateInterviewStage_ThenList_ReturnsCreatedStage(t *testing.T) {
 
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
 
-	created, err := s.CreateInterviewStage(ctx, posting.ID, 1, "Recruiter Screen", nil, "")
+	created, err := s.CreateInterviewStage(ctx, application.ID, 1, "Recruiter Screen", nil, "")
 	if err != nil {
 		t.Fatalf("CreateInterviewStage: %v", err)
 	}
 
-	got, err := s.ListInterviewStages(ctx, posting.ID)
+	got, err := s.ListInterviewStages(ctx, application.ID)
 	if err != nil {
 		t.Fatalf("ListInterviewStages: %v", err)
 	}
@@ -38,17 +39,18 @@ func TestListInterviewStages_ReturnsStagesInSequenceOrder(t *testing.T) {
 
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
 
-	onsite, err := s.CreateInterviewStage(ctx, posting.ID, 2, "Onsite", nil, "")
+	onsite, err := s.CreateInterviewStage(ctx, application.ID, 2, "Onsite", nil, "")
 	if err != nil {
 		t.Fatalf("CreateInterviewStage: %v", err)
 	}
-	screen, err := s.CreateInterviewStage(ctx, posting.ID, 1, "Recruiter Screen", nil, "")
+	screen, err := s.CreateInterviewStage(ctx, application.ID, 1, "Recruiter Screen", nil, "")
 	if err != nil {
 		t.Fatalf("CreateInterviewStage: %v", err)
 	}
 
-	got, err := s.ListInterviewStages(ctx, posting.ID)
+	got, err := s.ListInterviewStages(ctx, application.ID)
 	if err != nil {
 		t.Fatalf("ListInterviewStages: %v", err)
 	}
@@ -65,7 +67,8 @@ func TestUpdateInterviewStageOutcome_UpdatesOutcome(t *testing.T) {
 
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	stage, err := s.CreateInterviewStage(ctx, posting.ID, 1, "Recruiter Screen", nil, "")
+	application := mustCreateApplication(t, s, posting.ID)
+	stage, err := s.CreateInterviewStage(ctx, application.ID, 1, "Recruiter Screen", nil, "")
 	if err != nil {
 		t.Fatalf("CreateInterviewStage: %v", err)
 	}
@@ -95,7 +98,8 @@ func TestUpdateInterviewStage_ReplacesEditableFields(t *testing.T) {
 
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	stage, err := s.CreateInterviewStage(ctx, posting.ID, 1, "Recruiter Screen", nil, "")
+	application := mustCreateApplication(t, s, posting.ID)
+	stage, err := s.CreateInterviewStage(ctx, application.ID, 1, "Recruiter Screen", nil, "")
 	if err != nil {
 		t.Fatalf("CreateInterviewStage: %v", err)
 	}
@@ -107,15 +111,15 @@ func TestUpdateInterviewStage_ReplacesEditableFields(t *testing.T) {
 	}
 
 	want := InterviewStage{
-		ID:        stage.ID,
-		PostingID: posting.ID,
-		Sequence:  2,
-		Name:      "Technical Screen",
-		StageDate: &date,
-		Outcome:   "passed",
-		Notes:     "Went well",
-		CreatedAt: stage.CreatedAt,
-		UpdatedAt: updated.UpdatedAt,
+		ID:            stage.ID,
+		ApplicationID: application.ID,
+		Sequence:      2,
+		Name:          "Technical Screen",
+		StageDate:     &date,
+		Outcome:       "passed",
+		Notes:         "Went well",
+		CreatedAt:     stage.CreatedAt,
+		UpdatedAt:     updated.UpdatedAt,
 	}
 	if diff := cmp.Diff(want, updated); diff != "" {
 		t.Fatalf("UpdateInterviewStage mismatch (-want +got):\n%s", diff)
@@ -138,7 +142,8 @@ func TestDeleteInterviewStage_RemovesStage(t *testing.T) {
 
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	stage, err := s.CreateInterviewStage(ctx, posting.ID, 1, "Recruiter Screen", nil, "")
+	application := mustCreateApplication(t, s, posting.ID)
+	stage, err := s.CreateInterviewStage(ctx, application.ID, 1, "Recruiter Screen", nil, "")
 	if err != nil {
 		t.Fatalf("CreateInterviewStage: %v", err)
 	}
@@ -147,7 +152,7 @@ func TestDeleteInterviewStage_RemovesStage(t *testing.T) {
 		t.Fatalf("DeleteInterviewStage: %v", err)
 	}
 
-	got, err := s.ListInterviewStages(ctx, posting.ID)
+	got, err := s.ListInterviewStages(ctx, application.ID)
 	if err != nil {
 		t.Fatalf("ListInterviewStages: %v", err)
 	}
