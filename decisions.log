@@ -697,3 +697,29 @@ Store API: MarkPostingInterested/UnmarkPostingInterested and
 ArchivePosting/UnarchivePosting (mirrors posting.go's
 MarkPostingClosed/MarkPostingReopened naming), replacing
 UpdatePostingMarkupStatus.
+
+## 2026-08-14 — CreateCompany restores instead of erroring on re-add of a paused company
+Context: companies.(source, source_ref) is UNIQUE, and the constraint
+applies regardless of deleted_at (see "Company lifecycle: soft pause
+only, no hard delete", 2026-08-10). Pausing a company via the TUI's
+"p" key (Store.SoftDeleteCompany) removes it from the active list but
+leaves the row in place. Re-adding the same company (TUI "a" form,
+same source_ref) previously hit CreateCompany's plain INSERT and
+failed with a raw UNIQUE constraint violation instead of doing
+anything sensible -- confirmed via a failing test before the fix.
+Decision: CreateCompany now looks up an existing row by (source,
+source_ref) first (ignoring deleted_at) inside a transaction; if
+found, it restores that row (clears deleted_at) and updates the name,
+rather than attempting a duplicate insert. Mirrors the existing
+UpsertPosting pattern (find-by-natural-key, insert-or-update in one
+tx) rather than inventing a new shape. No new sentinel error --
+callers of CreateCompany don't need to distinguish "created" from
+"restored," and the TUI's existing companyCreatedMsg handling already
+does the right thing (appends to the active list) since a paused
+company isn't in that list to begin with.
+Alternative considered: return a distinct "already exists" error and
+make the caller decide. Rejected -- there's no case in this app today
+where silently restoring is the wrong call (the paused company's
+postings/markup/applications were never deleted, so there's nothing
+to reconcile), and it avoids a UI-side prompt for a decision the user
+already made by re-adding.

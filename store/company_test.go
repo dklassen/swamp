@@ -77,6 +77,39 @@ func TestSoftDeleteCompany_ExcludesFromListAndGet(t *testing.T) {
 	}
 }
 
+func TestCreateCompany_SameSourceRefAsSoftDeletedCompany_RestoresExistingRow(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	original := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	if err := s.SoftDeleteCompany(ctx, original.ID); err != nil {
+		t.Fatalf("SoftDeleteCompany: %v", err)
+	}
+
+	readded, err := s.CreateCompany(ctx, "Acme Corp", "ashby", "acme")
+	if err != nil {
+		t.Fatalf("CreateCompany: %v", err)
+	}
+
+	if readded.ID != original.ID {
+		t.Fatalf("CreateCompany re-add ID = %d, want %d (same underlying row, not a new one)", readded.ID, original.ID)
+	}
+	if readded.Name != "Acme Corp" {
+		t.Fatalf("CreateCompany re-add Name = %q, want %q", readded.Name, "Acme Corp")
+	}
+	if readded.DeletedAt != nil {
+		t.Fatalf("CreateCompany re-add DeletedAt = %v, want nil (restored)", readded.DeletedAt)
+	}
+
+	list, err := s.ListActiveCompanies(ctx)
+	if err != nil {
+		t.Fatalf("ListActiveCompanies: %v", err)
+	}
+	if len(list) != 1 || list[0].ID != original.ID {
+		t.Fatalf("ListActiveCompanies after re-add = %+v, want [%d]", list, original.ID)
+	}
+}
+
 func TestRestoreCompany_UndoesSoftDelete(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

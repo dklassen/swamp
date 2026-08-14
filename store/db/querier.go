@@ -32,6 +32,11 @@ type Querier interface {
 	DeleteInterviewStage(ctx context.Context, id int64) error
 	GetApplication(ctx context.Context, postingID int64) (Application, error)
 	GetCompany(ctx context.Context, id int64) (Company, error)
+	// Deliberately ignores deleted_at: source+source_ref is UNIQUE across all
+	// rows regardless of soft-delete state, so re-adding a company (CreateCompany)
+	// needs to find a soft-deleted match too, in order to restore it instead of
+	// violating the UNIQUE constraint with a duplicate insert.
+	GetCompanyBySourceAndSourceRef(ctx context.Context, arg GetCompanyBySourceAndSourceRefParams) (Company, error)
 	GetPosting(ctx context.Context, id int64) (Posting, error)
 	GetPostingBySourceAndSourceID(ctx context.Context, arg GetPostingBySourceAndSourceIDParams) (Posting, error)
 	GetPostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
@@ -64,6 +69,7 @@ type Querier interface {
 	MarkPostingReopened(ctx context.Context, id int64) error
 	RemoveTagFromPosting(ctx context.Context, arg RemoveTagFromPostingParams) error
 	RestoreCompany(ctx context.Context, id int64) error
+	RestoreCompanyWithName(ctx context.Context, arg RestoreCompanyWithNameParams) (Company, error)
 	SoftDeleteCompany(ctx context.Context, id int64) error
 	SoftDeleteTag(ctx context.Context, id int64) error
 	UnarchivePosting(ctx context.Context, postingID int64) (PostingMarkup, error)
