@@ -469,3 +469,85 @@ in vim-inspired TUIs (lazygit, k9s, fzf, less all support both), and
 there's no real cost to keeping arrows working for anyone who doesn't
 use vim bindings. No key collisions with existing single-letter
 bindings (a/p/r/o/q/b).
+
+## 2026-08-12 — Filter values: strings from our public API, not Ashby's internal IDs
+Context: Ashby's own careers-page UI (jobs.ashbyhq.com/{company}) updates
+its URL with ID-based params (e.g. locationId=<uuid>) when filtering,
+raising the question of whether we should filter on IDs instead of
+department/location strings for robustness against renames.
+Decision: keep filtering on the plain-string department/location values
+already in our public API response. Did not pursue scraping Ashby's
+careers-page HTML for ID data.
+Why: verified two things empirically before deciding. First, the public
+API we use (api.ashbyhq.com/posting-api/job-board/{slug}) has no ID
+fields at all for department/location/team -- IDs only appear in a
+<script>-embedded JSON blob inside the HTML of Ashby's own careers page,
+which is undocumented frontend implementation detail, not a stable
+contract, and could change silently on any Ashby deploy. Second, even
+that embedded data doesn't line up with our fields: it has teamId and
+locationId, no departmentId, so it's not even clear which of our fields
+(department vs team) an ID would correspond to -- and there's no visible
+ID-to-display-name lookup table to build a usable picker from anyway
+(just opaque UUIDs). Building an HTML-scraping fallback for a data
+source with unclear field mapping and no display names, alongside the
+clean documented-API client we already have, wasn't worth it.
+
+## 2026-08-12 — TUI filter selection: narrow immediately, reload authoritatively after re-sync
+Context: selecting/saving a company's department/location filters from
+the posting list needed a UX decision -- does the visible list narrow
+right away, or only after the next sync actually changes what's stored
+(the existing non-retroactive filter semantics)?
+Decision: on save, apply filter.Match client-side against the
+already-loaded postings for instant visual feedback, then kick off a
+background SyncCompany re-fetch (existing "filter change triggers
+re-fetch" behavior). When that sync completes, if the refreshed
+company is the one currently being viewed (matched by
+sync.Result.CompanyID), reload postings from the DB so the view
+becomes authoritative instead of staying with just the optimistic
+client-side narrowing.
+Why: confirmed directly with the user rather than assumed -- pure "only
+affects future syncs" would leave the view showing everything until a
+manual refresh, which doesn't match "select a filter from the list and
+see it take effect" intent. The two-step (optimistic narrow, then
+authoritative reload) gets both instant feedback and correctness
+without needing the view-time SQL filtering that would otherwise be
+needed to keep company_filters' existing ingest-time-only semantics
+intact.
+
+## 2026-08-12 — Filter value keyspace: two explicit queries, not a dynamic-field one
+Context: department and location values are company-specific
+vocabularies (Ramp's departments aren't any other company's), so
+filter options need to come from what's actually been ingested.
+Decision: ListDistinctDepartmentsForCompany/
+ListDistinctLocationsForCompany as two separate sqlc queries.
+Why: matches company_filters' existing field IN ('department',
+'location') CHECK constraint, and sqlc doesn't support a bind
+parameter as a column name anyway (no dynamic-field query is even
+possible without hand-rolled SQL string building). Trivial to extend
+with a third explicit query if another filterable field is ever
+added.
+
+## 2026-08-12 — loadPostings re-applies saved filters after every fetch
+Context: found via user bug report ("after entering a filter the
+posting list does not seem to update") that the optimistic client-side
+narrow on save was getting silently undone. Root cause: the background
+re-sync's completion triggers a reload via loadPostings ->
+ListPostingsByCompany, which has no notion of company_filters at all
+(filters gate ingestion only, a deliberate earlier decision) -- so the
+"authoritative reload" was authoritatively wrong, loading everything
+unfiltered and overwriting the narrowed view.
+Decision: loadPostings now also fetches the company's current
+company_filters and re-applies them (via the same narrowPostingsToFilters
+used for the optimistic narrow) to every set of postings it returns,
+not just the one right after a save.
+Why: this is the one place postings get loaded for display (both first
+entry into the posting list and every reload after), so making it
+filter-aware there covers both the immediate bug and, for free, true
+cross-run persistence -- a company with filters saved from a prior
+session now narrows on first load too, not just right after saving in
+the same session. Caught by extending the existing save-flow test to
+drive through the full save -> sync -> reload chain instead of only
+checking the immediate optimistic-narrow state; a second test confirms
+first-load narrowing for filters that already existed before the
+session started (not just just-saved ones), since that's the literal
+"persisting across runs" requirement and wasn't otherwise exercised.

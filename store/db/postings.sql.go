@@ -155,6 +155,67 @@ func (q *Queries) GetPostingBySourceAndSourceID(ctx context.Context, arg GetPost
 	return i, err
 }
 
+const listDistinctDepartmentsForCompany = `-- name: ListDistinctDepartmentsForCompany :many
+SELECT DISTINCT department FROM postings
+WHERE company_id = ? AND department IS NOT NULL AND department != ''
+ORDER BY department
+`
+
+// Keyspace discovery for filter selection: department is a company-
+// specific vocabulary (not a fixed enum), so filter values are offered
+// from what's actually been ingested, not guessed at.
+func (q *Queries) ListDistinctDepartmentsForCompany(ctx context.Context, companyID int64) ([]sql.NullString, error) {
+	rows, err := q.db.QueryContext(ctx, listDistinctDepartmentsForCompany, companyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []sql.NullString
+	for rows.Next() {
+		var department sql.NullString
+		if err := rows.Scan(&department); err != nil {
+			return nil, err
+		}
+		items = append(items, department)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDistinctLocationsForCompany = `-- name: ListDistinctLocationsForCompany :many
+SELECT DISTINCT location FROM postings
+WHERE company_id = ? AND location IS NOT NULL AND location != ''
+ORDER BY location
+`
+
+func (q *Queries) ListDistinctLocationsForCompany(ctx context.Context, companyID int64) ([]sql.NullString, error) {
+	rows, err := q.db.QueryContext(ctx, listDistinctLocationsForCompany, companyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []sql.NullString
+	for rows.Next() {
+		var location sql.NullString
+		if err := rows.Scan(&location); err != nil {
+			return nil, err
+		}
+		items = append(items, location)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPostingsByCompany = `-- name: ListPostingsByCompany :many
 SELECT id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at FROM postings
 WHERE company_id = ?
