@@ -223,15 +223,15 @@ func createCompany(s *store.Store, name, sourceRef string) tea.Cmd {
 	}
 }
 
-type companyPausedMsg struct {
+type companyDeletedMsg struct {
 	companyID int64
 	err       error
 }
 
-func pauseCompany(s *store.Store, companyID int64) tea.Cmd {
+func deleteCompany(s *store.Store, companyID int64) tea.Cmd {
 	return func() tea.Msg {
 		err := s.SoftDeleteCompany(context.Background(), companyID)
-		return companyPausedMsg{companyID: companyID, err: err}
+		return companyDeletedMsg{companyID: companyID, err: err}
 	}
 }
 
@@ -405,7 +405,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.companies = append(a.companies, msg.company)
 			a.screen = screenCompanyList
 		}
-	case companyPausedMsg:
+	case companyDeletedMsg:
 		a.err = msg.err
 		if msg.err == nil {
 			for i, c := range a.companies {
@@ -487,9 +487,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			case msg.String() == "q":
 				return a, tea.Quit
-			case msg.String() == "p":
+			case msg.String() == "d":
 				if a.cursor < len(a.companies) {
-					return a, pauseCompany(a.store, a.companies[a.cursor].ID)
+					return a, deleteCompany(a.store, a.companies[a.cursor].ID)
 				}
 			case msg.String() == "r":
 				if a.cursor < len(a.companies) {
@@ -701,7 +701,7 @@ func (a *App) View() string {
 				b.WriteString("  " + line + "\n")
 			}
 		}
-		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view postings  a: add  p: pause  r: refresh  q: quit"))
+		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view postings  a: add  d: delete  r: refresh  q: quit"))
 	}
 
 	return b.String()
