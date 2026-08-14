@@ -9,8 +9,11 @@ import (
 	"github.com/dklassen/swamp/store/db"
 )
 
-// PostingMarkup is the user's own markup on a posting: status, free-text
-// notes. One row per posting, always present (see UpsertPosting).
+// PostingMarkup is the user's lightweight triage on a posting itself
+// (new/interested/archived) plus free-text notes -- deliberately separate
+// from Application, which tracks the pursuit of the posting once the user
+// actually starts applying (see Application). One row per posting, always
+// present (see UpsertPosting).
 type PostingMarkup struct {
 	PostingID  int64
 	UserStatus string

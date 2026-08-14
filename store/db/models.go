@@ -9,6 +9,15 @@ import (
 	"time"
 )
 
+type Application struct {
+	ID        int64     `json:"id"`
+	PostingID int64     `json:"posting_id"`
+	Status    string    `json:"status"`
+	Notes     string    `json:"notes"`
+	CreatedAt time.Time `json:"created_at"`
+	UpdatedAt time.Time `json:"updated_at"`
+}
+
 type Company struct {
 	ID        int64        `json:"id"`
 	Name      string       `json:"name"`
@@ -28,15 +37,15 @@ type CompanyFilter struct {
 }
 
 type InterviewStage struct {
-	ID        int64        `json:"id"`
-	PostingID int64        `json:"posting_id"`
-	Sequence  int64        `json:"sequence"`
-	Name      string       `json:"name"`
-	StageDate sql.NullTime `json:"stage_date"`
-	Outcome   string       `json:"outcome"`
-	Notes     string       `json:"notes"`
-	CreatedAt time.Time    `json:"created_at"`
-	UpdatedAt time.Time    `json:"updated_at"`
+	ID            int64        `json:"id"`
+	ApplicationID int64        `json:"application_id"`
+	Sequence      int64        `json:"sequence"`
+	Name          string       `json:"name"`
+	StageDate     sql.NullTime `json:"stage_date"`
+	Outcome       string       `json:"outcome"`
+	Notes         string       `json:"notes"`
+	CreatedAt     time.Time    `json:"created_at"`
+	UpdatedAt     time.Time    `json:"updated_at"`
 }
 
 type Posting struct {

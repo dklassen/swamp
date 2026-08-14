@@ -1,11 +1,11 @@
 -- name: CreateInterviewStage :one
-INSERT INTO interview_stages (posting_id, sequence, name, stage_date, notes)
+INSERT INTO interview_stages (application_id, sequence, name, stage_date, notes)
 VALUES (?, ?, ?, ?, ?)
 RETURNING *;
 
--- name: ListInterviewStagesByPosting :many
+-- name: ListInterviewStagesByApplication :many
 SELECT * FROM interview_stages
-WHERE posting_id = ?
+WHERE application_id = ?
 ORDER BY sequence;
 
 -- name: UpdateInterviewStageOutcome :one

@@ -11,6 +11,11 @@ import (
 
 type Querier interface {
 	AddTagToPosting(ctx context.Context, arg AddTagToPostingParams) error
+	// Unlike posting_markup, not auto-created for every posting -- an
+	// application exists only once the user takes an explicit "start
+	// application" action. Relies on column defaults (status='application_started',
+	// notes='').
+	CreateApplication(ctx context.Context, postingID int64) (Application, error)
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
 	CreateCompanyFilter(ctx context.Context, arg CreateCompanyFilterParams) (CompanyFilter, error)
 	CreateInterviewStage(ctx context.Context, arg CreateInterviewStageParams) (InterviewStage, error)
@@ -24,6 +29,7 @@ type Querier interface {
 	CreateTag(ctx context.Context, name string) (Tag, error)
 	DeleteCompanyFilters(ctx context.Context, companyID int64) error
 	DeleteInterviewStage(ctx context.Context, id int64) error
+	GetApplication(ctx context.Context, postingID int64) (Application, error)
 	GetCompany(ctx context.Context, id int64) (Company, error)
 	GetPosting(ctx context.Context, id int64) (Posting, error)
 	GetPostingBySourceAndSourceID(ctx context.Context, arg GetPostingBySourceAndSourceIDParams) (Posting, error)
@@ -39,7 +45,7 @@ type Querier interface {
 	// from what's actually been ingested, not guessed at.
 	ListDistinctDepartmentsForCompany(ctx context.Context, companyID int64) ([]sql.NullString, error)
 	ListDistinctLocationsForCompany(ctx context.Context, companyID int64) ([]sql.NullString, error)
-	ListInterviewStagesByPosting(ctx context.Context, postingID int64) ([]InterviewStage, error)
+	ListInterviewStagesByApplication(ctx context.Context, applicationID int64) ([]InterviewStage, error)
 	ListPostingHistoryByPosting(ctx context.Context, postingID int64) ([]PostingHistory, error)
 	// id DESC is a tiebreaker: a single sync inserts many rows within the same
 	// CURRENT_TIMESTAMP second (sqlite has only second resolution), so
@@ -58,6 +64,8 @@ type Querier interface {
 	RestoreCompany(ctx context.Context, id int64) error
 	SoftDeleteCompany(ctx context.Context, id int64) error
 	SoftDeleteTag(ctx context.Context, id int64) error
+	UpdateApplicationNotes(ctx context.Context, arg UpdateApplicationNotesParams) (Application, error)
+	UpdateApplicationStatus(ctx context.Context, arg UpdateApplicationStatusParams) (Application, error)
 	UpdateInterviewStage(ctx context.Context, arg UpdateInterviewStageParams) (InterviewStage, error)
 	UpdateInterviewStageOutcome(ctx context.Context, arg UpdateInterviewStageOutcomeParams) (InterviewStage, error)
 	// Updates ingested content fields only. Deliberately does not touch
