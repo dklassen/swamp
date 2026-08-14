@@ -46,7 +46,7 @@ Resume/cover-letter generation and autonomous agents (see original vision below)
 
 ## Implementation Decisions
 
-> **Every non-trivial decision also gets an entry in [`decisions.log`](decisions.log)** — chronological, includes the "why" and alternatives considered, and survives independent of git history shape (unlike commit messages, which can get squashed away). This section is a current-state summary; `decisions.log` is the trail of how we got here. Don't forget to append to it.
+> This section is a current-state summary. [`decisions.log`](decisions.log) is the chronological trail of how we got here (the "why" and alternatives considered for each decision); [`CLAUDE.md`](CLAUDE.md) has testing requirements, workflow, and other agent-facing operational standards for this repo.
 
 - **Language/runtime**: Go.
 - **Storage**: SQLite, accessed via `database/sql` + [sqlc](https://sqlc.dev/) (hand-written SQL, generated type-safe Go — chosen over an ORM like GORM to keep queries explicit and testable, matching Go idioms rather than ActiveRecord-style abstraction).
@@ -71,17 +71,6 @@ Resume/cover-letter generation and autonomous agents (see original vision below)
 - **`tui`** — Bubble Tea views: company management, posting list/detail, filter editing, markup editing (status/tags/notes/interview stages), open-in-browser keybinding.
 - **`cmd/swamp`** — entrypoint; launches the TUI by default, exposes a `fetch` subcommand, runs goose migrations on startup.
 
-## Testing Decisions
-
-- TDD (red-green-refactor) is a project-wide requirement.
-- Full automated test suites required for the core/orchestration modules: `ashby`, `filter`, `store`, `sync`.
-  - `ashby`: tested against recorded/fixture HTTP responses, no live network calls in tests.
-  - `filter`: pure function, tested exhaustively against posting/filter combinations.
-  - `store`: tested against a real sqlite file (temp db per test), not mocked.
-  - `sync`: tested with fakes for `ashby` and a real `store`, verifying fetch → filter → upsert → status-transition behavior end to end.
-- `tui` Update-function logic (state transitions) is tested where practical; the View/render layer is not held to automated coverage and is verified manually.
-- `cmd/swamp` wiring is verified manually, not unit tested.
-
 ## Out of Scope (this phase)
 
 - Job boards other than Ashby
@@ -104,4 +93,5 @@ The long-term vision for this project (unchanged, just deferred beyond this phas
 
 - Golang
 - SQLite for local storage
-- TDD development iteration
+
+See [`CLAUDE.md`](CLAUDE.md) for testing requirements and other development standards.
