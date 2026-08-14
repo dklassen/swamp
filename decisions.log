@@ -723,3 +723,17 @@ where silently restoring is the wrong call (the paused company's
 postings/markup/applications were never deleted, so there's nothing
 to reconcile), and it avoids a UI-side prompt for a decision the user
 already made by re-adding.
+
+## 2026-08-14 — Company list keybinding renamed p (pause) to d (delete)
+Context: the underlying behavior (SoftDeleteCompany) hasn't changed --
+still soft-delete only, per "Company lifecycle: soft pause only, no
+hard delete" (2026-08-10). But issue #1 asked for a way to "delete a
+company from the company view," and the "p: pause" label didn't read
+as that action, so the ask wasn't discoverable even though the
+capability already existed.
+Decision: renamed the keybinding from "p" to "d" and relabeled it
+"delete" in the help text, plus the internal names that shadowed it
+(pauseCompany -> deleteCompany, companyPausedMsg -> companyDeletedMsg)
+so code and UI say the same thing. Purely a naming change -- still a
+soft delete under the hood, nothing about the 2026-08-10 decision
+changed.

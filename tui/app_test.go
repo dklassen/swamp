@@ -187,24 +187,24 @@ func TestApp_SubmitForm_CreatesCompanyAndReturnsToList(t *testing.T) {
 	}
 }
 
-func TestApp_PressP_TogglesPauseOnSelectedCompany(t *testing.T) {
+func TestApp_PressD_DeletesSelectedCompany(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	app, cmd := sendKey(app, runeKey('p'))
+	app, cmd := sendKey(app, runeKey('d'))
 	if cmd == nil {
-		t.Fatal("Update on 'p' returned nil Cmd, want a command that pauses the company")
+		t.Fatal("Update on 'd' returned nil Cmd, want a command that deletes the company")
 	}
 	app, _ = sendKey(app, cmd())
 
 	if len(app.companies) != 0 {
-		t.Fatalf("app.companies after pause = %+v, want empty (paused = soft-deleted, excluded from active list)", app.companies)
+		t.Fatalf("app.companies after delete = %+v, want empty (soft-deleted, excluded from active list)", app.companies)
 	}
 
 	_, err := s.GetCompany(context.Background(), acme.ID)
 	if !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("GetCompany after pause error = %v, want ErrNotFound (soft-deleted companies are excluded)", err)
+		t.Fatalf("GetCompany after delete error = %v, want ErrNotFound (soft-deleted companies are excluded)", err)
 	}
 }
 
