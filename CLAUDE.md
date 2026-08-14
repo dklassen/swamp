@@ -2,17 +2,23 @@
 
 Operational guidance for working in this repo: build/test commands, workflow, and standards established over the course of this project. For product scope and architecture, see `README.md`. For the chronological "why" behind decisions, see `decisions.log`.
 
+## Issue-driven task workflow
+
+When asked to work through a labeled group of issues:
+
+1. Fetch the issues: `gh issue list --label "<tag>" --state open --json number,title,body,labels,url`
+2. Build a task list from the results, one item per issue (number + title).
+3. Work through the list in order:
+   - `gh issue view <number> --comments` to pull full context before starting
+   - Implement the change
+   - Reference the issue number in the commit message (e.g. `fixes #123`)
+   - `gh issue comment <number> --body "..."` to log what was done, if asked
+4. Report progress after each issue rather than batching silently.
+5. Do not close issues or push without explicit confirmation unless told otherwise.
+
 ## Testing
 
 - TDD (red-green-refactor) is a project-wide requirement: write a failing test, watch it fail for the right reason, write minimal code to pass, watch it pass, then refactor. One behavior at a time — never write multiple tests before running any of them.
-- Full automated test suites required for the core/orchestration modules: `ashby`, `filter`, `store`, `sync`.
-  - `ashby`: tested against recorded/fixture HTTP responses, no live network calls in tests.
-  - `filter`: pure function, tested exhaustively against posting/filter combinations.
-  - `store`: tested against a real sqlite file (temp db per test), not mocked.
-  - `sync`: tested with fakes for `ashby` and a real `store`, verifying fetch → filter → upsert → status-transition behavior end to end.
-- `tui` Update-function logic (state transitions) is tested where practical; the View/render layer is not held to automated coverage and is verified manually instead (see "Manual verification" below).
-- `cmd/swamp` wiring is verified manually, not unit tested.
-- When a pattern of test setup repeats 3+ times, extract a helper — not before (see e.g. `mustCreateCompany`, `openPostingList`/`openPostingDetail`, `sendKey`).
 - Prefer `github.com/google/go-cmp/cmp` (`cmp.Diff`) over manual field-by-field comparison or `==` on structs containing `time.Time` (`==` on `time.Time` is a known footgun — see Go's own docs).
 
 ## Feature branch workflow
@@ -50,15 +56,6 @@ If `fmt:check` fails, run `gofmt -w <files>`. The pre-commit hook auto-formats s
   - `task test` — `go test ./...`.
 - **go.mod**: don't fight `go mod tidy`/`go get` when they strip the `toolchain` line — that's intentional (Go 1.21+ auto-selects a compatible toolchain from the `go` directive's minimum version). Don't re-add an explicit `toolchain` pin.
 - **golangci-lint** findings get fixed properly (explicitly discarding/asserting on errors, etc.), not suppressed via exclude rules or `//nolint`, unless there's a specific documented justification.
-
-## Manual verification for runtime/TUI changes
-
-`tui`'s View layer and `cmd/swamp` aren't unit tested, so changes there need to be verified by actually driving the code against real data before considering them done:
-
-- For `ashby`/`sync` behavior: a throwaway `go run` script (not committed) constructing a real `store.Store` + `sync.Syncer` with the real `ashby.NewClient()`, hitting the live Ashby API against a real company slug.
-- For `tui` behavior: a throwaway script driving a real `*tui.App` through `Init`/`Update`/`View` (manually executing returned `tea.Cmd`s and feeding results back in, the same way the Bubble Tea runtime would) and printing `View()` output at each step to inspect visually.
-- Clean up scratch scripts/db files after verifying (`rm` them) — they're not part of the repo.
-- When in doubt, ask the user to verify in a real terminal via `task build && ./bin/swamp`. This has caught real bugs that scripted verification alone missed (a stale-binary false alarm, and a genuine filter-narrowing bug that only manifested after a background re-sync completed).
 
 ## Decisions log
 
