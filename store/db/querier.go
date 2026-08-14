@@ -11,6 +11,7 @@ import (
 
 type Querier interface {
 	AddTagToPosting(ctx context.Context, arg AddTagToPostingParams) error
+	ArchivePosting(ctx context.Context, postingID int64) (PostingMarkup, error)
 	// Unlike posting_markup, not auto-created for every posting -- an
 	// application exists only once the user takes an explicit "start
 	// application" action. Relies on column defaults (status='application_started',
@@ -24,7 +25,7 @@ type Querier interface {
 	// Not exposed directly on the Store API: every posting must have exactly
 	// one markup row, so Store creates it as part of UpsertPosting rather than
 	// leaving callers to remember a second call. Relies on column defaults
-	// (user_status='new', notes='').
+	// (interested_at=NULL, archived_at=NULL, notes='').
 	CreatePostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
 	CreateTag(ctx context.Context, name string) (Tag, error)
 	DeleteCompanyFilters(ctx context.Context, companyID int64) error
@@ -59,11 +60,14 @@ type Querier interface {
 	// later soft-deleted (see schema comment on posting_tags).
 	ListTagsForPosting(ctx context.Context, postingID int64) ([]Tag, error)
 	MarkPostingClosed(ctx context.Context, id int64) error
+	MarkPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error)
 	MarkPostingReopened(ctx context.Context, id int64) error
 	RemoveTagFromPosting(ctx context.Context, arg RemoveTagFromPostingParams) error
 	RestoreCompany(ctx context.Context, id int64) error
 	SoftDeleteCompany(ctx context.Context, id int64) error
 	SoftDeleteTag(ctx context.Context, id int64) error
+	UnarchivePosting(ctx context.Context, postingID int64) (PostingMarkup, error)
+	UnmarkPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error)
 	UpdateApplicationNotes(ctx context.Context, arg UpdateApplicationNotesParams) (Application, error)
 	UpdateApplicationStatus(ctx context.Context, arg UpdateApplicationStatusParams) (Application, error)
 	UpdateInterviewStage(ctx context.Context, arg UpdateInterviewStageParams) (InterviewStage, error)
@@ -75,7 +79,6 @@ type Querier interface {
 	// source_id) is assumed to belong to the same company for its lifetime.
 	UpdatePosting(ctx context.Context, arg UpdatePostingParams) (Posting, error)
 	UpdatePostingMarkupNotes(ctx context.Context, arg UpdatePostingMarkupNotesParams) (PostingMarkup, error)
-	UpdatePostingMarkupStatus(ctx context.Context, arg UpdatePostingMarkupStatusParams) (PostingMarkup, error)
 }
 
 var _ Querier = (*Queries)(nil)

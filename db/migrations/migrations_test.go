@@ -124,3 +124,46 @@ func TestSplitApplicationFromPosting_RepointsInterviewStagesToApplication(t *tes
 		t.Fatalf("interview_stages.application_id = %d, want %d (the backfilled application's own id)", gotApplicationID, wantApplicationID)
 	}
 }
+
+// TestPostingMarkupInterestedArchivedFlags_MigratesInterestedStatusToTimestamp
+// verifies the 00003 migration's data copy: an existing 'interested'
+// posting_markup row must produce a non-null interested_at (and null
+// archived_at), not be silently dropped when user_status disappears.
+func TestPostingMarkupInterestedArchivedFlags_MigratesInterestedStatusToTimestamp(t *testing.T) {
+	sqlDB := migrateTo(t, 2)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload)
+		 VALUES (1, 1, 'ashby', 'job-1', 'Software Engineer', '{}')`,
+	); err != nil {
+		t.Fatalf("insert posting: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO posting_markup (posting_id, user_status) VALUES (1, 'interested')`,
+	); err != nil {
+		t.Fatalf("insert posting_markup: %v", err)
+	}
+
+	if err := goose.UpTo(sqlDB, ".", 3); err != nil {
+		t.Fatalf("migrate to version 3: %v", err)
+	}
+
+	var interestedAt sql.NullTime
+	var archivedAt sql.NullTime
+	if err := sqlDB.QueryRow(
+		`SELECT interested_at, archived_at FROM posting_markup WHERE posting_id = 1`,
+	).Scan(&interestedAt, &archivedAt); err != nil {
+		t.Fatalf("query posting_markup: %v", err)
+	}
+	if !interestedAt.Valid {
+		t.Fatal("interested_at is NULL, want non-null (migrated from user_status='interested')")
+	}
+	if archivedAt.Valid {
+		t.Fatal("archived_at is non-null, want NULL")
+	}
+}
