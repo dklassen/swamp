@@ -56,6 +56,35 @@ func (q *Queries) GetCompany(ctx context.Context, id int64) (Company, error) {
 	return i, err
 }
 
+const getCompanyBySourceAndSourceRef = `-- name: GetCompanyBySourceAndSourceRef :one
+SELECT id, name, source, source_ref, deleted_at, created_at, updated_at FROM companies
+WHERE source = ? AND source_ref = ?
+`
+
+type GetCompanyBySourceAndSourceRefParams struct {
+	Source    string `json:"source"`
+	SourceRef string `json:"source_ref"`
+}
+
+// Deliberately ignores deleted_at: source+source_ref is UNIQUE across all
+// rows regardless of soft-delete state, so re-adding a company (CreateCompany)
+// needs to find a soft-deleted match too, in order to restore it instead of
+// violating the UNIQUE constraint with a duplicate insert.
+func (q *Queries) GetCompanyBySourceAndSourceRef(ctx context.Context, arg GetCompanyBySourceAndSourceRefParams) (Company, error) {
+	row := q.db.QueryRowContext(ctx, getCompanyBySourceAndSourceRef, arg.Source, arg.SourceRef)
+	var i Company
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Source,
+		&i.SourceRef,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const listActiveCompanies = `-- name: ListActiveCompanies :many
 SELECT id, name, source, source_ref, deleted_at, created_at, updated_at FROM companies
 WHERE deleted_at IS NULL
@@ -102,6 +131,33 @@ WHERE id = ?
 func (q *Queries) RestoreCompany(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, restoreCompany, id)
 	return err
+}
+
+const restoreCompanyWithName = `-- name: RestoreCompanyWithName :one
+UPDATE companies
+SET name = ?, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at
+`
+
+type RestoreCompanyWithNameParams struct {
+	Name string `json:"name"`
+	ID   int64  `json:"id"`
+}
+
+func (q *Queries) RestoreCompanyWithName(ctx context.Context, arg RestoreCompanyWithNameParams) (Company, error) {
+	row := q.db.QueryRowContext(ctx, restoreCompanyWithName, arg.Name, arg.ID)
+	var i Company
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Source,
+		&i.SourceRef,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
 }
 
 const softDeleteCompany = `-- name: SoftDeleteCompany :exec

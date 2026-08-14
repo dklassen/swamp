@@ -7,6 +7,20 @@ RETURNING *;
 SELECT * FROM companies
 WHERE id = ? AND deleted_at IS NULL;
 
+-- name: GetCompanyBySourceAndSourceRef :one
+-- Deliberately ignores deleted_at: source+source_ref is UNIQUE across all
+-- rows regardless of soft-delete state, so re-adding a company (CreateCompany)
+-- needs to find a soft-deleted match too, in order to restore it instead of
+-- violating the UNIQUE constraint with a duplicate insert.
+SELECT * FROM companies
+WHERE source = ? AND source_ref = ?;
+
+-- name: RestoreCompanyWithName :one
+UPDATE companies
+SET name = ?, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE id = ?
+RETURNING *;
+
 -- name: ListActiveCompanies :many
 SELECT * FROM companies
 WHERE deleted_at IS NULL
