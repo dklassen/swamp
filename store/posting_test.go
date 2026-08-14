@@ -59,11 +59,10 @@ func TestUpsertPosting_NewPosting_AutoCreatesMarkupRow(t *testing.T) {
 	}
 
 	want := PostingMarkup{
-		PostingID:  created.ID,
-		UserStatus: "new",
-		Notes:      "",
-		CreatedAt:  markup.CreatedAt,
-		UpdatedAt:  markup.UpdatedAt,
+		PostingID: created.ID,
+		Notes:     "",
+		CreatedAt: markup.CreatedAt,
+		UpdatedAt: markup.UpdatedAt,
 	}
 	if diff := cmp.Diff(want, markup); diff != "" {
 		t.Fatalf("GetPostingMarkup mismatch (-want +got):\n%s", diff)
@@ -253,19 +252,22 @@ func TestGetPostingMarkup_NonexistentPostingID_ReturnsErrNotFound(t *testing.T) 
 	}
 }
 
-func TestUpdatePostingMarkupStatus_UpdatesStatus(t *testing.T) {
+func TestMarkPostingInterested_SetsInterestedAt(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 
-	updated, err := s.UpdatePostingMarkupStatus(ctx, posting.ID, "interested")
+	updated, err := s.MarkPostingInterested(ctx, posting.ID)
 	if err != nil {
-		t.Fatalf("UpdatePostingMarkupStatus: %v", err)
+		t.Fatalf("MarkPostingInterested: %v", err)
 	}
-	if updated.UserStatus != "interested" {
-		t.Fatalf("UserStatus = %q, want %q", updated.UserStatus, "interested")
+	if updated.InterestedAt == nil {
+		t.Fatal("InterestedAt is nil, want non-nil")
+	}
+	if updated.ArchivedAt != nil {
+		t.Fatalf("ArchivedAt = %v, want nil", updated.ArchivedAt)
 	}
 
 	got, err := s.GetPostingMarkup(ctx, posting.ID)
@@ -274,6 +276,69 @@ func TestUpdatePostingMarkupStatus_UpdatesStatus(t *testing.T) {
 	}
 	if diff := cmp.Diff(updated, got); diff != "" {
 		t.Fatalf("GetPostingMarkup mismatch (-updated +got):\n%s", diff)
+	}
+}
+
+func TestUnmarkPostingInterested_ClearsInterestedAt(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+
+	if _, err := s.MarkPostingInterested(ctx, posting.ID); err != nil {
+		t.Fatalf("MarkPostingInterested: %v", err)
+	}
+
+	updated, err := s.UnmarkPostingInterested(ctx, posting.ID)
+	if err != nil {
+		t.Fatalf("UnmarkPostingInterested: %v", err)
+	}
+	if updated.InterestedAt != nil {
+		t.Fatalf("InterestedAt = %v, want nil", updated.InterestedAt)
+	}
+}
+
+func TestArchivePosting_SetsArchivedAt_IndependentOfInterested(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+
+	if _, err := s.MarkPostingInterested(ctx, posting.ID); err != nil {
+		t.Fatalf("MarkPostingInterested: %v", err)
+	}
+
+	updated, err := s.ArchivePosting(ctx, posting.ID)
+	if err != nil {
+		t.Fatalf("ArchivePosting: %v", err)
+	}
+	if updated.ArchivedAt == nil {
+		t.Fatal("ArchivedAt is nil, want non-nil")
+	}
+	if updated.InterestedAt == nil {
+		t.Fatal("InterestedAt is nil, want non-nil (archiving must not clear it)")
+	}
+}
+
+func TestUnarchivePosting_ClearsArchivedAt(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+
+	if _, err := s.ArchivePosting(ctx, posting.ID); err != nil {
+		t.Fatalf("ArchivePosting: %v", err)
+	}
+
+	updated, err := s.UnarchivePosting(ctx, posting.ID)
+	if err != nil {
+		t.Fatalf("UnarchivePosting: %v", err)
+	}
+	if updated.ArchivedAt != nil {
+		t.Fatalf("ArchivedAt = %v, want nil", updated.ArchivedAt)
 	}
 }
 

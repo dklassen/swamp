@@ -659,3 +659,41 @@ observed need. If a posting does reopen while an old application
 exists, handle it as an explicit user decision at that moment (reset
 the existing application, or revisit the schema then) rather than
 pre-building for it.
+
+## 2026-08-14 — posting_markup.user_status replaced with interested_at/archived_at flags
+Context: user pushed back on the earlier new/interested/archived enum
+("we are getting ahead of ourselves ... interested should be a separate
+boolean used for filtering"). "Interested" isn't a pipeline stage --
+it's an independent bookmark/tag for later review, and you don't
+"leave" being interested the way an application progresses through
+states. Use case: mark postings for later review/application, or
+quick filtering.
+Decision: dropped the CHECK-constrained enum entirely. posting_markup
+now has interested_at TIMESTAMP NULL and archived_at TIMESTAMP NULL,
+independently settable (IS NOT NULL doubles as the boolean check).
+archived_at mirrors the deleted_at soft-delete convention already used
+for companies and tags elsewhere in this schema, rather than
+introducing a new idiom. Both can be set at once now (e.g. archiving
+something you were once interested in) -- the old single-enum model
+would have silently lost the "was interested" fact the moment
+something was archived; this doesn't.
+Considered and rejected two alternatives (user asked for the
+comparison directly):
+- Plain boolean instead of timestamp: strictly worse here -- loses
+  "when," which is directly useful for sorting/filtering a watchlist
+  by recency, and buys nothing over a nullable timestamp since
+  IS NOT NULL already gives the boolean check for free.
+- Separate append-only events table (posting_id, event_type,
+  occurred_at), mirroring posting_history's existing pattern for
+  ingested-content changes: gives full toggle history, but "am I
+  currently interested" becomes a latest-per-type lookup instead of a
+  column check -- real cost on the TUI posting-list filter hot path --
+  for a history requirement that doesn't exist yet. Same "need 3 real
+  examples before abstracting" reasoning as the applications
+  cardinality decision. posting_history is direct prior art in this
+  codebase for revisiting this if a real need for full history shows
+  up later; not a one-way door.
+Store API: MarkPostingInterested/UnmarkPostingInterested and
+ArchivePosting/UnarchivePosting (mirrors posting.go's
+MarkPostingClosed/MarkPostingReopened naming), replacing
+UpdatePostingMarkupStatus.

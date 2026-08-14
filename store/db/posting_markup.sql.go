@@ -9,22 +9,44 @@ import (
 	"context"
 )
 
+const archivePosting = `-- name: ArchivePosting :one
+UPDATE posting_markup
+SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE posting_id = ?
+RETURNING posting_id, interested_at, archived_at, notes, created_at, updated_at
+`
+
+func (q *Queries) ArchivePosting(ctx context.Context, postingID int64) (PostingMarkup, error) {
+	row := q.db.QueryRowContext(ctx, archivePosting, postingID)
+	var i PostingMarkup
+	err := row.Scan(
+		&i.PostingID,
+		&i.InterestedAt,
+		&i.ArchivedAt,
+		&i.Notes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const createPostingMarkup = `-- name: CreatePostingMarkup :one
 INSERT INTO posting_markup (posting_id)
 VALUES (?)
-RETURNING posting_id, user_status, notes, created_at, updated_at
+RETURNING posting_id, interested_at, archived_at, notes, created_at, updated_at
 `
 
 // Not exposed directly on the Store API: every posting must have exactly
 // one markup row, so Store creates it as part of UpsertPosting rather than
 // leaving callers to remember a second call. Relies on column defaults
-// (user_status='new', notes=”).
+// (interested_at=NULL, archived_at=NULL, notes=”).
 func (q *Queries) CreatePostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error) {
 	row := q.db.QueryRowContext(ctx, createPostingMarkup, postingID)
 	var i PostingMarkup
 	err := row.Scan(
 		&i.PostingID,
-		&i.UserStatus,
+		&i.InterestedAt,
+		&i.ArchivedAt,
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -33,7 +55,7 @@ func (q *Queries) CreatePostingMarkup(ctx context.Context, postingID int64) (Pos
 }
 
 const getPostingMarkup = `-- name: GetPostingMarkup :one
-SELECT posting_id, user_status, notes, created_at, updated_at FROM posting_markup
+SELECT posting_id, interested_at, archived_at, notes, created_at, updated_at FROM posting_markup
 WHERE posting_id = ?
 `
 
@@ -42,7 +64,71 @@ func (q *Queries) GetPostingMarkup(ctx context.Context, postingID int64) (Postin
 	var i PostingMarkup
 	err := row.Scan(
 		&i.PostingID,
-		&i.UserStatus,
+		&i.InterestedAt,
+		&i.ArchivedAt,
+		&i.Notes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const markPostingInterested = `-- name: MarkPostingInterested :one
+UPDATE posting_markup
+SET interested_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
+WHERE posting_id = ?
+RETURNING posting_id, interested_at, archived_at, notes, created_at, updated_at
+`
+
+func (q *Queries) MarkPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error) {
+	row := q.db.QueryRowContext(ctx, markPostingInterested, postingID)
+	var i PostingMarkup
+	err := row.Scan(
+		&i.PostingID,
+		&i.InterestedAt,
+		&i.ArchivedAt,
+		&i.Notes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const unarchivePosting = `-- name: UnarchivePosting :one
+UPDATE posting_markup
+SET archived_at = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE posting_id = ?
+RETURNING posting_id, interested_at, archived_at, notes, created_at, updated_at
+`
+
+func (q *Queries) UnarchivePosting(ctx context.Context, postingID int64) (PostingMarkup, error) {
+	row := q.db.QueryRowContext(ctx, unarchivePosting, postingID)
+	var i PostingMarkup
+	err := row.Scan(
+		&i.PostingID,
+		&i.InterestedAt,
+		&i.ArchivedAt,
+		&i.Notes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const unmarkPostingInterested = `-- name: UnmarkPostingInterested :one
+UPDATE posting_markup
+SET interested_at = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE posting_id = ?
+RETURNING posting_id, interested_at, archived_at, notes, created_at, updated_at
+`
+
+func (q *Queries) UnmarkPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error) {
+	row := q.db.QueryRowContext(ctx, unmarkPostingInterested, postingID)
+	var i PostingMarkup
+	err := row.Scan(
+		&i.PostingID,
+		&i.InterestedAt,
+		&i.ArchivedAt,
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -54,7 +140,7 @@ const updatePostingMarkupNotes = `-- name: UpdatePostingMarkupNotes :one
 UPDATE posting_markup
 SET notes = ?, updated_at = CURRENT_TIMESTAMP
 WHERE posting_id = ?
-RETURNING posting_id, user_status, notes, created_at, updated_at
+RETURNING posting_id, interested_at, archived_at, notes, created_at, updated_at
 `
 
 type UpdatePostingMarkupNotesParams struct {
@@ -67,32 +153,8 @@ func (q *Queries) UpdatePostingMarkupNotes(ctx context.Context, arg UpdatePostin
 	var i PostingMarkup
 	err := row.Scan(
 		&i.PostingID,
-		&i.UserStatus,
-		&i.Notes,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const updatePostingMarkupStatus = `-- name: UpdatePostingMarkupStatus :one
-UPDATE posting_markup
-SET user_status = ?, updated_at = CURRENT_TIMESTAMP
-WHERE posting_id = ?
-RETURNING posting_id, user_status, notes, created_at, updated_at
-`
-
-type UpdatePostingMarkupStatusParams struct {
-	UserStatus string `json:"user_status"`
-	PostingID  int64  `json:"posting_id"`
-}
-
-func (q *Queries) UpdatePostingMarkupStatus(ctx context.Context, arg UpdatePostingMarkupStatusParams) (PostingMarkup, error) {
-	row := q.db.QueryRowContext(ctx, updatePostingMarkupStatus, arg.UserStatus, arg.PostingID)
-	var i PostingMarkup
-	err := row.Scan(
-		&i.PostingID,
-		&i.UserStatus,
+		&i.InterestedAt,
+		&i.ArchivedAt,
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,

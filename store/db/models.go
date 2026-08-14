@@ -81,11 +81,12 @@ type PostingHistory struct {
 }
 
 type PostingMarkup struct {
-	PostingID  int64     `json:"posting_id"`
-	UserStatus string    `json:"user_status"`
-	Notes      string    `json:"notes"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	PostingID    int64        `json:"posting_id"`
+	InterestedAt sql.NullTime `json:"interested_at"`
+	ArchivedAt   sql.NullTime `json:"archived_at"`
+	Notes        string       `json:"notes"`
+	CreatedAt    time.Time    `json:"created_at"`
+	UpdatedAt    time.Time    `json:"updated_at"`
 }
 
 type PostingTag struct {
