@@ -23,14 +23,14 @@ When asked to work through a labeled group of issues:
 
 ## Feature branch workflow
 
-Each task/feature gets its own branch off `main`, merged back when complete:
+Each task/feature gets its own branch off `main`, reviewed via PR and merged on GitHub when complete:
 
 1. `git checkout -b <descriptive-branch-name>` off `main`.
 2. Build via TDD, committing in small, well-documented commits as logical chunks complete — not one giant commit at the end. No `Co-Authored-By` trailer in commit messages (explicit standing preference).
 3. Run the full verification checklist (below) before every commit.
 4. For any change touching the TUI or other runtime-visible behavior, do a manual verification against real data (below) before considering the work done.
-5. Confirm with the user before merging into `main`, and before deleting a branch — even one that's already merged. (Cherry-picks break git's own "already merged" safety check, so this matters more here than in a typical repo; see decisions.log for why cherry-picks came up at all.)
-6. After merging, re-verify `main` (build/test/lint) before deleting the branch.
+5. Confirm with the user before pushing the branch to GitHub and opening a PR for review. No local merge into `main` — merging happens on GitHub once the PR is reviewed.
+6. Merging the PR and any resulting branch cleanup (deleting the remote/local branch, syncing local `main`) happens as part of that GitHub review — not something to do automatically once the PR is open.
 
 ## Verification checklist (run before every commit)
 
