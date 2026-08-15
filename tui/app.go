@@ -63,9 +63,13 @@ type App struct {
 	postings        []store.Posting
 	postingMarkup   map[int64]store.PostingMarkup
 	postingCursor   int
-	detailViewport  viewport.Model
-	width           int
-	height          int
+	// hideArchived is ephemeral, in-memory-only display state -- not
+	// persisted (see decisions.log). Defaults true: the point of
+	// archiving a posting is to declutter the list.
+	hideArchived   bool
+	detailViewport viewport.Model
+	width          int
+	height         int
 
 	filterDepartmentOptions   []string
 	filterLocationOptions     []string
@@ -167,7 +171,7 @@ func New(s *store.Store, syncer *sync.Syncer) *App {
 	for i := range inputs {
 		inputs[i] = textinput.New()
 	}
-	return &App{store: s, syncer: syncer, formInputs: inputs, detailViewport: viewport.New(0, 0)}
+	return &App{store: s, syncer: syncer, formInputs: inputs, detailViewport: viewport.New(0, 0), hideArchived: true}
 }
 
 // postingDetailContent renders a posting's fields and description as the
@@ -322,7 +326,12 @@ type postingsLoadedMsg struct {
 // Every posting always has exactly one markup row (created alongside it
 // in UpsertPosting), so N+1 here is N cheap local sqlite reads, not N
 // round trips to a remote service.
-func loadPostings(s *store.Store, companyID int64) tea.Cmd {
+//
+// hideArchived additionally drops archived postings from the result --
+// ephemeral TUI display state (see the App.hideArchived field), not a
+// company_filters row, so it's applied here rather than at the
+// ingestion-gating layer.
+func loadPostings(s *store.Store, companyID int64, hideArchived bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 		postings, err := s.ListPostingsByCompany(ctx, companyID)
@@ -345,8 +354,24 @@ func loadPostings(s *store.Store, companyID int64) tea.Cmd {
 			markup[p.ID] = m
 		}
 
+		if hideArchived {
+			postings = filterOutArchived(postings, markup)
+		}
+
 		return postingsLoadedMsg{postings: postings, markup: markup, departments: departments, locations: locations}
 	}
+}
+
+// filterOutArchived drops postings whose markup has ArchivedAt set.
+func filterOutArchived(postings []store.Posting, markup map[int64]store.PostingMarkup) []store.Posting {
+	visible := make([]store.Posting, 0, len(postings))
+	for _, p := range postings {
+		if markup[p.ID].ArchivedAt != nil {
+			continue
+		}
+		visible = append(visible, p)
+	}
+	return visible
 }
 
 // splitCompanyFilters separates a company's saved filter rows by field.
@@ -500,7 +525,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// filter selection) -- reload from the DB so the view
 				// becomes authoritative instead of just the optimistic
 				// client-side narrowing applied at save time.
-				return a, loadPostings(a.store, a.selectedCompany.ID)
+				return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
 			}
 		}
 	case postingsLoadedMsg:
@@ -517,6 +542,22 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.postingMarkup = make(map[int64]store.PostingMarkup)
 			}
 			a.postingMarkup[msg.markup.PostingID] = msg.markup
+			// Archiving a posting while hideArchived is on should remove
+			// it from view immediately, not just once the list is next
+			// reloaded -- consistent with the fact that unarchiving it
+			// again requires pressing 'A' first (it's no longer
+			// reachable by cursor once hidden).
+			if a.hideArchived && msg.markup.ArchivedAt != nil {
+				for i, p := range a.postings {
+					if p.ID == msg.markup.PostingID {
+						a.postings = append(a.postings[:i], a.postings[i+1:]...)
+						break
+					}
+				}
+				if a.postingCursor >= len(a.postings) && a.postingCursor > 0 {
+					a.postingCursor = len(a.postings) - 1
+				}
+			}
 		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
@@ -587,7 +628,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.cursor < len(a.companies) {
 					a.selectedCompany = a.companies[a.cursor]
 					a.screen = screenPostingList
-					return a, loadPostings(a.store, a.selectedCompany.ID)
+					return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
 				}
 			}
 		case screenPostingList:
@@ -629,6 +670,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					currentlyArchived := a.postingMarkup[p.ID].ArchivedAt != nil
 					return a, toggleArchived(a.store, p.ID, currentlyArchived)
 				}
+			case msg.String() == "A":
+				a.hideArchived = !a.hideArchived
+				return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
 			}
 		case screenPostingDetail:
 			switch {
@@ -736,6 +780,9 @@ func (a *App) View() string {
 		if summary := filterSummaryLine(a.activeFilterDepartments, a.activeFilterLocations); summary != "" {
 			b.WriteString(helpStyle.Render(summary) + "\n")
 		}
+		if a.hideArchived {
+			b.WriteString(helpStyle.Render("Archived postings hidden (press 'A' to show)") + "\n")
+		}
 		if len(a.postings) == 0 {
 			b.WriteString("No postings yet. Press 'r' from the company list to refresh.\n")
 		}
@@ -750,7 +797,7 @@ func (a *App) View() string {
 				b.WriteString("  " + line + "\n")
 			}
 		}
-		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  f: filters  i: interested  x: archive  esc/b: back"))
+		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back"))
 	case screenPostingDetail:
 		if a.postingCursor < len(a.postings) {
 			b.WriteString(titleStyle.Render(a.postings[a.postingCursor].Title) + "\n")

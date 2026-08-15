@@ -824,3 +824,35 @@ cost either. Verified both commands pass locally with
 `SWAMP_DB_PATH` unset, matching what a bare CI runner will have.
 Lint can be added back later as `go tool task lint` the same way, if
 wanted.
+
+## 2026-08-15 — Hide-archived posting filter: ephemeral, posting-list keybinding, hidden by default
+Context: issue #11 -- archived postings (interested_at/archived_at
+flags, see the 2026-08-14 entry above) had no way to be filtered out
+of the main posting list.
+Decision: a new `A` keybinding on the posting list toggles
+`App.hideArchived` (defaults true) and reloads via loadPostings,
+which now drops archived postings from the result when hideArchived
+is set. Deliberately NOT a company_filters row -- that table's
+semantics are ingestion-gating (ashby fetch time, evaluated per
+company), while this is a pure display concern, evaluated after
+fetch on data already in the DB. Deliberately NOT persisted (no new
+table/column) -- ephemeral in-memory App state only, per "3 real
+examples before abstracting" (same reasoning as the interested_at/
+archived_at boolean-vs-timestamp decision) -- trivial to add
+persistence later by seeding the initial value from a settings row
+instead of hardcoding true, without touching the filtering logic.
+Considered folding this into screenFilterSelect alongside Department/
+Location (closer to the issue's original phrasing) -- rejected in
+favor of a dedicated keybinding matching the existing i/x pattern,
+since that screen's save flow persists to company_filters and this
+toggle deliberately doesn't, and mixing persisted/ephemeral state in
+one screen's cursor+save model added complexity for no real benefit.
+Consistency follow-on: archiving a posting (`x`) while hideArchived
+is on now also removes it from the in-memory posting list
+immediately (with cursor clamping), rather than leaving it visible
+until the next reload -- otherwise "hide archived" wouldn't actually
+hide postings archived during the current session. This also means
+unarchiving a posting requires pressing `A` first to reveal it again,
+since it's no longer reachable by cursor once hidden -- an accepted,
+intentional consequence, not a bug (updated two existing tests that
+assumed archived postings stayed cursor-reachable).
