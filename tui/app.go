@@ -279,7 +279,7 @@ func toggleInterested(s *store.Store, postingID int64, currentlyInterested bool)
 		if currentlyInterested {
 			m, err = s.UnmarkPostingInterested(ctx, postingID)
 		} else {
-			m, err = s.MarkPostingInterested(ctx, postingID)
+			m, err = s.SetPostingInterested(ctx, postingID)
 		}
 		return postingMarkupUpdatedMsg{markup: m, err: err}
 	}
@@ -295,7 +295,7 @@ func toggleArchived(s *store.Store, postingID int64, currentlyArchived bool) tea
 		if currentlyArchived {
 			m, err = s.UnarchivePosting(ctx, postingID)
 		} else {
-			m, err = s.ArchivePosting(ctx, postingID)
+			m, err = s.SetPostingArchived(ctx, postingID)
 		}
 		return postingMarkupUpdatedMsg{markup: m, err: err}
 	}
