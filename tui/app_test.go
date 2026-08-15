@@ -277,6 +277,15 @@ func TestApp_PressX_OnPostingList_TogglesArchivedOnSelectedPosting(t *testing.T)
 		t.Fatal("app.postingMarkup[postingID].ArchivedAt is nil after pressing 'x', want non-nil")
 	}
 
+	// Archiving hides the posting from view by default, so it's no longer
+	// reachable by cursor -- reveal archived postings again before
+	// toggling this one back off.
+	app, cmd = sendKey(app, runeKey('A'))
+	if cmd == nil {
+		t.Fatal("Update on 'A' returned nil Cmd")
+	}
+	app, _ = sendKey(app, cmd())
+
 	_, cmd = sendKey(app, runeKey('x'))
 	if cmd == nil {
 		t.Fatal("Update on second 'x' returned nil Cmd, want a command that unarchives the posting")
@@ -307,6 +316,15 @@ func TestApp_PressI_WhileArchived_SwitchesToInterestedAndClearsArchived(t *testi
 	if app.postingMarkup[postingID].ArchivedAt == nil {
 		t.Fatal("ArchivedAt is nil after pressing 'x', want non-nil (setup)")
 	}
+
+	// Archiving hides the posting from view by default, so it's no longer
+	// reachable by cursor -- reveal archived postings again before
+	// pressing 'i' on it.
+	app, cmd = sendKey(app, runeKey('A'))
+	if cmd == nil {
+		t.Fatal("Update on 'A' returned nil Cmd")
+	}
+	app, _ = sendKey(app, cmd())
 
 	app, cmd = sendKey(app, runeKey('i'))
 	if cmd == nil {
@@ -363,6 +381,130 @@ func TestApp_PressX_WhileInterested_SwitchesToArchivedAndClearsInterested(t *tes
 	}
 	if app.postingMarkup[postingID].InterestedAt != nil {
 		t.Fatal("app.postingMarkup[postingID].InterestedAt is non-nil after pressing 'x' while interested, want nil")
+	}
+}
+
+func TestApp_OpenPostingList_HidesArchivedPostingsByDefault(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {
+			{SourceID: "job-1", Title: "Engineer"},
+			{SourceID: "job-2", Title: "Designer"},
+		},
+	})
+	app := newTestApp(t, s, syncer)
+
+	app, cmd := sendKey(app, runeKey('r'))
+	if cmd == nil {
+		t.Fatal("Update on 'r' returned nil Cmd")
+	}
+	app, _ = sendKey(app, cmd())
+
+	postings, err := s.ListPostingsByCompany(context.Background(), app.companies[0].ID)
+	if err != nil {
+		t.Fatalf("ListPostingsByCompany: %v", err)
+	}
+	var archivedID int64
+	for _, p := range postings {
+		if p.Title == "Designer" {
+			archivedID = p.ID
+		}
+	}
+	if archivedID == 0 {
+		t.Fatal("could not find Designer posting to archive")
+	}
+	if _, err := s.SetPostingArchived(context.Background(), archivedID); err != nil {
+		t.Fatalf("SetPostingArchived: %v", err)
+	}
+
+	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Update on enter returned nil Cmd")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if len(app.postings) != 1 {
+		t.Fatalf("postings after opening list = %d, want 1 (archived one hidden)", len(app.postings))
+	}
+	if app.postings[0].Title != "Engineer" {
+		t.Fatalf("visible posting = %q, want %q", app.postings[0].Title, "Engineer")
+	}
+}
+
+func TestApp_PressA_OnPostingList_TogglesArchivedPostingsBackIntoView(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {
+			{SourceID: "job-1", Title: "Engineer"},
+			{SourceID: "job-2", Title: "Designer"},
+		},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+
+	var archivedID int64
+	for _, p := range app.postings {
+		if p.Title == "Designer" {
+			archivedID = p.ID
+		}
+	}
+	if archivedID == 0 {
+		t.Fatal("could not find Designer posting to archive")
+	}
+	if _, err := s.SetPostingArchived(context.Background(), archivedID); err != nil {
+		t.Fatalf("SetPostingArchived: %v", err)
+	}
+
+	app, cmd := sendKey(app, runeKey('A'))
+	if cmd == nil {
+		t.Fatal("Update on 'A' returned nil Cmd")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if len(app.postings) != 2 {
+		t.Fatalf("postings after pressing 'A' = %d, want 2 (archived one revealed)", len(app.postings))
+	}
+
+	app, cmd = sendKey(app, runeKey('A'))
+	if cmd == nil {
+		t.Fatal("Update on second 'A' returned nil Cmd")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if len(app.postings) != 1 {
+		t.Fatalf("postings after second 'A' = %d, want 1 (archived one hidden again)", len(app.postings))
+	}
+}
+
+func TestApp_PressX_WhileHidingArchived_RemovesPostingFromViewAndClampsCursor(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {
+			{SourceID: "job-1", Title: "Engineer"},
+			{SourceID: "job-2", Title: "Designer"},
+		},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	if len(app.postings) != 2 {
+		t.Fatalf("initial postings = %d, want 2", len(app.postings))
+	}
+	app.postingCursor = 1
+
+	app, cmd := sendKey(app, runeKey('x'))
+	if cmd == nil {
+		t.Fatal("Update on 'x' returned nil Cmd")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if len(app.postings) != 1 {
+		t.Fatalf("postings after archiving = %d, want 1 (archived one removed immediately)", len(app.postings))
+	}
+	if app.postingCursor != 0 {
+		t.Fatalf("postingCursor after archiving = %d, want 0 (clamped)", app.postingCursor)
 	}
 }
 
