@@ -24,7 +24,7 @@ tasks:
   lint:
     desc: Run golangci-lint
     cmds:
-      - ./bin/golangci-lint run ./...
+      - go tool golangci-lint run ./...
 
   hooks:install:
     desc: Point git at the repo's version-controlled hooks (run once per clone)
@@ -34,22 +34,22 @@ tasks:
   sqlc:generate:
     desc: Regenerate store/db from db/queries + db/migrations
     cmds:
-      - ./bin/sqlc generate
+      - go tool sqlc generate
 
   migrate:up:
     desc: Apply all pending migrations to the local sqlite db
     cmds:
-      - ./bin/goose -dir {{.MIGRATIONS_DIR}} sqlite3 "{{.DB_PATH}}" up
+      - go tool goose -dir {{.MIGRATIONS_DIR}} sqlite3 "{{.DB_PATH}}" up
 
   migrate:down:
     desc: Roll back the most recently applied migration
     cmds:
-      - ./bin/goose -dir {{.MIGRATIONS_DIR}} sqlite3 "{{.DB_PATH}}" down
+      - go tool goose -dir {{.MIGRATIONS_DIR}} sqlite3 "{{.DB_PATH}}" down
 
   migrate:status:
     desc: Show migration status for the local sqlite db
     cmds:
-      - ./bin/goose -dir {{.MIGRATIONS_DIR}} sqlite3 "{{.DB_PATH}}" status
+      - go tool goose -dir {{.MIGRATIONS_DIR}} sqlite3 "{{.DB_PATH}}" status
 
   test:
     desc: Run the Go test suite
