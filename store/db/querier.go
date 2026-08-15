@@ -70,6 +70,13 @@ type Querier interface {
 	RemoveTagFromPosting(ctx context.Context, arg RemoveTagFromPostingParams) error
 	RestoreCompany(ctx context.Context, id int64) error
 	RestoreCompanyWithName(ctx context.Context, arg RestoreCompanyWithNameParams) (Company, error)
+	// See SetPostingInterested -- same mutual-exclusivity reasoning, mirrored.
+	SetPostingArchived(ctx context.Context, postingID int64) (PostingMarkup, error)
+	// Like MarkPostingInterested, but also clears archived_at: the TUI treats
+	// interested/archived as mutually exclusive from the user's perspective
+	// (pressing "interested" while archived switches state rather than
+	// stacking), even though the schema itself allows both to be set.
+	SetPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error)
 	SoftDeleteCompany(ctx context.Context, id int64) error
 	SoftDeleteTag(ctx context.Context, id int64) error
 	UnarchivePosting(ctx context.Context, postingID int64) (PostingMarkup, error)

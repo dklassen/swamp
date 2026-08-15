@@ -61,6 +61,7 @@ type App struct {
 	err             error
 	selectedCompany store.Company
 	postings        []store.Posting
+	postingMarkup   map[int64]store.PostingMarkup
 	postingCursor   int
 	detailViewport  viewport.Model
 	width           int
@@ -107,6 +108,21 @@ func (a *App) filterItemAtCursor() (field, value string, ok bool) {
 		return "location", a.filterLocationOptions[idx], true
 	}
 	return "", "", false
+}
+
+// postingMarker renders a posting's markup state as a single-character
+// column for the posting list. Archived takes precedence over interested
+// when both are set, matching the same precedence the 00003 migration's
+// Down path uses when collapsing both flags back into one enum value.
+func postingMarker(m store.PostingMarkup) string {
+	switch {
+	case m.ArchivedAt != nil:
+		return "✕"
+	case m.InterestedAt != nil:
+		return "★"
+	default:
+		return " "
+	}
 }
 
 func derefOr(s *string, fallback string) string {
@@ -248,8 +264,46 @@ func refreshCompany(syncer *sync.Syncer, companyID int64, companyName string) te
 	}
 }
 
+type postingMarkupUpdatedMsg struct {
+	markup store.PostingMarkup
+	err    error
+}
+
+func toggleInterested(s *store.Store, postingID int64, currentlyInterested bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		var (
+			m   store.PostingMarkup
+			err error
+		)
+		if currentlyInterested {
+			m, err = s.UnmarkPostingInterested(ctx, postingID)
+		} else {
+			m, err = s.SetPostingInterested(ctx, postingID)
+		}
+		return postingMarkupUpdatedMsg{markup: m, err: err}
+	}
+}
+
+func toggleArchived(s *store.Store, postingID int64, currentlyArchived bool) tea.Cmd {
+	return func() tea.Msg {
+		ctx := context.Background()
+		var (
+			m   store.PostingMarkup
+			err error
+		)
+		if currentlyArchived {
+			m, err = s.UnarchivePosting(ctx, postingID)
+		} else {
+			m, err = s.SetPostingArchived(ctx, postingID)
+		}
+		return postingMarkupUpdatedMsg{markup: m, err: err}
+	}
+}
+
 type postingsLoadedMsg struct {
 	postings    []store.Posting
+	markup      map[int64]store.PostingMarkup
 	departments []string
 	locations   []string
 	err         error
@@ -262,6 +316,12 @@ type postingsLoadedMsg struct {
 // this, any reload (including the one triggered right after saving a new
 // filter selection) would silently undo the narrowing by loading
 // everything unfiltered.
+//
+// Also loads each visible posting's markup (interested/archived) so the
+// list can render it inline -- one GetPostingMarkup call per posting.
+// Every posting always has exactly one markup row (created alongside it
+// in UpsertPosting), so N+1 here is N cheap local sqlite reads, not N
+// round trips to a remote service.
 func loadPostings(s *store.Store, companyID int64) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
@@ -275,7 +335,17 @@ func loadPostings(s *store.Store, companyID int64) tea.Cmd {
 		}
 		departments, locations := splitCompanyFilters(companyFilters)
 		postings = narrowPostingsToFilters(postings, departments, locations)
-		return postingsLoadedMsg{postings: postings, departments: departments, locations: locations}
+
+		markup := make(map[int64]store.PostingMarkup, len(postings))
+		for _, p := range postings {
+			m, err := s.GetPostingMarkup(ctx, p.ID)
+			if err != nil {
+				return postingsLoadedMsg{err: err}
+			}
+			markup[p.ID] = m
+		}
+
+		return postingsLoadedMsg{postings: postings, markup: markup, departments: departments, locations: locations}
 	}
 }
 
@@ -436,9 +506,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case postingsLoadedMsg:
 		a.err = msg.err
 		a.postings = msg.postings
+		a.postingMarkup = msg.markup
 		a.postingCursor = 0
 		a.activeFilterDepartments = msg.departments
 		a.activeFilterLocations = msg.locations
+	case postingMarkupUpdatedMsg:
+		a.err = msg.err
+		if msg.err == nil {
+			if a.postingMarkup == nil {
+				a.postingMarkup = make(map[int64]store.PostingMarkup)
+			}
+			a.postingMarkup[msg.markup.PostingID] = msg.markup
+		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
 		a.filterDepartmentOptions = msg.departments
@@ -538,6 +617,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case msg.String() == "f":
 				a.screen = screenFilterSelect
 				return a, loadFilterOptions(a.store, a.selectedCompany.ID)
+			case msg.String() == "i":
+				if a.postingCursor < len(a.postings) {
+					p := a.postings[a.postingCursor]
+					currentlyInterested := a.postingMarkup[p.ID].InterestedAt != nil
+					return a, toggleInterested(a.store, p.ID, currentlyInterested)
+				}
+			case msg.String() == "x":
+				if a.postingCursor < len(a.postings) {
+					p := a.postings[a.postingCursor]
+					currentlyArchived := a.postingMarkup[p.ID].ArchivedAt != nil
+					return a, toggleArchived(a.store, p.ID, currentlyArchived)
+				}
 			}
 		case screenPostingDetail:
 			switch {
@@ -651,14 +742,15 @@ func (a *App) View() string {
 		start, end := visibleWindow(a.postingCursor, len(a.postings), a.listRows())
 		for i := start; i < end; i++ {
 			p := a.postings[i]
-			line := fmt.Sprintf("%s | %s | %s | %s", p.Title, derefOr(p.Department, ""), derefOr(p.Location, ""), p.ListingStatus)
+			marker := postingMarker(a.postingMarkup[p.ID])
+			line := fmt.Sprintf("%s %s | %s | %s | %s", marker, p.Title, derefOr(p.Department, ""), derefOr(p.Location, ""), p.ListingStatus)
 			if i == a.postingCursor {
 				b.WriteString(cursorStyle.Render("> "+line) + "\n")
 			} else {
 				b.WriteString("  " + line + "\n")
 			}
 		}
-		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  f: filters  esc/b: back"))
+		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  f: filters  i: interested  x: archive  esc/b: back"))
 	case screenPostingDetail:
 		if a.postingCursor < len(a.postings) {
 			b.WriteString(titleStyle.Render(a.postings[a.postingCursor].Title) + "\n")

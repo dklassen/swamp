@@ -208,6 +208,164 @@ func TestApp_PressD_DeletesSelectedCompany(t *testing.T) {
 	}
 }
 
+func TestApp_PressI_OnPostingList_TogglesInterestedOnSelectedPosting(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	postingID := app.postings[0].ID
+
+	app, cmd := sendKey(app, runeKey('i'))
+	if cmd == nil {
+		t.Fatal("Update on 'i' returned nil Cmd, want a command that marks the posting interested")
+	}
+	app, _ = sendKey(app, cmd())
+
+	markup, err := s.GetPostingMarkup(context.Background(), postingID)
+	if err != nil {
+		t.Fatalf("GetPostingMarkup: %v", err)
+	}
+	if markup.InterestedAt == nil {
+		t.Fatal("InterestedAt is nil after pressing 'i', want non-nil")
+	}
+	if app.postingMarkup[postingID].InterestedAt == nil {
+		t.Fatal("app.postingMarkup[postingID].InterestedAt is nil after pressing 'i', want non-nil")
+	}
+
+	_, cmd = sendKey(app, runeKey('i'))
+	if cmd == nil {
+		t.Fatal("Update on second 'i' returned nil Cmd, want a command that unmarks the posting interested")
+	}
+	_, _ = sendKey(app, cmd())
+
+	markup, err = s.GetPostingMarkup(context.Background(), postingID)
+	if err != nil {
+		t.Fatalf("GetPostingMarkup: %v", err)
+	}
+	if markup.InterestedAt != nil {
+		t.Fatal("InterestedAt is non-nil after second 'i', want nil (toggled off)")
+	}
+}
+
+func TestApp_PressX_OnPostingList_TogglesArchivedOnSelectedPosting(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	postingID := app.postings[0].ID
+
+	app, cmd := sendKey(app, runeKey('x'))
+	if cmd == nil {
+		t.Fatal("Update on 'x' returned nil Cmd, want a command that archives the posting")
+	}
+	app, _ = sendKey(app, cmd())
+
+	markup, err := s.GetPostingMarkup(context.Background(), postingID)
+	if err != nil {
+		t.Fatalf("GetPostingMarkup: %v", err)
+	}
+	if markup.ArchivedAt == nil {
+		t.Fatal("ArchivedAt is nil after pressing 'x', want non-nil")
+	}
+	if app.postingMarkup[postingID].ArchivedAt == nil {
+		t.Fatal("app.postingMarkup[postingID].ArchivedAt is nil after pressing 'x', want non-nil")
+	}
+
+	_, cmd = sendKey(app, runeKey('x'))
+	if cmd == nil {
+		t.Fatal("Update on second 'x' returned nil Cmd, want a command that unarchives the posting")
+	}
+	_, _ = sendKey(app, cmd())
+
+	markup, err = s.GetPostingMarkup(context.Background(), postingID)
+	if err != nil {
+		t.Fatalf("GetPostingMarkup: %v", err)
+	}
+	if markup.ArchivedAt != nil {
+		t.Fatal("ArchivedAt is non-nil after second 'x', want nil (toggled off)")
+	}
+}
+
+func TestApp_PressI_WhileArchived_SwitchesToInterestedAndClearsArchived(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	postingID := app.postings[0].ID
+
+	app, cmd := sendKey(app, runeKey('x'))
+	app, _ = sendKey(app, cmd())
+	if app.postingMarkup[postingID].ArchivedAt == nil {
+		t.Fatal("ArchivedAt is nil after pressing 'x', want non-nil (setup)")
+	}
+
+	app, cmd = sendKey(app, runeKey('i'))
+	if cmd == nil {
+		t.Fatal("Update on 'i' returned nil Cmd")
+	}
+	app, _ = sendKey(app, cmd())
+
+	markup, err := s.GetPostingMarkup(context.Background(), postingID)
+	if err != nil {
+		t.Fatalf("GetPostingMarkup: %v", err)
+	}
+	if markup.ArchivedAt != nil {
+		t.Fatal("ArchivedAt is non-nil after pressing 'i' while archived, want nil (overridden)")
+	}
+	if markup.InterestedAt == nil {
+		t.Fatal("InterestedAt is nil after pressing 'i' while archived, want non-nil")
+	}
+	if app.postingMarkup[postingID].ArchivedAt != nil {
+		t.Fatal("app.postingMarkup[postingID].ArchivedAt is non-nil after pressing 'i' while archived, want nil")
+	}
+}
+
+func TestApp_PressX_WhileInterested_SwitchesToArchivedAndClearsInterested(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	postingID := app.postings[0].ID
+
+	app, cmd := sendKey(app, runeKey('i'))
+	app, _ = sendKey(app, cmd())
+	if app.postingMarkup[postingID].InterestedAt == nil {
+		t.Fatal("InterestedAt is nil after pressing 'i', want non-nil (setup)")
+	}
+
+	app, cmd = sendKey(app, runeKey('x'))
+	if cmd == nil {
+		t.Fatal("Update on 'x' returned nil Cmd")
+	}
+	app, _ = sendKey(app, cmd())
+
+	markup, err := s.GetPostingMarkup(context.Background(), postingID)
+	if err != nil {
+		t.Fatalf("GetPostingMarkup: %v", err)
+	}
+	if markup.InterestedAt != nil {
+		t.Fatal("InterestedAt is non-nil after pressing 'x' while interested, want nil (overridden)")
+	}
+	if markup.ArchivedAt == nil {
+		t.Fatal("ArchivedAt is nil after pressing 'x' while interested, want non-nil")
+	}
+	if app.postingMarkup[postingID].InterestedAt != nil {
+		t.Fatal("app.postingMarkup[postingID].InterestedAt is non-nil after pressing 'x' while interested, want nil")
+	}
+}
+
 func TestApp_PressQ_ReturnsQuitCmd(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))

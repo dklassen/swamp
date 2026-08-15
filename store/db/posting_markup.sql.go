@@ -94,6 +94,53 @@ func (q *Queries) MarkPostingInterested(ctx context.Context, postingID int64) (P
 	return i, err
 }
 
+const setPostingArchived = `-- name: SetPostingArchived :one
+UPDATE posting_markup
+SET archived_at = CURRENT_TIMESTAMP, interested_at = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE posting_id = ?
+RETURNING posting_id, interested_at, archived_at, notes, created_at, updated_at
+`
+
+// See SetPostingInterested -- same mutual-exclusivity reasoning, mirrored.
+func (q *Queries) SetPostingArchived(ctx context.Context, postingID int64) (PostingMarkup, error) {
+	row := q.db.QueryRowContext(ctx, setPostingArchived, postingID)
+	var i PostingMarkup
+	err := row.Scan(
+		&i.PostingID,
+		&i.InterestedAt,
+		&i.ArchivedAt,
+		&i.Notes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
+const setPostingInterested = `-- name: SetPostingInterested :one
+UPDATE posting_markup
+SET interested_at = CURRENT_TIMESTAMP, archived_at = NULL, updated_at = CURRENT_TIMESTAMP
+WHERE posting_id = ?
+RETURNING posting_id, interested_at, archived_at, notes, created_at, updated_at
+`
+
+// Like MarkPostingInterested, but also clears archived_at: the TUI treats
+// interested/archived as mutually exclusive from the user's perspective
+// (pressing "interested" while archived switches state rather than
+// stacking), even though the schema itself allows both to be set.
+func (q *Queries) SetPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error) {
+	row := q.db.QueryRowContext(ctx, setPostingInterested, postingID)
+	var i PostingMarkup
+	err := row.Scan(
+		&i.PostingID,
+		&i.InterestedAt,
+		&i.ArchivedAt,
+		&i.Notes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const unarchivePosting = `-- name: UnarchivePosting :one
 UPDATE posting_markup
 SET archived_at = NULL, updated_at = CURRENT_TIMESTAMP

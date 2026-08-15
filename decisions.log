@@ -737,3 +737,39 @@ Decision: renamed the keybinding from "p" to "d" and relabeled it
 so code and UI say the same thing. Purely a naming change -- still a
 soft delete under the hood, nothing about the 2026-08-10 decision
 changed.
+
+## 2026-08-14 — Posting list markup keybindings (i/x) and marker rendering
+Context: issue #2 -- store already had MarkPostingInterested/
+ArchivePosting etc. (see the interested_at/archived_at decision
+above) but nothing in the TUI called them.
+Decision: "i" toggles interested, "x" toggles archived, on the
+posting under the cursor in the posting list. Each posting's markup
+is loaded alongside the posting list itself (loadPostings now also
+calls GetPostingMarkup per posting -- N+1 against local sqlite, cheap
+enough not to warrant a join query yet) and rendered as a
+single-character marker column (★ interested, ✕ archived, blank
+neither). When both flags are set, the marker shows archived --
+matches the precedence the 00003 migration's Down path already uses
+when collapsing both back into one enum value, so the two places that
+have to pick a single representation agree with each other.
+
+## 2026-08-14 — i/x keybindings switch state instead of stacking it
+Context: manual testing of the above turned up a confusing case --
+schema allows interested_at and archived_at to be independently set,
+but the TUI's "i"/"x" keys as first built only ever set/cleared their
+own flag. Pressing "i" while a posting was already archived set
+interested_at without clearing archived_at, so the marker (which
+shows archived when both are set, per the entry above) didn't appear
+to change -- looked like the keypress did nothing.
+Decision: "i" and "x" now behave as an exclusive switch from the
+user's perspective: pressing one while the other is set clears the
+other and sets the pressed one (new SetPostingInterested/
+SetPostingArchived queries, each a single UPDATE setting one
+timestamp and NULLing the other). Pressing the same key that's
+already exclusively active still toggles it off back to neutral
+(unchanged, via the existing UnmarkPostingInterested/
+UnarchivePosting). The schema itself is untouched -- both columns can
+still independently be NULL/non-NULL -- this is TUI-level behavior
+only, layered on top via two new combined-update queries rather than
+composing two separate calls, to keep each keypress a single atomic
+UPDATE.
