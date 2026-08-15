@@ -19,6 +19,10 @@ When asked to work through a labeled group of issues:
 ## Testing
 
 - TDD (red-green-refactor) is a project-wide requirement: write a failing test, watch it fail for the right reason, write minimal code to pass, watch it pass, then refactor. One behavior at a time — never write multiple tests before running any of them.
+- Use table-driven tests for any function with multiple input/output cases.
+- Use `t.Run` subtests for logically grouped cases, and `t.Parallel()` for independent cases.
+- Use `t.Helper()` in helper functions to improve test failure output.
+- Focus on testing behavior, not implementation details. Avoid testing unexported functions or internal state unless there's a compelling reason.
 - Prefer `github.com/google/go-cmp/cmp` (`cmp.Diff`) over manual field-by-field comparison or `==` on structs containing `time.Time` (`==` on `time.Time` is a known footgun — see Go's own docs).
 
 ## Feature branch workflow
