@@ -803,3 +803,24 @@ binary. Considered keeping golangci-lint on a separate install path
 sqlc/goose/task (much lighter) still used `go tool` -- rejected in
 favor of one uniform mechanism for all four tools rather than two
 different ones to remember and document.
+
+## 2026-08-15 — CI runs the actual Taskfile commands via go tool, fmt not lint
+Context: CI was first built against golangci-lint-action + raw `go
+test`, before the go.mod tool-directive conversion above existed --
+so local dev (`task lint`/`task test`) and CI used two different
+mechanisms to reach the same result, with separate version pinning
+(golangci-lint-action's `version:` input vs whatever was in `bin/`).
+User explicitly asked to keep CI and the Taskfile workflow the same
+where possible, and to check fmt instead of lint for now.
+Decision: rebuilt on top of the go.mod tool-directive conversion --
+CI (.github/workflows/ci.yml) now runs `go tool task test` and
+`go tool task fmt:check`, the identical commands used locally, no
+separate action or version pin needed since go.mod/go.sum already
+pin every tool `task` might invoke. Dropped the lint job entirely
+(explicit user call, not an oversight) -- golangci-lint-action is
+gone, and since `go tool task test`/`fmt:check` never invoke
+golangci-lint, CI doesn't pay golangci-lint's large dependency-build
+cost either. Verified both commands pass locally with
+`SWAMP_DB_PATH` unset, matching what a bare CI runner will have.
+Lint can be added back later as `go tool task lint` the same way, if
+wanted.
