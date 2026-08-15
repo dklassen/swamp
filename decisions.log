@@ -737,3 +737,18 @@ Decision: renamed the keybinding from "p" to "d" and relabeled it
 so code and UI say the same thing. Purely a naming change -- still a
 soft delete under the hood, nothing about the 2026-08-10 decision
 changed.
+
+## 2026-08-14 — Posting list markup keybindings (i/x) and marker rendering
+Context: issue #2 -- store already had MarkPostingInterested/
+ArchivePosting etc. (see the interested_at/archived_at decision
+above) but nothing in the TUI called them.
+Decision: "i" toggles interested, "x" toggles archived, on the
+posting under the cursor in the posting list. Each posting's markup
+is loaded alongside the posting list itself (loadPostings now also
+calls GetPostingMarkup per posting -- N+1 against local sqlite, cheap
+enough not to warrant a join query yet) and rendered as a
+single-character marker column (★ interested, ✕ archived, blank
+neither). When both flags are set, the marker shows archived --
+matches the precedence the 00003 migration's Down path already uses
+when collapsing both back into one enum value, so the two places that
+have to pick a single representation agree with each other.
