@@ -773,3 +773,33 @@ still independently be NULL/non-NULL -- this is TUI-level behavior
 only, layered on top via two new combined-update queries rather than
 composing two separate calls, to keep each keypress a single atomic
 UPDATE.
+
+## 2026-08-15 — Dev tools (golangci-lint, sqlc, goose, task) pinned via go.mod tool directives
+Context: the four dev tools were installed ad hoc into a gitignored
+`bin/` via direnv's GOBIN, with no version recorded anywhere in the
+repo -- fine for one machine, but meant a CI setup or a new clone had
+nothing to reproduce the exact versions from. This came up directly
+while adding CI (needing lint/test to run against the same tool
+versions as local dev).
+Decision: all four are now `go.mod` tool dependencies (Go 1.24+'s
+`tool (...)` directive, added via `go get -tool <path>@<version>`),
+invoked as `go tool <name>` instead of `./bin/<name>`. `go.mod`/
+`go.sum` are now the single source of truth for tool versions -- a
+fresh clone or CI needs nothing beyond `go` itself; the pinned binary
+builds/caches automatically on first `go tool` invocation. Removed
+`.envrc`'s `GOBIN`/`PATH_add bin` (nothing installs into `bin/` this
+way anymore -- `task build` still writes `./bin/swamp`, but `go build
+-o` creates that directory itself, confirmed by testing against a
+renamed-away `bin/`). The full local verification checklist (build/
+test/lint/fmt:check) no longer needs `direnv exec .` at all -- none of
+those four commands depend on `SWAMP_DB_PATH` (confirmed by running
+`go test ./...` with `SWAMP_DB_PATH`/`GOBIN` unset); direnv's only
+remaining job is `SWAMP_DB_PATH` for actually running the app.
+Accepted tradeoff: golangci-lint specifically adds a large `go.sum`
+diff (~900 lines) when pinned this way, because it bundles all its
+linters as library dependencies rather than being a single lean
+binary. Considered keeping golangci-lint on a separate install path
+(official install script/binary release) to avoid that bloat while
+sqlc/goose/task (much lighter) still used `go tool` -- rejected in
+favor of one uniform mechanism for all four tools rather than two
+different ones to remember and document.
