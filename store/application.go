@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/dklassen/swamp/store/db"
@@ -31,11 +32,21 @@ type Application struct {
 }
 
 // applicationFromRow converts a raw sqlc row into an Application, parsing
-// the DB's plain-TEXT status column into the typed ApplicationStatus enum
-// (see application_status.go) -- this is the one place that parse can
-// fail, since the DB itself no longer enforces which strings are valid.
+// the DB's status column into the typed ApplicationStatus enum (see
+// application_status.go). status is nullable at the DB layer now (see
+// db/migrations/00004_..., PR #17 review -- the DB no longer invents or
+// enforces an initial value, the application does), but every write this
+// package makes always supplies a concrete status; an actual NULL here
+// means something outside this package wrote the row. The explicit Valid
+// check below is technically redundant with ParseApplicationStatus
+// rejecting "" (NullString's zero value) on its own, but it names the
+// failure and includes the row id, which is worth the extra line for
+// something that should never legitimately happen.
 func applicationFromRow(row db.Application) (Application, error) {
-	status, err := ParseApplicationStatus(row.Status)
+	if !row.Status.Valid {
+		return Application{}, fmt.Errorf("store: application %d has NULL status", row.ID)
+	}
+	status, err := ParseApplicationStatus(row.Status.String)
 	if err != nil {
 		return Application{}, err
 	}
@@ -50,7 +61,10 @@ func applicationFromRow(row db.Application) (Application, error) {
 }
 
 func (s *Store) CreateApplication(ctx context.Context, postingID int64) (Application, error) {
-	row, err := s.queries.CreateApplication(ctx, postingID)
+	row, err := s.queries.CreateApplication(ctx, db.CreateApplicationParams{
+		PostingID: postingID,
+		Status:    sql.NullString{String: ApplicationStatusStarted.String(), Valid: true},
+	})
 	if err != nil {
 		return Application{}, err
 	}
@@ -71,7 +85,7 @@ func (s *Store) GetApplication(ctx context.Context, postingID int64) (Applicatio
 func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, status ApplicationStatus) (Application, error) {
 	row, err := s.queries.UpdateApplicationStatus(ctx, db.UpdateApplicationStatusParams{
 		PostingID: postingID,
-		Status:    status.String(),
+		Status:    sql.NullString{String: status.String(), Valid: true},
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

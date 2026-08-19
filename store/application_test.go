@@ -86,6 +86,26 @@ func TestUpdateApplicationStatus_NonexistentPostingID_ReturnsErrNotFound(t *test
 	}
 }
 
+// TestGetApplication_NullStatusInDB_FailsLoudly verifies that a row with
+// an actual NULL status (only reachable via something outside this
+// package writing to the table directly, since store's own writes always
+// supply a concrete status -- see applicationFromRow) surfaces as an
+// error rather than silently coercing to some default status.
+func TestGetApplication_NullStatusInDB_FailsLoudly(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	if _, err := s.sqlDB.ExecContext(ctx, `INSERT INTO applications (posting_id) VALUES (?)`, posting.ID); err != nil {
+		t.Fatalf("insert application with NULL status: %v", err)
+	}
+
+	if _, err := s.GetApplication(ctx, posting.ID); err == nil {
+		t.Fatal("GetApplication with NULL status in DB = nil error, want an error")
+	}
+}
+
 func TestUpdateApplicationNotes_UpdatesNotes(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
