@@ -841,6 +841,67 @@ func TestApp_PressN_OnPostingDetail_WithNoApplication_NoOp(t *testing.T) {
 	}
 }
 
+func TestApp_PressA_OnPostingDetail_CreatedApplication_ReflectedInDetailView(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	app = openPostingDetail(app)
+	if strings.Contains(app.detailViewport.View(), "application_started") {
+		t.Fatal("detail view shows application_started before creating an application")
+	}
+
+	app, cmd := sendKey(app, runeKey('a'))
+	if cmd == nil {
+		t.Fatal("Update on 'a' returned nil Cmd")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if !strings.Contains(app.detailViewport.View(), "application_started") {
+		t.Fatalf("detail view after creating application = %q, want it to contain the new status", app.detailViewport.View())
+	}
+}
+
+func TestApp_PostingDetail_NavigatingBetweenPostings_LoadsEachPostingsOwnApplication(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {
+			{SourceID: "job-1", Title: "Engineer"},
+			{SourceID: "job-2", Title: "Designer"},
+		},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	engineerID := app.postings[0].ID
+	designerID := app.postings[1].ID
+	if _, err := s.CreateApplication(context.Background(), designerID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	if _, err := s.UpdateApplicationStatus(context.Background(), designerID, "interviewing"); err != nil {
+		t.Fatalf("UpdateApplicationStatus: %v", err)
+	}
+	app = openPostingDetail(app) // opens Engineer (postingCursor 0), no application
+
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyRight})
+	if cmd == nil {
+		t.Fatal("Update on right (posting detail nav) returned nil Cmd, want a command that loads the next posting's application")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if !strings.Contains(app.detailViewport.View(), "interviewing") {
+		t.Fatalf("detail view for Designer = %q, want it to contain %q", app.detailViewport.View(), "interviewing")
+	}
+	if _, ok := app.applicationsByPosting[engineerID]; ok {
+		t.Fatal("applicationsByPosting has an entry for Engineer, want none (it has no application)")
+	}
+}
+
 func TestApp_PressQ_ReturnsQuitCmd(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
