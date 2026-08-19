@@ -19,6 +19,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
@@ -96,6 +97,11 @@ type App struct {
 	applicationsByPosting   map[int64]store.Application
 	applicationStatusCursor int
 	notesTextarea           textarea.Model
+	// documents resolves an application's document paths, hiding the
+	// path convention and base directory the same way store hides
+	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
+	// mirroring how SWAMP_DB_PATH configures the store.
+	documents *documents.Store
 	// hideArchived is ephemeral, in-memory-only display state -- not
 	// persisted (see decisions.log). Defaults true: the point of
 	// archiving a posting is to declutter the list.
@@ -199,12 +205,29 @@ func renderFilterOption(label string, checked, isCursor bool) string {
 	return "  " + line + "\n"
 }
 
-func New(s *store.Store, syncer *sync.Syncer) *App {
+func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 	inputs := make([]textinput.Model, formFieldCount)
 	for i := range inputs {
 		inputs[i] = textinput.New()
 	}
-	return &App{store: s, syncer: syncer, formInputs: inputs, detailViewport: viewport.New(0, 0), hideArchived: true}
+	return &App{
+		store:          s,
+		syncer:         syncer,
+		formInputs:     inputs,
+		detailViewport: viewport.New(0, 0),
+		hideArchived:   true,
+		documents:      docs,
+	}
+}
+
+// documentStatusLine renders a single "<label>: found (<path>)" or
+// "<label>: not found (<path>)" line for the documents section.
+func documentStatusLine(label string, exists bool, path string) string {
+	status := "not found"
+	if exists {
+		status = "found"
+	}
+	return fieldLabel.Render(label+":") + " " + status + " (" + path + ")\n"
 }
 
 // postingDetailContent renders a posting's fields, application state, and
@@ -213,7 +236,16 @@ func New(s *store.Store, syncer *sync.Syncer) *App {
 // hasApplication are passed in rather than fetched here so this stays a
 // pure function of already-loaded state -- the async fetch happens
 // separately via loadApplication (see App.showPostingDetail).
-func postingDetailContent(p store.Posting, application store.Application, hasApplication bool) string {
+//
+// docs resolves the application's document paths and their presence via
+// os.Stat -- done inline here rather than through a separate
+// tea.Cmd/tea.Msg round trip like the rest of this file's store-backed
+// state, since checking whether two local files exist is cheap/local
+// enough that a second async fetch just to avoid it here would be
+// over-applying that convention (see decisions.log). When hasApplication
+// is false, no documents section is rendered at all -- "no application
+// -> show nothing".
+func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store) string {
 	var b strings.Builder
 	fields := []struct{ label, value string }{
 		{"Department", derefOr(p.Department, "")},
@@ -236,6 +268,10 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 		if application.Notes != "" {
 			b.WriteString(fieldLabel.Render("Application notes:") + " " + application.Notes + "\n")
 		}
+		status := docs.Status(application.ID)
+		b.WriteString("\n" + fieldLabel.Render("Documents") + "\n")
+		b.WriteString(documentStatusLine("Cover Letter", status.CoverLetter.Exists, status.CoverLetter.Path))
+		b.WriteString(documentStatusLine("Resume", status.Resume.Exists, status.Resume.Path))
 	} else {
 		b.WriteString(helpStyle.Render("No application started -- press 'a' to start one.") + "\n")
 	}
@@ -255,7 +291,7 @@ func (a *App) showPostingDetail() {
 	if a.postingCursor < len(a.postings) {
 		p := a.postings[a.postingCursor]
 		application, hasApplication := a.applicationsByPosting[p.ID]
-		content := postingDetailContent(p, application, hasApplication)
+		content := postingDetailContent(p, application, hasApplication, a.documents)
 		a.detailViewport.SetContent(wrapToWidth(content, a.detailViewport.Width))
 	}
 	a.detailViewport.GotoTop()

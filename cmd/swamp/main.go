@@ -17,6 +17,7 @@ import (
 
 	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/db/migrations"
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui"
@@ -26,6 +27,11 @@ func main() {
 	dbPath := os.Getenv("SWAMP_DB_PATH")
 	if dbPath == "" {
 		dbPath = "swamp.db"
+	}
+
+	documentsPath := os.Getenv("SWAMP_DOCUMENTS_PATH")
+	if documentsPath == "" {
+		documentsPath = "documents"
 	}
 
 	sqlDB, err := sql.Open("sqlite", "file:"+dbPath)
@@ -60,7 +66,7 @@ func main() {
 	}
 
 	syncer := sync.New(s, ashby.NewClient())
-	if _, err := tea.NewProgram(tui.New(s, syncer), tea.WithAltScreen()).Run(); err != nil {
+	if _, err := tea.NewProgram(tui.New(s, syncer, documents.NewStore(documentsPath)), tea.WithAltScreen()).Run(); err != nil {
 		log.Fatalf("run tui: %v", err)
 	}
 }

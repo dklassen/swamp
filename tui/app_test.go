@@ -3,6 +3,8 @@ package tui
 import (
 	"context"
 	"errors"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -11,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/ashby"
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
@@ -18,9 +21,12 @@ import (
 // newTestApp creates an App and drives it through Init, returning the
 // model with its initial companies already loaded. Tests that don't care
 // about refresh behavior can pass a syncer with no configured postings.
+// The App's documents.Store is rooted at a fresh t.TempDir() -- tests
+// that care about it (i.e. application document status) can read it back
+// via app.documents.
 func newTestApp(t *testing.T, s *store.Store, syncer *sync.Syncer) *App {
 	t.Helper()
-	app := New(s, syncer)
+	app := New(s, syncer, documents.NewStore(t.TempDir()))
 	model, _ := app.Update(app.Init()())
 	return model.(*App)
 }
@@ -1144,6 +1150,100 @@ func TestApp_PostingDetail_VimJ_ScrollsLikeDown(t *testing.T) {
 
 	if app.detailViewport.YOffset == 0 {
 		t.Fatal("YOffset after 'j' on a long description should have scrolled past 0")
+	}
+}
+
+func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	// Wide enough that the documents lines (which embed a full t.TempDir()
+	// path) aren't wrapped across lines -- wrapping itself is covered by
+	// other detail-view tests, not the concern here.
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
+	app = openPostingList(t, app)
+
+	posting := app.postings[0]
+	application, err := s.CreateApplication(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	status := app.documents.Status(application.ID)
+	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(status.CoverLetter.Path, []byte("# Cover Letter"), 0o644); err != nil {
+		t.Fatalf("WriteFile cover letter: %v", err)
+	}
+	if err := os.WriteFile(status.Resume.Path, []byte("# Resume"), 0o644); err != nil {
+		t.Fatalf("WriteFile resume: %v", err)
+	}
+
+	app = openPostingDetail(app)
+
+	view := app.View()
+	if !strings.Contains(view, "found ("+status.CoverLetter.Path+")") {
+		t.Errorf("view does not show cover letter found with path %q:\n%s", status.CoverLetter.Path, view)
+	}
+	if !strings.Contains(view, "found ("+status.Resume.Path+")") {
+		t.Errorf("view does not show resume found with path %q:\n%s", status.Resume.Path, view)
+	}
+}
+
+func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
+	app = openPostingList(t, app)
+
+	posting := app.postings[0]
+	application, err := s.CreateApplication(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	// Deliberately no files written -- the application row exists, but
+	// the documents don't yet.
+	status := app.documents.Status(application.ID)
+
+	app = openPostingDetail(app)
+
+	view := app.View()
+	if !strings.Contains(view, "not found ("+status.CoverLetter.Path+")") {
+		t.Errorf("view does not show cover letter not found with path %q:\n%s", status.CoverLetter.Path, view)
+	}
+	if !strings.Contains(view, "not found ("+status.Resume.Path+")") {
+		t.Errorf("view does not show resume not found with path %q:\n%s", status.Resume.Path, view)
+	}
+}
+
+func TestApp_PostingDetail_NoApplication_ShowsNoDocumentsSection(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
+	app = openPostingList(t, app)
+	// No CreateApplication call -- store.GetApplication will return
+	// store.ErrNotFound, per the "no application -> show nothing"
+	// decision (see decisions.log).
+
+	app = openPostingDetail(app)
+
+	view := app.View()
+	if strings.Contains(view, "Documents") {
+		t.Errorf("view shows a Documents section with no Application row:\n%s", view)
+	}
+	if strings.Contains(view, "Cover Letter") || strings.Contains(view, "Resume") {
+		t.Errorf("view mentions cover letter/resume with no Application row:\n%s", view)
 	}
 }
 

@@ -1051,3 +1051,158 @@ Ripple effects worked through in full:
 Re-ran the same manual tophat harness used for both prior rounds of
 this PR's work; confirmed byte-identical output again -- another pure
 internal change with no user-visible behavior difference.
+
+## 2026-08-19 -- Application documents (#5): filesystem, not DB blobs; presence-only in the TUI
+Context: #5 originally proposed storing cover-letter/resume markdown as
+two nullable TEXT columns on `applications`. A design discussion before
+implementation started reversed that: the repo owner wants an external
+agent/editor to consume this content directly, which a DB blob makes
+awkward (no diffing, no editing in a normal editor, no easy handoff to
+another tool). Superseded design, confirmed before implementation:
+content lives on the filesystem; `applications` gets no new columns.
+
+Decision: a new top-level `documents` package (mirroring `db/migrations`
+as a small, dependency-free top-level package) computes convention-
+derived paths from an applicationID alone --
+`<base>/<applicationID>/cover_letter.md` and `.../resume.md` -- and
+reports whether each exists via `os.Stat`. No path is ever persisted in
+the DB; it's recomputed on every lookup. `base` is a configurable root,
+threaded through as `SWAMP_DOCUMENTS_PATH` (default `"documents"`),
+mirroring the existing `SWAMP_DB_PATH` pattern in `cmd/swamp/main.go`
+exactly -- same shape of decision as the filename-convention conclusion
+already reached for #6's capabilities document (PROFILE_REFERENCE.md):
+prefer a filesystem convention over a DB-tracked path/config row when
+the content itself is meant to be edited directly, not through the app.
+
+TUI scope is deliberately presence/status only: the posting detail
+screen shows "Cover Letter: found (<path>)" / "not found (<path>)" (and
+the same for Resume) when an Application exists, nothing more. No
+in-app viewer or editor was built -- matches #6's conclusion that these
+documents are "managed by the user/agent directly on the filesystem",
+not through Swamp's UI. Loading follows the existing async
+tea.Cmd/tea.Msg pattern used throughout tui/app.go (see
+loadApplicationDocuments/applicationDocumentsLoadedMsg) rather than a
+synchronous store call inside Update, for consistency with every other
+store-backed read in this file.
+
+When no Application row exists yet for the selected posting
+(`store.GetApplication` returns `store.ErrNotFound`), the documents
+section is omitted entirely -- no auto-created Application, no "no
+application" placeholder. Rejected auto-creating an Application on
+first view: that would make merely looking at a posting have a silent
+DB side effect, which is surprising and hard to reason about (a read
+shouldn't write). Application creation is explicitly issue #4's job
+("wire up application lifecycle in the TUI"), not shipped yet -- so
+today, every posting's detail view omits the documents section
+regardless of on-disk files, until #4 lands. Accepted and intentional,
+not a bug: the alternative (partially building application-creation UI
+inside #5 to make the section appear) would have scope-crept #5 into
+#4's territory.
+
+Verified manually end-to-end (not just unit tests): built the real
+binary, applied migrations to a scratch sqlite db, inserted a company/
+posting/posting_markup/application row directly via sqlite3, wrote one
+of the two document files to disk, and drove the actual TUI
+interactively via tmux -- confirmed the documents section is absent for
+a posting with no application row, and shows correct found/not-found
+status with resolved paths for a posting that has one.
+
+## 2026-08-19 -- Application documents (#5), reworked on top of #4: reuse applicationsByPosting instead of a second fetch
+Context: exactly the collision the #4 entry above flagged ("Noted
+overlap risk... likely to collide with applicationsByPosting/
+loadApplication here at PR-review/rebase time"). #4 merged into main
+first, adding App.applicationsByPosting (populated by an async
+loadApplication command fired on entering posting detail and on h/l
+navigation) and changing postingDetailContent's signature to
+postingDetailContent(p store.Posting, application store.Application,
+hasApplication bool). This branch's original implementation (entry
+above) independently fetched the same store.Application via its own
+loadApplicationDocuments command/applicationDocumentsLoadedMsg, purely
+to read application.ID for documents.ForApplication -- a second async
+round-trip duplicating data #4's loadApplication already fetches at
+the same trigger points.
+Decision: merged main into this branch (git merge, not rebase --
+tui/app.go changed shape enough on both sides, in the same functions,
+that replaying this branch's commits one at a time via rebase would
+have meant resolving the same conflict twice for no benefit, since the
+loadApplicationDocuments machinery was being deleted immediately
+after anyway; a single merge commit plus clean follow-up commits was
+more honest about what actually happened than rewriting this branch's
+history to look like it was always built against #4's API). Deleted
+loadApplicationDocuments, applicationDocumentsLoadedMsg, and the
+App.applicationDocuments cache entirely, along with the two
+`return a, loadApplicationDocuments(...)` call sites on Enter/h/l --
+all now redundant. Document existence is instead computed inline
+inside postingDetailContent (given documentsBase as an added explicit
+parameter, same pure-function shape #4 already established) using the
+application/hasApplication values #4's loadApplication already
+supplies -- no new tea.Cmd, no new App field for caching status.
+Why synchronous os.Stat calls at render time are fine here despite the
+rest of this file's "everything through tea.Cmd" convention: that
+convention exists to keep Update side-effect-free for testability
+against real store/network calls, which are comparatively slow and
+worth decoupling from rendering. Checking whether two local files
+exist is neither -- it's the same class of operation as formatting a
+string, cheap enough (and local enough) that adding a second async
+round-trip just to avoid one os.Stat call in the render path would
+have been over-applying the pattern rather than following its actual
+intent. documents.Paths.*Exists() remains exactly as originally built
+(unchanged by this rework) -- only the caller changed, from an async
+Cmd to a direct call inside postingDetailContent.
+No product-behavior change from the original entry above: found/
+not-found/no-application semantics, path convention, SWAMP_DOCUMENTS_
+PATH config, and the documents package itself are all unchanged --
+this entry is purely about which existing fetch supplies
+application.ID.
+
+## 2026-08-19 -- Application documents (#5): documents.Store wraps the base path, per PR #18 review
+Context: PR review on tui/app.go's `New(s, syncer, documentsBase string)`
+flagged that App held a raw base-path string and postingDetailContent
+called the package-level documents.ForApplication(base, id) directly --
+meaning tui knew the documents path convention, unlike its relationship
+to store (App holds *store.Store, never SQL/schema details). Reviewer's
+call: skip the usual "three examples before abstracting" bar here and
+match the store precedent now, rather than let a second caller show up
+later with the same raw-string shape.
+Decision: added documents.Store (NewStore(base) *Store, method
+Get(applicationID) Paths) wrapping the free ForApplication function --
+the free function and its existing tests are unchanged and still used
+internally, so no test coverage was lost. Method named Get rather than
+ForApplication per further review feedback: ForApplication on a Store
+receiver implied more than a lookup; Get matches the store.Store
+convention already used throughout (GetApplication, GetPosting,
+GetCompany, ...). App.documentsBase string became App.documents
+*documents.Store; postingDetailContent's last parameter changed from
+documentsBase string to docs *documents.Store, calling
+docs.Get(application.ID) instead of documents.ForApplication(
+documentsBase, application.ID). cmd/swamp/main.go now constructs
+documents.NewStore(documentsPath) once at startup, same lifecycle as
+store.New(sqlDB). No behavior change -- verified via full test suite
+(documents and tui packages both still pass unchanged assertions,
+tests updated only to call app.documents.Get instead of
+documents.ForApplication(app.documentsBase, ...)).
+
+## 2026-08-19 -- Application documents (#5): move existence checks off Paths onto Store.Status, per PR #18 review
+Context: further review feedback on the Store.Get rename above -- Paths
+is named and shaped like a pure value type (two path strings), but its
+CoverLetterExists()/ResumeExists() methods silently performed an
+os.Stat syscall on every call. A method named "XExists()" on something
+called "Paths" reads like a cheap property check, not I/O; the naming
+hid which one it actually was. SRP concern: Paths was doing double duty
+as both a data holder and an I/O-performing service.
+Decision: Paths and the free ForApplication function are unchanged and
+stay pure (no methods, no I/O) -- still directly tested. Added Doc{Path
+string; Exists bool} and Status{CoverLetter, Resume Doc}. Store.Get was
+replaced with Store.Status(applicationID) Status, which computes Paths
+internally via ForApplication and does both os.Stat calls itself,
+returning path+existence bundled per document. This makes Store the
+sole owner of filesystem I/O in this package -- Paths never touches the
+filesystem -- and collapses postingDetailContent's two Store calls
+(one implicit via paths.CoverLetterExists()/paths.ResumeExists(), one
+to get the paths) into a single docs.Status(application.ID) call,
+matching the design goal from the Get rename (hide the path convention
+entirely behind one method call). No behavior change -- verified via
+full test suite; documents_test.go's exists-behavior tests now
+construct a Store and call Status instead of calling the removed
+Paths methods directly, and tui/app_test.go's two document-status
+tests call app.documents.Status instead of app.documents.Get.
