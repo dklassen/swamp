@@ -14,9 +14,12 @@ type Querier interface {
 	ArchivePosting(ctx context.Context, postingID int64) (PostingMarkup, error)
 	// Unlike posting_markup, not auto-created for every posting -- an
 	// application exists only once the user takes an explicit "start
-	// application" action. Relies on column defaults (status='application_started',
-	// notes='').
-	CreateApplication(ctx context.Context, postingID int64) (Application, error)
+	// application" action. status is supplied explicitly by the caller
+	// (store.CreateApplication passes store.ApplicationStatusStarted.String())
+	// rather than relying on a DB default -- the initial value is the
+	// application's decision, not the schema's (see db/migrations/00004_...,
+	// PR #17 review). notes still relies on its own column default ('').
+	CreateApplication(ctx context.Context, arg CreateApplicationParams) (Application, error)
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
 	CreateCompanyFilter(ctx context.Context, arg CreateCompanyFilterParams) (CompanyFilter, error)
 	CreateInterviewStage(ctx context.Context, arg CreateInterviewStageParams) (InterviewStage, error)

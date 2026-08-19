@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/dklassen/swamp/store/db"
@@ -24,29 +25,50 @@ import (
 type Application struct {
 	ID        int64
 	PostingID int64
-	Status    string
+	Status    ApplicationStatus
 	Notes     string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
-func applicationFromRow(row db.Application) Application {
-	return Application{
-		ID:        row.ID,
-		PostingID: row.PostingID,
-		Status:    row.Status,
-		Notes:     row.Notes,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+// applicationFromRow converts a raw sqlc row into an Application, parsing
+// the DB's status column into the typed ApplicationStatus enum (see
+// application_status.go). status is nullable at the DB layer now (see
+// db/migrations/00004_..., PR #17 review -- the DB no longer invents or
+// enforces an initial value, the application does), but every write this
+// package makes always supplies a concrete status; an actual NULL here
+// means something outside this package wrote the row. The explicit Valid
+// check below is technically redundant with ParseApplicationStatus
+// rejecting "" (NullString's zero value) on its own, but it names the
+// failure and includes the row id, which is worth the extra line for
+// something that should never legitimately happen.
+func applicationFromRow(row db.Application) (Application, error) {
+	if !row.Status.Valid {
+		return Application{}, fmt.Errorf("store: application %d has NULL status", row.ID)
 	}
-}
-
-func (s *Store) CreateApplication(ctx context.Context, postingID int64) (Application, error) {
-	row, err := s.queries.CreateApplication(ctx, postingID)
+	status, err := ParseApplicationStatus(row.Status.String)
 	if err != nil {
 		return Application{}, err
 	}
-	return applicationFromRow(row), nil
+	return Application{
+		ID:        row.ID,
+		PostingID: row.PostingID,
+		Status:    status,
+		Notes:     row.Notes,
+		CreatedAt: row.CreatedAt,
+		UpdatedAt: row.UpdatedAt,
+	}, nil
+}
+
+func (s *Store) CreateApplication(ctx context.Context, postingID int64) (Application, error) {
+	row, err := s.queries.CreateApplication(ctx, db.CreateApplicationParams{
+		PostingID: postingID,
+		Status:    sql.NullString{String: ApplicationStatusStarted.String(), Valid: true},
+	})
+	if err != nil {
+		return Application{}, err
+	}
+	return applicationFromRow(row)
 }
 
 func (s *Store) GetApplication(ctx context.Context, postingID int64) (Application, error) {
@@ -57,13 +79,13 @@ func (s *Store) GetApplication(ctx context.Context, postingID int64) (Applicatio
 		}
 		return Application{}, err
 	}
-	return applicationFromRow(row), nil
+	return applicationFromRow(row)
 }
 
-func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, status string) (Application, error) {
+func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, status ApplicationStatus) (Application, error) {
 	row, err := s.queries.UpdateApplicationStatus(ctx, db.UpdateApplicationStatusParams{
 		PostingID: postingID,
-		Status:    status,
+		Status:    sql.NullString{String: status.String(), Valid: true},
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -71,7 +93,7 @@ func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, st
 		}
 		return Application{}, err
 	}
-	return applicationFromRow(row), nil
+	return applicationFromRow(row)
 }
 
 func (s *Store) UpdateApplicationNotes(ctx context.Context, postingID int64, notes string) (Application, error) {
@@ -85,5 +107,5 @@ func (s *Store) UpdateApplicationNotes(ctx context.Context, postingID int64, not
 		}
 		return Application{}, err
 	}
-	return applicationFromRow(row), nil
+	return applicationFromRow(row)
 }

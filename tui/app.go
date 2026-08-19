@@ -24,27 +24,20 @@ import (
 	"github.com/dklassen/swamp/sync"
 )
 
-// applicationStatuses is the full fixed set of legal application.status
-// values, per the applications table's CHECK constraint (see
-// db/migrations/00002_split_application_from_posting.sql). The schema
-// encodes no transition graph -- every status is reachable from every
-// other -- so the status-select screen offers all of them unconditionally
-// rather than a hand-maintained "valid next status" list this codebase
-// would have to invent and keep in sync with the DB by hand.
-var applicationStatuses = []string{
-	"application_started",
-	"application_submitted",
-	"interviewing",
-	"rejected",
-	"offer_received",
-	"offer_accepted",
-	"offer_declined",
-}
+// applicationStatuses is the full fixed set of legal application statuses,
+// per store.ApplicationStatuses -- store.ApplicationStatus (a Go enum) is
+// the sole source of truth for valid values now (see decisions.log,
+// 2026-08-19); the DB column has no CHECK constraint of its own to stay in
+// sync with. The schema encodes no transition graph -- every status is
+// reachable from every other -- so the status-select screen offers all of
+// them unconditionally rather than a hand-maintained "valid next status"
+// list.
+var applicationStatuses = store.ApplicationStatuses()
 
 // applicationStatusIndex returns status's position in applicationStatuses,
 // or 0 if not found -- used to point the status-select cursor at the
 // application's current status when the screen is opened.
-func applicationStatusIndex(status string) int {
+func applicationStatusIndex(status store.ApplicationStatus) int {
 	for i, s := range applicationStatuses {
 		if s == status {
 			return i
@@ -239,7 +232,7 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 		b.WriteString(fieldLabel.Render(f.label+":") + " " + f.value + "\n")
 	}
 	if hasApplication {
-		b.WriteString(fieldLabel.Render("Application status:") + " " + application.Status + "\n")
+		b.WriteString(fieldLabel.Render("Application status:") + " " + application.Status.String() + "\n")
 		if application.Notes != "" {
 			b.WriteString(fieldLabel.Render("Application notes:") + " " + application.Notes + "\n")
 		}
@@ -400,7 +393,7 @@ type applicationStatusUpdatedMsg struct {
 	err         error
 }
 
-func updateApplicationStatus(s *store.Store, postingID int64, status string) tea.Cmd {
+func updateApplicationStatus(s *store.Store, postingID int64, status store.ApplicationStatus) tea.Cmd {
 	return func() tea.Msg {
 		app, err := s.UpdateApplicationStatus(context.Background(), postingID, status)
 		return applicationStatusUpdatedMsg{application: app, err: err}
@@ -1031,9 +1024,9 @@ func (a *App) View() string {
 		b.WriteString(titleStyle.Render("Set application status") + "\n")
 		for i, st := range applicationStatuses {
 			if i == a.applicationStatusCursor {
-				b.WriteString(cursorStyle.Render("> "+st) + "\n")
+				b.WriteString(cursorStyle.Render("> "+st.String()) + "\n")
 			} else {
-				b.WriteString("  " + st + "\n")
+				b.WriteString("  " + st.String() + "\n")
 			}
 		}
 		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: save  esc/b: cancel"))
