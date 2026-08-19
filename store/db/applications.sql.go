@@ -7,20 +7,29 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
 
 const createApplication = `-- name: CreateApplication :one
-INSERT INTO applications (posting_id)
-VALUES (?)
+INSERT INTO applications (posting_id, status)
+VALUES (?, ?)
 RETURNING id, posting_id, status, notes, created_at, updated_at
 `
 
+type CreateApplicationParams struct {
+	PostingID int64          `json:"posting_id"`
+	Status    sql.NullString `json:"status"`
+}
+
 // Unlike posting_markup, not auto-created for every posting -- an
 // application exists only once the user takes an explicit "start
-// application" action. Relies on column defaults (status='application_started',
-// notes=”).
-func (q *Queries) CreateApplication(ctx context.Context, postingID int64) (Application, error) {
-	row := q.db.QueryRowContext(ctx, createApplication, postingID)
+// application" action. status is supplied explicitly by the caller
+// (store.CreateApplication passes store.ApplicationStatusStarted.String())
+// rather than relying on a DB default -- the initial value is the
+// application's decision, not the schema's (see db/migrations/00004_...,
+// PR #17 review). notes still relies on its own column default (”).
+func (q *Queries) CreateApplication(ctx context.Context, arg CreateApplicationParams) (Application, error) {
+	row := q.db.QueryRowContext(ctx, createApplication, arg.PostingID, arg.Status)
 	var i Application
 	err := row.Scan(
 		&i.ID,
@@ -86,8 +95,8 @@ RETURNING id, posting_id, status, notes, created_at, updated_at
 `
 
 type UpdateApplicationStatusParams struct {
-	Status    string `json:"status"`
-	PostingID int64  `json:"posting_id"`
+	Status    sql.NullString `json:"status"`
+	PostingID int64          `json:"posting_id"`
 }
 
 func (q *Queries) UpdateApplicationStatus(ctx context.Context, arg UpdateApplicationStatusParams) (Application, error) {
