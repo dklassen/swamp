@@ -856,3 +856,58 @@ unarchiving a posting requires pressing `A` first to reveal it again,
 since it's no longer reachable by cursor once hidden -- an accepted,
 intentional consequence, not a bug (updated two existing tests that
 assumed archived postings stayed cursor-reachable).
+
+## 2026-08-19 -- Application documents (#5): filesystem, not DB blobs; presence-only in the TUI
+Context: #5 originally proposed storing cover-letter/resume markdown as
+two nullable TEXT columns on `applications`. A design discussion before
+implementation started reversed that: the repo owner wants an external
+agent/editor to consume this content directly, which a DB blob makes
+awkward (no diffing, no editing in a normal editor, no easy handoff to
+another tool). Superseded design, confirmed before implementation:
+content lives on the filesystem; `applications` gets no new columns.
+
+Decision: a new top-level `documents` package (mirroring `db/migrations`
+as a small, dependency-free top-level package) computes convention-
+derived paths from an applicationID alone --
+`<base>/<applicationID>/cover_letter.md` and `.../resume.md` -- and
+reports whether each exists via `os.Stat`. No path is ever persisted in
+the DB; it's recomputed on every lookup. `base` is a configurable root,
+threaded through as `SWAMP_DOCUMENTS_PATH` (default `"documents"`),
+mirroring the existing `SWAMP_DB_PATH` pattern in `cmd/swamp/main.go`
+exactly -- same shape of decision as the filename-convention conclusion
+already reached for #6's capabilities document (PROFILE_REFERENCE.md):
+prefer a filesystem convention over a DB-tracked path/config row when
+the content itself is meant to be edited directly, not through the app.
+
+TUI scope is deliberately presence/status only: the posting detail
+screen shows "Cover Letter: found (<path>)" / "not found (<path>)" (and
+the same for Resume) when an Application exists, nothing more. No
+in-app viewer or editor was built -- matches #6's conclusion that these
+documents are "managed by the user/agent directly on the filesystem",
+not through Swamp's UI. Loading follows the existing async
+tea.Cmd/tea.Msg pattern used throughout tui/app.go (see
+loadApplicationDocuments/applicationDocumentsLoadedMsg) rather than a
+synchronous store call inside Update, for consistency with every other
+store-backed read in this file.
+
+When no Application row exists yet for the selected posting
+(`store.GetApplication` returns `store.ErrNotFound`), the documents
+section is omitted entirely -- no auto-created Application, no "no
+application" placeholder. Rejected auto-creating an Application on
+first view: that would make merely looking at a posting have a silent
+DB side effect, which is surprising and hard to reason about (a read
+shouldn't write). Application creation is explicitly issue #4's job
+("wire up application lifecycle in the TUI"), not shipped yet -- so
+today, every posting's detail view omits the documents section
+regardless of on-disk files, until #4 lands. Accepted and intentional,
+not a bug: the alternative (partially building application-creation UI
+inside #5 to make the section appear) would have scope-crept #5 into
+#4's territory.
+
+Verified manually end-to-end (not just unit tests): built the real
+binary, applied migrations to a scratch sqlite db, inserted a company/
+posting/posting_markup/application row directly via sqlite3, wrote one
+of the two document files to disk, and drove the actual TUI
+interactively via tmux -- confirmed the documents section is absent for
+a posting with no application row, and shows correct found/not-found
+status with resolved paths for a posting that has one.
