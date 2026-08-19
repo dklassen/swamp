@@ -1154,3 +1154,27 @@ not-found/no-application semantics, path convention, SWAMP_DOCUMENTS_
 PATH config, and the documents package itself are all unchanged --
 this entry is purely about which existing fetch supplies
 application.ID.
+
+## 2026-08-19 -- Application documents (#5): documents.Store wraps the base path, per PR #18 review
+Context: PR review on tui/app.go's `New(s, syncer, documentsBase string)`
+flagged that App held a raw base-path string and postingDetailContent
+called the package-level documents.ForApplication(base, id) directly --
+meaning tui knew the documents path convention, unlike its relationship
+to store (App holds *store.Store, never SQL/schema details). Reviewer's
+call: skip the usual "three examples before abstracting" bar here and
+match the store precedent now, rather than let a second caller show up
+later with the same raw-string shape.
+Decision: added documents.Store (NewStore(base) *Store, method
+ForApplication(applicationID) Paths) wrapping the free ForApplication
+function -- the free function and its existing tests are unchanged and
+still used internally, so no test coverage was lost. App.documentsBase
+string became App.documents *documents.Store; postingDetailContent's
+last parameter changed from documentsBase string to docs
+*documents.Store, calling docs.ForApplication(application.ID) instead
+of documents.ForApplication(documentsBase, application.ID). cmd/swamp/
+main.go now constructs documents.NewStore(documentsPath) once at
+startup, same lifecycle as store.New(sqlDB). No behavior change --
+verified via full test suite (documents and tui packages both still
+pass unchanged assertions, tests updated only to call app.documents.
+ForApplication instead of documents.ForApplication(app.documentsBase,
+...)).

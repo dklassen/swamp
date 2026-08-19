@@ -97,12 +97,11 @@ type App struct {
 	applicationsByPosting   map[int64]store.Application
 	applicationStatusCursor int
 	notesTextarea           textarea.Model
-	// documentsBase is the configurable filesystem root under which each
-	// application's documents live (see documents.ForApplication) --
-	// threaded through from SWAMP_DOCUMENTS_PATH, mirroring how
-	// SWAMP_DB_PATH configures the store. No path is ever persisted in
-	// the DB; it's always recomputed from an Application's ID.
-	documentsBase string
+	// documents resolves an application's document paths, hiding the
+	// path convention and base directory the same way store hides
+	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
+	// mirroring how SWAMP_DB_PATH configures the store.
+	documents *documents.Store
 	// hideArchived is ephemeral, in-memory-only display state -- not
 	// persisted (see decisions.log). Defaults true: the point of
 	// archiving a posting is to declutter the list.
@@ -206,7 +205,7 @@ func renderFilterOption(label string, checked, isCursor bool) string {
 	return "  " + line + "\n"
 }
 
-func New(s *store.Store, syncer *sync.Syncer, documentsBase string) *App {
+func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 	inputs := make([]textinput.Model, formFieldCount)
 	for i := range inputs {
 		inputs[i] = textinput.New()
@@ -217,7 +216,7 @@ func New(s *store.Store, syncer *sync.Syncer, documentsBase string) *App {
 		formInputs:     inputs,
 		detailViewport: viewport.New(0, 0),
 		hideArchived:   true,
-		documentsBase:  documentsBase,
+		documents:      docs,
 	}
 }
 
@@ -238,16 +237,15 @@ func documentStatusLine(label string, exists bool, path string) string {
 // pure function of already-loaded state -- the async fetch happens
 // separately via loadApplication (see App.showPostingDetail).
 //
-// documentsBase is used to compute the application's document paths (see
-// documents.ForApplication) and check their presence via os.Stat --
-// done inline here rather than through a separate tea.Cmd/tea.Msg round
-// trip like the rest of this file's store-backed state, since checking
-// whether two local files exist is cheap/local enough that a second
-// async fetch just to avoid it here would be over-applying that
-// convention (see decisions.log). When hasApplication is false, no
-// documents section is rendered at all -- "no application -> show
-// nothing".
-func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, documentsBase string) string {
+// docs resolves the application's document paths and their presence via
+// os.Stat -- done inline here rather than through a separate
+// tea.Cmd/tea.Msg round trip like the rest of this file's store-backed
+// state, since checking whether two local files exist is cheap/local
+// enough that a second async fetch just to avoid it here would be
+// over-applying that convention (see decisions.log). When hasApplication
+// is false, no documents section is rendered at all -- "no application
+// -> show nothing".
+func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store) string {
 	var b strings.Builder
 	fields := []struct{ label, value string }{
 		{"Department", derefOr(p.Department, "")},
@@ -270,7 +268,7 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 		if application.Notes != "" {
 			b.WriteString(fieldLabel.Render("Application notes:") + " " + application.Notes + "\n")
 		}
-		paths := documents.ForApplication(documentsBase, application.ID)
+		paths := docs.ForApplication(application.ID)
 		b.WriteString("\n" + fieldLabel.Render("Documents") + "\n")
 		b.WriteString(documentStatusLine("Cover Letter", paths.CoverLetterExists(), paths.CoverLetter))
 		b.WriteString(documentStatusLine("Resume", paths.ResumeExists(), paths.Resume))
@@ -293,7 +291,7 @@ func (a *App) showPostingDetail() {
 	if a.postingCursor < len(a.postings) {
 		p := a.postings[a.postingCursor]
 		application, hasApplication := a.applicationsByPosting[p.ID]
-		content := postingDetailContent(p, application, hasApplication, a.documentsBase)
+		content := postingDetailContent(p, application, hasApplication, a.documents)
 		a.detailViewport.SetContent(wrapToWidth(content, a.detailViewport.Width))
 	}
 	a.detailViewport.GotoTop()

@@ -21,11 +21,12 @@ import (
 // newTestApp creates an App and drives it through Init, returning the
 // model with its initial companies already loaded. Tests that don't care
 // about refresh behavior can pass a syncer with no configured postings.
-// documentsBase is a fresh t.TempDir() -- tests that care about it (i.e.
-// application document status) can read it back via app.documentsBase.
+// The App's documents.Store is rooted at a fresh t.TempDir() -- tests
+// that care about it (i.e. application document status) can read it back
+// via app.documents.
 func newTestApp(t *testing.T, s *store.Store, syncer *sync.Syncer) *App {
 	t.Helper()
-	app := New(s, syncer, t.TempDir())
+	app := New(s, syncer, documents.NewStore(t.TempDir()))
 	model, _ := app.Update(app.Init()())
 	return model.(*App)
 }
@@ -1170,7 +1171,7 @@ func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testin
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	paths := documents.ForApplication(app.documentsBase, application.ID)
+	paths := app.documents.ForApplication(application.ID)
 	if err := os.MkdirAll(filepath.Dir(paths.CoverLetter), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -1209,7 +1210,7 @@ func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testi
 	}
 	// Deliberately no files written -- the application row exists, but
 	// the documents don't yet.
-	paths := documents.ForApplication(app.documentsBase, application.ID)
+	paths := app.documents.ForApplication(application.ID)
 
 	app = openPostingDetail(app)
 

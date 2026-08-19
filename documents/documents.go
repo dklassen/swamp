@@ -31,6 +31,24 @@ func ForApplication(base string, applicationID int64) Paths {
 	}
 }
 
+// Store resolves document paths under a fixed base directory, so callers
+// (e.g. the TUI) don't need to know the path convention or thread a base
+// path around themselves -- on par with how store.Store hides SQL/schema
+// details behind method calls.
+type Store struct {
+	base string
+}
+
+// NewStore returns a Store rooted at base.
+func NewStore(base string) *Store {
+	return &Store{base: base}
+}
+
+// ForApplication computes applicationID's document paths.
+func (s *Store) ForApplication(applicationID int64) Paths {
+	return ForApplication(s.base, applicationID)
+}
+
 // CoverLetterExists reports whether the cover letter file exists on
 // disk.
 func (p Paths) CoverLetterExists() bool {
