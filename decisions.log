@@ -856,3 +856,73 @@ unarchiving a posting requires pressing `A` first to reveal it again,
 since it's no longer reachable by cursor once hidden -- an accepted,
 intentional consequence, not a bug (updated two existing tests that
 assumed archived postings stayed cursor-reachable).
+
+## 2026-08-19 — Wire up application lifecycle in the TUI (issue #4): full-enum status select, textarea notes, a/s/n on posting detail
+Context: store/application.go (CreateApplication, GetApplication,
+UpdateApplicationStatus, UpdateApplicationNotes) has been fully
+implemented and tested for a while, but none of it was reachable from
+the TUI -- no way to start an application, see its status, change it,
+or record notes without leaving the app.
+Decision: three new posting-detail keybindings -- 'a' starts an
+application (CreateApplication) if the selected posting doesn't have
+one yet; 's' opens a new screenApplicationStatusSelect screen (cursor
+list, same shape as screenFilterSelect) listing all seven
+applications.status enum values unconditionally; 'n' opens a new
+screenApplicationNotesEdit screen (bubbles/textarea, pre-populated
+with existing notes) with ctrl+s to save (UpdateApplicationNotes) and
+esc to cancel. Posting detail now also renders the application's
+current status/notes (or "No application started -- press 'a' to
+start one." when none exists), sourced from a new
+App.applicationsByPosting map[int64]store.Application populated by an
+async loadApplication command dispatched whenever detail is entered
+or navigated between postings (h/l) -- postingDetailContent stays a
+pure function of already-loaded state, per the package's Update
+side-effect-free convention; the fetch itself happens in the Cmd, not
+inside the render path.
+Why a full-enum select instead of a hardcoded "valid next status"
+transition graph: the applications.status column's CHECK constraint
+(db/migrations/00002_split_application_from_posting.sql) allows any
+of the seven values from any row state -- the schema encodes no
+transition graph at all. Hardcoding one in the TUI would be inventing
+a state machine the DB doesn't have and would need to be kept in sync
+by hand for no benefit yet -- YAGNI until an actual need for enforced
+transitions shows up (e.g. an offer_accepted -> application_started
+regression makes no real-world sense, but nothing today says users
+won't want to correct a mis-click that way).
+Why textarea instead of textinput for notes: application.Notes is a
+free-form multi-line TEXT column (unlike the company form's
+single-line name/source-ref fields, which use textinput). bubbles/
+textarea was already available transitively via the pinned
+charmbracelet/bubbles v1.0.0 dependency -- no go.mod change needed.
+Enter inserts a newline in textarea (its default keymap), so save
+couldn't reuse Enter the way every other screen in this app does;
+ctrl+s was chosen as an unambiguous, uncommon-enough-to-not-collide
+save keybinding, with esc kept as cancel for consistency with every
+other screen's cancel key.
+Key choices: 'a'/'s'/'n' scoped to screenPostingDetail only (not
+posting list) -- keeps the interaction anchored to the screen that
+now displays application state, and avoids duplicating the
+existence-check logic across two screens for no clear benefit yet.
+Confirmed lowercase 'a' was unbound in that screen before this change
+(only uppercase 'A', a posting-list-only archived-visibility toggle,
+was in use -- different screen, no collision). 'a' pressed a second
+time when an application already exists is a deliberate no-op (guard
+checked against the in-memory applicationsByPosting map before
+calling CreateApplication) rather than a store-level error path,
+since posting_id is UNIQUE on the applications table and a second
+CreateApplication call would otherwise hit that constraint.
+Verification: full TDD suite (go test ./tui/... -v, one test at a
+time) plus a throwaway harness (not committed) that drove the real
+tui.App through New/Update/View exactly as Bubble Tea's runtime would,
+against a real goose-migrated scratch sqlite db -- seeded a company/
+posting, then walked company list -> posting list -> posting detail
+-> create application -> status select -> set status -> notes editor
+-> save notes -> back to list, printing View() at each step and cross-
+checking final store state (GetApplication) against what was typed.
+Noted overlap risk: a separate concurrent change (issue #5, cover
+letter/resume document storage, different worktree/branch) is also
+adding an App field and an async GetApplication fetch on entering
+posting detail, purely to detect document-file presence -- likely to
+collide with applicationsByPosting/loadApplication here at PR-review/
+rebase time. Not resolved here; flagged for Dana to reconcile when
+both PRs are ready.
