@@ -167,3 +167,106 @@ func TestPostingMarkupInterestedArchivedFlags_MigratesInterestedStatusToTimestam
 		t.Fatal("archived_at is non-null, want NULL")
 	}
 }
+
+// TestDropApplicationStatusCheckConstraint_PreservesExistingApplicationRow
+// verifies the 00004 migration's rebuild of applications (dropping its
+// status CHECK constraint -- validation moved to Go, see
+// store.ParseApplicationStatus and decisions.log) doesn't lose or alter
+// data already in the table.
+func TestDropApplicationStatusCheckConstraint_PreservesExistingApplicationRow(t *testing.T) {
+	sqlDB := migrateTo(t, 3)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload)
+		 VALUES (1, 1, 'ashby', 'job-1', 'Software Engineer', '{}')`,
+	); err != nil {
+		t.Fatalf("insert posting: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO applications (posting_id, status, notes) VALUES (1, 'interviewing', 'great chat')`,
+	); err != nil {
+		t.Fatalf("insert application: %v", err)
+	}
+
+	if err := goose.UpTo(sqlDB, ".", 4); err != nil {
+		t.Fatalf("migrate to version 4: %v", err)
+	}
+	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+		t.Fatalf("GetDBVersion: %v", err)
+	} else if gotVersion != 4 {
+		t.Fatalf("DB version after UpTo(4) = %d, want 4 (migration 00004 not found?)", gotVersion)
+	}
+
+	var status, notes string
+	if err := sqlDB.QueryRow(`SELECT status, notes FROM applications WHERE posting_id = 1`).Scan(&status, &notes); err != nil {
+		t.Fatalf("query applications: %v", err)
+	}
+	if status != "interviewing" {
+		t.Fatalf("applications.status = %q, want %q", status, "interviewing")
+	}
+	if notes != "great chat" {
+		t.Fatalf("applications.notes = %q, want %q", notes, "great chat")
+	}
+}
+
+// TestDropApplicationStatusCheckConstraint_ArbitraryStatusValueAccepted
+// verifies the CHECK constraint on applications.status is actually gone
+// after 00004: a value outside the old fixed set, which would have failed
+// under 00002's CHECK, must now insert cleanly.
+func TestDropApplicationStatusCheckConstraint_ArbitraryStatusValueAccepted(t *testing.T) {
+	sqlDB := migrateTo(t, 4)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload)
+		 VALUES (1, 1, 'ashby', 'job-1', 'Software Engineer', '{}')`,
+	); err != nil {
+		t.Fatalf("insert posting: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO applications (posting_id, status) VALUES (1, 'anything-goes')`,
+	); err != nil {
+		t.Fatalf("insert application with arbitrary status = %v, want success (CHECK constraint dropped in 00004)", err)
+	}
+}
+
+// TestApplicationStatusHasNoDBDefault verifies status has neither a NOT
+// NULL constraint nor a DEFAULT after 00004: omitting it from an INSERT
+// must leave it NULL, not silently populate 'application_started' -- the
+// DB no longer decides the initial value, the application does (see PR
+// #17 review, decisions.log).
+func TestApplicationStatusHasNoDBDefault(t *testing.T) {
+	sqlDB := migrateTo(t, 4)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload)
+		 VALUES (1, 1, 'ashby', 'job-1', 'Software Engineer', '{}')`,
+	); err != nil {
+		t.Fatalf("insert posting: %v", err)
+	}
+	if _, err := sqlDB.Exec(`INSERT INTO applications (posting_id) VALUES (1)`); err != nil {
+		t.Fatalf("insert application without status = %v, want success (column is nullable, no default)", err)
+	}
+
+	var status sql.NullString
+	if err := sqlDB.QueryRow(`SELECT status FROM applications WHERE posting_id = 1`).Scan(&status); err != nil {
+		t.Fatalf("query applications.status: %v", err)
+	}
+	if status.Valid {
+		t.Fatalf("applications.status = %q, want NULL (no DB default)", status.String)
+	}
+}

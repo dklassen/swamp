@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -23,6 +24,28 @@ import (
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
+
+// applicationStatuses is the full fixed set of legal application statuses,
+// per store.ApplicationStatuses -- store.ApplicationStatus (a Go enum) is
+// the sole source of truth for valid values now (see decisions.log,
+// 2026-08-19); the DB column has no CHECK constraint of its own to stay in
+// sync with. The schema encodes no transition graph -- every status is
+// reachable from every other -- so the status-select screen offers all of
+// them unconditionally rather than a hand-maintained "valid next status"
+// list.
+var applicationStatuses = store.ApplicationStatuses()
+
+// applicationStatusIndex returns status's position in applicationStatuses,
+// or 0 if not found -- used to point the status-select cursor at the
+// application's current status when the screen is opened.
+func applicationStatusIndex(status store.ApplicationStatus) int {
+	for i, s := range applicationStatuses {
+		if s == status {
+			return i
+		}
+	}
+	return 0
+}
 
 var (
 	titleStyle   = lipgloss.NewStyle().Bold(true).MarginBottom(1)
@@ -41,6 +64,8 @@ const (
 	screenPostingList
 	screenPostingDetail
 	screenFilterSelect
+	screenApplicationStatusSelect
+	screenApplicationNotesEdit
 )
 
 // formInputs indices: name, then source ref. Source is fixed to "ashby"
@@ -65,19 +90,19 @@ type App struct {
 	postings        []store.Posting
 	postingMarkup   map[int64]store.PostingMarkup
 	postingCursor   int
+	// applicationsByPosting holds the application for each posting_id that
+	// has one (fetched async on entering posting detail -- see
+	// loadApplication). A posting with no entry has no application yet
+	// (Application is created lazily, unlike PostingMarkup).
+	applicationsByPosting   map[int64]store.Application
+	applicationStatusCursor int
+	notesTextarea           textarea.Model
 	// documentsBase is the configurable filesystem root under which each
 	// application's documents live (see documents.ForApplication) --
 	// threaded through from SWAMP_DOCUMENTS_PATH, mirroring how
 	// SWAMP_DB_PATH configures the store. No path is ever persisted in
 	// the DB; it's always recomputed from an Application's ID.
 	documentsBase string
-	// applicationDocuments caches the last-loaded document status per
-	// posting ID (mirroring the postingMarkup map pattern above), so
-	// postingDetailContent can render it without doing IO itself. Absent
-	// entry (zero value, found == false) means either not loaded yet or
-	// no Application exists for the posting -- both render the same way:
-	// no documents section.
-	applicationDocuments map[int64]applicationDocumentsStatus
 	// hideArchived is ephemeral, in-memory-only display state -- not
 	// persisted (see decisions.log). Defaults true: the point of
 	// archiving a posting is to declutter the list.
@@ -196,23 +221,6 @@ func New(s *store.Store, syncer *sync.Syncer, documentsBase string) *App {
 	}
 }
 
-// applicationDocumentsStatus is the last-loaded document presence/path
-// status for a posting's application, cached in App.applicationDocuments
-// keyed by posting ID. found is false both when no Application exists
-// yet for the posting and before the async load has completed -- both
-// cases render identically (no documents section), per the "no
-// application -> show nothing" decision (see decisions.log): omitting
-// the section is indistinguishable from "haven't heard back yet", which
-// is fine since a load is always in flight by the time the detail
-// screen is visible.
-type applicationDocumentsStatus struct {
-	found             bool
-	coverLetterExists bool
-	coverLetterPath   string
-	resumeExists      bool
-	resumePath        string
-}
-
 // documentStatusLine renders a single "<label>: found (<path>)" or
 // "<label>: not found (<path>)" line for the documents section.
 func documentStatusLine(label string, exists bool, path string) string {
@@ -223,12 +231,23 @@ func documentStatusLine(label string, exists bool, path string) string {
 	return fieldLabel.Render(label+":") + " " + status + " (" + path + ")\n"
 }
 
-// postingDetailContent renders a posting's fields and description as the
-// scrollable body of the detail view (title is rendered separately, as a
-// fixed header outside the viewport). docs is the posting's cached
-// application-documents status (see applicationDocumentsStatus); when
-// docs.found is false, no documents section is rendered at all.
-func postingDetailContent(p store.Posting, docs applicationDocumentsStatus) string {
+// postingDetailContent renders a posting's fields, application state, and
+// description as the scrollable body of the detail view (title is rendered
+// separately, as a fixed header outside the viewport). application/
+// hasApplication are passed in rather than fetched here so this stays a
+// pure function of already-loaded state -- the async fetch happens
+// separately via loadApplication (see App.showPostingDetail).
+//
+// documentsBase is used to compute the application's document paths (see
+// documents.ForApplication) and check their presence via os.Stat --
+// done inline here rather than through a separate tea.Cmd/tea.Msg round
+// trip like the rest of this file's store-backed state, since checking
+// whether two local files exist is cheap/local enough that a second
+// async fetch just to avoid it here would be over-applying that
+// convention (see decisions.log). When hasApplication is false, no
+// documents section is rendered at all -- "no application -> show
+// nothing".
+func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, documentsBase string) string {
 	var b strings.Builder
 	fields := []struct{ label, value string }{
 		{"Department", derefOr(p.Department, "")},
@@ -246,10 +265,17 @@ func postingDetailContent(p store.Posting, docs applicationDocumentsStatus) stri
 		}
 		b.WriteString(fieldLabel.Render(f.label+":") + " " + f.value + "\n")
 	}
-	if docs.found {
+	if hasApplication {
+		b.WriteString(fieldLabel.Render("Application status:") + " " + application.Status.String() + "\n")
+		if application.Notes != "" {
+			b.WriteString(fieldLabel.Render("Application notes:") + " " + application.Notes + "\n")
+		}
+		paths := documents.ForApplication(documentsBase, application.ID)
 		b.WriteString("\n" + fieldLabel.Render("Documents") + "\n")
-		b.WriteString(documentStatusLine("Cover Letter", docs.coverLetterExists, docs.coverLetterPath))
-		b.WriteString(documentStatusLine("Resume", docs.resumeExists, docs.resumePath))
+		b.WriteString(documentStatusLine("Cover Letter", paths.CoverLetterExists(), paths.CoverLetter))
+		b.WriteString(documentStatusLine("Resume", paths.ResumeExists(), paths.Resume))
+	} else {
+		b.WriteString(helpStyle.Render("No application started -- press 'a' to start one.") + "\n")
 	}
 	if desc := derefOr(p.DescriptionText, ""); desc != "" {
 		b.WriteString("\n" + desc + "\n")
@@ -266,7 +292,8 @@ func (a *App) showPostingDetail() {
 	a.detailViewport.Height = a.listRows()
 	if a.postingCursor < len(a.postings) {
 		p := a.postings[a.postingCursor]
-		content := postingDetailContent(p, a.applicationDocuments[p.ID])
+		application, hasApplication := a.applicationsByPosting[p.ID]
+		content := postingDetailContent(p, application, hasApplication, a.documentsBase)
 		a.detailViewport.SetContent(wrapToWidth(content, a.detailViewport.Width))
 	}
 	a.detailViewport.GotoTop()
@@ -362,44 +389,64 @@ func toggleArchived(s *store.Store, postingID int64, currentlyArchived bool) tea
 	}
 }
 
-type applicationDocumentsLoadedMsg struct {
-	postingID         int64
-	found             bool
-	coverLetterExists bool
-	coverLetterPath   string
-	resumeExists      bool
-	resumePath        string
-	err               error
+type applicationCreatedMsg struct {
+	application store.Application
+	err         error
 }
 
-// loadApplicationDocuments looks up the Application for postingID and,
-// if one exists, resolves its document paths (see
-// documents.ForApplication) and checks presence on disk. If no
-// Application row exists yet for the posting (store.ErrNotFound), found
-// is false and no path fields are populated -- the detail view renders
-// no documents section in that case, per the "no application -> show
-// nothing" decision in decisions.log (deliberately not an error: issue
-// #4, which wires up Application creation in the TUI, hasn't shipped
-// yet, so this is the normal state for every posting today).
-func loadApplicationDocuments(s *store.Store, documentsBase string, postingID int64) tea.Cmd {
+func createApplication(s *store.Store, postingID int64) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-		application, err := s.GetApplication(ctx, postingID)
+		app, err := s.CreateApplication(context.Background(), postingID)
+		return applicationCreatedMsg{application: app, err: err}
+	}
+}
+
+type applicationLoadedMsg struct {
+	postingID   int64
+	application store.Application
+	found       bool
+	err         error
+}
+
+// loadApplication fetches the application for a posting, if one exists.
+// GetApplication returns ErrNotFound when the posting has no application
+// yet (the common case, since Application is created lazily via 'a' on the
+// detail screen rather than alongside every posting) -- that's translated
+// to found=false here rather than surfaced as an error.
+func loadApplication(s *store.Store, postingID int64) tea.Cmd {
+	return func() tea.Msg {
+		app, err := s.GetApplication(context.Background(), postingID)
 		if errors.Is(err, store.ErrNotFound) {
-			return applicationDocumentsLoadedMsg{postingID: postingID, found: false}
+			return applicationLoadedMsg{postingID: postingID, found: false}
 		}
 		if err != nil {
-			return applicationDocumentsLoadedMsg{postingID: postingID, err: err}
+			return applicationLoadedMsg{postingID: postingID, err: err}
 		}
-		paths := documents.ForApplication(documentsBase, application.ID)
-		return applicationDocumentsLoadedMsg{
-			postingID:         postingID,
-			found:             true,
-			coverLetterExists: paths.CoverLetterExists(),
-			coverLetterPath:   paths.CoverLetter,
-			resumeExists:      paths.ResumeExists(),
-			resumePath:        paths.Resume,
-		}
+		return applicationLoadedMsg{postingID: postingID, application: app, found: true}
+	}
+}
+
+type applicationStatusUpdatedMsg struct {
+	application store.Application
+	err         error
+}
+
+func updateApplicationStatus(s *store.Store, postingID int64, status store.ApplicationStatus) tea.Cmd {
+	return func() tea.Msg {
+		app, err := s.UpdateApplicationStatus(context.Background(), postingID, status)
+		return applicationStatusUpdatedMsg{application: app, err: err}
+	}
+}
+
+type applicationNotesUpdatedMsg struct {
+	application store.Application
+	err         error
+}
+
+func updateApplicationNotes(s *store.Store, postingID int64, notes string) tea.Cmd {
+	return func() tea.Msg {
+		app, err := s.UpdateApplicationNotes(context.Background(), postingID, notes)
+		return applicationNotesUpdatedMsg{application: app, err: err}
 	}
 }
 
@@ -657,27 +704,51 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
-	case applicationDocumentsLoadedMsg:
+	case applicationLoadedMsg:
 		a.err = msg.err
 		if msg.err == nil {
-			if a.applicationDocuments == nil {
-				a.applicationDocuments = make(map[int64]applicationDocumentsStatus)
+			if a.applicationsByPosting == nil {
+				a.applicationsByPosting = make(map[int64]store.Application)
 			}
-			a.applicationDocuments[msg.postingID] = applicationDocumentsStatus{
-				found:             msg.found,
-				coverLetterExists: msg.coverLetterExists,
-				coverLetterPath:   msg.coverLetterPath,
-				resumeExists:      msg.resumeExists,
-				resumePath:        msg.resumePath,
+			if msg.found {
+				a.applicationsByPosting[msg.postingID] = msg.application
+			} else {
+				delete(a.applicationsByPosting, msg.postingID)
 			}
-			// The load is async, so it may resolve after
-			// showPostingDetail already rendered the viewport without
-			// this posting's documents section -- if the detail screen
-			// is still showing this same posting, re-render so the
-			// section appears without waiting for the next navigation.
-			if a.screen == screenPostingDetail && a.postingCursor < len(a.postings) && a.postings[a.postingCursor].ID == msg.postingID {
+			if a.screen == screenPostingDetail {
 				a.showPostingDetail()
 			}
+		}
+	case applicationCreatedMsg:
+		a.err = msg.err
+		if msg.err == nil {
+			if a.applicationsByPosting == nil {
+				a.applicationsByPosting = make(map[int64]store.Application)
+			}
+			a.applicationsByPosting[msg.application.PostingID] = msg.application
+			if a.screen == screenPostingDetail {
+				a.showPostingDetail()
+			}
+		}
+	case applicationStatusUpdatedMsg:
+		a.err = msg.err
+		if msg.err == nil {
+			if a.applicationsByPosting == nil {
+				a.applicationsByPosting = make(map[int64]store.Application)
+			}
+			a.applicationsByPosting[msg.application.PostingID] = msg.application
+			a.screen = screenPostingDetail
+			a.showPostingDetail()
+		}
+	case applicationNotesUpdatedMsg:
+		a.err = msg.err
+		if msg.err == nil {
+			if a.applicationsByPosting == nil {
+				a.applicationsByPosting = make(map[int64]store.Application)
+			}
+			a.applicationsByPosting[msg.application.PostingID] = msg.application
+			a.screen = screenPostingDetail
+			a.showPostingDetail()
 		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
@@ -767,7 +838,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.postingCursor < len(a.postings) {
 					a.screen = screenPostingDetail
 					a.showPostingDetail()
-					return a, loadApplicationDocuments(a.store, a.documentsBase, a.postings[a.postingCursor].ID)
+					return a, loadApplication(a.store, a.postings[a.postingCursor].ID)
 				}
 			case msg.String() == "o":
 				if a.postingCursor < len(a.postings) {
@@ -801,13 +872,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.postingCursor < len(a.postings)-1 {
 					a.postingCursor++
 					a.showPostingDetail()
-					return a, loadApplicationDocuments(a.store, a.documentsBase, a.postings[a.postingCursor].ID)
+					return a, loadApplication(a.store, a.postings[a.postingCursor].ID)
 				}
 			case msg.Type == tea.KeyLeft, msg.String() == "h":
 				if a.postingCursor > 0 {
 					a.postingCursor--
 					a.showPostingDetail()
-					return a, loadApplicationDocuments(a.store, a.documentsBase, a.postings[a.postingCursor].ID)
+					return a, loadApplication(a.store, a.postings[a.postingCursor].ID)
 				}
 			case msg.Type == tea.KeyEsc, msg.String() == "b":
 				a.screen = screenPostingList
@@ -818,9 +889,69 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return a, openInBrowser(*url)
 					}
 				}
+			case msg.String() == "a":
+				if a.postingCursor < len(a.postings) {
+					p := a.postings[a.postingCursor]
+					if _, exists := a.applicationsByPosting[p.ID]; !exists {
+						return a, createApplication(a.store, p.ID)
+					}
+				}
+			case msg.String() == "s":
+				if a.postingCursor < len(a.postings) {
+					p := a.postings[a.postingCursor]
+					if app, exists := a.applicationsByPosting[p.ID]; exists {
+						a.screen = screenApplicationStatusSelect
+						a.applicationStatusCursor = applicationStatusIndex(app.Status)
+					}
+				}
+			case msg.String() == "n":
+				if a.postingCursor < len(a.postings) {
+					p := a.postings[a.postingCursor]
+					if app, exists := a.applicationsByPosting[p.ID]; exists {
+						a.screen = screenApplicationNotesEdit
+						a.notesTextarea = textarea.New()
+						a.notesTextarea.SetWidth(a.width)
+						a.notesTextarea.SetHeight(a.listRows())
+						a.notesTextarea.SetValue(app.Notes)
+						a.notesTextarea.Focus()
+					}
+				}
 			default:
 				var cmd tea.Cmd
 				a.detailViewport, cmd = a.detailViewport.Update(msg)
+				return a, cmd
+			}
+		case screenApplicationStatusSelect:
+			switch {
+			case msg.Type == tea.KeyDown, msg.String() == "j":
+				if a.applicationStatusCursor < len(applicationStatuses)-1 {
+					a.applicationStatusCursor++
+				}
+			case msg.Type == tea.KeyUp, msg.String() == "k":
+				if a.applicationStatusCursor > 0 {
+					a.applicationStatusCursor--
+				}
+			case msg.Type == tea.KeyEsc, msg.String() == "b":
+				a.screen = screenPostingDetail
+			case msg.Type == tea.KeyEnter:
+				if a.postingCursor < len(a.postings) {
+					p := a.postings[a.postingCursor]
+					status := applicationStatuses[a.applicationStatusCursor]
+					return a, updateApplicationStatus(a.store, p.ID, status)
+				}
+			}
+		case screenApplicationNotesEdit:
+			switch msg.Type {
+			case tea.KeyEsc:
+				a.screen = screenPostingDetail
+			case tea.KeyCtrlS:
+				if a.postingCursor < len(a.postings) {
+					p := a.postings[a.postingCursor]
+					return a, updateApplicationNotes(a.store, p.ID, a.notesTextarea.Value())
+				}
+			default:
+				var cmd tea.Cmd
+				a.notesTextarea, cmd = a.notesTextarea.Update(msg)
 				return a, cmd
 			}
 		case screenFilterSelect:
@@ -926,7 +1057,21 @@ func (a *App) View() string {
 			b.WriteString(titleStyle.Render(a.postings[a.postingCursor].Title) + "\n")
 		}
 		b.WriteString(a.detailViewport.View() + "\n")
-		b.WriteString(helpStyle.Render("↑/↓ (j/k): scroll  ←/→ (h/l): prev/next posting  o: open in browser  esc/b: back"))
+		b.WriteString(helpStyle.Render("↑/↓ (j/k): scroll  ←/→ (h/l): prev/next posting  o: open in browser  a: start application  s: set status  n: edit notes  esc/b: back"))
+	case screenApplicationStatusSelect:
+		b.WriteString(titleStyle.Render("Set application status") + "\n")
+		for i, st := range applicationStatuses {
+			if i == a.applicationStatusCursor {
+				b.WriteString(cursorStyle.Render("> "+st.String()) + "\n")
+			} else {
+				b.WriteString("  " + st.String() + "\n")
+			}
+		}
+		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: save  esc/b: cancel"))
+	case screenApplicationNotesEdit:
+		b.WriteString(titleStyle.Render("Edit application notes") + "\n")
+		b.WriteString(a.notesTextarea.View() + "\n")
+		b.WriteString(helpStyle.Render("ctrl+s: save  esc: cancel"))
 	case screenFilterSelect:
 		b.WriteString(titleStyle.Render(fmt.Sprintf("Filters: %s", a.selectedCompany.Name)) + "\n")
 		if len(a.filterDepartmentOptions) == 0 && len(a.filterLocationOptions) == 0 {
