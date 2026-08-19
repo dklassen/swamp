@@ -926,3 +926,73 @@ posting detail, purely to detect document-file presence -- likely to
 collide with applicationsByPosting/loadApplication here at PR-review/
 rebase time. Not resolved here; flagged for Dana to reconcile when
 both PRs are ready.
+
+## 2026-08-19 — Application status becomes a Go enum; DB CHECK constraint dropped (PR #16 review)
+Context: Dana's inline review on PR #16 (tui/app.go line 34,
+comment id 3813059905): "this should be using a const iota pattern to
+simulate an enum implementing the stringer interface. We can mark/
+drop the constraint in the database and have the check here in code
+vs downstream in the DB. Duplicating the check doesn't hold value
+especially the added head ache of keeping them in sync." Prior to
+this, application status was a bare string everywhere (store.
+Application.Status, UpdateApplicationStatus's parameter, the TUI's
+applicationStatuses []string) with the only real enforcement living
+in the applications.status CHECK constraint (00002) -- exactly the
+duplication called out.
+Decision: added store.ApplicationStatus (store/application_status.go)
+-- a named int type, const iota values (ApplicationStatusStarted ...
+ApplicationStatusOfferDeclined), a hand-written String() (no stringer
+codegen tool added to go.mod for 7 values -- not worth it), and
+ParseApplicationStatus for the DB-string -> enum direction. store is
+the right home over tui or store/db: store/db is sqlc-generated and
+will always produce plain `string` for a SQLite TEXT column regardless
+of anything else, and store.Application is the domain type postings/
+applications already live on. Application.Status, UpdateApplication
+Status's parameter, and applicationFromRow (the sqlc-row -> domain-
+struct boundary) all switched to the typed value; applicationFromRow
+now returns (Application, error) since parsing can fail. tui/app.go's
+applicationStatuses var now aliases store.ApplicationStatuses()
+instead of maintaining its own []string copy, and applicationStatusIndex
+takes the typed value.
+Enforcement moved, not removed: ParseApplicationStatus is the one
+place a raw DB string is validated on the way in, and fails loudly
+(returns an error, not a silent default) for anything outside the
+known set -- this is what now stands in for the dropped DB CHECK.
+Migration 00004 (db/migrations/00004_drop_application_status_check_
+constraint.sql) rebuilds applications without the CHECK, following
+the same _new/copy-data/drop/rename pattern 00002 and 00003 used
+(SQLite has no ALTER TABLE ... DROP CONSTRAINT); Down restores the
+original 00002 constraint, verified to round-trip correctly (manual
+Up->Down->re-insert-invalid-value check, not added as a checked-in
+test since no prior migration in this repo has Down-path test
+coverage either -- staying consistent rather than introducing a new
+convention for one migration).
+Test fallout: store/application_test.go's
+TestUpdateApplicationStatus_RejectsRemovedAppliedValue asserted the
+DB CHECK constraint rejected "applied" -- can no longer compile once
+the parameter is typed (a string literal doesn't convert to
+ApplicationStatus). Removed; the same intent is now covered by
+store/application_status_test.go's ParseApplicationStatus rejection
+test, at the layer that actually enforces it post-change. Several
+other tests (store and tui) that compared .Status against bare string
+literals were updated to compare against the typed constants instead
+-- expected fallout from a type change, not a smell (see CLAUDE.md
+Testing section on TDD covering behavior, and the task instructions
+for this PR-review round explicitly calling this out as expected).
+Re-ran the same manual tophat harness used for the original PR #16
+work (throwaway, not committed) end-to-end after this change and
+confirmed byte-identical rendered output to before -- ApplicationStatus.
+String() produces the same DB-format strings the old []string literal
+did, so this is a pure internal refactor with no user-visible
+behavior change.
+Landed as its own PR (application-status-enum, stacked on top of
+wire-up-application-lifecycle/#16), not bundled into #16 -- Dana's
+call, made right after the review comment above: #16 should stay
+scoped to the original application-lifecycle feature it was already
+reviewed against, with the enum/constraint-drop as an isolated,
+separately-reviewable diff on top rather than silently expanding #16
+after review had already started. The two commits implementing this
+(fc0758f, 8f2c175) had not been pushed yet when the split was
+requested, so no force-push/history-rewrite was needed -- just a new
+branch pointer plus a hard reset of wire-up-application-lifecycle back
+to what origin already had.
