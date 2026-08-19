@@ -996,3 +996,58 @@ after review had already started. The two commits implementing this
 requested, so no force-push/history-rewrite was needed -- just a new
 branch pointer plus a hard reset of wire-up-application-lifecycle back
 to what origin already had.
+
+## 2026-08-19 — applications.status also drops NOT NULL/DEFAULT; DB doesn't invent the initial value either (PR #17 review)
+Context: follow-up review comment on PR #17 (db/migrations/00004_...
+line 17, comment id 3813210549), on the line just landed in the entry
+above: "remove the not null constraint here. The status is controlled
+by the application. DB is just a dumb bag of bytes." Same underlying
+philosophy as the CHECK-constraint drop, taken one step further: not
+only should the DB not validate which status values are legal, it
+shouldn't decide the initial one either.
+Decision: applications.status in 00004's Up block changed from
+`TEXT NOT NULL DEFAULT 'application_started'` to bare `TEXT` -- no
+NOT NULL, no DEFAULT. notes is untouched (still `NOT NULL DEFAULT ''`)
+-- the review comment was specifically about status, and notes
+genuinely has no meaningful "the application decides" story the way
+status's initial value does (empty notes is just... empty notes).
+Ripple effects worked through in full:
+- db/queries/applications.sql's CreateApplication now takes status as
+  an explicit query parameter (`INSERT INTO applications (posting_id,
+  status) VALUES (?, ?)`) instead of an implicit column default.
+  store.CreateApplication supplies ApplicationStatusStarted.String()
+  from Go -- deliberately not a hardcoded string literal moved from
+  the DDL into the query SQL, which would have missed the point (Go
+  decides the value, not "the DB decides it in one fewer place now").
+- sqlc regeneration (nullable column): db.Application.Status,
+  CreateApplicationParams.Status, and UpdateApplicationStatusParams.
+  Status all became sql.NullString. store's applicationFromRow (the
+  sqlc-row -> domain-struct boundary, already doing status parsing
+  since the enum work above) now also checks row.Status.Valid,
+  failing loudly with the row id if an actual NULL is ever
+  encountered -- shouldn't happen via this package's own writes
+  (CreateApplication and UpdateApplicationStatus both always supply a
+  concrete value), but the column permits it, so something writing
+  outside this package's API could produce one.
+- Verified the explicit Valid check is technically redundant with
+  ParseApplicationStatus already rejecting "" (NullString's zero
+  value) on its own -- confirmed by temporarily deleting the check and
+  watching TestGetApplication_NullStatusInDB_FailsLoudly still pass.
+  Kept the explicit check anyway: same failure guarantee, but a
+  clearer error message that names the row id, which is worth one
+  extra line for a case that should never legitimately occur.
+- Down migration (rebuilds applications_old with the original 00002
+  NOT NULL DEFAULT + CHECK shape) needed no code change, but its
+  round-trip behavior needed re-verifying since the Up side changed
+  under it: manually confirmed (a) normal data (status always
+  populated, since every real write goes through store) still rebuilds
+  cleanly on Down, and (b) a row with an actual NULL status now causes
+  Down to fail loudly with a NOT NULL constraint violation rather than
+  silently coercing it to the restored default -- both consistent with
+  this project's no-silent-fallback convention.
+- Added TestApplicationStatusHasNoDBDefault (db/migrations/
+  migrations_test.go): inserting a row without status must leave it
+  NULL, not auto-populate 'application_started'.
+Re-ran the same manual tophat harness used for both prior rounds of
+this PR's work; confirmed byte-identical output again -- another pure
+internal change with no user-visible behavior difference.
