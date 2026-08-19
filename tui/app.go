@@ -9,6 +9,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -21,6 +22,35 @@ import (
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
+
+// applicationStatuses is the full fixed set of legal application.status
+// values, per the applications table's CHECK constraint (see
+// db/migrations/00002_split_application_from_posting.sql). The schema
+// encodes no transition graph -- every status is reachable from every
+// other -- so the status-select screen offers all of them unconditionally
+// rather than a hand-maintained "valid next status" list this codebase
+// would have to invent and keep in sync with the DB by hand.
+var applicationStatuses = []string{
+	"application_started",
+	"application_submitted",
+	"interviewing",
+	"rejected",
+	"offer_received",
+	"offer_accepted",
+	"offer_declined",
+}
+
+// applicationStatusIndex returns status's position in applicationStatuses,
+// or 0 if not found -- used to point the status-select cursor at the
+// application's current status when the screen is opened.
+func applicationStatusIndex(status string) int {
+	for i, s := range applicationStatuses {
+		if s == status {
+			return i
+		}
+	}
+	return 0
+}
 
 var (
 	titleStyle   = lipgloss.NewStyle().Bold(true).MarginBottom(1)
@@ -39,6 +69,8 @@ const (
 	screenPostingList
 	screenPostingDetail
 	screenFilterSelect
+	screenApplicationStatusSelect
+	screenApplicationNotesEdit
 )
 
 // formInputs indices: name, then source ref. Source is fixed to "ashby"
@@ -63,6 +95,12 @@ type App struct {
 	postings        []store.Posting
 	postingMarkup   map[int64]store.PostingMarkup
 	postingCursor   int
+	// applicationsByPosting holds the application for each posting_id that
+	// has one (fetched async on entering posting detail -- see
+	// loadApplication). A posting with no entry has no application yet
+	// (Application is created lazily, unlike PostingMarkup).
+	applicationsByPosting   map[int64]store.Application
+	applicationStatusCursor int
 	// hideArchived is ephemeral, in-memory-only display state -- not
 	// persisted (see decisions.log). Defaults true: the point of
 	// archiving a posting is to declutter the list.
@@ -174,10 +212,13 @@ func New(s *store.Store, syncer *sync.Syncer) *App {
 	return &App{store: s, syncer: syncer, formInputs: inputs, detailViewport: viewport.New(0, 0), hideArchived: true}
 }
 
-// postingDetailContent renders a posting's fields and description as the
-// scrollable body of the detail view (title is rendered separately, as a
-// fixed header outside the viewport).
-func postingDetailContent(p store.Posting) string {
+// postingDetailContent renders a posting's fields, application state, and
+// description as the scrollable body of the detail view (title is rendered
+// separately, as a fixed header outside the viewport). application/
+// hasApplication are passed in rather than fetched here so this stays a
+// pure function of already-loaded state -- the async fetch happens
+// separately via loadApplication (see App.showPostingDetail).
+func postingDetailContent(p store.Posting, application store.Application, hasApplication bool) string {
 	var b strings.Builder
 	fields := []struct{ label, value string }{
 		{"Department", derefOr(p.Department, "")},
@@ -195,6 +236,14 @@ func postingDetailContent(p store.Posting) string {
 		}
 		b.WriteString(fieldLabel.Render(f.label+":") + " " + f.value + "\n")
 	}
+	if hasApplication {
+		b.WriteString(fieldLabel.Render("Application status:") + " " + application.Status + "\n")
+		if application.Notes != "" {
+			b.WriteString(fieldLabel.Render("Application notes:") + " " + application.Notes + "\n")
+		}
+	} else {
+		b.WriteString(helpStyle.Render("No application started -- press 'a' to start one.") + "\n")
+	}
 	if desc := derefOr(p.DescriptionText, ""); desc != "" {
 		b.WriteString("\n" + desc + "\n")
 	}
@@ -209,7 +258,9 @@ func (a *App) showPostingDetail() {
 	a.detailViewport.Width = a.width
 	a.detailViewport.Height = a.listRows()
 	if a.postingCursor < len(a.postings) {
-		content := postingDetailContent(a.postings[a.postingCursor])
+		p := a.postings[a.postingCursor]
+		application, hasApplication := a.applicationsByPosting[p.ID]
+		content := postingDetailContent(p, application, hasApplication)
 		a.detailViewport.SetContent(wrapToWidth(content, a.detailViewport.Width))
 	}
 	a.detailViewport.GotoTop()
@@ -302,6 +353,55 @@ func toggleArchived(s *store.Store, postingID int64, currentlyArchived bool) tea
 			m, err = s.SetPostingArchived(ctx, postingID)
 		}
 		return postingMarkupUpdatedMsg{markup: m, err: err}
+	}
+}
+
+type applicationCreatedMsg struct {
+	application store.Application
+	err         error
+}
+
+func createApplication(s *store.Store, postingID int64) tea.Cmd {
+	return func() tea.Msg {
+		app, err := s.CreateApplication(context.Background(), postingID)
+		return applicationCreatedMsg{application: app, err: err}
+	}
+}
+
+type applicationLoadedMsg struct {
+	postingID   int64
+	application store.Application
+	found       bool
+	err         error
+}
+
+// loadApplication fetches the application for a posting, if one exists.
+// GetApplication returns ErrNotFound when the posting has no application
+// yet (the common case, since Application is created lazily via 'a' on the
+// detail screen rather than alongside every posting) -- that's translated
+// to found=false here rather than surfaced as an error.
+func loadApplication(s *store.Store, postingID int64) tea.Cmd {
+	return func() tea.Msg {
+		app, err := s.GetApplication(context.Background(), postingID)
+		if errors.Is(err, store.ErrNotFound) {
+			return applicationLoadedMsg{postingID: postingID, found: false}
+		}
+		if err != nil {
+			return applicationLoadedMsg{postingID: postingID, err: err}
+		}
+		return applicationLoadedMsg{postingID: postingID, application: app, found: true}
+	}
+}
+
+type applicationStatusUpdatedMsg struct {
+	application store.Application
+	err         error
+}
+
+func updateApplicationStatus(s *store.Store, postingID int64, status string) tea.Cmd {
+	return func() tea.Msg {
+		app, err := s.UpdateApplicationStatus(context.Background(), postingID, status)
+		return applicationStatusUpdatedMsg{application: app, err: err}
 	}
 }
 
@@ -559,6 +659,42 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 			}
 		}
+	case applicationLoadedMsg:
+		a.err = msg.err
+		if msg.err == nil {
+			if a.applicationsByPosting == nil {
+				a.applicationsByPosting = make(map[int64]store.Application)
+			}
+			if msg.found {
+				a.applicationsByPosting[msg.postingID] = msg.application
+			} else {
+				delete(a.applicationsByPosting, msg.postingID)
+			}
+			if a.screen == screenPostingDetail {
+				a.showPostingDetail()
+			}
+		}
+	case applicationCreatedMsg:
+		a.err = msg.err
+		if msg.err == nil {
+			if a.applicationsByPosting == nil {
+				a.applicationsByPosting = make(map[int64]store.Application)
+			}
+			a.applicationsByPosting[msg.application.PostingID] = msg.application
+			if a.screen == screenPostingDetail {
+				a.showPostingDetail()
+			}
+		}
+	case applicationStatusUpdatedMsg:
+		a.err = msg.err
+		if msg.err == nil {
+			if a.applicationsByPosting == nil {
+				a.applicationsByPosting = make(map[int64]store.Application)
+			}
+			a.applicationsByPosting[msg.application.PostingID] = msg.application
+			a.screen = screenPostingDetail
+			a.showPostingDetail()
+		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
 		a.filterDepartmentOptions = msg.departments
@@ -647,6 +783,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.postingCursor < len(a.postings) {
 					a.screen = screenPostingDetail
 					a.showPostingDetail()
+					return a, loadApplication(a.store, a.postings[a.postingCursor].ID)
 				}
 			case msg.String() == "o":
 				if a.postingCursor < len(a.postings) {
@@ -680,11 +817,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if a.postingCursor < len(a.postings)-1 {
 					a.postingCursor++
 					a.showPostingDetail()
+					return a, loadApplication(a.store, a.postings[a.postingCursor].ID)
 				}
 			case msg.Type == tea.KeyLeft, msg.String() == "h":
 				if a.postingCursor > 0 {
 					a.postingCursor--
 					a.showPostingDetail()
+					return a, loadApplication(a.store, a.postings[a.postingCursor].ID)
 				}
 			case msg.Type == tea.KeyEsc, msg.String() == "b":
 				a.screen = screenPostingList
@@ -695,10 +834,44 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						return a, openInBrowser(*url)
 					}
 				}
+			case msg.String() == "a":
+				if a.postingCursor < len(a.postings) {
+					p := a.postings[a.postingCursor]
+					if _, exists := a.applicationsByPosting[p.ID]; !exists {
+						return a, createApplication(a.store, p.ID)
+					}
+				}
+			case msg.String() == "s":
+				if a.postingCursor < len(a.postings) {
+					p := a.postings[a.postingCursor]
+					if app, exists := a.applicationsByPosting[p.ID]; exists {
+						a.screen = screenApplicationStatusSelect
+						a.applicationStatusCursor = applicationStatusIndex(app.Status)
+					}
+				}
 			default:
 				var cmd tea.Cmd
 				a.detailViewport, cmd = a.detailViewport.Update(msg)
 				return a, cmd
+			}
+		case screenApplicationStatusSelect:
+			switch {
+			case msg.Type == tea.KeyDown, msg.String() == "j":
+				if a.applicationStatusCursor < len(applicationStatuses)-1 {
+					a.applicationStatusCursor++
+				}
+			case msg.Type == tea.KeyUp, msg.String() == "k":
+				if a.applicationStatusCursor > 0 {
+					a.applicationStatusCursor--
+				}
+			case msg.Type == tea.KeyEsc, msg.String() == "b":
+				a.screen = screenPostingDetail
+			case msg.Type == tea.KeyEnter:
+				if a.postingCursor < len(a.postings) {
+					p := a.postings[a.postingCursor]
+					status := applicationStatuses[a.applicationStatusCursor]
+					return a, updateApplicationStatus(a.store, p.ID, status)
+				}
 			}
 		case screenFilterSelect:
 			total := len(a.filterDepartmentOptions) + len(a.filterLocationOptions)
@@ -803,7 +976,17 @@ func (a *App) View() string {
 			b.WriteString(titleStyle.Render(a.postings[a.postingCursor].Title) + "\n")
 		}
 		b.WriteString(a.detailViewport.View() + "\n")
-		b.WriteString(helpStyle.Render("↑/↓ (j/k): scroll  ←/→ (h/l): prev/next posting  o: open in browser  esc/b: back"))
+		b.WriteString(helpStyle.Render("↑/↓ (j/k): scroll  ←/→ (h/l): prev/next posting  o: open in browser  a: start application  s: set status  n: edit notes  esc/b: back"))
+	case screenApplicationStatusSelect:
+		b.WriteString(titleStyle.Render("Set application status") + "\n")
+		for i, st := range applicationStatuses {
+			if i == a.applicationStatusCursor {
+				b.WriteString(cursorStyle.Render("> "+st) + "\n")
+			} else {
+				b.WriteString("  " + st + "\n")
+			}
+		}
+		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: save  esc/b: cancel"))
 	case screenFilterSelect:
 		b.WriteString(titleStyle.Render(fmt.Sprintf("Filters: %s", a.selectedCompany.Name)) + "\n")
 		if len(a.filterDepartmentOptions) == 0 && len(a.filterLocationOptions) == 0 {

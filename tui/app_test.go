@@ -56,9 +56,14 @@ func openPostingList(t *testing.T, app *App) *App {
 }
 
 // openPostingDetail drives app (already on screenPostingList) into the
-// detail view for the currently selected posting.
+// detail view for the currently selected posting, including running the
+// command dispatched on entry that loads the posting's application (if
+// any), so app.applicationsByPosting reflects DB state immediately.
 func openPostingDetail(app *App) *App {
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil {
+		app, _ = sendKey(app, cmd())
+	}
 	return app
 }
 
@@ -505,6 +510,218 @@ func TestApp_PressX_WhileHidingArchived_RemovesPostingFromViewAndClampsCursor(t 
 	}
 	if app.postingCursor != 0 {
 		t.Fatalf("postingCursor after archiving = %d, want 0 (clamped)", app.postingCursor)
+	}
+}
+
+func TestApp_PressA_OnPostingDetail_WithNoApplication_CreatesApplication(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	postingID := app.postings[0].ID
+	app = openPostingDetail(app)
+
+	app, cmd := sendKey(app, runeKey('a'))
+	if cmd == nil {
+		t.Fatal("Update on 'a' returned nil Cmd, want a command that creates the application")
+	}
+	_, _ = sendKey(app, cmd())
+
+	application, err := s.GetApplication(context.Background(), postingID)
+	if err != nil {
+		t.Fatalf("GetApplication: %v", err)
+	}
+	if application.Status != "application_started" {
+		t.Fatalf("application.Status = %q, want %q", application.Status, "application_started")
+	}
+}
+
+func TestApp_PressA_OnPostingDetail_WhenApplicationAlreadyExists_DoesNotDuplicate(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	postingID := app.postings[0].ID
+	app = openPostingDetail(app)
+
+	app, cmd := sendKey(app, runeKey('a'))
+	if cmd == nil {
+		t.Fatal("Update on first 'a' returned nil Cmd, want a command that creates the application")
+	}
+	app, _ = sendKey(app, cmd())
+
+	_, cmd = sendKey(app, runeKey('a'))
+	if cmd != nil {
+		t.Fatal("Update on second 'a' (application already exists) returned non-nil Cmd, want nil (no-op)")
+	}
+
+	applications, err := s.GetApplication(context.Background(), postingID)
+	if err != nil {
+		t.Fatalf("GetApplication: %v", err)
+	}
+	if applications.Status != "application_started" {
+		t.Fatalf("application.Status = %q, want %q (unchanged)", applications.Status, "application_started")
+	}
+}
+
+func TestApp_OpenPostingDetail_WithExistingApplication_LoadsAndDisplaysStatus(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	postingID := app.postings[0].ID
+	if _, err := s.CreateApplication(context.Background(), postingID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+
+	app = openPostingDetail(app)
+
+	application, ok := app.applicationsByPosting[postingID]
+	if !ok {
+		t.Fatal("app.applicationsByPosting has no entry for postingID after opening detail, want the pre-existing application loaded")
+	}
+	if application.Status != "application_started" {
+		t.Fatalf("loaded application.Status = %q, want %q", application.Status, "application_started")
+	}
+	if !strings.Contains(app.detailViewport.View(), "application_started") {
+		t.Fatalf("detail viewport view = %q, want it to contain the application status", app.detailViewport.View())
+	}
+}
+
+func TestApp_OpenPostingDetail_WithNoApplication_ShowsNoApplicationMessage(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	app = openPostingDetail(app)
+
+	if strings.Contains(app.detailViewport.View(), "application_started") {
+		t.Fatalf("detail viewport view = %q, want no application status shown", app.detailViewport.View())
+	}
+}
+
+func TestApp_PressS_OnPostingDetail_WithApplication_OpensStatusSelect(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	postingID := app.postings[0].ID
+	if _, err := s.CreateApplication(context.Background(), postingID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	app = openPostingDetail(app)
+
+	app, _ = sendKey(app, runeKey('s'))
+
+	if app.screen != screenApplicationStatusSelect {
+		t.Fatalf("screen after 's' = %v, want screenApplicationStatusSelect", app.screen)
+	}
+}
+
+func TestApp_PressS_OnPostingDetail_WithNoApplication_NoOp(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	app = openPostingDetail(app)
+
+	app, _ = sendKey(app, runeKey('s'))
+
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after 's' with no application = %v, want screenPostingDetail (no-op)", app.screen)
+	}
+}
+
+func TestApp_StatusSelect_Enter_UpdatesStatusAndReturnsToDetail(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	postingID := app.postings[0].ID
+	if _, err := s.CreateApplication(context.Background(), postingID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	app = openPostingDetail(app)
+	app, _ = sendKey(app, runeKey('s'))
+
+	// Cursor starts at 0 ("application_started"); move down once to land on
+	// "application_submitted" (the second entry in applicationStatuses).
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Update on enter (status select) returned nil Cmd, want a command that updates the status")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after saving status = %v, want screenPostingDetail", app.screen)
+	}
+	if app.applicationsByPosting[postingID].Status != "application_submitted" {
+		t.Fatalf("app.applicationsByPosting[postingID].Status = %q, want %q", app.applicationsByPosting[postingID].Status, "application_submitted")
+	}
+
+	stored, err := s.GetApplication(context.Background(), postingID)
+	if err != nil {
+		t.Fatalf("GetApplication: %v", err)
+	}
+	if stored.Status != "application_submitted" {
+		t.Fatalf("stored application.Status = %q, want %q", stored.Status, "application_submitted")
+	}
+}
+
+func TestApp_StatusSelect_Esc_CancelsWithoutSaving(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	postingID := app.postings[0].ID
+	if _, err := s.CreateApplication(context.Background(), postingID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	app = openPostingDetail(app)
+	app, _ = sendKey(app, runeKey('s'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after esc = %v, want screenPostingDetail", app.screen)
+	}
+	stored, err := s.GetApplication(context.Background(), postingID)
+	if err != nil {
+		t.Fatalf("GetApplication: %v", err)
+	}
+	if stored.Status != "application_started" {
+		t.Fatalf("stored application.Status = %q, want %q (esc should not persist)", stored.Status, "application_started")
 	}
 }
 
