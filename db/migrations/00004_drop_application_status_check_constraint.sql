@@ -11,10 +11,17 @@
 -- copy. SQLite has no ALTER TABLE ... DROP CONSTRAINT, so rebuild the
 -- table without it, same pattern 00002/00003 used for posting_markup/
 -- interview_stages.
+--
+-- status also drops its NOT NULL and DEFAULT 'application_started' here
+-- (PR #17 review follow-up): the initial status is the application's
+-- decision (store.CreateApplication now supplies it explicitly, see
+-- db/queries/applications.sql), not something the schema should invent --
+-- "DB is just a dumb bag of bytes." notes keeps its own NOT NULL DEFAULT
+-- '' untouched; this is specifically about status.
 CREATE TABLE applications_new (
     id          INTEGER PRIMARY KEY,
     posting_id  INTEGER NOT NULL UNIQUE REFERENCES postings(id),
-    status      TEXT NOT NULL DEFAULT 'application_started',
+    status      TEXT,
     notes       TEXT NOT NULL DEFAULT '',
     created_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_at  TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP

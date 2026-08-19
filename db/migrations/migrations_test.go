@@ -238,3 +238,35 @@ func TestDropApplicationStatusCheckConstraint_ArbitraryStatusValueAccepted(t *te
 		t.Fatalf("insert application with arbitrary status = %v, want success (CHECK constraint dropped in 00004)", err)
 	}
 }
+
+// TestApplicationStatusHasNoDBDefault verifies status has neither a NOT
+// NULL constraint nor a DEFAULT after 00004: omitting it from an INSERT
+// must leave it NULL, not silently populate 'application_started' -- the
+// DB no longer decides the initial value, the application does (see PR
+// #17 review, decisions.log).
+func TestApplicationStatusHasNoDBDefault(t *testing.T) {
+	sqlDB := migrateTo(t, 4)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload)
+		 VALUES (1, 1, 'ashby', 'job-1', 'Software Engineer', '{}')`,
+	); err != nil {
+		t.Fatalf("insert posting: %v", err)
+	}
+	if _, err := sqlDB.Exec(`INSERT INTO applications (posting_id) VALUES (1)`); err != nil {
+		t.Fatalf("insert application without status = %v, want success (column is nullable, no default)", err)
+	}
+
+	var status sql.NullString
+	if err := sqlDB.QueryRow(`SELECT status FROM applications WHERE posting_id = 1`).Scan(&status); err != nil {
+		t.Fatalf("query applications.status: %v", err)
+	}
+	if status.Valid {
+		t.Fatalf("applications.status = %q, want NULL (no DB default)", status.String)
+	}
+}
