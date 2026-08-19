@@ -268,7 +268,7 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 		if application.Notes != "" {
 			b.WriteString(fieldLabel.Render("Application notes:") + " " + application.Notes + "\n")
 		}
-		paths := docs.ForApplication(application.ID)
+		paths := docs.Get(application.ID)
 		b.WriteString("\n" + fieldLabel.Render("Documents") + "\n")
 		b.WriteString(documentStatusLine("Cover Letter", paths.CoverLetterExists(), paths.CoverLetter))
 		b.WriteString(documentStatusLine("Resume", paths.ResumeExists(), paths.Resume))

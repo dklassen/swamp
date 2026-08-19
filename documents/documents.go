@@ -44,8 +44,8 @@ func NewStore(base string) *Store {
 	return &Store{base: base}
 }
 
-// ForApplication computes applicationID's document paths.
-func (s *Store) ForApplication(applicationID int64) Paths {
+// Get returns applicationID's document paths.
+func (s *Store) Get(applicationID int64) Paths {
 	return ForApplication(s.base, applicationID)
 }
 

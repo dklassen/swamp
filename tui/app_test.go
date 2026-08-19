@@ -1171,7 +1171,7 @@ func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testin
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	paths := app.documents.ForApplication(application.ID)
+	paths := app.documents.Get(application.ID)
 	if err := os.MkdirAll(filepath.Dir(paths.CoverLetter), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -1210,7 +1210,7 @@ func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testi
 	}
 	// Deliberately no files written -- the application row exists, but
 	// the documents don't yet.
-	paths := app.documents.ForApplication(application.ID)
+	paths := app.documents.Get(application.ID)
 
 	app = openPostingDetail(app)
 

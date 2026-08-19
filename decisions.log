@@ -1165,16 +1165,19 @@ call: skip the usual "three examples before abstracting" bar here and
 match the store precedent now, rather than let a second caller show up
 later with the same raw-string shape.
 Decision: added documents.Store (NewStore(base) *Store, method
-ForApplication(applicationID) Paths) wrapping the free ForApplication
-function -- the free function and its existing tests are unchanged and
-still used internally, so no test coverage was lost. App.documentsBase
-string became App.documents *documents.Store; postingDetailContent's
-last parameter changed from documentsBase string to docs
-*documents.Store, calling docs.ForApplication(application.ID) instead
-of documents.ForApplication(documentsBase, application.ID). cmd/swamp/
-main.go now constructs documents.NewStore(documentsPath) once at
-startup, same lifecycle as store.New(sqlDB). No behavior change --
-verified via full test suite (documents and tui packages both still
-pass unchanged assertions, tests updated only to call app.documents.
-ForApplication instead of documents.ForApplication(app.documentsBase,
-...)).
+Get(applicationID) Paths) wrapping the free ForApplication function --
+the free function and its existing tests are unchanged and still used
+internally, so no test coverage was lost. Method named Get rather than
+ForApplication per further review feedback: ForApplication on a Store
+receiver implied more than a lookup; Get matches the store.Store
+convention already used throughout (GetApplication, GetPosting,
+GetCompany, ...). App.documentsBase string became App.documents
+*documents.Store; postingDetailContent's last parameter changed from
+documentsBase string to docs *documents.Store, calling
+docs.Get(application.ID) instead of documents.ForApplication(
+documentsBase, application.ID). cmd/swamp/main.go now constructs
+documents.NewStore(documentsPath) once at startup, same lifecycle as
+store.New(sqlDB). No behavior change -- verified via full test suite
+(documents and tui packages both still pass unchanged assertions,
+tests updated only to call app.documents.Get instead of
+documents.ForApplication(app.documentsBase, ...)).
