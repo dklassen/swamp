@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
@@ -101,6 +102,7 @@ type App struct {
 	// (Application is created lazily, unlike PostingMarkup).
 	applicationsByPosting   map[int64]store.Application
 	applicationStatusCursor int
+	notesTextarea           textarea.Model
 	// hideArchived is ephemeral, in-memory-only display state -- not
 	// persisted (see decisions.log). Defaults true: the point of
 	// archiving a posting is to declutter the list.
@@ -405,6 +407,18 @@ func updateApplicationStatus(s *store.Store, postingID int64, status string) tea
 	}
 }
 
+type applicationNotesUpdatedMsg struct {
+	application store.Application
+	err         error
+}
+
+func updateApplicationNotes(s *store.Store, postingID int64, notes string) tea.Cmd {
+	return func() tea.Msg {
+		app, err := s.UpdateApplicationNotes(context.Background(), postingID, notes)
+		return applicationNotesUpdatedMsg{application: app, err: err}
+	}
+}
+
 type postingsLoadedMsg struct {
 	postings    []store.Posting
 	markup      map[int64]store.PostingMarkup
@@ -695,6 +709,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.screen = screenPostingDetail
 			a.showPostingDetail()
 		}
+	case applicationNotesUpdatedMsg:
+		a.err = msg.err
+		if msg.err == nil {
+			if a.applicationsByPosting == nil {
+				a.applicationsByPosting = make(map[int64]store.Application)
+			}
+			a.applicationsByPosting[msg.application.PostingID] = msg.application
+			a.screen = screenPostingDetail
+			a.showPostingDetail()
+		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
 		a.filterDepartmentOptions = msg.departments
@@ -849,6 +873,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						a.applicationStatusCursor = applicationStatusIndex(app.Status)
 					}
 				}
+			case msg.String() == "n":
+				if a.postingCursor < len(a.postings) {
+					p := a.postings[a.postingCursor]
+					if app, exists := a.applicationsByPosting[p.ID]; exists {
+						a.screen = screenApplicationNotesEdit
+						a.notesTextarea = textarea.New()
+						a.notesTextarea.SetWidth(a.width)
+						a.notesTextarea.SetHeight(a.listRows())
+						a.notesTextarea.SetValue(app.Notes)
+						a.notesTextarea.Focus()
+					}
+				}
 			default:
 				var cmd tea.Cmd
 				a.detailViewport, cmd = a.detailViewport.Update(msg)
@@ -872,6 +908,20 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					status := applicationStatuses[a.applicationStatusCursor]
 					return a, updateApplicationStatus(a.store, p.ID, status)
 				}
+			}
+		case screenApplicationNotesEdit:
+			switch msg.Type {
+			case tea.KeyEsc:
+				a.screen = screenPostingDetail
+			case tea.KeyCtrlS:
+				if a.postingCursor < len(a.postings) {
+					p := a.postings[a.postingCursor]
+					return a, updateApplicationNotes(a.store, p.ID, a.notesTextarea.Value())
+				}
+			default:
+				var cmd tea.Cmd
+				a.notesTextarea, cmd = a.notesTextarea.Update(msg)
+				return a, cmd
 			}
 		case screenFilterSelect:
 			total := len(a.filterDepartmentOptions) + len(a.filterLocationOptions)
@@ -987,6 +1037,10 @@ func (a *App) View() string {
 			}
 		}
 		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: save  esc/b: cancel"))
+	case screenApplicationNotesEdit:
+		b.WriteString(titleStyle.Render("Edit application notes") + "\n")
+		b.WriteString(a.notesTextarea.View() + "\n")
+		b.WriteString(helpStyle.Render("ctrl+s: save  esc: cancel"))
 	case screenFilterSelect:
 		b.WriteString(titleStyle.Render(fmt.Sprintf("Filters: %s", a.selectedCompany.Name)) + "\n")
 		if len(a.filterDepartmentOptions) == 0 && len(a.filterLocationOptions) == 0 {

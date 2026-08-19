@@ -725,6 +725,122 @@ func TestApp_StatusSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 	}
 }
 
+func TestApp_PressN_OnPostingDetail_WithApplication_OpensNotesEditorPrepopulated(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	postingID := app.postings[0].ID
+	if _, err := s.CreateApplication(context.Background(), postingID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	if _, err := s.UpdateApplicationNotes(context.Background(), postingID, "Referred by Alice"); err != nil {
+		t.Fatalf("UpdateApplicationNotes: %v", err)
+	}
+	app = openPostingDetail(app)
+
+	app, _ = sendKey(app, runeKey('n'))
+
+	if app.screen != screenApplicationNotesEdit {
+		t.Fatalf("screen after 'n' = %v, want screenApplicationNotesEdit", app.screen)
+	}
+	if got := app.notesTextarea.Value(); got != "Referred by Alice" {
+		t.Fatalf("notesTextarea.Value() = %q, want %q", got, "Referred by Alice")
+	}
+}
+
+func TestApp_NotesEdit_CtrlS_SavesNotesAndReturnsToDetail(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	postingID := app.postings[0].ID
+	if _, err := s.CreateApplication(context.Background(), postingID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	app = openPostingDetail(app)
+	app, _ = sendKey(app, runeKey('n'))
+
+	app, _ = sendKey(app, runeKey('H', 'i'))
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyCtrlS})
+	if cmd == nil {
+		t.Fatal("Update on ctrl+s (notes edit) returned nil Cmd, want a command that saves notes")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after saving notes = %v, want screenPostingDetail", app.screen)
+	}
+	if app.applicationsByPosting[postingID].Notes != "Hi" {
+		t.Fatalf("app.applicationsByPosting[postingID].Notes = %q, want %q", app.applicationsByPosting[postingID].Notes, "Hi")
+	}
+
+	stored, err := s.GetApplication(context.Background(), postingID)
+	if err != nil {
+		t.Fatalf("GetApplication: %v", err)
+	}
+	if stored.Notes != "Hi" {
+		t.Fatalf("stored application.Notes = %q, want %q", stored.Notes, "Hi")
+	}
+}
+
+func TestApp_NotesEdit_Esc_CancelsWithoutSaving(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	postingID := app.postings[0].ID
+	if _, err := s.CreateApplication(context.Background(), postingID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	app = openPostingDetail(app)
+	app, _ = sendKey(app, runeKey('n'))
+
+	app, _ = sendKey(app, runeKey('H', 'i'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after esc = %v, want screenPostingDetail", app.screen)
+	}
+	stored, err := s.GetApplication(context.Background(), postingID)
+	if err != nil {
+		t.Fatalf("GetApplication: %v", err)
+	}
+	if stored.Notes != "" {
+		t.Fatalf("stored application.Notes = %q, want empty (esc should not persist)", stored.Notes)
+	}
+}
+
+func TestApp_PressN_OnPostingDetail_WithNoApplication_NoOp(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]ashby.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	app = openPostingDetail(app)
+
+	app, _ = sendKey(app, runeKey('n'))
+
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after 'n' with no application = %v, want screenPostingDetail (no-op)", app.screen)
+	}
+}
+
 func TestApp_PressQ_ReturnsQuitCmd(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
