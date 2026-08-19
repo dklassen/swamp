@@ -534,8 +534,8 @@ func TestApp_PressA_OnPostingDetail_WithNoApplication_CreatesApplication(t *test
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if application.Status != "application_started" {
-		t.Fatalf("application.Status = %q, want %q", application.Status, "application_started")
+	if application.Status != store.ApplicationStatusStarted {
+		t.Fatalf("application.Status = %s, want %s", application.Status, store.ApplicationStatusStarted)
 	}
 }
 
@@ -565,8 +565,8 @@ func TestApp_PressA_OnPostingDetail_WhenApplicationAlreadyExists_DoesNotDuplicat
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if applications.Status != "application_started" {
-		t.Fatalf("application.Status = %q, want %q (unchanged)", applications.Status, "application_started")
+	if applications.Status != store.ApplicationStatusStarted {
+		t.Fatalf("application.Status = %s, want %s (unchanged)", applications.Status, store.ApplicationStatusStarted)
 	}
 }
 
@@ -590,8 +590,8 @@ func TestApp_OpenPostingDetail_WithExistingApplication_LoadsAndDisplaysStatus(t 
 	if !ok {
 		t.Fatal("app.applicationsByPosting has no entry for postingID after opening detail, want the pre-existing application loaded")
 	}
-	if application.Status != "application_started" {
-		t.Fatalf("loaded application.Status = %q, want %q", application.Status, "application_started")
+	if application.Status != store.ApplicationStatusStarted {
+		t.Fatalf("loaded application.Status = %s, want %s", application.Status, store.ApplicationStatusStarted)
 	}
 	if !strings.Contains(app.detailViewport.View(), "application_started") {
 		t.Fatalf("detail viewport view = %q, want it to contain the application status", app.detailViewport.View())
@@ -681,16 +681,16 @@ func TestApp_StatusSelect_Enter_UpdatesStatusAndReturnsToDetail(t *testing.T) {
 	if app.screen != screenPostingDetail {
 		t.Fatalf("screen after saving status = %v, want screenPostingDetail", app.screen)
 	}
-	if app.applicationsByPosting[postingID].Status != "application_submitted" {
-		t.Fatalf("app.applicationsByPosting[postingID].Status = %q, want %q", app.applicationsByPosting[postingID].Status, "application_submitted")
+	if app.applicationsByPosting[postingID].Status != store.ApplicationStatusSubmitted {
+		t.Fatalf("app.applicationsByPosting[postingID].Status = %s, want %s", app.applicationsByPosting[postingID].Status, store.ApplicationStatusSubmitted)
 	}
 
 	stored, err := s.GetApplication(context.Background(), postingID)
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if stored.Status != "application_submitted" {
-		t.Fatalf("stored application.Status = %q, want %q", stored.Status, "application_submitted")
+	if stored.Status != store.ApplicationStatusSubmitted {
+		t.Fatalf("stored application.Status = %s, want %s", stored.Status, store.ApplicationStatusSubmitted)
 	}
 }
 
@@ -720,8 +720,8 @@ func TestApp_StatusSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if stored.Status != "application_started" {
-		t.Fatalf("stored application.Status = %q, want %q (esc should not persist)", stored.Status, "application_started")
+	if stored.Status != store.ApplicationStatusStarted {
+		t.Fatalf("stored application.Status = %s, want %s (esc should not persist)", stored.Status, store.ApplicationStatusStarted)
 	}
 }
 
@@ -883,7 +883,7 @@ func TestApp_PostingDetail_NavigatingBetweenPostings_LoadsEachPostingsOwnApplica
 	if _, err := s.CreateApplication(context.Background(), designerID); err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	if _, err := s.UpdateApplicationStatus(context.Background(), designerID, "interviewing"); err != nil {
+	if _, err := s.UpdateApplicationStatus(context.Background(), designerID, store.ApplicationStatusInterviewing); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 	app = openPostingDetail(app) // opens Engineer (postingCursor 0), no application

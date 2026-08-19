@@ -28,8 +28,8 @@ func TestCreateApplication_ThenGet_ReturnsSameApplication(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	if created.Status != "application_started" {
-		t.Fatalf("Status = %q, want %q", created.Status, "application_started")
+	if created.Status != ApplicationStatusStarted {
+		t.Fatalf("Status = %s, want %s", created.Status, ApplicationStatusStarted)
 	}
 
 	got, err := s.GetApplication(ctx, posting.ID)
@@ -59,12 +59,12 @@ func TestUpdateApplicationStatus_UpdatesStatus(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	mustCreateApplication(t, s, posting.ID)
 
-	updated, err := s.UpdateApplicationStatus(ctx, posting.ID, "interviewing")
+	updated, err := s.UpdateApplicationStatus(ctx, posting.ID, ApplicationStatusInterviewing)
 	if err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
-	if updated.Status != "interviewing" {
-		t.Fatalf("Status = %q, want %q", updated.Status, "interviewing")
+	if updated.Status != ApplicationStatusInterviewing {
+		t.Fatalf("Status = %s, want %s", updated.Status, ApplicationStatusInterviewing)
 	}
 
 	got, err := s.GetApplication(ctx, posting.ID)
@@ -80,22 +80,9 @@ func TestUpdateApplicationStatus_NonexistentPostingID_ReturnsErrNotFound(t *test
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	_, err := s.UpdateApplicationStatus(ctx, 999, "interviewing")
+	_, err := s.UpdateApplicationStatus(ctx, 999, ApplicationStatusInterviewing)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("UpdateApplicationStatus error = %v, want ErrNotFound", err)
-	}
-}
-
-func TestUpdateApplicationStatus_RejectsRemovedAppliedValue(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	mustCreateApplication(t, s, posting.ID)
-
-	if _, err := s.UpdateApplicationStatus(ctx, posting.ID, "applied"); err == nil {
-		t.Fatal("UpdateApplicationStatus(\"applied\") = nil error, want CHECK constraint failure")
 	}
 }
 

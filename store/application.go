@@ -24,21 +24,29 @@ import (
 type Application struct {
 	ID        int64
 	PostingID int64
-	Status    string
+	Status    ApplicationStatus
 	Notes     string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
 
-func applicationFromRow(row db.Application) Application {
+// applicationFromRow converts a raw sqlc row into an Application, parsing
+// the DB's plain-TEXT status column into the typed ApplicationStatus enum
+// (see application_status.go) -- this is the one place that parse can
+// fail, since the DB itself no longer enforces which strings are valid.
+func applicationFromRow(row db.Application) (Application, error) {
+	status, err := ParseApplicationStatus(row.Status)
+	if err != nil {
+		return Application{}, err
+	}
 	return Application{
 		ID:        row.ID,
 		PostingID: row.PostingID,
-		Status:    row.Status,
+		Status:    status,
 		Notes:     row.Notes,
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
-	}
+	}, nil
 }
 
 func (s *Store) CreateApplication(ctx context.Context, postingID int64) (Application, error) {
@@ -46,7 +54,7 @@ func (s *Store) CreateApplication(ctx context.Context, postingID int64) (Applica
 	if err != nil {
 		return Application{}, err
 	}
-	return applicationFromRow(row), nil
+	return applicationFromRow(row)
 }
 
 func (s *Store) GetApplication(ctx context.Context, postingID int64) (Application, error) {
@@ -57,13 +65,13 @@ func (s *Store) GetApplication(ctx context.Context, postingID int64) (Applicatio
 		}
 		return Application{}, err
 	}
-	return applicationFromRow(row), nil
+	return applicationFromRow(row)
 }
 
-func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, status string) (Application, error) {
+func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, status ApplicationStatus) (Application, error) {
 	row, err := s.queries.UpdateApplicationStatus(ctx, db.UpdateApplicationStatusParams{
 		PostingID: postingID,
-		Status:    status,
+		Status:    status.String(),
 	})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -71,7 +79,7 @@ func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, st
 		}
 		return Application{}, err
 	}
-	return applicationFromRow(row), nil
+	return applicationFromRow(row)
 }
 
 func (s *Store) UpdateApplicationNotes(ctx context.Context, postingID int64, notes string) (Application, error) {
@@ -85,5 +93,5 @@ func (s *Store) UpdateApplicationNotes(ctx context.Context, postingID int64, not
 		}
 		return Application{}, err
 	}
-	return applicationFromRow(row), nil
+	return applicationFromRow(row)
 }
