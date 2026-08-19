@@ -21,20 +21,21 @@ func TestForApplication_ComputesExpectedPaths(t *testing.T) {
 	}
 }
 
-func TestExists_FalseWhenFileAbsent(t *testing.T) {
+func TestStore_Status_FalseWhenFileAbsent(t *testing.T) {
 	t.Parallel()
 
-	paths := ForApplication(t.TempDir(), 1)
+	s := NewStore(t.TempDir())
+	status := s.Status(1)
 
-	if paths.CoverLetterExists() {
-		t.Error("CoverLetterExists() = true, want false (file was never written)")
+	if status.CoverLetter.Exists {
+		t.Error("CoverLetter.Exists = true, want false (file was never written)")
 	}
-	if paths.ResumeExists() {
-		t.Error("ResumeExists() = true, want false (file was never written)")
+	if status.Resume.Exists {
+		t.Error("Resume.Exists = true, want false (file was never written)")
 	}
 }
 
-func TestExists_TrueWhenFilePresent(t *testing.T) {
+func TestStore_Status_TrueWhenFilePresent(t *testing.T) {
 	t.Parallel()
 
 	base := t.TempDir()
@@ -50,10 +51,18 @@ func TestExists_TrueWhenFilePresent(t *testing.T) {
 		t.Fatalf("WriteFile resume: %v", err)
 	}
 
-	if !paths.CoverLetterExists() {
-		t.Error("CoverLetterExists() = false, want true (file was written)")
+	status := NewStore(base).Status(7)
+
+	if !status.CoverLetter.Exists {
+		t.Error("CoverLetter.Exists = false, want true (file was written)")
 	}
-	if !paths.ResumeExists() {
-		t.Error("ResumeExists() = false, want true (file was written)")
+	if status.CoverLetter.Path != paths.CoverLetter {
+		t.Errorf("CoverLetter.Path = %q, want %q", status.CoverLetter.Path, paths.CoverLetter)
+	}
+	if !status.Resume.Exists {
+		t.Error("Resume.Exists = false, want true (file was written)")
+	}
+	if status.Resume.Path != paths.Resume {
+		t.Errorf("Resume.Path = %q, want %q", status.Resume.Path, paths.Resume)
 	}
 }

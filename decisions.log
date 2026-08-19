@@ -1181,3 +1181,28 @@ store.New(sqlDB). No behavior change -- verified via full test suite
 (documents and tui packages both still pass unchanged assertions,
 tests updated only to call app.documents.Get instead of
 documents.ForApplication(app.documentsBase, ...)).
+
+## 2026-08-19 -- Application documents (#5): move existence checks off Paths onto Store.Status, per PR #18 review
+Context: further review feedback on the Store.Get rename above -- Paths
+is named and shaped like a pure value type (two path strings), but its
+CoverLetterExists()/ResumeExists() methods silently performed an
+os.Stat syscall on every call. A method named "XExists()" on something
+called "Paths" reads like a cheap property check, not I/O; the naming
+hid which one it actually was. SRP concern: Paths was doing double duty
+as both a data holder and an I/O-performing service.
+Decision: Paths and the free ForApplication function are unchanged and
+stay pure (no methods, no I/O) -- still directly tested. Added Doc{Path
+string; Exists bool} and Status{CoverLetter, Resume Doc}. Store.Get was
+replaced with Store.Status(applicationID) Status, which computes Paths
+internally via ForApplication and does both os.Stat calls itself,
+returning path+existence bundled per document. This makes Store the
+sole owner of filesystem I/O in this package -- Paths never touches the
+filesystem -- and collapses postingDetailContent's two Store calls
+(one implicit via paths.CoverLetterExists()/paths.ResumeExists(), one
+to get the paths) into a single docs.Status(application.ID) call,
+matching the design goal from the Get rename (hide the path convention
+entirely behind one method call). No behavior change -- verified via
+full test suite; documents_test.go's exists-behavior tests now
+construct a Store and call Status instead of calling the removed
+Paths methods directly, and tui/app_test.go's two document-status
+tests call app.documents.Status instead of app.documents.Get.

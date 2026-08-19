@@ -31,10 +31,25 @@ func ForApplication(base string, applicationID int64) Paths {
 	}
 }
 
-// Store resolves document paths under a fixed base directory, so callers
-// (e.g. the TUI) don't need to know the path convention or thread a base
-// path around themselves -- on par with how store.Store hides SQL/schema
-// details behind method calls.
+// Doc is a single document's resolved path and whether it exists on
+// disk as of the moment it was checked.
+type Doc struct {
+	Path   string
+	Exists bool
+}
+
+// Status is an application's cover-letter/resume presence, as of the
+// moment Store.Status checked -- see Store.Status.
+type Status struct {
+	CoverLetter Doc
+	Resume      Doc
+}
+
+// Store resolves document paths and checks their presence under a fixed
+// base directory, so callers (e.g. the TUI) don't need to know the path
+// convention or thread a base path around themselves -- on par with how
+// store.Store hides SQL/schema details behind method calls. Store, not
+// Paths, owns the filesystem I/O: Paths stays a pure value type.
 type Store struct {
 	base string
 }
@@ -44,20 +59,14 @@ func NewStore(base string) *Store {
 	return &Store{base: base}
 }
 
-// Get returns applicationID's document paths.
-func (s *Store) Get(applicationID int64) Paths {
-	return ForApplication(s.base, applicationID)
-}
-
-// CoverLetterExists reports whether the cover letter file exists on
-// disk.
-func (p Paths) CoverLetterExists() bool {
-	return fileExists(p.CoverLetter)
-}
-
-// ResumeExists reports whether the resume file exists on disk.
-func (p Paths) ResumeExists() bool {
-	return fileExists(p.Resume)
+// Status returns applicationID's document paths and whether each exists
+// on disk, checked via os.Stat.
+func (s *Store) Status(applicationID int64) Status {
+	paths := ForApplication(s.base, applicationID)
+	return Status{
+		CoverLetter: Doc{Path: paths.CoverLetter, Exists: fileExists(paths.CoverLetter)},
+		Resume:      Doc{Path: paths.Resume, Exists: fileExists(paths.Resume)},
+	}
 }
 
 func fileExists(path string) bool {

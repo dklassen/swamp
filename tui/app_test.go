@@ -1171,25 +1171,25 @@ func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testin
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	paths := app.documents.Get(application.ID)
-	if err := os.MkdirAll(filepath.Dir(paths.CoverLetter), 0o755); err != nil {
+	status := app.documents.Status(application.ID)
+	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(paths.CoverLetter, []byte("# Cover Letter"), 0o644); err != nil {
+	if err := os.WriteFile(status.CoverLetter.Path, []byte("# Cover Letter"), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
-	if err := os.WriteFile(paths.Resume, []byte("# Resume"), 0o644); err != nil {
+	if err := os.WriteFile(status.Resume.Path, []byte("# Resume"), 0o644); err != nil {
 		t.Fatalf("WriteFile resume: %v", err)
 	}
 
 	app = openPostingDetail(app)
 
 	view := app.View()
-	if !strings.Contains(view, "found ("+paths.CoverLetter+")") {
-		t.Errorf("view does not show cover letter found with path %q:\n%s", paths.CoverLetter, view)
+	if !strings.Contains(view, "found ("+status.CoverLetter.Path+")") {
+		t.Errorf("view does not show cover letter found with path %q:\n%s", status.CoverLetter.Path, view)
 	}
-	if !strings.Contains(view, "found ("+paths.Resume+")") {
-		t.Errorf("view does not show resume found with path %q:\n%s", paths.Resume, view)
+	if !strings.Contains(view, "found ("+status.Resume.Path+")") {
+		t.Errorf("view does not show resume found with path %q:\n%s", status.Resume.Path, view)
 	}
 }
 
@@ -1210,16 +1210,16 @@ func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testi
 	}
 	// Deliberately no files written -- the application row exists, but
 	// the documents don't yet.
-	paths := app.documents.Get(application.ID)
+	status := app.documents.Status(application.ID)
 
 	app = openPostingDetail(app)
 
 	view := app.View()
-	if !strings.Contains(view, "not found ("+paths.CoverLetter+")") {
-		t.Errorf("view does not show cover letter not found with path %q:\n%s", paths.CoverLetter, view)
+	if !strings.Contains(view, "not found ("+status.CoverLetter.Path+")") {
+		t.Errorf("view does not show cover letter not found with path %q:\n%s", status.CoverLetter.Path, view)
 	}
-	if !strings.Contains(view, "not found ("+paths.Resume+")") {
-		t.Errorf("view does not show resume not found with path %q:\n%s", paths.Resume, view)
+	if !strings.Contains(view, "not found ("+status.Resume.Path+")") {
+		t.Errorf("view does not show resume not found with path %q:\n%s", status.Resume.Path, view)
 	}
 }
 

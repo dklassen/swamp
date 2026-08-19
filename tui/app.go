@@ -268,10 +268,10 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 		if application.Notes != "" {
 			b.WriteString(fieldLabel.Render("Application notes:") + " " + application.Notes + "\n")
 		}
-		paths := docs.Get(application.ID)
+		status := docs.Status(application.ID)
 		b.WriteString("\n" + fieldLabel.Render("Documents") + "\n")
-		b.WriteString(documentStatusLine("Cover Letter", paths.CoverLetterExists(), paths.CoverLetter))
-		b.WriteString(documentStatusLine("Resume", paths.ResumeExists(), paths.Resume))
+		b.WriteString(documentStatusLine("Cover Letter", status.CoverLetter.Exists, status.CoverLetter.Path))
+		b.WriteString(documentStatusLine("Resume", status.Resume.Exists, status.Resume.Path))
 	} else {
 		b.WriteString(helpStyle.Render("No application started -- press 'a' to start one.") + "\n")
 	}
