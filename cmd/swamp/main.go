@@ -28,6 +28,11 @@ func main() {
 		dbPath = "swamp.db"
 	}
 
+	documentsPath := os.Getenv("SWAMP_DOCUMENTS_PATH")
+	if documentsPath == "" {
+		documentsPath = "documents"
+	}
+
 	sqlDB, err := sql.Open("sqlite", "file:"+dbPath)
 	if err != nil {
 		log.Fatalf("open db: %v", err)
@@ -60,7 +65,7 @@ func main() {
 	}
 
 	syncer := sync.New(s, ashby.NewClient())
-	if _, err := tea.NewProgram(tui.New(s, syncer), tea.WithAltScreen()).Run(); err != nil {
+	if _, err := tea.NewProgram(tui.New(s, syncer, documentsPath), tea.WithAltScreen()).Run(); err != nil {
 		log.Fatalf("run tui: %v", err)
 	}
 }
