@@ -1345,3 +1345,43 @@ shows "Filtering: Department: Engineering | Location: Remote"),
 re-opening filter-select after a save correctly re-seeds both
 selections as checked, and esc cancels back to the posting list
 without altering the saved state.
+
+## 2026-08-24 -- tui.App decomposition PR 4/6: extract applicationStatusModel (RFC #19)
+Context: fourth implementation PR against RFC #19. Scope: the
+application-status-select screen.
+
+Decision: new tui/application_status.go defines
+applicationStatusModel{store, postingID, cursor} -- App.applicationStatusCursor
+becomes private cursor on the model. applicationStatuses (the fixed
+status list) and applicationStatusIndex (cursor-seeding helper) moved
+into the same file for cohesion -- previously declared at the top of
+app.go, used nowhere else.
+
+Seeding follows PR 2's synchronous, key-press-time pattern (not PR 3's
+async one): posting-detail's 's' handler already computes
+applicationStatusIndex(app.Status) inline before this PR, so
+newApplicationStatusModel(store, postingID, currentStatus) just moves
+that same computation into a constructor call, capturing postingID too
+so the model is fully self-contained for both cursor movement and the
+eventual save -- posting-detail's 's' handler stays inline in App for
+now (posting-list/detail aren't extracted until PR 6), but no longer
+needs to reach into App state on behalf of this screen once it's
+entered. applicationStatusUpdatedMsg's existing central handler
+(unchanged) does the save-then-return-to-detail transition once
+updateApplicationStatus resolves -- this screen never sees that
+message itself.
+
+cancelApplicationStatusMsg represents Esc/'b' -- the only cross-screen
+effect. No test file changes were needed this time: no existing test
+asserted on app.applicationStatusCursor by name.
+
+Verified: full test suite (62 tui tests, fully unchanged -- first PR
+in this series requiring zero app_test.go edits) plus 4 new isolated
+applicationStatusModel tests (cursor seeded from current status on
+construction, cursor movement clamps to the fixed status count in both
+directions, esc returns cancel, enter returns the update cmd). Manually
+verified against the real binary via tmux: pressing 's' on a posting
+with an application opens the screen with the cursor already on the
+current status, j/k moves the cursor, enter saves the newly selected
+status and returns to detail with the updated status visible (and
+persisted in the DB), esc cancels without persisting anything.
