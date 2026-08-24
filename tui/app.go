@@ -80,7 +80,7 @@ type App struct {
 	store           *store.Store
 	syncer          *sync.Syncer
 	companies       []store.Company
-	cursor          int
+	companyList     companyListModel
 	screen          screen
 	formInputs      []textinput.Model
 	formFocus       int
@@ -213,6 +213,7 @@ func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 	return &App{
 		store:          s,
 		syncer:         syncer,
+		companyList:    newCompanyListModel(s, syncer),
 		formInputs:     inputs,
 		detailViewport: viewport.New(0, 0),
 		hideArchived:   true,
@@ -652,9 +653,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
-			if a.cursor >= len(a.companies) && a.cursor > 0 {
-				a.cursor = len(a.companies) - 1
-			}
+			a.companyList.clampCursor(len(a.companies))
 		}
 	case companyRefreshedMsg:
 		a.err = msg.err
@@ -785,27 +784,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.KeyMsg:
 		switch a.screen {
 		case screenCompanyList:
-			switch {
-			case msg.Type == tea.KeyDown, msg.String() == "j":
-				if a.cursor < len(a.companies)-1 {
-					a.cursor++
-				}
-			case msg.Type == tea.KeyUp, msg.String() == "k":
-				if a.cursor > 0 {
-					a.cursor--
-				}
-			case msg.String() == "q":
-				return a, tea.Quit
-			case msg.String() == "d":
-				if a.cursor < len(a.companies) {
-					return a, deleteCompany(a.store, a.companies[a.cursor].ID)
-				}
-			case msg.String() == "r":
-				if a.cursor < len(a.companies) {
-					c := a.companies[a.cursor]
-					return a, refreshCompany(a.syncer, c.ID, c.Name)
-				}
-			case msg.String() == "a":
+			cmd, intent := a.companyList.Update(msg, a.companies)
+			switch v := intent.(type) {
+			case enterCompanyFormMsg:
 				a.screen = screenCompanyForm
 				a.formFocus = 0
 				for i := range a.formInputs {
@@ -813,13 +794,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					a.formInputs[i].Blur()
 				}
 				a.formInputs[0].Focus()
-			case msg.Type == tea.KeyEnter:
-				if a.cursor < len(a.companies) {
-					a.selectedCompany = a.companies[a.cursor]
-					a.screen = screenPostingList
-					return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
-				}
+			case selectCompanyMsg:
+				a.selectedCompany = v.company
+				a.screen = screenPostingList
+				return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
 			}
+			return a, cmd
 		case screenPostingList:
 			switch {
 			case msg.Type == tea.KeyDown, msg.String() == "j":
@@ -1092,21 +1072,7 @@ func (a *App) View() string {
 		}
 		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  space: toggle  enter: save  esc/b: cancel"))
 	default:
-		b.WriteString(titleStyle.Render("Companies") + "\n")
-		if len(a.companies) == 0 {
-			b.WriteString("No companies yet. Press 'a' to add one.\n")
-		}
-		start, end := visibleWindow(a.cursor, len(a.companies), a.listRows())
-		for i := start; i < end; i++ {
-			c := a.companies[i]
-			line := fmt.Sprintf("%s (%s)", c.Name, c.SourceRef)
-			if i == a.cursor {
-				b.WriteString(cursorStyle.Render("> "+line) + "\n")
-			} else {
-				b.WriteString("  " + line + "\n")
-			}
-		}
-		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view postings  a: add  d: delete  r: refresh  q: quit"))
+		b.WriteString(a.companyList.View(a.companies, a.listRows()))
 	}
 
 	return b.String()
