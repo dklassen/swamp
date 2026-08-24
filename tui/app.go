@@ -24,28 +24,6 @@ import (
 	"github.com/dklassen/swamp/sync"
 )
 
-// applicationStatuses is the full fixed set of legal application statuses,
-// per store.ApplicationStatuses -- store.ApplicationStatus (a Go enum) is
-// the sole source of truth for valid values now (see decisions.log,
-// 2026-08-19); the DB column has no CHECK constraint of its own to stay in
-// sync with. The schema encodes no transition graph -- every status is
-// reachable from every other -- so the status-select screen offers all of
-// them unconditionally rather than a hand-maintained "valid next status"
-// list.
-var applicationStatuses = store.ApplicationStatuses()
-
-// applicationStatusIndex returns status's position in applicationStatuses,
-// or 0 if not found -- used to point the status-select cursor at the
-// application's current status when the screen is opened.
-func applicationStatusIndex(status store.ApplicationStatus) int {
-	for i, s := range applicationStatuses {
-		if s == status {
-			return i
-		}
-	}
-	return 0
-}
-
 var (
 	titleStyle   = lipgloss.NewStyle().Bold(true).MarginBottom(1)
 	cursorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
@@ -84,9 +62,9 @@ type App struct {
 	// has one (fetched async on entering posting detail -- see
 	// loadApplication). A posting with no entry has no application yet
 	// (Application is created lazily, unlike PostingMarkup).
-	applicationsByPosting   map[int64]store.Application
-	applicationStatusCursor int
-	notesTextarea           textarea.Model
+	applicationsByPosting map[int64]store.Application
+	applicationStatus     applicationStatusModel
+	notesTextarea         textarea.Model
 	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
 	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
@@ -819,7 +797,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					p := a.postings[a.postingCursor]
 					if app, exists := a.applicationsByPosting[p.ID]; exists {
 						a.screen = screenApplicationStatusSelect
-						a.applicationStatusCursor = applicationStatusIndex(app.Status)
+						a.applicationStatus = newApplicationStatusModel(a.store, p.ID, app.Status)
 					}
 				}
 			case msg.String() == "n":
@@ -840,24 +818,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, cmd
 			}
 		case screenApplicationStatusSelect:
-			switch {
-			case msg.Type == tea.KeyDown, msg.String() == "j":
-				if a.applicationStatusCursor < len(applicationStatuses)-1 {
-					a.applicationStatusCursor++
-				}
-			case msg.Type == tea.KeyUp, msg.String() == "k":
-				if a.applicationStatusCursor > 0 {
-					a.applicationStatusCursor--
-				}
-			case msg.Type == tea.KeyEsc, msg.String() == "b":
+			cmd, intent := a.applicationStatus.Update(msg)
+			if _, ok := intent.(cancelApplicationStatusMsg); ok {
 				a.screen = screenPostingDetail
-			case msg.Type == tea.KeyEnter:
-				if a.postingCursor < len(a.postings) {
-					p := a.postings[a.postingCursor]
-					status := applicationStatuses[a.applicationStatusCursor]
-					return a, updateApplicationStatus(a.store, p.ID, status)
-				}
 			}
+			return a, cmd
 		case screenApplicationNotesEdit:
 			switch msg.Type {
 			case tea.KeyEsc:
@@ -931,15 +896,7 @@ func (a *App) View() string {
 		b.WriteString(a.detailViewport.View() + "\n")
 		b.WriteString(helpStyle.Render("↑/↓ (j/k): scroll  ←/→ (h/l): prev/next posting  o: open in browser  a: start application  s: set status  n: edit notes  esc/b: back"))
 	case screenApplicationStatusSelect:
-		b.WriteString(titleStyle.Render("Set application status") + "\n")
-		for i, st := range applicationStatuses {
-			if i == a.applicationStatusCursor {
-				b.WriteString(cursorStyle.Render("> "+st.String()) + "\n")
-			} else {
-				b.WriteString("  " + st.String() + "\n")
-			}
-		}
-		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: save  esc/b: cancel"))
+		b.WriteString(a.applicationStatus.View())
 	case screenApplicationNotesEdit:
 		b.WriteString(titleStyle.Render("Edit application notes") + "\n")
 		b.WriteString(a.notesTextarea.View() + "\n")
