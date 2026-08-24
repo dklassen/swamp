@@ -1292,3 +1292,56 @@ the previous field, enter with both fields filled creates the company
 and returns to the list, esc cancels without creating anything, and a
 fresh 'a' after a cancel starts blank again (no leaked state from the
 cancelled attempt).
+
+## 2026-08-24 -- tui.App decomposition PR 3/6: extract filterSelectModel (RFC #19)
+Context: third implementation PR against RFC #19. Scope: the
+department/location filter-select screen.
+
+Decision: new tui/filter_select.go defines filterSelectModel{store,
+companyID, companyName, departmentOptions, locationOptions, cursor,
+selectedDepartments, selectedLocations} -- all five App fields this
+screen owned (filterDepartmentOptions, filterLocationOptions,
+filterCursor, filterSelectedDepartments, filterSelectedLocations) move
+onto it and become private, along with the two App methods that only
+this screen used (filterItemAtCursor, selectedFilterValues), now
+unexported methods on the model. activeFilterDepartments/
+activeFilterLocations stay App-owned domain data, unchanged -- they're
+a different concept (the company's currently-applied filters, shown in
+the posting list header) already distinct in the code from this
+screen's in-progress editing state.
+
+Construction differs from PR 1/2's "seed at key-press time" pattern:
+filter options are loaded asynchronously (loadFilterOptions, dispatched
+from screenPostingList's 'f' handler, which stays inline in App since
+posting-list isn't extracted until PR 6) -- so filterSelectModel can't
+be constructed synchronously the way companyFormModel is on 'a'. It's
+instead constructed inside filterOptionsLoadedMsg's existing central
+handler, once the async load resolves, replacing what were previously
+5 separate field assignments with one newFilterSelectModel(...) call.
+This is the same "construct fresh from a *LoadedMsg" shape PR 6's
+postingDetailModel will need for the harder pair -- confirms the
+pattern generalizes to async-seeded screens, not just key-press-seeded
+ones.
+
+cancelFilterSelectMsg represents Esc/'b' (the only cross-screen
+effect); Enter dispatches saveCompanyFilters as a real async Cmd and
+stays on-screen -- companyFiltersSavedMsg's existing central handler
+(unchanged) does the screen-back-to-posting-list transition,
+postings-narrowing, and refreshCompany dispatch once saving succeeds.
+
+Verified: full test suite (62 tui tests, unchanged assertions -- only
+app.filterDepartmentOptions/filterLocationOptions/
+filterSelectedDepartments call sites became
+app.filterSelect.departmentOptions/locationOptions/
+selectedDepartments) plus 6 new isolated filterSelectModel tests
+(seeds existing selections from saved filters, itemAtCursor spans
+departments then locations correctly including out-of-range, cursor
+clamps to total, space toggles, esc returns cancel, enter returns
+save cmd). Manually verified against the real binary via tmux:
+opening filters loads both departments and locations, cursor moves
+correctly through the combined department-then-location list, space
+toggles a checkbox, enter saves and narrows the posting list (header
+shows "Filtering: Department: Engineering | Location: Remote"),
+re-opening filter-select after a save correctly re-seeds both
+selections as checked, and esc cancels back to the posting list
+without altering the saved state.
