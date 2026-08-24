@@ -1385,3 +1385,35 @@ with an application opens the screen with the cursor already on the
 current status, j/k moves the cursor, enter saves the newly selected
 status and returns to detail with the updated status visible (and
 persisted in the DB), esc cancels without persisting anything.
+
+## 2026-08-24 -- tui.App decomposition PR 5/6: extract applicationNotesModel (RFC #19)
+Context: fifth implementation PR against RFC #19. Scope: the
+application-notes-edit screen. Same shape as PR 4 (synchronous,
+key-press-time construction) since notes editing is entered from
+posting-detail's 'n' handler exactly like status-select's 's'.
+
+Decision: new tui/application_notes.go defines
+applicationNotesModel{store, postingID, textarea} --
+App.notesTextarea becomes private, paired with the postingID it's
+editing (previously read from a.postings[a.postingCursor] at both
+construction and save time; now captured once at construction).
+newApplicationNotesModel(store, postingID, notes, width, height)
+replaces the previous 5-line construct-and-configure block
+(textarea.New/SetWidth/SetHeight/SetValue/Focus) inline in the 'n'
+handler. cancelApplicationNotesMsg represents Esc -- the only
+cross-screen effect; ctrl+s dispatches updateApplicationNotes as a
+real async Cmd and stays on-screen, same as PR 4's Enter-to-save.
+applicationNotesUpdatedMsg's existing central handler (unchanged)
+does the save-then-return-to-detail transition.
+
+Verified: full test suite (62 tui tests -- one call site,
+app.notesTextarea.Value(), became app.applicationNotes.textarea.Value())
+plus 4 new isolated applicationNotesModel tests (seeds textarea value
+and focus on construction, esc returns cancel, ctrl+s returns save
+cmd, typing a key updates the textarea's value through its own
+Update). Manually verified against the real binary via tmux: 'n' on a
+posting with an application opens the screen with existing notes
+pre-filled and focused, typing appends text, ctrl+s saves and returns
+to detail with the updated notes visible (and persisted in the DB),
+and a second 'n' + edit + esc discards the edit without touching the
+DB (previously-saved notes remain intact).

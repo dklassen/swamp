@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textarea"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -64,7 +63,7 @@ type App struct {
 	// (Application is created lazily, unlike PostingMarkup).
 	applicationsByPosting map[int64]store.Application
 	applicationStatus     applicationStatusModel
-	notesTextarea         textarea.Model
+	applicationNotes      applicationNotesModel
 	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
 	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
@@ -805,11 +804,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					p := a.postings[a.postingCursor]
 					if app, exists := a.applicationsByPosting[p.ID]; exists {
 						a.screen = screenApplicationNotesEdit
-						a.notesTextarea = textarea.New()
-						a.notesTextarea.SetWidth(a.width)
-						a.notesTextarea.SetHeight(a.listRows())
-						a.notesTextarea.SetValue(app.Notes)
-						a.notesTextarea.Focus()
+						a.applicationNotes = newApplicationNotesModel(a.store, p.ID, app.Notes, a.width, a.listRows())
 					}
 				}
 			default:
@@ -824,19 +819,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, cmd
 		case screenApplicationNotesEdit:
-			switch msg.Type {
-			case tea.KeyEsc:
+			cmd, intent := a.applicationNotes.Update(msg)
+			if _, ok := intent.(cancelApplicationNotesMsg); ok {
 				a.screen = screenPostingDetail
-			case tea.KeyCtrlS:
-				if a.postingCursor < len(a.postings) {
-					p := a.postings[a.postingCursor]
-					return a, updateApplicationNotes(a.store, p.ID, a.notesTextarea.Value())
-				}
-			default:
-				var cmd tea.Cmd
-				a.notesTextarea, cmd = a.notesTextarea.Update(msg)
-				return a, cmd
 			}
+			return a, cmd
 		case screenFilterSelect:
 			cmd, intent := a.filterSelect.Update(msg)
 			if _, ok := intent.(cancelFilterSelectMsg); ok {
@@ -898,9 +885,7 @@ func (a *App) View() string {
 	case screenApplicationStatusSelect:
 		b.WriteString(a.applicationStatus.View())
 	case screenApplicationNotesEdit:
-		b.WriteString(titleStyle.Render("Edit application notes") + "\n")
-		b.WriteString(a.notesTextarea.View() + "\n")
-		b.WriteString(helpStyle.Render("ctrl+s: save  esc: cancel"))
+		b.WriteString(a.applicationNotes.View())
 	case screenFilterSelect:
 		b.WriteString(a.filterSelect.View())
 	default:
