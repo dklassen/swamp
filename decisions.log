@@ -1417,3 +1417,103 @@ pre-filled and focused, typing appends text, ctrl+s saves and returns
 to detail with the updated notes visible (and persisted in the DB),
 and a second 'n' + edit + esc discards the edit without touching the
 DB (previously-saved notes remain intact).
+
+## 2026-08-24 -- tui.App decomposition PR 6/6 (final): extract postingListModel + postingDetailModel (RFC #19)
+Context: sixth and final implementation PR against RFC #19 -- the hard
+pair the RFC's design work centered on, reaching the RFC's declared end
+state. Scope: the posting-list and posting-detail screens.
+
+Decision, postingListModel{store, cursor}: same shape as PR 1's
+companyListModel. postings/postingMarkup/hideArchived/activeFilter*
+stay App-owned domain data, passed in as a postingListSnapshot on every
+call. Four new intent messages (backToCompanyListMsg,
+enterPostingDetailMsg, enterFilterSelectMsg, toggleHideArchivedMsg)
+cover this screen's cross-screen effects; i/x/o dispatch real async
+commands directly via the model's own store reference, same as PR 1's
+company list.
+
+Decision, postingDetailModel{store, documents, viewport, posting,
+application, hasApplication}: the RFC's harder design, implemented
+close to as specified but with one deliberate change made during
+implementation -- applicationsByPosting stays App-owned (not moved
+into this model), because it's a genuine cross-visit cache the async
+loadApplication/applicationLoaded round trip depends on; removing it
+would have meant every re-visit to a previously-viewed posting
+flashing "no application" until the async refresh resolved. Instead,
+App.lookupPosting(id) seeds a fresh postingDetailModel from the map at
+every construction point (entering from the list, h/l navigation, and
+the four application-mutating *UpdatedMsg handlers reconstructing the
+currently-displayed posting after a save) -- postingDetailModel itself
+never holds a reference to the map, matching the RFC's "snapshot, not
+shared pointer" principle even though the map's contents feed it.
+newPostingDetailModel always rebuilds the viewport fresh (matching the
+pre-extraction showPostingDetail's "always rebuild, always reset
+scroll" behavior) rather than mutating an existing instance in place.
+
+Two real design gaps surfaced only once this was wired into App and
+tested against real key sequences, not caught by isolated unit tests
+alone:
+
+1. h/l navigation inside detail no longer touches postingList.cursor
+   (the two models are genuinely independent, per the isolation goal)
+   -- but returning to the list via esc/b used to implicitly preserve
+   cursor position for free, since postingCursor was one shared field.
+   Fix: postingList.setCursor(i) plus an explicit reconciliation step
+   in App's backToPostingListMsg handling
+   (a.postingList.setCursor(indexOfPosting(a.postings,
+   a.postingDetail.posting.ID))) -- the parent syncs the two models at
+   exactly the one transition boundary where it's user-visible, rather
+   than either model needing to know about the other. Caught by two
+   existing app_test.go tests
+   (TestApp_PostingDetail_RightMovesToNextPostingStayingInDetail,
+   TestApp_PostingDetail_VimHL_MovesBetweenPostingsLikeArrows) that
+   asserted directly on the old shared postingCursor field -- fixing
+   them to assert on app.postingDetail.posting.Title instead (the
+   actually-observable behavior) surfaced that assumption was baked
+   into the old field, not derivable from user-visible behavior alone.
+
+2. Those same two tests' fixture data had backwards title expectations
+   once written to check actual posting correspondence rather than raw
+   cursor arithmetic: ListPostingsByCompany orders first_seen_at DESC,
+   id DESC, so with two postings sharing a first_seen_at (one sync
+   batch), the later-inserted one (higher id) sorts first -- the
+   original tests never caught this because they only asserted the
+   cursor int incremented, never which posting was actually at that
+   index. Not a bug this PR introduced; a pre-existing ordering fact
+   the old tests happened not to depend on.
+
+resetCursorIfOutOfBounds (distinct from PR 1/3's clampCursor, which
+lands on the last valid index) preserves companyFiltersSavedMsg's
+original "reset to 0" semantics after a filter re-narrows the list --
+named and kept separate rather than reusing clampCursor for a
+different behavior at that call site.
+
+Verified: full test suite (62 tui tests -- ~25 postingCursor and ~15
+detailViewport call sites renamed to postingList.cursor/
+postingDetail.viewport; two tests reworked as described above; no
+other behavior changes) plus 17 new isolated tests across
+posting_list_test.go and posting_detail_test.go (cursor
+movement/clamp/reset, all five intent messages, self-contained i/o
+commands, application-guarded a/s/n handling, resize). Manually
+verified against the real binary via tmux with 3 seeded postings:
+list cursor movement, i/x toggles with immediate archive-hide removal
+and A-toggle restore, enter/esc round-trip with the new cursor-sync
+fix confirmed working (esc from detail after h/l navigation correctly
+lands the list cursor on the last-viewed posting, not a stale one),
+h/l navigation across all 3 postings with correct content at each
+step, a/s/n sub-screens (status cursor correctly seeded, notes
+correctly seeded, both save-and-return-to-detail correctly), f
+entering filter-select from the list, window resize while on detail,
+and q quit. One finding, confirmed pre-existing on main (not a
+regression from this PR, left out of scope): the posting-detail
+title line doesn't render in this tmux/terminal setup -- reproduced
+identically against a from-main build with the same binary/db/key
+sequence before any of PR 1-6's changes existed, so it predates this
+entire decomposition effort.
+
+This is the final PR in the RFC #19 series -- App now holds no
+per-screen UI-only fields beyond the 7 screen model values themselves;
+all UI-only state (cursors, form inputs, textareas, viewports) is
+private to its owning screen, and all cross-screen effects flow
+through typed messages the parent interprets, closing the
+encapsulation gap the RFC set out to close.
