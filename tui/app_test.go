@@ -503,7 +503,7 @@ func TestApp_PressX_WhileHidingArchived_RemovesPostingFromViewAndClampsCursor(t 
 	if len(app.postings) != 2 {
 		t.Fatalf("initial postings = %d, want 2", len(app.postings))
 	}
-	app.postingCursor = 1
+	app.postingList.cursor = 1
 
 	app, cmd := sendKey(app, runeKey('x'))
 	if cmd == nil {
@@ -514,8 +514,8 @@ func TestApp_PressX_WhileHidingArchived_RemovesPostingFromViewAndClampsCursor(t 
 	if len(app.postings) != 1 {
 		t.Fatalf("postings after archiving = %d, want 1 (archived one removed immediately)", len(app.postings))
 	}
-	if app.postingCursor != 0 {
-		t.Fatalf("postingCursor after archiving = %d, want 0 (clamped)", app.postingCursor)
+	if app.postingList.cursor != 0 {
+		t.Fatalf("postingCursor after archiving = %d, want 0 (clamped)", app.postingList.cursor)
 	}
 }
 
@@ -599,8 +599,8 @@ func TestApp_OpenPostingDetail_WithExistingApplication_LoadsAndDisplaysStatus(t 
 	if application.Status != store.ApplicationStatusStarted {
 		t.Fatalf("loaded application.Status = %s, want %s", application.Status, store.ApplicationStatusStarted)
 	}
-	if !strings.Contains(app.detailViewport.View(), "application_started") {
-		t.Fatalf("detail viewport view = %q, want it to contain the application status", app.detailViewport.View())
+	if !strings.Contains(app.postingDetail.viewport.View(), "application_started") {
+		t.Fatalf("detail viewport view = %q, want it to contain the application status", app.postingDetail.viewport.View())
 	}
 }
 
@@ -614,8 +614,8 @@ func TestApp_OpenPostingDetail_WithNoApplication_ShowsNoApplicationMessage(t *te
 	app = openPostingList(t, app)
 	app = openPostingDetail(app)
 
-	if strings.Contains(app.detailViewport.View(), "application_started") {
-		t.Fatalf("detail viewport view = %q, want no application status shown", app.detailViewport.View())
+	if strings.Contains(app.postingDetail.viewport.View(), "application_started") {
+		t.Fatalf("detail viewport view = %q, want no application status shown", app.postingDetail.viewport.View())
 	}
 }
 
@@ -857,7 +857,7 @@ func TestApp_PressA_OnPostingDetail_CreatedApplication_ReflectedInDetailView(t *
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
 	app = openPostingDetail(app)
-	if strings.Contains(app.detailViewport.View(), "application_started") {
+	if strings.Contains(app.postingDetail.viewport.View(), "application_started") {
 		t.Fatal("detail view shows application_started before creating an application")
 	}
 
@@ -867,8 +867,8 @@ func TestApp_PressA_OnPostingDetail_CreatedApplication_ReflectedInDetailView(t *
 	}
 	app, _ = sendKey(app, cmd())
 
-	if !strings.Contains(app.detailViewport.View(), "application_started") {
-		t.Fatalf("detail view after creating application = %q, want it to contain the new status", app.detailViewport.View())
+	if !strings.Contains(app.postingDetail.viewport.View(), "application_started") {
+		t.Fatalf("detail view after creating application = %q, want it to contain the new status", app.postingDetail.viewport.View())
 	}
 }
 
@@ -892,7 +892,7 @@ func TestApp_PostingDetail_NavigatingBetweenPostings_LoadsEachPostingsOwnApplica
 	if _, err := s.UpdateApplicationStatus(context.Background(), designerID, store.ApplicationStatusInterviewing); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
-	app = openPostingDetail(app) // opens Engineer (postingCursor 0), no application
+	app = openPostingDetail(app) // opens the posting at cursor 0, no application
 
 	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyRight})
 	if cmd == nil {
@@ -900,8 +900,8 @@ func TestApp_PostingDetail_NavigatingBetweenPostings_LoadsEachPostingsOwnApplica
 	}
 	app, _ = sendKey(app, cmd())
 
-	if !strings.Contains(app.detailViewport.View(), "interviewing") {
-		t.Fatalf("detail view for Designer = %q, want it to contain %q", app.detailViewport.View(), "interviewing")
+	if !strings.Contains(app.postingDetail.viewport.View(), "interviewing") {
+		t.Fatalf("detail view for Designer = %q, want it to contain %q", app.postingDetail.viewport.View(), "interviewing")
 	}
 	if _, ok := app.applicationsByPosting[engineerID]; ok {
 		t.Fatal("applicationsByPosting has an entry for Engineer, want none (it has no application)")
@@ -1021,20 +1021,20 @@ func TestApp_PostingListCursor_MovesWithinBounds(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
 
-	if app.postingCursor != 0 {
-		t.Fatalf("initial postingCursor = %d, want 0", app.postingCursor)
+	if app.postingList.cursor != 0 {
+		t.Fatalf("initial postingCursor = %d, want 0", app.postingList.cursor)
 	}
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
-	if app.postingCursor != 1 {
-		t.Fatalf("postingCursor after down = %d, want 1", app.postingCursor)
+	if app.postingList.cursor != 1 {
+		t.Fatalf("postingCursor after down = %d, want 1", app.postingList.cursor)
 	}
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
-	if app.postingCursor != 1 {
-		t.Fatalf("postingCursor after down at bottom = %d, want 1 (clamped)", app.postingCursor)
+	if app.postingList.cursor != 1 {
+		t.Fatalf("postingCursor after down at bottom = %d, want 1 (clamped)", app.postingList.cursor)
 	}
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyUp})
-	if app.postingCursor != 0 {
-		t.Fatalf("postingCursor after up = %d, want 0", app.postingCursor)
+	if app.postingList.cursor != 0 {
+		t.Fatalf("postingCursor after up = %d, want 0", app.postingList.cursor)
 	}
 }
 
@@ -1084,24 +1084,47 @@ func TestApp_PostingDetail_RightMovesToNextPostingStayingInDetail(t *testing.T) 
 	app = openPostingList(t, app)
 	app = openPostingDetail(app)
 
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyRight})
+	// ListPostingsByCompany orders first_seen_at DESC, id DESC -- both
+	// postings share a first_seen_at (one sync batch), so the
+	// later-inserted job-2/Designer (higher id) sorts first. Entering
+	// detail from the top of the list starts on Designer.
+	if app.postingDetail.posting.Title != "Designer" {
+		t.Fatalf("initial posting shown in detail = %q, want %q", app.postingDetail.posting.Title, "Designer")
+	}
+
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyRight})
 
 	if app.screen != screenPostingDetail {
 		t.Fatalf("screen after right on detail = %v, want screenPostingDetail (stay in detail)", app.screen)
 	}
-	if app.postingCursor != 1 {
-		t.Fatalf("postingCursor after right on detail = %d, want 1", app.postingCursor)
+	if app.postingDetail.posting.Title != "Engineer" {
+		t.Fatalf("posting shown after right on detail = %q, want %q", app.postingDetail.posting.Title, "Engineer")
 	}
+	if cmd == nil {
+		t.Fatal("Update on right returned nil Cmd, want a command that loads the new posting's application")
+	}
+	app, _ = sendKey(app, cmd())
 
 	// Clamped at the last posting.
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyRight})
-	if app.postingCursor != 1 {
-		t.Fatalf("postingCursor after right at last posting = %d, want 1 (clamped)", app.postingCursor)
+	if app.postingDetail.posting.Title != "Engineer" {
+		t.Fatalf("posting shown after right at last posting = %q, want %q (clamped)", app.postingDetail.posting.Title, "Engineer")
 	}
 
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyLeft})
-	if app.postingCursor != 0 {
-		t.Fatalf("postingCursor after left on detail = %d, want 0", app.postingCursor)
+	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyLeft})
+	if app.postingDetail.posting.Title != "Designer" {
+		t.Fatalf("posting shown after left on detail = %q, want %q", app.postingDetail.posting.Title, "Designer")
+	}
+	if cmd == nil {
+		t.Fatal("Update on left returned nil Cmd, want a command that loads the new posting's application")
+	}
+	app, _ = sendKey(app, cmd())
+
+	// Returning to the list should land the cursor on the posting last
+	// viewed in detail, not wherever it was before entering detail.
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	if app.postingList.cursor != 0 {
+		t.Fatalf("postingList.cursor after returning from detail = %d, want 0 (synced to last-viewed posting)", app.postingList.cursor)
 	}
 }
 
@@ -1117,13 +1140,13 @@ func TestApp_PostingDetail_DownScrollsLongDescription(t *testing.T) {
 	app = openPostingList(t, app)
 	app = openPostingDetail(app)
 
-	if app.detailViewport.YOffset != 0 {
-		t.Fatalf("initial YOffset = %d, want 0", app.detailViewport.YOffset)
+	if app.postingDetail.viewport.YOffset != 0 {
+		t.Fatalf("initial YOffset = %d, want 0", app.postingDetail.viewport.YOffset)
 	}
 
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
 
-	if app.detailViewport.YOffset == 0 {
+	if app.postingDetail.viewport.YOffset == 0 {
 		t.Fatal("YOffset after down on a long description should have scrolled past 0")
 	}
 	if app.screen != screenPostingDetail {
@@ -1148,7 +1171,7 @@ func TestApp_PostingDetail_VimJ_ScrollsLikeDown(t *testing.T) {
 
 	app, _ = sendKey(app, runeKey('j'))
 
-	if app.detailViewport.YOffset == 0 {
+	if app.postingDetail.viewport.YOffset == 0 {
 		t.Fatal("YOffset after 'j' on a long description should have scrolled past 0")
 	}
 }
@@ -1276,12 +1299,12 @@ func TestApp_PostingList_VimJK_MoveCursorLikeArrows(t *testing.T) {
 	app = openPostingList(t, app)
 
 	app, _ = sendKey(app, runeKey('j'))
-	if app.postingCursor != 1 {
-		t.Fatalf("postingCursor after 'j' = %d, want 1", app.postingCursor)
+	if app.postingList.cursor != 1 {
+		t.Fatalf("postingCursor after 'j' = %d, want 1", app.postingList.cursor)
 	}
 	app, _ = sendKey(app, runeKey('k'))
-	if app.postingCursor != 0 {
-		t.Fatalf("postingCursor after 'k' = %d, want 0", app.postingCursor)
+	if app.postingList.cursor != 0 {
+		t.Fatalf("postingCursor after 'k' = %d, want 0", app.postingList.cursor)
 	}
 }
 
@@ -1298,17 +1321,24 @@ func TestApp_PostingDetail_VimHL_MovesBetweenPostingsLikeArrows(t *testing.T) {
 	app = openPostingList(t, app)
 	app = openPostingDetail(app)
 
+	// ListPostingsByCompany orders first_seen_at DESC, id DESC, so the
+	// later-inserted job-2/Designer sorts first -- detail starts on
+	// Designer.
+	if app.postingDetail.posting.Title != "Designer" {
+		t.Fatalf("initial posting shown in detail = %q, want %q", app.postingDetail.posting.Title, "Designer")
+	}
+
 	app, _ = sendKey(app, runeKey('l'))
-	if app.postingCursor != 1 {
-		t.Fatalf("postingCursor after 'l' = %d, want 1", app.postingCursor)
+	if app.postingDetail.posting.Title != "Engineer" {
+		t.Fatalf("posting shown after 'l' = %q, want %q", app.postingDetail.posting.Title, "Engineer")
 	}
 	if app.screen != screenPostingDetail {
 		t.Fatalf("screen after 'l' = %v, want screenPostingDetail (stay in detail)", app.screen)
 	}
 
 	app, _ = sendKey(app, runeKey('h'))
-	if app.postingCursor != 0 {
-		t.Fatalf("postingCursor after 'h' = %d, want 0", app.postingCursor)
+	if app.postingDetail.posting.Title != "Designer" {
+		t.Fatalf("posting shown after 'h' = %q, want %q", app.postingDetail.posting.Title, "Designer")
 	}
 }
 
@@ -1324,7 +1354,7 @@ func TestApp_PostingDetail_LongLine_WrapsToViewportWidth(t *testing.T) {
 	app = openPostingList(t, app)
 	app = openPostingDetail(app)
 
-	for _, line := range strings.Split(app.detailViewport.View(), "\n") {
+	for _, line := range strings.Split(app.postingDetail.viewport.View(), "\n") {
 		if w := lipgloss.Width(line); w > 20 {
 			t.Fatalf("rendered line %q has width %d, want <= 20", line, w)
 		}
@@ -1352,7 +1382,7 @@ func TestApp_WindowResize_OnPostingDetail_ReWraps(t *testing.T) {
 
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 15, Height: 200})
 
-	view := app.detailViewport.View()
+	view := app.postingDetail.viewport.View()
 	for _, line := range strings.Split(view, "\n") {
 		if w := lipgloss.Width(line); w > 15 {
 			t.Fatalf("rendered line %q has width %d, want <= 15 after resize", line, w)

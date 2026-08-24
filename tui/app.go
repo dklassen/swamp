@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
@@ -56,7 +55,8 @@ type App struct {
 	selectedCompany store.Company
 	postings        []store.Posting
 	postingMarkup   map[int64]store.PostingMarkup
-	postingCursor   int
+	postingList     postingListModel
+	postingDetail   postingDetailModel
 	// applicationsByPosting holds the application for each posting_id that
 	// has one (fetched async on entering posting detail -- see
 	// loadApplication). A posting with no entry has no application yet
@@ -72,10 +72,9 @@ type App struct {
 	// hideArchived is ephemeral, in-memory-only display state -- not
 	// persisted (see decisions.log). Defaults true: the point of
 	// archiving a posting is to declutter the list.
-	hideArchived   bool
-	detailViewport viewport.Model
-	width          int
-	height         int
+	hideArchived bool
+	width        int
+	height       int
 
 	filterSelect filterSelectModel
 
@@ -101,44 +100,11 @@ func (a *App) listRows() int {
 	return rows
 }
 
-// postingMarker renders a posting's markup state as a single-character
-// column for the posting list. Archived takes precedence over interested
-// when both are set, matching the same precedence the 00003 migration's
-// Down path uses when collapsing both flags back into one enum value.
-func postingMarker(m store.PostingMarkup) string {
-	switch {
-	case m.ArchivedAt != nil:
-		return "✕"
-	case m.InterestedAt != nil:
-		return "★"
-	default:
-		return " "
-	}
-}
-
 func derefOr(s *string, fallback string) string {
 	if s == nil {
 		return fallback
 	}
 	return *s
-}
-
-// filterSummaryLine renders the currently-active filters as a one-line
-// summary (e.g. "Filtering: Department: Engineering | Location:
-// Remote"), or "" if no filters are active -- so the filter state isn't
-// invisible in the posting list.
-func filterSummaryLine(departments, locations []string) string {
-	if len(departments) == 0 && len(locations) == 0 {
-		return ""
-	}
-	var parts []string
-	if len(departments) > 0 {
-		parts = append(parts, "Department: "+strings.Join(departments, ", "))
-	}
-	if len(locations) > 0 {
-		parts = append(parts, "Location: "+strings.Join(locations, ", "))
-	}
-	return "Filtering: " + strings.Join(parts, " | ")
 }
 
 func renderFilterOption(label string, checked, isCursor bool) string {
@@ -155,13 +121,13 @@ func renderFilterOption(label string, checked, isCursor bool) string {
 
 func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 	return &App{
-		store:          s,
-		syncer:         syncer,
-		companyList:    newCompanyListModel(s, syncer),
-		companyForm:    newCompanyFormModel(s),
-		detailViewport: viewport.New(0, 0),
-		hideArchived:   true,
-		documents:      docs,
+		store:        s,
+		syncer:       syncer,
+		companyList:  newCompanyListModel(s, syncer),
+		companyForm:  newCompanyFormModel(s),
+		postingList:  newPostingListModel(s),
+		hideArchived: true,
+		documents:    docs,
 	}
 }
 
@@ -180,7 +146,7 @@ func documentStatusLine(label string, exists bool, path string) string {
 // separately, as a fixed header outside the viewport). application/
 // hasApplication are passed in rather than fetched here so this stays a
 // pure function of already-loaded state -- the async fetch happens
-// separately via loadApplication (see App.showPostingDetail).
+// separately via loadApplication (see newPostingDetailModel).
 //
 // docs resolves the application's document paths and their presence via
 // os.Stat -- done inline here rather than through a separate
@@ -226,20 +192,30 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 	return b.String()
 }
 
-// showPostingDetail (re)sizes the detail viewport from the current window
-// dimensions and loads the currently-selected posting's content into it,
-// resetting scroll to the top -- called both when first entering the
-// detail screen and when moving to a different posting within it.
-func (a *App) showPostingDetail() {
-	a.detailViewport.Width = a.width
-	a.detailViewport.Height = a.listRows()
-	if a.postingCursor < len(a.postings) {
-		p := a.postings[a.postingCursor]
-		application, hasApplication := a.applicationsByPosting[p.ID]
-		content := postingDetailContent(p, application, hasApplication, a.documents)
-		a.detailViewport.SetContent(wrapToWidth(content, a.detailViewport.Width))
+// lookupPosting finds id in a.postings, returning it along with its
+// application (if any) from a.applicationsByPosting -- used to seed a
+// fresh postingDetailModel by ID, since that model doesn't hold a
+// reference to either collection itself.
+func (a *App) lookupPosting(id int64) (store.Posting, store.Application, bool) {
+	var p store.Posting
+	for _, candidate := range a.postings {
+		if candidate.ID == id {
+			p = candidate
+			break
+		}
 	}
-	a.detailViewport.GotoTop()
+	app, hasApp := a.applicationsByPosting[id]
+	return p, app, hasApp
+}
+
+// indexOfPosting returns id's index in postings, or -1 if not present.
+func indexOfPosting(postings []store.Posting, id int64) int {
+	for i, p := range postings {
+		if p.ID == id {
+			return i
+		}
+	}
+	return -1
 }
 
 type companiesLoadedMsg struct {
@@ -601,7 +577,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		a.postings = msg.postings
 		a.postingMarkup = msg.markup
-		a.postingCursor = 0
+		a.postingList.resetCursor()
 		a.activeFilterDepartments = msg.departments
 		a.activeFilterLocations = msg.locations
 	case postingMarkupUpdatedMsg:
@@ -623,9 +599,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						break
 					}
 				}
-				if a.postingCursor >= len(a.postings) && a.postingCursor > 0 {
-					a.postingCursor = len(a.postings) - 1
-				}
+				a.postingList.clampCursor(len(a.postings))
 			}
 		}
 	case applicationLoadedMsg:
@@ -640,7 +614,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				delete(a.applicationsByPosting, msg.postingID)
 			}
 			if a.screen == screenPostingDetail {
-				a.showPostingDetail()
+				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
 			}
 		}
 	case applicationCreatedMsg:
@@ -651,7 +626,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			if a.screen == screenPostingDetail {
-				a.showPostingDetail()
+				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
 			}
 		}
 	case applicationStatusUpdatedMsg:
@@ -662,7 +638,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			a.screen = screenPostingDetail
-			a.showPostingDetail()
+			p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
 		}
 	case applicationNotesUpdatedMsg:
 		a.err = msg.err
@@ -672,7 +649,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			a.screen = screenPostingDetail
-			a.showPostingDetail()
+			p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
 		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
@@ -684,9 +662,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.postings = narrowPostingsToFilters(a.postings, msg.departments, msg.locations)
 			a.activeFilterDepartments = msg.departments
 			a.activeFilterLocations = msg.locations
-			if a.postingCursor >= len(a.postings) {
-				a.postingCursor = 0
-			}
+			a.postingList.resetCursorIfOutOfBounds(len(a.postings))
 			return a, refreshCompany(a.syncer, a.selectedCompany.ID, a.selectedCompany.Name)
 		}
 	case browserOpenedMsg:
@@ -697,11 +673,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if a.screen == screenPostingDetail {
 			// Re-wrap at the new width: viewport.View() truncates rather
 			// than re-wrapping already-set content when Width shrinks, so
-			// just resizing the fields isn't enough. showPostingDetail
-			// also resizes detailViewport itself from a.width/a.height.
-			// When not on the detail screen, sizing happens fresh the
-			// next time it's entered, so nothing to do here.
-			a.showPostingDetail()
+			// just resizing the fields isn't enough. postingDetail.resize
+			// rebuilds the viewport at the new dimensions. When not on the
+			// detail screen, sizing happens fresh the next time it's
+			// entered, so nothing to do here.
+			a.postingDetail.resize(a.width, a.listRows())
 		}
 	case tea.KeyMsg:
 		switch a.screen {
@@ -718,100 +694,54 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			return a, cmd
 		case screenPostingList:
-			switch {
-			case msg.Type == tea.KeyDown, msg.String() == "j":
-				if a.postingCursor < len(a.postings)-1 {
-					a.postingCursor++
-				}
-			case msg.Type == tea.KeyUp, msg.String() == "k":
-				if a.postingCursor > 0 {
-					a.postingCursor--
-				}
-			case msg.Type == tea.KeyEsc, msg.String() == "b":
+			snap := postingListSnapshot{
+				companyName:             a.selectedCompany.Name,
+				postings:                a.postings,
+				markup:                  a.postingMarkup,
+				hideArchived:            a.hideArchived,
+				activeFilterDepartments: a.activeFilterDepartments,
+				activeFilterLocations:   a.activeFilterLocations,
+			}
+			cmd, intent := a.postingList.Update(msg, snap)
+			switch v := intent.(type) {
+			case backToCompanyListMsg:
 				a.screen = screenCompanyList
-			case msg.Type == tea.KeyEnter:
-				if a.postingCursor < len(a.postings) {
-					a.screen = screenPostingDetail
-					a.showPostingDetail()
-					return a, loadApplication(a.store, a.postings[a.postingCursor].ID)
-				}
-			case msg.String() == "o":
-				if a.postingCursor < len(a.postings) {
-					url := a.postings[a.postingCursor].JobURL
-					if url != nil && *url != "" {
-						return a, openInBrowser(*url)
-					}
-				}
-			case msg.String() == "f":
+			case enterPostingDetailMsg:
+				p, app, hasApp := a.lookupPosting(v.postingID)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
+				a.screen = screenPostingDetail
+				return a, loadApplication(a.store, p.ID)
+			case enterFilterSelectMsg:
 				a.screen = screenFilterSelect
 				return a, loadFilterOptions(a.store, a.selectedCompany.ID)
-			case msg.String() == "i":
-				if a.postingCursor < len(a.postings) {
-					p := a.postings[a.postingCursor]
-					currentlyInterested := a.postingMarkup[p.ID].InterestedAt != nil
-					return a, toggleInterested(a.store, p.ID, currentlyInterested)
-				}
-			case msg.String() == "x":
-				if a.postingCursor < len(a.postings) {
-					p := a.postings[a.postingCursor]
-					currentlyArchived := a.postingMarkup[p.ID].ArchivedAt != nil
-					return a, toggleArchived(a.store, p.ID, currentlyArchived)
-				}
-			case msg.String() == "A":
+			case toggleHideArchivedMsg:
 				a.hideArchived = !a.hideArchived
 				return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
 			}
+			return a, cmd
 		case screenPostingDetail:
-			switch {
-			case msg.Type == tea.KeyRight, msg.String() == "l":
-				if a.postingCursor < len(a.postings)-1 {
-					a.postingCursor++
-					a.showPostingDetail()
-					return a, loadApplication(a.store, a.postings[a.postingCursor].ID)
-				}
-			case msg.Type == tea.KeyLeft, msg.String() == "h":
-				if a.postingCursor > 0 {
-					a.postingCursor--
-					a.showPostingDetail()
-					return a, loadApplication(a.store, a.postings[a.postingCursor].ID)
-				}
-			case msg.Type == tea.KeyEsc, msg.String() == "b":
+			cmd, intent := a.postingDetail.Update(msg)
+			switch v := intent.(type) {
+			case backToPostingListMsg:
 				a.screen = screenPostingList
-			case msg.String() == "o":
-				if a.postingCursor < len(a.postings) {
-					url := a.postings[a.postingCursor].JobURL
-					if url != nil && *url != "" {
-						return a, openInBrowser(*url)
-					}
+				a.postingList.setCursor(indexOfPosting(a.postings, a.postingDetail.posting.ID))
+			case navigatePostingMsg:
+				idx := indexOfPosting(a.postings, v.postingID)
+				newIdx := idx + v.direction
+				if idx >= 0 && newIdx >= 0 && newIdx < len(a.postings) {
+					p := a.postings[newIdx]
+					app, hasApp := a.applicationsByPosting[p.ID]
+					a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
+					return a, loadApplication(a.store, p.ID)
 				}
-			case msg.String() == "a":
-				if a.postingCursor < len(a.postings) {
-					p := a.postings[a.postingCursor]
-					if _, exists := a.applicationsByPosting[p.ID]; !exists {
-						return a, createApplication(a.store, p.ID)
-					}
-				}
-			case msg.String() == "s":
-				if a.postingCursor < len(a.postings) {
-					p := a.postings[a.postingCursor]
-					if app, exists := a.applicationsByPosting[p.ID]; exists {
-						a.screen = screenApplicationStatusSelect
-						a.applicationStatus = newApplicationStatusModel(a.store, p.ID, app.Status)
-					}
-				}
-			case msg.String() == "n":
-				if a.postingCursor < len(a.postings) {
-					p := a.postings[a.postingCursor]
-					if app, exists := a.applicationsByPosting[p.ID]; exists {
-						a.screen = screenApplicationNotesEdit
-						a.applicationNotes = newApplicationNotesModel(a.store, p.ID, app.Notes, a.width, a.listRows())
-					}
-				}
-			default:
-				var cmd tea.Cmd
-				a.detailViewport, cmd = a.detailViewport.Update(msg)
-				return a, cmd
+			case enterApplicationStatusMsg:
+				a.screen = screenApplicationStatusSelect
+				a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus)
+			case enterApplicationNotesMsg:
+				a.screen = screenApplicationNotesEdit
+				a.applicationNotes = newApplicationNotesModel(a.store, v.postingID, v.currentNotes, a.width, a.listRows())
 			}
+			return a, cmd
 		case screenApplicationStatusSelect:
 			cmd, intent := a.applicationStatus.Update(msg)
 			if _, ok := intent.(cancelApplicationStatusMsg); ok {
@@ -854,34 +784,17 @@ func (a *App) View() string {
 	case screenCompanyForm:
 		b.WriteString(a.companyForm.View())
 	case screenPostingList:
-		b.WriteString(titleStyle.Render(fmt.Sprintf("Postings: %s", a.selectedCompany.Name)) + "\n")
-		if summary := filterSummaryLine(a.activeFilterDepartments, a.activeFilterLocations); summary != "" {
-			b.WriteString(helpStyle.Render(summary) + "\n")
+		snap := postingListSnapshot{
+			companyName:             a.selectedCompany.Name,
+			postings:                a.postings,
+			markup:                  a.postingMarkup,
+			hideArchived:            a.hideArchived,
+			activeFilterDepartments: a.activeFilterDepartments,
+			activeFilterLocations:   a.activeFilterLocations,
 		}
-		if a.hideArchived {
-			b.WriteString(helpStyle.Render("Archived postings hidden (press 'A' to show)") + "\n")
-		}
-		if len(a.postings) == 0 {
-			b.WriteString("No postings yet. Press 'r' from the company list to refresh.\n")
-		}
-		start, end := visibleWindow(a.postingCursor, len(a.postings), a.listRows())
-		for i := start; i < end; i++ {
-			p := a.postings[i]
-			marker := postingMarker(a.postingMarkup[p.ID])
-			line := fmt.Sprintf("%s %s | %s | %s | %s", marker, p.Title, derefOr(p.Department, ""), derefOr(p.Location, ""), p.ListingStatus)
-			if i == a.postingCursor {
-				b.WriteString(cursorStyle.Render("> "+line) + "\n")
-			} else {
-				b.WriteString("  " + line + "\n")
-			}
-		}
-		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back"))
+		b.WriteString(a.postingList.View(snap, a.listRows()))
 	case screenPostingDetail:
-		if a.postingCursor < len(a.postings) {
-			b.WriteString(titleStyle.Render(a.postings[a.postingCursor].Title) + "\n")
-		}
-		b.WriteString(a.detailViewport.View() + "\n")
-		b.WriteString(helpStyle.Render("↑/↓ (j/k): scroll  ←/→ (h/l): prev/next posting  o: open in browser  a: start application  s: set status  n: edit notes  esc/b: back"))
+		b.WriteString(a.postingDetail.View())
 	case screenApplicationStatusSelect:
 		b.WriteString(a.applicationStatus.View())
 	case screenApplicationNotesEdit:
