@@ -93,24 +93,24 @@ func TestApp_CursorDown_MovesSelectionWithinBounds(t *testing.T) {
 	mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	if app.cursor != 0 {
-		t.Fatalf("initial cursor = %d, want 0", app.cursor)
+	if app.companyList.cursor != 0 {
+		t.Fatalf("initial cursor = %d, want 0", app.companyList.cursor)
 	}
 
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
-	if app.cursor != 1 {
-		t.Fatalf("cursor after down = %d, want 1", app.cursor)
+	if app.companyList.cursor != 1 {
+		t.Fatalf("cursor after down = %d, want 1", app.companyList.cursor)
 	}
 
 	// At the bottom, another down should not move past the last company.
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
-	if app.cursor != 1 {
-		t.Fatalf("cursor after down at bottom = %d, want 1 (clamped)", app.cursor)
+	if app.companyList.cursor != 1 {
+		t.Fatalf("cursor after down at bottom = %d, want 1 (clamped)", app.companyList.cursor)
 	}
 
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyUp})
-	if app.cursor != 0 {
-		t.Fatalf("cursor after up = %d, want 0", app.cursor)
+	if app.companyList.cursor != 0 {
+		t.Fatalf("cursor after up = %d, want 0", app.companyList.cursor)
 	}
 }
 
@@ -1254,12 +1254,12 @@ func TestApp_CompanyList_VimJK_MoveCursorLikeArrows(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	app, _ = sendKey(app, runeKey('j'))
-	if app.cursor != 1 {
-		t.Fatalf("cursor after 'j' = %d, want 1", app.cursor)
+	if app.companyList.cursor != 1 {
+		t.Fatalf("cursor after 'j' = %d, want 1", app.companyList.cursor)
 	}
 	app, _ = sendKey(app, runeKey('k'))
-	if app.cursor != 0 {
-		t.Fatalf("cursor after 'k' = %d, want 0", app.cursor)
+	if app.companyList.cursor != 0 {
+		t.Fatalf("cursor after 'k' = %d, want 0", app.companyList.cursor)
 	}
 }
 

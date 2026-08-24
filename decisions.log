@@ -1206,3 +1206,51 @@ full test suite; documents_test.go's exists-behavior tests now
 construct a Store and call Status instead of calling the removed
 Paths methods directly, and tui/app_test.go's two document-status
 tests call app.documents.Status instead of app.documents.Get.
+
+## 2026-08-24 -- tui.App decomposition PR 1/6: extract companyListModel (RFC #19)
+Context: first implementation PR against RFC #19 (parent-mediated nested
+TEA models for tui.App). Scope: only the company-list screen -- lowest
+risk, no dependents, proves the pattern before the harder posting-list/
+detail pair (PR 6).
+
+Decision: new tui/company_list.go defines companyListModel{store,
+syncer, cursor} -- cursor is private, moved off App entirely (was
+App.cursor). companies []store.Company stays App-owned domain data,
+loaded via the existing companiesLoadedMsg/companyCreatedMsg/
+companyDeletedMsg handlers, passed into companyListModel.Update/View by
+value on every call. Two new message types (enterCompanyFormMsg,
+selectCompanyMsg) represent this screen's only two cross-screen effects.
+
+One correction made during implementation, not anticipated in the RFC:
+routing screen transitions purely through tea.Cmd-produced messages (as
+originally sketched) would have added an extra async round-trip that
+tui/app_test.go's openPostingList helper (used by the majority of the
+test suite) doesn't account for -- it runs exactly one cmd-and-feedback
+cycle per keypress. Fix: companyListModel.Update returns (tea.Cmd,
+tea.Msg), not just tea.Cmd -- the tea.Msg (if non-nil) is an intent
+App.Update applies synchronously, in the same call, exactly matching
+today's timing (screen changes and any resulting loadPostings dispatch
+happen in one Update call, same as before this type existed). This is
+closer to the "transition" pattern from one of the RFC's rejected
+alternative designs than to pure Design-A-style Cmd-only signaling --
+worth knowing since the RFC's mechanism description undersold this
+timing constraint. Genuine async commands (deleteCompany, refreshCompany)
+are unaffected -- returned as the first value, run through bubbletea
+normally.
+
+App.companyDeletedMsg's cursor-clamp (previously 2 inline lines) is now
+a.companyList.clampCursor(len(a.companies)) -- the exact "new wrinkle"
+the RFC named in advance (App can no longer reach the screen's private
+cursor directly).
+
+Verified: full existing test suite (62 tui tests) passes unchanged
+after updating the ~12 call sites that read app.cursor to
+app.companyList.cursor -- no test assertions or behavior changed, only
+the field's location. New tui/company_list_test.go adds isolated
+coverage of companyListModel directly (cursor movement/clamp, Enter/'a'
+returning the right intent, no-companies edge case) with no App/store
+setup required, demonstrating the RFC's stated test-isolation goal.
+Manually verified against the real binary via tmux: cursor movement,
+enter-to-postings, esc/b back, 'a' to form, 'd' delete with correct
+cursor clamp (2 companies -> delete first -> cursor correctly lands on
+the remaining one), 'q' quit.
