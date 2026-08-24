@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textarea"
-	"github.com/charmbracelet/bubbles/textinput"
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -68,22 +67,13 @@ const (
 	screenApplicationNotesEdit
 )
 
-// formInputs indices: name, then source ref. Source is fixed to "ashby"
-// for now (the only supported job board), so there's no source picker.
-const (
-	formFieldName = iota
-	formFieldSourceRef
-	formFieldCount
-)
-
 type App struct {
 	store           *store.Store
 	syncer          *sync.Syncer
 	companies       []store.Company
 	companyList     companyListModel
 	screen          screen
-	formInputs      []textinput.Model
-	formFocus       int
+	companyForm     companyFormModel
 	status          string
 	err             error
 	selectedCompany store.Company
@@ -206,15 +196,11 @@ func renderFilterOption(label string, checked, isCursor bool) string {
 }
 
 func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
-	inputs := make([]textinput.Model, formFieldCount)
-	for i := range inputs {
-		inputs[i] = textinput.New()
-	}
 	return &App{
 		store:          s,
 		syncer:         syncer,
 		companyList:    newCompanyListModel(s, syncer),
-		formInputs:     inputs,
+		companyForm:    newCompanyFormModel(s),
 		detailViewport: viewport.New(0, 0),
 		hideArchived:   true,
 		documents:      docs,
@@ -788,12 +774,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			switch v := intent.(type) {
 			case enterCompanyFormMsg:
 				a.screen = screenCompanyForm
-				a.formFocus = 0
-				for i := range a.formInputs {
-					a.formInputs[i].SetValue("")
-					a.formInputs[i].Blur()
-				}
-				a.formInputs[0].Focus()
+				a.companyForm = newCompanyFormModel(a.store)
 			case selectCompanyMsg:
 				a.selectedCompany = v.company
 				a.screen = screenPostingList
@@ -960,26 +941,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, saveCompanyFilters(a.store, a.selectedCompany.ID, departments, locations)
 			}
 		case screenCompanyForm:
-			if msg.Type == tea.KeyEsc {
+			cmd, intent := a.companyForm.Update(msg)
+			if _, ok := intent.(cancelCompanyFormMsg); ok {
 				a.screen = screenCompanyList
-				return a, nil
 			}
-			if msg.Type == tea.KeyTab {
-				a.formInputs[a.formFocus].Blur()
-				a.formFocus = (a.formFocus + 1) % formFieldCount
-				a.formInputs[a.formFocus].Focus()
-				return a, nil
-			}
-			if msg.Type == tea.KeyEnter {
-				name := a.formInputs[formFieldName].Value()
-				sourceRef := a.formInputs[formFieldSourceRef].Value()
-				if name == "" || sourceRef == "" {
-					return a, nil
-				}
-				return a, createCompany(a.store, name, sourceRef)
-			}
-			var cmd tea.Cmd
-			a.formInputs[a.formFocus], cmd = a.formInputs[a.formFocus].Update(msg)
 			return a, cmd
 		}
 	}
@@ -997,16 +962,7 @@ func (a *App) View() string {
 
 	switch a.screen {
 	case screenCompanyForm:
-		b.WriteString(titleStyle.Render("Add company") + "\n")
-		labels := []string{"Name", "Ashby slug"}
-		for i, input := range a.formInputs {
-			label := fieldLabel
-			if i == a.formFocus {
-				label = focusedLabel
-			}
-			b.WriteString(label.Render(labels[i]+":") + " " + input.View() + "\n")
-		}
-		b.WriteString(helpStyle.Render("tab: next field  enter: save  esc: cancel"))
+		b.WriteString(a.companyForm.View())
 	case screenPostingList:
 		b.WriteString(titleStyle.Render(fmt.Sprintf("Postings: %s", a.selectedCompany.Name)) + "\n")
 		if summary := filterSummaryLine(a.activeFilterDepartments, a.activeFilterLocations); summary != "" {

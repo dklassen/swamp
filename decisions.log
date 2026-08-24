@@ -1254,3 +1254,41 @@ Manually verified against the real binary via tmux: cursor movement,
 enter-to-postings, esc/b back, 'a' to form, 'd' delete with correct
 cursor clamp (2 companies -> delete first -> cursor correctly lands on
 the remaining one), 'q' quit.
+
+## 2026-08-24 -- tui.App decomposition PR 2/6: extract companyFormModel (RFC #19)
+Context: second implementation PR against RFC #19. Scope: the
+add-company form -- like the company list, has zero cross-screen reads
+today, so isolates cleanly.
+
+Decision: new tui/company_form.go defines companyFormModel{store,
+inputs, focus} -- App.formInputs/App.formFocus move onto it entirely
+and become private. formFieldName/formFieldSourceRef/formFieldCount
+constants moved into the same file for cohesion (previously declared
+at App's top). The previous "reset in place" pattern on entry
+(App.formInputs[i].SetValue(""); Blur(); formInputs[0].Focus(), run
+from the company-list's 'a' handler) is replaced by constructing a
+fresh companyFormModel via newCompanyFormModel(store) each time
+enterCompanyFormMsg is handled -- same effect, construction instead of
+post-hoc mutation, consistent with PR 1's pattern and the RFC's
+seed-at-construction convention for the harder screens still to come.
+
+One new message type, cancelCompanyFormMsg, represents Esc -- the only
+cross-screen effect this form has (submitting via Enter dispatches
+createCompany as a real async Cmd and stays on the same screen;
+companyCreatedMsg's existing central handler already does the
+screen-back-to-list transition once creation succeeds, unchanged).
+
+Verified: full test suite (62 tui tests, unchanged assertions -- only
+app.formInputs/app.formFocus call sites became
+app.companyForm.inputs/app.companyForm.focus) plus 5 new isolated
+companyFormModel tests (focus-on-construct, tab-advances-focus,
+esc-returns-cancel, enter-with-empty-fields-is-noop,
+enter-with-valid-fields-returns-createCompany-cmd) requiring no
+App/store setup beyond a *store.Store passed straight into the
+constructor (nil is fine for cases that never invoke the returned cmd).
+Manually verified against the real binary via tmux: 'a' opens a blank
+form, typing populates the focused field, tab moves focus and blurs
+the previous field, enter with both fields filled creates the company
+and returns to the list, esc cancels without creating anything, and a
+fresh 'a' after a cancel starts blank again (no leaked state from the
+cancelled attempt).

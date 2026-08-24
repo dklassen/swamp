@@ -136,8 +136,8 @@ func TestApp_TypingInForm_UpdatesFocusedField(t *testing.T) {
 	app, _ = sendKey(app, runeKey('a'))
 	app, _ = sendKey(app, runeKey('A', 'c', 'm', 'e'))
 
-	if got := app.formInputs[0].Value(); got != "Acme" {
-		t.Fatalf("formInputs[0].Value() = %q, want %q", got, "Acme")
+	if got := app.companyForm.inputs[0].Value(); got != "Acme" {
+		t.Fatalf("companyForm.inputs[0].Value() = %q, want %q", got, "Acme")
 	}
 }
 
@@ -148,19 +148,19 @@ func TestApp_Tab_MovesFocusToNextField(t *testing.T) {
 	app, _ = sendKey(app, runeKey('a'))
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
-	if app.formFocus != formFieldSourceRef {
-		t.Fatalf("formFocus after tab = %d, want formFieldSourceRef", app.formFocus)
+	if app.companyForm.focus != formFieldSourceRef {
+		t.Fatalf("companyForm.focus after tab = %d, want formFieldSourceRef", app.companyForm.focus)
 	}
-	if !app.formInputs[formFieldSourceRef].Focused() {
-		t.Fatal("formInputs[formFieldSourceRef] should be focused after tab")
+	if !app.companyForm.inputs[formFieldSourceRef].Focused() {
+		t.Fatal("companyForm.inputs[formFieldSourceRef] should be focused after tab")
 	}
-	if app.formInputs[formFieldName].Focused() {
-		t.Fatal("formInputs[formFieldName] should be blurred after tab")
+	if app.companyForm.inputs[formFieldName].Focused() {
+		t.Fatal("companyForm.inputs[formFieldName] should be blurred after tab")
 	}
 
 	app, _ = sendKey(app, runeKey('a', 'c', 'm', 'e'))
-	if got := app.formInputs[formFieldSourceRef].Value(); got != "acme" {
-		t.Fatalf("formInputs[formFieldSourceRef].Value() = %q, want %q", got, "acme")
+	if got := app.companyForm.inputs[formFieldSourceRef].Value(); got != "acme" {
+		t.Fatalf("companyForm.inputs[formFieldSourceRef].Value() = %q, want %q", got, "acme")
 	}
 }
 
