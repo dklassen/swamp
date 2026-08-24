@@ -100,11 +100,7 @@ type App struct {
 	width          int
 	height         int
 
-	filterDepartmentOptions   []string
-	filterLocationOptions     []string
-	filterCursor              int
-	filterSelectedDepartments map[string]bool
-	filterSelectedLocations   map[string]bool
+	filterSelect filterSelectModel
 
 	// activeFilterDepartments/activeFilterLocations are the company's
 	// currently-applied filter values, kept in sync with whatever
@@ -126,21 +122,6 @@ func (a *App) listRows() int {
 		rows = 0
 	}
 	return rows
-}
-
-// filterItemAtCursor maps filterCursor into the combined
-// departments-then-locations list, returning which field/value it points
-// at. ok is false if the cursor is out of range (e.g. no options loaded
-// yet).
-func (a *App) filterItemAtCursor() (field, value string, ok bool) {
-	if a.filterCursor < len(a.filterDepartmentOptions) {
-		return "department", a.filterDepartmentOptions[a.filterCursor], true
-	}
-	idx := a.filterCursor - len(a.filterDepartmentOptions)
-	if idx < len(a.filterLocationOptions) {
-		return "location", a.filterLocationOptions[idx], true
-	}
-	return "", "", false
 }
 
 // postingMarker renders a posting's markup state as a single-character
@@ -577,23 +558,6 @@ func saveCompanyFilters(s *store.Store, companyID int64, departments, locations 
 	}
 }
 
-// selectedFilterValues returns the currently checked department and
-// location values from the filter-select screen, in the same order as
-// filterDepartmentOptions/filterLocationOptions.
-func (a *App) selectedFilterValues() (departments, locations []string) {
-	for _, d := range a.filterDepartmentOptions {
-		if a.filterSelectedDepartments[d] {
-			departments = append(departments, d)
-		}
-	}
-	for _, l := range a.filterLocationOptions {
-		if a.filterSelectedLocations[l] {
-			locations = append(locations, l)
-		}
-	}
-	return departments, locations
-}
-
 // narrowPostingsToFilters keeps only postings matching the given
 // department/location values (OR within a field, AND across fields, same
 // semantics as filter.Match), for the optimistic client-side narrowing
@@ -735,12 +699,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
-		a.filterDepartmentOptions = msg.departments
-		a.filterLocationOptions = msg.locations
-		a.filterCursor = 0
-		existingDepartments, existingLocations := splitCompanyFilters(msg.existingFilters)
-		a.filterSelectedDepartments = toSet(existingDepartments)
-		a.filterSelectedLocations = toSet(existingLocations)
+		a.filterSelect = newFilterSelectModel(a.store, a.selectedCompany.ID, a.selectedCompany.Name, msg.departments, msg.locations, msg.existingFilters)
 	case companyFiltersSavedMsg:
 		a.err = msg.err
 		if msg.err == nil {
@@ -914,32 +873,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, cmd
 			}
 		case screenFilterSelect:
-			total := len(a.filterDepartmentOptions) + len(a.filterLocationOptions)
-			switch {
-			case msg.Type == tea.KeyDown, msg.String() == "j":
-				if a.filterCursor < total-1 {
-					a.filterCursor++
-				}
-			case msg.Type == tea.KeyUp, msg.String() == "k":
-				if a.filterCursor > 0 {
-					a.filterCursor--
-				}
-			case msg.Type == tea.KeySpace:
-				field, value, ok := a.filterItemAtCursor()
-				if ok {
-					switch field {
-					case "department":
-						a.filterSelectedDepartments[value] = !a.filterSelectedDepartments[value]
-					case "location":
-						a.filterSelectedLocations[value] = !a.filterSelectedLocations[value]
-					}
-				}
-			case msg.Type == tea.KeyEsc, msg.String() == "b":
+			cmd, intent := a.filterSelect.Update(msg)
+			if _, ok := intent.(cancelFilterSelectMsg); ok {
 				a.screen = screenPostingList
-			case msg.Type == tea.KeyEnter:
-				departments, locations := a.selectedFilterValues()
-				return a, saveCompanyFilters(a.store, a.selectedCompany.ID, departments, locations)
 			}
+			return a, cmd
 		case screenCompanyForm:
 			cmd, intent := a.companyForm.Update(msg)
 			if _, ok := intent.(cancelCompanyFormMsg); ok {
@@ -1007,26 +945,7 @@ func (a *App) View() string {
 		b.WriteString(a.notesTextarea.View() + "\n")
 		b.WriteString(helpStyle.Render("ctrl+s: save  esc: cancel"))
 	case screenFilterSelect:
-		b.WriteString(titleStyle.Render(fmt.Sprintf("Filters: %s", a.selectedCompany.Name)) + "\n")
-		if len(a.filterDepartmentOptions) == 0 && len(a.filterLocationOptions) == 0 {
-			b.WriteString("No department/location values discovered yet -- refresh the company first.\n")
-		}
-		idx := 0
-		if len(a.filterDepartmentOptions) > 0 {
-			b.WriteString(fieldLabel.Render("Department") + "\n")
-			for _, d := range a.filterDepartmentOptions {
-				b.WriteString(renderFilterOption(d, a.filterSelectedDepartments[d], idx == a.filterCursor))
-				idx++
-			}
-		}
-		if len(a.filterLocationOptions) > 0 {
-			b.WriteString(fieldLabel.Render("Location") + "\n")
-			for _, l := range a.filterLocationOptions {
-				b.WriteString(renderFilterOption(l, a.filterSelectedLocations[l], idx == a.filterCursor))
-				idx++
-			}
-		}
-		b.WriteString(helpStyle.Render("↑/↓ (j/k): select  space: toggle  enter: save  esc/b: cancel"))
+		b.WriteString(a.filterSelect.View())
 	default:
 		b.WriteString(a.companyList.View(a.companies, a.listRows()))
 	}

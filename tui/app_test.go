@@ -1424,10 +1424,10 @@ func TestApp_PressF_OnPostingList_OpensFilterSelectAndLoadsOptions(t *testing.T)
 
 	app, _ = sendKey(app, cmd())
 
-	if diff := cmp.Diff([]string{"Engineering"}, app.filterDepartmentOptions); diff != "" {
+	if diff := cmp.Diff([]string{"Engineering"}, app.filterSelect.departmentOptions); diff != "" {
 		t.Fatalf("filterDepartmentOptions mismatch (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff([]string{"Remote"}, app.filterLocationOptions); diff != "" {
+	if diff := cmp.Diff([]string{"Remote"}, app.filterSelect.locationOptions); diff != "" {
 		t.Fatalf("filterLocationOptions mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -1443,17 +1443,17 @@ func TestApp_FilterSelect_SpaceTogglesSelection(t *testing.T) {
 	app, cmd := sendKey(app, runeKey('f'))
 	app, _ = sendKey(app, cmd())
 
-	if app.filterSelectedDepartments["Engineering"] {
+	if app.filterSelect.selectedDepartments["Engineering"] {
 		t.Fatal("Engineering should not be selected initially")
 	}
 
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
-	if !app.filterSelectedDepartments["Engineering"] {
+	if !app.filterSelect.selectedDepartments["Engineering"] {
 		t.Fatal("Engineering should be selected after space")
 	}
 
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
-	if app.filterSelectedDepartments["Engineering"] {
+	if app.filterSelect.selectedDepartments["Engineering"] {
 		t.Fatal("Engineering should be deselected after second space")
 	}
 }
@@ -1506,7 +1506,7 @@ func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) 
 	// Cursor starts at filterDepartmentOptions[0]. Confirm which
 	// department that is before toggling, so the assertion below isn't
 	// order-dependent.
-	wantDept := app.filterDepartmentOptions[0]
+	wantDept := app.filterSelect.departmentOptions[0]
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
 
 	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
@@ -1661,7 +1661,7 @@ func TestApp_FilterSelect_Enter_UpdatesActiveFiltersImmediately(t *testing.T) {
 
 	app, cmd := sendKey(app, runeKey('f'))
 	app, _ = sendKey(app, cmd())
-	wantDept := app.filterDepartmentOptions[0]
+	wantDept := app.filterSelect.departmentOptions[0]
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
 	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 	app, _ = sendKey(app, cmd()) // companyFiltersSavedMsg
