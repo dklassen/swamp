@@ -754,8 +754,8 @@ func TestApp_PressN_OnPostingDetail_WithApplication_OpensNotesEditorPrepopulated
 	if app.screen != screenApplicationNotesEdit {
 		t.Fatalf("screen after 'n' = %v, want screenApplicationNotesEdit", app.screen)
 	}
-	if got := app.notesTextarea.Value(); got != "Referred by Alice" {
-		t.Fatalf("notesTextarea.Value() = %q, want %q", got, "Referred by Alice")
+	if got := app.applicationNotes.textarea.Value(); got != "Referred by Alice" {
+		t.Fatalf("applicationNotes.textarea.Value() = %q, want %q", got, "Referred by Alice")
 	}
 }
 
