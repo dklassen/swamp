@@ -1,6 +1,9 @@
 package store
 
-import "testing"
+import (
+	"encoding/json"
+	"testing"
+)
 
 func TestApplicationStatus_String_ReturnsDBValue(t *testing.T) {
 	if got := ApplicationStatusStarted.String(); got != "application_started" {
@@ -17,6 +20,17 @@ func TestApplicationStatuses_EachRoundTripsThroughStringAndParse(t *testing.T) {
 		if parsed != status {
 			t.Fatalf("ParseApplicationStatus(%q) = %v, want %v", status.String(), parsed, status)
 		}
+	}
+}
+
+func TestApplicationStatus_MarshalJSON_UsesDBStringNotIntValue(t *testing.T) {
+	got, err := json.Marshal(ApplicationStatusInterviewing)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	want := `"interviewing"`
+	if string(got) != want {
+		t.Fatalf("json.Marshal(ApplicationStatusInterviewing) = %s, want %s (a bare int forces JSON consumers to know Swamp's internal enum ordering)", got, want)
 	}
 }
 
