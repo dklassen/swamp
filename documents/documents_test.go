@@ -35,6 +35,49 @@ func TestStore_Status_FalseWhenFileAbsent(t *testing.T) {
 	}
 }
 
+func TestStore_EnsureDir_CreatesDirWhenAbsent(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	paths, err := NewStore(base).EnsureDir(3)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+
+	want := ForApplication(base, 3)
+	if paths != want {
+		t.Errorf("paths = %+v, want %+v", paths, want)
+	}
+
+	info, err := os.Stat(filepath.Dir(paths.CoverLetter))
+	if err != nil {
+		t.Fatalf("Stat dir: %v", err)
+	}
+	if !info.IsDir() {
+		t.Error("expected the application's document directory to exist as a directory")
+	}
+}
+
+func TestStore_EnsureDir_IdempotentWhenDirAlreadyExists(t *testing.T) {
+	t.Parallel()
+
+	base := t.TempDir()
+	s := NewStore(base)
+
+	if _, err := s.EnsureDir(5); err != nil {
+		t.Fatalf("first EnsureDir: %v", err)
+	}
+	paths, err := s.EnsureDir(5)
+	if err != nil {
+		t.Fatalf("second EnsureDir: %v", err)
+	}
+
+	want := ForApplication(base, 5)
+	if paths != want {
+		t.Errorf("paths = %+v, want %+v", paths, want)
+	}
+}
+
 func TestStore_Status_TrueWhenFilePresent(t *testing.T) {
 	t.Parallel()
 
