@@ -59,6 +59,18 @@ func NewStore(base string) *Store {
 	return &Store{base: base}
 }
 
+// EnsureDir creates applicationID's document directory if it doesn't
+// already exist yet, and returns its resolved paths. Safe to call more
+// than once for the same applicationID -- MkdirAll is a no-op when the
+// directory is already there.
+func (s *Store) EnsureDir(applicationID int64) (Paths, error) {
+	paths := ForApplication(s.base, applicationID)
+	if err := os.MkdirAll(filepath.Dir(paths.CoverLetter), 0o755); err != nil {
+		return Paths{}, err
+	}
+	return paths, nil
+}
+
 // Status returns applicationID's document paths and whether each exists
 // on disk, checked via os.Stat.
 func (s *Store) Status(applicationID int64) Status {

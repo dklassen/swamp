@@ -1,6 +1,9 @@
 package store
 
-import "fmt"
+import (
+	"encoding/json"
+	"fmt"
+)
 
 // ApplicationStatus is a typed enum for Application.Status. Go is the sole
 // source of truth for which values are legal (see decisions.log,
@@ -42,6 +45,14 @@ func (s ApplicationStatus) String() string {
 		return fmt.Sprintf("ApplicationStatus(%d)", int(s))
 	}
 	return applicationStatusNames[s]
+}
+
+// MarshalJSON encodes as the same DB string form String() returns (e.g.
+// "application_started"), not the underlying int -- callers outside this
+// package (e.g. the stage package's CLI JSON output) shouldn't need to
+// know this enum's internal ordering to make sense of a status.
+func (s ApplicationStatus) MarshalJSON() ([]byte, error) {
+	return json.Marshal(s.String())
 }
 
 // ParseApplicationStatus converts a raw DB status string into the typed

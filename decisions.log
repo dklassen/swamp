@@ -1517,3 +1517,75 @@ all UI-only state (cursors, form inputs, textareas, viewports) is
 private to its owning screen, and all cross-screen effects flow
 through typed messages the parent interprets, closing the
 encapsulation gap the RFC set out to close.
+
+## 2026-08-26 -- Agent hand-off mechanism: stage package (#26)
+Context: the piece the project's been building toward since the 2026-08-10
+v1-scope decision ("resume generation needs good data first") and the
+documents (#5) / capabilities-document (#6) work -- a CLI mechanism an
+external agent can use to discover interested postings and get everything
+it needs to draft a tailored cover letter and resume. Swamp itself never
+drafts content or calls an LLM; that stays entirely external, consistent
+with #5's "consumed directly by an external agent" framing for the
+documents package.
+
+Decision, new `stage` package, not `handoff`: the original PRD draft named
+this package `handoff`, describing the interaction between Swamp and the
+external agent rather than the responsibility the package owns -- flagged
+in PR review as naming smell (meta/architectural language, not domain
+vocabulary, unlike `sync`/`documents`/`store`). Renamed to `stage`: the
+package stages an application for drafting -- gets it into a
+ready-and-waiting state without doing the drafting itself.
+
+Decision, single constructed type mirroring sync.Syncer: `stage.New(store,
+documents)` returns one `*Stage` value with `List`/`Prepare` methods, not
+loose package-level functions -- same shape as `sync.New(...)` -> `*Syncer`
+-> `.SyncAll(...)`. Neither `store` nor `documents` import each other or
+gain any new dependency; `stage` is the only package that knows about
+both, exactly how `sync` is the only package that knows about both `ashby`
+and `store`.
+
+Decision, List (read-only) vs Prepare (mutating) split: continues the
+project's existing "no silent DB side effects from a read" principle (see
+#5's design discussion). `List` queries interested+non-archived postings
+via a new store query (postings JOIN posting_markup JOIN companies LEFT
+JOIN applications) and filters out any whose application already has both
+documents on disk (checked via `documents.Store.Status`) -- safe to call
+as often as needed. `Prepare` is the only mutating entry point: gets or
+creates the posting's Application (idempotent, mirrors the TUI's existing
+"no-op if already exists" behavior for the `a` key), then calls a new
+`documents.Store.EnsureDir` to create the document directory if needed.
+`documents.Store.Status` and `ForApplication` stay unchanged and
+read-only; `EnsureDir` is additive, not a change to that contract.
+
+Decision, CLI surface: two subcommands added to the existing bare
+`os.Args` switch in cmd/swamp/main.go, same pattern as `fetch` (no CLI
+framework) -- `stage list` prints List's result as a JSON array, `stage
+prepare <posting-id>` prints Prepare's result as a JSON object.
+
+Finding during manual verification: `store.ApplicationStatus` (a Go
+int-enum) serialized to JSON as a bare integer (`0`) rather than its DB
+string form ("application_started") -- undermines the entire point of
+machine-readable output, since an external agent would need to know
+Swamp's internal enum ordering. Fixed by adding
+`ApplicationStatus.MarshalJSON` (delegates to the existing `String()`),
+covered by a new test in application_status_test.go. Caught by actually
+running the built binary against a scratch db and reading the JSON output,
+not by the unit tests alone -- worth noting as a case where the
+"documents"-style manual-verification step earned its keep.
+
+No new DB tables/columns beyond the one new SELECT query. No LLM client,
+API key handling, or provider code added anywhere in Swamp. TUI unchanged
+-- the existing found/not-found document display already reflects this
+mechanism's output with no modification needed. PROFILE_REFERENCE.md
+untouched, per #6's existing resolution.
+
+Verified: `go build ./...`, `go test ./...` (all packages green, including
+11 new stage package tests and 2 new documents/application_status tests),
+`golangci-lint run ./...` (0 issues), `gofmt` check clean. Manually
+verified the built binary end-to-end against a scratch sqlite db and
+documents directory: list excludes a posting with no posting_markup row
+and one not marked interested; prepare creates the application and
+directory and is idempotent on a second call (second call's Exists flags
+correctly reflect a file written between calls); list excludes a posting
+once both documents exist on disk; ApplicationStatus renders as a string
+after the MarshalJSON fix.

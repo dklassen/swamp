@@ -68,3 +68,21 @@ ORDER BY department;
 SELECT DISTINCT location FROM postings
 WHERE company_id = ? AND location IS NOT NULL AND location != ''
 ORDER BY location;
+
+-- name: ListInterestedPostings :many
+-- Postings the user has flagged interested and not archived, joined with
+-- their company name and -- if one has been started -- their
+-- application's id and status. Feeds the stage package's discovery of
+-- work for the external-agent hand-off mechanism (see stage.List).
+SELECT
+    postings.*,
+    companies.name AS company_name,
+    applications.id AS application_id,
+    applications.status AS application_status
+FROM postings
+JOIN posting_markup ON posting_markup.posting_id = postings.id
+JOIN companies ON companies.id = postings.company_id
+LEFT JOIN applications ON applications.posting_id = postings.id
+WHERE posting_markup.interested_at IS NOT NULL
+  AND posting_markup.archived_at IS NULL
+ORDER BY posting_markup.interested_at DESC;
