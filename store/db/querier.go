@@ -54,6 +54,11 @@ type Querier interface {
 	// from what's actually been ingested, not guessed at.
 	ListDistinctDepartmentsForCompany(ctx context.Context, companyID int64) ([]sql.NullString, error)
 	ListDistinctLocationsForCompany(ctx context.Context, companyID int64) ([]sql.NullString, error)
+	// Postings the user has flagged interested and not archived, joined with
+	// their company name and -- if one has been started -- their
+	// application's id and status. Feeds the stage package's discovery of
+	// work for the external-agent hand-off mechanism (see stage.List).
+	ListInterestedPostings(ctx context.Context) ([]ListInterestedPostingsRow, error)
 	ListInterviewStagesByApplication(ctx context.Context, applicationID int64) ([]InterviewStage, error)
 	ListPostingHistoryByPosting(ctx context.Context, postingID int64) ([]PostingHistory, error)
 	// id DESC is a tiebreaker: a single sync inserts many rows within the same

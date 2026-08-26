@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"time"
 )
 
 const createPosting = `-- name: CreatePosting :one
@@ -206,6 +207,100 @@ func (q *Queries) ListDistinctLocationsForCompany(ctx context.Context, companyID
 			return nil, err
 		}
 		items = append(items, location)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listInterestedPostings = `-- name: ListInterestedPostings :many
+SELECT
+    postings.id, postings.company_id, postings.source, postings.source_id, postings.title, postings.department, postings.team, postings.location, postings.employment_type, postings.workplace_type, postings.description_html, postings.description_text, postings.job_url, postings.application_url, postings.published_at, postings.raw_payload, postings.listing_status, postings.first_seen_at, postings.last_seen_at, postings.created_at, postings.updated_at,
+    companies.name AS company_name,
+    applications.id AS application_id,
+    applications.status AS application_status
+FROM postings
+JOIN posting_markup ON posting_markup.posting_id = postings.id
+JOIN companies ON companies.id = postings.company_id
+LEFT JOIN applications ON applications.posting_id = postings.id
+WHERE posting_markup.interested_at IS NOT NULL
+  AND posting_markup.archived_at IS NULL
+ORDER BY posting_markup.interested_at DESC
+`
+
+type ListInterestedPostingsRow struct {
+	ID                int64          `json:"id"`
+	CompanyID         int64          `json:"company_id"`
+	Source            string         `json:"source"`
+	SourceID          string         `json:"source_id"`
+	Title             string         `json:"title"`
+	Department        sql.NullString `json:"department"`
+	Team              sql.NullString `json:"team"`
+	Location          sql.NullString `json:"location"`
+	EmploymentType    sql.NullString `json:"employment_type"`
+	WorkplaceType     sql.NullString `json:"workplace_type"`
+	DescriptionHtml   sql.NullString `json:"description_html"`
+	DescriptionText   sql.NullString `json:"description_text"`
+	JobUrl            sql.NullString `json:"job_url"`
+	ApplicationUrl    sql.NullString `json:"application_url"`
+	PublishedAt       sql.NullTime   `json:"published_at"`
+	RawPayload        string         `json:"raw_payload"`
+	ListingStatus     string         `json:"listing_status"`
+	FirstSeenAt       time.Time      `json:"first_seen_at"`
+	LastSeenAt        time.Time      `json:"last_seen_at"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+	CompanyName       string         `json:"company_name"`
+	ApplicationID     sql.NullInt64  `json:"application_id"`
+	ApplicationStatus sql.NullString `json:"application_status"`
+}
+
+// Postings the user has flagged interested and not archived, joined with
+// their company name and -- if one has been started -- their
+// application's id and status. Feeds the stage package's discovery of
+// work for the external-agent hand-off mechanism (see stage.List).
+func (q *Queries) ListInterestedPostings(ctx context.Context) ([]ListInterestedPostingsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listInterestedPostings)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListInterestedPostingsRow
+	for rows.Next() {
+		var i ListInterestedPostingsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.CompanyID,
+			&i.Source,
+			&i.SourceID,
+			&i.Title,
+			&i.Department,
+			&i.Team,
+			&i.Location,
+			&i.EmploymentType,
+			&i.WorkplaceType,
+			&i.DescriptionHtml,
+			&i.DescriptionText,
+			&i.JobUrl,
+			&i.ApplicationUrl,
+			&i.PublishedAt,
+			&i.RawPayload,
+			&i.ListingStatus,
+			&i.FirstSeenAt,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.CompanyName,
+			&i.ApplicationID,
+			&i.ApplicationStatus,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Close(); err != nil {
 		return nil, err
