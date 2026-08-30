@@ -109,25 +109,59 @@ func (m *filterSelectModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	return nil, nil
 }
 
-func (m *filterSelectModel) View() string {
+// filterWindow splits a visibleWindow-style combined-cursor window across
+// the department and location option groups, so a long combined list
+// scrolls to keep the cursor visible the same way the company/posting
+// lists already do (see visibleWindow). rows is the row budget for
+// option lines only -- a group's section header renders "for free"
+// whenever that group has at least one option in view, so it's never
+// orphaned without its items, and hidden entirely once the window
+// scrolls past it.
+func filterWindow(cursor, deptCount, locCount, rows int) (deptStart, deptEnd, locStart, locEnd int) {
+	start, end := visibleWindow(cursor, deptCount+locCount, rows)
+
+	deptStart = start
+	if deptStart > deptCount {
+		deptStart = deptCount
+	}
+	deptEnd = end
+	if deptEnd > deptCount {
+		deptEnd = deptCount
+	}
+
+	locStart = start - deptCount
+	if locStart < 0 {
+		locStart = 0
+	}
+	locEnd = end - deptCount
+	if locEnd < 0 {
+		locEnd = 0
+	}
+	if locEnd > locCount {
+		locEnd = locCount
+	}
+	return deptStart, deptEnd, locStart, locEnd
+}
+
+func (m *filterSelectModel) View(listRows int) string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render(fmt.Sprintf("Filters: %s", m.companyName)) + "\n")
 	if len(m.departmentOptions) == 0 && len(m.locationOptions) == 0 {
 		b.WriteString("No department/location values discovered yet -- refresh the company first.\n")
 	}
-	idx := 0
-	if len(m.departmentOptions) > 0 {
+	deptStart, deptEnd, locStart, locEnd := filterWindow(m.cursor, len(m.departmentOptions), len(m.locationOptions), listRows)
+	if deptStart < deptEnd {
 		b.WriteString(fieldLabel.Render("Department") + "\n")
-		for _, d := range m.departmentOptions {
-			b.WriteString(renderFilterOption(d, m.selectedDepartments[d], idx == m.cursor))
-			idx++
+		for i := deptStart; i < deptEnd; i++ {
+			d := m.departmentOptions[i]
+			b.WriteString(renderFilterOption(d, m.selectedDepartments[d], i == m.cursor))
 		}
 	}
-	if len(m.locationOptions) > 0 {
+	if locStart < locEnd {
 		b.WriteString(fieldLabel.Render("Location") + "\n")
-		for _, l := range m.locationOptions {
-			b.WriteString(renderFilterOption(l, m.selectedLocations[l], idx == m.cursor))
-			idx++
+		for i := locStart; i < locEnd; i++ {
+			l := m.locationOptions[i]
+			b.WriteString(renderFilterOption(l, m.selectedLocations[l], len(m.departmentOptions)+i == m.cursor))
 		}
 	}
 	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  space: toggle  enter: save  esc/b: cancel"))
