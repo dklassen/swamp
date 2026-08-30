@@ -1765,3 +1765,60 @@ through the built CLI binary against a scratch db: inserted a
 source="greenhouse" company pointed at gitlab's real board, ran `swamp
 fetch`, confirmed 220 postings created with sane title/department/
 location, and confirmed a second fetch was idempotent (0 created).
+
+## 2026-08-30 -- Company form source picker: step 2 of Greenhouse support (#30)
+Context: step 2 of #30 -- letting a user actually add a Greenhouse company
+through the TUI, not just via direct SQL. Branched off greenhouse-job-
+board-support's tip (not main) since it depends on that PR's sync/
+createCompany plumbing.
+
+Decision: source selection is a third field in the existing add-company
+form (Tab-cycled alongside Name/SourceRef), not a separate screen.
+Picking a source and filling in the board slug/token felt like one
+coherent action, not two -- a dedicated screen-then-screen flow would add
+a navigation round-trip for what's fundamentally still "fill out one
+form." companySources ([]string{"ashby", "greenhouse"}) and
+sourceRefLabels (which label the second field gets, since "Ashby slug"
+and "Greenhouse board token" mean different things) live in
+company_form.go itself, not derived from sync's fetcher map -- there's no
+existing canonical exported list of supported sources to derive from
+without inventing new cross-package plumbing for two hardcoded strings;
+a comment flags that this list must be kept in sync with
+cmd/swamp/main.go's newSyncer by hand.
+
+Decision, form layout: kept `inputs []textinput.Model` sized
+formFieldCount (3) with formFieldSource's slot simply unused as a
+textinput, rather than restructuring around 2 named fields -- this let
+the existing formFieldName/formFieldSourceRef constants and every
+existing test assertion that references them by name keep working
+unchanged (only their integer values shifted, invisibly, since nothing
+hardcoded the literal 0/1). Source cycles via left/right arrow only when
+it's the focused field -- guarded explicitly so arrow keys don't leak
+into the source picker while a text field is focused (a textinput
+consumes arrow keys itself, for cursor movement within the field).
+
+Focus starts on the source field (not Name, as it did before) --
+picking/confirming a source is now the natural first step of the flow,
+and the picker's current selection is always visible in View() regardless
+of focus, so nothing is hidden by starting there.
+
+createCompany gained a source parameter (previously hardcoded "ashby");
+its one call site in companyFormModel.Update now passes
+companySources[m.sourceIndex].
+
+Verified: go build/test/lint/fmt all clean, including 8 new
+company_form tests (source-field-first focus, 3-field tab cycling,
+left/right cycling on and off the source field, and an end-to-end test
+using a real store confirming the selected source actually lands in the
+created company row) and 3 existing App-level integration tests updated
+for the new field order (they previously assumed focus started on Name).
+Manually verified against the real built binary via tmux: opened the
+form, confirmed the source picker renders with ashby boxed by default
+and the second field labeled "Ashby slug", toggled to greenhouse and
+confirmed the label switched to "Greenhouse board token", submitted a
+real Greenhouse company (GitLab, board token "gitlab") and confirmed it
+stored with source=greenhouse, then pressed 'r' to refresh and confirmed
+it synced for real against GitLab's live Greenhouse board (220 postings
+created) -- proving the full chain (TUI form -> store -> sync routing ->
+GreenhouseFetcher -> real API) works end to end together. Also verified
+submitting with the default (ashby) source unchanged, no regression.
