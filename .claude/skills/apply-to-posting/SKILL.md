@@ -14,7 +14,7 @@ scheduled mode -- only run this with a person present in the session.
 Run every command below from the repo root (`cd
 /Users/dana/Documents/Code/lang/go/swamp` if you're not already there), and
 prefix each `swamp` invocation with `direnv exec .` so `SWAMP_DB_PATH` and
-`SWAMP_ASSETS_PATH` are set from `.envrc`. Use `go run ./cmd/swamp
+`SWAMP_DOCUMENTS_PATH` are set from `.envrc`. Use `go run ./cmd/swamp
 <args>` rather than assuming a built binary exists.
 
 ## 1. Discover eligible postings
