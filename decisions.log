@@ -1658,3 +1658,45 @@ name back to `documents`), `golangci-lint run ./...` (0 issues), `gofmt`
 check clean. Manually re-ran `swamp stage prepare` against the real
 project database -- confirmed paths still resolve correctly under
 assets/<id>/ with existing content intact.
+
+## 2026-08-30 -- Filter select screen scrolls with cursor on long lists (#14)
+Context: filterSelectModel.View() (tui/filter_select.go) rendered its
+entire department+location option list unconditionally, with no
+windowing against terminal height -- unlike company_list and posting_list,
+which both already bound rendering to visible rows via visibleWindow(cursor,
+n, listRows). For a company with a long department/location list (e.g. a
+real company in the dev db has 18 departments + 28 locations), moving the
+cursor past what fit on screen left it off-screen instead of scrolling the
+view to follow it.
+
+Decision: extract filterWindow(cursor, deptCount, locCount, rows) as a new
+pure, unit-tested helper (tui/filter_select.go, tests in
+filter_select_test.go) rather than inlining the windowing math into View().
+It wraps the existing visibleWindow over the combined department+location
+index space, then splits the resulting [start,end) back into per-group
+[start,end) ranges. rows is a budget for option lines only -- a group's
+section header ("Department"/"Location") renders "for free" whenever that
+group has at least one option in the visible window, and disappears
+entirely once the window scrolls past it, so it's never shown orphaned
+with no items under it. Matches this project's existing pattern of keeping
+windowing math in small tested functions (visibleWindow itself) separate
+from View(), which this project's testing decisions explicitly exclude
+from automated coverage (see tui package doc comment).
+
+filterSelectModel.View gained a listRows int parameter, matching
+company_list/posting_list's existing View(items, listRows) shape; the
+call site in App.View passes a.listRows(), same as the other two list
+screens.
+
+Verified: go build/test/lint/fmt all clean, including 6 new filterWindow
+table-driven test cases (fits everything, zero rows, cursor deep in
+locations hiding the department header, cursor in departments hiding the
+location header, window straddling both groups, zero departments).
+Manually verified against the real project database via tmux (15-row
+terminal, cohere's 18 departments + 28 locations): windowed rendering
+matches the row budget on first entry, scrolling down through the full
+list keeps the cursor visible throughout, the straddle case correctly
+shows both headers with partial groups when the window spans the
+boundary, the Department header disappears once fully scrolled past, and
+both ends clamp correctly (first/last item stays visible without
+overscrolling).
