@@ -29,6 +29,10 @@ func newCompanyListModel(s *store.Store, syncer *sync.Syncer) companyListModel {
 // still App's job until the form screen is extracted (RFC #19, PR 2).
 type enterCompanyFormMsg struct{}
 
+// enterCompanyEditMsg signals that App should switch to the company-edit
+// screen for the given company.
+type enterCompanyEditMsg struct{ company store.Company }
+
 // selectCompanyMsg signals that App should switch to the posting-list
 // screen for the given company.
 type selectCompanyMsg struct{ company store.Company }
@@ -62,6 +66,10 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 		}
 	case msg.String() == "a":
 		return nil, enterCompanyFormMsg{}
+	case msg.String() == "e":
+		if m.cursor < len(companies) {
+			return nil, enterCompanyEditMsg{company: companies[m.cursor]}
+		}
 	case msg.Type == tea.KeyEnter:
 		if m.cursor < len(companies) {
 			return nil, selectCompanyMsg{company: companies[m.cursor]}
@@ -86,7 +94,7 @@ func (m *companyListModel) View(companies []store.Company, listRows int) string 
 			b.WriteString("  " + line + "\n")
 		}
 	}
-	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view postings  a: add  d: delete  r: refresh  q: quit"))
+	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view postings  a: add  e: edit  d: delete  r: refresh  q: quit"))
 	return b.String()
 }
 

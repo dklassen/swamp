@@ -110,6 +110,57 @@ func TestCreateCompany_SameSourceRefAsSoftDeletedCompany_RestoresExistingRow(t *
 	}
 }
 
+func TestUpdateCompanyName_ChangesNameOnly(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+
+	updated, err := s.UpdateCompanyName(ctx, acme.ID, "Acme Corp")
+	if err != nil {
+		t.Fatalf("UpdateCompanyName: %v", err)
+	}
+	if updated.Name != "Acme Corp" {
+		t.Fatalf("updated.Name = %q, want %q", updated.Name, "Acme Corp")
+	}
+	if updated.Source != "ashby" || updated.SourceRef != "acme" {
+		t.Fatalf("updated.Source/SourceRef = %q/%q, want unchanged ashby/acme", updated.Source, updated.SourceRef)
+	}
+
+	got, err := s.GetCompany(ctx, acme.ID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+	if got.Name != "Acme Corp" {
+		t.Fatalf("GetCompany after update Name = %q, want %q", got.Name, "Acme Corp")
+	}
+}
+
+func TestUpdateCompanyName_NonexistentID_ReturnsErrNotFound(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	_, err := s.UpdateCompanyName(ctx, 999, "New Name")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateCompanyName error = %v, want ErrNotFound", err)
+	}
+}
+
+func TestUpdateCompanyName_SoftDeletedCompany_ReturnsErrNotFound(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	if err := s.SoftDeleteCompany(ctx, acme.ID); err != nil {
+		t.Fatalf("SoftDeleteCompany: %v", err)
+	}
+
+	_, err := s.UpdateCompanyName(ctx, acme.ID, "New Name")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("UpdateCompanyName on soft-deleted company error = %v, want ErrNotFound", err)
+	}
+}
+
 func TestRestoreCompany_UndoesSoftDelete(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
