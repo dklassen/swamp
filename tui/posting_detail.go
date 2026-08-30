@@ -6,12 +6,12 @@ import (
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/assets"
 	"github.com/dklassen/swamp/store"
 )
 
 // postingDetailModel drives the posting-detail screen for a single
-// posting. It holds the store/documents it needs for its own commands,
+// posting. It holds the store/assets it needs for its own commands,
 // the posting and application data it was constructed with (a snapshot,
 // not a live reference into App.applicationsByPosting -- App re-seeds
 // this model whenever that data changes, see App.Update), and its own
@@ -19,7 +19,7 @@ import (
 // this model never reaches into App's postings slice or cursor.
 type postingDetailModel struct {
 	store          *store.Store
-	documents      *documents.Store
+	assets         *assets.Store
 	viewport       viewport.Model
 	posting        store.Posting
 	application    store.Application
@@ -32,10 +32,10 @@ type postingDetailModel struct {
 // data changes (navigating to a different posting, an application being
 // created/updated, or a window resize), matching the pre-extraction
 // showPostingDetail's "always rebuild, always reset scroll" behavior.
-func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool) postingDetailModel {
+func newPostingDetailModel(s *store.Store, docs *assets.Store, width, height int, p store.Posting, app store.Application, hasApp bool) postingDetailModel {
 	vp := viewport.New(width, height)
 	vp.SetContent(wrapToWidth(postingDetailContent(p, app, hasApp, docs), width))
-	return postingDetailModel{store: s, documents: docs, viewport: vp, posting: p, application: app, hasApplication: hasApp}
+	return postingDetailModel{store: s, assets: docs, viewport: vp, posting: p, application: app, hasApplication: hasApp}
 }
 
 // backToPostingListMsg signals that App should switch to the
@@ -111,5 +111,5 @@ func (m *postingDetailModel) View() string {
 // posting/application data -- called on window resize while this screen
 // is active (see tea.WindowSizeMsg in App.Update).
 func (m *postingDetailModel) resize(width, height int) {
-	*m = newPostingDetailModel(m.store, m.documents, width, height, m.posting, m.application, m.hasApplication)
+	*m = newPostingDetailModel(m.store, m.assets, width, height, m.posting, m.application, m.hasApplication)
 }

@@ -19,8 +19,8 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/dklassen/swamp/ashby"
+	"github.com/dklassen/swamp/assets"
 	"github.com/dklassen/swamp/db/migrations"
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
@@ -33,9 +33,9 @@ func main() {
 		dbPath = "swamp.db"
 	}
 
-	documentsPath := os.Getenv("SWAMP_DOCUMENTS_PATH")
-	if documentsPath == "" {
-		documentsPath = "documents"
+	assetsPath := os.Getenv("SWAMP_ASSETS_PATH")
+	if assetsPath == "" {
+		assetsPath = "assets"
 	}
 
 	sqlDB, err := sql.Open("sqlite", "file:"+dbPath)
@@ -57,7 +57,7 @@ func main() {
 	}
 
 	s := store.New(sqlDB)
-	documentsStore := documents.NewStore(documentsPath)
+	assetsStore := assets.NewStore(assetsPath)
 
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
@@ -65,7 +65,7 @@ func main() {
 			runFetch(s)
 			return
 		case "stage":
-			runStage(s, documentsStore, os.Args[2:])
+			runStage(s, assetsStore, os.Args[2:])
 			return
 		default:
 			fmt.Fprintf(os.Stderr, "usage: %s [fetch|stage]\n", os.Args[0])
@@ -74,7 +74,7 @@ func main() {
 	}
 
 	syncer := sync.New(s, ashby.NewClient())
-	if _, err := tea.NewProgram(tui.New(s, syncer, documentsStore), tea.WithAltScreen()).Run(); err != nil {
+	if _, err := tea.NewProgram(tui.New(s, syncer, assetsStore), tea.WithAltScreen()).Run(); err != nil {
 		log.Fatalf("run tui: %v", err)
 	}
 }
@@ -112,7 +112,7 @@ func runFetch(s *store.Store) {
 // eligible postings as a JSON array, `stage prepare <posting-id>` commits
 // to one and prints the result as a JSON object. See the stage package
 // for what each does.
-func runStage(s *store.Store, d *documents.Store, args []string) {
+func runStage(s *store.Store, a *assets.Store, args []string) {
 	usage := func() {
 		fmt.Fprintf(os.Stderr, "usage: %s stage [list|prepare <posting-id>]\n", os.Args[0])
 		os.Exit(1)
@@ -121,7 +121,7 @@ func runStage(s *store.Store, d *documents.Store, args []string) {
 		usage()
 	}
 
-	st := stage.New(s, d)
+	st := stage.New(s, a)
 	ctx := context.Background()
 
 	switch args[0] {

@@ -1,10 +1,10 @@
-// Package documents locates and checks for a given application's
+// Package assets locates and checks for a given application's
 // cover-letter/resume markdown files on the filesystem. The content
 // itself is never read by this package -- it's plain markdown meant to
 // be consumed directly by an external agent/editor, not by Swamp. See
 // decisions.log for why this is filesystem-backed rather than DB
-// columns.
-package documents
+// columns, and for the 2026-08-30 rename from "documents" to "assets".
+package assets
 
 import (
 	"os"

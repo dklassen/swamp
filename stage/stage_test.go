@@ -11,12 +11,12 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/dklassen/swamp/assets"
 	"github.com/dklassen/swamp/db/migrations"
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
 
-func newTestStage(t *testing.T) (*Stage, *store.Store, *documents.Store) {
+func newTestStage(t *testing.T) (*Stage, *store.Store, *assets.Store) {
 	t.Helper()
 
 	sqlDB, err := sql.Open("sqlite", "file:"+t.TempDir()+"/test.db")
@@ -38,8 +38,8 @@ func newTestStage(t *testing.T) (*Stage, *store.Store, *documents.Store) {
 	}
 
 	s := store.New(sqlDB)
-	d := documents.NewStore(t.TempDir())
-	return New(s, d), s, d
+	a := assets.NewStore(t.TempDir())
+	return New(s, a), s, a
 }
 
 func mustCreateCompany(t *testing.T, s *store.Store, name string) store.Company {
@@ -163,7 +163,7 @@ func TestList_IncludesInterestedPostingWithApplicationButNoDocuments(t *testing.
 func TestList_ExcludesPostingWithBothDocumentsAlreadyGenerated(t *testing.T) {
 	t.Parallel()
 
-	st, s, d := newTestStage(t)
+	st, s, a := newTestStage(t)
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
@@ -171,7 +171,7 @@ func TestList_ExcludesPostingWithBothDocumentsAlreadyGenerated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	paths, err := d.EnsureDir(app.ID)
+	paths, err := a.EnsureDir(app.ID)
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
@@ -194,7 +194,7 @@ func TestList_ExcludesPostingWithBothDocumentsAlreadyGenerated(t *testing.T) {
 func TestList_IncludesPostingWithOnlyOneDocumentGenerated(t *testing.T) {
 	t.Parallel()
 
-	st, s, d := newTestStage(t)
+	st, s, a := newTestStage(t)
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
@@ -202,7 +202,7 @@ func TestList_IncludesPostingWithOnlyOneDocumentGenerated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	paths, err := d.EnsureDir(app.ID)
+	paths, err := a.EnsureDir(app.ID)
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
