@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/x/cellbuf v0.0.15
 	github.com/google/go-cmp v0.7.0
 	github.com/pressly/goose/v3 v3.27.3
+	golang.org/x/net v0.57.0
 	modernc.org/sqlite v1.56.0
 )
 
@@ -349,7 +350,6 @@ require (
 	golang.org/x/exp v0.0.0-20260718201538-764159d718ef // indirect
 	golang.org/x/exp/typeparams v0.0.0-20260209203927-2842357ff358 // indirect
 	golang.org/x/mod v0.38.0 // indirect
-	golang.org/x/net v0.57.0 // indirect
 	golang.org/x/oauth2 v0.36.0 // indirect
 	golang.org/x/sync v0.22.0 // indirect
 	golang.org/x/sys v0.47.0 // indirect
