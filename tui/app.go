@@ -800,7 +800,7 @@ func (a *App) View() string {
 	case screenApplicationNotesEdit:
 		b.WriteString(a.applicationNotes.View())
 	case screenFilterSelect:
-		b.WriteString(a.filterSelect.View())
+		b.WriteString(a.filterSelect.View(a.listRows()))
 	default:
 		b.WriteString(a.companyList.View(a.companies, a.listRows()))
 	}
