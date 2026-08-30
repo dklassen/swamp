@@ -3,8 +3,6 @@ package sync
 import (
 	"context"
 	"testing"
-
-	"github.com/dklassen/swamp/ashby"
 )
 
 func TestSyncCompany_NewPostingNoFilters_Created(t *testing.T) {
@@ -12,11 +10,11 @@ func TestSyncCompany_NewPostingNoFilters_Created(t *testing.T) {
 	ctx := context.Background()
 
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	fetcher := &fakeFetcher{postings: map[string][]ashby.Posting{
+	fetcher := &fakeFetcher{postings: map[string][]Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
 
-	syncer := New(s, fetcher)
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
 	result, err := syncer.SyncCompany(ctx, company.ID)
 	if err != nil {
 		t.Fatalf("SyncCompany: %v", err)
@@ -46,11 +44,11 @@ func TestSyncCompany_PostingDoesNotMatchFilters_NotCreated(t *testing.T) {
 	if _, err := s.CreateCompanyFilter(ctx, company.ID, "department", "Sales"); err != nil {
 		t.Fatalf("CreateCompanyFilter: %v", err)
 	}
-	fetcher := &fakeFetcher{postings: map[string][]ashby.Posting{
+	fetcher := &fakeFetcher{postings: map[string][]Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
 
-	syncer := New(s, fetcher)
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
 	result, err := syncer.SyncCompany(ctx, company.ID)
 	if err != nil {
 		t.Fatalf("SyncCompany: %v", err)
@@ -77,16 +75,16 @@ func TestSyncCompany_ExistingPostingContentChanged_UpdatedWithHistory(t *testing
 	ctx := context.Background()
 
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	fetcher := &fakeFetcher{postings: map[string][]ashby.Posting{
+	fetcher := &fakeFetcher{postings: map[string][]Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
-	syncer := New(s, fetcher)
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
 	}
 
-	fetcher.postings["acme"] = []ashby.Posting{
+	fetcher.postings["acme"] = []Posting{
 		samplePosting("job-1", "Senior Engineer", "Engineering", "Remote"),
 	}
 
@@ -129,10 +127,10 @@ func TestSyncCompany_ExistingPostingUnchanged_NoUpdateNoHistory(t *testing.T) {
 	ctx := context.Background()
 
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	fetcher := &fakeFetcher{postings: map[string][]ashby.Posting{
+	fetcher := &fakeFetcher{postings: map[string][]Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
-	syncer := New(s, fetcher)
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
@@ -167,10 +165,10 @@ func TestSyncCompany_PostingDisappearsFromFetch_ClosedWithHistory(t *testing.T) 
 	ctx := context.Background()
 
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	fetcher := &fakeFetcher{postings: map[string][]ashby.Posting{
+	fetcher := &fakeFetcher{postings: map[string][]Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
-	syncer := New(s, fetcher)
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
@@ -212,8 +210,8 @@ func TestSyncCompany_ClosedPostingReappears_ReopenedWithHistory(t *testing.T) {
 
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := samplePosting("job-1", "Engineer", "Engineering", "Remote")
-	fetcher := &fakeFetcher{postings: map[string][]ashby.Posting{"acme": {posting}}}
-	syncer := New(s, fetcher)
+	fetcher := &fakeFetcher{postings: map[string][]Posting{"acme": {posting}}}
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
@@ -223,7 +221,7 @@ func TestSyncCompany_ClosedPostingReappears_ReopenedWithHistory(t *testing.T) {
 		t.Fatalf("closing SyncCompany: %v", err)
 	}
 
-	fetcher.postings["acme"] = []ashby.Posting{posting}
+	fetcher.postings["acme"] = []Posting{posting}
 	result, err := syncer.SyncCompany(ctx, company.ID)
 	if err != nil {
 		t.Fatalf("reopening SyncCompany: %v", err)
@@ -254,8 +252,8 @@ func TestSyncCompany_UnsupportedSource_ReturnsError(t *testing.T) {
 	ctx := context.Background()
 
 	company := mustCreateCompany(t, s, "Acme", "lever", "acme")
-	fetcher := &fakeFetcher{postings: map[string][]ashby.Posting{}}
-	syncer := New(s, fetcher)
+	fetcher := &fakeFetcher{postings: map[string][]Posting{}}
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
 
 	_, err := syncer.SyncCompany(ctx, company.ID)
 	if err == nil {

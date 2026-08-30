@@ -21,6 +21,7 @@ import (
 	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/greenhouse"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
@@ -77,10 +78,19 @@ func main() {
 		}
 	}
 
-	syncer := sync.New(s, ashby.NewClient())
+	syncer := newSyncer(s)
 	if _, err := tea.NewProgram(tui.New(s, syncer, documentsStore), tea.WithAltScreen()).Run(); err != nil {
 		log.Fatalf("run tui: %v", err)
 	}
+}
+
+// newSyncer builds a Syncer configured with every supported job board
+// source, keyed by the store.Company.Source value each one handles.
+func newSyncer(s *store.Store) *sync.Syncer {
+	return sync.New(s, map[string]sync.PostingFetcher{
+		"ashby":      sync.NewAshbyFetcher(ashby.NewClient()),
+		"greenhouse": sync.NewGreenhouseFetcher(greenhouse.NewClient()),
+	})
 }
 
 func runFetch(s *store.Store) {
@@ -95,7 +105,7 @@ func runFetch(s *store.Store) {
 		names[c.ID] = c.Name
 	}
 
-	syncer := sync.New(s, ashby.NewClient())
+	syncer := newSyncer(s)
 	results, err := syncer.SyncAll(ctx)
 	if err != nil {
 		log.Fatalf("sync: %v", err)

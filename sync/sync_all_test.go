@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"testing"
-
-	"github.com/dklassen/swamp/ashby"
 )
 
 func TestSyncAll_OneCompanyFailsFetch_OthersStillProcessed(t *testing.T) {
@@ -16,7 +14,7 @@ func TestSyncAll_OneCompanyFailsFetch_OthersStillProcessed(t *testing.T) {
 	_ = mustCreateCompany(t, s, "Globex", "ashby", "globex")
 
 	fetcher := &perBoardFetcher{
-		postings: map[string][]ashby.Posting{
+		postings: map[string][]Posting{
 			"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 		},
 		errBoards: map[string]error{
@@ -24,7 +22,7 @@ func TestSyncAll_OneCompanyFailsFetch_OthersStillProcessed(t *testing.T) {
 		},
 	}
 
-	syncer := New(s, fetcher)
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
 	results, err := syncer.SyncAll(ctx)
 	if err != nil {
 		t.Fatalf("SyncAll: %v", err)

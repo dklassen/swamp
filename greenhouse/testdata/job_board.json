@@ -1,0 +1,40 @@
+{
+  "jobs": [
+    {
+      "id": 4123456,
+      "internal_job_id": 9001,
+      "title": "Security Engineer, Cloud",
+      "updated_at": "2026-04-07T17:12:35-00:00",
+      "requisition_id": "REQ-101",
+      "location": { "name": "New York, NY (HQ)" },
+      "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/4123456",
+      "language": "en",
+      "content": "&lt;h1&gt;About the role&lt;/h1&gt;&lt;p&gt;Join our security team.&lt;/p&gt;",
+      "departments": [
+        { "id": 1, "name": "Engineering", "parent_id": null, "child_ids": [] }
+      ],
+      "offices": [
+        { "id": 10, "name": "New York", "parent_id": null, "child_ids": [] }
+      ],
+      "metadata": null
+    },
+    {
+      "id": 4123457,
+      "internal_job_id": 9002,
+      "title": "Product Designer",
+      "updated_at": "2026-05-12T09:00:00-00:00",
+      "requisition_id": "REQ-102",
+      "location": { "name": "Remote (US)" },
+      "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/4123457",
+      "language": "en",
+      "content": "&lt;h1&gt;About the role&lt;/h1&gt;&lt;p&gt;Design delightful products.&lt;/p&gt;",
+      "departments": [
+        { "id": 2, "name": "Design", "parent_id": null, "child_ids": [] },
+        { "id": 3, "name": "Product", "parent_id": null, "child_ids": [] }
+      ],
+      "offices": [],
+      "metadata": null
+    }
+  ],
+  "meta": { "total": 2 }
+}
