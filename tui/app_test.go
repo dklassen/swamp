@@ -133,10 +133,11 @@ func TestApp_TypingInForm_UpdatesFocusedField(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	app, _ = sendKey(app, runeKey('a'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab}) // source field is focused first; move to name
 	app, _ = sendKey(app, runeKey('A', 'c', 'm', 'e'))
 
-	if got := app.companyForm.inputs[0].Value(); got != "Acme" {
-		t.Fatalf("companyForm.inputs[0].Value() = %q, want %q", got, "Acme")
+	if got := app.companyForm.inputs[formFieldName].Value(); got != "Acme" {
+		t.Fatalf("companyForm.inputs[formFieldName].Value() = %q, want %q", got, "Acme")
 	}
 }
 
@@ -145,16 +146,21 @@ func TestApp_Tab_MovesFocusToNextField(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	app, _ = sendKey(app, runeKey('a'))
+	if app.companyForm.focus != formFieldSource {
+		t.Fatalf("companyForm.focus on entering the form = %d, want formFieldSource", app.companyForm.focus)
+	}
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	if app.companyForm.focus != formFieldSourceRef {
-		t.Fatalf("companyForm.focus after tab = %d, want formFieldSourceRef", app.companyForm.focus)
+		t.Fatalf("companyForm.focus after 2 tabs = %d, want formFieldSourceRef", app.companyForm.focus)
 	}
 	if !app.companyForm.inputs[formFieldSourceRef].Focused() {
-		t.Fatal("companyForm.inputs[formFieldSourceRef] should be focused after tab")
+		t.Fatal("companyForm.inputs[formFieldSourceRef] should be focused after 2 tabs")
 	}
 	if app.companyForm.inputs[formFieldName].Focused() {
-		t.Fatal("companyForm.inputs[formFieldName] should be blurred after tab")
+		t.Fatal("companyForm.inputs[formFieldName] should be blurred after tabbing away")
 	}
 
 	app, _ = sendKey(app, runeKey('a', 'c', 'm', 'e'))
@@ -168,8 +174,9 @@ func TestApp_SubmitForm_CreatesCompanyAndReturnsToList(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	app, _ = sendKey(app, runeKey('a'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab}) // source (default "ashby") -> name
 	app, _ = sendKey(app, runeKey('A', 'c', 'm', 'e'))
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab}) // name -> sourceRef
 	app, _ = sendKey(app, runeKey('a', 'c', 'm', 'e'))
 
 	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
@@ -184,8 +191,8 @@ func TestApp_SubmitForm_CreatesCompanyAndReturnsToList(t *testing.T) {
 	if len(app.companies) != 1 {
 		t.Fatalf("app.companies = %+v, want 1 company", app.companies)
 	}
-	if app.companies[0].Name != "Acme" || app.companies[0].SourceRef != "acme" {
-		t.Fatalf("created company = %+v, want Name=Acme SourceRef=acme", app.companies[0])
+	if app.companies[0].Name != "Acme" || app.companies[0].Source != "ashby" || app.companies[0].SourceRef != "acme" {
+		t.Fatalf("created company = %+v, want Name=Acme Source=ashby SourceRef=acme", app.companies[0])
 	}
 
 	stored, err := s.ListActiveCompanies(context.Background())

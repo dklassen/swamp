@@ -239,9 +239,9 @@ type companyCreatedMsg struct {
 	err     error
 }
 
-func createCompany(s *store.Store, name, sourceRef string) tea.Cmd {
+func createCompany(s *store.Store, name, source, sourceRef string) tea.Cmd {
 	return func() tea.Msg {
-		company, err := s.CreateCompany(context.Background(), name, "ashby", sourceRef)
+		company, err := s.CreateCompany(context.Background(), name, source, sourceRef)
 		return companyCreatedMsg{company: company, err: err}
 	}
 }
