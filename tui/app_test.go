@@ -225,6 +225,45 @@ func TestApp_PressD_DeletesSelectedCompany(t *testing.T) {
 	}
 }
 
+func TestApp_PressE_EditsCompanyName(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, runeKey('e'))
+	if app.screen != screenCompanyEdit {
+		t.Fatalf("screen after 'e' = %v, want screenCompanyEdit", app.screen)
+	}
+	if got := app.companyEdit.nameInput.Value(); got != "Acme" {
+		t.Fatalf("companyEdit.nameInput.Value() = %q, want %q (seeded from selected company)", got, "Acme")
+	}
+
+	app, _ = sendKey(app, runeKey(' ', 'C', 'o', 'r', 'p'))
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Update on submit returned nil Cmd, want a command that saves the company name")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if app.screen != screenCompanyList {
+		t.Fatalf("screen after submit = %v, want screenCompanyList", app.screen)
+	}
+	if len(app.companies) != 1 || app.companies[0].Name != "Acme Corp" {
+		t.Fatalf("app.companies = %+v, want 1 company named %q", app.companies, "Acme Corp")
+	}
+	if app.companies[0].Source != "ashby" || app.companies[0].SourceRef != "acme" {
+		t.Fatalf("app.companies[0] = %+v, want Source/SourceRef unchanged (ashby/acme)", app.companies[0])
+	}
+
+	stored, err := s.GetCompany(context.Background(), acme.ID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+	if stored.Name != "Acme Corp" {
+		t.Fatalf("stored.Name = %q, want %q", stored.Name, "Acme Corp")
+	}
+}
+
 func TestApp_PressI_OnPostingList_TogglesInterestedOnSelectedPosting(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")

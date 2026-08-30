@@ -60,6 +60,36 @@ func TestCompanyListModel_Enter_NoCompanies_ReturnsNothing(t *testing.T) {
 	}
 }
 
+func TestCompanyListModel_E_ReturnsEnterCompanyEditMsg(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme"}}
+	m := &companyListModel{}
+
+	cmd, intent := m.Update(runeKey('e'), companies)
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil", cmd)
+	}
+	edit, ok := intent.(enterCompanyEditMsg)
+	if !ok {
+		t.Fatalf("intent = %T, want enterCompanyEditMsg", intent)
+	}
+	if edit.company.ID != 1 {
+		t.Fatalf("enterCompanyEditMsg.company.ID = %d, want 1", edit.company.ID)
+	}
+}
+
+func TestCompanyListModel_E_NoCompanies_ReturnsNothing(t *testing.T) {
+	t.Parallel()
+
+	m := &companyListModel{}
+
+	cmd, intent := m.Update(runeKey('e'), nil)
+	if cmd != nil || intent != nil {
+		t.Fatalf("cmd, intent = %v, %v, want nil, nil", cmd, intent)
+	}
+}
+
 func TestCompanyListModel_A_ReturnsEnterCompanyFormMsg(t *testing.T) {
 	t.Parallel()
 

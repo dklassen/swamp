@@ -36,6 +36,7 @@ type screen int
 const (
 	screenCompanyList screen = iota
 	screenCompanyForm
+	screenCompanyEdit
 	screenPostingList
 	screenPostingDetail
 	screenFilterSelect
@@ -50,6 +51,7 @@ type App struct {
 	companyList     companyListModel
 	screen          screen
 	companyForm     companyFormModel
+	companyEdit     companyEditModel
 	status          string
 	err             error
 	selectedCompany store.Company
@@ -255,6 +257,18 @@ func deleteCompany(s *store.Store, companyID int64) tea.Cmd {
 	return func() tea.Msg {
 		err := s.SoftDeleteCompany(context.Background(), companyID)
 		return companyDeletedMsg{companyID: companyID, err: err}
+	}
+}
+
+type companyNameUpdatedMsg struct {
+	company store.Company
+	err     error
+}
+
+func updateCompanyName(s *store.Store, companyID int64, name string) tea.Cmd {
+	return func() tea.Msg {
+		company, err := s.UpdateCompanyName(context.Background(), companyID, name)
+		return companyNameUpdatedMsg{company: company, err: err}
 	}
 }
 
@@ -558,6 +572,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.companyList.clampCursor(len(a.companies))
 		}
+	case companyNameUpdatedMsg:
+		a.err = msg.err
+		if msg.err == nil {
+			for i, c := range a.companies {
+				if c.ID == msg.company.ID {
+					a.companies[i] = msg.company
+					break
+				}
+			}
+			a.screen = screenCompanyList
+		}
 	case companyRefreshedMsg:
 		a.err = msg.err
 		if msg.err == nil {
@@ -687,6 +712,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			case enterCompanyFormMsg:
 				a.screen = screenCompanyForm
 				a.companyForm = newCompanyFormModel(a.store)
+			case enterCompanyEditMsg:
+				a.screen = screenCompanyEdit
+				a.companyEdit = newCompanyEditModel(a.store, v.company.ID, v.company.Name)
 			case selectCompanyMsg:
 				a.selectedCompany = v.company
 				a.screen = screenPostingList
@@ -766,6 +794,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.screen = screenCompanyList
 			}
 			return a, cmd
+		case screenCompanyEdit:
+			cmd, intent := a.companyEdit.Update(msg)
+			if _, ok := intent.(cancelCompanyEditMsg); ok {
+				a.screen = screenCompanyList
+			}
+			return a, cmd
 		}
 	}
 	return a, nil
@@ -783,6 +817,8 @@ func (a *App) View() string {
 	switch a.screen {
 	case screenCompanyForm:
 		b.WriteString(a.companyForm.View())
+	case screenCompanyEdit:
+		b.WriteString(a.companyEdit.View())
 	case screenPostingList:
 		snap := postingListSnapshot{
 			companyName:             a.selectedCompany.Name,
