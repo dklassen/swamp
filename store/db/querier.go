@@ -91,6 +91,9 @@ type Querier interface {
 	UnmarkPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error)
 	UpdateApplicationNotes(ctx context.Context, arg UpdateApplicationNotesParams) (Application, error)
 	UpdateApplicationStatus(ctx context.Context, arg UpdateApplicationStatusParams) (Application, error)
+	// Excludes soft-deleted rows, same guard as GetCompany -- editing a
+	// deleted company isn't a supported action.
+	UpdateCompanyName(ctx context.Context, arg UpdateCompanyNameParams) (Company, error)
 	UpdateInterviewStage(ctx context.Context, arg UpdateInterviewStageParams) (InterviewStage, error)
 	UpdateInterviewStageOutcome(ctx context.Context, arg UpdateInterviewStageOutcomeParams) (InterviewStage, error)
 	// Updates ingested content fields only. Deliberately does not touch

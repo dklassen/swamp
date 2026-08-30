@@ -21,6 +21,14 @@ SET name = ?, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
 RETURNING *;
 
+-- name: UpdateCompanyName :one
+-- Excludes soft-deleted rows, same guard as GetCompany -- editing a
+-- deleted company isn't a supported action.
+UPDATE companies
+SET name = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND deleted_at IS NULL
+RETURNING *;
+
 -- name: ListActiveCompanies :many
 SELECT * FROM companies
 WHERE deleted_at IS NULL

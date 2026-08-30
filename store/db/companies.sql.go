@@ -170,3 +170,32 @@ func (q *Queries) SoftDeleteCompany(ctx context.Context, id int64) error {
 	_, err := q.db.ExecContext(ctx, softDeleteCompany, id)
 	return err
 }
+
+const updateCompanyName = `-- name: UpdateCompanyName :one
+UPDATE companies
+SET name = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND deleted_at IS NULL
+RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at
+`
+
+type UpdateCompanyNameParams struct {
+	Name string `json:"name"`
+	ID   int64  `json:"id"`
+}
+
+// Excludes soft-deleted rows, same guard as GetCompany -- editing a
+// deleted company isn't a supported action.
+func (q *Queries) UpdateCompanyName(ctx context.Context, arg UpdateCompanyNameParams) (Company, error) {
+	row := q.db.QueryRowContext(ctx, updateCompanyName, arg.Name, arg.ID)
+	var i Company
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Source,
+		&i.SourceRef,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
