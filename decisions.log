@@ -1700,3 +1700,68 @@ shows both headers with partial groups when the window spans the
 boundary, the Department header disappears once fully scrolled past, and
 both ends clamp correctly (first/last item stays visible without
 overscrolling).
+
+## 2026-08-30 -- Greenhouse job board support: client + sync multi-source routing (#30)
+Context: step 1 of adding Greenhouse support (issue #30) -- a client
+package plus the sync.PostingFetcher decoupling its own doc comment had
+been waiting on since the 2026-08-11 decision ("deliberately not built
+ahead of having a second real example to design it against"). Step 2 (TUI
+add-company source picker, createCompany hardcoding "ashby") is
+explicitly out of scope for this pass -- sequenced separately per Bob's
+own breakdown of the work.
+
+Decision, verify against real docs and real live data before designing:
+fetched docs.greenhouse.io directly rather than working from memory, then
+probed several real companies' live Greenhouse boards (gitlab, discord,
+airbnb) rather than trusting the docs alone. This caught a real bug the
+docs didn't mention: Greenhouse's `content` field is HTML-entity-*double*-
+encoded -- its JSON string value is itself entity-escaped markup (e.g.
+"&lt;p&gt;" not "<p>"). Missing this would have meant DescriptionHTML
+wasn't actually renderable HTML and DescriptionText showed raw tag syntax
+as visible text instead of stripped plain text. Caught by updating the
+test fixture to match the real encoding (turning a passing-by-coincidence
+test into a real red), not by the live-data check alone -- the fixture
+now guards against regressing this specifically.
+
+Decision, three real design points where Greenhouse's shape doesn't map
+cleanly onto Ashby's (confirmed against docs.greenhouse.io/job-board.html,
+not guessed): (1) a Greenhouse job can belong to multiple departments
+(array), joined into one "; "-separated string since store/filter expect
+a single value per posting -- Ashby postings are single-department today
+so this doesn't change existing behavior; (2) DescriptionText is derived
+via a real HTML tokenizer (golang.org/x/net/html, already in the module
+graph as an indirect dep, promoted to direct rather than adding a new
+external dependency) rather than left empty, since it's what stage.List
+surfaces to an external agent for drafting -- a naive regex stripper was
+rejected because it gets entity decoding and <script>/<style> exclusion
+wrong; (3) EmploymentType/WorkplaceType are left empty for Greenhouse
+postings -- Greenhouse's job board API doesn't expose them in a
+structured, cross-company-reliable way (only via per-company-configurable
+metadata).
+
+Decision, sync.Posting + per-source adapters over a shared interface on
+the client packages: sync gets its own source-agnostic Posting type
+(identical shape to what ashby.Posting already was). Each source package
+(ashby, greenhouse) keeps its own native Posting type matching what that
+source's API actually returns -- greenhouse.Posting has no Team/
+EmploymentType/WorkplaceType fields at all, rather than padding it with
+fields that source can never populate. AshbyFetcher/GreenhouseFetcher are
+thin adapters translating each into sync.Posting and satisfying
+PostingFetcher. Syncer holds map[string]PostingFetcher keyed by
+store.Company.Source instead of one fetcher; SyncCompany looks up the
+configured source and errors on an unconfigured one, same failure mode as
+the old ashby-only check. Adding a third source (e.g. #31's Lever) is one
+more map entry in cmd/swamp/main.go's newSyncer, no interface changes.
+
+Verified: go build/test/lint/fmt all clean across the whole repo,
+including greenhouse's tests (client + stripHTML, both against
+fixtures) and sync's tests (existing SyncCompany/SyncAll suite migrated
+to the new Posting type and map-based New, plus new AshbyFetcher/
+GreenhouseFetcher translation tests). Manually verified against gitlab's
+real, live Greenhouse board through the actual client (not just the
+fixture): 220 real postings, description HTML/text correctly decoded and
+stripped. Also manually verified the full sync pipeline end to end
+through the built CLI binary against a scratch db: inserted a
+source="greenhouse" company pointed at gitlab's real board, ran `swamp
+fetch`, confirmed 220 postings created with sane title/department/
+location, and confirmed a second fetch was idempotent (0 created).
