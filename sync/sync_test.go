@@ -10,7 +10,6 @@ import (
 
 	_ "modernc.org/sqlite"
 
-	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/store"
 )
@@ -51,11 +50,11 @@ func mustCreateCompany(t *testing.T, s *store.Store, name, source, sourceRef str
 // fakeFetcher is a PostingFetcher whose FetchPostings return value is
 // configured per test, so sync tests never make real HTTP calls.
 type fakeFetcher struct {
-	postings map[string][]ashby.Posting // boardSlug -> postings
+	postings map[string][]Posting // boardSlug -> postings
 	err      error
 }
 
-func (f *fakeFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]ashby.Posting, error) {
+func (f *fakeFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]Posting, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -66,19 +65,19 @@ func (f *fakeFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]as
 // slugs while succeeding for others, for testing SyncAll's per-company
 // error isolation.
 type perBoardFetcher struct {
-	postings  map[string][]ashby.Posting
+	postings  map[string][]Posting
 	errBoards map[string]error
 }
 
-func (f *perBoardFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]ashby.Posting, error) {
+func (f *perBoardFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]Posting, error) {
 	if err, ok := f.errBoards[boardSlug]; ok {
 		return nil, err
 	}
 	return f.postings[boardSlug], nil
 }
 
-func samplePosting(sourceID, title, department, location string) ashby.Posting {
-	return ashby.Posting{
+func samplePosting(sourceID, title, department, location string) Posting {
+	return Posting{
 		SourceID:        sourceID,
 		Title:           title,
 		Department:      department,

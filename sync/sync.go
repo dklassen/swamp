@@ -7,20 +7,42 @@ package sync
 import (
 	"context"
 	"fmt"
+	"time"
 
-	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/store"
 )
 
-// PostingFetcher is sync's own minimal view of a job board client:
-// *ashby.Client satisfies it structurally, so tests use a fake instead of
-// making real HTTP calls. Note this does not yet decouple sync from Ashby
-// specifically -- the return type is ashby.Posting, since Ashby is the
-// only source implemented so far. A second job board would need its own
-// posting type and a real translation layer here; that's deliberately not
-// built ahead of having a second real example to design it against.
+// Posting is sync's own source-agnostic posting shape -- what every
+// PostingFetcher must translate its source's native posting type into.
+// Kept as its own type (rather than reusing e.g. ashby.Posting) so sync
+// doesn't depend on any one job board's client; each source package
+// (ashby, greenhouse) keeps its own native Posting type matching what
+// that source's API actually returns, and a small per-source adapter
+// (AshbyFetcher, GreenhouseFetcher) translates into this shape. Not
+// every source can populate every field -- e.g. Greenhouse has no
+// employment/workplace type -- those are simply left empty.
+type Posting struct {
+	SourceID        string
+	Title           string
+	Department      string
+	Team            string
+	Location        string
+	EmploymentType  string
+	WorkplaceType   string
+	DescriptionHTML string
+	DescriptionText string
+	JobURL          string
+	ApplicationURL  string
+	PublishedAt     time.Time
+	RawPayload      []byte
+}
+
+// PostingFetcher is sync's own minimal view of a job board client, one
+// per source. boardSlug is whatever that source's client needs to
+// identify the board (an Ashby slug, a Greenhouse board token, etc.) --
+// it's passed through from store.Company.SourceRef untouched.
 type PostingFetcher interface {
-	FetchPostings(ctx context.Context, boardSlug string) ([]ashby.Posting, error)
+	FetchPostings(ctx context.Context, boardSlug string) ([]Posting, error)
 }
 
 // Result summarizes one company's sync outcome. Err is set on a
@@ -36,13 +58,15 @@ type Result struct {
 	Err       error
 }
 
+// Syncer routes each company to the PostingFetcher for its source
+// (company.Source, e.g. "ashby" or "greenhouse") -- see SyncCompany.
 type Syncer struct {
-	store   *store.Store
-	fetcher PostingFetcher
+	store    *store.Store
+	fetchers map[string]PostingFetcher
 }
 
-func New(s *store.Store, fetcher PostingFetcher) *Syncer {
-	return &Syncer{store: s, fetcher: fetcher}
+func New(s *store.Store, fetchers map[string]PostingFetcher) *Syncer {
+	return &Syncer{store: s, fetchers: fetchers}
 }
 
 // SyncAll refreshes every active company. A single company's failure

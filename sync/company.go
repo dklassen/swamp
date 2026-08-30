@@ -7,14 +7,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/store"
 )
-
-// sourceAshby is the only store.Company.Source value PostingFetcher
-// currently supports.
-const sourceAshby = "ashby"
 
 func toFilterRules(filters []store.CompanyFilter) []filter.Filter {
 	rules := make([]filter.Filter, len(filters))
@@ -24,7 +19,7 @@ func toFilterRules(filters []store.CompanyFilter) []filter.Filter {
 	return rules
 }
 
-func toFilterPosting(p ashby.Posting) filter.Posting {
+func toFilterPosting(p Posting) filter.Posting {
 	return filter.Posting{Department: p.Department, Location: p.Location}
 }
 
@@ -35,7 +30,7 @@ func stringOrNil(s string) *string {
 	return &s
 }
 
-func toCreatePostingParams(companyID int64, source string, p ashby.Posting) store.CreatePostingParams {
+func toCreatePostingParams(companyID int64, source string, p Posting) store.CreatePostingParams {
 	params := store.CreatePostingParams{
 		CompanyID:       companyID,
 		Source:          source,
@@ -113,11 +108,12 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (Result, erro
 	if err != nil {
 		return result, fmt.Errorf("sync: get company: %w", err)
 	}
-	if company.Source != sourceAshby {
+	fetcher, ok := s.fetchers[company.Source]
+	if !ok {
 		return result, fmt.Errorf("sync: unsupported source %q", company.Source)
 	}
 
-	fetched, err := s.fetcher.FetchPostings(ctx, company.SourceRef)
+	fetched, err := fetcher.FetchPostings(ctx, company.SourceRef)
 	if err != nil {
 		return result, fmt.Errorf("sync: fetch postings: %w", err)
 	}
