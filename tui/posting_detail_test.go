@@ -6,7 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/assets"
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -77,7 +77,7 @@ func TestPostingDetailModel_A_NoApplication_ReturnsCreateCmd(t *testing.T) {
 func TestPostingDetailModel_A_HasApplication_NoOp(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, assets.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, store.Application{}, true)
+	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, store.Application{}, true)
 	cmd, intent := m.Update(runeKey('a'))
 	if cmd != nil || intent != nil {
 		t.Fatalf("cmd, intent = %v, %v, want nil, nil (application already exists)", cmd, intent)
@@ -88,7 +88,7 @@ func TestPostingDetailModel_S_HasApplication_ReturnsEnterStatusMsg(t *testing.T)
 	t.Parallel()
 
 	app := store.Application{PostingID: 5, Status: store.ApplicationStatusSubmitted}
-	m := newPostingDetailModel(nil, assets.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, app, true)
+	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, app, true)
 	cmd, intent := m.Update(runeKey('s'))
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
@@ -116,7 +116,7 @@ func TestPostingDetailModel_N_HasApplication_ReturnsEnterNotesMsg(t *testing.T) 
 	t.Parallel()
 
 	app := store.Application{PostingID: 5, Notes: "existing notes"}
-	m := newPostingDetailModel(nil, assets.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, app, true)
+	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, app, true)
 	cmd, intent := m.Update(runeKey('n'))
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)

@@ -16,7 +16,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/dklassen/swamp/assets"
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
@@ -64,11 +64,11 @@ type App struct {
 	applicationsByPosting map[int64]store.Application
 	applicationStatus     applicationStatusModel
 	applicationNotes      applicationNotesModel
-	// assets resolves an application's document paths, hiding the
+	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
-	// schema/SQL details -- threaded through from SWAMP_ASSETS_PATH,
+	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
 	// mirroring how SWAMP_DB_PATH configures the store.
-	assets *assets.Store
+	documents *documents.Store
 	// hideArchived is ephemeral, in-memory-only display state -- not
 	// persisted (see decisions.log). Defaults true: the point of
 	// archiving a posting is to declutter the list.
@@ -119,7 +119,7 @@ func renderFilterOption(label string, checked, isCursor bool) string {
 	return "  " + line + "\n"
 }
 
-func New(s *store.Store, syncer *sync.Syncer, docs *assets.Store) *App {
+func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 	return &App{
 		store:        s,
 		syncer:       syncer,
@@ -127,7 +127,7 @@ func New(s *store.Store, syncer *sync.Syncer, docs *assets.Store) *App {
 		companyForm:  newCompanyFormModel(s),
 		postingList:  newPostingListModel(s),
 		hideArchived: true,
-		assets:       docs,
+		documents:    docs,
 	}
 }
 
@@ -156,7 +156,7 @@ func documentStatusLine(label string, exists bool, path string) string {
 // over-applying that convention (see decisions.log). When hasApplication
 // is false, no documents section is rendered at all -- "no application
 // -> show nothing".
-func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *assets.Store) string {
+func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store) string {
 	var b strings.Builder
 	fields := []struct{ label, value string }{
 		{"Department", derefOr(p.Department, "")},
@@ -615,7 +615,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if a.screen == screenPostingDetail {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.assets, a.width, a.listRows(), p, app, hasApp)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
 			}
 		}
 	case applicationCreatedMsg:
@@ -627,7 +627,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			if a.screen == screenPostingDetail {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.assets, a.width, a.listRows(), p, app, hasApp)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
 			}
 		}
 	case applicationStatusUpdatedMsg:
@@ -639,7 +639,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			a.screen = screenPostingDetail
 			p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-			a.postingDetail = newPostingDetailModel(a.store, a.assets, a.width, a.listRows(), p, app, hasApp)
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
 		}
 	case applicationNotesUpdatedMsg:
 		a.err = msg.err
@@ -650,7 +650,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			a.screen = screenPostingDetail
 			p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-			a.postingDetail = newPostingDetailModel(a.store, a.assets, a.width, a.listRows(), p, app, hasApp)
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
 		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
@@ -708,7 +708,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.screen = screenCompanyList
 			case enterPostingDetailMsg:
 				p, app, hasApp := a.lookupPosting(v.postingID)
-				a.postingDetail = newPostingDetailModel(a.store, a.assets, a.width, a.listRows(), p, app, hasApp)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
 				a.screen = screenPostingDetail
 				return a, loadApplication(a.store, p.ID)
 			case enterFilterSelectMsg:
@@ -731,7 +731,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				if idx >= 0 && newIdx >= 0 && newIdx < len(a.postings) {
 					p := a.postings[newIdx]
 					app, hasApp := a.applicationsByPosting[p.ID]
-					a.postingDetail = newPostingDetailModel(a.store, a.assets, a.width, a.listRows(), p, app, hasApp)
+					a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
 					return a, loadApplication(a.store, p.ID)
 				}
 			case enterApplicationStatusMsg:

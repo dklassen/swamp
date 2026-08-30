@@ -13,7 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/ashby"
-	"github.com/dklassen/swamp/assets"
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
@@ -21,12 +21,12 @@ import (
 // newTestApp creates an App and drives it through Init, returning the
 // model with its initial companies already loaded. Tests that don't care
 // about refresh behavior can pass a syncer with no configured postings.
-// The App's assets.Store is rooted at a fresh t.TempDir() -- tests
+// The App's documents.Store is rooted at a fresh t.TempDir() -- tests
 // that care about it (i.e. application document status) can read it back
-// via app.assets.
+// via app.documents.
 func newTestApp(t *testing.T, s *store.Store, syncer *sync.Syncer) *App {
 	t.Helper()
-	app := New(s, syncer, assets.NewStore(t.TempDir()))
+	app := New(s, syncer, documents.NewStore(t.TempDir()))
 	model, _ := app.Update(app.Init()())
 	return model.(*App)
 }
@@ -1194,7 +1194,7 @@ func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testin
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	status := app.assets.Status(application.ID)
+	status := app.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -1233,7 +1233,7 @@ func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testi
 	}
 	// Deliberately no files written -- the application row exists, but
 	// the documents don't yet.
-	status := app.assets.Status(application.ID)
+	status := app.documents.Status(application.ID)
 
 	app = openPostingDetail(app)
 

@@ -1,10 +1,11 @@
-// Package assets locates and checks for a given application's
+// Package documents locates and checks for a given application's
 // cover-letter/resume markdown files on the filesystem. The content
 // itself is never read by this package -- it's plain markdown meant to
 // be consumed directly by an external agent/editor, not by Swamp. See
 // decisions.log for why this is filesystem-backed rather than DB
-// columns, and for the 2026-08-30 rename from "documents" to "assets".
-package assets
+// columns. The default base directory is "assets" (see cmd/swamp/main.go)
+// -- only the storage path was renamed, not this package.
+package documents
 
 import (
 	"os"

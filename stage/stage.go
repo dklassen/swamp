@@ -11,7 +11,7 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/dklassen/swamp/assets"
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -47,12 +47,12 @@ type Prepared struct {
 // mirroring how sync.Syncer composes ashby and store: List and Prepare
 // are its whole exported API.
 type Stage struct {
-	store  *store.Store
-	assets *assets.Store
+	store     *store.Store
+	documents *documents.Store
 }
 
-func New(s *store.Store, a *assets.Store) *Stage {
-	return &Stage{store: s, assets: a}
+func New(s *store.Store, d *documents.Store) *Stage {
+	return &Stage{store: s, documents: d}
 }
 
 // List returns interested, non-archived postings that don't yet have both
@@ -68,7 +68,7 @@ func (st *Stage) List(ctx context.Context) ([]Candidate, error) {
 	candidates := make([]Candidate, 0, len(postings))
 	for _, p := range postings {
 		if p.ApplicationID != nil {
-			status := st.assets.Status(*p.ApplicationID)
+			status := st.documents.Status(*p.ApplicationID)
 			if status.CoverLetter.Exists && status.Resume.Exists {
 				continue
 			}
@@ -108,10 +108,10 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 		return nil, fmt.Errorf("stage: get or create application: %w", err)
 	}
 
-	if _, err := st.assets.EnsureDir(application.ID); err != nil {
+	if _, err := st.documents.EnsureDir(application.ID); err != nil {
 		return nil, fmt.Errorf("stage: ensure document directory: %w", err)
 	}
-	status := st.assets.Status(application.ID)
+	status := st.documents.Status(application.ID)
 
 	return &Prepared{
 		Posting:       posting,
