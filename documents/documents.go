@@ -3,7 +3,8 @@
 // itself is never read by this package -- it's plain markdown meant to
 // be consumed directly by an external agent/editor, not by Swamp. See
 // decisions.log for why this is filesystem-backed rather than DB
-// columns.
+// columns. The default base directory is "assets" (see cmd/swamp/main.go)
+// -- only the storage path was renamed, not this package.
 package documents
 
 import (

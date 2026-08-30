@@ -33,9 +33,13 @@ func main() {
 		dbPath = "swamp.db"
 	}
 
+	// Default base directory is "assets", not "documents" -- naming the
+	// storage path is the only thing this convention was renamed for
+	// (see decisions.log); the package/env var identifiers stay as
+	// "documents".
 	documentsPath := os.Getenv("SWAMP_DOCUMENTS_PATH")
 	if documentsPath == "" {
-		documentsPath = "documents"
+		documentsPath = "assets"
 	}
 
 	sqlDB, err := sql.Open("sqlite", "file:"+dbPath)

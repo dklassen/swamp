@@ -1589,3 +1589,72 @@ directory and is idempotent on a second call (second call's Exists flags
 correctly reflect a file written between calls); list excludes a posting
 once both documents exist on disk; ApplicationStatus renders as a string
 after the MarshalJSON fix.
+
+## 2026-08-30 -- Rename documents package/convention to assets
+Context: the on-disk storage location for an application's cover
+letter/resume markdown was named "documents" throughout (Go package,
+SWAMP_DOCUMENTS_PATH env var, default base directory) since #5. Renamed
+to "assets" on request.
+
+Decision: full rename, not just the default folder name -- Go package
+`documents` -> `assets` (directory and files renamed to match: assets.go,
+assets_test.go), `SWAMP_DOCUMENTS_PATH` -> `SWAMP_ASSETS_PATH`, default
+base directory `"documents"` -> `"assets"`. Every call site across
+cmd/swamp/main.go, stage, and tui updated (import paths, struct field
+names App.assets/postingDetailModel.assets, constructor params). Left a
+package named `documents` pointing at an `assets` folder would have been
+the exact class of naming inconsistency flagged and fixed once already
+this project (`handoff` -> `stage`, see the 2026-08-26 entry) -- not
+worth reintroducing here.
+
+Not renamed: the TUI's user-facing "Documents" section label and the
+plain English word "documents" used generically in comments/tests to
+mean "the cover letter and resume" -- those describe the artifacts
+themselves, not the storage mechanism, and weren't part of what was
+asked.
+
+The package's exported API (Store, Paths, Doc, Status, ForApplication,
+NewStore, EnsureDir) needed no changes -- none of those identifiers
+named "documents" in the first place, only the package/env var/folder
+name did.
+
+Existing real on-disk content (an application's already-drafted
+cover_letter.md/resume.md under the old documents/ directory) was moved
+to assets/ as part of this change, not left orphaned.
+
+Verified: `go build ./...`, `go test ./...` (all packages green,
+including the renamed `assets` package), `golangci-lint run ./...` (0
+issues), `gofmt` check clean. Manually re-ran `swamp stage list` and
+`swamp stage prepare` against the real project database via `direnv exec
+.` after re-approving the changed .envrc -- confirmed existing
+application content survived the directory move and new paths resolve
+under assets/ with Exists correctly reported.
+
+## 2026-08-30 -- Correction: revert the documents->assets Go rename, keep only the storage path renamed
+Context: the previous entry (same date, "Rename documents package/convention
+to assets") over-scoped the request. The actual ask was narrower: only the
+on-disk storage path for an application's documents should be named
+"assets" -- not the Go package, not SWAMP_DOCUMENTS_PATH, not any struct
+field. Reverted all of that: package is `documents` again (directory and
+files back to documents/documents.go, documents/documents_test.go), env
+var is `SWAMP_DOCUMENTS_PATH` again, struct fields are
+App.documents/postingDetailModel.documents/Stage.documents again.
+
+What's actually kept from the previous entry: the default value of
+SWAMP_DOCUMENTS_PATH changed from "documents" to "assets"
+(cmd/swamp/main.go), and the real on-disk content that was already moved
+to assets/<id>/ stays there (that's the correct location now, unrelated
+to what the Go package is named).
+
+Lesson: "renamed throughout" in an AskUserQuestion option description is
+not the same as confirmed scope -- when a rename touches identifiers
+beyond what was literally asked (a filesystem path vs. a Go package/env
+var/struct field are different things even if they share a word), that's
+worth a separate, explicit confirmation rather than inferring "throughout"
+covers all of them from one recommended option.
+
+Verified: `go build ./...`, `go test ./...` (all packages green, package
+name back to `documents`), `golangci-lint run ./...` (0 issues), `gofmt`
+check clean. Manually re-ran `swamp stage prepare` against the real
+project database -- confirmed paths still resolve correctly under
+assets/<id>/ with existing content intact.

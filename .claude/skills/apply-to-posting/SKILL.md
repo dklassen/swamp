@@ -61,15 +61,15 @@ direnv exec . go run ./cmd/swamp stage prepare <posting-id>
 This is the one mutating step in the whole workflow, and it's idempotent --
 safe to re-run if you need to fetch this information again later in the
 same session. It creates the application record if one doesn't exist yet
-and makes sure the documents directory is there, then prints:
+and makes sure the assets directory is there, then prints:
 
 ```json
 {
   "Posting": { "...": "same shape as above" },
   "CompanyName": "Acme",
   "ApplicationID": 1,
-  "CoverLetter": { "Path": "/abs/path/documents/1/cover_letter.md", "Exists": false },
-  "Resume": { "Path": "/abs/path/documents/1/resume.md", "Exists": false }
+  "CoverLetter": { "Path": "/abs/path/assets/1/cover_letter.md", "Exists": false },
+  "Resume": { "Path": "/abs/path/assets/1/resume.md", "Exists": false }
 }
 ```
 
