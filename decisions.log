@@ -1629,3 +1629,32 @@ issues), `gofmt` check clean. Manually re-ran `swamp stage list` and
 .` after re-approving the changed .envrc -- confirmed existing
 application content survived the directory move and new paths resolve
 under assets/ with Exists correctly reported.
+
+## 2026-08-30 -- Correction: revert the documents->assets Go rename, keep only the storage path renamed
+Context: the previous entry (same date, "Rename documents package/convention
+to assets") over-scoped the request. The actual ask was narrower: only the
+on-disk storage path for an application's documents should be named
+"assets" -- not the Go package, not SWAMP_DOCUMENTS_PATH, not any struct
+field. Reverted all of that: package is `documents` again (directory and
+files back to documents/documents.go, documents/documents_test.go), env
+var is `SWAMP_DOCUMENTS_PATH` again, struct fields are
+App.documents/postingDetailModel.documents/Stage.documents again.
+
+What's actually kept from the previous entry: the default value of
+SWAMP_DOCUMENTS_PATH changed from "documents" to "assets"
+(cmd/swamp/main.go), and the real on-disk content that was already moved
+to assets/<id>/ stays there (that's the correct location now, unrelated
+to what the Go package is named).
+
+Lesson: "renamed throughout" in an AskUserQuestion option description is
+not the same as confirmed scope -- when a rename touches identifiers
+beyond what was literally asked (a filesystem path vs. a Go package/env
+var/struct field are different things even if they share a word), that's
+worth a separate, explicit confirmation rather than inferring "throughout"
+covers all of them from one recommended option.
+
+Verified: `go build ./...`, `go test ./...` (all packages green, package
+name back to `documents`), `golangci-lint run ./...` (0 issues), `gofmt`
+check clean. Manually re-ran `swamp stage prepare` against the real
+project database -- confirmed paths still resolve correctly under
+assets/<id>/ with existing content intact.
