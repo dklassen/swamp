@@ -1863,3 +1863,33 @@ added a company, pressed e, confirmed the name field is pre-seeded,
 appended text and saved, confirmed the list shows the updated name and
 the DB row kept the same id/source/source_ref, and confirmed esc after
 typing cancels without saving.
+
+## 2026-08-31 -- Move project instructions to AGENTS.md, CLAUDE.md imports it
+Context: the repo's instructions file (formerly CLAUDE.md) had no Claude-
+specific content in it -- it was pure repo/engineering workflow guidance
+(issue workflow, testing, branching, tooling, decisions log) that applies
+identically to any coding agent working in this codebase. AGENTS.md is
+the emerging cross-tool convention for exactly this.
+
+Decision: AGENTS.md is now the source of truth (verbatim content, moved
+wholesale, only the intro line reworded to be tool-agnostic). CLAUDE.md
+is a real, small file (not a symlink) containing `@AGENTS.md` -- Claude
+Code's documented import syntax -- so Claude Code's own auto-discovery
+(which looks for CLAUDE.md specifically, confirmed it has no first-class
+AGENTS.md support) still picks up the same content, with room to add
+genuinely Claude-Code-specific instructions below the import later if any
+ever arise. A symlink (`ln -s AGENTS.md CLAUDE.md`) was considered and
+rejected in favor of two real files -- explicit preference, not a
+technical constraint (the symlink is verified to work fine on macOS/
+Linux; Windows needs Admin/Developer Mode for it, which the import
+syntax sidesteps entirely, but that wasn't the deciding factor here).
+
+Also folded in a process fix while touching this file: added an explicit
+"use GitHub's closing-keyword syntax (Fixes #N), not a bare #N reference"
+line to the feature-branch workflow section, from the #35-stayed-open-
+after-#42-merged incident earlier the same day.
+
+Verified: both files read back correctly, diffed AGENTS.md's body against
+the prior CLAUDE.md to confirm only the two intended changes (reworded
+intro line, new closing-keyword item) -- no accidental content loss in
+the move.
