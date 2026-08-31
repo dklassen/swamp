@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dklassen/swamp/store"
 )
@@ -123,5 +124,34 @@ func TestPostingListModel_ResetCursor(t *testing.T) {
 	m.resetCursor()
 	if m.cursor != 0 {
 		t.Fatalf("cursor after reset = %d, want 0", m.cursor)
+	}
+}
+
+func TestTruncateCol(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		s    string
+		max  int
+		want string
+	}{
+		{"shorter than max is unchanged", "Engineer", 10, "Engineer"},
+		{"equal to max is unchanged", "Engineer", 8, "Engineer"},
+		{"longer than max is truncated with ellipsis", "Senior Backend Engineer", 10, "Senior Ba…"},
+		{"empty string is unchanged", "", 10, ""},
+		{"wide (double-width) runes truncate by display width, not rune count", "シニアコンサルティングエンジニア", 10, "シニアコ…"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := truncateCol(tt.s, tt.max)
+			if got != tt.want {
+				t.Fatalf("truncateCol(%q, %d) = %q, want %q", tt.s, tt.max, got, tt.want)
+			}
+			if w := lipgloss.Width(got); w > tt.max {
+				t.Fatalf("truncateCol(%q, %d) width = %d, want <= %d", tt.s, tt.max, w, tt.max)
+			}
+		})
 	}
 }
