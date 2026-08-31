@@ -25,3 +25,21 @@ UPDATE applications
 SET notes = ?, updated_at = CURRENT_TIMESTAMP
 WHERE posting_id = ?
 RETURNING *;
+
+-- name: ListActiveApplications :many
+-- Applications not at a terminal dead-end status (rejected,
+-- offer_declined), joined with their posting and company name -- feeds
+-- the active-applications TUI screen (#43). Unlike ListInterestedPostings
+-- this is an inner join on applications (an application always exists
+-- for every row here), ordered most-recently-changed first so whatever
+-- moved last surfaces at the top.
+SELECT
+    postings.*,
+    companies.name AS company_name,
+    applications.id AS application_id,
+    applications.status AS application_status
+FROM applications
+JOIN postings ON postings.id = applications.posting_id
+JOIN companies ON companies.id = postings.company_id
+WHERE applications.status NOT IN ('rejected', 'offer_declined')
+ORDER BY applications.updated_at DESC;

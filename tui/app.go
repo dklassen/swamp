@@ -43,6 +43,7 @@ const (
 	screenFilterSelect
 	screenApplicationStatusSelect
 	screenApplicationNotesEdit
+	screenActiveApplications
 )
 
 type App struct {
@@ -67,6 +68,16 @@ type App struct {
 	applicationsByPosting map[int64]store.Application
 	applicationStatus     applicationStatusModel
 	applicationNotes      applicationNotesModel
+	// applicationStatusReturnScreen is which screen entered
+	// screenApplicationStatusSelect -- screenPostingDetail and
+	// screenActiveApplications both can, so the cancel/save handlers need
+	// to know which one to return to rather than assuming.
+	applicationStatusReturnScreen screen
+	// activeApplications backs the home screen: every application not at
+	// a terminal dead-end status, across every company (see
+	// store.ListActiveApplications, decisions.log #43).
+	activeApplications    []store.ActiveApplication
+	activeApplicationList activeApplicationListModel
 	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
 	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
@@ -124,13 +135,15 @@ func renderFilterOption(label string, checked, isCursor bool) string {
 
 func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 	return &App{
-		store:        s,
-		syncer:       syncer,
-		companyList:  newCompanyListModel(s, syncer),
-		companyForm:  newCompanyFormModel(s),
-		postingList:  newPostingListModel(s),
-		hideArchived: true,
-		documents:    docs,
+		store:                 s,
+		syncer:                syncer,
+		screen:                screenActiveApplications,
+		companyList:           newCompanyListModel(s, syncer),
+		companyForm:           newCompanyFormModel(s),
+		postingList:           newPostingListModel(s),
+		activeApplicationList: newActiveApplicationListModel(s, docs),
+		hideArchived:          true,
+		documents:             docs,
 	}
 }
 
@@ -245,7 +258,19 @@ func sortCompaniesByName(companies []store.Company) {
 }
 
 func (a *App) Init() tea.Cmd {
-	return loadCompanies(a.store)
+	return tea.Batch(loadCompanies(a.store), loadActiveApplications(a.store))
+}
+
+type activeApplicationsLoadedMsg struct {
+	applications []store.ActiveApplication
+	err          error
+}
+
+func loadActiveApplications(s *store.Store) tea.Cmd {
+	return func() tea.Msg {
+		apps, err := s.ListActiveApplications(context.Background())
+		return activeApplicationsLoadedMsg{applications: apps, err: err}
+	}
 }
 
 type companyCreatedMsg struct {
@@ -567,6 +592,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case companiesLoadedMsg:
 		a.err = msg.err
 		a.companies = msg.companies
+	case activeApplicationsLoadedMsg:
+		a.err = msg.err
+		a.activeApplications = msg.applications
+		a.activeApplicationList.resetCursorIfOutOfBounds(len(a.activeApplications))
 	case companyCreatedMsg:
 		a.err = msg.err
 		if msg.err == nil {
@@ -669,6 +698,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
 				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
 			}
+			// A freshly-started application should show up in the active-
+			// applications list without needing a restart.
+			return a, loadActiveApplications(a.store)
 		}
 	case applicationStatusUpdatedMsg:
 		a.err = msg.err
@@ -677,9 +709,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.applicationsByPosting = make(map[int64]store.Application)
 			}
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
-			a.screen = screenPostingDetail
-			p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
+			a.screen = a.applicationStatusReturnScreen
+			if a.screen == screenPostingDetail {
+				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
+			}
+			// The new status may have moved this application to/from a
+			// terminal status (rejected/offer_declined), changing whether
+			// it belongs in the active-applications list at all -- reload
+			// rather than patch in place so that's always correct,
+			// regardless of which screen triggered the change.
+			return a, loadActiveApplications(a.store)
 		}
 	case applicationNotesUpdatedMsg:
 		a.err = msg.err
@@ -735,6 +775,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch a.screen {
+	case screenActiveApplications:
+		cmd, intent := a.activeApplicationList.Update(msg, a.activeApplications)
+		switch v := intent.(type) {
+		case backToCompanyListMsg:
+			a.screen = screenCompanyList
+		case enterApplicationStatusMsg:
+			a.applicationStatusReturnScreen = screenActiveApplications
+			a.screen = screenApplicationStatusSelect
+			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus)
+		}
+		return a, cmd
 	case screenCompanyList:
 		cmd, intent := a.companyList.Update(msg, a.companies)
 		switch v := intent.(type) {
@@ -748,6 +799,8 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.selectedCompany = v.company
 			a.screen = screenPostingList
 			return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
+		case backToActiveApplicationsMsg:
+			a.screen = screenActiveApplications
 		}
 		return a, cmd
 	case screenPostingList:
@@ -792,6 +845,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return a, loadApplication(a.store, p.ID)
 			}
 		case enterApplicationStatusMsg:
+			a.applicationStatusReturnScreen = screenPostingDetail
 			a.screen = screenApplicationStatusSelect
 			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus)
 		case enterApplicationNotesMsg:
@@ -802,7 +856,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case screenApplicationStatusSelect:
 		cmd, intent := a.applicationStatus.Update(msg)
 		if _, ok := intent.(cancelApplicationStatusMsg); ok {
-			a.screen = screenPostingDetail
+			a.screen = a.applicationStatusReturnScreen
 		}
 		return a, cmd
 	case screenApplicationNotesEdit:
@@ -843,6 +897,10 @@ func (a *App) View() string {
 	}
 
 	switch a.screen {
+	case screenActiveApplications:
+		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.listRows()))
+	case screenCompanyList:
+		b.WriteString(a.companyList.View(a.companies, a.listRows()))
 	case screenCompanyForm:
 		b.WriteString(a.companyForm.View())
 	case screenCompanyEdit:
@@ -865,8 +923,6 @@ func (a *App) View() string {
 		b.WriteString(a.applicationNotes.View())
 	case screenFilterSelect:
 		b.WriteString(a.filterSelect.View(a.listRows()))
-	default:
-		b.WriteString(a.companyList.View(a.companies, a.listRows()))
 	}
 
 	return b.String()

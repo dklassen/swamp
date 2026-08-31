@@ -2085,3 +2085,94 @@ because it's convenient to be touching the code anyway.
 Note: this doesn't retroactively split #49 -- it's already open, and
 splitting an already-committed, already-pushed PR after the fact would
 be more churn than value. Applies going forward.
+
+## 2026-08-31 -- Active-applications screen becomes the app's home screen (#43)
+Problem: an application was only reachable by drilling into a specific
+company's posting list -- no cross-company view of "everything I'm
+actively applying to," no quick way to check status or open a cover
+letter/resume without remembering which company/posting it belonged to.
+
+Several real design decisions were open in the issue itself, resolved
+with Bob directly before implementing:
+- **Active scope**: excludes only `rejected`/`offer_declined` -- every
+  other status (including `offer_received`/`offer_accepted`) still
+  shows, since those can still need attention.
+- **Missing document on $EDITOR open**: opens anyway. Most editors
+  create the file on save; no separate "has this been prepared" gate.
+- **Entry point**: not a new keybinding on the company list -- this
+  screen *replaces* the company list as the app's home screen. Company
+  list becomes one level deeper, reached via 'c' from here, with a new
+  esc/b binding on company list to get back (it had no "back" before,
+  since it was the top of the hierarchy).
+
+Implementation:
+- `store.ListActiveApplications` / `store.ActiveApplication`: an inner
+  join on `applications` (unlike `ListInterestedPostings`'s left join --
+  an application always exists for every row here), joined with
+  `postings`/`companies` for company name and posting fields, ordered
+  by `applications.updated_at DESC`. `ApplicationStatus` comes back as
+  `sql.NullString` from sqlc despite the `WHERE ... NOT IN` filter
+  (sqlc can't know the filter excludes NULL) -- handled the same
+  defensive way `applicationFromRow` already does for `GetApplication`.
+- `tui/editor.go`: `openInEditor`/`editorCommand`, a distinct mechanism
+  from `openInBrowser` -- most `$EDITOR`s are terminal programs that
+  need `tea.ExecProcess` (suspends the Program, hands over the TTY)
+  rather than `openInBrowser`'s fire-and-forget `.Start()` for a
+  detached GUI process. `editorCommand` is the pure, testable decision
+  (unset `$EDITOR` -> error); the actual `os.Getenv`/`exec.Command`
+  plumbing around it isn't unit-tested, mirroring `openInBrowser`'s own
+  untested outer wrapper.
+- `tui/active_applications.go`: new screen, table-rendered like
+  `posting_list.go` (#46) for visual consistency. Keys: l/r open cover
+  letter/resume in `$EDITOR` (via `documents.Store.EnsureDir`, called
+  synchronously -- same "local filesystem I/O is cheap enough to not
+  need a separate tea.Cmd round trip" reasoning `postingDetailContent`'s
+  `docs.Status` call already established), s changes status (reuses
+  `applicationStatusModel`/`enterApplicationStatusMsg` rather than a
+  second status-picker), c goes to companies, q quits.
+- **Return-screen tracking**: `screenApplicationStatusSelect` is now
+  reachable from both `screenPostingDetail` and the new screen, but
+  `applicationStatusUpdatedMsg`'s handler hardcoded "return to posting
+  detail." Added `App.applicationStatusReturnScreen`, set wherever
+  `enterApplicationStatusMsg` is handled, read by both the cancel path
+  and the save path instead of assuming.
+- **Freshness**: both `applicationCreatedMsg` (starting a new
+  application from posting-detail) and `applicationStatusUpdatedMsg`
+  now also return `loadActiveApplications` -- a status change can move
+  an application in or out of the terminal-status filter, and a newly
+  started application should appear without restarting the app. Found
+  this gap while writing the App-level tests below, not in the
+  original issue -- fixed rather than filed separately since it's the
+  same underlying "keep the list correct" concern the screen exists for.
+- `App.Init()` now returns `tea.Batch(loadCompanies, loadActiveApplications)`
+  -- surfaced a real bug in the test harness: `newTestApp` previously
+  ran `app.Init()()` and fed the single result straight into `Update`,
+  which worked when `Init` returned exactly one `tea.Cmd`/msg pair. A
+  `tea.Batch` returns a `tea.BatchMsg` (`[]tea.Cmd`) instead, which
+  `App.Update` has no case for -- silently dropped, meaning companies/
+  active-applications would never load in any test. Replaced with
+  `applyCmd`, a small recursive helper that unpacks `BatchMsg` the way
+  a real `tea.Program`'s runtime loop would, since these tests drive
+  `App` directly without one.
+- Home screen changing broke ~15 existing tests that assumed
+  `screenCompanyList` was where `newTestApp` starts (most through the
+  shared `openPostingList` helper, used by 46 tests) -- fixed at the
+  helper level (`openPostingList` now presses 'c' first) plus each
+  standalone test that pressed company-list keys directly, rather than
+  changing `newTestApp`'s own default screen (which would have hidden
+  the real behavior the new screen introduces).
+
+Verified: full unit coverage (store join/filtering, `editorCommand`,
+the new screen's keybindings, empty-list safety) plus App-level
+integration tests for the return-screen fix (including a test that
+would fail to compile without `saveResolved`-style tracking) and the
+freshness-reload fix. Manually verified via tmux against a real
+production dataset with a live `vi` as `$EDITOR`: home screen renders
+real data correctly aligned; 'c'/esc round-trips between home and
+company list; 's' from home correctly returns to home (not posting
+detail) on both cancel and save; rejecting an application immediately
+drops it from the list; starting a new application via posting-detail's
+'a' key makes it appear on the home screen without a restart; 'l'/'r'
+launch `vi` via `tea.ExecProcess` on the correct distinct file paths,
+swamp's screen redraws cleanly after `vi` exits, and the saved content
+actually persists to disk.

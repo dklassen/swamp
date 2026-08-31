@@ -37,6 +37,12 @@ type enterCompanyEditMsg struct{ company store.Company }
 // screen for the given company.
 type selectCompanyMsg struct{ company store.Company }
 
+// backToActiveApplicationsMsg signals that App should switch back to the
+// active-applications screen -- the app's home screen (see decisions.log,
+// #43); company list is reached from there via 'c', not the other way
+// around, so it needs its own way back.
+type backToActiveApplicationsMsg struct{}
+
 // Update handles one key press. The returned tea.Cmd (if non-nil) is a
 // real async command for App to run through bubbletea as usual. The
 // returned tea.Msg (if non-nil) is an intent for App to apply
@@ -55,6 +61,8 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 		}
 	case msg.String() == "q":
 		return tea.Quit, nil
+	case msg.Type == tea.KeyEsc, msg.String() == "b":
+		return nil, backToActiveApplicationsMsg{}
 	case msg.String() == "d":
 		if m.cursor < len(companies) {
 			return deleteCompany(m.store, companies[m.cursor].ID), nil
@@ -94,7 +102,7 @@ func (m *companyListModel) View(companies []store.Company, listRows int) string 
 			b.WriteString("  " + line + "\n")
 		}
 	}
-	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view postings  a: add  e: edit  d: delete  r: refresh  q: quit"))
+	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view postings  a: add  e: edit  d: delete  r: refresh  esc/b: back  q: quit"))
 	return b.String()
 }
 

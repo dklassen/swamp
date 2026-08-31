@@ -90,6 +90,20 @@ func TestCompanyListModel_E_NoCompanies_ReturnsNothing(t *testing.T) {
 	}
 }
 
+func TestCompanyListModel_Esc_ReturnsBackToActiveApplicationsMsg(t *testing.T) {
+	t.Parallel()
+
+	m := &companyListModel{}
+
+	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc}, nil)
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil", cmd)
+	}
+	if _, ok := intent.(backToActiveApplicationsMsg); !ok {
+		t.Fatalf("intent = %T, want backToActiveApplicationsMsg", intent)
+	}
+}
+
 func TestCompanyListModel_A_ReturnsEnterCompanyFormMsg(t *testing.T) {
 	t.Parallel()
 

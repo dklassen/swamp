@@ -47,6 +47,13 @@ type Querier interface {
 	// creating) where callers need to know about a soft-deleted tag too, not
 	// just active ones.
 	GetTagByName(ctx context.Context, name string) (Tag, error)
+	// Applications not at a terminal dead-end status (rejected,
+	// offer_declined), joined with their posting and company name -- feeds
+	// the active-applications TUI screen (#43). Unlike ListInterestedPostings
+	// this is an inner join on applications (an application always exists
+	// for every row here), ordered most-recently-changed first so whatever
+	// moved last surfaces at the top.
+	ListActiveApplications(ctx context.Context) ([]ListActiveApplicationsRow, error)
 	ListActiveCompanies(ctx context.Context) ([]Company, error)
 	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)
 	// Keyspace discovery for filter selection: department is a company-

@@ -26,7 +26,28 @@ import (
 func newTestApp(t *testing.T, s *store.Store, syncer *sync.Syncer) *App {
 	t.Helper()
 	app := New(s, syncer, documents.NewStore(t.TempDir()))
-	model, _ := app.Update(app.Init()())
+	return applyCmd(t, app, app.Init())
+}
+
+// applyCmd runs cmd and feeds the resulting message through app.Update.
+// If cmd is itself a tea.Batch (App.Init returns one, to load companies
+// and active applications concurrently), its BatchMsg unpacks into
+// per-command messages that a real tea.Program's runtime loop would run
+// and apply individually -- these tests drive App directly without one,
+// so this replicates that unpacking recursively.
+func applyCmd(t *testing.T, app *App, cmd tea.Cmd) *App {
+	t.Helper()
+	if cmd == nil {
+		return app
+	}
+	msg := cmd()
+	if batch, ok := msg.(tea.BatchMsg); ok {
+		for _, c := range batch {
+			app = applyCmd(t, app, c)
+		}
+		return app
+	}
+	model, _ := app.Update(msg)
 	return model.(*App)
 }
 
@@ -42,10 +63,12 @@ func runeKey(r ...rune) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: r}
 }
 
-// openPostingList drives app from the company list into the posting list
-// for the currently selected company: refresh, then enter.
+// openPostingList drives app from wherever it starts (the active-
+// applications home screen) into the posting list for the currently
+// selected company: to the company list, refresh, then enter.
 func openPostingList(t *testing.T, app *App) *App {
 	t.Helper()
+	app, _ = sendKey(app, runeKey('c'))
 	app, cmd := sendKey(app, runeKey('r'))
 	if cmd == nil {
 		t.Fatal("Update on 'r' returned nil Cmd")
@@ -91,6 +114,7 @@ func TestApp_CursorDown_MovesSelectionWithinBounds(t *testing.T) {
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, runeKey('c'))
 
 	if app.companyList.cursor != 0 {
 		t.Fatalf("initial cursor = %d, want 0", app.companyList.cursor)
@@ -117,8 +141,13 @@ func TestApp_PressA_EntersCompanyForm(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
+	if app.screen != screenActiveApplications {
+		t.Fatalf("initial screen = %v, want screenActiveApplications (the home screen)", app.screen)
+	}
+
+	app, _ = sendKey(app, runeKey('c'))
 	if app.screen != screenCompanyList {
-		t.Fatalf("initial screen = %v, want screenCompanyList", app.screen)
+		t.Fatalf("screen after 'c' = %v, want screenCompanyList", app.screen)
 	}
 
 	app, _ = sendKey(app, runeKey('a'))
@@ -131,6 +160,7 @@ func TestApp_PressA_EntersCompanyForm(t *testing.T) {
 func TestApp_TypingInForm_UpdatesFocusedField(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, runeKey('c'))
 
 	app, _ = sendKey(app, runeKey('a'))
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab}) // source field is focused first; move to name
@@ -144,6 +174,7 @@ func TestApp_TypingInForm_UpdatesFocusedField(t *testing.T) {
 func TestApp_Tab_MovesFocusToNextField(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, runeKey('c'))
 
 	app, _ = sendKey(app, runeKey('a'))
 	if app.companyForm.focus != formFieldSource {
@@ -172,6 +203,7 @@ func TestApp_Tab_MovesFocusToNextField(t *testing.T) {
 func TestApp_SubmitForm_CreatesCompanyAndReturnsToList(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, runeKey('c'))
 
 	app, _ = sendKey(app, runeKey('a'))
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab}) // source (default "ashby") -> name
@@ -208,6 +240,7 @@ func TestApp_PressD_DeletesSelectedCompany(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, runeKey('c'))
 
 	app, cmd := sendKey(app, runeKey('d'))
 	if cmd == nil {
@@ -229,6 +262,7 @@ func TestApp_PressE_EditsCompanyName(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, runeKey('c'))
 
 	app, _ = sendKey(app, runeKey('e'))
 	if app.screen != screenCompanyEdit {
@@ -268,6 +302,7 @@ func TestApp_EscWhileCompanyNameSavePending_DoesNotRaceTheSave(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, runeKey('c'))
 
 	app, _ = sendKey(app, runeKey('e'))
 	app, _ = sendKey(app, runeKey(' ', 'C', 'o', 'r', 'p'))
@@ -307,6 +342,7 @@ func TestApp_SubmitForm_KeepsCompanyListSorted(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, runeKey('c'))
 
 	// "Acme" sorts before the already-loaded "Globex" -- appending it
 	// blindly would leave the in-memory list out of order even though a
@@ -337,6 +373,7 @@ func TestApp_PressE_RenameKeepsCompanyListSorted(t *testing.T) {
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, runeKey('c'))
 
 	// Renaming "Acme" (cursor at index 0) to "Zzz" moves it past "Globex"
 	// alphabetically -- an in-place replace at the old index would leave
@@ -549,6 +586,7 @@ func TestApp_OpenPostingList_HidesArchivedPostingsByDefault(t *testing.T) {
 		},
 	})
 	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, runeKey('c'))
 
 	app, cmd := sendKey(app, runeKey('r'))
 	if cmd == nil {
@@ -686,6 +724,39 @@ func TestApp_PressA_OnPostingDetail_WithNoApplication_CreatesApplication(t *test
 	}
 	if application.Status != store.ApplicationStatusStarted {
 		t.Fatalf("application.Status = %s, want %s", application.Status, store.ApplicationStatusStarted)
+	}
+}
+
+// TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications
+// verifies a freshly-started application shows up in the active-
+// applications list without needing a restart -- applicationCreatedMsg
+// reloads it, the same way applicationStatusUpdatedMsg already does for
+// status changes.
+func TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]sync.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	if len(app.activeApplications) != 0 {
+		t.Fatalf("app.activeApplications before starting one = %+v, want empty", app.activeApplications)
+	}
+	app = openPostingList(t, app)
+	app = openPostingDetail(app)
+
+	app, cmd := sendKey(app, runeKey('a'))
+	if cmd == nil {
+		t.Fatal("Update on 'a' returned nil Cmd, want a command that creates the application")
+	}
+	app, createdCmd := sendKey(app, cmd())
+	if createdCmd == nil {
+		t.Fatal("applicationCreatedMsg handling returned nil Cmd, want a command that reloads active applications")
+	}
+	app, _ = sendKey(app, createdCmd())
+
+	if len(app.activeApplications) != 1 {
+		t.Fatalf("app.activeApplications after starting one = %+v, want 1", app.activeApplications)
 	}
 }
 
@@ -872,6 +943,104 @@ func TestApp_StatusSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 	}
 	if stored.Status != store.ApplicationStatusStarted {
 		t.Fatalf("stored application.Status = %s, want %s (esc should not persist)", stored.Status, store.ApplicationStatusStarted)
+	}
+}
+
+func TestApp_StartsOnActiveApplicationsScreen(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustCreateApplication(t, s, posting.ID)
+
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	if app.screen != screenActiveApplications {
+		t.Fatalf("initial screen = %v, want screenActiveApplications", app.screen)
+	}
+	if len(app.activeApplications) != 1 {
+		t.Fatalf("app.activeApplications = %+v, want 1 (loaded on Init)", app.activeApplications)
+	}
+	if app.activeApplications[0].CompanyName != "Acme" {
+		t.Fatalf("activeApplications[0].CompanyName = %q, want %q", app.activeApplications[0].CompanyName, "Acme")
+	}
+}
+
+func TestApp_ActiveApplications_C_ThenEsc_ReturnsHome(t *testing.T) {
+	s := newTestStore(t)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, runeKey('c'))
+	if app.screen != screenCompanyList {
+		t.Fatalf("screen after 'c' = %v, want screenCompanyList", app.screen)
+	}
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	if app.screen != screenActiveApplications {
+		t.Fatalf("screen after esc from company list = %v, want screenActiveApplications", app.screen)
+	}
+}
+
+// TestApp_ActiveApplications_StatusChange_ReturnsToActiveApplications
+// exercises the return-screen tracking applicationStatusReturnScreen
+// exists for: screenApplicationStatusSelect is reachable from both
+// screenPostingDetail and screenActiveApplications now, so saving (or
+// cancelling) must land back on whichever one entered it, not a
+// hardcoded screen.
+func TestApp_ActiveApplications_StatusChange_ReturnsToActiveApplications(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, runeKey('s'))
+	if app.screen != screenApplicationStatusSelect {
+		t.Fatalf("screen after 's' = %v, want screenApplicationStatusSelect", app.screen)
+	}
+
+	// Move from "application_started" (index 0) to "application_submitted".
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Update on enter (status select) returned nil Cmd, want a command that updates the status")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if app.screen != screenActiveApplications {
+		t.Fatalf("screen after saving status = %v, want screenActiveApplications (where 's' was pressed from)", app.screen)
+	}
+}
+
+// TestApp_ActiveApplications_StatusChangeToRejected_RemovesFromList
+// verifies the applicationStatusUpdatedMsg handler reloads the active
+// list after a status change, since moving to a terminal status
+// (rejected/offer_declined) should drop the application from view
+// immediately rather than on the next full reload.
+func TestApp_ActiveApplications_StatusChangeToRejected_RemovesFromList(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, runeKey('s'))
+	// Move from "application_started" (index 0) to "rejected" (index 3 --
+	// started, submitted, interviewing, rejected).
+	for range 3 {
+		app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
+	}
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Update on enter (status select) returned nil Cmd, want a command that updates the status")
+	}
+	app, statusCmd := sendKey(app, cmd())
+	if statusCmd == nil {
+		t.Fatal("applicationStatusUpdatedMsg handling returned nil Cmd, want a command that reloads active applications")
+	}
+	app, _ = sendKey(app, statusCmd())
+
+	if len(app.activeApplications) != 0 {
+		t.Fatalf("app.activeApplications after rejecting = %+v, want empty", app.activeApplications)
 	}
 }
 
@@ -1070,6 +1239,7 @@ func TestApp_PressQ_ReturnsQuitCmd(t *testing.T) {
 func TestApp_PressEsc_CancelsFormBackToList(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, runeKey('c'))
 
 	app, _ = sendKey(app, runeKey('a'))
 	app, _ = sendKey(app, runeKey('A', 'c', 'm', 'e'))
@@ -1086,6 +1256,7 @@ func TestApp_PressEsc_CancelsFormBackToList(t *testing.T) {
 func TestApp_CancellingAScreen_ClearsStaleError(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, runeKey('c'))
 
 	app, _ = sendKey(app, runeKey('a'))
 	// Simulate an error left over from a failed action on this screen
@@ -1111,6 +1282,7 @@ func TestApp_PressR_RefreshesSelectedCompanyAndShowsStatus(t *testing.T) {
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, runeKey('c'))
 
 	app, cmd := sendKey(app, runeKey('r'))
 	if cmd == nil {
@@ -1440,6 +1612,7 @@ func TestApp_CompanyList_VimJK_MoveCursorLikeArrows(t *testing.T) {
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, runeKey('c'))
 
 	app, _ = sendKey(app, runeKey('j'))
 	if app.companyList.cursor != 1 {
