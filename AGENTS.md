@@ -10,7 +10,7 @@ When asked to work through a labeled group of issues:
 2. Build a task list from the results, one item per issue (number + title).
 3. Work through the list in order:
    - `gh issue view <number> --comments` to pull full context before starting
-   - Implement the change
+   - Implement the change, on its own branch (see Feature branch workflow) -- **one PR per issue by default**, even when several issues were filed or picked up together (e.g. all found during the same code review). Don't default to bundling multiple issues into one branch/PR for convenience; ask the user first if bundling seems to make sense for a given batch.
    - Reference the issue number in the commit message (e.g. `fixes #123`)
    - `gh issue comment <number> --body "..."` to log what was done, if asked
 4. Report progress after each issue rather than batching silently.
@@ -27,7 +27,7 @@ When asked to work through a labeled group of issues:
 
 ## Feature branch workflow
 
-Each task/feature gets its own branch off `main`, reviewed via PR and merged on GitHub when complete:
+Each task/feature gets its own branch off `main`, reviewed via PR and merged on GitHub when complete. Keep PRs scoped to the minimal change needed -- one issue or one fix per PR by default (see Issue-driven task workflow above); don't fold in unrelated or loosely-related work just because it's convenient to be touching the code anyway.
 
 1. `git checkout -b <descriptive-branch-name>` off `main`.
 2. Build via TDD, committing in small, well-documented commits as logical chunks complete — not one giant commit at the end. No `Co-Authored-By` trailer in commit messages (explicit standing preference).
