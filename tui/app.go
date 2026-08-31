@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -230,6 +231,17 @@ func loadCompanies(s *store.Store) tea.Cmd {
 		companies, err := s.ListActiveCompanies(context.Background())
 		return companiesLoadedMsg{companies: companies, err: err}
 	}
+}
+
+// sortCompaniesByName keeps an in-memory companies slice in the same
+// order ListActiveCompanies' `ORDER BY name` would return -- called after
+// any in-place mutation (create, rename) that could change where an
+// entry belongs, since Go's string `<` matches SQLite's default byte-wise
+// collation.
+func sortCompaniesByName(companies []store.Company) {
+	sort.Slice(companies, func(i, j int) bool {
+		return companies[i].Name < companies[j].Name
+	})
 }
 
 func (a *App) Init() tea.Cmd {
@@ -559,6 +571,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		if msg.err == nil {
 			a.companies = append(a.companies, msg.company)
+			sortCompaniesByName(a.companies)
 			a.screen = screenCompanyList
 		}
 	case companyDeletedMsg:
@@ -574,6 +587,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case companyNameUpdatedMsg:
 		a.err = msg.err
+		a.companyEdit.saveResolved()
 		if msg.err == nil {
 			for i, c := range a.companies {
 				if c.ID == msg.company.ID {
@@ -581,6 +595,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
+			sortCompaniesByName(a.companies)
 			a.screen = screenCompanyList
 		}
 	case companyRefreshedMsg:
@@ -705,102 +720,115 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.postingDetail.resize(a.width, a.listRows())
 		}
 	case tea.KeyMsg:
-		switch a.screen {
-		case screenCompanyList:
-			cmd, intent := a.companyList.Update(msg, a.companies)
-			switch v := intent.(type) {
-			case enterCompanyFormMsg:
-				a.screen = screenCompanyForm
-				a.companyForm = newCompanyFormModel(a.store)
-			case enterCompanyEditMsg:
-				a.screen = screenCompanyEdit
-				a.companyEdit = newCompanyEditModel(a.store, v.company.ID, v.company.Name)
-			case selectCompanyMsg:
-				a.selectedCompany = v.company
-				a.screen = screenPostingList
-				return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
-			}
-			return a, cmd
-		case screenPostingList:
-			snap := postingListSnapshot{
-				companyName:             a.selectedCompany.Name,
-				postings:                a.postings,
-				markup:                  a.postingMarkup,
-				hideArchived:            a.hideArchived,
-				activeFilterDepartments: a.activeFilterDepartments,
-				activeFilterLocations:   a.activeFilterLocations,
-			}
-			cmd, intent := a.postingList.Update(msg, snap)
-			switch v := intent.(type) {
-			case backToCompanyListMsg:
-				a.screen = screenCompanyList
-			case enterPostingDetailMsg:
-				p, app, hasApp := a.lookupPosting(v.postingID)
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
-				a.screen = screenPostingDetail
-				return a, loadApplication(a.store, p.ID)
-			case enterFilterSelectMsg:
-				a.screen = screenFilterSelect
-				return a, loadFilterOptions(a.store, a.selectedCompany.ID)
-			case toggleHideArchivedMsg:
-				a.hideArchived = !a.hideArchived
-				return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
-			}
-			return a, cmd
-		case screenPostingDetail:
-			cmd, intent := a.postingDetail.Update(msg)
-			switch v := intent.(type) {
-			case backToPostingListMsg:
-				a.screen = screenPostingList
-				a.postingList.setCursor(indexOfPosting(a.postings, a.postingDetail.posting.ID))
-			case navigatePostingMsg:
-				idx := indexOfPosting(a.postings, v.postingID)
-				newIdx := idx + v.direction
-				if idx >= 0 && newIdx >= 0 && newIdx < len(a.postings) {
-					p := a.postings[newIdx]
-					app, hasApp := a.applicationsByPosting[p.ID]
-					a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
-					return a, loadApplication(a.store, p.ID)
-				}
-			case enterApplicationStatusMsg:
-				a.screen = screenApplicationStatusSelect
-				a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus)
-			case enterApplicationNotesMsg:
-				a.screen = screenApplicationNotesEdit
-				a.applicationNotes = newApplicationNotesModel(a.store, v.postingID, v.currentNotes, a.width, a.listRows())
-			}
-			return a, cmd
-		case screenApplicationStatusSelect:
-			cmd, intent := a.applicationStatus.Update(msg)
-			if _, ok := intent.(cancelApplicationStatusMsg); ok {
-				a.screen = screenPostingDetail
-			}
-			return a, cmd
-		case screenApplicationNotesEdit:
-			cmd, intent := a.applicationNotes.Update(msg)
-			if _, ok := intent.(cancelApplicationNotesMsg); ok {
-				a.screen = screenPostingDetail
-			}
-			return a, cmd
-		case screenFilterSelect:
-			cmd, intent := a.filterSelect.Update(msg)
-			if _, ok := intent.(cancelFilterSelectMsg); ok {
-				a.screen = screenPostingList
-			}
-			return a, cmd
-		case screenCompanyForm:
-			cmd, intent := a.companyForm.Update(msg)
-			if _, ok := intent.(cancelCompanyFormMsg); ok {
-				a.screen = screenCompanyList
-			}
-			return a, cmd
-		case screenCompanyEdit:
-			cmd, intent := a.companyEdit.Update(msg)
-			if _, ok := intent.(cancelCompanyEditMsg); ok {
-				a.screen = screenCompanyList
-			}
-			return a, cmd
+		prevScreen := a.screen
+		model, cmd := a.updateKeyMsg(msg)
+		if a.screen != prevScreen {
+			// A stale error from whatever screen the user just left (e.g.
+			// a failed save they then cancelled out of) shouldn't keep
+			// showing on the screen they land on next -- see #41.
+			a.err = nil
 		}
+		return model, cmd
+	}
+	return a, nil
+}
+
+func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch a.screen {
+	case screenCompanyList:
+		cmd, intent := a.companyList.Update(msg, a.companies)
+		switch v := intent.(type) {
+		case enterCompanyFormMsg:
+			a.screen = screenCompanyForm
+			a.companyForm = newCompanyFormModel(a.store)
+		case enterCompanyEditMsg:
+			a.screen = screenCompanyEdit
+			a.companyEdit = newCompanyEditModel(a.store, v.company.ID, v.company.Name)
+		case selectCompanyMsg:
+			a.selectedCompany = v.company
+			a.screen = screenPostingList
+			return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
+		}
+		return a, cmd
+	case screenPostingList:
+		snap := postingListSnapshot{
+			companyName:             a.selectedCompany.Name,
+			postings:                a.postings,
+			markup:                  a.postingMarkup,
+			hideArchived:            a.hideArchived,
+			activeFilterDepartments: a.activeFilterDepartments,
+			activeFilterLocations:   a.activeFilterLocations,
+		}
+		cmd, intent := a.postingList.Update(msg, snap)
+		switch v := intent.(type) {
+		case backToCompanyListMsg:
+			a.screen = screenCompanyList
+		case enterPostingDetailMsg:
+			p, app, hasApp := a.lookupPosting(v.postingID)
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
+			a.screen = screenPostingDetail
+			return a, loadApplication(a.store, p.ID)
+		case enterFilterSelectMsg:
+			a.screen = screenFilterSelect
+			return a, loadFilterOptions(a.store, a.selectedCompany.ID)
+		case toggleHideArchivedMsg:
+			a.hideArchived = !a.hideArchived
+			return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
+		}
+		return a, cmd
+	case screenPostingDetail:
+		cmd, intent := a.postingDetail.Update(msg)
+		switch v := intent.(type) {
+		case backToPostingListMsg:
+			a.screen = screenPostingList
+			a.postingList.setCursor(indexOfPosting(a.postings, a.postingDetail.posting.ID))
+		case navigatePostingMsg:
+			idx := indexOfPosting(a.postings, v.postingID)
+			newIdx := idx + v.direction
+			if idx >= 0 && newIdx >= 0 && newIdx < len(a.postings) {
+				p := a.postings[newIdx]
+				app, hasApp := a.applicationsByPosting[p.ID]
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
+				return a, loadApplication(a.store, p.ID)
+			}
+		case enterApplicationStatusMsg:
+			a.screen = screenApplicationStatusSelect
+			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus)
+		case enterApplicationNotesMsg:
+			a.screen = screenApplicationNotesEdit
+			a.applicationNotes = newApplicationNotesModel(a.store, v.postingID, v.currentNotes, a.width, a.listRows())
+		}
+		return a, cmd
+	case screenApplicationStatusSelect:
+		cmd, intent := a.applicationStatus.Update(msg)
+		if _, ok := intent.(cancelApplicationStatusMsg); ok {
+			a.screen = screenPostingDetail
+		}
+		return a, cmd
+	case screenApplicationNotesEdit:
+		cmd, intent := a.applicationNotes.Update(msg)
+		if _, ok := intent.(cancelApplicationNotesMsg); ok {
+			a.screen = screenPostingDetail
+		}
+		return a, cmd
+	case screenFilterSelect:
+		cmd, intent := a.filterSelect.Update(msg)
+		if _, ok := intent.(cancelFilterSelectMsg); ok {
+			a.screen = screenPostingList
+		}
+		return a, cmd
+	case screenCompanyForm:
+		cmd, intent := a.companyForm.Update(msg)
+		if _, ok := intent.(cancelCompanyFormMsg); ok {
+			a.screen = screenCompanyList
+		}
+		return a, cmd
+	case screenCompanyEdit:
+		cmd, intent := a.companyEdit.Update(msg)
+		if _, ok := intent.(cancelCompanyEditMsg); ok {
+			a.screen = screenCompanyList
+		}
+		return a, cmd
 	}
 	return a, nil
 }

@@ -167,3 +167,41 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithSelectedSource(t *testing.T) {
 		t.Fatalf("stored company = %+v, want Source=greenhouse SourceRef=acme-token", stored)
 	}
 }
+
+func TestCompanyFormModel_Enter_WhitespaceOnlyName_NoOp(t *testing.T) {
+	t.Parallel()
+
+	m := newCompanyFormModel(nil)
+	m.inputs[formFieldName].SetValue("   ")
+	m.inputs[formFieldSourceRef].SetValue("acme")
+
+	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd != nil || intent != nil {
+		t.Fatalf("cmd, intent = %v, %v, want nil, nil (whitespace-only name)", cmd, intent)
+	}
+}
+
+func TestCompanyFormModel_Enter_TrimsSavedName(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	m := newCompanyFormModel(s)
+	m.inputs[formFieldName].SetValue("  Acme  ")
+	m.inputs[formFieldSourceRef].SetValue("acme")
+
+	cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("cmd = nil, want a command that creates the company")
+	}
+	msg := cmd()
+	created, ok := msg.(companyCreatedMsg)
+	if !ok {
+		t.Fatalf("msg = %T, want companyCreatedMsg", msg)
+	}
+	if created.err != nil {
+		t.Fatalf("companyCreatedMsg.err = %v, want nil", created.err)
+	}
+	if created.company.Name != "Acme" {
+		t.Fatalf("created company Name = %q, want %q (trimmed)", created.company.Name, "Acme")
+	}
+}
