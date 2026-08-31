@@ -95,7 +95,7 @@ func (m *companyFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		m.cycleSource(-1)
 		return nil, nil
 	case msg.Type == tea.KeyEnter:
-		name := m.inputs[formFieldName].Value()
+		name := strings.TrimSpace(m.inputs[formFieldName].Value())
 		sourceRef := m.inputs[formFieldSourceRef].Value()
 		if name == "" || sourceRef == "" {
 			return nil, nil
