@@ -1936,3 +1936,23 @@ readable through it), `git status` shows a rename for the skill file
 (history preserved, not add+delete), grepped AGENTS.md/README.md for
 stale `.claude/skills`, `agent/skills`, or `SKILL.md` path references --
 none found.
+
+## 2026-08-31 -- AGENTS.md: one PR per issue by default, keep PRs minimally scoped
+Context: PR #49 bundled four bug-labeled issues (#37, #38, #39, #41) into
+one branch/PR because they were all found together during the #35 code
+review and touched adjacent code. Bob flagged this after the fact: he
+wants one PR per issue by default going forward, with PRs kept scoped to
+the minimal change, and asked for it to be written down in AGENTS.md
+rather than relied on as a one-off correction.
+
+Decision: added an explicit rule to "Issue-driven task workflow" --
+one PR per issue by default even when several issues are filed or
+picked up together, don't bundle for convenience, ask first if bundling
+seems to genuinely make sense for a given batch. Added a matching line
+to "Feature branch workflow" generalizing the same principle beyond the
+issue-batch case: don't fold in unrelated or loosely-related work just
+because it's convenient to be touching the code anyway.
+
+Note: this doesn't retroactively split #49 -- it's already open, and
+splitting an already-committed, already-pushed PR after the fact would
+be more churn than value. Applies going forward.
