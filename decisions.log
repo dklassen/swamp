@@ -1863,3 +1863,76 @@ added a company, pressed e, confirmed the name field is pre-seeded,
 appended text and saved, confirmed the list shows the updated name and
 the DB row kept the same id/source/source_ref, and confirmed esc after
 typing cancels without saving.
+
+## 2026-08-31 -- Move project instructions to AGENTS.md, CLAUDE.md imports it
+Context: the repo's instructions file (formerly CLAUDE.md) had no Claude-
+specific content in it -- it was pure repo/engineering workflow guidance
+(issue workflow, testing, branching, tooling, decisions log) that applies
+identically to any coding agent working in this codebase. AGENTS.md is
+the emerging cross-tool convention for exactly this.
+
+Decision: AGENTS.md is now the source of truth (verbatim content, moved
+wholesale, only the intro line reworded to be tool-agnostic). CLAUDE.md
+is a real, small file (not a symlink) containing `@AGENTS.md` -- Claude
+Code's documented import syntax -- so Claude Code's own auto-discovery
+(which looks for CLAUDE.md specifically, confirmed it has no first-class
+AGENTS.md support) still picks up the same content, with room to add
+genuinely Claude-Code-specific instructions below the import later if any
+ever arise. A symlink (`ln -s AGENTS.md CLAUDE.md`) was considered and
+rejected in favor of two real files -- explicit preference, not a
+technical constraint (the symlink is verified to work fine on macOS/
+Linux; Windows needs Admin/Developer Mode for it, which the import
+syntax sidesteps entirely, but that wasn't the deciding factor here).
+
+Also folded in a process fix while touching this file: added an explicit
+"use GitHub's closing-keyword syntax (Fixes #N), not a bare #N reference"
+line to the feature-branch workflow section, from the #35-stayed-open-
+after-#42-merged incident earlier the same day.
+
+Verified: both files read back correctly, diffed AGENTS.md's body against
+the prior CLAUDE.md to confirm only the two intended changes (reworded
+intro line, new closing-keyword item) -- no accidental content loss in
+the move.
+
+## 2026-08-31 -- apply-to-posting skill moved to .agents/skills/, symlinked from .claude/skills/
+Context: continuing the AGENTS.md migration's spirit (tool-agnostic
+canonical location, not buried under a tool-specific dotdir) for the
+apply-to-posting skill, which already had no Claude-specific wording in
+its body.
+
+Unlike CLAUDE.md, Claude Code has no import syntax for skills -- verified
+via claude-code-guide against the real docs. Skills are only discovered
+at `.claude/skills/<name>/SKILL.md`, hard-coded, no settings.json search
+path option. The only supported way to keep one canonical copy outside
+that dir is a symlink; Claude Code explicitly documents following
+symlinked skill directories.
+
+Directory name went through a correction: first landed on `agent/skills/`
+(matching the singular, un-dotted feel of `AGENTS.md`), but Bob flagged
+`.agents/skills/` as the standard he'd seen. Checked both claims before
+picking: web search says `.agents/skills/` is a widely-cited convention
+tied to the open Agent Skills format spec at agentskills.io; a direct
+doc check via claude-code-guide found Claude Code's own docs mention only
+`.claude/skills/` (personal/project), enterprise-managed, and plugin
+paths -- no `.agents/skills/` anywhere. The two aren't actually in
+conflict: agentskills.io standardizes the SKILL.md file format, not a
+discovery path -- each tool picks its own path independently, and
+Claude Code hasn't adopted `.agents/skills/` as one. So naming it
+`.agents/skills/` doesn't buy native discovery either way; it was Bob's
+explicit call once that was laid out, made for consistency with the
+convention he's seen elsewhere.
+
+Decision: canonical file is now `.agents/skills/apply-to-posting/
+SKILL.md` (moved with `git mv` to preserve history, after first moving
+through `agent/skills/`). `.claude/skills/apply-to-posting` is a symlink
+to `../../.agents/skills/apply-to-posting`. This is the opposite call
+from the CLAUDE.md/AGENTS.md split (real file there, symlink rejected)
+-- different situation, since there's no lightweight import mechanism
+for a multi-file skill the way `@AGENTS.md` covers a single small file.
+
+Verified: symlink resolves (`ls -la .claude/skills/` shows it pointing at
+`../../.agents/skills/apply-to-posting`, `readlink` confirms, `SKILL.md`
+readable through it), `git status` shows a rename for the skill file
+(history preserved, not add+delete), grepped AGENTS.md/README.md for
+stale `.claude/skills`, `agent/skills`, or `SKILL.md` path references --
+none found.
