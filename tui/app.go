@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -230,6 +231,17 @@ func loadCompanies(s *store.Store) tea.Cmd {
 		companies, err := s.ListActiveCompanies(context.Background())
 		return companiesLoadedMsg{companies: companies, err: err}
 	}
+}
+
+// sortCompaniesByName keeps an in-memory companies slice in the same
+// order ListActiveCompanies' `ORDER BY name` would return -- called after
+// any in-place mutation (create, rename) that could change where an
+// entry belongs, since Go's string `<` matches SQLite's default byte-wise
+// collation.
+func sortCompaniesByName(companies []store.Company) {
+	sort.Slice(companies, func(i, j int) bool {
+		return companies[i].Name < companies[j].Name
+	})
 }
 
 func (a *App) Init() tea.Cmd {
@@ -559,6 +571,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		if msg.err == nil {
 			a.companies = append(a.companies, msg.company)
+			sortCompaniesByName(a.companies)
 			a.screen = screenCompanyList
 		}
 	case companyDeletedMsg:
@@ -581,6 +594,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					break
 				}
 			}
+			sortCompaniesByName(a.companies)
 			a.screen = screenCompanyList
 		}
 	case companyRefreshedMsg:

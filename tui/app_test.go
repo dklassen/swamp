@@ -264,6 +264,66 @@ func TestApp_PressE_EditsCompanyName(t *testing.T) {
 	}
 }
 
+func TestApp_SubmitForm_KeepsCompanyListSorted(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Globex", "ashby", "globex")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	// "Acme" sorts before the already-loaded "Globex" -- appending it
+	// blindly would leave the in-memory list out of order even though a
+	// fresh load would show it first.
+	app, _ = sendKey(app, runeKey('a'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab}) // source -> name
+	app, _ = sendKey(app, runeKey('A', 'c', 'm', 'e'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab}) // name -> sourceRef
+	app, _ = sendKey(app, runeKey('a', 'c', 'm', 'e'))
+
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Update on submit returned nil Cmd, want a command that creates the company")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if len(app.companies) != 2 {
+		t.Fatalf("app.companies = %+v, want 2 companies", app.companies)
+	}
+	if app.companies[0].Name != "Acme" || app.companies[1].Name != "Globex" {
+		t.Fatalf("app.companies names = [%q, %q], want [Acme, Globex] (alphabetical)",
+			app.companies[0].Name, app.companies[1].Name)
+	}
+}
+
+func TestApp_PressE_RenameKeepsCompanyListSorted(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustCreateCompany(t, s, "Globex", "ashby", "globex")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	// Renaming "Acme" (cursor at index 0) to "Zzz" moves it past "Globex"
+	// alphabetically -- an in-place replace at the old index would leave
+	// the list out of order even though a fresh load would show it last.
+	app, _ = sendKey(app, runeKey('e'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyBackspace, Alt: false})
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyBackspace})
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyBackspace})
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyBackspace})
+	app, _ = sendKey(app, runeKey('Z', 'z', 'z'))
+
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Update on submit returned nil Cmd, want a command that saves the company name")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if len(app.companies) != 2 {
+		t.Fatalf("app.companies = %+v, want 2 companies", app.companies)
+	}
+	if app.companies[0].Name != "Globex" || app.companies[1].Name != "Zzz" {
+		t.Fatalf("app.companies names = [%q, %q], want [Globex, Zzz] (alphabetical)",
+			app.companies[0].Name, app.companies[1].Name)
+	}
+}
+
 func TestApp_PressI_OnPostingList_TogglesInterestedOnSelectedPosting(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
