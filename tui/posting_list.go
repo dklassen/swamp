@@ -5,9 +5,35 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/lipgloss/table"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/store"
 )
+
+// Column max widths for the posting table -- values longer than these get
+// truncated with an ellipsis rather than wrapped, so every row stays
+// exactly one physical line (visibleWindow's cursor/scroll math assumes
+// one line per posting; see decisions.log and issue #46).
+const (
+	titleColWidth      = 40
+	departmentColWidth = 18
+	locationColWidth   = 20
+	statusColWidth     = 8
+)
+
+// postingTableChromeLines is the number of physical lines lipgloss/table's
+// default border adds beyond one line per data row: top border, header,
+// header separator, bottom border.
+const postingTableChromeLines = 4
+
+// truncateCol shortens s to at most max columns wide, replacing the tail
+// with an ellipsis when it doesn't fit. Width-aware (not byte-aware) so
+// multi-byte runes truncate correctly.
+func truncateCol(s string, max int) string {
+	return ansi.TruncateWc(s, max, "…")
+}
 
 // postingMarker renders a posting's markup state as a single-character
 // column for the posting list. Archived takes precedence over interested
@@ -136,17 +162,33 @@ func (m *postingListModel) View(snap postingListSnapshot, listRows int) string {
 	}
 	if len(snap.postings) == 0 {
 		b.WriteString("No postings yet. Press 'r' from the company list to refresh.\n")
-	}
-	start, end := visibleWindow(m.cursor, len(snap.postings), listRows)
-	for i := start; i < end; i++ {
-		p := snap.postings[i]
-		marker := postingMarker(snap.markup[p.ID])
-		line := fmt.Sprintf("%s %s | %s | %s | %s", marker, p.Title, derefOr(p.Department, ""), derefOr(p.Location, ""), p.ListingStatus)
-		if i == m.cursor {
-			b.WriteString(cursorStyle.Render("> "+line) + "\n")
-		} else {
-			b.WriteString("  " + line + "\n")
+	} else {
+		rows := listRows - postingTableChromeLines
+		if rows < 0 {
+			rows = 0
 		}
+		start, end := visibleWindow(m.cursor, len(snap.postings), rows)
+		cursorRow := m.cursor - start
+		t := table.New().
+			Headers("", "Title", "Department", "Location", "Status").
+			StyleFunc(func(row, _ int) lipgloss.Style {
+				style := lipgloss.NewStyle().Padding(0, 1)
+				if row == cursorRow {
+					return style.Inherit(cursorStyle)
+				}
+				return style
+			})
+		for i := start; i < end; i++ {
+			p := snap.postings[i]
+			t.Row(
+				postingMarker(snap.markup[p.ID]),
+				truncateCol(p.Title, titleColWidth),
+				truncateCol(derefOr(p.Department, ""), departmentColWidth),
+				truncateCol(derefOr(p.Location, ""), locationColWidth),
+				truncateCol(p.ListingStatus, statusColWidth),
+			)
+		}
+		b.WriteString(t.Render() + "\n")
 	}
 	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back"))
 	return b.String()
