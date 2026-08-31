@@ -1937,6 +1937,64 @@ readable through it), `git status` shows a rename for the skill file
 stale `.claude/skills`, `agent/skills`, or `SKILL.md` path references --
 none found.
 
+## 2026-08-31 -- Posting list columns aligned with lipgloss/table (#46)
+Problem: `postingListModel.View` built each row with `fmt.Sprintf("%s %s |
+%s | %s | %s", ...)` -- no fixed column widths, so the `|` separators
+landed at a different horizontal position on every line. `github.com/
+charmbracelet/lipgloss/table` was already sitting in the dependency graph
+(a subpackage of lipgloss v1.1.0, already a direct dependency) and does
+column width computation natively.
+
+Decision: adopted `lipgloss/table` with its default bordered rendering --
+Bob's comment on the issue confirmed the table doesn't need to be
+borderless or replicate the old minimal look, so no custom border
+stripping was needed. Columns: marker (★/✕/blank), Title, Department,
+Location, Status, with a header row. Cell values are truncated to a
+fixed max width per column (title 40, department 18, location 20,
+status 8) with an ellipsis via `github.com/charmbracelet/x/ansi`'s
+`TruncateWc` (already an indirect dependency, pulled in by lipgloss/
+table itself -- promoted to direct with `go mod tidy`) before being
+handed to the table, rather than relying on the table's own wrap
+behavior.
+
+This was the real decision point the issue flagged: every list screen in
+this TUI (`visibleWindow` in `viewport.go`) assumes exactly one physical
+line per item for its cursor/scroll math. Letting cells wrap would have
+broken that assumption everywhere it's used -- truncating keeps every
+row exactly one line, which is why cells are pre-truncated (width-aware,
+not byte-aware, so multi-byte runes truncate correctly) rather than
+handed to the table untouched and left to `lipgloss/table`'s own
+wrapping.
+
+The selected row is no longer marked with a `"> "` text prefix (awkward
+inside table cells) -- instead the whole row is styled with the existing
+`cursorStyle` (foreground 212) via the table's `StyleFunc`, keeping the
+same visual language as the rest of the app.
+
+The table's own border/header adds 4 physical lines beyond one per data
+row (top border, header, header separator, bottom border) that aren't
+accounted for in `chromeRows` (a fixed constant shared across all list
+screens). Rather than touching the shared constant, `postingListModel.
+View` subtracts a local `postingTableChromeLines = 4` from `listRows`
+before computing `visibleWindow`'s row budget, scoped to this screen
+only.
+
+Scope: `company_list.go`'s `"%s (%s)"` rows are a label, not a table
+(matches the issue's own scoping note) -- left untouched.
+
+Verified: `TestTruncateCol` (TDD, table-driven) covers under/over/equal-
+to-max and a wide-rune (CJK) case -- confirmed the expected truncated
+value against `ansi.TruncateWc`'s actual output rather than assuming it,
+and asserted `lipgloss.Width` of the result never exceeds max. Manually
+verified against a real production dataset (913 real postings across 10
+companies, copied to a scratch db) via tmux: confirmed columns align
+across rows of varying length, long titles truncate with an ellipsis,
+a real double-width Japanese title (`シニアコンサルティングエンジニア`)
+renders and aligns correctly, cursor row highlighting still works and
+coexists with the marker column, and a 41-row unfiltered table (Clickhouse)
+renders within the terminal height with no overflow -- confirming the
+`postingTableChromeLines` budget subtraction is correct.
+
 ## 2026-08-31 -- Four bug-labeled issues from the #35 code review (#38, #39, #41, #37)
 All four were found during code review of #35 and filed as separate
 issues; tackled together in one branch/PR since they're small, related,
