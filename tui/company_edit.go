@@ -17,6 +17,12 @@ type companyEditModel struct {
 	store     *store.Store
 	companyID int64
 	nameInput textinput.Model
+	// saving is true from the moment Enter dispatches updateCompanyName
+	// until saveResolved is called with its result. bubbletea has no way
+	// to cancel an already-dispatched command, so Esc can't actually stop
+	// an in-flight save -- it's blocked instead, so "esc: cancel" stays
+	// true rather than racing the save (see decisions.log, #37).
+	saving bool
 }
 
 // newCompanyEditModel returns an edit screen for companyID, seeded with
@@ -35,17 +41,29 @@ type cancelCompanyEditMsg struct{}
 func (m *companyEditModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	switch msg.Type {
 	case tea.KeyEsc:
+		if m.saving {
+			return nil, nil
+		}
 		return nil, cancelCompanyEditMsg{}
 	case tea.KeyEnter:
 		name := strings.TrimSpace(m.nameInput.Value())
 		if name == "" {
 			return nil, nil
 		}
+		m.saving = true
 		return updateCompanyName(m.store, m.companyID, name), nil
 	}
 	var cmd tea.Cmd
 	m.nameInput, cmd = m.nameInput.Update(msg)
 	return cmd, nil
+}
+
+// saveResolved marks the in-flight save (if any) as done, letting Esc
+// cancel normally again. Called by App once companyNameUpdatedMsg
+// arrives, whether the save succeeded or failed -- either way, there's
+// no longer a save in flight for Esc to race.
+func (m *companyEditModel) saveResolved() {
+	m.saving = false
 }
 
 func (m *companyEditModel) View() string {

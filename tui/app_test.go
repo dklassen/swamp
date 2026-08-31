@@ -264,6 +264,45 @@ func TestApp_PressE_EditsCompanyName(t *testing.T) {
 	}
 }
 
+func TestApp_EscWhileCompanyNameSavePending_DoesNotRaceTheSave(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, runeKey('e'))
+	app, _ = sendKey(app, runeKey(' ', 'C', 'o', 'r', 'p'))
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Update on submit returned nil Cmd, want a command that saves the company name")
+	}
+
+	// A fast Esc raced against the still-in-flight save from above --
+	// bubbletea can't cancel a dispatched command, so this must not
+	// switch screens (that would claim "cancelled" while the save is
+	// still going to land moments later).
+	app, escCmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	if escCmd != nil {
+		t.Fatalf("Update on esc while save pending returned %v, want nil (esc blocked)", escCmd)
+	}
+	if app.screen != screenCompanyEdit {
+		t.Fatalf("screen after esc while save pending = %v, want screenCompanyEdit (still blocked)", app.screen)
+	}
+
+	// The save resolves; screen leaves on its own like a normal submit.
+	app, _ = sendKey(app, cmd())
+	if app.screen != screenCompanyList {
+		t.Fatalf("screen after save resolved = %v, want screenCompanyList", app.screen)
+	}
+
+	stored, err := s.GetCompany(context.Background(), acme.ID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+	if stored.Name != "Acme Corp" {
+		t.Fatalf("stored.Name = %q, want %q (save was not cancelled)", stored.Name, "Acme Corp")
+	}
+}
+
 func TestApp_SubmitForm_KeepsCompanyListSorted(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Globex", "ashby", "globex")

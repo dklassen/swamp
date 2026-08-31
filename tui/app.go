@@ -587,6 +587,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case companyNameUpdatedMsg:
 		a.err = msg.err
+		a.companyEdit.saveResolved()
 		if msg.err == nil {
 			for i, c := range a.companies {
 				if c.ID == msg.company.ID {

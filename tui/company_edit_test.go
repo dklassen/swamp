@@ -106,3 +106,39 @@ func TestCompanyEditModel_Enter_TrimsSavedName(t *testing.T) {
 		t.Fatalf("company.Name = %q, want %q (trimmed)", updated.company.Name, "Acme Corp")
 	}
 }
+
+func TestCompanyEditModel_Esc_WhileSavePending_NoOp(t *testing.T) {
+	t.Parallel()
+
+	m := newCompanyEditModel(nil, 7, "Acme")
+	m.nameInput.SetValue("Acme Corp")
+
+	// Enter dispatches the save command but doesn't run it -- bubbletea
+	// runs commands async, so at this point the save is "in flight" from
+	// the model's perspective even though nothing has executed yet.
+	if cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {
+		t.Fatal("cmd = nil, want a command that saves the company name")
+	}
+
+	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd != nil || intent != nil {
+		t.Fatalf("cmd, intent = %v, %v, want nil, nil (esc while save pending)", cmd, intent)
+	}
+}
+
+func TestCompanyEditModel_Esc_AfterSaveResolved_ReturnsCancelMsg(t *testing.T) {
+	t.Parallel()
+
+	m := newCompanyEditModel(nil, 7, "Acme")
+	m.nameInput.SetValue("Acme Corp")
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	m.saveResolved()
+
+	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil", cmd)
+	}
+	if _, ok := intent.(cancelCompanyEditMsg); !ok {
+		t.Fatalf("intent = %T, want cancelCompanyEditMsg (esc after save resolved)", intent)
+	}
+}
