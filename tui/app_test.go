@@ -1044,6 +1044,27 @@ func TestApp_PressEsc_CancelsFormBackToList(t *testing.T) {
 	}
 }
 
+func TestApp_CancellingAScreen_ClearsStaleError(t *testing.T) {
+	s := newTestStore(t)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, runeKey('a'))
+	// Simulate an error left over from a failed action on this screen
+	// (e.g. a save that failed) -- a real failure would set this via a
+	// tea.Msg, but the point under test is what happens to it on the
+	// next screen transition, not how it got set.
+	app.err = errors.New("boom")
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+
+	if app.screen != screenCompanyList {
+		t.Fatalf("screen after esc = %v, want screenCompanyList", app.screen)
+	}
+	if app.err != nil {
+		t.Fatalf("app.err after cancelling out = %v, want nil (stale error should clear on screen transition)", app.err)
+	}
+}
+
 func TestApp_PressR_RefreshesSelectedCompanyAndShowsStatus(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
