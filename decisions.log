@@ -1893,3 +1893,31 @@ Verified: both files read back correctly, diffed AGENTS.md's body against
 the prior CLAUDE.md to confirm only the two intended changes (reworded
 intro line, new closing-keyword item) -- no accidental content loss in
 the move.
+
+## 2026-08-31 -- apply-to-posting skill moved to agent/skills/, symlinked from .claude/skills/
+Context: continuing the AGENTS.md migration's spirit (tool-agnostic
+canonical location, not buried under a tool-specific dotdir) for the
+apply-to-posting skill, which already had no Claude-specific wording in
+its body.
+
+Unlike CLAUDE.md, Claude Code has no import syntax for skills -- verified
+via claude-code-guide against the real docs. Skills are only discovered
+at `.claude/skills/<name>/SKILL.md`, hard-coded, no settings.json search
+path option. The only supported way to keep one canonical copy outside
+that dir is a symlink; Claude Code explicitly documents following
+symlinked skill directories.
+
+Decision: canonical file is now `agent/skills/apply-to-posting/SKILL.md`
+(moved with `git mv` to preserve history). `.claude/skills/apply-to-
+posting` is a symlink to `../../agent/skills/apply-to-posting`. This is
+the opposite call from the CLAUDE.md/AGENTS.md split (real file there,
+symlink rejected) -- different situation, since there's no lightweight
+import mechanism for a multi-file skill the way `@AGENTS.md` covers a
+single small file. Asked Bob directly given the precedent; symlink was
+his call.
+
+Verified: symlink resolves (`ls -la .claude/skills/` shows it pointing at
+`../../agent/skills/apply-to-posting`, `SKILL.md` readable through it),
+`git mv` preserved history (`git status` shows a rename, not an add+
+delete), grepped AGENTS.md/README.md for stale `.claude/skills` or
+`SKILL.md` references -- none found.
