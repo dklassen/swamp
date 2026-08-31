@@ -37,7 +37,7 @@ func (m *companyEditModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	case tea.KeyEsc:
 		return nil, cancelCompanyEditMsg{}
 	case tea.KeyEnter:
-		name := m.nameInput.Value()
+		name := strings.TrimSpace(m.nameInput.Value())
 		if name == "" {
 			return nil, nil
 		}
