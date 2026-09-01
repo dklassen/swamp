@@ -53,6 +53,12 @@ type Querier interface {
 	// this is an inner join on applications (an application always exists
 	// for every row here), ordered most-recently-changed first so whatever
 	// moved last surfaces at the top.
+	//
+	// Selects every applications column (aliased to avoid colliding with
+	// postings' own id/created_at/updated_at from postings.*) so the Go side
+	// can build a complete, honest store.Application via applicationFromRow
+	// -- not a partial one that happens to share a name with the real thing
+	// (see decisions.log, ApplicationView).
 	ListActiveApplications(ctx context.Context) ([]ListActiveApplicationsRow, error)
 	ListActiveCompanies(ctx context.Context) ([]Company, error)
 	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)

@@ -33,11 +33,20 @@ RETURNING *;
 -- this is an inner join on applications (an application always exists
 -- for every row here), ordered most-recently-changed first so whatever
 -- moved last surfaces at the top.
+--
+-- Selects every applications column (aliased to avoid colliding with
+-- postings' own id/created_at/updated_at from postings.*) so the Go side
+-- can build a complete, honest store.Application via applicationFromRow
+-- -- not a partial one that happens to share a name with the real thing
+-- (see decisions.log, ApplicationView).
 SELECT
     postings.*,
     companies.name AS company_name,
     applications.id AS application_id,
-    applications.status AS application_status
+    applications.status AS application_status,
+    applications.notes AS application_notes,
+    applications.created_at AS application_created_at,
+    applications.updated_at AS application_updated_at
 FROM applications
 JOIN postings ON postings.id = applications.posting_id
 JOIN companies ON companies.id = postings.company_id

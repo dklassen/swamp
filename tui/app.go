@@ -76,7 +76,7 @@ type App struct {
 	// activeApplications backs the home screen: every application not at
 	// a terminal dead-end status, across every company (see
 	// store.ListActiveApplications, decisions.log #43).
-	activeApplications    []store.ActiveApplication
+	activeApplications    []store.ApplicationView
 	activeApplicationList activeApplicationListModel
 	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
@@ -262,7 +262,7 @@ func (a *App) Init() tea.Cmd {
 }
 
 type activeApplicationsLoadedMsg struct {
-	applications []store.ActiveApplication
+	applications []store.ApplicationView
 	err          error
 }
 

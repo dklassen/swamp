@@ -32,7 +32,7 @@ func newActiveApplicationListModel(s *store.Store, docs *documents.Store) active
 // real async command for App to run through bubbletea as usual. The
 // returned tea.Msg (if non-nil) is an intent for App to apply
 // synchronously -- see companyListModel.Update for the same convention.
-func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.ActiveApplication) (tea.Cmd, tea.Msg) {
+func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.ApplicationView) (tea.Cmd, tea.Msg) {
 	switch {
 	case msg.Type == tea.KeyDown, msg.String() == "j":
 		if m.cursor < len(apps)-1 {
@@ -49,7 +49,7 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.ActiveA
 	case msg.String() == "s":
 		if m.cursor < len(apps) {
 			a := apps[m.cursor]
-			return nil, enterApplicationStatusMsg{postingID: a.Posting.ID, currentStatus: a.ApplicationStatus}
+			return nil, enterApplicationStatusMsg{postingID: a.Posting.ID, currentStatus: a.Status}
 		}
 	case msg.String() == "l":
 		if m.cursor < len(apps) {
@@ -70,8 +70,8 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.ActiveA
 // enough to call synchronously here rather than through a separate
 // tea.Cmd round trip, same reasoning postingDetailContent's docs.Status
 // call already relies on (see decisions.log).
-func (m *activeApplicationListModel) openDocument(a store.ActiveApplication, resume bool) tea.Cmd {
-	paths, err := m.documents.EnsureDir(a.ApplicationID)
+func (m *activeApplicationListModel) openDocument(a store.ApplicationView, resume bool) tea.Cmd {
+	paths, err := m.documents.EnsureDir(a.ID)
 	if err != nil {
 		return func() tea.Msg { return editorClosedMsg{err: err} }
 	}
@@ -82,7 +82,7 @@ func (m *activeApplicationListModel) openDocument(a store.ActiveApplication, res
 	return openInEditor(path)
 }
 
-func (m *activeApplicationListModel) View(apps []store.ActiveApplication, listRows int) string {
+func (m *activeApplicationListModel) View(apps []store.ApplicationView, listRows int) string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Active Applications") + "\n")
 	if len(apps) == 0 {
@@ -108,7 +108,7 @@ func (m *activeApplicationListModel) View(apps []store.ActiveApplication, listRo
 			t.Row(
 				truncateCol(a.CompanyName, departmentColWidth),
 				truncateCol(a.Posting.Title, titleColWidth),
-				a.ApplicationStatus.String(),
+				a.Status.String(),
 			)
 		}
 		b.WriteString(t.Render() + "\n")

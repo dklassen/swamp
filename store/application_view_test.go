@@ -44,8 +44,8 @@ func TestListActiveApplications_ExcludesRejectedAndOfferDeclined(t *testing.T) {
 		t.Fatalf("len(got) = %d, want 2 (started + interviewing only): %+v", len(got), got)
 	}
 	gotTitles := map[string]bool{}
-	for _, a := range got {
-		gotTitles[a.Posting.Title] = true
+	for _, v := range got {
+		gotTitles[v.Posting.Title] = true
 	}
 	if !gotTitles["Started Role"] || !gotTitles["Interviewing Role"] {
 		t.Fatalf("got titles = %v, want Started Role and Interviewing Role present", gotTitles)
@@ -71,17 +71,23 @@ func TestListActiveApplications_IncludesCompanyNameAndApplicationFields(t *testi
 		t.Fatalf("len(got) = %d, want 1", len(got))
 	}
 
-	a := got[0]
-	if a.CompanyName != "Acme" {
-		t.Fatalf("CompanyName = %q, want %q", a.CompanyName, "Acme")
+	v := got[0]
+	if v.CompanyName != "Acme" {
+		t.Fatalf("CompanyName = %q, want %q", v.CompanyName, "Acme")
 	}
-	if a.Posting.Title != "Software Engineer" {
-		t.Fatalf("Posting.Title = %q, want %q", a.Posting.Title, "Software Engineer")
+	if v.Posting.Title != "Software Engineer" {
+		t.Fatalf("Posting.Title = %q, want %q", v.Posting.Title, "Software Engineer")
 	}
-	if a.ApplicationID != app.ID {
-		t.Fatalf("ApplicationID = %d, want %d", a.ApplicationID, app.ID)
+	if v.ID != app.ID {
+		t.Fatalf("ID = %d, want %d", v.ID, app.ID)
 	}
-	if a.ApplicationStatus != ApplicationStatusStarted {
-		t.Fatalf("ApplicationStatus = %s, want %s", a.ApplicationStatus, ApplicationStatusStarted)
+	if v.Status != ApplicationStatusStarted {
+		t.Fatalf("Status = %s, want %s", v.Status, ApplicationStatusStarted)
+	}
+	if v.Notes != app.Notes {
+		t.Fatalf("Notes = %q, want %q", v.Notes, app.Notes)
+	}
+	if v.PostingID != posting.ID {
+		t.Fatalf("PostingID = %d, want %d", v.PostingID, posting.ID)
 	}
 }

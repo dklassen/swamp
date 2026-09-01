@@ -9,19 +9,17 @@ import (
 	"github.com/dklassen/swamp/store"
 )
 
-func testActiveApplications() []store.ActiveApplication {
-	return []store.ActiveApplication{
+func testActiveApplications() []store.ApplicationView {
+	return []store.ApplicationView{
 		{
-			Posting:           store.Posting{ID: 1, Title: "Engineer"},
-			CompanyName:       "Acme",
-			ApplicationID:     10,
-			ApplicationStatus: store.ApplicationStatusStarted,
+			Application: store.Application{ID: 10, Status: store.ApplicationStatusStarted},
+			Posting:     store.Posting{ID: 1, Title: "Engineer"},
+			CompanyName: "Acme",
 		},
 		{
-			Posting:           store.Posting{ID: 2, Title: "Designer"},
-			CompanyName:       "Globex",
-			ApplicationID:     20,
-			ApplicationStatus: store.ApplicationStatusInterviewing,
+			Application: store.Application{ID: 20, Status: store.ApplicationStatusInterviewing},
+			Posting:     store.Posting{ID: 2, Title: "Designer"},
+			CompanyName: "Globex",
 		},
 	}
 }
