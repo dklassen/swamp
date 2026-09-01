@@ -61,6 +61,86 @@ func (q *Queries) GetApplication(ctx context.Context, postingID int64) (Applicat
 	return i, err
 }
 
+const listActiveApplications = `-- name: ListActiveApplications :many
+SELECT applications.id, applications.posting_id, applications.status, applications.notes, applications.created_at, applications.updated_at, postings.id, postings.company_id, postings.source, postings.source_id, postings.title, postings.department, postings.team, postings.location, postings.employment_type, postings.workplace_type, postings.description_html, postings.description_text, postings.job_url, postings.application_url, postings.published_at, postings.raw_payload, postings.listing_status, postings.first_seen_at, postings.last_seen_at, postings.created_at, postings.updated_at, companies.name AS company_name
+FROM applications
+JOIN postings ON postings.id = applications.posting_id
+JOIN companies ON companies.id = postings.company_id
+WHERE applications.status NOT IN ('rejected', 'offer_declined')
+ORDER BY applications.updated_at DESC
+`
+
+type ListActiveApplicationsRow struct {
+	Application Application `json:"application"`
+	Posting     Posting     `json:"posting"`
+	CompanyName string      `json:"company_name"`
+}
+
+// Applications not at a terminal dead-end status (rejected,
+// offer_declined), joined with their posting and company name -- feeds
+// the active-applications TUI screen (#43). Unlike ListInterestedPostings
+// this is an inner join on applications (an application always exists
+// for every row here), ordered most-recently-changed first so whatever
+// moved last surfaces at the top.
+//
+// sqlc.embed(applications)/sqlc.embed(postings) generate nested
+// Application/Posting fields on the row directly from the schema, rather
+// than us hand-selecting+aliasing individual columns and reconstructing
+// them field-by-field in Go -- verified this works cleanly on this
+// engine (sqlite, sqlc v1.31.1) alongside a plain aliased column, one
+// inner join, no collisions (see decisions.log, ApplicationView).
+func (q *Queries) ListActiveApplications(ctx context.Context) ([]ListActiveApplicationsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listActiveApplications)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListActiveApplicationsRow
+	for rows.Next() {
+		var i ListActiveApplicationsRow
+		if err := rows.Scan(
+			&i.Application.ID,
+			&i.Application.PostingID,
+			&i.Application.Status,
+			&i.Application.Notes,
+			&i.Application.CreatedAt,
+			&i.Application.UpdatedAt,
+			&i.Posting.ID,
+			&i.Posting.CompanyID,
+			&i.Posting.Source,
+			&i.Posting.SourceID,
+			&i.Posting.Title,
+			&i.Posting.Department,
+			&i.Posting.Team,
+			&i.Posting.Location,
+			&i.Posting.EmploymentType,
+			&i.Posting.WorkplaceType,
+			&i.Posting.DescriptionHtml,
+			&i.Posting.DescriptionText,
+			&i.Posting.JobUrl,
+			&i.Posting.ApplicationUrl,
+			&i.Posting.PublishedAt,
+			&i.Posting.RawPayload,
+			&i.Posting.ListingStatus,
+			&i.Posting.FirstSeenAt,
+			&i.Posting.LastSeenAt,
+			&i.Posting.CreatedAt,
+			&i.Posting.UpdatedAt,
+			&i.CompanyName,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updateApplicationNotes = `-- name: UpdateApplicationNotes :one
 UPDATE applications
 SET notes = ?, updated_at = CURRENT_TIMESTAMP

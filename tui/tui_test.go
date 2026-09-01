@@ -47,6 +47,32 @@ func mustCreateCompany(t *testing.T, s *store.Store, name, source, sourceRef str
 	return c
 }
 
+// mustUpsertPosting creates a posting directly via the store, bypassing
+// the syncer -- for tests that need a posting/application to exist
+// without driving a full sync.
+func mustUpsertPosting(t *testing.T, s *store.Store, companyID int64, sourceID, title string) store.Posting {
+	t.Helper()
+	p, err := s.UpsertPosting(context.Background(), store.CreatePostingParams{
+		CompanyID: companyID,
+		Source:    "ashby",
+		SourceID:  sourceID,
+		Title:     title,
+	})
+	if err != nil {
+		t.Fatalf("UpsertPosting: %v", err)
+	}
+	return p
+}
+
+func mustCreateApplication(t *testing.T, s *store.Store, postingID int64) store.Application {
+	t.Helper()
+	a, err := s.CreateApplication(context.Background(), postingID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	return a
+}
+
 // fakeFetcher is a sync.PostingFetcher whose FetchPostings return value is
 // configured per test, so tui tests never make real HTTP calls.
 type fakeFetcher struct {
