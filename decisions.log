@@ -2086,6 +2086,200 @@ Note: this doesn't retroactively split #49 -- it's already open, and
 splitting an already-committed, already-pushed PR after the fact would
 be more churn than value. Applies going forward.
 
+## 2026-08-31 -- Active-applications screen becomes the app's home screen (#43)
+Problem: an application was only reachable by drilling into a specific
+company's posting list -- no cross-company view of "everything I'm
+actively applying to," no quick way to check status or open a cover
+letter/resume without remembering which company/posting it belonged to.
+
+Several real design decisions were open in the issue itself, resolved
+with Bob directly before implementing:
+- **Active scope**: excludes only `rejected`/`offer_declined` -- every
+  other status (including `offer_received`/`offer_accepted`) still
+  shows, since those can still need attention.
+- **Missing document on $EDITOR open**: opens anyway. Most editors
+  create the file on save; no separate "has this been prepared" gate.
+- **Entry point**: not a new keybinding on the company list -- this
+  screen *replaces* the company list as the app's home screen. Company
+  list becomes one level deeper, reached via 'c' from here, with a new
+  esc/b binding on company list to get back (it had no "back" before,
+  since it was the top of the hierarchy).
+
+Implementation:
+- `store.ListActiveApplications` / `store.ActiveApplication`: an inner
+  join on `applications` (unlike `ListInterestedPostings`'s left join --
+  an application always exists for every row here), joined with
+  `postings`/`companies` for company name and posting fields, ordered
+  by `applications.updated_at DESC`. `ApplicationStatus` comes back as
+  `sql.NullString` from sqlc despite the `WHERE ... NOT IN` filter
+  (sqlc can't know the filter excludes NULL) -- handled the same
+  defensive way `applicationFromRow` already does for `GetApplication`.
+- `tui/editor.go`: `openInEditor`/`editorCommand`, a distinct mechanism
+  from `openInBrowser` -- most `$EDITOR`s are terminal programs that
+  need `tea.ExecProcess` (suspends the Program, hands over the TTY)
+  rather than `openInBrowser`'s fire-and-forget `.Start()` for a
+  detached GUI process. `editorCommand` is the pure, testable decision
+  (unset `$EDITOR` -> error); the actual `os.Getenv`/`exec.Command`
+  plumbing around it isn't unit-tested, mirroring `openInBrowser`'s own
+  untested outer wrapper.
+- `tui/active_applications.go`: new screen, table-rendered like
+  `posting_list.go` (#46) for visual consistency. Keys: l/r open cover
+  letter/resume in `$EDITOR` (via `documents.Store.EnsureDir`, called
+  synchronously -- same "local filesystem I/O is cheap enough to not
+  need a separate tea.Cmd round trip" reasoning `postingDetailContent`'s
+  `docs.Status` call already established), s changes status (reuses
+  `applicationStatusModel`/`enterApplicationStatusMsg` rather than a
+  second status-picker), c goes to companies, q quits.
+- **Return-screen tracking**: `screenApplicationStatusSelect` is now
+  reachable from both `screenPostingDetail` and the new screen, but
+  `applicationStatusUpdatedMsg`'s handler hardcoded "return to posting
+  detail." Added `App.applicationStatusReturnScreen`, set wherever
+  `enterApplicationStatusMsg` is handled, read by both the cancel path
+  and the save path instead of assuming.
+- **Freshness**: both `applicationCreatedMsg` (starting a new
+  application from posting-detail) and `applicationStatusUpdatedMsg`
+  now also return `loadActiveApplications` -- a status change can move
+  an application in or out of the terminal-status filter, and a newly
+  started application should appear without restarting the app. Found
+  this gap while writing the App-level tests below, not in the
+  original issue -- fixed rather than filed separately since it's the
+  same underlying "keep the list correct" concern the screen exists for.
+- `App.Init()` now returns `tea.Batch(loadCompanies, loadActiveApplications)`
+  -- surfaced a real bug in the test harness: `newTestApp` previously
+  ran `app.Init()()` and fed the single result straight into `Update`,
+  which worked when `Init` returned exactly one `tea.Cmd`/msg pair. A
+  `tea.Batch` returns a `tea.BatchMsg` (`[]tea.Cmd`) instead, which
+  `App.Update` has no case for -- silently dropped, meaning companies/
+  active-applications would never load in any test. Replaced with
+  `applyCmd`, a small recursive helper that unpacks `BatchMsg` the way
+  a real `tea.Program`'s runtime loop would, since these tests drive
+  `App` directly without one.
+- Home screen changing broke ~15 existing tests that assumed
+  `screenCompanyList` was where `newTestApp` starts (most through the
+  shared `openPostingList` helper, used by 46 tests) -- fixed at the
+  helper level (`openPostingList` now presses 'c' first) plus each
+  standalone test that pressed company-list keys directly, rather than
+  changing `newTestApp`'s own default screen (which would have hidden
+  the real behavior the new screen introduces).
+
+Verified: full unit coverage (store join/filtering, `editorCommand`,
+the new screen's keybindings, empty-list safety) plus App-level
+integration tests for the return-screen fix (including a test that
+would fail to compile without `saveResolved`-style tracking) and the
+freshness-reload fix. Manually verified via tmux against a real
+production dataset with a live `vi` as `$EDITOR`: home screen renders
+real data correctly aligned; 'c'/esc round-trips between home and
+company list; 's' from home correctly returns to home (not posting
+detail) on both cancel and save; rejecting an application immediately
+drops it from the list; starting a new application via posting-detail's
+'a' key makes it appear on the home screen without a restart; 'l'/'r'
+launch `vi` via `tea.ExecProcess` on the correct distinct file paths,
+swamp's screen redraws cleanly after `vi` exits, and the saved content
+actually persists to disk.
+
+## 2026-08-31 -- store.ActiveApplication renamed to store.ApplicationView
+Follow-up to the entry above: Bob flagged `ActiveApplication`'s name
+directly -- "the adjective" (Active) doesn't earn its place, since the
+struct's shape (application + posting + company name) has nothing to do
+with status filtering; a rejected application joined the same way would
+have the identical shape. The type doesn't represent "an active
+application," it represents "an application, viewed with its posting and
+company resolved" -- "active" describes what `ListActiveApplications`
+selects, not what the row looks like.
+
+Renaming straight to `Application` wasn't available -- `store.Application`
+already exists (the plain `applications`-table row `GetApplication`/
+`CreateApplication`/etc. return). First pass at a fix put `Posting`/
+`CompanyName` directly onto `Application` itself, populated only by the
+join query and zero-valued everywhere else -- Bob called this out too:
+it doesn't remove the two-shapes problem, it just hides it inside one
+type name instead of two, which is worse (a caller can no longer tell
+from the type alone whether `.CompanyName` is real).
+
+Landed on `ApplicationView`, embedding `Application` rather than
+duplicating its fields under different names (the prior `ApplicationID`/
+`ApplicationStatus` fields are gone -- `.ID`/`.Status` now come from the
+embedded `Application`, promoted through). This isn't following the
+`InterestedPosting` precedent (raised and explicitly set aside -- Bob's
+call was to reason from the concept, not the existing pattern):
+`InterestedPosting` wraps `Posting` with genuinely optional data (an
+application may not exist yet, hence its `*int64`/`*ApplicationStatus`
+pointer fields) -- a different concept layered on top. `ApplicationView`
+is the same entity, not a different one, with context resolved that
+every other caller already has in scope by the time they call
+`GetApplication`. As Bob put it: in an ORM (Rails etc.) this would just
+be a defined relation/include; sqlc has no such magic, so a small
+hand-written view type is the direct, honest equivalent -- not a
+workaround.
+
+Query changes to support this: `ListActiveApplications` now also selects
+`applications.notes`/`created_at`/`updated_at` (aliased to avoid
+colliding with `postings.*`'s own columns of the same name), so the
+embedded `Application` is actually complete -- not a second partial
+representation that happens to reuse the real type's name.
+`applicationViewFromRow` builds it via the existing `applicationFromRow`
+(reused, not duplicated), passing a synthetic `db.Application` built
+from the row's aliased columns.
+
+Verified: `store` tests updated to assert on the promoted fields
+directly (`v.ID`, `v.Status`, `v.PostingID`, `v.Notes` -- the last two
+are new assertions this refactor made possible, since the embedded
+`Application` is now provably complete rather than assumed to be), full
+suite green, lint/fmt clean.
+
+## 2026-08-31 -- ListActiveApplications switched to sqlc.embed()
+Immediate follow-up to the entry above. Bob asked whether the query
+pattern itself (hand-selecting+aliasing individual `postings`/
+`applications` columns, then reconstructing `db.Posting`/`db.Application`
+literals field-by-field in `applicationViewFromRow`) was actually the
+right approach, rather than something already provided by the tooling.
+
+Checked rather than assumed: sqlc has a native macro for exactly this,
+`sqlc.embed(table)` -- it generates a nested struct field (e.g.
+`Posting db.Posting`) instead of flattened columns, with the `Scan()`
+call wired up automatically. Two real open questions before adopting it
+here: does it work on this project's engine (sqlite) at all, and does it
+coexist with a plain aliased column (`companies.name AS company_name`)
+and two embeds in the same inner join? Both had documented rough edges
+elsewhere (a github.com/sqlc-dev/sqlc issue describes `sqlc.embed` with
+a *left* join failing on sqlite when the embedded side is NULL), so
+rather than trust the docs summary, ran the exact shape against a
+scratch copy of this project's real schema (`sqlc generate` against a
+copy of `db/queries`+`db/migrations`, engine sqlite, sqlc v1.31.1 --
+matching `go.mod`/`sqlc.yaml` exactly): `SELECT sqlc.embed(applications),
+sqlc.embed(postings), companies.name AS company_name FROM ... JOIN ...`
+generated exactly the target shape (`ListActiveApplicationsRow{
+Application Application; Posting Posting; CompanyName string }`) with a
+correct, automatic `Scan()`. The known left-join/NULL issue doesn't
+apply here -- this is an inner join, application always exists.
+
+Decision: switched `ListActiveApplications` to `sqlc.embed(applications)`
++ `sqlc.embed(postings)` + the plain `company_name` alias.
+`applicationViewFromRow` now just runs `row.Application`/`row.Posting`
+(already the correct nested db types) through the existing
+`applicationFromRow`/`postingFromRow` conversions -- no more hand-copied
+field lists that silently stop tracking the schema if a column is added
+to `postings`/`applications` later. The `ApplicationView` Go type itself
+(embeds `Application`, from the entry above) is unchanged -- this was
+entirely a query-construction-layer improvement, not a type-shape one.
+
+This came out of a broader conversation about idiomatic Go for
+"entity + resolved related data": composition via embedding is the
+Go-level idiom (settled, unrelated to sqlc); `sqlc.embed()` is the
+sqlc-specific mechanism for producing that composition without hand-
+copying column lists, consistent with sqlc's own query-first (not
+ORM) design -- using it here isn't a stylistic preference, it's using
+the tool actually built for this rather than reimplementing a piece of
+it by hand.
+
+Verified: scratch experiment against real schema+engine before touching
+the real query (not assumed from docs, which were themselves incomplete/
+contradictory across summarized fetches); full build+test+lint+fmt
+clean after the switch; no `store`/`tui` call site needed to change,
+since `ApplicationView`'s public shape didn't change -- confirms the
+type-design (previous entry) and the query-construction fix (this one)
+were genuinely separable decisions, not entangled.
+
 ## 2026-08-31 -- ListInterestedPostings: same sqlc.embed() pattern as ApplicationView, applied selectively
 Follow-up to the `ActiveApplication` -> `ApplicationView` rename and its
 `sqlc.embed()` switch (both on the unmerged `active-applications-screen`

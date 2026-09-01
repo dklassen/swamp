@@ -47,6 +47,20 @@ type Querier interface {
 	// creating) where callers need to know about a soft-deleted tag too, not
 	// just active ones.
 	GetTagByName(ctx context.Context, name string) (Tag, error)
+	// Applications not at a terminal dead-end status (rejected,
+	// offer_declined), joined with their posting and company name -- feeds
+	// the active-applications TUI screen (#43). Unlike ListInterestedPostings
+	// this is an inner join on applications (an application always exists
+	// for every row here), ordered most-recently-changed first so whatever
+	// moved last surfaces at the top.
+	//
+	// sqlc.embed(applications)/sqlc.embed(postings) generate nested
+	// Application/Posting fields on the row directly from the schema, rather
+	// than us hand-selecting+aliasing individual columns and reconstructing
+	// them field-by-field in Go -- verified this works cleanly on this
+	// engine (sqlite, sqlc v1.31.1) alongside a plain aliased column, one
+	// inner join, no collisions (see decisions.log, ApplicationView).
+	ListActiveApplications(ctx context.Context) ([]ListActiveApplicationsRow, error)
 	ListActiveCompanies(ctx context.Context) ([]Company, error)
 	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)
 	// Keyspace discovery for filter selection: department is a company-
