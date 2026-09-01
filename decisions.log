@@ -2498,3 +2498,28 @@ and someone forgets the trim call. Sanitizing only in
 after `filter.Match`, so it wouldn't have fixed the exact-match bug.
 Did not backfill existing rows with padded values already in the
 database; this fix only prevents new writes from being unsanitized.
+
+## 2026-09-01 — Backfill existing posting rows with padded whitespace (migration 00005)
+Context: the previous entry's `sync.sanitizePosting` fix only stops new
+writes from being unsanitized. Rows already in the database (Stripe,
+StackAdapt, etc.) still carry the padded whitespace found during
+investigation.
+Decision: added goose migration `00005_trim_existing_posting_whitespace`,
+a pure data UPDATE (no schema change) that runs `TRIM()` over every
+free-text `postings` column sanitizePosting also covers (source_id,
+title, department, team, location, employment_type, workplace_type,
+description_html, description_text, job_url, application_url).
+`raw_payload` and `published_at` are left alone, same reasoning as the
+Go-side fix. Down is a documented no-op: trimming discards the exact
+original whitespace, so there's nothing to restore it from -- a
+fabricated restoration would misrepresent what was actually stored.
+Why: keeps the backfill in the same versioned, repeatable mechanism
+(`task migrate:up`) every other schema/data change in this project goes
+through, rather than a manual one-off SQL command against just the
+current local db that leaves no trace and wouldn't apply anywhere else
+(fresh clones, CI, another environment).
+Verified: new migrations_test.go case migrates to version 4, inserts a
+posting with padded values on every affected column plus untouched
+raw_payload, migrates to version 5, and asserts every column trimmed
+and raw_payload unchanged. Full migrations suite, full build/test/lint/
+fmt clean.
