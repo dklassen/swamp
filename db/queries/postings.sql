@@ -74,8 +74,17 @@ ORDER BY location;
 -- their company name and -- if one has been started -- their
 -- application's id and status. Feeds the stage package's discovery of
 -- work for the external-agent hand-off mechanism (see stage.List).
+--
+-- sqlc.embed(postings) for the always-present side (postings is inner-
+-- joined via posting_markup, never nullable here) -- same reasoning as
+-- ListActiveApplications (see decisions.log, ApplicationView). Deliberately
+-- NOT sqlc.embed(applications): that side is LEFT JOINed (an application
+-- may not exist yet) and sqlc.embed has a documented bug scanning a NULL
+-- embedded struct on sqlite (sqlc-dev/sqlc#2997) -- kept as individually
+-- aliased nullable columns, handled by the existing sql.NullInt64/
+-- sql.NullString .Valid checks in interestedPostingFromRow.
 SELECT
-    postings.*,
+    sqlc.embed(postings),
     companies.name AS company_name,
     applications.id AS application_id,
     applications.status AS application_status

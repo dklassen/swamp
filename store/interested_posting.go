@@ -20,31 +20,17 @@ type InterestedPosting struct {
 	ApplicationStatus *ApplicationStatus
 }
 
+// interestedPostingFromRow converts a row built by sqlc.embed(postings) --
+// row.Posting is already the exact nested db.Posting that macro
+// generates, so this runs it through the same postingFromRow every other
+// Posting goes through, rather than hand-reconstructing it field-by-field
+// from a flat row (see decisions.log, ApplicationView). The application
+// side stays hand-checked (sql.NullInt64/sql.NullString .Valid) since
+// it's LEFT JOINed and genuinely optional -- sqlc.embed(applications)
+// isn't used here (see the query comment).
 func interestedPostingFromRow(row db.ListInterestedPostingsRow) (InterestedPosting, error) {
 	p := InterestedPosting{
-		Posting: postingFromRow(db.Posting{
-			ID:              row.ID,
-			CompanyID:       row.CompanyID,
-			Source:          row.Source,
-			SourceID:        row.SourceID,
-			Title:           row.Title,
-			Department:      row.Department,
-			Team:            row.Team,
-			Location:        row.Location,
-			EmploymentType:  row.EmploymentType,
-			WorkplaceType:   row.WorkplaceType,
-			DescriptionHtml: row.DescriptionHtml,
-			DescriptionText: row.DescriptionText,
-			JobUrl:          row.JobUrl,
-			ApplicationUrl:  row.ApplicationUrl,
-			PublishedAt:     row.PublishedAt,
-			RawPayload:      row.RawPayload,
-			ListingStatus:   row.ListingStatus,
-			FirstSeenAt:     row.FirstSeenAt,
-			LastSeenAt:      row.LastSeenAt,
-			CreatedAt:       row.CreatedAt,
-			UpdatedAt:       row.UpdatedAt,
-		}),
+		Posting:     postingFromRow(row.Posting),
 		CompanyName: row.CompanyName,
 	}
 	if row.ApplicationID.Valid {
