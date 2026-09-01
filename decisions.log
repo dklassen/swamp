@@ -2085,3 +2085,53 @@ because it's convenient to be touching the code anyway.
 Note: this doesn't retroactively split #49 -- it's already open, and
 splitting an already-committed, already-pushed PR after the fact would
 be more churn than value. Applies going forward.
+
+## 2026-08-31 -- ListInterestedPostings: same sqlc.embed() pattern as ApplicationView, applied selectively
+Follow-up to the `ActiveApplication` -> `ApplicationView` rename and its
+`sqlc.embed()` switch (both on the unmerged `active-applications-screen`
+branch, PR #53). `ListInterestedPostings` (`store/interested_posting.go`,
+feeding `stage.List`) was the other query in the codebase built the same
+hand-selected-columns-and-manually-reconstruct-the-struct way -- it
+predates `ApplicationView` and was in fact its explicit precedent.
+
+Applied `sqlc.embed(postings)` for the posting side: `postings` is
+inner-joined via `posting_markup`, always present, exactly the case the
+macro is verified safe for (see the entry above). `interestedPostingFromRow`
+now runs `row.Posting` straight through `postingFromRow`, same
+simplification as `applicationViewFromRow` got.
+
+Deliberately did NOT `sqlc.embed(applications)` here. This query LEFT
+JOINs `applications` (a posting can be interested with no application
+started yet) -- exactly the case where the earlier research (sqlc-dev/
+sqlc#2997) found `sqlc.embed` broken on sqlite: it fails scanning a NULL
+embedded struct rather than reporting it as absent. Left that side as
+individually aliased nullable columns (`applications.id AS
+application_id`, `applications.status AS application_status`), handled
+by the existing `sql.NullInt64`/`sql.NullString` `.Valid` checks --
+unchanged, and correct as-is.
+
+Also deliberately did NOT change `InterestedPosting.Posting` from a
+named field to an anonymously embedded one, even though `ApplicationView`
+embeds `Application`. Different situation: `ApplicationView` needed
+embedding specifically to stop `ActiveApplication` from re-flattening
+`Application`'s fields under new names (`ApplicationID`/`ApplicationStatus`
+duplicating what `Application.ID`/`Application.Status` already say).
+`InterestedPosting` never had that problem -- `Posting Posting` was
+already a real, whole field holding a real `Posting` value; its
+`ApplicationID *int64`/`ApplicationStatus *ApplicationStatus` are two
+genuinely optional scalars, not a flattened re-encoding of `Application`
+(which also has `Notes`/`CreatedAt`/`UpdatedAt` that `InterestedPosting`
+doesn't need). Embedding here would be a cosmetic API-surface change
+with no concrete problem behind it -- not applying "the same pattern"
+just for surface-level consistency where the underlying issue it fixes
+doesn't exist.
+
+Verified: added `store/interested_posting_test.go` (no direct test
+existed before -- only indirect coverage via `stage`'s tests) covering
+the no-application case (fields nil), the has-application case (fields
+populated), and the archived-exclusion case; ran all three against the
+pre-refactor code first to confirm they're a real baseline, then again
+after -- unchanged, green. `stage`'s existing test suite (the actual
+consumer) also unchanged and green -- confirms the `Posting:` field-name
+access pattern it uses is unaffected either way. Full build/test/lint/
+fmt clean.

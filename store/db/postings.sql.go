@@ -8,7 +8,6 @@ package db
 import (
 	"context"
 	"database/sql"
-	"time"
 )
 
 const createPosting = `-- name: CreatePosting :one
@@ -233,27 +232,7 @@ ORDER BY posting_markup.interested_at DESC
 `
 
 type ListInterestedPostingsRow struct {
-	ID                int64          `json:"id"`
-	CompanyID         int64          `json:"company_id"`
-	Source            string         `json:"source"`
-	SourceID          string         `json:"source_id"`
-	Title             string         `json:"title"`
-	Department        sql.NullString `json:"department"`
-	Team              sql.NullString `json:"team"`
-	Location          sql.NullString `json:"location"`
-	EmploymentType    sql.NullString `json:"employment_type"`
-	WorkplaceType     sql.NullString `json:"workplace_type"`
-	DescriptionHtml   sql.NullString `json:"description_html"`
-	DescriptionText   sql.NullString `json:"description_text"`
-	JobUrl            sql.NullString `json:"job_url"`
-	ApplicationUrl    sql.NullString `json:"application_url"`
-	PublishedAt       sql.NullTime   `json:"published_at"`
-	RawPayload        string         `json:"raw_payload"`
-	ListingStatus     string         `json:"listing_status"`
-	FirstSeenAt       time.Time      `json:"first_seen_at"`
-	LastSeenAt        time.Time      `json:"last_seen_at"`
-	CreatedAt         time.Time      `json:"created_at"`
-	UpdatedAt         time.Time      `json:"updated_at"`
+	Posting           Posting        `json:"posting"`
 	CompanyName       string         `json:"company_name"`
 	ApplicationID     sql.NullInt64  `json:"application_id"`
 	ApplicationStatus sql.NullString `json:"application_status"`
@@ -263,6 +242,15 @@ type ListInterestedPostingsRow struct {
 // their company name and -- if one has been started -- their
 // application's id and status. Feeds the stage package's discovery of
 // work for the external-agent hand-off mechanism (see stage.List).
+//
+// sqlc.embed(postings) for the always-present side (postings is inner-
+// joined via posting_markup, never nullable here) -- same reasoning as
+// ListActiveApplications (see decisions.log, ApplicationView). Deliberately
+// NOT sqlc.embed(applications): that side is LEFT JOINed (an application
+// may not exist yet) and sqlc.embed has a documented bug scanning a NULL
+// embedded struct on sqlite (sqlc-dev/sqlc#2997) -- kept as individually
+// aliased nullable columns, handled by the existing sql.NullInt64/
+// sql.NullString .Valid checks in interestedPostingFromRow.
 func (q *Queries) ListInterestedPostings(ctx context.Context) ([]ListInterestedPostingsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listInterestedPostings)
 	if err != nil {
@@ -273,27 +261,27 @@ func (q *Queries) ListInterestedPostings(ctx context.Context) ([]ListInterestedP
 	for rows.Next() {
 		var i ListInterestedPostingsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.CompanyID,
-			&i.Source,
-			&i.SourceID,
-			&i.Title,
-			&i.Department,
-			&i.Team,
-			&i.Location,
-			&i.EmploymentType,
-			&i.WorkplaceType,
-			&i.DescriptionHtml,
-			&i.DescriptionText,
-			&i.JobUrl,
-			&i.ApplicationUrl,
-			&i.PublishedAt,
-			&i.RawPayload,
-			&i.ListingStatus,
-			&i.FirstSeenAt,
-			&i.LastSeenAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.Posting.ID,
+			&i.Posting.CompanyID,
+			&i.Posting.Source,
+			&i.Posting.SourceID,
+			&i.Posting.Title,
+			&i.Posting.Department,
+			&i.Posting.Team,
+			&i.Posting.Location,
+			&i.Posting.EmploymentType,
+			&i.Posting.WorkplaceType,
+			&i.Posting.DescriptionHtml,
+			&i.Posting.DescriptionText,
+			&i.Posting.JobUrl,
+			&i.Posting.ApplicationUrl,
+			&i.Posting.PublishedAt,
+			&i.Posting.RawPayload,
+			&i.Posting.ListingStatus,
+			&i.Posting.FirstSeenAt,
+			&i.Posting.LastSeenAt,
+			&i.Posting.CreatedAt,
+			&i.Posting.UpdatedAt,
 			&i.CompanyName,
 			&i.ApplicationID,
 			&i.ApplicationStatus,
