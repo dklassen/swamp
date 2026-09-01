@@ -7,40 +7,27 @@ package sync
 import (
 	"context"
 	"fmt"
-	"time"
 
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
-// Posting is sync's own source-agnostic posting shape -- what every
-// PostingFetcher must translate its source's native posting type into.
-// Kept as its own type (rather than reusing e.g. ashby.Posting) so sync
-// doesn't depend on any one job board's client; each source package
-// (ashby, greenhouse) keeps its own native Posting type matching what
-// that source's API actually returns, and a small per-source adapter
-// (AshbyFetcher, GreenhouseFetcher) translates into this shape. Not
-// every source can populate every field -- e.g. Greenhouse has no
-// employment/workplace type -- those are simply left empty.
-type Posting struct {
-	SourceID        string
-	Title           string
-	Department      string
-	Team            string
-	Location        string
-	EmploymentType  string
-	WorkplaceType   string
-	DescriptionHTML string
-	DescriptionText string
-	JobURL          string
-	ApplicationURL  string
-	PublishedAt     time.Time
-	RawPayload      []byte
-}
+// Posting is an alias to jobboard.Posting, not a separate struct.
+// ashby.Posting/greenhouse.Posting/lever.Posting are the same alias, so a
+// source client's Posting IS this type -- no field-by-field translation
+// code exists between a client and sync, and none can silently drop a
+// field. Not every source can populate every field -- e.g. Greenhouse has
+// no employment/workplace type -- those are simply left empty (see
+// jobboard's doc comment, and decisions.log, #57).
+type Posting = jobboard.Posting
 
 // PostingFetcher is sync's own minimal view of a job board client, one
-// per source. boardSlug is whatever that source's client needs to
-// identify the board (an Ashby slug, a Greenhouse board token, etc.) --
-// it's passed through from store.Company.SourceRef untouched.
+// per source. Every source client (*ashby.Client, *greenhouse.Client,
+// *lever.Client) already has this exact method signature, so each one
+// satisfies PostingFetcher directly -- no per-source adapter type is
+// needed. boardSlug is whatever that source's client needs to identify
+// the board (an Ashby slug, a Greenhouse board token, etc.) -- it's
+// passed through from store.Company.SourceRef untouched.
 type PostingFetcher interface {
 	FetchPostings(ctx context.Context, boardSlug string) ([]Posting, error)
 }

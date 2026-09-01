@@ -86,12 +86,15 @@ func main() {
 }
 
 // newSyncer builds a Syncer configured with every supported job board
-// source, keyed by the store.Company.Source value each one handles.
+// source, keyed by the store.Company.Source value each one handles. Each
+// client satisfies sync.PostingFetcher directly -- no adapter type is
+// needed, since ashby.Posting/greenhouse.Posting/lever.Posting are all
+// aliases to jobboard.Posting (see decisions.log, #57).
 func newSyncer(s *store.Store) *sync.Syncer {
 	return sync.New(s, map[string]sync.PostingFetcher{
-		"ashby":      sync.NewAshbyFetcher(ashby.NewClient()),
-		"greenhouse": sync.NewGreenhouseFetcher(greenhouse.NewClient()),
-		"lever":      sync.NewLeverFetcher(lever.NewClient()),
+		"ashby":      ashby.NewClient(),
+		"greenhouse": greenhouse.NewClient(),
+		"lever":      lever.NewClient(),
 	})
 }
 

@@ -9,10 +9,11 @@
 // semicolon-separated string, since store/filter expect a single value
 // per posting), there's no separate application URL (JobURL and
 // ApplicationURL are the same absolute_url), there's no employment/
-// workplace type field at all, and there's no plain-text description --
-// only HTML, stripped here on a best-effort basis (see html.go) since
-// DescriptionText is what an external agent drafts a cover letter from
-// (see the stage package).
+// workplace type field at all (Team, EmploymentType, WorkplaceType are
+// simply left at their zero value -- see jobboard's doc comment), and
+// there's no plain-text description -- only HTML, stripped here on a
+// best-effort basis (see html.go) since DescriptionText is what an
+// external agent drafts a cover letter from (see the stage package).
 package greenhouse
 
 import (
@@ -24,22 +25,15 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/dklassen/swamp/jobboard"
 )
 
 const defaultBaseURL = "https://boards-api.greenhouse.io"
 
-type Posting struct {
-	SourceID        string
-	Title           string
-	Department      string
-	Location        string
-	DescriptionHTML string
-	DescriptionText string
-	JobURL          string
-	ApplicationURL  string
-	PublishedAt     time.Time
-	RawPayload      []byte
-}
+// Posting is an alias to jobboard.Posting, not a separate struct -- see
+// that package's doc comment for why (decisions.log, #57).
+type Posting = jobboard.Posting
 
 type Client struct {
 	httpClient *http.Client

@@ -19,25 +19,15 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/dklassen/swamp/jobboard"
 )
 
 const defaultBaseURL = "https://api.lever.co"
 
-type Posting struct {
-	SourceID        string
-	Title           string
-	Department      string
-	Team            string
-	Location        string
-	EmploymentType  string
-	WorkplaceType   string
-	DescriptionHTML string
-	DescriptionText string
-	JobURL          string
-	ApplicationURL  string
-	PublishedAt     time.Time
-	RawPayload      []byte
-}
+// Posting is an alias to jobboard.Posting, not a separate struct -- see
+// that package's doc comment for why (decisions.log, #57).
+type Posting = jobboard.Posting
 
 type Client struct {
 	httpClient *http.Client
