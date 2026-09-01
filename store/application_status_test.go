@@ -42,3 +42,28 @@ func TestParseApplicationStatus_UnknownValue_ReturnsError(t *testing.T) {
 		t.Fatal("ParseApplicationStatus(\"applied\") = nil error, want error (not a valid status)")
 	}
 }
+
+func TestTerminalApplicationStatuses_IsRejectedAndOfferDeclinedOnly(t *testing.T) {
+	got := TerminalApplicationStatuses()
+	want := []ApplicationStatus{ApplicationStatusRejected, ApplicationStatusOfferDeclined}
+	if len(got) != len(want) {
+		t.Fatalf("TerminalApplicationStatuses() = %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("TerminalApplicationStatuses() = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestTerminalApplicationStatuses_EveryValueIsAKnownStatus(t *testing.T) {
+	known := map[ApplicationStatus]bool{}
+	for _, s := range ApplicationStatuses() {
+		known[s] = true
+	}
+	for _, terminal := range TerminalApplicationStatuses() {
+		if !known[terminal] {
+			t.Fatalf("TerminalApplicationStatuses() contains %v, not in ApplicationStatuses()", terminal)
+		}
+	}
+}
