@@ -79,3 +79,22 @@ func ApplicationStatuses() []ApplicationStatus {
 	}
 	return out
 }
+
+// terminalApplicationStatuses holds the statuses ListActiveApplications
+// excludes -- dead ends the user isn't still pursuing. This is the sole
+// source of truth for "terminal": the query passes this list to sqlc's
+// slice macro at call time rather than hardcoding status strings in SQL,
+// so there's exactly one place this business rule can be edited (see
+// decisions.log, issue #60).
+var terminalApplicationStatuses = []ApplicationStatus{
+	ApplicationStatusRejected,
+	ApplicationStatusOfferDeclined,
+}
+
+// TerminalApplicationStatuses returns the statuses that count as a dead
+// end for an application -- see terminalApplicationStatuses.
+func TerminalApplicationStatuses() []ApplicationStatus {
+	out := make([]ApplicationStatus, len(terminalApplicationStatuses))
+	copy(out, terminalApplicationStatuses)
+	return out
+}

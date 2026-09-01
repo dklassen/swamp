@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"database/sql"
 
 	"github.com/dklassen/swamp/store/db"
 )
@@ -40,10 +41,15 @@ func applicationViewFromRow(row db.ListActiveApplicationsRow) (ApplicationView, 
 }
 
 // ListActiveApplications returns applications not at a terminal
-// dead-end status (rejected, offer_declined), each viewed with its
-// posting and company name resolved, most-recently-changed first.
+// dead-end status (see TerminalApplicationStatuses), each viewed with
+// its posting and company name resolved, most-recently-changed first.
 func (s *Store) ListActiveApplications(ctx context.Context) ([]ApplicationView, error) {
-	rows, err := s.queries.ListActiveApplications(ctx)
+	terminal := TerminalApplicationStatuses()
+	excluded := make([]sql.NullString, len(terminal))
+	for i, status := range terminal {
+		excluded[i] = sql.NullString{String: status.String(), Valid: true}
+	}
+	rows, err := s.queries.ListActiveApplications(ctx, excluded)
 	if err != nil {
 		return nil, err
 	}

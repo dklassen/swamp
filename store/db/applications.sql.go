@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const createApplication = `-- name: CreateApplication :one
@@ -66,7 +67,7 @@ SELECT applications.id, applications.posting_id, applications.status, applicatio
 FROM applications
 JOIN postings ON postings.id = applications.posting_id
 JOIN companies ON companies.id = postings.company_id
-WHERE applications.status NOT IN ('rejected', 'offer_declined')
+WHERE applications.status NOT IN (/*SLICE:terminal_statuses*/?)
 ORDER BY applications.updated_at DESC
 `
 
@@ -76,12 +77,12 @@ type ListActiveApplicationsRow struct {
 	CompanyName string      `json:"company_name"`
 }
 
-// Applications not at a terminal dead-end status (rejected,
-// offer_declined), joined with their posting and company name -- feeds
-// the active-applications TUI screen (#43). Unlike ListInterestedPostings
-// this is an inner join on applications (an application always exists
-// for every row here), ordered most-recently-changed first so whatever
-// moved last surfaces at the top.
+// Applications not at a terminal dead-end status, joined with their
+// posting and company name -- feeds the active-applications TUI screen
+// (#43). Unlike ListInterestedPostings this is an inner join on
+// applications (an application always exists for every row here),
+// ordered most-recently-changed first so whatever moved last surfaces
+// at the top.
 //
 // sqlc.embed(applications)/sqlc.embed(postings) generate nested
 // Application/Posting fields on the row directly from the schema, rather
@@ -89,8 +90,27 @@ type ListActiveApplicationsRow struct {
 // them field-by-field in Go -- verified this works cleanly on this
 // engine (sqlite, sqlc v1.31.1) alongside a plain aliased column, one
 // inner join, no collisions (see decisions.log, ApplicationView).
-func (q *Queries) ListActiveApplications(ctx context.Context) ([]ListActiveApplicationsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listActiveApplications)
+//
+// sqlc.slice('terminal_statuses') keeps store.TerminalApplicationStatuses
+// as the sole source of truth for which statuses are terminal -- no
+// status strings are hardcoded here, they're passed in as a query
+// parameter at call time (see decisions.log, issue #60). Verified this
+// works correctly on this engine with real data before adopting it; the
+// one real constraint is that sqlc.slice can't safely combine with other
+// bound parameters on sqlite (a documented ordering bug) -- this query
+// has none today, but that needs re-verifying if one is ever added.
+func (q *Queries) ListActiveApplications(ctx context.Context, terminalStatuses []sql.NullString) ([]ListActiveApplicationsRow, error) {
+	query := listActiveApplications
+	var queryParams []interface{}
+	if len(terminalStatuses) > 0 {
+		for _, v := range terminalStatuses {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:terminal_statuses*/?", strings.Repeat(",?", len(terminalStatuses))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:terminal_statuses*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}

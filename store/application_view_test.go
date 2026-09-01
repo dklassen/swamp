@@ -55,6 +55,53 @@ func TestListActiveApplications_ExcludesRejectedAndOfferDeclined(t *testing.T) {
 	}
 }
 
+// TestListActiveApplications_MatchesTerminalApplicationStatuses is a
+// drift-detection test, not just a regression test: it derives "which
+// statuses should be excluded" from TerminalApplicationStatuses() itself
+// rather than hardcoding rejected/offer_declined a second time, so it
+// stays correct (and would catch a real mismatch) even if the set of
+// terminal statuses changes later (see decisions.log, issue #60).
+func TestListActiveApplications_MatchesTerminalApplicationStatuses(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	terminal := map[ApplicationStatus]bool{}
+	for _, status := range TerminalApplicationStatuses() {
+		terminal[status] = true
+	}
+
+	wantIncluded := map[string]bool{}
+	for _, status := range ApplicationStatuses() {
+		posting := mustUpsertPosting(t, s, acme.ID, "job-"+status.String(), status.String())
+		mustCreateApplication(t, s, posting.ID)
+		if _, err := s.UpdateApplicationStatus(ctx, posting.ID, status); err != nil {
+			t.Fatalf("UpdateApplicationStatus(%s): %v", status, err)
+		}
+		if !terminal[status] {
+			wantIncluded[posting.Title] = true
+		}
+	}
+
+	got, err := s.ListActiveApplications(ctx)
+	if err != nil {
+		t.Fatalf("ListActiveApplications: %v", err)
+	}
+
+	gotTitles := map[string]bool{}
+	for _, v := range got {
+		gotTitles[v.Posting.Title] = true
+	}
+	if len(gotTitles) != len(wantIncluded) {
+		t.Fatalf("ListActiveApplications returned %v, want exactly %v", gotTitles, wantIncluded)
+	}
+	for title := range wantIncluded {
+		if !gotTitles[title] {
+			t.Fatalf("ListActiveApplications missing %q (non-terminal status), got %v", title, gotTitles)
+		}
+	}
+}
+
 func TestListActiveApplications_IncludesCompanyNameAndApplicationFields(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

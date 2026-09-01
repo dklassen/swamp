@@ -2338,3 +2338,70 @@ after -- unchanged, green. `stage`'s existing test suite (the actual
 consumer) also unchanged and green -- confirms the `Posting:` field-name
 access pattern it uses is unaffected either way. Full build/test/lint/
 fmt clean.
+
+## 2026-09-01 -- Terminal application status: single source of truth via sqlc.slice() (#60)
+Problem: `store/application_status.go` defines the canonical
+`ApplicationStatus` enum, but which statuses count as "terminal"
+(excluded from `ListActiveApplications`) existed only as a raw SQL
+literal, `WHERE applications.status NOT IN ('rejected',
+'offer_declined')` -- disconnected from the Go source of truth, with
+nothing to catch drift if a status was renamed or a new terminal one
+added and this line wasn't updated to match.
+
+Considered three mechanisms, discussed with Bob:
+(A) filter in Go after an unfiltered fetch -- eliminates duplication,
+smallest diff, matches an existing pattern already used twice elsewhere
+in this codebase (`filterOutArchived`, `narrowPostingsToFilters` in
+`tui/app.go`), but loses locality of behavior: reading the SQL query
+alone wouldn't show that any filtering happens at all.
+(B) `sqlc.slice()` -- keep the exclusion as a real SQL `NOT IN`, but
+source the actual status values from Go at call time instead of typing
+them as literals in the query file.
+(C) a drift-detection test asserting the SQL and Go agree, without
+structurally preventing drift -- worth adding regardless of A or B.
+
+Initially leaned A, reasoning mostly on diff size. Bob pushed back:
+`sqlc.slice()` keeps Go as the sole source of truth exactly as fully as
+A does (the `.sql` file ends up with zero status string literals either
+way -- just a placeholder), while additionally keeping the query itself
+honest about what it does, which A does not: a reader of the SQL file
+alone under A would see no status filtering and have to go find the
+surrounding Go code to learn any rows get dropped. That's a real
+readability argument A didn't have, not just a performance one -- went
+with B.
+
+Verified before adopting, not assumed: `sqlc.slice()`'s sqlite support
+has a documented ordering bug when combined with *other* bound
+parameters in the same query (this query has none, but that's a
+constraint on future changes to it, not a proof it's safe in general).
+Ran the exact query shape against a scratch copy of this project's real
+schema/stack (sqlc v1.31.1, sqlite) with real inserted data -- one
+application per status, including the terminal ones -- and confirmed the
+generated `ListActiveApplications(ctx, terminalStatuses
+[]sql.NullString)` returns exactly the non-terminal rows before touching
+the real query file.
+
+Implementation: `store.TerminalApplicationStatuses()` (new, in
+`application_status.go`) is the sole source of truth, returning a
+defensive copy the same way `ApplicationStatuses()` already does.
+`ListActiveApplications`'s SQL now reads `WHERE applications.status NOT
+IN (sqlc.slice('terminal_statuses'))` -- no status strings in the query
+file at all. `store.ListActiveApplications`'s public signature is
+unchanged (`ctx` only) -- it builds the `[]sql.NullString` param from
+`TerminalApplicationStatuses()` internally, so no caller outside `store`
+needs to know this mechanism exists.
+
+Also added (C) as belt-and-suspenders, not a substitute for B:
+`TestListActiveApplications_MatchesTerminalApplicationStatuses` derives
+its expected-included set from `TerminalApplicationStatuses()` itself
+rather than hardcoding status names a second time in the test, and
+creates one real application per every status in `ApplicationStatuses()`
+-- so it stays a meaningful check even if the terminal set changes later,
+rather than freezing today's two specific values into the test forever.
+
+Verified: new tests for `TerminalApplicationStatuses()` itself (exact
+value, and that every terminal status is a real known status); the new
+drift-detection integration test; both pre-existing `ListActiveApplications`
+tests unchanged and green against the real store; full build/test/lint/
+fmt clean; `tui`'s call site (`app.go`) untouched and still green,
+confirming the public API didn't change.
