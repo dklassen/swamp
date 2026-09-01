@@ -13,12 +13,12 @@ func testActiveApplications() []store.ApplicationView {
 	return []store.ApplicationView{
 		{
 			Application: store.Application{ID: 10, Status: store.ApplicationStatusStarted},
-			Posting:     store.Posting{ID: 1, Title: "Engineer"},
+			Posting:     store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}},
 			CompanyName: "Acme",
 		},
 		{
 			Application: store.Application{ID: 20, Status: store.ApplicationStatusInterviewing},
-			Posting:     store.Posting{ID: 2, Title: "Designer"},
+			Posting:     store.Posting{ID: 2, IngestedFields: store.IngestedFields{Title: "Designer"}},
 			CompanyName: "Globex",
 		},
 	}

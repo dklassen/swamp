@@ -2523,3 +2523,78 @@ posting with padded values on every affected column plus untouched
 raw_payload, migrates to version 5, and asserts every column trimmed
 and raw_payload unchanged. Full migrations suite, full build/test/lint/
 fmt clean.
+
+## 2026-09-01 -- Unify posting-shape mapping via jobboard.Posting + store.IngestedFields (#57)
+Context: Lever's addition (#31, previous entry) replicated the exact
+duplication #57 tracked: four near-identical ~13-field shapes
+(ashby.Posting, greenhouse.Posting, lever.Posting, sync.Posting) hand-
+copied at every source-adapter and every store-mapping call site, with
+no compiler check that a field added to one was added to the others.
+Ran the full `/improve-codebase` design process: framed the problem
+space, spawned 4 differently-constrained design agents in parallel
+(minimal interface, maximum flexibility, optimize for the common
+caller, ports & adapters), compared designs in prose, then posted an
+RFC to issue #57 (github.com/dklassen/swamp/issues/57#issuecomment-5497117510)
+before implementing.
+Decision, two parts:
+1. `jobboard.Posting` (new package, stdlib-only) is now the single
+   canonical source-agnostic posting shape. `ashby.Posting`,
+   `greenhouse.Posting`, `lever.Posting`, and `sync.Posting` are all
+   `type X = jobboard.Posting` aliases, not independently-declared
+   structs that happen to match -- a client's Posting IS sync's
+   Posting, so every source client satisfies `sync.PostingFetcher`
+   directly with zero adapter/translation code. Deleted the three
+   ~13-field hand-copy adapter files this obsoleted
+   (sync/{ashby,greenhouse,lever}_fetcher.go and their tests) and wired
+   clients directly into `newSyncer` in cmd/swamp/main.go.
+2. `store.IngestedFields` (embedded into both `store.Posting` and
+   `store.CreatePostingParams`) is now the single place that defines
+   "what counts as a posting's content" -- `sync.toIngestedFields`
+   builds one `IngestedFields` value from a fetched Posting instead of
+   13 separate field assignments, and `sync.postingContentChanged`
+   collapses to `!cmp.Equal(existing.IngestedFields,
+   params.IngestedFields)`, replacing the hand-written
+   `stringPtrEqual`/`timePtrEqual` chain (both helpers deleted, now
+   unused).
+Explicitly out of scope (per the RFC, to keep this change reviewable):
+`store.Posting`'s pointer-typed fields (`*string` where nothing
+distinguishes nil from empty) -- filed separately as issue #67 rather
+than folded in, since it's an independent, wider-blast-radius change
+store doesn't need to make just to fix #57. A generic
+`fieldmap.Mapper[S,D]` engine (one design agent's proposal) --
+rejected as premature abstraction per this project's own stated
+philosophy (CLAUDE.md: "three examples before extracting"; this is the
+second real mapping-collapse in the codebase, not the third).
+`postingFromRow`'s per-field `sql.NullString` unwrapping in
+store/posting.go -- left as-is; it's already one place, not duplicated.
+Discovered mid-implementation: embedding `IngestedFields` means every
+existing call site constructing `store.Posting{...}` or
+`CreatePostingParams{...}` with flat field keys (e.g. `Title: "x"`)
+stopped compiling -- reading a promoted field works at any Go version,
+but writing one via a flat keyed struct literal needs Go 1.27+, and
+this project's go.mod declares go 1.26.1. Confirmed via the real
+compiler, not just the LSP, before treating it as real. Fixed by
+nesting those fields under an explicit `IngestedFields: ...` key at
+every affected site (11 files: store/store_test.go,
+store/posting_test.go, stage/stage_test.go, tui/tui_test.go,
+tui/active_applications_test.go, tui/posting_list_test.go,
+tui/posting_detail_test.go, plus sync/company.go itself) -- a
+mechanical fix, not a design change.
+Added `sync.TestIngestedFields_CoversEveryPostingField`
+(sync/field_completeness_test.go), a reflection-based test comparing
+`jobboard.Posting`'s field names (minus SourceID, which identifies a
+posting rather than being ingested content) against
+`store.IngestedFields`'s field names -- guards against a field being
+added to one and silently forgotten on the other now that
+`toIngestedFields` has no per-field code path left to miss. Lives in
+`sync`, not `store`, since store deliberately has no knowledge of
+jobboard (store shouldn't import a job-board-specific package).
+Verified: full existing store/sync/tui suites still green after every
+call site was updated (no test assertions changed, only construction
+syntax). New completeness test passes and was confirmed to actually
+catch drift by temporarily adding a field to Posting alone. Manually
+verified via tmux against a seeded scratch db: company list -> posting
+list (Title/Department/Location columns) -> posting detail (Department/
+Location/Job URL/description text) all render correctly end to end,
+confirming the embedded field flows through db row -> postingFromRow ->
+TUI rendering with no regression. Full build/vet/test/lint/fmt clean.

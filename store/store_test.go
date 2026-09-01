@@ -57,11 +57,13 @@ func mustCreateTag(t *testing.T, s *Store, name string) Tag {
 func mustUpsertPosting(t *testing.T, s *Store, companyID int64, sourceID, title string) Posting {
 	t.Helper()
 	p, err := s.UpsertPosting(context.Background(), CreatePostingParams{
-		CompanyID:  companyID,
-		Source:     "ashby",
-		SourceID:   sourceID,
-		Title:      title,
-		RawPayload: `{"id":"` + sourceID + `"}`,
+		CompanyID: companyID,
+		Source:    "ashby",
+		SourceID:  sourceID,
+		IngestedFields: IngestedFields{
+			Title:      title,
+			RawPayload: `{"id":"` + sourceID + `"}`,
+		},
 	})
 	if err != nil {
 		t.Fatalf("UpsertPosting: %v", err)

@@ -5,7 +5,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
+
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/store"
@@ -30,11 +31,11 @@ func stringOrNil(s string) *string {
 	return &s
 }
 
-func toCreatePostingParams(companyID int64, source string, p Posting) store.CreatePostingParams {
-	params := store.CreatePostingParams{
-		CompanyID:       companyID,
-		Source:          source,
-		SourceID:        p.SourceID,
+// toIngestedFields builds the fields store.Posting and
+// store.CreatePostingParams share from a fetched Posting -- the single
+// place that conversion happens (see decisions.log, #57).
+func toIngestedFields(p Posting) store.IngestedFields {
+	fields := store.IngestedFields{
 		Title:           p.Title,
 		Department:      stringOrNil(p.Department),
 		Team:            stringOrNil(p.Team),
@@ -49,40 +50,24 @@ func toCreatePostingParams(companyID int64, source string, p Posting) store.Crea
 	}
 	if !p.PublishedAt.IsZero() {
 		t := p.PublishedAt
-		params.PublishedAt = &t
+		fields.PublishedAt = &t
 	}
-	return params
+	return fields
 }
 
-func stringPtrEqual(a, b *string) bool {
-	if a == nil || b == nil {
-		return a == b
+func toCreatePostingParams(companyID int64, source string, p Posting) store.CreatePostingParams {
+	return store.CreatePostingParams{
+		CompanyID:      companyID,
+		Source:         source,
+		SourceID:       p.SourceID,
+		IngestedFields: toIngestedFields(p),
 	}
-	return *a == *b
-}
-
-func timePtrEqual(a, b *time.Time) bool {
-	if a == nil || b == nil {
-		return a == b
-	}
-	return a.Equal(*b)
 }
 
 // postingContentChanged reports whether any ingested field on existing
 // differs from the freshly-fetched params.
 func postingContentChanged(existing store.Posting, params store.CreatePostingParams) bool {
-	return existing.Title != params.Title ||
-		!stringPtrEqual(existing.Department, params.Department) ||
-		!stringPtrEqual(existing.Team, params.Team) ||
-		!stringPtrEqual(existing.Location, params.Location) ||
-		!stringPtrEqual(existing.EmploymentType, params.EmploymentType) ||
-		!stringPtrEqual(existing.WorkplaceType, params.WorkplaceType) ||
-		!stringPtrEqual(existing.DescriptionHTML, params.DescriptionHTML) ||
-		!stringPtrEqual(existing.DescriptionText, params.DescriptionText) ||
-		!stringPtrEqual(existing.JobURL, params.JobURL) ||
-		!stringPtrEqual(existing.ApplicationURL, params.ApplicationURL) ||
-		!timePtrEqual(existing.PublishedAt, params.PublishedAt) ||
-		existing.RawPayload != params.RawPayload
+	return !cmp.Equal(existing.IngestedFields, params.IngestedFields)
 }
 
 // recordHistory snapshots posting's current ingested state and writes it

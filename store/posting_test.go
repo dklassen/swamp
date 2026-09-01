@@ -16,11 +16,13 @@ func TestUpsertPosting_NewPosting_ThenGet_ReturnsSamePosting(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 
 	created, err := s.UpsertPosting(ctx, CreatePostingParams{
-		CompanyID:  acme.ID,
-		Source:     "ashby",
-		SourceID:   "job-1",
-		Title:      "Software Engineer",
-		RawPayload: `{"id":"job-1"}`,
+		CompanyID: acme.ID,
+		Source:    "ashby",
+		SourceID:  "job-1",
+		IngestedFields: IngestedFields{
+			Title:      "Software Engineer",
+			RawPayload: `{"id":"job-1"}`,
+		},
 	})
 	if err != nil {
 		t.Fatalf("UpsertPosting: %v", err)
@@ -43,11 +45,13 @@ func TestUpsertPosting_NewPosting_AutoCreatesMarkupRow(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 
 	created, err := s.UpsertPosting(ctx, CreatePostingParams{
-		CompanyID:  acme.ID,
-		Source:     "ashby",
-		SourceID:   "job-1",
-		Title:      "Software Engineer",
-		RawPayload: `{"id":"job-1"}`,
+		CompanyID: acme.ID,
+		Source:    "ashby",
+		SourceID:  "job-1",
+		IngestedFields: IngestedFields{
+			Title:      "Software Engineer",
+			RawPayload: `{"id":"job-1"}`,
+		},
 	})
 	if err != nil {
 		t.Fatalf("UpsertPosting: %v", err)
@@ -76,22 +80,26 @@ func TestUpsertPosting_SameSourceAndSourceID_UpdatesInPlace(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 
 	first, err := s.UpsertPosting(ctx, CreatePostingParams{
-		CompanyID:  acme.ID,
-		Source:     "ashby",
-		SourceID:   "job-1",
-		Title:      "Software Engineer",
-		RawPayload: `{"id":"job-1"}`,
+		CompanyID: acme.ID,
+		Source:    "ashby",
+		SourceID:  "job-1",
+		IngestedFields: IngestedFields{
+			Title:      "Software Engineer",
+			RawPayload: `{"id":"job-1"}`,
+		},
 	})
 	if err != nil {
 		t.Fatalf("UpsertPosting (first): %v", err)
 	}
 
 	second, err := s.UpsertPosting(ctx, CreatePostingParams{
-		CompanyID:  acme.ID,
-		Source:     "ashby",
-		SourceID:   "job-1",
-		Title:      "Senior Software Engineer",
-		RawPayload: `{"id":"job-1","title":"Senior Software Engineer"}`,
+		CompanyID: acme.ID,
+		Source:    "ashby",
+		SourceID:  "job-1",
+		IngestedFields: IngestedFields{
+			Title:      "Senior Software Engineer",
+			RawPayload: `{"id":"job-1","title":"Senior Software Engineer"}`,
+		},
 	})
 	if err != nil {
 		t.Fatalf("UpsertPosting (second): %v", err)
@@ -126,11 +134,13 @@ func TestUpsertPosting_OnUpdate_DoesNotChangeListingStatus(t *testing.T) {
 	}
 
 	updated, err := s.UpsertPosting(ctx, CreatePostingParams{
-		CompanyID:  acme.ID,
-		Source:     "ashby",
-		SourceID:   "job-1",
-		Title:      "Software Engineer II",
-		RawPayload: `{"id":"job-1"}`,
+		CompanyID: acme.ID,
+		Source:    "ashby",
+		SourceID:  "job-1",
+		IngestedFields: IngestedFields{
+			Title:      "Software Engineer II",
+			RawPayload: `{"id":"job-1"}`,
+		},
 	})
 	if err != nil {
 		t.Fatalf("UpsertPosting: %v", err)
@@ -367,12 +377,14 @@ func TestListDistinctDepartmentsForCompany_ReturnsSortedUniqueValues(t *testing.
 	sales := "Sales"
 	for i, dept := range []*string{&eng, &sales, &eng} {
 		_, err := s.UpsertPosting(ctx, CreatePostingParams{
-			CompanyID:  acme.ID,
-			Source:     "ashby",
-			SourceID:   fmt.Sprintf("job-%d", i),
-			Title:      "Role",
-			Department: dept,
-			RawPayload: "{}",
+			CompanyID: acme.ID,
+			Source:    "ashby",
+			SourceID:  fmt.Sprintf("job-%d", i),
+			IngestedFields: IngestedFields{
+				Title:      "Role",
+				Department: dept,
+				RawPayload: "{}",
+			},
 		})
 		if err != nil {
 			t.Fatalf("UpsertPosting: %v", err)
@@ -398,12 +410,14 @@ func TestListDistinctLocationsForCompany_ReturnsSortedUniqueValues(t *testing.T)
 	nyc := "New York"
 	for i, loc := range []*string{&nyc, &remote, &remote} {
 		_, err := s.UpsertPosting(ctx, CreatePostingParams{
-			CompanyID:  acme.ID,
-			Source:     "ashby",
-			SourceID:   fmt.Sprintf("job-%d", i),
-			Title:      "Role",
-			Location:   loc,
-			RawPayload: "{}",
+			CompanyID: acme.ID,
+			Source:    "ashby",
+			SourceID:  fmt.Sprintf("job-%d", i),
+			IngestedFields: IngestedFields{
+				Title:      "Role",
+				Location:   loc,
+				RawPayload: "{}",
+			},
 		})
 		if err != nil {
 			t.Fatalf("UpsertPosting: %v", err)
