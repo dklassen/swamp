@@ -13,13 +13,14 @@ import (
 // create, in the order the source field cycles through. Must be kept in
 // sync with cmd/swamp/main.go's newSyncer -- a source added there with no
 // entry here can never actually be added as a company.
-var companySources = []string{"ashby", "greenhouse"}
+var companySources = []string{"ashby", "greenhouse", "lever"}
 
 // sourceRefLabels gives each source's second field a label matching what
 // that source actually needs to identify a company's board.
 var sourceRefLabels = map[string]string{
 	"ashby":      "Ashby slug",
 	"greenhouse": "Greenhouse board token",
+	"lever":      "Lever site",
 }
 
 // formInputs indices: a non-textinput source picker, then name, then
