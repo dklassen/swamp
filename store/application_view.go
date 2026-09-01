@@ -21,43 +21,20 @@ type ApplicationView struct {
 	CompanyName string
 }
 
+// applicationViewFromRow converts a row built by sqlc.embed(applications)/
+// sqlc.embed(postings) -- row.Application and row.Posting are already the
+// exact nested db types those macros generate, so this just runs them
+// through the same conversion every other Application/Posting goes
+// through, rather than hand-reconstructing them field-by-field from a
+// flat row (see decisions.log).
 func applicationViewFromRow(row db.ListActiveApplicationsRow) (ApplicationView, error) {
-	app, err := applicationFromRow(db.Application{
-		ID:        row.ApplicationID,
-		PostingID: row.ID,
-		Status:    row.ApplicationStatus,
-		Notes:     row.ApplicationNotes,
-		CreatedAt: row.ApplicationCreatedAt,
-		UpdatedAt: row.ApplicationUpdatedAt,
-	})
+	app, err := applicationFromRow(row.Application)
 	if err != nil {
 		return ApplicationView{}, err
 	}
 	return ApplicationView{
 		Application: app,
-		Posting: postingFromRow(db.Posting{
-			ID:              row.ID,
-			CompanyID:       row.CompanyID,
-			Source:          row.Source,
-			SourceID:        row.SourceID,
-			Title:           row.Title,
-			Department:      row.Department,
-			Team:            row.Team,
-			Location:        row.Location,
-			EmploymentType:  row.EmploymentType,
-			WorkplaceType:   row.WorkplaceType,
-			DescriptionHtml: row.DescriptionHtml,
-			DescriptionText: row.DescriptionText,
-			JobUrl:          row.JobUrl,
-			ApplicationUrl:  row.ApplicationUrl,
-			PublishedAt:     row.PublishedAt,
-			RawPayload:      row.RawPayload,
-			ListingStatus:   row.ListingStatus,
-			FirstSeenAt:     row.FirstSeenAt,
-			LastSeenAt:      row.LastSeenAt,
-			CreatedAt:       row.CreatedAt,
-			UpdatedAt:       row.UpdatedAt,
-		}),
+		Posting:     postingFromRow(row.Posting),
 		CompanyName: row.CompanyName,
 	}, nil
 }

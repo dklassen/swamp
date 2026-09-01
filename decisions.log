@@ -2226,3 +2226,56 @@ directly (`v.ID`, `v.Status`, `v.PostingID`, `v.Notes` -- the last two
 are new assertions this refactor made possible, since the embedded
 `Application` is now provably complete rather than assumed to be), full
 suite green, lint/fmt clean.
+
+## 2026-08-31 -- ListActiveApplications switched to sqlc.embed()
+Immediate follow-up to the entry above. Bob asked whether the query
+pattern itself (hand-selecting+aliasing individual `postings`/
+`applications` columns, then reconstructing `db.Posting`/`db.Application`
+literals field-by-field in `applicationViewFromRow`) was actually the
+right approach, rather than something already provided by the tooling.
+
+Checked rather than assumed: sqlc has a native macro for exactly this,
+`sqlc.embed(table)` -- it generates a nested struct field (e.g.
+`Posting db.Posting`) instead of flattened columns, with the `Scan()`
+call wired up automatically. Two real open questions before adopting it
+here: does it work on this project's engine (sqlite) at all, and does it
+coexist with a plain aliased column (`companies.name AS company_name`)
+and two embeds in the same inner join? Both had documented rough edges
+elsewhere (a github.com/sqlc-dev/sqlc issue describes `sqlc.embed` with
+a *left* join failing on sqlite when the embedded side is NULL), so
+rather than trust the docs summary, ran the exact shape against a
+scratch copy of this project's real schema (`sqlc generate` against a
+copy of `db/queries`+`db/migrations`, engine sqlite, sqlc v1.31.1 --
+matching `go.mod`/`sqlc.yaml` exactly): `SELECT sqlc.embed(applications),
+sqlc.embed(postings), companies.name AS company_name FROM ... JOIN ...`
+generated exactly the target shape (`ListActiveApplicationsRow{
+Application Application; Posting Posting; CompanyName string }`) with a
+correct, automatic `Scan()`. The known left-join/NULL issue doesn't
+apply here -- this is an inner join, application always exists.
+
+Decision: switched `ListActiveApplications` to `sqlc.embed(applications)`
++ `sqlc.embed(postings)` + the plain `company_name` alias.
+`applicationViewFromRow` now just runs `row.Application`/`row.Posting`
+(already the correct nested db types) through the existing
+`applicationFromRow`/`postingFromRow` conversions -- no more hand-copied
+field lists that silently stop tracking the schema if a column is added
+to `postings`/`applications` later. The `ApplicationView` Go type itself
+(embeds `Application`, from the entry above) is unchanged -- this was
+entirely a query-construction-layer improvement, not a type-shape one.
+
+This came out of a broader conversation about idiomatic Go for
+"entity + resolved related data": composition via embedding is the
+Go-level idiom (settled, unrelated to sqlc); `sqlc.embed()` is the
+sqlc-specific mechanism for producing that composition without hand-
+copying column lists, consistent with sqlc's own query-first (not
+ORM) design -- using it here isn't a stylistic preference, it's using
+the tool actually built for this rather than reimplementing a piece of
+it by hand.
+
+Verified: scratch experiment against real schema+engine before touching
+the real query (not assumed from docs, which were themselves incomplete/
+contradictory across summarized fetches); full build+test+lint+fmt
+clean after the switch; no `store`/`tui` call site needed to change,
+since `ApplicationView`'s public shape didn't change -- confirms the
+type-design (previous entry) and the query-construction fix (this one)
+were genuinely separable decisions, not entangled.

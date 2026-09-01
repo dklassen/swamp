@@ -8,7 +8,6 @@ package db
 import (
 	"context"
 	"database/sql"
-	"time"
 )
 
 const createApplication = `-- name: CreateApplication :one
@@ -63,14 +62,7 @@ func (q *Queries) GetApplication(ctx context.Context, postingID int64) (Applicat
 }
 
 const listActiveApplications = `-- name: ListActiveApplications :many
-SELECT
-    postings.id, postings.company_id, postings.source, postings.source_id, postings.title, postings.department, postings.team, postings.location, postings.employment_type, postings.workplace_type, postings.description_html, postings.description_text, postings.job_url, postings.application_url, postings.published_at, postings.raw_payload, postings.listing_status, postings.first_seen_at, postings.last_seen_at, postings.created_at, postings.updated_at,
-    companies.name AS company_name,
-    applications.id AS application_id,
-    applications.status AS application_status,
-    applications.notes AS application_notes,
-    applications.created_at AS application_created_at,
-    applications.updated_at AS application_updated_at
+SELECT applications.id, applications.posting_id, applications.status, applications.notes, applications.created_at, applications.updated_at, postings.id, postings.company_id, postings.source, postings.source_id, postings.title, postings.department, postings.team, postings.location, postings.employment_type, postings.workplace_type, postings.description_html, postings.description_text, postings.job_url, postings.application_url, postings.published_at, postings.raw_payload, postings.listing_status, postings.first_seen_at, postings.last_seen_at, postings.created_at, postings.updated_at, companies.name AS company_name
 FROM applications
 JOIN postings ON postings.id = applications.posting_id
 JOIN companies ON companies.id = postings.company_id
@@ -79,33 +71,9 @@ ORDER BY applications.updated_at DESC
 `
 
 type ListActiveApplicationsRow struct {
-	ID                   int64          `json:"id"`
-	CompanyID            int64          `json:"company_id"`
-	Source               string         `json:"source"`
-	SourceID             string         `json:"source_id"`
-	Title                string         `json:"title"`
-	Department           sql.NullString `json:"department"`
-	Team                 sql.NullString `json:"team"`
-	Location             sql.NullString `json:"location"`
-	EmploymentType       sql.NullString `json:"employment_type"`
-	WorkplaceType        sql.NullString `json:"workplace_type"`
-	DescriptionHtml      sql.NullString `json:"description_html"`
-	DescriptionText      sql.NullString `json:"description_text"`
-	JobUrl               sql.NullString `json:"job_url"`
-	ApplicationUrl       sql.NullString `json:"application_url"`
-	PublishedAt          sql.NullTime   `json:"published_at"`
-	RawPayload           string         `json:"raw_payload"`
-	ListingStatus        string         `json:"listing_status"`
-	FirstSeenAt          time.Time      `json:"first_seen_at"`
-	LastSeenAt           time.Time      `json:"last_seen_at"`
-	CreatedAt            time.Time      `json:"created_at"`
-	UpdatedAt            time.Time      `json:"updated_at"`
-	CompanyName          string         `json:"company_name"`
-	ApplicationID        int64          `json:"application_id"`
-	ApplicationStatus    sql.NullString `json:"application_status"`
-	ApplicationNotes     string         `json:"application_notes"`
-	ApplicationCreatedAt time.Time      `json:"application_created_at"`
-	ApplicationUpdatedAt time.Time      `json:"application_updated_at"`
+	Application Application `json:"application"`
+	Posting     Posting     `json:"posting"`
+	CompanyName string      `json:"company_name"`
 }
 
 // Applications not at a terminal dead-end status (rejected,
@@ -115,11 +83,12 @@ type ListActiveApplicationsRow struct {
 // for every row here), ordered most-recently-changed first so whatever
 // moved last surfaces at the top.
 //
-// Selects every applications column (aliased to avoid colliding with
-// postings' own id/created_at/updated_at from postings.*) so the Go side
-// can build a complete, honest store.Application via applicationFromRow
-// -- not a partial one that happens to share a name with the real thing
-// (see decisions.log, ApplicationView).
+// sqlc.embed(applications)/sqlc.embed(postings) generate nested
+// Application/Posting fields on the row directly from the schema, rather
+// than us hand-selecting+aliasing individual columns and reconstructing
+// them field-by-field in Go -- verified this works cleanly on this
+// engine (sqlite, sqlc v1.31.1) alongside a plain aliased column, one
+// inner join, no collisions (see decisions.log, ApplicationView).
 func (q *Queries) ListActiveApplications(ctx context.Context) ([]ListActiveApplicationsRow, error) {
 	rows, err := q.db.QueryContext(ctx, listActiveApplications)
 	if err != nil {
@@ -130,33 +99,34 @@ func (q *Queries) ListActiveApplications(ctx context.Context) ([]ListActiveAppli
 	for rows.Next() {
 		var i ListActiveApplicationsRow
 		if err := rows.Scan(
-			&i.ID,
-			&i.CompanyID,
-			&i.Source,
-			&i.SourceID,
-			&i.Title,
-			&i.Department,
-			&i.Team,
-			&i.Location,
-			&i.EmploymentType,
-			&i.WorkplaceType,
-			&i.DescriptionHtml,
-			&i.DescriptionText,
-			&i.JobUrl,
-			&i.ApplicationUrl,
-			&i.PublishedAt,
-			&i.RawPayload,
-			&i.ListingStatus,
-			&i.FirstSeenAt,
-			&i.LastSeenAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
+			&i.Application.ID,
+			&i.Application.PostingID,
+			&i.Application.Status,
+			&i.Application.Notes,
+			&i.Application.CreatedAt,
+			&i.Application.UpdatedAt,
+			&i.Posting.ID,
+			&i.Posting.CompanyID,
+			&i.Posting.Source,
+			&i.Posting.SourceID,
+			&i.Posting.Title,
+			&i.Posting.Department,
+			&i.Posting.Team,
+			&i.Posting.Location,
+			&i.Posting.EmploymentType,
+			&i.Posting.WorkplaceType,
+			&i.Posting.DescriptionHtml,
+			&i.Posting.DescriptionText,
+			&i.Posting.JobUrl,
+			&i.Posting.ApplicationUrl,
+			&i.Posting.PublishedAt,
+			&i.Posting.RawPayload,
+			&i.Posting.ListingStatus,
+			&i.Posting.FirstSeenAt,
+			&i.Posting.LastSeenAt,
+			&i.Posting.CreatedAt,
+			&i.Posting.UpdatedAt,
 			&i.CompanyName,
-			&i.ApplicationID,
-			&i.ApplicationStatus,
-			&i.ApplicationNotes,
-			&i.ApplicationCreatedAt,
-			&i.ApplicationUpdatedAt,
 		); err != nil {
 			return nil, err
 		}

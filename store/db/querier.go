@@ -54,11 +54,12 @@ type Querier interface {
 	// for every row here), ordered most-recently-changed first so whatever
 	// moved last surfaces at the top.
 	//
-	// Selects every applications column (aliased to avoid colliding with
-	// postings' own id/created_at/updated_at from postings.*) so the Go side
-	// can build a complete, honest store.Application via applicationFromRow
-	// -- not a partial one that happens to share a name with the real thing
-	// (see decisions.log, ApplicationView).
+	// sqlc.embed(applications)/sqlc.embed(postings) generate nested
+	// Application/Posting fields on the row directly from the schema, rather
+	// than us hand-selecting+aliasing individual columns and reconstructing
+	// them field-by-field in Go -- verified this works cleanly on this
+	// engine (sqlite, sqlc v1.31.1) alongside a plain aliased column, one
+	// inner join, no collisions (see decisions.log, ApplicationView).
 	ListActiveApplications(ctx context.Context) ([]ListActiveApplicationsRow, error)
 	ListActiveCompanies(ctx context.Context) ([]Company, error)
 	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)

@@ -34,19 +34,13 @@ RETURNING *;
 -- for every row here), ordered most-recently-changed first so whatever
 -- moved last surfaces at the top.
 --
--- Selects every applications column (aliased to avoid colliding with
--- postings' own id/created_at/updated_at from postings.*) so the Go side
--- can build a complete, honest store.Application via applicationFromRow
--- -- not a partial one that happens to share a name with the real thing
--- (see decisions.log, ApplicationView).
-SELECT
-    postings.*,
-    companies.name AS company_name,
-    applications.id AS application_id,
-    applications.status AS application_status,
-    applications.notes AS application_notes,
-    applications.created_at AS application_created_at,
-    applications.updated_at AS application_updated_at
+-- sqlc.embed(applications)/sqlc.embed(postings) generate nested
+-- Application/Posting fields on the row directly from the schema, rather
+-- than us hand-selecting+aliasing individual columns and reconstructing
+-- them field-by-field in Go -- verified this works cleanly on this
+-- engine (sqlite, sqlc v1.31.1) alongside a plain aliased column, one
+-- inner join, no collisions (see decisions.log, ApplicationView).
+SELECT sqlc.embed(applications), sqlc.embed(postings), companies.name AS company_name
 FROM applications
 JOIN postings ON postings.id = applications.posting_id
 JOIN companies ON companies.id = postings.company_id
