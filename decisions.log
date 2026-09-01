@@ -2455,3 +2455,46 @@ site"), pressed 'r' and confirmed a real sync against Ro's live board
 confirming team/location/employment type/workplace type/job URL/
 application URL/plaintext description all render correctly with no HTML
 leakage. Full build/test/lint/fmt clean.
+
+## 2026-09-01 — Trim fetched posting fields before filter matching and persistence
+Context: investigating a Stripe/StackAdapt data-quality question surfaced
+that job board APIs (Greenhouse, Ashby) return free-text fields with
+inconsistent leading/trailing whitespace -- e.g. Stripe's Greenhouse
+listings had both "Dublin" and "Dublin " for the same city, and 35 of
+its postings had padded `location` values. Tracing the ingestion path
+(ashby/greenhouse/lever fetchers -> sync.Posting -> toCreatePostingParams
+-> store) showed no trimming anywhere; every string field was a verbatim
+passthrough from the source API's JSON.
+Decision: added `sanitizePosting` in `sync/sanitize.go`, applied once in
+`SyncCompany` immediately after `fetcher.FetchPostings` returns, trimming
+every free-text `Posting` field (SourceID, Title, Department, Team,
+Location, EmploymentType, WorkplaceType, DescriptionHTML, DescriptionText,
+JobURL, ApplicationURL). `RawPayload` is deliberately left untouched
+(it's the source's raw JSON, kept verbatim for audit) and `PublishedAt`
+isn't a string.
+Why: this is a single choke point that every source funnels through
+before filter matching or persistence, so one function fixes it for all
+three fetchers (and any future ones) rather than patching each
+individually. Applying it before `filter.Match` matters as much as
+applying it before save: `filter.Match` does an exact (case-insensitive)
+comparison, so an untrimmed posting location like "Canada " silently
+failed to match a clean company_filters value of "Canada" -- a real
+matching bug, not just messy stored data. `company_filters` values
+themselves didn't need a separate fix: the TUI populates them from
+`ListDistinctDepartmentsForCompany`/`ListDistinctLocationsForCompany`,
+which read from `postings` -- already-sanitized by this fix.
+Verified: new table-driven unit test for `sanitizePosting` (trims every
+field, leaves RawPayload/PublishedAt untouched). Two new
+`sync.SyncCompany` integration tests: one confirming a padded fetched
+posting is saved trimmed, one reproducing the filter-matching bug
+directly (a "Canada" filter against a fetched "Canada " location) and
+confirming it now matches. Full existing sync suite still green. Full
+build/test/lint/fmt clean.
+Alternatives considered: sanitizing inside each fetcher (ashby_fetcher.go,
+greenhouse_fetcher.go, lever_fetcher.go) individually -- rejected as
+triplicated logic with no shared enforcement if a fetcher is added later
+and someone forgets the trim call. Sanitizing only in
+`toCreatePostingParams` (right before save) -- rejected because it runs
+after `filter.Match`, so it wouldn't have fixed the exact-match bug.
+Did not backfill existing rows with padded values already in the
+database; this fix only prevents new writes from being unsanitized.

@@ -118,6 +118,9 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (Result, erro
 		return result, fmt.Errorf("sync: fetch postings: %w", err)
 	}
 	result.Fetched = len(fetched)
+	for i := range fetched {
+		fetched[i] = sanitizePosting(fetched[i])
+	}
 
 	filters, err := s.store.ListCompanyFilters(ctx, companyID)
 	if err != nil {

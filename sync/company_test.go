@@ -260,3 +260,59 @@ func TestSyncCompany_UnsupportedSource_ReturnsError(t *testing.T) {
 		t.Fatal("SyncCompany: expected error for unsupported source \"lever\", got nil")
 	}
 }
+
+func TestSyncCompany_FetchedPostingHasWhitespace_SavedTrimmed(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	padded := samplePosting("job-1", " Engineer ", " Engineering", "Dublin, Ireland ")
+	fetcher := &fakeFetcher{postings: map[string][]Posting{"acme": {padded}}}
+
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
+		t.Fatalf("SyncCompany: %v", err)
+	}
+
+	postings, err := s.ListPostingsByCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("ListPostingsByCompany: %v", err)
+	}
+	if len(postings) != 1 {
+		t.Fatalf("got %d postings, want 1", len(postings))
+	}
+	if postings[0].Title != "Engineer" {
+		t.Fatalf("posting title = %q, want %q", postings[0].Title, "Engineer")
+	}
+	if postings[0].Department == nil || *postings[0].Department != "Engineering" {
+		t.Fatalf("posting department = %v, want %q", postings[0].Department, "Engineering")
+	}
+	if postings[0].Location == nil || *postings[0].Location != "Dublin, Ireland" {
+		t.Fatalf("posting location = %v, want %q", postings[0].Location, "Dublin, Ireland")
+	}
+}
+
+// This is the concrete bug the whitespace issue caused: filter.Match does
+// an exact (case-insensitive) comparison, so a clean filter value like
+// "Canada" silently failed to match a fetched posting location of
+// "Canada " before fetched postings were sanitized.
+func TestSyncCompany_FilterValueMatchesTrimmedLocation_PostingCreated(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	if _, err := s.CreateCompanyFilter(ctx, company.ID, "location", "Canada"); err != nil {
+		t.Fatalf("CreateCompanyFilter: %v", err)
+	}
+	padded := samplePosting("job-1", "Engineer", "Engineering", "Canada ")
+	fetcher := &fakeFetcher{postings: map[string][]Posting{"acme": {padded}}}
+
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	result, err := syncer.SyncCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("SyncCompany: %v", err)
+	}
+	if result.Created != 1 {
+		t.Fatalf("result.Created = %d, want 1", result.Created)
+	}
+}
