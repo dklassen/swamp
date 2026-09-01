@@ -65,10 +65,15 @@ func TestCompanyFormModel_RightArrow_OnSourceField_CyclesSource(t *testing.T) {
 		t.Fatalf("source after right = %q, want greenhouse", companySources[m.sourceIndex])
 	}
 
+	m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	if companySources[m.sourceIndex] != "lever" {
+		t.Fatalf("source after second right = %q, want lever", companySources[m.sourceIndex])
+	}
+
 	// Wraps back around rather than clamping.
 	m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	if companySources[m.sourceIndex] != "ashby" {
-		t.Fatalf("source after second right = %q, want ashby (wrapped)", companySources[m.sourceIndex])
+		t.Fatalf("source after third right = %q, want ashby (wrapped)", companySources[m.sourceIndex])
 	}
 }
 
@@ -77,8 +82,8 @@ func TestCompanyFormModel_LeftArrow_OnSourceField_CyclesSourceBackward(t *testin
 
 	m := newCompanyFormModel(nil)
 	m.Update(tea.KeyMsg{Type: tea.KeyLeft})
-	if companySources[m.sourceIndex] != "greenhouse" {
-		t.Fatalf("source after left = %q, want greenhouse (wrapped backward)", companySources[m.sourceIndex])
+	if companySources[m.sourceIndex] != "lever" {
+		t.Fatalf("source after left = %q, want lever (wrapped backward to the last source)", companySources[m.sourceIndex])
 	}
 }
 
@@ -165,6 +170,44 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithSelectedSource(t *testing.T) {
 	}
 	if stored.Source != "greenhouse" || stored.SourceRef != "acme-token" {
 		t.Fatalf("stored company = %+v, want Source=greenhouse SourceRef=acme-token", stored)
+	}
+}
+
+func TestCompanyFormModel_Enter_CreatesCompanyWithLeverSource(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	m := newCompanyFormModel(s)
+	m.Update(tea.KeyMsg{Type: tea.KeyLeft}) // wraps backward to lever, the last source
+	if companySources[m.sourceIndex] != "lever" {
+		t.Fatalf("source after left = %q, want lever", companySources[m.sourceIndex])
+	}
+	m.inputs[formFieldName].SetValue("Acme")
+	m.inputs[formFieldSourceRef].SetValue("acme")
+
+	cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("cmd = nil, want a command that creates the company")
+	}
+
+	msg := cmd()
+	created, ok := msg.(companyCreatedMsg)
+	if !ok {
+		t.Fatalf("msg = %T, want companyCreatedMsg", msg)
+	}
+	if created.err != nil {
+		t.Fatalf("companyCreatedMsg.err = %v, want nil", created.err)
+	}
+	if created.company.Source != "lever" {
+		t.Fatalf("created company Source = %q, want %q", created.company.Source, "lever")
+	}
+
+	stored, err := s.GetCompany(context.Background(), created.company.ID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+	if stored.Source != "lever" || stored.SourceRef != "acme" {
+		t.Fatalf("stored company = %+v, want Source=lever SourceRef=acme", stored)
 	}
 }
 

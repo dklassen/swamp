@@ -2405,3 +2405,53 @@ drift-detection integration test; both pre-existing `ListActiveApplications`
 tests unchanged and green against the real store; full build/test/lint/
 fmt clean; `tui`'s call site (`app.go`) untouched and still green,
 confirming the public API didn't change.
+
+## 2026-09-01 -- Add Lever job board support (#31)
+Third source, following the exact adapter pattern #30 (Greenhouse)
+established: `sync.PostingFetcher` interface, a `lever` package mirroring
+`ashby`/`greenhouse`'s shape, a `LeverFetcher` translation adapter, wired
+into `cmd/swamp/main.go`'s `newSyncer` and the TUI's company-form source
+picker (`companySources`, `sourceRefLabels`).
+
+Verified Lever's actual public API against real live data before writing
+any code, rather than assuming from docs (the issue itself flagged this
+as unverified). `GET https://api.lever.co/v0/postings/{site}?mode=json`
+-- found a real active board (`ro`, Ro/Roman Health) by probing several
+candidate site slugs directly, then fetched its real JSON with curl.
+Caught two concrete discrepancies between the docs summary and live
+data: `workplaceType`'s real value is `"onsite"`, not `"on-site"` as the
+docs description implied; `categories.department` is omitted from the
+JSON entirely when unset, not sent as `""`. Also confirmed structural
+facts the issue left open: the top-level response is a bare JSON array
+(not `{"jobs": [...]}` like Ashby/Greenhouse), `createdAt` is
+milliseconds since the Unix epoch (not seconds), and an unbounded
+request (no `skip`/`limit`) returns everything in one call -- Ro's real
+48 postings came back with no pagination needed, consistent with how
+`ashby`/`greenhouse` are already implemented (single-request, no
+pagination loop).
+
+One implementation detail worth noting: Lever provides `descriptionPlain`
+natively, unlike Greenhouse (HTML-only, required `stripHTML`, see
+`greenhouse/html.go`) -- no HTML-stripping utility needed here at all.
+
+`companySources` gained a third entry (`lever`, appended last, cycling
+order ashby -> greenhouse -> lever). This changed two existing tests'
+expected wrap-around values (`TestCompanyFormModel_RightArrow_...`,
+`TestCompanyFormModel_LeftArrow_...` in `tui/company_form_test.go`) --
+updated them to match 3 sources instead of 2, plus added a
+Lever-specific creation test mirroring the existing Greenhouse one.
+
+Verified: `lever` package unit tests against a hand-built fixture
+(covering the confirmed missing-department behavior explicitly,
+`RawPayload` preservation, non-OK status handling) plus a throwaway
+verification program run directly against Ro's live board (not just the
+fixture) confirming the real client decodes real dates/URLs/fields
+correctly end to end. `sync.LeverFetcher` translation test. Manually
+verified via tmux end to end against the real built binary: added a
+company with source=lever through the actual TUI form (source picker
+showed all three options, cycling worked, label switched to "Lever
+site"), pressed 'r' and confirmed a real sync against Ro's live board
+(48 fetched, 48 created), and opened a real posting's detail view
+confirming team/location/employment type/workplace type/job URL/
+application URL/plaintext description all render correctly with no HTML
+leakage. Full build/test/lint/fmt clean.

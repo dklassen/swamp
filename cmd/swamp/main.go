@@ -22,6 +22,7 @@ import (
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/greenhouse"
+	"github.com/dklassen/swamp/lever"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
@@ -90,6 +91,7 @@ func newSyncer(s *store.Store) *sync.Syncer {
 	return sync.New(s, map[string]sync.PostingFetcher{
 		"ashby":      sync.NewAshbyFetcher(ashby.NewClient()),
 		"greenhouse": sync.NewGreenhouseFetcher(greenhouse.NewClient()),
+		"lever":      sync.NewLeverFetcher(lever.NewClient()),
 	})
 }
 
