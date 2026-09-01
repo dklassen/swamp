@@ -2,6 +2,7 @@ package migrations
 
 import (
 	"database/sql"
+	"strings"
 	"testing"
 
 	"github.com/pressly/goose/v3"
@@ -268,5 +269,81 @@ func TestApplicationStatusHasNoDBDefault(t *testing.T) {
 	}
 	if status.Valid {
 		t.Fatalf("applications.status = %q, want NULL (no DB default)", status.String)
+	}
+}
+
+// TestTrimExistingPostingWhitespace_TrimsPaddedFields verifies the 00005
+// migration's backfill: postings written before sync started trimming
+// fetched fields (see sync.sanitizePosting) had padded whitespace on
+// free-text columns, e.g. Stripe's Greenhouse listings showing up as
+// both "Dublin" and "Dublin ". This migration cleans up what's already
+// stored; raw_payload is deliberately left untouched (raw source JSON,
+// kept verbatim for audit).
+func TestTrimExistingPostingWhitespace_TrimsPaddedFields(t *testing.T) {
+	sqlDB := migrateTo(t, 4)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO postings (
+			id, company_id, source, source_id, title, department, team, location,
+			employment_type, workplace_type, description_html, description_text,
+			job_url, application_url, raw_payload
+		 ) VALUES (
+			1, 1, 'ashby', ' job-1 ', ' Engineer ', ' Engineering', 'Core ', ' Dublin, Ireland ',
+			' FullTime ', ' Remote ', ' <p>desc</p> ', ' desc ',
+			' https://example.com/job-1 ', ' https://example.com/job-1/apply ', ' {"padded":true} '
+		 )`,
+	); err != nil {
+		t.Fatalf("insert posting: %v", err)
+	}
+
+	if err := goose.UpTo(sqlDB, ".", 5); err != nil {
+		t.Fatalf("migrate to version 5: %v", err)
+	}
+
+	var (
+		sourceID, title, department, team, location                     string
+		employmentType, workplaceType, descriptionHTML, descriptionText string
+		jobURL, applicationURL, rawPayload                              string
+	)
+	if err := sqlDB.QueryRow(
+		`SELECT source_id, title, department, team, location,
+		        employment_type, workplace_type, description_html, description_text,
+		        job_url, application_url, raw_payload
+		 FROM postings WHERE id = 1`,
+	).Scan(
+		&sourceID, &title, &department, &team, &location,
+		&employmentType, &workplaceType, &descriptionHTML, &descriptionText,
+		&jobURL, &applicationURL, &rawPayload,
+	); err != nil {
+		t.Fatalf("query posting: %v", err)
+	}
+
+	for name, got := range map[string]string{
+		"source_id":        sourceID,
+		"title":            title,
+		"department":       department,
+		"team":             team,
+		"location":         location,
+		"employment_type":  employmentType,
+		"workplace_type":   workplaceType,
+		"description_html": descriptionHTML,
+		"description_text": descriptionText,
+		"job_url":          jobURL,
+		"application_url":  applicationURL,
+	} {
+		if got != strings.TrimSpace(got) || strings.Contains(got, "  ") {
+			t.Errorf("%s = %q, want trimmed", name, got)
+		}
+	}
+	if location != "Dublin, Ireland" {
+		t.Errorf("location = %q, want %q", location, "Dublin, Ireland")
+	}
+	if rawPayload != ` {"padded":true} ` {
+		t.Errorf("raw_payload = %q, want untouched", rawPayload)
 	}
 }
