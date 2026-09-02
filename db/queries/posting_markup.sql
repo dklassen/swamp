@@ -11,12 +11,6 @@ RETURNING *;
 SELECT * FROM posting_markup
 WHERE posting_id = ?;
 
--- name: MarkPostingInterested :one
-UPDATE posting_markup
-SET interested_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-WHERE posting_id = ?
-RETURNING *;
-
 -- name: UnmarkPostingInterested :one
 UPDATE posting_markup
 SET interested_at = NULL, updated_at = CURRENT_TIMESTAMP
@@ -24,18 +18,12 @@ WHERE posting_id = ?
 RETURNING *;
 
 -- name: SetPostingInterested :one
--- Like MarkPostingInterested, but also clears archived_at: the TUI treats
+-- Sets interested_at and also clears archived_at: the TUI treats
 -- interested/archived as mutually exclusive from the user's perspective
 -- (pressing "interested" while archived switches state rather than
 -- stacking), even though the schema itself allows both to be set.
 UPDATE posting_markup
 SET interested_at = CURRENT_TIMESTAMP, archived_at = NULL, updated_at = CURRENT_TIMESTAMP
-WHERE posting_id = ?
-RETURNING *;
-
--- name: ArchivePosting :one
-UPDATE posting_markup
-SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
 WHERE posting_id = ?
 RETURNING *;
 

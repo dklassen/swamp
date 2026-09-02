@@ -11,7 +11,6 @@ import (
 
 type Querier interface {
 	AddTagToPosting(ctx context.Context, arg AddTagToPostingParams) error
-	ArchivePosting(ctx context.Context, postingID int64) (PostingMarkup, error)
 	// Unlike posting_markup, not auto-created for every posting -- an
 	// application exists only once the user takes an explicit "start
 	// application" action. status is supplied explicitly by the caller
@@ -105,14 +104,13 @@ type Querier interface {
 	// later soft-deleted (see schema comment on posting_tags).
 	ListTagsForPosting(ctx context.Context, postingID int64) ([]Tag, error)
 	MarkPostingClosed(ctx context.Context, id int64) error
-	MarkPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error)
 	MarkPostingReopened(ctx context.Context, id int64) error
 	RemoveTagFromPosting(ctx context.Context, arg RemoveTagFromPostingParams) error
 	RestoreCompany(ctx context.Context, id int64) error
 	RestoreCompanyWithName(ctx context.Context, arg RestoreCompanyWithNameParams) (Company, error)
 	// See SetPostingInterested -- same mutual-exclusivity reasoning, mirrored.
 	SetPostingArchived(ctx context.Context, postingID int64) (PostingMarkup, error)
-	// Like MarkPostingInterested, but also clears archived_at: the TUI treats
+	// Sets interested_at and also clears archived_at: the TUI treats
 	// interested/archived as mutually exclusive from the user's perspective
 	// (pressing "interested" while archived switches state rather than
 	// stacking), even though the schema itself allows both to be set.

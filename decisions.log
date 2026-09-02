@@ -2637,3 +2637,38 @@ TestApp_PressX_WhileHidingArchived_RemovesPostingFromViewAndClampsCursor)
 pass unchanged. Manually verified via tmux against a seeded scratch db:
 rename, delete, and archive-while-hiding all behave identically to
 before. Full build/test/lint/fmt clean.
+
+## 2026-09-02 -- Remove dead MarkPostingInterested/ArchivePosting (#58)
+Context: store/posting_markup.go exposed 8 methods for two independent
+booleans (interested/archived) plus notes. MarkPostingInterested and
+ArchivePosting had zero production callers -- confirmed via grep across
+the whole repo, only their own tests called them -- while every real
+caller (tui/app.go's toggleInterested/toggleArchived) used the Set*
+variants. The undocumented-in-the-name difference (SetPostingInterested
+also clears ArchivedAt; MarkPostingInterested doesn't) was a silent
+correctness footgun: picking the wrong one produces wrong markup state
+with no compiler or obvious runtime error.
+Decision: removed MarkPostingInterested and ArchivePosting (Store
+methods, sqlc queries in db/queries/posting_markup.sql, and generated
+store/db code via `task sqlc:generate`) rather than renaming to make the
+"also clears" behavior explicit -- the issue's own preferred option,
+since these two were genuinely unused rather than needed under a
+clearer name. UnmarkPostingInterested/UnarchivePosting stay (real
+production callers, the "toggle off" counterparts). UpdatePostingMarkupNotes
+was also found to have zero production callers (posting-markup notes
+have no TUI entry point -- only Application.Notes does) but is left
+alone: out of scope, not something this issue flagged, and removing it
+wasn't asked for.
+TestListInterestedPostings_ExcludesArchived used ArchivePosting
+specifically to construct "interested AND archived simultaneously set"
+(a state the schema allows but, after this change, no longer reachable
+through any public Store method) to guard ListInterestedPostings' WHERE
+clause itself, not just today's TUI-reachable states. Rewrote it to set
+archived_at via a direct SQL UPDATE against s.sqlDB (the test file is
+package store, so this is in-package, not a new exported backdoor) so
+the invariant stays tested rather than being silently narrowed to
+"archived implies not interested" by construction.
+Verified: full build/test/lint/fmt clean. Manually verified via tmux
+against a seeded scratch db: interested toggle on/off, archive, and
+unarchive all still work through the TUI exactly as before (no TUI code
+changed).

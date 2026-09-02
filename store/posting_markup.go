@@ -51,17 +51,6 @@ func (s *Store) GetPostingMarkup(ctx context.Context, postingID int64) (PostingM
 	return postingMarkupFromRow(row), nil
 }
 
-func (s *Store) MarkPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error) {
-	row, err := s.queries.MarkPostingInterested(ctx, postingID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return PostingMarkup{}, ErrNotFound
-		}
-		return PostingMarkup{}, err
-	}
-	return postingMarkupFromRow(row), nil
-}
-
 func (s *Store) UnmarkPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error) {
 	row, err := s.queries.UnmarkPostingInterested(ctx, postingID)
 	if err != nil {
@@ -73,21 +62,10 @@ func (s *Store) UnmarkPostingInterested(ctx context.Context, postingID int64) (P
 	return postingMarkupFromRow(row), nil
 }
 
-// SetPostingInterested is like MarkPostingInterested but also clears
-// ArchivedAt -- see the SetPostingInterested query comment for why.
+// SetPostingInterested sets InterestedAt and also clears ArchivedAt --
+// see the SetPostingInterested query comment for why.
 func (s *Store) SetPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error) {
 	row, err := s.queries.SetPostingInterested(ctx, postingID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return PostingMarkup{}, ErrNotFound
-		}
-		return PostingMarkup{}, err
-	}
-	return postingMarkupFromRow(row), nil
-}
-
-func (s *Store) ArchivePosting(ctx context.Context, postingID int64) (PostingMarkup, error) {
-	row, err := s.queries.ArchivePosting(ctx, postingID)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return PostingMarkup{}, ErrNotFound
