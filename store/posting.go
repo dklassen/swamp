@@ -10,53 +10,54 @@ import (
 	"github.com/dklassen/swamp/store/db"
 )
 
+// IngestedFields is a posting's content as ingested from its source --
+// exactly the fields store.Posting and CreatePostingParams share, and
+// exactly the fields a re-fetch needs to compare to detect a real
+// content change (see sync/company.go's use of this type). Pulled into
+// one type so there's a single place defining "what counts as a
+// posting's content," rather than that field list being hand-copied at
+// every site that needs it (see decisions.log, #57).
+type IngestedFields struct {
+	Title           string
+	Department      *string
+	Team            *string
+	Location        *string
+	EmploymentType  *string
+	WorkplaceType   *string
+	DescriptionHTML *string
+	DescriptionText *string
+	JobURL          *string
+	ApplicationURL  *string
+	PublishedAt     *time.Time
+	RawPayload      string
+}
+
 // Posting is a source-agnostic job posting: canonical fields are
 // normalized across boards, RawPayload preserves the original response for
 // anything not (yet) promoted to a canonical field.
 type Posting struct {
-	ID              int64
-	CompanyID       int64
-	Source          string
-	SourceID        string
-	Title           string
-	Department      *string
-	Team            *string
-	Location        *string
-	EmploymentType  *string
-	WorkplaceType   *string
-	DescriptionHTML *string
-	DescriptionText *string
-	JobURL          *string
-	ApplicationURL  *string
-	PublishedAt     *time.Time
-	RawPayload      string
-	ListingStatus   string
-	FirstSeenAt     time.Time
-	LastSeenAt      time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	ID        int64
+	CompanyID int64
+	Source    string
+	SourceID  string
+	IngestedFields
+	ListingStatus string
+	FirstSeenAt   time.Time
+	LastSeenAt    time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
-// CreatePostingParams are the ingested fields for a posting. This is the
-// shape whoever maps a source-specific posting (e.g. ashby.Posting) into
-// store is expected to populate; store itself has no knowledge of any
-// specific job board.
+// CreatePostingParams are the ingested fields for a posting, plus the
+// identity fields needed to place it. This is the shape whoever maps a
+// source-specific posting (e.g. a jobboard.Posting) into store is
+// expected to populate; store itself has no knowledge of any specific
+// job board.
 type CreatePostingParams struct {
-	CompanyID       int64
-	Source          string
-	SourceID        string
-	Title           string
-	Department      *string
-	Team            *string
-	Location        *string
-	EmploymentType  *string
-	WorkplaceType   *string
-	DescriptionHTML *string
-	DescriptionText *string
-	JobURL          *string
-	ApplicationURL  *string
-	PublishedAt     *time.Time
-	RawPayload      string
+	CompanyID int64
+	Source    string
+	SourceID  string
+	IngestedFields
 }
 
 func postingFromRow(row db.Posting) Posting {
@@ -65,14 +66,14 @@ func postingFromRow(row db.Posting) Posting {
 		CompanyID:     row.CompanyID,
 		Source:        row.Source,
 		SourceID:      row.SourceID,
-		Title:         row.Title,
-		RawPayload:    row.RawPayload,
 		ListingStatus: row.ListingStatus,
 		FirstSeenAt:   row.FirstSeenAt,
 		LastSeenAt:    row.LastSeenAt,
 		CreatedAt:     row.CreatedAt,
 		UpdatedAt:     row.UpdatedAt,
 	}
+	p.Title = row.Title
+	p.RawPayload = row.RawPayload
 	if row.Department.Valid {
 		p.Department = &row.Department.String
 	}

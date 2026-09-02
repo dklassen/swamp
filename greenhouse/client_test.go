@@ -11,6 +11,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
+
+	"github.com/dklassen/swamp/jobboard"
 )
 
 func newTestServer(t *testing.T, fixturePath string) *httptest.Server {
@@ -45,7 +47,7 @@ func TestFetchPostings_ReturnsPostingsFromFixture(t *testing.T) {
 		t.Fatalf("got %d postings, want 2", len(postings))
 	}
 
-	want := Posting{
+	want := jobboard.Posting{
 		SourceID:        "4123456",
 		Title:           "Security Engineer, Cloud",
 		Department:      "Engineering",
@@ -57,7 +59,7 @@ func TestFetchPostings_ReturnsPostingsFromFixture(t *testing.T) {
 		PublishedAt:     time.Date(2026, 4, 7, 17, 12, 35, 0, time.UTC),
 	}
 
-	if diff := cmp.Diff(want, postings[0], cmpopts.IgnoreFields(Posting{}, "RawPayload")); diff != "" {
+	if diff := cmp.Diff(want, postings[0], cmpopts.IgnoreFields(jobboard.Posting{}, "RawPayload")); diff != "" {
 		t.Fatalf("first posting mismatch (-want +got):\n%s", diff)
 	}
 }

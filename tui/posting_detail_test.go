@@ -13,7 +13,7 @@ import (
 func TestPostingDetailModel_New_RendersTitleAndContent(t *testing.T) {
 	t.Parallel()
 
-	p := store.Posting{ID: 1, Title: "Engineer"}
+	p := store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}}
 	m := newPostingDetailModel(nil, nil, 80, 20, p, store.Application{}, false)
 	if !containsAll(m.View(), "Engineer", "No application started") {
 		t.Fatalf("View() = %q, want it to contain title and no-application message", m.View())
@@ -133,7 +133,7 @@ func TestPostingDetailModel_N_HasApplication_ReturnsEnterNotesMsg(t *testing.T) 
 func TestPostingDetailModel_Resize_RebuildsViewportAtNewDimensions(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 1, Title: "Engineer"}, store.Application{}, false)
+	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}}, store.Application{}, false)
 	m.resize(40, 10)
 	if m.viewport.Width != 40 || m.viewport.Height != 10 {
 		t.Fatalf("viewport dims = %dx%d, want 40x10", m.viewport.Width, m.viewport.Height)

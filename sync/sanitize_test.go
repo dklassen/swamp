@@ -3,13 +3,15 @@ package sync
 import (
 	"testing"
 	"time"
+
+	"github.com/dklassen/swamp/jobboard"
 )
 
 func TestSanitizePosting_TrimsWhitespaceOnStringFields(t *testing.T) {
 	published := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	raw := []byte(`{"id":" job-1 "}`)
 
-	p := Posting{
+	p := jobboard.Posting{
 		SourceID:        " job-1 ",
 		Title:           "  Engineer ",
 		Department:      " Engineering",
@@ -27,7 +29,7 @@ func TestSanitizePosting_TrimsWhitespaceOnStringFields(t *testing.T) {
 
 	got := sanitizePosting(p)
 
-	want := Posting{
+	want := jobboard.Posting{
 		SourceID:        "job-1",
 		Title:           "Engineer",
 		Department:      "Engineering",
@@ -43,7 +45,7 @@ func TestSanitizePosting_TrimsWhitespaceOnStringFields(t *testing.T) {
 		RawPayload:      raw,
 	}
 
-	// Posting contains a []byte field so it isn't comparable with ==;
+	// jobboard.Posting contains a []byte field so it isn't comparable with ==;
 	// compare field by field instead.
 	if got.SourceID != want.SourceID ||
 		got.Title != want.Title ||
@@ -63,7 +65,7 @@ func TestSanitizePosting_TrimsWhitespaceOnStringFields(t *testing.T) {
 }
 
 func TestSanitizePosting_LeavesRawPayloadUntouched(t *testing.T) {
-	p := Posting{RawPayload: []byte(` {"padded": true} `)}
+	p := jobboard.Posting{RawPayload: []byte(` {"padded": true} `)}
 
 	got := sanitizePosting(p)
 

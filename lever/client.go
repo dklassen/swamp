@@ -1,8 +1,8 @@
 // Package lever is a client for Lever's public Postings API
 // (https://github.com/lever/postings-api). It fetches published postings
 // for a company's Lever job board and normalizes them into the
-// domain-shaped Posting type, preserving each posting's raw JSON so
-// nothing is lost even for fields not yet mapped.
+// domain-shaped jobboard.Posting type, preserving each posting's raw JSON
+// so nothing is lost even for fields not yet mapped.
 //
 // Unlike Ashby/Greenhouse, Lever's response is a bare JSON array, not an
 // object wrapping a "jobs" field. Lever also provides a plain-text
@@ -19,25 +19,11 @@ import (
 	"fmt"
 	"net/http"
 	"time"
+
+	"github.com/dklassen/swamp/jobboard"
 )
 
 const defaultBaseURL = "https://api.lever.co"
-
-type Posting struct {
-	SourceID        string
-	Title           string
-	Department      string
-	Team            string
-	Location        string
-	EmploymentType  string
-	WorkplaceType   string
-	DescriptionHTML string
-	DescriptionText string
-	JobURL          string
-	ApplicationURL  string
-	PublishedAt     time.Time
-	RawPayload      []byte
-}
 
 type Client struct {
 	httpClient *http.Client
@@ -90,7 +76,7 @@ type posting struct {
 // FetchPostings fetches site's published postings. mode=json selects the
 // JSON response format (Lever also supports html/iframe modes for
 // embedding, not relevant here).
-func (c *Client) FetchPostings(ctx context.Context, site string) ([]Posting, error) {
+func (c *Client) FetchPostings(ctx context.Context, site string) ([]jobboard.Posting, error) {
 	url := fmt.Sprintf("%s/v0/postings/%s?mode=json", c.baseURL, site)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -113,13 +99,13 @@ func (c *Client) FetchPostings(ctx context.Context, site string) ([]Posting, err
 		return nil, fmt.Errorf("lever: decode postings response: %w", err)
 	}
 
-	postings := make([]Posting, len(raw))
+	postings := make([]jobboard.Posting, len(raw))
 	for i, r := range raw {
 		var p posting
 		if err := json.Unmarshal(r, &p); err != nil {
 			return nil, fmt.Errorf("lever: decode posting: %w", err)
 		}
-		postings[i] = Posting{
+		postings[i] = jobboard.Posting{
 			SourceID:        p.ID,
 			Title:           p.Text,
 			Department:      p.Categories.Department,
