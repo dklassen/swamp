@@ -1,0 +1,95 @@
+# Your Name — Skills & Experience Reference
+
+Use this file when generating tailored applications. Pull from this, don't invent.
+
+Copy this file to `PROFILE_REFERENCE.md` (gitignored — it's personal and
+shouldn't be committed) and fill in your own background. This is the
+source of truth the `apply-to-posting` skill draws from when drafting
+cover letters and resumes for postings tracked in Swamp.
+
+---
+
+## Career Arc
+
+A short paragraph framing your overall trajectory: what kind of roles you've
+held, what you're known for, what you're looking for next, and any
+constraints worth stating up front (location, remote/onsite, seniority
+level). Note anything you want every draft to consistently avoid or lead
+with (e.g. "don't lead with years of experience").
+
+---
+
+## Experience
+
+### Company Name — Title (Start–End)
+
+A one-line note on how central this role is and what to pull from it.
+
+- Bullet point describing a concrete accomplishment, with **key
+  technologies/skills** bolded so they're easy to scan
+- Another accomplishment — quantify impact where you can (scale, latency,
+  team size, revenue, etc.)
+- ...
+
+**Framing options:**
+
+- Which angle to lead with when this role is most relevant (e.g. "backend
+  engineering angle: ...")
+- Another possible angle
+
+<!-- Repeat one "### Company Name — Title (Start–End)" section per role,
+     most recent first. -->
+
+---
+
+## Education
+
+**Degree, Field — Institution (Year)**
+One line on focus/specialization if relevant.
+
+---
+
+## Technical Skills
+
+### Languages
+
+- **Primary language** (current)
+- Other languages, roughly ordered by depth of experience
+
+### <Domain-specific category, e.g. "Data & Streaming">
+
+- Tools/technologies with a short note on where you used them
+
+### Infrastructure & DevOps
+
+- Tools/technologies with a short note on where you used them
+
+### Not in background (be honest)
+
+- Technologies you're explicitly NOT experienced with, so drafts never
+  claim them — list what you know only by reputation/tradeoffs vs. what
+  you've actually operated
+
+---
+
+## Leadership & Other
+
+- Team leadership, mentoring, cross-functional collaboration
+- Certifications, side projects, community involvement, anything else
+  worth surfacing
+
+---
+
+## Narrative Strengths (by role type)
+
+| Role type          | Lead with                          | Supporting evidence        |
+| ------------------- | ----------------------------------- | --------------------------- |
+| e.g. Backend eng    | Which experience to open with       | What backs it up secondarily |
+| e.g. Platform/infra | Which experience to open with       | What backs it up secondarily |
+
+---
+
+## Voice & Style Notes
+
+- Any prose conventions to follow or avoid (em dashes, sentence rhythm,
+  tone, spelling convention, humour, etc.) so drafts sound like you
