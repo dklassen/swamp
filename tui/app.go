@@ -234,6 +234,16 @@ func indexOfPosting(postings []store.Posting, id int64) int {
 	return -1
 }
 
+// indexOfCompany returns id's index in companies, or -1 if not present.
+func indexOfCompany(companies []store.Company, id int64) int {
+	for i, c := range companies {
+		if c.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
 type companiesLoadedMsg struct {
 	companies []store.Company
 	err       error
@@ -606,11 +616,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case companyDeletedMsg:
 		a.err = msg.err
 		if msg.err == nil {
-			for i, c := range a.companies {
-				if c.ID == msg.companyID {
-					a.companies = append(a.companies[:i], a.companies[i+1:]...)
-					break
-				}
+			if i := indexOfCompany(a.companies, msg.companyID); i != -1 {
+				a.companies = append(a.companies[:i], a.companies[i+1:]...)
 			}
 			a.companyList.clampCursor(len(a.companies))
 		}
@@ -618,11 +625,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		a.companyEdit.saveResolved()
 		if msg.err == nil {
-			for i, c := range a.companies {
-				if c.ID == msg.company.ID {
-					a.companies[i] = msg.company
-					break
-				}
+			if i := indexOfCompany(a.companies, msg.company.ID); i != -1 {
+				a.companies[i] = msg.company
 			}
 			sortCompaniesByName(a.companies)
 			a.screen = screenCompanyList
@@ -662,11 +666,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// again requires pressing 'A' first (it's no longer
 			// reachable by cursor once hidden).
 			if a.hideArchived && msg.markup.ArchivedAt != nil {
-				for i, p := range a.postings {
-					if p.ID == msg.markup.PostingID {
-						a.postings = append(a.postings[:i], a.postings[i+1:]...)
-						break
-					}
+				if i := indexOfPosting(a.postings, msg.markup.PostingID); i != -1 {
+					a.postings = append(a.postings[:i], a.postings[i+1:]...)
 				}
 				a.postingList.clampCursor(len(a.postings))
 			}
