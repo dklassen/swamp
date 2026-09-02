@@ -9,27 +9,6 @@ import (
 	"context"
 )
 
-const archivePosting = `-- name: ArchivePosting :one
-UPDATE posting_markup
-SET archived_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-WHERE posting_id = ?
-RETURNING posting_id, interested_at, archived_at, notes, created_at, updated_at
-`
-
-func (q *Queries) ArchivePosting(ctx context.Context, postingID int64) (PostingMarkup, error) {
-	row := q.db.QueryRowContext(ctx, archivePosting, postingID)
-	var i PostingMarkup
-	err := row.Scan(
-		&i.PostingID,
-		&i.InterestedAt,
-		&i.ArchivedAt,
-		&i.Notes,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const createPostingMarkup = `-- name: CreatePostingMarkup :one
 INSERT INTO posting_markup (posting_id)
 VALUES (?)
@@ -73,27 +52,6 @@ func (q *Queries) GetPostingMarkup(ctx context.Context, postingID int64) (Postin
 	return i, err
 }
 
-const markPostingInterested = `-- name: MarkPostingInterested :one
-UPDATE posting_markup
-SET interested_at = CURRENT_TIMESTAMP, updated_at = CURRENT_TIMESTAMP
-WHERE posting_id = ?
-RETURNING posting_id, interested_at, archived_at, notes, created_at, updated_at
-`
-
-func (q *Queries) MarkPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error) {
-	row := q.db.QueryRowContext(ctx, markPostingInterested, postingID)
-	var i PostingMarkup
-	err := row.Scan(
-		&i.PostingID,
-		&i.InterestedAt,
-		&i.ArchivedAt,
-		&i.Notes,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const setPostingArchived = `-- name: SetPostingArchived :one
 UPDATE posting_markup
 SET archived_at = CURRENT_TIMESTAMP, interested_at = NULL, updated_at = CURRENT_TIMESTAMP
@@ -123,7 +81,7 @@ WHERE posting_id = ?
 RETURNING posting_id, interested_at, archived_at, notes, created_at, updated_at
 `
 
-// Like MarkPostingInterested, but also clears archived_at: the TUI treats
+// Sets interested_at and also clears archived_at: the TUI treats
 // interested/archived as mutually exclusive from the user's perspective
 // (pressing "interested" while archived switches state rather than
 // stacking), even though the schema itself allows both to be set.
