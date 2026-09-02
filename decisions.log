@@ -2618,3 +2618,22 @@ respect. Updated the doc comments in cmd/swamp/main.go, jobboard/posting.go,
 and filter/filter.go that described the now-removed aliases.
 Verified: full build/vet/test/lint/fmt clean, no test assertions changed
 (construction syntax only).
+
+## 2026-09-02 -- Add indexOfCompany, matching indexOfPosting (#40)
+Context: tui/app.go had three independent inline "loop over a slice,
+compare .ID, break" copies (companyDeletedMsg, companyNameUpdatedMsg,
+postingMarkupUpdatedMsg's archive-removal branch), plus a fourth,
+already-generalized version (indexOfPosting) that was typed to
+[]store.Posting so couldn't cover the two company-list sites.
+Decision: added indexOfCompany([]store.Company, id int64) int alongside
+indexOfPosting, following the same shape, rather than a generic
+indexByID[T any] -- matches this codebase's established style (no
+generics used anywhere else) and was the option the issue itself flagged
+as simpler. Replaced all three inline loops with calls to the appropriate
+helper. Pure cleanup, no behavior change.
+Verified: existing tests already covering all three call sites
+(TestApp_PressD_DeletesSelectedCompany, TestApp_PressE_RenameKeepsCompanyListSorted,
+TestApp_PressX_WhileHidingArchived_RemovesPostingFromViewAndClampsCursor)
+pass unchanged. Manually verified via tmux against a seeded scratch db:
+rename, delete, and archive-while-hiding all behave identically to
+before. Full build/test/lint/fmt clean.
