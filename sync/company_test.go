@@ -286,11 +286,11 @@ func TestSyncCompany_FetchedPostingHasWhitespace_SavedTrimmed(t *testing.T) {
 	if postings[0].Title != "Engineer" {
 		t.Fatalf("posting title = %q, want %q", postings[0].Title, "Engineer")
 	}
-	if postings[0].Department == nil || *postings[0].Department != "Engineering" {
-		t.Fatalf("posting department = %v, want %q", postings[0].Department, "Engineering")
+	if postings[0].Department != "Engineering" {
+		t.Fatalf("posting department = %q, want %q", postings[0].Department, "Engineering")
 	}
-	if postings[0].Location == nil || *postings[0].Location != "Dublin, Ireland" {
-		t.Fatalf("posting location = %v, want %q", postings[0].Location, "Dublin, Ireland")
+	if postings[0].Location != "Dublin, Ireland" {
+		t.Fatalf("posting location = %q, want %q", postings[0].Location, "Dublin, Ireland")
 	}
 }
 

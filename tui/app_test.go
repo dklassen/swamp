@@ -1894,8 +1894,8 @@ func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) 
 	if len(app.postings) != 1 {
 		t.Fatalf("postings after save = %+v, want 1 (narrowed to %s)", app.postings, wantDept)
 	}
-	if derefOr(app.postings[0].Department, "") != wantDept {
-		t.Fatalf("remaining posting department = %q, want %q", derefOr(app.postings[0].Department, ""), wantDept)
+	if app.postings[0].Department != wantDept {
+		t.Fatalf("remaining posting department = %q, want %q", app.postings[0].Department, wantDept)
 	}
 
 	saved, err := s.ListCompanyFilters(context.Background(), acme.ID)
@@ -1922,8 +1922,8 @@ func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) 
 	if len(app.postings) != 1 {
 		t.Fatalf("postings after post-sync reload = %+v, want still 1 (filter should survive the reload)", app.postings)
 	}
-	if derefOr(app.postings[0].Department, "") != wantDept {
-		t.Fatalf("posting department after reload = %q, want %q", derefOr(app.postings[0].Department, ""), wantDept)
+	if app.postings[0].Department != wantDept {
+		t.Fatalf("posting department after reload = %q, want %q", app.postings[0].Department, wantDept)
 	}
 }
 
@@ -1988,8 +1988,8 @@ func TestApp_OpenPostingList_WithPreExistingSavedFilters_NarrowsOnFirstLoad(t *t
 	if len(app.postings) != 1 {
 		t.Fatalf("postings on first load = %+v, want 1 (narrowed by pre-existing saved filter, simulating a prior session)", app.postings)
 	}
-	if derefOr(app.postings[0].Department, "") != "Engineering" {
-		t.Fatalf("posting department = %q, want %q", derefOr(app.postings[0].Department, ""), "Engineering")
+	if app.postings[0].Department != "Engineering" {
+		t.Fatalf("posting department = %q, want %q", app.postings[0].Department, "Engineering")
 	}
 }
 
