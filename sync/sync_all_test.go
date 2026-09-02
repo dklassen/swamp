@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/dklassen/swamp/jobboard"
 )
 
 func TestSyncAll_OneCompanyFailsFetch_OthersStillProcessed(t *testing.T) {
@@ -14,7 +16,7 @@ func TestSyncAll_OneCompanyFailsFetch_OthersStillProcessed(t *testing.T) {
 	_ = mustCreateCompany(t, s, "Globex", "ashby", "globex")
 
 	fetcher := &perBoardFetcher{
-		postings: map[string][]Posting{
+		postings: map[string][]jobboard.Posting{
 			"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 		},
 		errBoards: map[string]error{

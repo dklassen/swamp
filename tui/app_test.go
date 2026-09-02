@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
@@ -403,7 +404,7 @@ func TestApp_PressE_RenameKeepsCompanyListSorted(t *testing.T) {
 func TestApp_PressI_OnPostingList_TogglesInterestedOnSelectedPosting(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -445,7 +446,7 @@ func TestApp_PressI_OnPostingList_TogglesInterestedOnSelectedPosting(t *testing.
 func TestApp_PressX_OnPostingList_TogglesArchivedOnSelectedPosting(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -496,7 +497,7 @@ func TestApp_PressX_OnPostingList_TogglesArchivedOnSelectedPosting(t *testing.T)
 func TestApp_PressI_WhileArchived_SwitchesToInterestedAndClearsArchived(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -542,7 +543,7 @@ func TestApp_PressI_WhileArchived_SwitchesToInterestedAndClearsArchived(t *testi
 func TestApp_PressX_WhileInterested_SwitchesToArchivedAndClearsInterested(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -579,7 +580,7 @@ func TestApp_PressX_WhileInterested_SwitchesToArchivedAndClearsInterested(t *tes
 func TestApp_OpenPostingList_HidesArchivedPostingsByDefault(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {
 			{SourceID: "job-1", Title: "Engineer"},
 			{SourceID: "job-2", Title: "Designer"},
@@ -628,7 +629,7 @@ func TestApp_OpenPostingList_HidesArchivedPostingsByDefault(t *testing.T) {
 func TestApp_PressA_OnPostingList_TogglesArchivedPostingsBackIntoView(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {
 			{SourceID: "job-1", Title: "Engineer"},
 			{SourceID: "job-2", Title: "Designer"},
@@ -674,7 +675,7 @@ func TestApp_PressA_OnPostingList_TogglesArchivedPostingsBackIntoView(t *testing
 func TestApp_PressX_WhileHidingArchived_RemovesPostingFromViewAndClampsCursor(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {
 			{SourceID: "job-1", Title: "Engineer"},
 			{SourceID: "job-2", Title: "Designer"},
@@ -704,7 +705,7 @@ func TestApp_PressX_WhileHidingArchived_RemovesPostingFromViewAndClampsCursor(t 
 func TestApp_PressA_OnPostingDetail_WithNoApplication_CreatesApplication(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -735,7 +736,7 @@ func TestApp_PressA_OnPostingDetail_WithNoApplication_CreatesApplication(t *test
 func TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -763,7 +764,7 @@ func TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications(t
 func TestApp_PressA_OnPostingDetail_WhenApplicationAlreadyExists_DoesNotDuplicate(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -794,7 +795,7 @@ func TestApp_PressA_OnPostingDetail_WhenApplicationAlreadyExists_DoesNotDuplicat
 func TestApp_OpenPostingDetail_WithExistingApplication_LoadsAndDisplaysStatus(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -822,7 +823,7 @@ func TestApp_OpenPostingDetail_WithExistingApplication_LoadsAndDisplaysStatus(t 
 func TestApp_OpenPostingDetail_WithNoApplication_ShowsNoApplicationMessage(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -837,7 +838,7 @@ func TestApp_OpenPostingDetail_WithNoApplication_ShowsNoApplicationMessage(t *te
 func TestApp_PressS_OnPostingDetail_WithApplication_OpensStatusSelect(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -859,7 +860,7 @@ func TestApp_PressS_OnPostingDetail_WithApplication_OpensStatusSelect(t *testing
 func TestApp_PressS_OnPostingDetail_WithNoApplication_NoOp(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -877,7 +878,7 @@ func TestApp_PressS_OnPostingDetail_WithNoApplication_NoOp(t *testing.T) {
 func TestApp_StatusSelect_Enter_UpdatesStatusAndReturnsToDetail(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -918,7 +919,7 @@ func TestApp_StatusSelect_Enter_UpdatesStatusAndReturnsToDetail(t *testing.T) {
 func TestApp_StatusSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1047,7 +1048,7 @@ func TestApp_ActiveApplications_StatusChangeToRejected_RemovesFromList(t *testin
 func TestApp_PressN_OnPostingDetail_WithApplication_OpensNotesEditorPrepopulated(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1075,7 +1076,7 @@ func TestApp_PressN_OnPostingDetail_WithApplication_OpensNotesEditorPrepopulated
 func TestApp_NotesEdit_CtrlS_SavesNotesAndReturnsToDetail(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1114,7 +1115,7 @@ func TestApp_NotesEdit_CtrlS_SavesNotesAndReturnsToDetail(t *testing.T) {
 func TestApp_NotesEdit_Esc_CancelsWithoutSaving(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1145,7 +1146,7 @@ func TestApp_NotesEdit_Esc_CancelsWithoutSaving(t *testing.T) {
 func TestApp_PressN_OnPostingDetail_WithNoApplication_NoOp(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1163,7 +1164,7 @@ func TestApp_PressN_OnPostingDetail_WithNoApplication_NoOp(t *testing.T) {
 func TestApp_PressA_OnPostingDetail_CreatedApplication_ReflectedInDetailView(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1188,7 +1189,7 @@ func TestApp_PressA_OnPostingDetail_CreatedApplication_ReflectedInDetailView(t *
 func TestApp_PostingDetail_NavigatingBetweenPostings_LoadsEachPostingsOwnApplication(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {
 			{SourceID: "job-1", Title: "Engineer"},
 			{SourceID: "job-2", Title: "Designer"},
@@ -1278,7 +1279,7 @@ func TestApp_CancellingAScreen_ClearsStaleError(t *testing.T) {
 func TestApp_PressR_RefreshesSelectedCompanyAndShowsStatus(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1309,7 +1310,7 @@ func TestApp_PressR_RefreshesSelectedCompanyAndShowsStatus(t *testing.T) {
 func TestApp_PressEnter_OpensPostingListForSelectedCompany(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1333,7 +1334,7 @@ func TestApp_PressEnter_OpensPostingListForSelectedCompany(t *testing.T) {
 func TestApp_PressEsc_OnPostingList_ReturnsToCompanyList(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1349,7 +1350,7 @@ func TestApp_PressEsc_OnPostingList_ReturnsToCompanyList(t *testing.T) {
 func TestApp_PostingListCursor_MovesWithinBounds(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {
 			{SourceID: "job-1", Title: "Engineer"},
 			{SourceID: "job-2", Title: "Designer"},
@@ -1378,7 +1379,7 @@ func TestApp_PostingListCursor_MovesWithinBounds(t *testing.T) {
 func TestApp_PressEnter_OnPostingList_OpensDetailForSelectedPosting(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1394,7 +1395,7 @@ func TestApp_PressEnter_OnPostingList_OpensDetailForSelectedPosting(t *testing.T
 func TestApp_PressEsc_OnPostingDetail_ReturnsToPostingList(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1411,7 +1412,7 @@ func TestApp_PressEsc_OnPostingDetail_ReturnsToPostingList(t *testing.T) {
 func TestApp_PostingDetail_RightMovesToNextPostingStayingInDetail(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {
 			{SourceID: "job-1", Title: "Engineer"},
 			{SourceID: "job-2", Title: "Designer"},
@@ -1469,7 +1470,7 @@ func TestApp_PostingDetail_DownScrollsLongDescription(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	longDescription := strings.Repeat("line\n", 100)
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", DescriptionText: longDescription}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1498,7 +1499,7 @@ func TestApp_PostingDetail_VimJ_ScrollsLikeDown(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	longDescription := strings.Repeat("line\n", 100)
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", DescriptionText: longDescription}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1516,7 +1517,7 @@ func TestApp_PostingDetail_VimJ_ScrollsLikeDown(t *testing.T) {
 func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1556,7 +1557,7 @@ func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testin
 func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1586,7 +1587,7 @@ func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testi
 func TestApp_PostingDetail_NoApplication_ShowsNoDocumentsSection(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1627,7 +1628,7 @@ func TestApp_CompanyList_VimJK_MoveCursorLikeArrows(t *testing.T) {
 func TestApp_PostingList_VimJK_MoveCursorLikeArrows(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {
 			{SourceID: "job-1", Title: "Engineer"},
 			{SourceID: "job-2", Title: "Designer"},
@@ -1649,7 +1650,7 @@ func TestApp_PostingList_VimJK_MoveCursorLikeArrows(t *testing.T) {
 func TestApp_PostingDetail_VimHL_MovesBetweenPostingsLikeArrows(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {
 			{SourceID: "job-1", Title: "Engineer"},
 			{SourceID: "job-2", Title: "Designer"},
@@ -1684,7 +1685,7 @@ func TestApp_PostingDetail_LongLine_WrapsToViewportWidth(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	longLine := strings.Repeat("word ", 40)
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", DescriptionText: longLine}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1708,7 +1709,7 @@ func TestApp_WindowResize_OnPostingDetail_ReWraps(t *testing.T) {
 	// check would miss (viewport.View() uses lipgloss MaxWidth, which
 	// truncates already-wrapped content instead of re-wrapping it).
 	longLine := strings.Repeat("word ", 40) + "LASTWORD"
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", DescriptionText: longLine}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1745,7 +1746,7 @@ func TestApp_WindowSizeMsg_UpdatesDimensions(t *testing.T) {
 func TestApp_PressO_OnPostingDetail_OpensJobURLInBrowser(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", JobURL: "https://jobs.ashbyhq.com/acme/job-1"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1761,7 +1762,7 @@ func TestApp_PressO_OnPostingDetail_OpensJobURLInBrowser(t *testing.T) {
 func TestApp_PressO_OnPostingList_OpensSelectedPostingJobURLInBrowser(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", JobURL: "https://jobs.ashbyhq.com/acme/job-1"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1776,7 +1777,7 @@ func TestApp_PressO_OnPostingList_OpensSelectedPostingJobURLInBrowser(t *testing
 func TestApp_PressF_OnPostingList_OpensFilterSelectAndLoadsOptions(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1803,7 +1804,7 @@ func TestApp_PressF_OnPostingList_OpensFilterSelectAndLoadsOptions(t *testing.T)
 func TestApp_FilterSelect_SpaceTogglesSelection(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1829,7 +1830,7 @@ func TestApp_FilterSelect_SpaceTogglesSelection(t *testing.T) {
 func TestApp_FilterSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1856,7 +1857,7 @@ func TestApp_FilterSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {
 			{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"},
 			{SourceID: "job-2", Title: "Salesperson", Department: "Sales", Location: "Remote"},
@@ -1929,7 +1930,7 @@ func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) 
 func TestApp_CompanyRefreshed_ForCurrentlyViewedCompany_ReloadsPostings(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1954,7 +1955,7 @@ func TestApp_CompanyRefreshed_ForCurrentlyViewedCompany_ReloadsPostings(t *testi
 func TestApp_CompanyRefreshed_ForDifferentCompany_DoesNotReloadPostings(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -1975,7 +1976,7 @@ func TestApp_OpenPostingList_WithPreExistingSavedFilters_NarrowsOnFirstLoad(t *t
 	if _, err := s.CreateCompanyFilter(context.Background(), acme.ID, "department", "Engineering"); err != nil {
 		t.Fatalf("CreateCompanyFilter: %v", err)
 	}
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {
 			{SourceID: "job-1", Title: "Engineer", Department: "Engineering"},
 			{SourceID: "job-2", Title: "Salesperson", Department: "Sales"},
@@ -2001,7 +2002,7 @@ func TestApp_OpenPostingList_TracksActiveFiltersFromExisting(t *testing.T) {
 	if _, err := s.CreateCompanyFilter(context.Background(), acme.ID, "location", "Remote"); err != nil {
 		t.Fatalf("CreateCompanyFilter: %v", err)
 	}
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"}},
 	})
 	app := newTestApp(t, s, syncer)
@@ -2018,7 +2019,7 @@ func TestApp_OpenPostingList_TracksActiveFiltersFromExisting(t *testing.T) {
 func TestApp_FilterSelect_Enter_UpdatesActiveFiltersImmediately(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := newTestSyncer(s, map[string][]sync.Posting{
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering"}},
 	})
 	app := newTestApp(t, s, syncer)

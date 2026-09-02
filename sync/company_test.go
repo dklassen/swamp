@@ -3,6 +3,8 @@ package sync
 import (
 	"context"
 	"testing"
+
+	"github.com/dklassen/swamp/jobboard"
 )
 
 func TestSyncCompany_NewPostingNoFilters_Created(t *testing.T) {
@@ -10,7 +12,7 @@ func TestSyncCompany_NewPostingNoFilters_Created(t *testing.T) {
 	ctx := context.Background()
 
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	fetcher := &fakeFetcher{postings: map[string][]Posting{
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
 
@@ -44,7 +46,7 @@ func TestSyncCompany_PostingDoesNotMatchFilters_NotCreated(t *testing.T) {
 	if _, err := s.CreateCompanyFilter(ctx, company.ID, "department", "Sales"); err != nil {
 		t.Fatalf("CreateCompanyFilter: %v", err)
 	}
-	fetcher := &fakeFetcher{postings: map[string][]Posting{
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
 
@@ -75,7 +77,7 @@ func TestSyncCompany_ExistingPostingContentChanged_UpdatedWithHistory(t *testing
 	ctx := context.Background()
 
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	fetcher := &fakeFetcher{postings: map[string][]Posting{
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
 	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
@@ -84,7 +86,7 @@ func TestSyncCompany_ExistingPostingContentChanged_UpdatedWithHistory(t *testing
 		t.Fatalf("initial SyncCompany: %v", err)
 	}
 
-	fetcher.postings["acme"] = []Posting{
+	fetcher.postings["acme"] = []jobboard.Posting{
 		samplePosting("job-1", "Senior Engineer", "Engineering", "Remote"),
 	}
 
@@ -127,7 +129,7 @@ func TestSyncCompany_ExistingPostingUnchanged_NoUpdateNoHistory(t *testing.T) {
 	ctx := context.Background()
 
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	fetcher := &fakeFetcher{postings: map[string][]Posting{
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
 	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
@@ -165,7 +167,7 @@ func TestSyncCompany_PostingDisappearsFromFetch_ClosedWithHistory(t *testing.T) 
 	ctx := context.Background()
 
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	fetcher := &fakeFetcher{postings: map[string][]Posting{
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
 	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
@@ -210,7 +212,7 @@ func TestSyncCompany_ClosedPostingReappears_ReopenedWithHistory(t *testing.T) {
 
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := samplePosting("job-1", "Engineer", "Engineering", "Remote")
-	fetcher := &fakeFetcher{postings: map[string][]Posting{"acme": {posting}}}
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": {posting}}}
 	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
@@ -221,7 +223,7 @@ func TestSyncCompany_ClosedPostingReappears_ReopenedWithHistory(t *testing.T) {
 		t.Fatalf("closing SyncCompany: %v", err)
 	}
 
-	fetcher.postings["acme"] = []Posting{posting}
+	fetcher.postings["acme"] = []jobboard.Posting{posting}
 	result, err := syncer.SyncCompany(ctx, company.ID)
 	if err != nil {
 		t.Fatalf("reopening SyncCompany: %v", err)
@@ -252,7 +254,7 @@ func TestSyncCompany_UnsupportedSource_ReturnsError(t *testing.T) {
 	ctx := context.Background()
 
 	company := mustCreateCompany(t, s, "Acme", "lever", "acme")
-	fetcher := &fakeFetcher{postings: map[string][]Posting{}}
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{}}
 	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
 
 	_, err := syncer.SyncCompany(ctx, company.ID)
@@ -267,7 +269,7 @@ func TestSyncCompany_FetchedPostingHasWhitespace_SavedTrimmed(t *testing.T) {
 
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	padded := samplePosting("job-1", " Engineer ", " Engineering", "Dublin, Ireland ")
-	fetcher := &fakeFetcher{postings: map[string][]Posting{"acme": {padded}}}
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": {padded}}}
 
 	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
@@ -305,7 +307,7 @@ func TestSyncCompany_FilterValueMatchesTrimmedLocation_PostingCreated(t *testing
 		t.Fatalf("CreateCompanyFilter: %v", err)
 	}
 	padded := samplePosting("job-1", "Engineer", "Engineering", "Canada ")
-	fetcher := &fakeFetcher{postings: map[string][]Posting{"acme": {padded}}}
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": {padded}}}
 
 	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
 	result, err := syncer.SyncCompany(ctx, company.ID)

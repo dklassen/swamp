@@ -1,6 +1,10 @@
 package sync
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/dklassen/swamp/jobboard"
+)
 
 // sanitizePosting trims leading/trailing whitespace from every
 // free-text field a source's API returns before it's used for filter
@@ -13,7 +17,7 @@ import "strings"
 // RawPayload is deliberately left untouched: it's the source's raw JSON
 // response, kept verbatim for audit/debugging, not a display field.
 // PublishedAt isn't a string.
-func sanitizePosting(p Posting) Posting {
+func sanitizePosting(p jobboard.Posting) jobboard.Posting {
 	p.SourceID = strings.TrimSpace(p.SourceID)
 	p.Title = strings.TrimSpace(p.Title)
 	p.Department = strings.TrimSpace(p.Department)

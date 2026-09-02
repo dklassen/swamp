@@ -1,8 +1,8 @@
 // Package ashby is a client for Ashby's public job board API
 // (https://developers.ashbyhq.com/docs/public-job-posting-api). It fetches
 // published postings for a company's Ashby job board and normalizes them
-// into the domain-shaped Posting type, preserving each posting's raw JSON
-// so nothing is lost even for fields not yet mapped.
+// into the domain-shaped jobboard.Posting type, preserving each posting's
+// raw JSON so nothing is lost even for fields not yet mapped.
 package ashby
 
 import (
@@ -16,10 +16,6 @@ import (
 )
 
 const defaultBaseURL = "https://api.ashbyhq.com"
-
-// Posting is an alias to jobboard.Posting, not a separate struct -- see
-// that package's doc comment for why (decisions.log, #57).
-type Posting = jobboard.Posting
 
 type Client struct {
 	httpClient *http.Client
@@ -66,7 +62,7 @@ type job struct {
 	DescriptionPlain string    `json:"descriptionPlain"`
 }
 
-func (c *Client) FetchPostings(ctx context.Context, boardSlug string) ([]Posting, error) {
+func (c *Client) FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error) {
 	url := fmt.Sprintf("%s/posting-api/job-board/%s?listedOnly=true", c.baseURL, boardSlug)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -89,13 +85,13 @@ func (c *Client) FetchPostings(ctx context.Context, boardSlug string) ([]Posting
 		return nil, fmt.Errorf("ashby: decode job board response: %w", err)
 	}
 
-	postings := make([]Posting, len(body.Jobs))
+	postings := make([]jobboard.Posting, len(body.Jobs))
 	for i, raw := range body.Jobs {
 		var j job
 		if err := json.Unmarshal(raw, &j); err != nil {
 			return nil, fmt.Errorf("ashby: decode job posting: %w", err)
 		}
-		postings[i] = Posting{
+		postings[i] = jobboard.Posting{
 			SourceID:        j.ID,
 			Title:           j.Title,
 			Department:      j.Department,

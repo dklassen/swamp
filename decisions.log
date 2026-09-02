@@ -2598,3 +2598,23 @@ list (Title/Department/Location columns) -> posting detail (Department/
 Location/Job URL/description text) all render correctly end to end,
 confirming the embedded field flows through db row -> postingFromRow ->
 TUI rendering with no regression. Full build/vet/test/lint/fmt clean.
+
+## 2026-09-02 -- Drop the per-package Posting aliases from #57's Part 1
+Context: reviewing #57 Part 1 raised whether `ashby.Posting`,
+`greenhouse.Posting`, `lever.Posting`, and `sync.Posting` (each
+`type Posting = jobboard.Posting`) were pulling their weight, or just
+adding a name with no function.
+Checked: none of the four packages attach any method or field to their
+local alias -- every use is a bare return-type/parameter-type/composite
+literal. The zero-adapter benefit the original decision cites (a source
+client's Posting IS sync's Posting, so it satisfies `sync.PostingFetcher`
+directly) holds purely because everyone ultimately names the same
+underlying type; it doesn't depend on the local aliases existing.
+Deleted all four `type Posting = jobboard.Posting` declarations;
+`ashby`/`greenhouse`/`lever`/`sync` and their tests now reference
+`jobboard.Posting` directly. Mechanical change only -- no behavior
+differs, since an alias and its target were already identical in every
+respect. Updated the doc comments in cmd/swamp/main.go, jobboard/posting.go,
+and filter/filter.go that described the now-removed aliases.
+Verified: full build/vet/test/lint/fmt clean, no test assertions changed
+(construction syntax only).

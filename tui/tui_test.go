@@ -10,6 +10,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/dklassen/swamp/db/migrations"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
@@ -76,13 +77,13 @@ func mustCreateApplication(t *testing.T, s *store.Store, postingID int64) store.
 // fakeFetcher is a sync.PostingFetcher whose FetchPostings return value is
 // configured per test, so tui tests never make real HTTP calls.
 type fakeFetcher struct {
-	postings map[string][]sync.Posting
+	postings map[string][]jobboard.Posting
 }
 
-func (f *fakeFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]sync.Posting, error) {
+func (f *fakeFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error) {
 	return f.postings[boardSlug], nil
 }
 
-func newTestSyncer(s *store.Store, postings map[string][]sync.Posting) *sync.Syncer {
+func newTestSyncer(s *store.Store, postings map[string][]jobboard.Posting) *sync.Syncer {
 	return sync.New(s, map[string]sync.PostingFetcher{"ashby": &fakeFetcher{postings: postings}})
 }

@@ -12,24 +12,19 @@ import (
 	"github.com/dklassen/swamp/store"
 )
 
-// Posting is an alias to jobboard.Posting, not a separate struct.
-// ashby.Posting/greenhouse.Posting/lever.Posting are the same alias, so a
-// source client's Posting IS this type -- no field-by-field translation
-// code exists between a client and sync, and none can silently drop a
-// field. Not every source can populate every field -- e.g. Greenhouse has
-// no employment/workplace type -- those are simply left empty (see
-// jobboard's doc comment, and decisions.log, #57).
-type Posting = jobboard.Posting
-
 // PostingFetcher is sync's own minimal view of a job board client, one
 // per source. Every source client (*ashby.Client, *greenhouse.Client,
-// *lever.Client) already has this exact method signature, so each one
-// satisfies PostingFetcher directly -- no per-source adapter type is
-// needed. boardSlug is whatever that source's client needs to identify
-// the board (an Ashby slug, a Greenhouse board token, etc.) -- it's
-// passed through from store.Company.SourceRef untouched.
+// *lever.Client) returns jobboard.Posting directly (not a locally-declared
+// type), so each one satisfies PostingFetcher directly -- no per-source
+// adapter type is needed, and no field-by-field translation code exists
+// between a client and sync. Not every source can populate every field --
+// e.g. Greenhouse has no employment/workplace type -- those are simply
+// left empty (see jobboard's doc comment, and decisions.log, #57).
+// boardSlug is whatever that source's client needs to identify the board
+// (an Ashby slug, a Greenhouse board token, etc.) -- it's passed through
+// from store.Company.SourceRef untouched.
 type PostingFetcher interface {
-	FetchPostings(ctx context.Context, boardSlug string) ([]Posting, error)
+	FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error)
 }
 
 // Result summarizes one company's sync outcome. Err is set on a

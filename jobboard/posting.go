@@ -1,10 +1,10 @@
 // Package jobboard defines the canonical, source-agnostic shape a job
 // board client normalizes its API response into. It exists purely as a
-// shared vocabulary type: ashby.Posting, greenhouse.Posting, lever.Posting,
-// and sync.Posting are all type aliases to jobboard.Posting rather than
-// four independently-declared structs that happen to match, so a client
-// package's Posting IS sync's Posting -- no field-by-field translation
-// code exists between them, and none can silently drop a field.
+// shared vocabulary type: ashby, greenhouse, lever, and sync all use this
+// type directly rather than four independently-declared structs that
+// happen to match, so a client package's Posting IS sync's Posting -- no
+// field-by-field translation code exists between them, and none can
+// silently drop a field.
 //
 // A field a source's API can't supply (e.g. Greenhouse has no Team,
 // EmploymentType, or WorkplaceType) is simply left at its zero value --

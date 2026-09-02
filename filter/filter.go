@@ -1,6 +1,6 @@
 // Package filter is pure, I/O-free matching logic: given a company's
 // configured filter rules and a job posting, decide whether the posting
-// matches. It has no dependency on ashby or store — see Posting's doc
+// matches. It has no dependency on jobboard or store — see Posting's doc
 // comment for why.
 package filter
 
@@ -10,12 +10,12 @@ import (
 )
 
 // Posting is the minimal set of fields filter rules are evaluated against.
-// It deliberately does not reuse ashby.Posting: filter should stay decoupled
-// from any one job board's client, since store.Company/postings (once the
-// sync package exists) may become the actual match target, and ashby.Posting
-// carries many fields (descriptions, URLs, raw payload) filter has no
-// business depending on. Callers convert whatever posting shape they have
-// into a filter.Posting at the call site.
+// It deliberately does not reuse jobboard.Posting: filter should stay
+// decoupled from any one job board's client, since store.Company/postings
+// (once the sync package exists) may become the actual match target, and
+// jobboard.Posting carries many fields (descriptions, URLs, raw payload)
+// filter has no business depending on. Callers convert whatever posting
+// shape they have into a filter.Posting at the call site.
 type Posting struct {
 	Department string
 	Location   string

@@ -1,8 +1,8 @@
 // Package greenhouse is a client for Greenhouse's public Job Board API
 // (https://docs.greenhouse.io/job-board.html). It fetches published
 // postings for a company's Greenhouse job board and normalizes them into
-// the domain-shaped Posting type, preserving each posting's raw JSON so
-// nothing is lost even for fields not yet mapped.
+// the domain-shaped jobboard.Posting type, preserving each posting's raw
+// JSON so nothing is lost even for fields not yet mapped.
 //
 // Greenhouse's job shape differs from Ashby's in ways that don't map
 // cleanly: a job can belong to multiple departments (joined here into one
@@ -30,10 +30,6 @@ import (
 )
 
 const defaultBaseURL = "https://boards-api.greenhouse.io"
-
-// Posting is an alias to jobboard.Posting, not a separate struct -- see
-// that package's doc comment for why (decisions.log, #57).
-type Posting = jobboard.Posting
 
 type Client struct {
 	httpClient *http.Client
@@ -87,7 +83,7 @@ type job struct {
 // ?content=true -- without it, Greenhouse omits departments and the
 // description entirely, and department is required for this app's
 // filtering to work at all.
-func (c *Client) FetchPostings(ctx context.Context, boardToken string) ([]Posting, error) {
+func (c *Client) FetchPostings(ctx context.Context, boardToken string) ([]jobboard.Posting, error) {
 	url := fmt.Sprintf("%s/v1/boards/%s/jobs?content=true", c.baseURL, boardToken)
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
@@ -110,7 +106,7 @@ func (c *Client) FetchPostings(ctx context.Context, boardToken string) ([]Postin
 		return nil, fmt.Errorf("greenhouse: decode job board response: %w", err)
 	}
 
-	postings := make([]Posting, len(body.Jobs))
+	postings := make([]jobboard.Posting, len(body.Jobs))
 	for i, raw := range body.Jobs {
 		var j job
 		if err := json.Unmarshal(raw, &j); err != nil {
@@ -122,7 +118,7 @@ func (c *Client) FetchPostings(ctx context.Context, boardToken string) ([]Postin
 		// live response -- decode once to recover actual HTML before
 		// storing it or stripping tags from it.
 		descriptionHTML := html.UnescapeString(j.Content)
-		postings[i] = Posting{
+		postings[i] = jobboard.Posting{
 			SourceID:        strconv.FormatInt(j.ID, 10),
 			Title:           j.Title,
 			Department:      joinDepartments(j.Departments),

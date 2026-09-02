@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -27,7 +28,7 @@ func fieldNames(t reflect.Type) []string {
 // the posting rather than being ingested content, and lives directly on
 // CreatePostingParams instead of IngestedFields.
 func TestIngestedFields_CoversEveryPostingField(t *testing.T) {
-	want := fieldNames(reflect.TypeOf(Posting{}))
+	want := fieldNames(reflect.TypeOf(jobboard.Posting{}))
 	for i, name := range want {
 		if name == "SourceID" {
 			want = append(want[:i], want[i+1:]...)

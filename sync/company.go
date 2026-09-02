@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/filter"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -20,7 +21,7 @@ func toFilterRules(filters []store.CompanyFilter) []filter.Filter {
 	return rules
 }
 
-func toFilterPosting(p Posting) filter.Posting {
+func toFilterPosting(p jobboard.Posting) filter.Posting {
 	return filter.Posting{Department: p.Department, Location: p.Location}
 }
 
@@ -34,7 +35,7 @@ func stringOrNil(s string) *string {
 // toIngestedFields builds the fields store.Posting and
 // store.CreatePostingParams share from a fetched Posting -- the single
 // place that conversion happens (see decisions.log, #57).
-func toIngestedFields(p Posting) store.IngestedFields {
+func toIngestedFields(p jobboard.Posting) store.IngestedFields {
 	fields := store.IngestedFields{
 		Title:           p.Title,
 		Department:      stringOrNil(p.Department),
@@ -55,7 +56,7 @@ func toIngestedFields(p Posting) store.IngestedFields {
 	return fields
 }
 
-func toCreatePostingParams(companyID int64, source string, p Posting) store.CreatePostingParams {
+func toCreatePostingParams(companyID int64, source string, p jobboard.Posting) store.CreatePostingParams {
 	return store.CreatePostingParams{
 		CompanyID:      companyID,
 		Source:         source,
