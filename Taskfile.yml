@@ -1,8 +1,8 @@
-version: '3'
+version: "3"
 
 vars:
   MIGRATIONS_DIR: db/migrations
-  DB_PATH: '${SWAMP_DB_PATH:-./swamp.db}'
+  DB_PATH: "${SWAMP_DB_PATH:-./swamp.db}"
 
 tasks:
   fmt:
@@ -60,3 +60,8 @@ tasks:
     desc: Build the swamp binary to ./bin/swamp
     cmds:
       - go build -o bin/swamp ./cmd/swamp
+
+  run:
+    desc: Run the swamp binary with the local sqlite db
+    cmds:
+      - ./bin/swamp
