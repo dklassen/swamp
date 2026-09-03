@@ -3141,3 +3141,89 @@ tui/app.go, which still serve the independent manual 'r' refresh
 keybinding on the company-list screen (tui/company_list.go) -- a
 different, still-needed code path, not a leftover of the old
 filter-save flow.
+
+## 2026-09-03 -- Show latest document review outcome inline on posting detail (#83)
+
+User asked for a way to see, at a glance, whether a drafted document
+(cover letter/resume) last passed or got flagged in review, and why --
+previously the only way to see a review's outcome was to walk through
+the review-select/review-form screens again. Explicitly ruled out a
+numeric score field ("don't see the value for a numeric scale unless we
+were doing more complex review work") -- store.DocumentReview's existing
+pass/flag Outcome + free-text Notes already carry everything needed;
+this is a read-path addition, not a data-model change. Also explicitly
+asked for the indicator per-document (cover letter/resume can fail
+independently) and folded inline into the existing posting-detail
+screen, not a separate screen -- so the "Documents" section postingDetailContent
+already renders was the natural place, not a new screen alongside
+review-select/review-form.
+
+Added store.Store.LatestDocumentReview(ctx, applicationID, documentType)
+-- thin wrapper over the existing ListDocumentReviews (already ordered
+most-recent-cycle-first), returning (DocumentReview, ok, err) rather than
+a slice, since every caller here only ever wants the latest one.
+
+On the TUI side, postingDetailContent's own doc comment already states
+the rule this had to follow: application/hasApplication are passed in
+rather than fetched inline, specifically so store-backed state goes
+through the same async tea.Cmd/tea.Msg round trip as the rest of the
+screen (docs.Status via os.Stat is the one deliberate exception, since
+that's local filesystem-existence-checking, not a DB read). So the
+latest-reviews-per-document-type data follows loadApplication's own
+pattern: loadDocumentReviews/documentReviewsLoadedMsg, mirrored via a
+new postingDetailModel.latestReviews map[string]store.DocumentReview
+field threaded through newPostingDetailModel and postingDetailContent.
+A maybeLoadDocumentReviews(s, hasApp, applicationID) helper centralizes
+"only fire the load when there's actually an application" across the
+half-dozen places a.postingDetail's underlying application changes
+(entering the screen, navigating prev/next, and every
+application-mutation message handler) -- reload-rather-than-patch,
+matching applicationStatusUpdatedMsg's existing "reload active
+applications wholesale" precedent elsewhere in the same file.
+
+documentReviewCreatedMsg's handler previously returned to
+screenPostingDetail without rebuilding a.postingDetail at all -- a
+pre-existing gap (harmless before, since nothing on that screen depended
+on review state) that would have meant a freshly-submitted review's
+outcome not showing until navigating away and back. Fixed as part of
+this change: it now rebuilds and re-triggers the reviews load, same as
+every other application-state transition.
+
+Uncovered along the way: the tui test suite's applyCmd helper (used by
+newTestApp for App.Init's tea.Batch, and now needed by
+openPostingDetail too) ran app.Update(msg) but discarded the Cmd that
+call itself returned -- fine when no handler chained a further Cmd, but
+this change's loadApplication -> applicationLoadedMsg ->
+loadDocumentReviews chain needs exactly that second hop. Fixed applyCmd
+to recursively chase whatever Cmd each Update call returns, which is
+what a real tea.Program's runtime loop does anyway -- not a workaround,
+a correctness fix to the test harness. openPostingDetail (used by ~30
+existing tests) switched from a raw sendKey(app, cmd()) to applyCmd for
+the same reason: entering posting detail for an application that
+already has one dispatches a tea.Batch(loadApplication,
+maybeLoadDocumentReviews) once hasApp is known synchronously (e.g.
+re-entering a posting already in a.applicationsByPosting), and a raw
+sendKey can't unpack a BatchMsg.
+
+Verified: full build/test/lint/fmt clean. New tests:
+store.TestLatestDocumentReview_NoReviews_ReturnsNotFound,
+store.TestLatestDocumentReview_ReturnsMostRecentCycle,
+tui.TestPostingDetailModel_New_NoReviewsYet_ShowsNotReviewedBadge,
+tui.TestPostingDetailModel_New_WithReviews_ShowsOutcomeAndNotes,
+tui.TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline,
+tui.TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail.
+Manually verified via tmux against a seeded scratch db (SWAMP_DB_PATH
+and SWAMP_DOCUMENTS_PATH both pointed at scratch paths, to avoid
+touching the real project's assets/db): an application with a flagged
+cover-letter review and a passed resume review showed "[FLAGGED]" with
+its notes line and "[PASSED]" inline on the posting-detail screen; a
+second application with no reviews yet showed "[not reviewed]" for both
+documents; and submitting a fresh review (r -> select cover letter ->
+ctrl+s) updated the posting-detail screen's badge and notes immediately,
+with no navigation away and back required.
+
+Noted but out of scope, flagged separately (not fixed here): the
+document-review-form screen's title line ("Review cover letter") wasn't
+visible on screen during manual verification, even scrolled to the very
+top of the tmux pane -- pre-existing behavior, unrelated to this change
+(tui/document_review_form.go untouched here).
