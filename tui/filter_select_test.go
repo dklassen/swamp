@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -12,7 +13,7 @@ func newTestFilterSelectModel() *filterSelectModel {
 	m := newFilterSelectModel(nil, 1, "Acme",
 		[]string{"Engineering", "Sales"},
 		[]string{"Remote", "Onsite"},
-		[]store.CompanyFilter{{Field: "department", Value: "Sales"}},
+		[]store.CompanyFilter{{Field: filter.FieldDepartment, Value: "Sales"}},
 	)
 	return &m
 }
@@ -35,13 +36,13 @@ func TestFilterSelectModel_ItemAtCursor_SpansDepartmentsThenLocations(t *testing
 	m := newTestFilterSelectModel()
 
 	field, value, ok := m.itemAtCursor()
-	if !ok || field != "department" || value != "Engineering" {
+	if !ok || field != filter.FieldDepartment || value != "Engineering" {
 		t.Fatalf("itemAtCursor() at 0 = %q, %q, %v, want department, Engineering, true", field, value, ok)
 	}
 
 	m.cursor = 2 // first location
 	field, value, ok = m.itemAtCursor()
-	if !ok || field != "location" || value != "Remote" {
+	if !ok || field != filter.FieldLocation || value != "Remote" {
 		t.Fatalf("itemAtCursor() at 2 = %q, %q, %v, want location, Remote, true", field, value, ok)
 	}
 

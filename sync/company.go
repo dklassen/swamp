@@ -13,7 +13,13 @@ import (
 	"github.com/dklassen/swamp/store"
 )
 
-func toFilterRules(filters []store.CompanyFilter) []filter.Filter {
+// FilterRules converts a company's saved filter rows into the rules
+// filter.Match evaluates against a posting. Exported so tui's
+// display-time filtering (loadPostings) shares this exact conversion
+// with ingestion-time gating (SyncCompany below) instead of maintaining
+// an independent copy that could silently drift out of agreement with
+// this one (see decisions.log, #61).
+func FilterRules(filters []store.CompanyFilter) []filter.Filter {
 	rules := make([]filter.Filter, len(filters))
 	for i, f := range filters {
 		rules[i] = filter.Filter{Field: f.Field, Value: f.Value}
@@ -101,7 +107,7 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (Result, erro
 	if err != nil {
 		return result, fmt.Errorf("sync: list company filters: %w", err)
 	}
-	rules := toFilterRules(filters)
+	rules := FilterRules(filters)
 
 	seenSourceIDs := make(map[string]bool, len(fetched))
 	for _, p := range fetched {

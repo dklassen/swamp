@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
@@ -1902,7 +1903,7 @@ func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ListCompanyFilters: %v", err)
 	}
-	if len(saved) != 1 || saved[0].Field != "department" || saved[0].Value != wantDept {
+	if len(saved) != 1 || saved[0].Field != filter.FieldDepartment || saved[0].Value != wantDept {
 		t.Fatalf("saved filters = %+v, want one department=%s filter", saved, wantDept)
 	}
 
@@ -1973,7 +1974,7 @@ func TestApp_CompanyRefreshed_ForDifferentCompany_DoesNotReloadPostings(t *testi
 func TestApp_OpenPostingList_WithPreExistingSavedFilters_NarrowsOnFirstLoad(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	if _, err := s.CreateCompanyFilter(context.Background(), acme.ID, "department", "Engineering"); err != nil {
+	if _, err := s.CreateCompanyFilter(context.Background(), acme.ID, filter.FieldDepartment, "Engineering"); err != nil {
 		t.Fatalf("CreateCompanyFilter: %v", err)
 	}
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1996,10 +1997,10 @@ func TestApp_OpenPostingList_WithPreExistingSavedFilters_NarrowsOnFirstLoad(t *t
 func TestApp_OpenPostingList_TracksActiveFiltersFromExisting(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	if _, err := s.CreateCompanyFilter(context.Background(), acme.ID, "department", "Engineering"); err != nil {
+	if _, err := s.CreateCompanyFilter(context.Background(), acme.ID, filter.FieldDepartment, "Engineering"); err != nil {
 		t.Fatalf("CreateCompanyFilter: %v", err)
 	}
-	if _, err := s.CreateCompanyFilter(context.Background(), acme.ID, "location", "Remote"); err != nil {
+	if _, err := s.CreateCompanyFilter(context.Background(), acme.ID, filter.FieldLocation, "Remote"); err != nil {
 		t.Fatalf("CreateCompanyFilter: %v", err)
 	}
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -2059,5 +2060,125 @@ func TestFilterSummaryLine_DepartmentsAndLocations(t *testing.T) {
 	want := "Filtering: Department: Engineering | Location: Remote"
 	if got != want {
 		t.Fatalf("filterSummaryLine = %q, want %q", got, want)
+	}
+}
+
+// TestFilterPostingsByCompanyFilters_MatchSemantics pins the same
+// AND-across-fields/OR-within-field semantics SyncCompany's ingestion-time
+// gating relies on (both now share sync.FilterRules -- see decisions.log,
+// #61), via filterPostingsByCompanyFilters directly rather than through a
+// full App.
+func TestFilterPostingsByCompanyFilters_MatchSemantics(t *testing.T) {
+	t.Parallel()
+
+	eng := store.Posting{ID: 1, IngestedFields: store.IngestedFields{Department: "Engineering", Location: "Remote"}}
+	sales := store.Posting{ID: 2, IngestedFields: store.IngestedFields{Department: "Sales", Location: "Remote"}}
+	engNYC := store.Posting{ID: 3, IngestedFields: store.IngestedFields{Department: "Engineering", Location: "New York"}}
+	postings := []store.Posting{eng, sales, engNYC}
+
+	tests := []struct {
+		name    string
+		filters []store.CompanyFilter
+		want    []store.Posting
+	}{
+		{
+			name:    "no filters matches everything",
+			filters: nil,
+			want:    postings,
+		},
+		{
+			name:    "department filter alone",
+			filters: []store.CompanyFilter{{Field: filter.FieldDepartment, Value: "Engineering"}},
+			want:    []store.Posting{eng, engNYC},
+		},
+		{
+			name:    "location filter alone",
+			filters: []store.CompanyFilter{{Field: filter.FieldLocation, Value: "Remote"}},
+			want:    []store.Posting{eng, sales},
+		},
+		{
+			name: "department and location AND together, OR within a field",
+			filters: []store.CompanyFilter{
+				{Field: filter.FieldDepartment, Value: "Engineering"},
+				{Field: filter.FieldDepartment, Value: "Sales"},
+				{Field: filter.FieldLocation, Value: "Remote"},
+			},
+			want: []store.Posting{eng, sales},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := filterPostingsByCompanyFilters(postings, tt.filters)
+			if err != nil {
+				t.Fatalf("filterPostingsByCompanyFilters: %v", err)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Fatalf("filterPostingsByCompanyFilters mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// TestFilterPostingsByCompanyFilters_UnsupportedField_ReturnsError guards
+// a real behavior change from the old loadPostings path: splitCompanyFilters
+// silently dropped any CompanyFilter row whose Field wasn't "department"/
+// "location" (its switch has no default case), so an unrecognized field
+// never even reached filter.Match -- that constraint was just silently
+// not applied. filterPostingsByCompanyFilters instead routes every row
+// through sync.FilterRules + filter.Match, the same path SyncCompany uses,
+// so an unsupported field name -- which should be unreachable given
+// company_filters' CHECK constraint, but this package can't assume that
+// -- now surfaces as an error, consistent with ingestion-time gating,
+// instead of silently narrowing the list as if the filter didn't exist.
+func TestFilterPostingsByCompanyFilters_UnsupportedField_ReturnsError(t *testing.T) {
+	t.Parallel()
+
+	postings := []store.Posting{{ID: 1, IngestedFields: store.IngestedFields{Department: "Engineering"}}}
+	filters := []store.CompanyFilter{{Field: "not_a_real_field", Value: "x"}}
+
+	_, err := filterPostingsByCompanyFilters(postings, filters)
+	if err == nil {
+		t.Fatal("filterPostingsByCompanyFilters err = nil, want an error for an unsupported field")
+	}
+}
+
+// TestApp_PostingsLoadedMsgWithErr_ClearsPostingsAndMarkup pins the
+// App-level consequence of loadPostings returning an error (e.g. from
+// filterPostingsByCompanyFilters, though company_filters' CHECK
+// constraint makes that specific trigger unreachable in practice --
+// postingsLoadedMsg{err:...} can come from any of loadPostings' several
+// fallible steps): the Update handler unconditionally applies
+// msg.postings/msg.markup/msg.departments/msg.locations, so an error
+// blanks the previously-loaded list rather than leaving it visible
+// alongside the error. Documented as a deliberate trade-off (see
+// decisions.log, #61) rather than something this test argues should
+// change -- it exists so a future change to this behavior is a visible,
+// intentional diff instead of a silent one.
+func TestApp_PostingsLoadedMsgWithErr_ClearsPostingsAndMarkup(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+
+	if len(app.postings) != 1 {
+		t.Fatalf("postings before error = %+v, want 1", app.postings)
+	}
+
+	app, _ = sendKey(app, postingsLoadedMsg{err: errors.New("boom")})
+
+	if app.postings != nil {
+		t.Fatalf("postings after error = %+v, want nil (cleared)", app.postings)
+	}
+	if app.postingMarkup != nil {
+		t.Fatalf("postingMarkup after error = %+v, want nil (cleared)", app.postingMarkup)
+	}
+	if app.err == nil {
+		t.Fatal("app.err = nil, want the propagated error")
 	}
 }

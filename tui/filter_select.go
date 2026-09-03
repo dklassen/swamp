@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -50,11 +51,11 @@ func newFilterSelectModel(s *store.Store, companyID int64, companyName string, d
 // cursor is out of range (e.g. no options loaded yet).
 func (m *filterSelectModel) itemAtCursor() (field, value string, ok bool) {
 	if m.cursor < len(m.departmentOptions) {
-		return "department", m.departmentOptions[m.cursor], true
+		return filter.FieldDepartment, m.departmentOptions[m.cursor], true
 	}
 	idx := m.cursor - len(m.departmentOptions)
 	if idx < len(m.locationOptions) {
-		return "location", m.locationOptions[idx], true
+		return filter.FieldLocation, m.locationOptions[idx], true
 	}
 	return "", "", false
 }
@@ -94,9 +95,9 @@ func (m *filterSelectModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		field, value, ok := m.itemAtCursor()
 		if ok {
 			switch field {
-			case "department":
+			case filter.FieldDepartment:
 				m.selectedDepartments[value] = !m.selectedDepartments[value]
-			case "location":
+			case filter.FieldLocation:
 				m.selectedLocations[value] = !m.selectedLocations[value]
 			}
 		}

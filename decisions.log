@@ -2722,3 +2722,103 @@ via tmux against a seeded scratch db: a posting with every optional
 field populated and one with none of them render identically to before
 in both the list and detail views, and the JobURL open-in-browser gate
 correctly no-ops on the empty-JobURL posting without crashing.
+
+## 2026-09-03 -- Unify ingestion-time and display-time filter matching (#61)
+Context: sync/company.go's toFilterRules/toFilterPosting (ingestion
+gating) and tui/app.go's splitCompanyFilters+narrowPostingsToFilters
+(display narrowing) both built []filter.Filter and called filter.Match,
+independently. The real risk wasn't the per-posting match call (already
+single-sourced via filter.Match) but the field-name strings
+"department"/"location", hardcoded independently in 9 places across
+filter/filter.go, tui/app.go, and tui/filter_select.go -- a new
+filterable field needed all of them touched in lockstep with nothing to
+catch a miss.
+Decision, two parts:
+1. Exported filter.FieldDepartment/FieldLocation constants; replaced all
+   9 string-literal sites with them (filter/filter.go's own
+   fieldAccessors map, tui/app.go's splitCompanyFilters/
+   narrowPostingsToFilters/saveCompanyFilters, tui/filter_select.go's
+   itemAtCursor/Update).
+2. Exported sync.FilterRules (was toFilterRules) and added
+   tui.filterPostingsByCompanyFilters, which calls it directly --
+   tui/app.go's loadPostings (the authoritative DB-driven filtering
+   pass) now shares the exact same store.CompanyFilter -> []filter.Filter
+   conversion SyncCompany uses at ingestion time, instead of
+   round-tripping through splitCompanyFilters's departments/locations
+   split and rebuilding rules from that. splitCompanyFilters itself
+   stays -- its department/location split is still needed for other TUI
+   display state (the "Filtering: ..." summary line, pre-populating the
+   filter-select screen's checkboxes), not just for matching.
+narrowPostingsToFilters (the optimistic client-side narrow applied
+immediately after saving a filter selection, before the background
+re-sync completes) also now delegates to filterPostingsByCompanyFilters,
+via synthetic store.CompanyFilter{Field, Value} values built from its
+departments/locations input -- no DB read needed, since sync.FilterRules
+only reads Field/Value off each row. (An earlier version of this entry
+claimed this delegation would require a synchronous DB read and left
+narrowPostingsToFilters as a third independent rule-construction copy;
+that claim was wrong -- caught during code review, see the follow-up
+note below.) It's still non-authoritative in the same sense as before --
+companyRefreshedMsg reloads from the DB right after specifically
+because this pass is approximate -- but it's no longer a second
+hand-copy of the matching logic itself.
+Real behavior change, in loadPostings' favor: previously,
+splitCompanyFilters silently dropped any company_filters row whose
+field wasn't "department"/"location" (its switch has no default), so
+an unrecognized field was never applied and never errored --
+filterPostingsByCompanyFilters now routes every row through
+sync.FilterRules + filter.Match like ingestion does, so an unsupported
+field surfaces as an error (propagated via postingsLoadedMsg{err:err}),
+consistent with SyncCompany's existing behavior. Should be unreachable
+given company_filters' CHECK constraint, but store/filter don't get to
+assume that from outside their own package.
+Added TestFilterPostingsByCompanyFilters_MatchSemantics (AND across
+fields, OR within a field, matching SyncCompany's semantics) and
+TestFilterPostingsByCompanyFilters_UnsupportedField_ReturnsError
+(pins the behavior change above) directly against the new function,
+rather than only indirectly through App-level tests.
+Considered, rejected: running the full /improve-codebase design-agent
+process the issue flagged as a candidate for -- the issue's own "why it
+matters" was really about the scattered field-name strings and the two
+independent rule-construction paths, not about filter.Match's algorithm
+itself, so a smaller, directly-scoped fix addressed the actual risk
+without the larger design-exploration overhead.
+Verified: full build/vet/test/lint/fmt clean, all pre-existing filter
+tests (sync.TestSyncCompany_*, tui.TestApp_*Filter*) pass unchanged.
+Manually verified via tmux against a seeded scratch db: a pre-existing
+saved department filter narrows the posting list correctly on open
+(exercising the new loadPostings path), and switching to a different
+filter and forcing a fresh reload (back out, re-enter) correctly picks
+up postings the previous filter had excluded.
+
+Follow-up (same day, before push): ran an 8-angle code review against
+this change. Four independent angles (reuse, cross-file tracer,
+simplification, altitude) converged on the same real gap: the initial
+version left narrowPostingsToFilters as a third independent
+rule-construction-and-match loop, justified in this log by a claim (see
+above, now corrected) that unifying it would need a synchronous DB
+read -- wrong, since sync.FilterRules only reads Field/Value. Fixed:
+narrowPostingsToFilters now delegates to filterPostingsByCompanyFilters
+via synthetic CompanyFilter rows, so there's exactly one
+rule-construction-and-match implementation, not three. Also fixed:
+tests that still used raw "department"/"location" string literals
+instead of the new filter.FieldDepartment/FieldLocation constants
+(tui/filter_select_test.go, tui/app_test.go) -- cheap, and the PR's own
+premise was making the field name a single source of truth.
+Considered and deliberately left as-is: filterPostingsByCompanyFilters
+propagating a filter.Match error blanks the entire posting list
+(postings/markup/active-filter badges all zeroed) rather than degrading
+gracefully like the pre-#61 path did. Real severity increase in the
+abstract, but confirmed unreachable in normal use (company_filters has
+a CHECK (field IN ('department','location')) constraint the store API
+can't bypass), and consistent with this project's existing fail-loudly
+stance (filter.Match's own doc comment) -- softening it would mean
+re-introducing silent partial-filtering, the exact failure mode #61 was
+filed to eliminate elsewhere. Added
+TestApp_PostingsLoadedMsgWithErr_ClearsPostingsAndMarkup to pin this
+behavior directly (App.Update given postingsLoadedMsg{err:...}) rather
+than leave it undocumented, since a full DB-level integration test
+can't construct the trigger condition -- CreateCompanyFilter itself
+would be rejected by the CHECK constraint before an unsupported-field
+row could ever reach loadPostings.
+Re-verified: full build/vet/test/lint/fmt clean after the above fixes.
