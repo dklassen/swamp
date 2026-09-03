@@ -10,18 +10,89 @@ import (
 	"github.com/dklassen/swamp/store/db"
 )
 
-// Document type and review outcome values for DocumentReview.DocumentType/
-// Outcome -- plain TEXT with a DB CHECK constraint (like
-// interview_stages.outcome), not a Go enum: unlike applications.status
-// (see decisions.log, 00004_drop_application_status_check_constraint),
-// this is a small, stable set with no history of churn.
-const (
-	DocumentTypeCoverLetter = "cover_letter"
-	DocumentTypeResume      = "resume"
+// DocumentType is a typed enum for DocumentReview.DocumentType. Go is the
+// sole source of truth for which values are legal, following
+// ApplicationStatus's pattern (see application_status.go, decisions.log)
+// rather than a DB CHECK constraint -- the document_reviews.document_type
+// column dropped its CHECK in migration 00008, once this stopped being
+// "a small, stable set with no history of churn" (00007's original
+// reasoning) worth a second source of truth. ParseDocumentType is where
+// enforcement now happens, at the point a raw DB row is turned into a
+// store.DocumentReview.
+type DocumentType int
 
-	ReviewOutcomePassed  = "passed"
-	ReviewOutcomeFlagged = "flagged"
+const (
+	DocumentTypeCoverLetter DocumentType = iota
+	DocumentTypeResume
 )
+
+// documentTypeNames holds the DB string form for each DocumentType,
+// indexed by its int value -- the single place the Go<->DB string
+// mapping is defined; String and ParseDocumentType both go through it so
+// they can't drift from each other.
+var documentTypeNames = [...]string{
+	DocumentTypeCoverLetter: "cover_letter",
+	DocumentTypeResume:      "resume",
+}
+
+// String implements fmt.Stringer, and is also the value persisted to the
+// document_reviews.document_type DB column.
+func (d DocumentType) String() string {
+	if d < 0 || int(d) >= len(documentTypeNames) {
+		return fmt.Sprintf("DocumentType(%d)", int(d))
+	}
+	return documentTypeNames[d]
+}
+
+// ParseDocumentType converts a raw DB document_type string into the typed
+// enum, failing loudly (rather than silently defaulting) if the value
+// isn't one of the known types -- since the DB no longer enforces this
+// with a CHECK constraint, this is the only place it's still enforced.
+func ParseDocumentType(s string) (DocumentType, error) {
+	for i, name := range documentTypeNames {
+		if name == s {
+			return DocumentType(i), nil
+		}
+	}
+	return 0, fmt.Errorf("store: unknown document type %q", s)
+}
+
+// ReviewOutcome is a typed enum for DocumentReview.Outcome -- same
+// reasoning and pattern as DocumentType above.
+type ReviewOutcome int
+
+const (
+	ReviewOutcomePassed ReviewOutcome = iota
+	ReviewOutcomeFlagged
+)
+
+// reviewOutcomeNames holds the DB string form for each ReviewOutcome,
+// indexed by its int value -- see documentTypeNames above for why.
+var reviewOutcomeNames = [...]string{
+	ReviewOutcomePassed:  "passed",
+	ReviewOutcomeFlagged: "flagged",
+}
+
+// String implements fmt.Stringer, and is also the value persisted to the
+// document_reviews.outcome DB column.
+func (o ReviewOutcome) String() string {
+	if o < 0 || int(o) >= len(reviewOutcomeNames) {
+		return fmt.Sprintf("ReviewOutcome(%d)", int(o))
+	}
+	return reviewOutcomeNames[o]
+}
+
+// ParseReviewOutcome converts a raw DB outcome string into the typed
+// enum, failing loudly if the value isn't one of the known outcomes --
+// see ParseDocumentType above for why.
+func ParseReviewOutcome(s string) (ReviewOutcome, error) {
+	for i, name := range reviewOutcomeNames {
+		if name == s {
+			return ReviewOutcome(i), nil
+		}
+	}
+	return 0, fmt.Errorf("store: unknown review outcome %q", s)
+}
 
 // DocumentReview is one human pass over a drafted cover letter or resume,
 // owned by the user and append-only -- never edited or deleted once
@@ -35,27 +106,41 @@ const (
 type DocumentReview struct {
 	ID              int64
 	ApplicationID   int64
-	DocumentType    string
+	DocumentType    DocumentType
 	Cycle           int64
 	ContentSnapshot string
 	ContentSHA256   string
-	Outcome         string
+	Outcome         ReviewOutcome
 	Notes           string
 	CreatedAt       time.Time
 }
 
-func documentReviewFromRow(row db.DocumentReview) DocumentReview {
+// documentReviewFromRow converts a raw sqlc row into a DocumentReview,
+// parsing the DB's document_type/outcome columns into their typed enums
+// (see ParseDocumentType/ParseReviewOutcome above) -- the DB no longer
+// enforces either with a CHECK constraint (migration 00008), so this is
+// where an unknown value is caught, the same way applicationFromRow does
+// for status.
+func documentReviewFromRow(row db.DocumentReview) (DocumentReview, error) {
+	documentType, err := ParseDocumentType(row.DocumentType)
+	if err != nil {
+		return DocumentReview{}, err
+	}
+	outcome, err := ParseReviewOutcome(row.Outcome)
+	if err != nil {
+		return DocumentReview{}, err
+	}
 	return DocumentReview{
 		ID:              row.ID,
 		ApplicationID:   row.ApplicationID,
-		DocumentType:    row.DocumentType,
+		DocumentType:    documentType,
 		Cycle:           row.Cycle,
 		ContentSnapshot: row.ContentSnapshot,
 		ContentSHA256:   row.ContentSha256,
-		Outcome:         row.Outcome,
+		Outcome:         outcome,
 		Notes:           row.Notes,
 		CreatedAt:       row.CreatedAt,
-	}
+	}, nil
 }
 
 // CreateDocumentReview records a review of content (documentType's
@@ -64,10 +149,10 @@ func documentReviewFromRow(row db.DocumentReview) DocumentReview {
 // is computed here -- the count of existing reviews for this
 // application+documentType, plus one -- rather than supplied by the
 // caller, so it can't drift out of sequence.
-func (s *Store) CreateDocumentReview(ctx context.Context, applicationID int64, documentType, content, outcome, notes string) (DocumentReview, error) {
+func (s *Store) CreateDocumentReview(ctx context.Context, applicationID int64, documentType DocumentType, content string, outcome ReviewOutcome, notes string) (DocumentReview, error) {
 	count, err := s.queries.CountDocumentReviews(ctx, db.CountDocumentReviewsParams{
 		ApplicationID: applicationID,
-		DocumentType:  documentType,
+		DocumentType:  documentType.String(),
 	})
 	if err != nil {
 		return DocumentReview{}, fmt.Errorf("store: count document reviews: %w", err)
@@ -76,23 +161,23 @@ func (s *Store) CreateDocumentReview(ctx context.Context, applicationID int64, d
 	sum := sha256.Sum256([]byte(content))
 	row, err := s.queries.CreateDocumentReview(ctx, db.CreateDocumentReviewParams{
 		ApplicationID:   applicationID,
-		DocumentType:    documentType,
+		DocumentType:    documentType.String(),
 		Cycle:           count + 1,
 		ContentSnapshot: content,
 		ContentSha256:   hex.EncodeToString(sum[:]),
-		Outcome:         outcome,
+		Outcome:         outcome.String(),
 		Notes:           notes,
 	})
 	if err != nil {
 		return DocumentReview{}, fmt.Errorf("store: create document review: %w", err)
 	}
-	return documentReviewFromRow(row), nil
+	return documentReviewFromRow(row)
 }
 
 // LatestDocumentReview returns applicationID's most recent review of
 // documentType, if any. ok is false when no review has been recorded yet
 // (the common case until the user runs a review) rather than an error.
-func (s *Store) LatestDocumentReview(ctx context.Context, applicationID int64, documentType string) (review DocumentReview, ok bool, err error) {
+func (s *Store) LatestDocumentReview(ctx context.Context, applicationID int64, documentType DocumentType) (review DocumentReview, ok bool, err error) {
 	reviews, err := s.ListDocumentReviews(ctx, applicationID, documentType)
 	if err != nil {
 		return DocumentReview{}, false, err
@@ -110,9 +195,9 @@ func (s *Store) LatestDocumentReview(ctx context.Context, applicationID int64, d
 // ListActiveApplications (see application_view.go) and by the TUI
 // wherever a per-document-type review summary is needed for one
 // application (see decisions.log #83).
-func (s *Store) LatestDocumentReviews(ctx context.Context, applicationID int64) (map[string]DocumentReview, error) {
-	reviews := make(map[string]DocumentReview)
-	for _, documentType := range []string{DocumentTypeCoverLetter, DocumentTypeResume} {
+func (s *Store) LatestDocumentReviews(ctx context.Context, applicationID int64) (map[DocumentType]DocumentReview, error) {
+	reviews := make(map[DocumentType]DocumentReview)
+	for _, documentType := range []DocumentType{DocumentTypeCoverLetter, DocumentTypeResume} {
 		review, ok, err := s.LatestDocumentReview(ctx, applicationID, documentType)
 		if err != nil {
 			return nil, err
@@ -126,17 +211,21 @@ func (s *Store) LatestDocumentReviews(ctx context.Context, applicationID int64) 
 
 // ListDocumentReviews returns applicationID's reviews for documentType,
 // most recent cycle first.
-func (s *Store) ListDocumentReviews(ctx context.Context, applicationID int64, documentType string) ([]DocumentReview, error) {
+func (s *Store) ListDocumentReviews(ctx context.Context, applicationID int64, documentType DocumentType) ([]DocumentReview, error) {
 	rows, err := s.queries.ListDocumentReviews(ctx, db.ListDocumentReviewsParams{
 		ApplicationID: applicationID,
-		DocumentType:  documentType,
+		DocumentType:  documentType.String(),
 	})
 	if err != nil {
 		return nil, err
 	}
 	reviews := make([]DocumentReview, len(rows))
 	for i, row := range rows {
-		reviews[i] = documentReviewFromRow(row)
+		review, err := documentReviewFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		reviews[i] = review
 	}
 	return reviews, nil
 }

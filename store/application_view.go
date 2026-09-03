@@ -20,7 +20,7 @@ type ApplicationView struct {
 	Application
 	Posting       Posting
 	CompanyName   string
-	LatestReviews map[string]DocumentReview
+	LatestReviews map[DocumentType]DocumentReview
 }
 
 // applicationViewFromRow converts a row built by sqlc.embed(applications)/
