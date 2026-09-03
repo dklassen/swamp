@@ -47,7 +47,7 @@ func TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication(t *test
 	t.Parallel()
 
 	apps := testActiveApplications()
-	apps[0].LatestReviews = map[string]store.DocumentReview{
+	apps[0].LatestReviews = map[store.DocumentType]store.DocumentReview{
 		store.DocumentTypeCoverLetter: {Outcome: store.ReviewOutcomeFlagged},
 		store.DocumentTypeResume:      {Outcome: store.ReviewOutcomePassed},
 	}

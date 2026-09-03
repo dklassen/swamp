@@ -15,7 +15,7 @@ import (
 // agent may not have drafted it).
 type documentReviewOption struct {
 	label        string
-	documentType string
+	documentType store.DocumentType
 	path         string
 	exists       bool
 }
@@ -59,7 +59,7 @@ type cancelDocumentReviewSelectMsg struct{}
 // content.
 type enterDocumentReviewFormMsg struct {
 	applicationID int64
-	documentType  string
+	documentType  store.DocumentType
 	content       string
 	err           error
 }
