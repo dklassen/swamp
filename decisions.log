@@ -3421,3 +3421,151 @@ store.TestDocumentType_MarshalJSON_UsesDBStringNotIntValue,
 store.TestReviewOutcome_MarshalJSON_UsesDBStringNotIntValue. No manual
 TUI verification -- this is a store-only addition with no runtime-visible
 behavior change (nothing calls MarshalJSON on either type yet).
+
+## 2026-09-03 -- Add application-detail screen, move per-application actions off active-applications (#87)
+
+User: active-applications ("application view") should keep its review-
+status column, but pressing enter should go to a new application-detail
+screen that organizes everything about one application -- navigate to
+the related posting, edit cover letter, edit resume, review cover
+letter, review resume. Application-specific functionality currently on
+the active-applications list (editing/reviewing documents) moves there;
+status-setting ('s') stays put per explicit follow-up ("ignore set
+status and leave as is"). Confirmed via question: "review application"
+in the original ask means "review resume" (paired with "review cover
+letter"), not a separate whole-application review concept.
+
+New screenApplicationDetail + applicationDetailModel (application_
+detail.go), constructed from the store.ApplicationView the user pressed
+enter on (already carries Posting, CompanyName, Status, Notes, and
+LatestReviews -- everything the screen renders, no extra load needed).
+Keymap: p (view posting), l/r (edit cover letter/resume in $EDITOR --
+moved verbatim from activeApplicationListModel.openDocument, which
+active-applications no longer needs), L/R (review cover letter/resume).
+L/R skip documentReviewSelectModel's two-step picker entirely -- unlike
+posting detail's 'r' (untouched, still picks between two documents),
+this screen already knows which document from which key was pressed, so
+enterReview reads the file and builds enterDocumentReviewFormMsg
+directly. activeApplicationListModel lost its documents field/param
+along with openDocument (and store, which turned out to already be
+dead code before this change -- nothing in that model ever read it;
+removed rather than inventing a justification for keeping it, since this
+edit was already touching that exact struct).
+
+Two return-screen fields needed generalizing, both following the
+existing applicationStatusReturnScreen precedent (same problem, already
+solved once): documentReviewReturnScreen gained a third possible value
+(screenApplicationDetail, alongside screenPostingDetail/
+screenActiveApplications) since L/R can now enter the review-form flow
+from here too. documentReviewCreatedMsg's post-save handler branches on
+it three ways -- returning to application detail reloads that one
+application's reviews (loadDocumentReviews) and, in the background,
+the whole active-applications list too, so its Review-column glyph isn't
+stale by the time the user backs out.
+
+Second, and not anticipated going in: 'p' (navigate to the related
+posting) exposed a real bug in the *existing* backToPostingListMsg
+handler, which unconditionally set screen = screenPostingList --
+correct only when posting detail was reached by browsing a company's
+postings (a.postings populated via loadPostings). Reached from
+application detail instead, a.postings is empty, so esc landed on an
+empty, disconnected posting-list screen. Manual verification caught
+this (not a hunch -- confirmed by actually pressing esc and seeing the
+empty list) before it shipped. Fixed with postingDetailReturnScreen,
+the same applicationStatusReturnScreen pattern a third time; also fixed
+a knock-on issue this surfaced along the way, that dispatching
+loadApplication after entering posting detail from application detail
+immediately clobbered the correctly-set Posting/Application with a
+zero value via that same a.postings-dependent lookupPosting inside
+applicationLoadedMsg's handler -- resolved by not dispatching
+loadApplication for this entry point at all, since applicationDetail's
+ApplicationView is already fresh enough (rather than trying to make
+lookupPosting itself work when a.postings was never populated).
+
+Verified: full build/test/lint/fmt clean. New tests:
+tui.TestApplicationDetailModel_* (Esc/b, p, l, r, L, R -- including the
+missing-document no-op case and the View() content check),
+tui.TestActiveApplicationListModel_Enter_ReturnsEnterApplicationDetailMsg,
+tui.TestApp_ActiveApplications_Enter_EntersApplicationDetail,
+tui.TestApp_ApplicationDetail_P_EntersPostingDetail,
+tui.TestApp_ApplicationDetail_ShiftR_EntersReviewFormDirectly,
+tui.TestApp_ApplicationDetail_CancelDocumentReview_ReturnsToApplicationDetail,
+tui.TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately,
+tui.TestApp_PostingDetailFromApplicationDetail_Esc_ReturnsToApplicationDetail
+(the return-screen regression test). Manually verified via tmux against
+a seeded scratch db end to end: active-applications' Review column
+unchanged; enter opens application detail showing both documents'
+status/outcome/notes; 'p' jumps straight to the related posting with
+correct data, and esc from there returns to application detail (not an
+empty posting list); 'R' on application detail enters the review-form
+screen directly (no picker), and submitting a resume review updates
+both application detail's badge and, once backed out, active-
+applications' compact glyph -- both without extra navigation.
+
+## 2026-09-03 -- Fix incomplete lookupPosting fix from PR #88 (code review)
+
+/code-review on PR #88 (8 finder angles + verification) caught that the
+previous entry's fix was incomplete. That entry fixed 'esc' from posting
+detail (via postingDetailReturnScreen) and the entry into posting detail
+itself (skipping loadApplication) for the new application-detail 'p'
+fast path -- but three OTHER handlers still unconditionally rebuilt
+a.postingDetail via lookupPosting(a.postingDetail.posting.ID) whenever
+a.screen == screenPostingDetail: applicationStatusUpdatedMsg,
+applicationNotesUpdatedMsg (no screen check at all), and
+documentReviewCreatedMsg's screenPostingDetail branch. lookupPosting
+searches a.postings, which the fast path deliberately never populates
+(same reason as before) -- so lookupPosting returned a zero-value
+store.Posting{}, and each of these three silently blanked the displayed
+posting's title/department/location/URL after a successful status
+change, notes edit, or (posting detail's own two-step) document review,
+even though the underlying write succeeded. Multiple review agents
+independently confirmed this, one by writing and running an actual
+reproduction. My own comment on the entry-point handler had already
+flagged the identical hazard for loadApplication's rebuild path and
+deliberately avoided it there -- the fix just wasn't extended to these
+three siblings.
+
+Fixed with a shared rebuildPostingDetailApplication helper: instead of
+re-deriving the Posting via lookupPosting (which can fail), it keeps
+a.postingDetail.posting as-is (always correct, since these handlers only
+ever change application-side data, never which posting is shown) and
+only refreshes app/hasApp from a.applicationsByPosting -- which lookupPosting
+already resolves independently of a.postings, so that half was never
+broken. All three call sites now go through this one helper. Also
+removed the now-dead `case screenActiveApplications:` branch in
+documentReviewCreatedMsg's switch (nothing sets documentReviewReturnScreen
+to that value anymore after PR #88 replaced active-applications' old 'R'
+key with the application-detail flow -- confirmed via grep, only two
+assignment sites remain) and tightened its `default: // screenPostingDetail`
+to an explicit `case screenPostingDetail:`, since a bare default there was
+silently masking exactly this class of "forgot to handle a new screen"
+bug.
+
+The review surfaced several other findings (duplicated read-and-build
+logic between document_review_select.go and application_detail.go's
+enterReview; a duplicated enterDocumentReviewFormMsg handler block in
+app.go; application_detail.go's View() re-deriving the same Documents-
+section assembly postingDetailContent already has; a missing automated
+test that active-applications' glyph refreshes after a review submitted
+from application detail; two test pairs that should be table-driven per
+AGENTS.md; a redundant double-query when refreshing one review's glyph;
+and the broader observation that the app now has three near-identical
+"which screen do I return to" fields, added one at a time, which is the
+root cause of the bug this entry fixes). None of these are data-
+corruption bugs like the one above, and several involve real design
+choices (a navigation stack instead of three fields; whether to
+factor out the duplicated read-and-build logic given the two callers'
+existence checks aren't quite the same shape) -- filed as GitHub issues
+for follow-up rather than fixed here, to keep this fix minimal and
+focused while the codebase is fresh in mind, and because the
+higher-effort ones (the navigation-stack refactor especially) deserve
+their own design discussion rather than an autonomous judgment call.
+
+Verified: full build/test/lint/fmt clean. New test:
+TestApp_StatusChangeFromApplicationDetailFastPath_PreservesPostingFields
+(changes status from posting detail reached via application detail's
+'p', asserts the posting's title survives the round trip). Manually
+verified via tmux against a seeded scratch db: application detail -> 'p'
+-> posting detail (fields intact) -> 's' -> pick a new status -> confirm
+-- posting detail re-renders with Department/Location/title still shown
+and the new status ("interviewing") applied correctly.
