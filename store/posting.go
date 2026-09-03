@@ -17,35 +17,49 @@ import (
 // one type so there's a single place defining "what counts as a
 // posting's content," rather than that field list being hand-copied at
 // every site that needs it (see decisions.log, #57).
+//
+// json tags pin the field names exactly as they already serialize today
+// (Go's default reflect-based names) rather than changing them -- the
+// point is making a future Go-side rename require an explicit tag edit
+// to also change the JSON contract an external LLM agent reads
+// (.agents/skills/apply-to-posting/SKILL.md), not changing that contract
+// now (see decisions.log, #59).
 type IngestedFields struct {
-	Title           string
-	Department      string
-	Team            string
-	Location        string
-	EmploymentType  string
-	WorkplaceType   string
-	DescriptionHTML string
-	DescriptionText string
-	JobURL          string
-	ApplicationURL  string
-	PublishedAt     time.Time
-	RawPayload      string
+	Title           string    `json:"Title"`
+	Department      string    `json:"Department"`
+	Team            string    `json:"Team"`
+	Location        string    `json:"Location"`
+	EmploymentType  string    `json:"EmploymentType"`
+	WorkplaceType   string    `json:"WorkplaceType"`
+	DescriptionHTML string    `json:"DescriptionHTML"`
+	DescriptionText string    `json:"DescriptionText"`
+	JobURL          string    `json:"JobURL"`
+	ApplicationURL  string    `json:"ApplicationURL"`
+	PublishedAt     time.Time `json:"PublishedAt"`
+	RawPayload      string    `json:"RawPayload"`
 }
 
 // Posting is a source-agnostic job posting: canonical fields are
 // normalized across boards, RawPayload preserves the original response for
 // anything not (yet) promoted to a canonical field.
+//
+// IngestedFields is deliberately left without its own json tag: an
+// anonymous field with no tag stays promoted (its fields serialize
+// directly into this struct's own JSON object, matching how the current
+// agent hand-off JSON already looks), where a tag would instead nest it
+// under an "IngestedFields" key and silently break that contract (see
+// decisions.log, #59).
 type Posting struct {
-	ID        int64
-	CompanyID int64
-	Source    string
-	SourceID  string
+	ID        int64  `json:"ID"`
+	CompanyID int64  `json:"CompanyID"`
+	Source    string `json:"Source"`
+	SourceID  string `json:"SourceID"`
 	IngestedFields
-	ListingStatus string
-	FirstSeenAt   time.Time
-	LastSeenAt    time.Time
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ListingStatus string    `json:"ListingStatus"`
+	FirstSeenAt   time.Time `json:"FirstSeenAt"`
+	LastSeenAt    time.Time `json:"LastSeenAt"`
+	CreatedAt     time.Time `json:"CreatedAt"`
+	UpdatedAt     time.Time `json:"UpdatedAt"`
 }
 
 // CreatePostingParams are the ingested fields for a posting, plus the
