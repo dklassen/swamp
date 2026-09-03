@@ -3421,3 +3421,83 @@ store.TestDocumentType_MarshalJSON_UsesDBStringNotIntValue,
 store.TestReviewOutcome_MarshalJSON_UsesDBStringNotIntValue. No manual
 TUI verification -- this is a store-only addition with no runtime-visible
 behavior change (nothing calls MarshalJSON on either type yet).
+
+## 2026-09-03 -- Add application-detail screen, move per-application actions off active-applications (#87)
+
+User: active-applications ("application view") should keep its review-
+status column, but pressing enter should go to a new application-detail
+screen that organizes everything about one application -- navigate to
+the related posting, edit cover letter, edit resume, review cover
+letter, review resume. Application-specific functionality currently on
+the active-applications list (editing/reviewing documents) moves there;
+status-setting ('s') stays put per explicit follow-up ("ignore set
+status and leave as is"). Confirmed via question: "review application"
+in the original ask means "review resume" (paired with "review cover
+letter"), not a separate whole-application review concept.
+
+New screenApplicationDetail + applicationDetailModel (application_
+detail.go), constructed from the store.ApplicationView the user pressed
+enter on (already carries Posting, CompanyName, Status, Notes, and
+LatestReviews -- everything the screen renders, no extra load needed).
+Keymap: p (view posting), l/r (edit cover letter/resume in $EDITOR --
+moved verbatim from activeApplicationListModel.openDocument, which
+active-applications no longer needs), L/R (review cover letter/resume).
+L/R skip documentReviewSelectModel's two-step picker entirely -- unlike
+posting detail's 'r' (untouched, still picks between two documents),
+this screen already knows which document from which key was pressed, so
+enterReview reads the file and builds enterDocumentReviewFormMsg
+directly. activeApplicationListModel lost its documents field/param
+along with openDocument (and store, which turned out to already be
+dead code before this change -- nothing in that model ever read it;
+removed rather than inventing a justification for keeping it, since this
+edit was already touching that exact struct).
+
+Two return-screen fields needed generalizing, both following the
+existing applicationStatusReturnScreen precedent (same problem, already
+solved once): documentReviewReturnScreen gained a third possible value
+(screenApplicationDetail, alongside screenPostingDetail/
+screenActiveApplications) since L/R can now enter the review-form flow
+from here too. documentReviewCreatedMsg's post-save handler branches on
+it three ways -- returning to application detail reloads that one
+application's reviews (loadDocumentReviews) and, in the background,
+the whole active-applications list too, so its Review-column glyph isn't
+stale by the time the user backs out.
+
+Second, and not anticipated going in: 'p' (navigate to the related
+posting) exposed a real bug in the *existing* backToPostingListMsg
+handler, which unconditionally set screen = screenPostingList --
+correct only when posting detail was reached by browsing a company's
+postings (a.postings populated via loadPostings). Reached from
+application detail instead, a.postings is empty, so esc landed on an
+empty, disconnected posting-list screen. Manual verification caught
+this (not a hunch -- confirmed by actually pressing esc and seeing the
+empty list) before it shipped. Fixed with postingDetailReturnScreen,
+the same applicationStatusReturnScreen pattern a third time; also fixed
+a knock-on issue this surfaced along the way, that dispatching
+loadApplication after entering posting detail from application detail
+immediately clobbered the correctly-set Posting/Application with a
+zero value via that same a.postings-dependent lookupPosting inside
+applicationLoadedMsg's handler -- resolved by not dispatching
+loadApplication for this entry point at all, since applicationDetail's
+ApplicationView is already fresh enough (rather than trying to make
+lookupPosting itself work when a.postings was never populated).
+
+Verified: full build/test/lint/fmt clean. New tests:
+tui.TestApplicationDetailModel_* (Esc/b, p, l, r, L, R -- including the
+missing-document no-op case and the View() content check),
+tui.TestActiveApplicationListModel_Enter_ReturnsEnterApplicationDetailMsg,
+tui.TestApp_ActiveApplications_Enter_EntersApplicationDetail,
+tui.TestApp_ApplicationDetail_P_EntersPostingDetail,
+tui.TestApp_ApplicationDetail_ShiftR_EntersReviewFormDirectly,
+tui.TestApp_ApplicationDetail_CancelDocumentReview_ReturnsToApplicationDetail,
+tui.TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately,
+tui.TestApp_PostingDetailFromApplicationDetail_Esc_ReturnsToApplicationDetail
+(the return-screen regression test). Manually verified via tmux against
+a seeded scratch db end to end: active-applications' Review column
+unchanged; enter opens application detail showing both documents'
+status/outcome/notes; 'p' jumps straight to the related posting with
+correct data, and esc from there returns to application detail (not an
+empty posting list); 'R' on application detail enters the review-form
+screen directly (no picker), and submitting a resume review updates
+both application detail's badge and, once backed out, active-
+applications' compact glyph -- both without extra navigation.
