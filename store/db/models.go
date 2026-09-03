@@ -36,6 +36,18 @@ type CompanyFilter struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type DocumentReview struct {
+	ID              int64     `json:"id"`
+	ApplicationID   int64     `json:"application_id"`
+	DocumentType    string    `json:"document_type"`
+	Cycle           int64     `json:"cycle"`
+	ContentSnapshot string    `json:"content_snapshot"`
+	ContentSha256   string    `json:"content_sha256"`
+	Outcome         string    `json:"outcome"`
+	Notes           string    `json:"notes"`
+	CreatedAt       time.Time `json:"created_at"`
+}
+
 type InterviewStage struct {
 	ID            int64        `json:"id"`
 	ApplicationID int64        `json:"application_id"`

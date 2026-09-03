@@ -67,6 +67,12 @@ type enterApplicationNotesMsg struct {
 	currentNotes string
 }
 
+// enterDocumentReviewSelectMsg signals that App should switch to the
+// document-review-select screen for this application.
+type enterDocumentReviewSelectMsg struct {
+	applicationID int64
+}
+
 func (m *postingDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	switch {
 	case msg.Type == tea.KeyRight, msg.String() == "l":
@@ -91,6 +97,10 @@ func (m *postingDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		if m.hasApplication {
 			return nil, enterApplicationNotesMsg{postingID: m.posting.ID, currentNotes: m.application.Notes}
 		}
+	case msg.String() == "r":
+		if m.hasApplication {
+			return nil, enterDocumentReviewSelectMsg{applicationID: m.application.ID}
+		}
 	default:
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
@@ -103,7 +113,7 @@ func (m *postingDetailModel) View() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render(m.posting.Title) + "\n")
 	b.WriteString(m.viewport.View() + "\n")
-	b.WriteString(helpStyle.Render("↑/↓ (j/k): scroll  ←/→ (h/l): prev/next posting  o: open in browser  a: start application  s: set status  n: edit notes  esc/b: back"))
+	b.WriteString(helpStyle.Render("↑/↓ (j/k): scroll  ←/→ (h/l): prev/next posting  o: open in browser  a: start application  s: set status  n: edit notes  r: review document  esc/b: back"))
 	return b.String()
 }
 

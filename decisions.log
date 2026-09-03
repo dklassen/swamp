@@ -2882,3 +2882,139 @@ version 5 with a NULL-department posting, launched the real binary
 `typeof()` in sqlite3 that the backfilled value is genuinely '' (not
 NULL), and confirmed the posting list and detail view render identically
 to before -- blank Department/Location, no crash.
+
+## 2026-09-03 -- Document review tracking, point 1 (#51)
+Context: #51 splits into three parts (spec, review cycle, metrics);
+comment thread narrowed the first pass to "point 1" specifically: DB
+tables for reviews (transactional, never overwritten, linked to a review
+cycle), TUI to submit them, and how to link the agent that drafted a
+document to its review. Discussed in chat before implementing (issue
+itself calls for simplest-implementation-first, not full design up
+front, but still asked rather than assumed on the load-bearing calls).
+Key existing-code facts that shaped this: documents.Store overwrites
+cover_letter.md/resume.md in place with zero versioning of its own, and
+documents' own package doc comment states Swamp never reads document
+content, only checks presence -- both had to be addressed head-on, not
+worked around.
+Decisions:
+1. content_snapshot on every review row: without it, a review recorded
+   today becomes unreadable once the file gets redrafted next week.
+   Mirrors this project's own established pattern for "track history
+   without losing it" (posting_history's full-snapshot approach, not a
+   diff or pointer).
+2. content_sha256 alongside content_snapshot (asked and confirmed in
+   chat): computed once at write time from content already in hand, so
+   "did this change between review N-1 and N" becomes a cheap indexed
+   comparison instead of diffing TEXT blobs. Deliberately NOT a
+   standalone hash tracked outside formal reviews (e.g. updated on every
+   `stage prepare` or TUI visit) -- that's really the seed of the
+   deferred "agent/user interaction event" tracking (comment 2's
+   territory), out of scope for point 1.
+3. How drafting links to review, resolved minimally: it doesn't, not
+   yet. cycle is an auto-incrementing count of reviews per (application,
+   document_type), computed by store.CreateDocumentReview (COUNT+1), not
+   supplied by the caller or tied to a separately-instrumented "draft"
+   event. The content_snapshot IS the record of what got reviewed; two
+   consecutive reviews with identical snapshots are directly visible by
+   comparing them (or their sha256) without Swamp needing to watch the
+   filesystem or the skill needing to call a new subcommand after every
+   write. Deferred, not decided against -- revisit once there's real
+   review history to learn from.
+4. document_type/outcome are plain TEXT with a DB CHECK constraint
+   (cover_letter/resume, passed/flagged), not a Go-typed enum. Unlike
+   applications.status (see 00004_drop_application_status_check_
+   constraint.sql, PR #17 review), which moved to Go-only enforcement
+   specifically because it already had significant schema churn and a
+   pre-existing Go enum duplicating it, document_type/outcome are new,
+   small, and stable -- interview_stages.outcome is the closer precedent
+   (plain TEXT + CHECK, no Go enum), followed here instead.
+5. documents package untouched -- its "never reads content" boundary
+   stays true. The TUI reads file content directly via os.ReadFile once
+   the user commits to reviewing a specific document
+   (documentReviewSelectModel.Update), using the path documents.Store
+   already resolves; store.CreateDocumentReview takes content as a
+   plain string parameter and has no filesystem access of its own.
+Schema: migration 00007 adds document_reviews (application_id FK,
+document_type, cycle, content_snapshot, content_sha256, outcome, notes,
+created_at), UNIQUE(application_id, document_type, cycle) as a safety
+net behind the store-computed cycle. No updated_at -- reviews are
+append-only, matching the issue's explicit "we don't overwrite reviews."
+TUI: two new screens on the posting-detail flow ('r', gated on
+hasApplication like 's'/'n'), mirroring existing shapes exactly rather
+than inventing new ones -- documentReviewSelectModel is a cursor-list
+picker like applicationStatusModel (shows Cover Letter/Resume with
+found/not-found, Enter on a missing one no-ops), documentReviewFormModel
+is a textarea like applicationNotesModel but with two submit bindings
+instead of one (ctrl+p passed, ctrl+f flagged) rather than a separate
+outcome-picker step -- avoids inventing a multi-field form shape with no
+precedent in this codebase for what's fundamentally still "notes plus
+which of two keys you press."
+Explicitly deferred (comment 2's scope, not point 1): agent/session
+interaction events, user-opened/user-edited tracking, and any Swamp-side
+subcommand the skill would call mid-draft. Also deferred: surfacing
+review history in postingDetailContent's view (nice-to-have, not needed
+to start capturing reviews).
+Verified: full build/vet/test/lint/fmt clean. New tests: store package
+(cycle computation, per-document-type isolation, sha256, list ordering),
+migrations package (CHECK constraints and UNIQUE constraint actually
+enforced at the DB level, not just by well-behaved Go callers), tui
+package (both new screen models' key handling, plus postingDetailModel's
+new 'r' keybinding gated on hasApplication). Manually verified via tmux
+against a seeded scratch db end to end: review-select shows correct
+found/not-found status, Enter on a missing document no-ops, submitting
+via ctrl+p/ctrl+f writes the expected row (content_sha256 populated,
+notes captured), cycle increments correctly on a second review of the
+same document type while staying independent across cover_letter vs.
+resume, and esc/cancel from both new screens returns to posting-detail
+without writing anything. Noted, not a regression: the review-form
+screen's title can scroll off-screen in a full-height terminal --
+confirmed this is pre-existing behavior shared by the notes-edit screen
+(same textarea-sized-to-listRows() pattern), not something this change
+introduced.
+
+Follow-up (same day, before push): ran a 9-angle code review (the usual
+8 plus an ad hoc SOLID-principles pass) against this change. Found and
+fixed a real bug: ctrl+p/ctrl+f were chosen as the submit bindings
+(passed/flagged) without checking against bubbles/textarea's own
+DefaultKeyMap, which already binds ctrl+p to "previous line" and ctrl+f
+to "character forward" -- pressing either while editing multi-line notes
+would have silently submitted the review instead of moving the cursor.
+Changed to ctrl+s (passed) and ctrl+g (flagged), both confirmed absent
+from textarea's keymap; added a regression test that types two lines,
+presses ctrl+p, and asserts no documentReviewCreatedMsg was produced.
+Also fixed, found independently by 4+ of the 9 angles: postingID was
+threaded dead through documentReviewSelectModel ->
+enterDocumentReviewFormMsg -> documentReviewFormModel with no consumer
+anywhere (removed from both models, the message, and their
+constructors); documentReviewSelectModel also held an unused
+*documents.Store field (only needed locally in its constructor, not
+kept). Extracted renderCursorLine (tui/app.go, alongside the existing
+renderFilterOption) since documentReviewSelectModel.View() was about to
+become a fourth near-identical copy of the same cursor-highlight
+rendering already duplicated in applicationStatusModel/company_list.go
+-- used it in the new file only, left the three pre-existing copies
+untouched (not this PR's job to retrofit working code). Fixed a real
+documentation-accuracy gap: content_sha256's comment claimed it was
+"indexed" when no index on it actually existed -- rather than walk back
+the claim, added idx_document_reviews_content_sha256 (cheap, and makes
+the documented intent true) instead of downgrading the comment.
+Considered and left as-is: the CountDocumentReviews-then-INSERT two
+round trips for cycle computation (SQLite single-writer, UNIQUE
+constraint is the real safety net either way, and the two-step form
+keeps cycle logic visible in Go next to its doc comment -- a defensible
+readability choice per the angles that raised it, not a clear mistake);
+the synchronous os.ReadFile in documentReviewSelectModel.Update (altitude
+and conventions angles agreed this extends, rather than violates, the
+existing tui/active_applications.go precedent for cheap local
+filesystem I/O in Update -- added an explicit comment saying so, since
+the prior version relied on the reader making that connection
+unprompted); the hardcoded 2-document-type list in
+newDocumentReviewSelectModel/documentTypeLabel (SOLID angle's OCP note
+-- already the deliberate, documented choice from the original entry
+above, not an oversight).
+Re-verified: full build/vet/test/lint/fmt clean after the above fixes.
+Manually re-verified the exact bug scenario via tmux: typed two lines of
+notes, pressed ctrl+p, confirmed the screen stayed on the review form
+with both lines intact (didn't submit), then pressed ctrl+s and
+confirmed the review was recorded correctly (outcome=passed, both lines
+in notes) and the screen returned to posting-detail.

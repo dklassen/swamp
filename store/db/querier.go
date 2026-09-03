@@ -11,6 +11,7 @@ import (
 
 type Querier interface {
 	AddTagToPosting(ctx context.Context, arg AddTagToPostingParams) error
+	CountDocumentReviews(ctx context.Context, arg CountDocumentReviewsParams) (int64, error)
 	// Unlike posting_markup, not auto-created for every posting -- an
 	// application exists only once the user takes an explicit "start
 	// application" action. status is supplied explicitly by the caller
@@ -21,6 +22,7 @@ type Querier interface {
 	CreateApplication(ctx context.Context, arg CreateApplicationParams) (Application, error)
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
 	CreateCompanyFilter(ctx context.Context, arg CreateCompanyFilterParams) (CompanyFilter, error)
+	CreateDocumentReview(ctx context.Context, arg CreateDocumentReviewParams) (DocumentReview, error)
 	CreateInterviewStage(ctx context.Context, arg CreateInterviewStageParams) (InterviewStage, error)
 	CreatePosting(ctx context.Context, arg CreatePostingParams) (Posting, error)
 	CreatePostingHistory(ctx context.Context, arg CreatePostingHistoryParams) (PostingHistory, error)
@@ -78,6 +80,9 @@ type Querier interface {
 	// #74), so excluding '' is the only filter required.
 	ListDistinctDepartmentsForCompany(ctx context.Context, companyID int64) ([]string, error)
 	ListDistinctLocationsForCompany(ctx context.Context, companyID int64) ([]string, error)
+	// cycle DESC: most recent review first, matching how a human would want
+	// to read review history (latest verdict up top).
+	ListDocumentReviews(ctx context.Context, arg ListDocumentReviewsParams) ([]DocumentReview, error)
 	// Postings the user has flagged interested and not archived, joined with
 	// their company name and -- if one has been started -- their
 	// application's id and status. Feeds the stage package's discovery of
