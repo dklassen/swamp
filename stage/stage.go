@@ -18,29 +18,36 @@ import (
 // Candidate is one posting ready for an external agent to work on: full
 // posting content plus, if an application already exists for it, its id
 // and status.
+//
+// json tags pin the field names this type already serializes to today,
+// since the real consumer of this JSON is an external LLM agent
+// following .agents/skills/apply-to-posting/SKILL.md's documented
+// examples, not Go code -- an ordinary Go-side rename would otherwise
+// silently break that hand-off with no compiler or test catching it
+// (see decisions.log, #59).
 type Candidate struct {
-	Posting           store.Posting
-	CompanyName       string
-	ApplicationID     *int64
-	ApplicationStatus *store.ApplicationStatus
+	Posting           store.Posting            `json:"Posting"`
+	CompanyName       string                   `json:"CompanyName"`
+	ApplicationID     *int64                   `json:"ApplicationID"`
+	ApplicationStatus *store.ApplicationStatus `json:"ApplicationStatus"`
 }
 
 // Document is one document's resolved path and whether it already exists
 // on disk, so an agent can tell a partially-generated application apart
 // from a fresh one.
 type Document struct {
-	Path   string
-	Exists bool
+	Path   string `json:"Path"`
+	Exists bool   `json:"Exists"`
 }
 
 // Prepared is everything an external agent needs to draft and write one
 // posting's cover letter and resume, once Prepare has committed to it.
 type Prepared struct {
-	Posting       store.Posting
-	CompanyName   string
-	ApplicationID int64
-	CoverLetter   Document
-	Resume        Document
+	Posting       store.Posting `json:"Posting"`
+	CompanyName   string        `json:"CompanyName"`
+	ApplicationID int64         `json:"ApplicationID"`
+	CoverLetter   Document      `json:"CoverLetter"`
+	Resume        Document      `json:"Resume"`
 }
 
 // Stage is the single entry point for the agent hand-off mechanism,
