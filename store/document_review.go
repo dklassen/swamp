@@ -89,6 +89,20 @@ func (s *Store) CreateDocumentReview(ctx context.Context, applicationID int64, d
 	return documentReviewFromRow(row), nil
 }
 
+// LatestDocumentReview returns applicationID's most recent review of
+// documentType, if any. ok is false when no review has been recorded yet
+// (the common case until the user runs a review) rather than an error.
+func (s *Store) LatestDocumentReview(ctx context.Context, applicationID int64, documentType string) (review DocumentReview, ok bool, err error) {
+	reviews, err := s.ListDocumentReviews(ctx, applicationID, documentType)
+	if err != nil {
+		return DocumentReview{}, false, err
+	}
+	if len(reviews) == 0 {
+		return DocumentReview{}, false, nil
+	}
+	return reviews[0], true, nil
+}
+
 // ListDocumentReviews returns applicationID's reviews for documentType,
 // most recent cycle first.
 func (s *Store) ListDocumentReviews(ctx context.Context, applicationID int64, documentType string) ([]DocumentReview, error) {
