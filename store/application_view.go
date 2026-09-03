@@ -18,8 +18,9 @@ import (
 // not a second, partial representation of it (see decisions.log).
 type ApplicationView struct {
 	Application
-	Posting     Posting
-	CompanyName string
+	Posting       Posting
+	CompanyName   string
+	LatestReviews map[string]DocumentReview
 }
 
 // applicationViewFromRow converts a row built by sqlc.embed(applications)/
@@ -42,7 +43,15 @@ func applicationViewFromRow(row db.ListActiveApplicationsRow) (ApplicationView, 
 
 // ListActiveApplications returns applications not at a terminal
 // dead-end status (see TerminalApplicationStatuses), each viewed with
-// its posting and company name resolved, most-recently-changed first.
+// its posting, company name, and latest document review per document
+// type resolved, most-recently-changed first.
+//
+// LatestReviews is filled in with one extra query pair (cover letter,
+// resume) per application rather than a single windowed join -- active
+// applications are a personal-scale list (a handful to a few dozen, not
+// thousands), so the extra local sqlite round trips are negligible, and
+// reusing LatestDocumentReview keeps this in step with its own
+// single-review semantics rather than duplicating that logic in SQL.
 func (s *Store) ListActiveApplications(ctx context.Context) ([]ApplicationView, error) {
 	terminal := TerminalApplicationStatuses()
 	excluded := make([]sql.NullString, len(terminal))
@@ -56,6 +65,10 @@ func (s *Store) ListActiveApplications(ctx context.Context) ([]ApplicationView, 
 	views := make([]ApplicationView, len(rows))
 	for i, row := range rows {
 		v, err := applicationViewFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		v.LatestReviews, err = s.LatestDocumentReviews(ctx, v.ID)
 		if err != nil {
 			return nil, err
 		}

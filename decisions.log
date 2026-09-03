@@ -3141,3 +3141,175 @@ tui/app.go, which still serve the independent manual 'r' refresh
 keybinding on the company-list screen (tui/company_list.go) -- a
 different, still-needed code path, not a leftover of the old
 filter-save flow.
+
+## 2026-09-03 -- Show latest document review outcome inline on posting detail (#83)
+
+User asked for a way to see, at a glance, whether a drafted document
+(cover letter/resume) last passed or got flagged in review, and why --
+previously the only way to see a review's outcome was to walk through
+the review-select/review-form screens again. Explicitly ruled out a
+numeric score field ("don't see the value for a numeric scale unless we
+were doing more complex review work") -- store.DocumentReview's existing
+pass/flag Outcome + free-text Notes already carry everything needed;
+this is a read-path addition, not a data-model change. Also explicitly
+asked for the indicator per-document (cover letter/resume can fail
+independently) and folded inline into the existing posting-detail
+screen, not a separate screen -- so the "Documents" section postingDetailContent
+already renders was the natural place, not a new screen alongside
+review-select/review-form.
+
+Added store.Store.LatestDocumentReview(ctx, applicationID, documentType)
+-- thin wrapper over the existing ListDocumentReviews (already ordered
+most-recent-cycle-first), returning (DocumentReview, ok, err) rather than
+a slice, since every caller here only ever wants the latest one.
+
+On the TUI side, postingDetailContent's own doc comment already states
+the rule this had to follow: application/hasApplication are passed in
+rather than fetched inline, specifically so store-backed state goes
+through the same async tea.Cmd/tea.Msg round trip as the rest of the
+screen (docs.Status via os.Stat is the one deliberate exception, since
+that's local filesystem-existence-checking, not a DB read). So the
+latest-reviews-per-document-type data follows loadApplication's own
+pattern: loadDocumentReviews/documentReviewsLoadedMsg, mirrored via a
+new postingDetailModel.latestReviews map[string]store.DocumentReview
+field threaded through newPostingDetailModel and postingDetailContent.
+A maybeLoadDocumentReviews(s, hasApp, applicationID) helper centralizes
+"only fire the load when there's actually an application" across the
+half-dozen places a.postingDetail's underlying application changes
+(entering the screen, navigating prev/next, and every
+application-mutation message handler) -- reload-rather-than-patch,
+matching applicationStatusUpdatedMsg's existing "reload active
+applications wholesale" precedent elsewhere in the same file.
+
+documentReviewCreatedMsg's handler previously returned to
+screenPostingDetail without rebuilding a.postingDetail at all -- a
+pre-existing gap (harmless before, since nothing on that screen depended
+on review state) that would have meant a freshly-submitted review's
+outcome not showing until navigating away and back. Fixed as part of
+this change: it now rebuilds and re-triggers the reviews load, same as
+every other application-state transition.
+
+Uncovered along the way: the tui test suite's applyCmd helper (used by
+newTestApp for App.Init's tea.Batch, and now needed by
+openPostingDetail too) ran app.Update(msg) but discarded the Cmd that
+call itself returned -- fine when no handler chained a further Cmd, but
+this change's loadApplication -> applicationLoadedMsg ->
+loadDocumentReviews chain needs exactly that second hop. Fixed applyCmd
+to recursively chase whatever Cmd each Update call returns, which is
+what a real tea.Program's runtime loop does anyway -- not a workaround,
+a correctness fix to the test harness. openPostingDetail (used by ~30
+existing tests) switched from a raw sendKey(app, cmd()) to applyCmd for
+the same reason: entering posting detail for an application that
+already has one dispatches a tea.Batch(loadApplication,
+maybeLoadDocumentReviews) once hasApp is known synchronously (e.g.
+re-entering a posting already in a.applicationsByPosting), and a raw
+sendKey can't unpack a BatchMsg.
+
+Verified: full build/test/lint/fmt clean. New tests:
+store.TestLatestDocumentReview_NoReviews_ReturnsNotFound,
+store.TestLatestDocumentReview_ReturnsMostRecentCycle,
+tui.TestPostingDetailModel_New_NoReviewsYet_ShowsNotReviewedBadge,
+tui.TestPostingDetailModel_New_WithReviews_ShowsOutcomeAndNotes,
+tui.TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline,
+tui.TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail.
+Manually verified via tmux against a seeded scratch db (SWAMP_DB_PATH
+and SWAMP_DOCUMENTS_PATH both pointed at scratch paths, to avoid
+touching the real project's assets/db): an application with a flagged
+cover-letter review and a passed resume review showed "[FLAGGED]" with
+its notes line and "[PASSED]" inline on the posting-detail screen; a
+second application with no reviews yet showed "[not reviewed]" for both
+documents; and submitting a fresh review (r -> select cover letter ->
+ctrl+s) updated the posting-detail screen's badge and notes immediately,
+with no navigation away and back required.
+
+Noted but out of scope, flagged separately (not fixed here): the
+document-review-form screen's title line ("Review cover letter") wasn't
+visible on screen during manual verification, even scrolled to the very
+top of the tmux pane -- pre-existing behavior, unrelated to this change
+(tui/document_review_form.go untouched here).
+
+## 2026-09-03 -- Also surface review status on the active-applications screen (#83 follow-up)
+
+Immediate user feedback on the above: "this flagging and review should
+happen on the application view not posting". Clarified via questions --
+"application view" means the active-applications screen
+(tui/active_applications.go, the cross-company home screen, see
+decisions.log #43), not a new screen; wanted a compact per-row indicator
+there (not the full badge+notes posting detail already got, which the
+user confirmed should stay); and confirmed this is additive, not a
+replacement for the posting-detail work above.
+
+store.ApplicationView gained a LatestReviews map[string]DocumentReview
+field, resolved inside ListActiveApplications via a new exported
+store.LatestDocumentReviews(ctx, applicationID) (cover letter + resume
+in one call) -- extracted from tui/app.go's loadDocumentReviews, which
+had the identical loop; that Cmd now just calls the store method,
+removing the duplication rather than adding a third copy. Deliberately
+N+1 (two extra LatestDocumentReview queries per application in
+ListActiveApplications' loop) rather than a windowed join query: active
+applications are a personal-scale list, not thousands of rows, and
+reusing LatestDocumentReview keeps single-review semantics in exactly
+one place. Because ApplicationView already carries this, no new
+TUI-side Cmd/Msg was needed here (unlike the posting-detail work) --
+loadActiveApplications already reloads the whole view including reviews.
+
+Rendering: a new reviewGlyphSummary/reviewGlyph pair renders a compact
+"CL:✓ R:✗"-style column (dim "-" for not-yet-reviewed), added as a
+fourth "Review" column on the active-applications table -- distinct from
+reviewBadge's full "[FLAGGED]" used on posting detail, which doesn't fit
+a table cell.
+
+The active-applications screen already binds 'l'/'r' to open the cover
+letter/resume directly in $EDITOR -- lowercase 'r' was taken, so
+entering the review flow from here uses 'R' (shift), following the
+existing 'A' toggle-archived-visibility precedent (posting_list.go) for
+a shift-modified variant of a related lowercase action.
+
+Making the document-review-select/-form screens reachable from a second
+entry point exposed a real gap: their cancel handlers and
+documentReviewCreatedMsg's post-save handler all hardcoded
+screen = screenPostingDetail, correct only when entered from there.
+Fixed by adding App.documentReviewReturnScreen, mirroring the existing
+applicationStatusReturnScreen field/pattern exactly (same problem,
+already solved once for the status-select screen -- see its own doc
+comment). documentReviewCreatedMsg now branches on the return screen:
+reload+rebuild postingDetail as before when returning there, or
+loadActiveApplications when returning to screenActiveApplications, so
+the glyph updates immediately there too, matching the "show immediately"
+requirement from the original posting-detail change.
+
+Also fixed, uncovered by testing this end-to-end: reviewBadge's
+"[not reviewed]" and documentStatusLine's "Notes:" line were both built
+with helpStyle -- which carries MarginTop(1), meant only for the
+screen-bottom help line it was designed for. Used inline, that margin
+inserted an unwanted leading blank line: visible in the very first
+manual tmux verification above ("[not reviewed]" landing on its own line
+below "Cover Letter: ...", and a blank line between "[FLAGGED]" and
+"Notes:") but not flagged at the time -- it read as plausible spacing
+rather than a bug. Caught for real once reviewGlyph reused the same
+style inside a lipgloss/table cell: MarginTop's leading newline broke
+the table's single-line-per-cell layout outright (a "CL:- R:-" cell
+wrapped across three visual rows, misaligning the whole table -- see the
+failing TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication
+this exposed). Fixed by adding dimStyle (helpStyle's color, no margin)
+and switching every inline use (reviewBadge, documentStatusLine's notes
+line, reviewGlyph) to it; helpStyle itself is untouched and still used
+correctly at every screen's actual bottom help line.
+
+Verified: full build/test/lint/fmt clean. New tests:
+store.TestListActiveApplications_NoReviews_LatestReviewsEmpty,
+store.TestListActiveApplications_IncludesLatestDocumentReviews,
+tui.TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication,
+tui.TestActiveApplicationListModel_ShiftR_ReturnsEnterDocumentReviewSelectMsg,
+tui.TestApp_ActiveApplications_ShiftR_EntersDocumentReviewSelect,
+tui.TestApp_ActiveApplications_CancelDocumentReview_ReturnsToActiveApplications,
+tui.TestApp_SubmitDocumentReviewFromActiveApplications_UpdatesGlyphImmediately.
+Manually verified via tmux against a seeded scratch db: the active-
+applications table showed "CL:✗ R:-" for a flagged-cover-letter
+application and "CL:- R:-" for an unreviewed one; pressing 'R' on the
+unreviewed row entered review-select, selecting/passing the cover letter
+returned to the active-applications screen with the glyph updated to
+"CL:✓ R:-" immediately; esc from review-select also returned to
+active-applications rather than posting detail; and posting detail's
+own "[not reviewed]"/"Notes:" rendering no longer shows the stray blank
+line from the helpStyle/MarginTop bug above.

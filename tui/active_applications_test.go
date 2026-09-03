@@ -43,6 +43,24 @@ func TestActiveApplicationListModel_CursorMovement_ClampsToApps(t *testing.T) {
 	}
 }
 
+func TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication(t *testing.T) {
+	t.Parallel()
+
+	apps := testActiveApplications()
+	apps[0].LatestReviews = map[string]store.DocumentReview{
+		store.DocumentTypeCoverLetter: {Outcome: store.ReviewOutcomeFlagged},
+		store.DocumentTypeResume:      {Outcome: store.ReviewOutcomePassed},
+	}
+	// apps[1] is left with no LatestReviews -- neither document reviewed yet.
+
+	m := newActiveApplicationListModel(nil, nil)
+	got := m.View(apps, 20)
+
+	if !containsAll(got, "CL:✗ R:✓", "CL:- R:-") {
+		t.Fatalf("View() = %q, want CL:✗ R:✓ for the reviewed application and CL:- R:- for the unreviewed one", got)
+	}
+}
+
 func TestActiveApplicationListModel_C_ReturnsBackToCompanyListMsg(t *testing.T) {
 	t.Parallel()
 
@@ -85,6 +103,25 @@ func TestActiveApplicationListModel_S_ReturnsEnterApplicationStatusMsg(t *testin
 	}
 	if got.currentStatus != store.ApplicationStatusStarted {
 		t.Fatalf("currentStatus = %s, want %s", got.currentStatus, store.ApplicationStatusStarted)
+	}
+}
+
+func TestActiveApplicationListModel_ShiftR_ReturnsEnterDocumentReviewSelectMsg(t *testing.T) {
+	t.Parallel()
+
+	m := newActiveApplicationListModel(nil, nil)
+	apps := testActiveApplications()
+
+	cmd, intent := m.Update(runeKey('R'), apps)
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil", cmd)
+	}
+	got, ok := intent.(enterDocumentReviewSelectMsg)
+	if !ok {
+		t.Fatalf("intent = %T, want enterDocumentReviewSelectMsg", intent)
+	}
+	if got.applicationID != apps[0].ID {
+		t.Fatalf("applicationID = %d, want %d (application at cursor 0)", got.applicationID, apps[0].ID)
 	}
 }
 

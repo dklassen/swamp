@@ -99,6 +99,51 @@ func TestCreateDocumentReview_CycleIsPerDocumentType(t *testing.T) {
 	}
 }
 
+func TestLatestDocumentReview_NoReviews_ReturnsNotFound(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+
+	_, ok, err := s.LatestDocumentReview(ctx, application.ID, DocumentTypeCoverLetter)
+	if err != nil {
+		t.Fatalf("LatestDocumentReview: %v", err)
+	}
+	if ok {
+		t.Fatal("ok = true, want false -- no reviews exist yet")
+	}
+}
+
+func TestLatestDocumentReview_ReturnsMostRecentCycle(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+
+	if _, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, "draft one", ReviewOutcomeFlagged, "too generic"); err != nil {
+		t.Fatalf("CreateDocumentReview (first): %v", err)
+	}
+	second, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, "draft two", ReviewOutcomePassed, "")
+	if err != nil {
+		t.Fatalf("CreateDocumentReview (second): %v", err)
+	}
+
+	got, ok, err := s.LatestDocumentReview(ctx, application.ID, DocumentTypeCoverLetter)
+	if err != nil {
+		t.Fatalf("LatestDocumentReview: %v", err)
+	}
+	if !ok {
+		t.Fatal("ok = false, want true")
+	}
+	if diff := cmp.Diff(second, got); diff != "" {
+		t.Fatalf("LatestDocumentReview mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestListDocumentReviews_ReturnsMostRecentCycleFirst(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
