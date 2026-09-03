@@ -29,6 +29,16 @@ type Filter struct {
 	Value string
 }
 
+// Field name constants for Filter.Field / company_filters.field -- the
+// single source of truth every caller building or reading a Filter should
+// use instead of retyping the string, so a typo can't silently produce a
+// filter Match rejects with "unsupported field" (or, worse, one caller's
+// string and another's drifting apart -- see decisions.log, #61).
+const (
+	FieldDepartment = "department"
+	FieldLocation   = "location"
+)
+
 // Match reports whether p satisfies filters. Filters are grouped by Field:
 // multiple Filters sharing a Field are OR'd together, and each distinct
 // Field present in filters must have at least one matching value (Fields
@@ -81,6 +91,6 @@ func Match(p Posting, filters []Filter) (bool, error) {
 // reads the corresponding value off a Posting. Adding a new filterable
 // field means adding an entry here (and to Posting).
 var fieldAccessors = map[string]func(Posting) string{
-	"department": func(p Posting) string { return p.Department },
-	"location":   func(p Posting) string { return p.Location },
+	FieldDepartment: func(p Posting) string { return p.Department },
+	FieldLocation:   func(p Posting) string { return p.Location },
 }
