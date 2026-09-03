@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"fmt"
 	"time"
 
@@ -44,6 +45,17 @@ func (d DocumentType) String() string {
 	return documentTypeNames[d]
 }
 
+// MarshalJSON encodes as the same DB string form String() returns (e.g.
+// "cover_letter"), not the underlying int -- preemptive, like
+// ApplicationStatus's own MarshalJSON: nothing serializes a
+// DocumentReview to JSON yet, but a bare int would otherwise be a
+// footgun the moment something does (a JSON consumer, or any persisted
+// blob, would have to know Swamp's internal enum ordering, which is
+// exactly what reordering the const block would silently break).
+func (d DocumentType) MarshalJSON() ([]byte, error) {
+	return json.Marshal(d.String())
+}
+
 // ParseDocumentType converts a raw DB document_type string into the typed
 // enum, failing loudly (rather than silently defaulting) if the value
 // isn't one of the known types -- since the DB no longer enforces this
@@ -80,6 +92,13 @@ func (o ReviewOutcome) String() string {
 		return fmt.Sprintf("ReviewOutcome(%d)", int(o))
 	}
 	return reviewOutcomeNames[o]
+}
+
+// MarshalJSON encodes as the same DB string form String() returns (e.g.
+// "passed"), not the underlying int -- see DocumentType.MarshalJSON
+// above for why this is added preemptively.
+func (o ReviewOutcome) MarshalJSON() ([]byte, error) {
+	return json.Marshal(o.String())
 }
 
 // ParseReviewOutcome converts a raw DB outcome string into the typed
