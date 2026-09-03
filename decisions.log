@@ -3501,3 +3501,71 @@ empty posting list); 'R' on application detail enters the review-form
 screen directly (no picker), and submitting a resume review updates
 both application detail's badge and, once backed out, active-
 applications' compact glyph -- both without extra navigation.
+
+## 2026-09-03 -- Fix incomplete lookupPosting fix from PR #88 (code review)
+
+/code-review on PR #88 (8 finder angles + verification) caught that the
+previous entry's fix was incomplete. That entry fixed 'esc' from posting
+detail (via postingDetailReturnScreen) and the entry into posting detail
+itself (skipping loadApplication) for the new application-detail 'p'
+fast path -- but three OTHER handlers still unconditionally rebuilt
+a.postingDetail via lookupPosting(a.postingDetail.posting.ID) whenever
+a.screen == screenPostingDetail: applicationStatusUpdatedMsg,
+applicationNotesUpdatedMsg (no screen check at all), and
+documentReviewCreatedMsg's screenPostingDetail branch. lookupPosting
+searches a.postings, which the fast path deliberately never populates
+(same reason as before) -- so lookupPosting returned a zero-value
+store.Posting{}, and each of these three silently blanked the displayed
+posting's title/department/location/URL after a successful status
+change, notes edit, or (posting detail's own two-step) document review,
+even though the underlying write succeeded. Multiple review agents
+independently confirmed this, one by writing and running an actual
+reproduction. My own comment on the entry-point handler had already
+flagged the identical hazard for loadApplication's rebuild path and
+deliberately avoided it there -- the fix just wasn't extended to these
+three siblings.
+
+Fixed with a shared rebuildPostingDetailApplication helper: instead of
+re-deriving the Posting via lookupPosting (which can fail), it keeps
+a.postingDetail.posting as-is (always correct, since these handlers only
+ever change application-side data, never which posting is shown) and
+only refreshes app/hasApp from a.applicationsByPosting -- which lookupPosting
+already resolves independently of a.postings, so that half was never
+broken. All three call sites now go through this one helper. Also
+removed the now-dead `case screenActiveApplications:` branch in
+documentReviewCreatedMsg's switch (nothing sets documentReviewReturnScreen
+to that value anymore after PR #88 replaced active-applications' old 'R'
+key with the application-detail flow -- confirmed via grep, only two
+assignment sites remain) and tightened its `default: // screenPostingDetail`
+to an explicit `case screenPostingDetail:`, since a bare default there was
+silently masking exactly this class of "forgot to handle a new screen"
+bug.
+
+The review surfaced several other findings (duplicated read-and-build
+logic between document_review_select.go and application_detail.go's
+enterReview; a duplicated enterDocumentReviewFormMsg handler block in
+app.go; application_detail.go's View() re-deriving the same Documents-
+section assembly postingDetailContent already has; a missing automated
+test that active-applications' glyph refreshes after a review submitted
+from application detail; two test pairs that should be table-driven per
+AGENTS.md; a redundant double-query when refreshing one review's glyph;
+and the broader observation that the app now has three near-identical
+"which screen do I return to" fields, added one at a time, which is the
+root cause of the bug this entry fixes). None of these are data-
+corruption bugs like the one above, and several involve real design
+choices (a navigation stack instead of three fields; whether to
+factor out the duplicated read-and-build logic given the two callers'
+existence checks aren't quite the same shape) -- filed as GitHub issues
+for follow-up rather than fixed here, to keep this fix minimal and
+focused while the codebase is fresh in mind, and because the
+higher-effort ones (the navigation-stack refactor especially) deserve
+their own design discussion rather than an autonomous judgment call.
+
+Verified: full build/test/lint/fmt clean. New test:
+TestApp_StatusChangeFromApplicationDetailFastPath_PreservesPostingFields
+(changes status from posting detail reached via application detail's
+'p', asserts the posting's title survives the round trip). Manually
+verified via tmux against a seeded scratch db: application detail -> 'p'
+-> posting detail (fields intact) -> 's' -> pick a new status -> confirm
+-- posting detail re-renders with Department/Location/title still shown
+and the new status ("interviewing") applied correctly.
