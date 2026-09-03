@@ -1712,6 +1712,46 @@ func TestApp_PostingDetailFromApplicationDetail_Esc_ReturnsToApplicationDetail(t
 	}
 }
 
+// TestApp_StatusChangeFromApplicationDetailFastPath_PreservesPostingFields
+// is a regression test for a bug caught in code review: applicationDetail's
+// 'p' enters posting detail without ever populating a.postings (the fast
+// path -- see decisions.log #87 follow-up). applicationStatusUpdatedMsg's
+// handler used to unconditionally rebuild a.postingDetail via
+// lookupPosting(a.postingDetail.posting.ID), which searches a.postings and
+// returns a zero-value store.Posting{} when not found -- so changing status
+// from a posting-detail screen reached this way silently blanked the
+// displayed posting's title/department/location/etc, even though the
+// status write itself succeeded. rebuildPostingDetailApplication fixes this
+// by keeping the already-displayed posting instead of re-deriving it.
+func TestApp_StatusChangeFromApplicationDetailFastPath_PreservesPostingFields(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // active-applications -> application detail
+	app, _ = sendKey(app, runeKey('p'))                   // application detail -> posting detail (fast path)
+	if app.postingDetail.posting.Title != "Engineer" {
+		t.Fatalf("postingDetail.posting.Title before status change = %q, want %q", app.postingDetail.posting.Title, "Engineer")
+	}
+
+	app, _ = sendKey(app, runeKey('s'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("Update on enter (status select) returned nil Cmd, want a command that updates the status")
+	}
+	app = applyCmd(t, app, cmd)
+
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after status change = %v, want screenPostingDetail", app.screen)
+	}
+	if app.postingDetail.posting.Title != "Engineer" {
+		t.Fatalf("postingDetail.posting.Title after status change = %q, want %q (lookupPosting must not clobber the posting when a.postings was never populated)", app.postingDetail.posting.Title, "Engineer")
+	}
+}
+
 func TestApp_ApplicationDetail_ShiftR_EntersReviewFormDirectly(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
