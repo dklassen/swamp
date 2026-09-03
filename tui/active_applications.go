@@ -7,25 +7,32 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
 
 // activeApplicationListModel drives the active-applications screen -- the
 // app's home screen (see decisions.log, #43): every application not at a
 // terminal dead-end status (rejected, offer_declined), across every
-// company, in one place. It holds only the dependencies it needs to
-// dispatch its own commands (store, documents) and its own private
-// cursor -- the application list itself is domain data owned by App,
-// passed in on every call, never cached here.
+// company, in one place. It holds only its own private cursor -- the
+// application list itself is domain data owned by App, passed in on
+// every call, never cached here. Application-specific actions
+// (editing/reviewing documents, viewing the related posting) live one
+// level down, on applicationDetailModel -- entered via enter (see
+// enterApplicationDetailMsg below); this screen keeps only
+// status-setting as a quick shortcut for fast triage across many
+// applications (see decisions.log, the #86 follow-up).
 type activeApplicationListModel struct {
-	store     *store.Store
-	documents *documents.Store
-	cursor    int
+	cursor int
 }
 
-func newActiveApplicationListModel(s *store.Store, docs *documents.Store) activeApplicationListModel {
-	return activeApplicationListModel{store: s, documents: docs}
+func newActiveApplicationListModel() activeApplicationListModel {
+	return activeApplicationListModel{}
+}
+
+// enterApplicationDetailMsg signals that App should switch to the
+// application-detail screen for this application.
+type enterApplicationDetailMsg struct {
+	application store.ApplicationView
 }
 
 // Update handles one key press. The returned tea.Cmd (if non-nil) is a
@@ -51,39 +58,12 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 			a := apps[m.cursor]
 			return nil, enterApplicationStatusMsg{postingID: a.Posting.ID, currentStatus: a.Status}
 		}
-	case msg.String() == "l":
+	case msg.Type == tea.KeyEnter:
 		if m.cursor < len(apps) {
-			return m.openDocument(apps[m.cursor], false), nil
-		}
-	case msg.String() == "r":
-		if m.cursor < len(apps) {
-			return m.openDocument(apps[m.cursor], true), nil
-		}
-	case msg.String() == "R":
-		if m.cursor < len(apps) {
-			return nil, enterDocumentReviewSelectMsg{applicationID: apps[m.cursor].ID}
+			return nil, enterApplicationDetailMsg{application: apps[m.cursor]}
 		}
 	}
 	return nil, nil
-}
-
-// openDocument ensures the application's document directory exists (most
-// editors create the file itself on save, but not the directory) and
-// returns a command that opens the cover letter (resume=false) or resume
-// (resume=true) in $EDITOR. EnsureDir is local filesystem I/O -- cheap
-// enough to call synchronously here rather than through a separate
-// tea.Cmd round trip, same reasoning postingDetailContent's docs.Status
-// call already relies on (see decisions.log).
-func (m *activeApplicationListModel) openDocument(a store.ApplicationView, resume bool) tea.Cmd {
-	paths, err := m.documents.EnsureDir(a.ID)
-	if err != nil {
-		return func() tea.Msg { return editorClosedMsg{err: err} }
-	}
-	path := paths.CoverLetter
-	if resume {
-		path = paths.Resume
-	}
-	return openInEditor(path)
 }
 
 func (m *activeApplicationListModel) View(apps []store.ApplicationView, listRows int) string {
@@ -118,7 +98,7 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, listRows
 		}
 		b.WriteString(t.Render() + "\n")
 	}
-	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  l: cover letter  r: resume  R: review a document  s: status  c: companies  q: quit"))
+	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: application detail  s: status  c: companies  q: quit"))
 	return b.String()
 }
 

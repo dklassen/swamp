@@ -5,7 +5,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -27,7 +26,7 @@ func testActiveApplications() []store.ApplicationView {
 func TestActiveApplicationListModel_CursorMovement_ClampsToApps(t *testing.T) {
 	t.Parallel()
 
-	m := newActiveApplicationListModel(nil, nil)
+	m := newActiveApplicationListModel()
 	apps := testActiveApplications()
 
 	m.Update(tea.KeyMsg{Type: tea.KeyDown}, apps)
@@ -53,7 +52,7 @@ func TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication(t *test
 	}
 	// apps[1] is left with no LatestReviews -- neither document reviewed yet.
 
-	m := newActiveApplicationListModel(nil, nil)
+	m := newActiveApplicationListModel()
 	got := m.View(apps, 20)
 
 	if !containsAll(got, "CL:✗ R:✓", "CL:- R:-") {
@@ -64,7 +63,7 @@ func TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication(t *test
 func TestActiveApplicationListModel_C_ReturnsBackToCompanyListMsg(t *testing.T) {
 	t.Parallel()
 
-	m := newActiveApplicationListModel(nil, nil)
+	m := newActiveApplicationListModel()
 	cmd, intent := m.Update(runeKey('c'), testActiveApplications())
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
@@ -77,7 +76,7 @@ func TestActiveApplicationListModel_C_ReturnsBackToCompanyListMsg(t *testing.T) 
 func TestActiveApplicationListModel_Q_ReturnsQuitCmd(t *testing.T) {
 	t.Parallel()
 
-	m := newActiveApplicationListModel(nil, nil)
+	m := newActiveApplicationListModel()
 	cmd, _ := m.Update(runeKey('q'), testActiveApplications())
 	if cmd == nil {
 		t.Fatal("Update on 'q' returned nil Cmd, want tea.Quit")
@@ -87,7 +86,7 @@ func TestActiveApplicationListModel_Q_ReturnsQuitCmd(t *testing.T) {
 func TestActiveApplicationListModel_S_ReturnsEnterApplicationStatusMsg(t *testing.T) {
 	t.Parallel()
 
-	m := newActiveApplicationListModel(nil, nil)
+	m := newActiveApplicationListModel()
 	apps := testActiveApplications()
 
 	cmd, intent := m.Update(runeKey('s'), apps)
@@ -106,56 +105,30 @@ func TestActiveApplicationListModel_S_ReturnsEnterApplicationStatusMsg(t *testin
 	}
 }
 
-func TestActiveApplicationListModel_ShiftR_ReturnsEnterDocumentReviewSelectMsg(t *testing.T) {
+func TestActiveApplicationListModel_Enter_ReturnsEnterApplicationDetailMsg(t *testing.T) {
 	t.Parallel()
 
-	m := newActiveApplicationListModel(nil, nil)
+	m := newActiveApplicationListModel()
 	apps := testActiveApplications()
 
-	cmd, intent := m.Update(runeKey('R'), apps)
+	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}
-	got, ok := intent.(enterDocumentReviewSelectMsg)
+	got, ok := intent.(enterApplicationDetailMsg)
 	if !ok {
-		t.Fatalf("intent = %T, want enterDocumentReviewSelectMsg", intent)
+		t.Fatalf("intent = %T, want enterApplicationDetailMsg", intent)
 	}
-	if got.applicationID != apps[0].ID {
-		t.Fatalf("applicationID = %d, want %d (application at cursor 0)", got.applicationID, apps[0].ID)
-	}
-}
-
-func TestActiveApplicationListModel_L_ReturnsOpenCoverLetterCmd(t *testing.T) {
-	t.Parallel()
-
-	m := newActiveApplicationListModel(nil, documents.NewStore(t.TempDir()))
-	cmd, intent := m.Update(runeKey('l'), testActiveApplications())
-	if cmd == nil {
-		t.Fatal("cmd = nil, want a command that opens the cover letter in $EDITOR")
-	}
-	if intent != nil {
-		t.Fatalf("intent = %v, want nil", intent)
+	if got.application.ID != apps[0].ID {
+		t.Fatalf("application.ID = %d, want %d (application at cursor 0)", got.application.ID, apps[0].ID)
 	}
 }
 
-func TestActiveApplicationListModel_R_ReturnsOpenResumeCmd(t *testing.T) {
+func TestActiveApplicationListModel_EmptyList_KeysDoNotPanic(t *testing.T) {
 	t.Parallel()
 
-	m := newActiveApplicationListModel(nil, documents.NewStore(t.TempDir()))
-	cmd, intent := m.Update(runeKey('r'), testActiveApplications())
-	if cmd == nil {
-		t.Fatal("cmd = nil, want a command that opens the resume in $EDITOR")
-	}
-	if intent != nil {
-		t.Fatalf("intent = %v, want nil", intent)
-	}
-}
-
-func TestActiveApplicationListModel_EmptyList_LSRDoNotPanic(t *testing.T) {
-	t.Parallel()
-
-	m := newActiveApplicationListModel(nil, documents.NewStore(t.TempDir()))
-	for _, key := range []tea.KeyMsg{runeKey('l'), runeKey('r'), runeKey('s')} {
+	m := newActiveApplicationListModel()
+	for _, key := range []tea.KeyMsg{runeKey('s'), {Type: tea.KeyEnter}} {
 		if cmd, intent := m.Update(key, nil); cmd != nil || intent != nil {
 			t.Fatalf("Update(%v) on empty list = %v, %v, want nil, nil", key, cmd, intent)
 		}
