@@ -3313,3 +3313,111 @@ returned to the active-applications screen with the glyph updated to
 active-applications rather than posting detail; and posting detail's
 own "[not reviewed]"/"Notes:" rendering no longer shows the stray blank
 line from the helpStyle/MarginTop bug above.
+
+## 2026-09-03 -- document_reviews enums move from DB CHECK to Go (#85)
+
+User, reviewing the #83 work: document_reviews.document_type/outcome
+should live as Go enums, matching applications.status, not as DB CHECK
+constraints -- validation belongs at the boundary layer (where a raw row
+becomes a store.DocumentReview), not duplicated in SQL. This directly
+reverses 00007's own stated reasoning ("a small, stable set with no
+history of churn, so it follows interview_stages.outcome's pattern
+instead [of applications.status's]") -- overruled by the user now that a
+second, independent use has appeared (see decisions.log's #83 entries
+above): what looked stable in isolation wasn't once review UI grew a
+compact-glyph rendering path alongside the full-badge one, i.e. exactly
+the kind of use that benefits from a typed enum's compiler-checked
+exhaustiveness over bare string comparisons.
+
+store.ApplicationStatus (application_status.go) is the exact template,
+copied faithfully: DocumentType and ReviewOutcome are now typed int
+enums in store/document_review.go, each with a String()
+(also the DB-persisted form), a Parse* that fails loudly on an unknown
+value, and a Names array both go through so String/Parse can't drift
+from each other. DocumentReview.DocumentType/Outcome are now these typed
+fields, not string; documentReviewFromRow (renamed to return an error,
+like applicationFromRow) is where an unknown DB value is now caught --
+CreateDocumentReview/LatestDocumentReview/LatestDocumentReviews/
+ListDocumentReviews all take/return the typed enums, calling .String()
+only at the sqlc boundary. No MarshalJSON added (unlike
+ApplicationStatus, which needed one for the stage package's CLI JSON
+output) -- nothing serializes a DocumentReview to JSON yet, so that's
+speculative until an actual caller needs it.
+
+New migration 00008 drops document_type/outcome's CHECK constraints,
+mirroring 00004's table-rebuild approach (SQLite has no ALTER TABLE ...
+DROP CONSTRAINT) -- unlike 00004's table, document_reviews has its own
+two indexes, so the rebuild recreates those explicitly or they'd be
+silently lost. Down migration restores both CHECK constraints, same
+"fail loudly if a row now violates them" reasoning as 00004's down. Left
+00007's own comment/reasoning untouched rather than editing it
+retroactively -- it accurately described the decision at the time it was
+made; the reversal and its reasoning belong here and in 00008's own
+comment, not rewritten into history.
+
+The type change cascades through every caller: tui/document_review_
+select.go's documentReviewOption.documentType, document_review_form.go's
+documentReviewFormModel.documentType/documentTypeLabel/
+createDocumentReview, and every map[string]store.DocumentReview (posting
+detail's latestReviews, active-applications' ApplicationView.
+LatestReviews, reviewGlyphSummary) all became map[store.DocumentType]... instead
+-- caught one real bug along the way: reviewBadge's default case was
+doing "[" + review.Outcome + "]" string concatenation, which stopped
+compiling once Outcome became a typed ReviewOutcome (fixed with
+.String()) -- a compile error, not a runtime one, which is exactly the
+"validated at the boundary, not scattered as string comparisons
+everywhere" property the user asked for actually paying for itself
+immediately.
+
+Explicitly left untouched: interview_stages.outcome, still a DB
+CHECK-constrained plain string -- the user scoped this to document_
+reviews specifically, and interview_stages wasn't part of the request.
+
+Verified: full build/test/lint/fmt clean, `task sqlc:generate` produces
+no diff (schema change doesn't affect sqlc's generated Go types, both
+columns were already TEXT). New migration tests:
+TestDropDocumentReviewsCheckConstraints_PreservesExistingRow,
+TestDropDocumentReviewsCheckConstraints_ArbitraryValuesAccepted,
+TestDropDocumentReviewsCheckConstraints_UniqueConstraintStillEnforced
+(the last a regression check that the table rebuild didn't lose the
+UNIQUE(application_id, document_type, cycle) constraint along with the
+CHECK constraints). TestDocumentReviewsCheckConstraints_RejectInvalidValues
+(00007's own test) needed no changes -- already pinned to migrateTo(t, 7),
+so it continues to document the pre-00008 behavior correctly. Manually
+verified via tmux against a fresh scratch db seeded through store.
+CreateDocumentReview (typed enums end to end, not raw SQL): a seeded
+flagged review round-tripped and displayed correctly on the active-
+applications screen, and submitting a fresh review live through the TUI
+(R -> select -> ctrl+s) persisted and updated the glyph as expected.
+
+## 2026-09-03 -- Add MarshalJSON to DocumentType/ReviewOutcome preemptively (#85 follow-up)
+
+Question raised in review of the above: since document_type/outcome are
+now Go enums with no DB CHECK constraint, what's the risk of a future
+reorder of the const block silently reinterpreting old data? Answer:
+none for the DB path -- String()/ParseDocumentType (and the
+ReviewOutcome equivalents) round-trip through the string form, and
+documentTypeNames/reviewOutcomeNames are keyed array literals (indexed
+by the constant itself, e.g. documentTypeNames: {DocumentTypeCoverLetter:
+"cover_letter", ...}), so a reorder can't desync the name a constant
+resolves to from what it resolved to before -- String() and Parse* stay
+mutually consistent regardless of each constant's underlying int value.
+
+The one real gap: neither type had a MarshalJSON, so Go's default
+json.Marshal on a bare `type DocumentType int` emits the raw int, not
+the string -- exactly like ApplicationStatus would without its own
+MarshalJSON (see application_status.go, added for the stage package's
+CLI JSON output). Nothing currently serializes a DocumentReview to
+JSON, so this wasn't yet a live bug, but any int written to a durable
+JSON blob (a log line, a cache, an external system) before some future
+reorder would silently resolve to the wrong value when read back after
+it, with no way to tell from the blob alone. Added MarshalJSON to both
+types now, matching ApplicationStatus's exact implementation (marshal
+String()'s output, not the int) -- cheap, and closes the gap before
+there's any real data depending on the current ordering to go stale.
+
+Verified: full build/test/lint/fmt clean. New tests:
+store.TestDocumentType_MarshalJSON_UsesDBStringNotIntValue,
+store.TestReviewOutcome_MarshalJSON_UsesDBStringNotIntValue. No manual
+TUI verification -- this is a store-only addition with no runtime-visible
+behavior change (nothing calls MarshalJSON on either type yet).

@@ -4,10 +4,33 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 )
+
+func TestDocumentType_MarshalJSON_UsesDBStringNotIntValue(t *testing.T) {
+	got, err := json.Marshal(DocumentTypeResume)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	want := `"resume"`
+	if string(got) != want {
+		t.Fatalf("json.Marshal(DocumentTypeResume) = %s, want %s (a bare int forces JSON consumers to know Swamp's internal enum ordering)", got, want)
+	}
+}
+
+func TestReviewOutcome_MarshalJSON_UsesDBStringNotIntValue(t *testing.T) {
+	got, err := json.Marshal(ReviewOutcomeFlagged)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	want := `"flagged"`
+	if string(got) != want {
+		t.Fatalf("json.Marshal(ReviewOutcomeFlagged) = %s, want %s (a bare int forces JSON consumers to know Swamp's internal enum ordering)", got, want)
+	}
+}
 
 func TestCreateDocumentReview_ThenList_ReturnsCreatedReview(t *testing.T) {
 	s := newTestStore(t)

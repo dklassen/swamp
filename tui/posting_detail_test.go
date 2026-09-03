@@ -34,7 +34,7 @@ func TestPostingDetailModel_New_WithReviews_ShowsOutcomeAndNotes(t *testing.T) {
 	t.Parallel()
 
 	app := store.Application{ID: 9, PostingID: 5}
-	reviews := map[string]store.DocumentReview{
+	reviews := map[store.DocumentType]store.DocumentReview{
 		store.DocumentTypeCoverLetter: {Outcome: store.ReviewOutcomeFlagged, Notes: "too generic, mention Go specifically"},
 		store.DocumentTypeResume:      {Outcome: store.ReviewOutcomePassed},
 	}

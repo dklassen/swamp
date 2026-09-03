@@ -21,14 +21,14 @@ import (
 type documentReviewFormModel struct {
 	store         *store.Store
 	applicationID int64
-	documentType  string
+	documentType  store.DocumentType
 	content       string
 	textarea      textarea.Model
 }
 
 // newDocumentReviewFormModel returns a review-form screen for
 // applicationID's documentType, sized to width/height.
-func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentType, content string, width, height int) documentReviewFormModel {
+func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentType store.DocumentType, content string, width, height int) documentReviewFormModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	ta.SetHeight(height)
@@ -51,7 +51,7 @@ type documentReviewCreatedMsg struct {
 	err    error
 }
 
-func createDocumentReview(s *store.Store, applicationID int64, documentType, content, outcome, notes string) tea.Cmd {
+func createDocumentReview(s *store.Store, applicationID int64, documentType store.DocumentType, content string, outcome store.ReviewOutcome, notes string) tea.Cmd {
 	return func() tea.Msg {
 		review, err := s.CreateDocumentReview(context.Background(), applicationID, documentType, content, outcome, notes)
 		return documentReviewCreatedMsg{review: review, err: err}
@@ -79,14 +79,14 @@ func (m *documentReviewFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 
 // documentTypeLabel renders a DocumentType constant as human-readable
 // text for screen titles.
-func documentTypeLabel(documentType string) string {
+func documentTypeLabel(documentType store.DocumentType) string {
 	switch documentType {
 	case store.DocumentTypeCoverLetter:
 		return "cover letter"
 	case store.DocumentTypeResume:
 		return "resume"
 	default:
-		return documentType
+		return documentType.String()
 	}
 }
 

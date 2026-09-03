@@ -198,7 +198,7 @@ func reviewBadge(review store.DocumentReview, hasReview bool) string {
 	case store.ReviewOutcomeFlagged:
 		return errStyle.Render("[FLAGGED]")
 	default:
-		return dimStyle.Render("[" + review.Outcome + "]")
+		return dimStyle.Render("[" + review.Outcome.String() + "]")
 	}
 }
 
@@ -208,7 +208,7 @@ func reviewBadge(review store.DocumentReview, hasReview bool) string {
 // reviewBadge's full "[FLAGGED]"/notes rendering -- see decisions.log
 // #83. A document with no entry in reviews (no review recorded yet)
 // renders as a dim "-".
-func reviewGlyphSummary(reviews map[string]store.DocumentReview) string {
+func reviewGlyphSummary(reviews map[store.DocumentType]store.DocumentReview) string {
 	clReview, hasCL := reviews[store.DocumentTypeCoverLetter]
 	resumeReview, hasResume := reviews[store.DocumentTypeResume]
 	return "CL:" + reviewGlyph(clReview, hasCL) + " R:" + reviewGlyph(resumeReview, hasResume)
@@ -250,7 +250,7 @@ func reviewGlyph(review store.DocumentReview, hasReview bool) string {
 // tea.Cmd/tea.Msg convention as the rest of this file's store-backed
 // state (see decisions.log #83). A document with no entry in the map
 // renders as "not reviewed".
-func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store, latestReviews map[string]store.DocumentReview) string {
+func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store, latestReviews map[store.DocumentType]store.DocumentReview) string {
 	var b strings.Builder
 	fields := []struct{ label, value string }{
 		{"Department", p.Department},
@@ -488,7 +488,7 @@ func loadApplication(s *store.Store, postingID int64) tea.Cmd {
 
 type documentReviewsLoadedMsg struct {
 	applicationID int64
-	reviews       map[string]store.DocumentReview
+	reviews       map[store.DocumentType]store.DocumentReview
 	err           error
 }
 

@@ -30,7 +30,7 @@ type postingDetailModel struct {
 	// loaded async via loadDocumentReviews the same way application
 	// itself is (see decisions.log #83) -- absent when not yet loaded,
 	// or nil when this posting has no application.
-	latestReviews map[string]store.DocumentReview
+	latestReviews map[store.DocumentType]store.DocumentReview
 }
 
 // newPostingDetailModel returns a detail screen for p, sized to
@@ -39,7 +39,7 @@ type postingDetailModel struct {
 // data changes (navigating to a different posting, an application being
 // created/updated, or a window resize), matching the pre-extraction
 // showPostingDetail's "always rebuild, always reset scroll" behavior.
-func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool, latestReviews map[string]store.DocumentReview) postingDetailModel {
+func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool, latestReviews map[store.DocumentType]store.DocumentReview) postingDetailModel {
 	vp := viewport.New(width, height)
 	vp.SetContent(wrapToWidth(postingDetailContent(p, app, hasApp, docs, latestReviews), width))
 	return postingDetailModel{store: s, documents: docs, viewport: vp, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews}
