@@ -3,11 +3,15 @@ package stage
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 
 	"github.com/pressly/goose/v3"
+
+	"github.com/google/go-cmp/cmp"
 
 	_ "modernc.org/sqlite"
 
@@ -293,6 +297,99 @@ func TestPrepare_CreatesDocumentDirectory(t *testing.T) {
 	}
 	if prepared.Resume.Exists {
 		t.Error("Resume.Exists = true, want false (nothing written yet)")
+	}
+}
+
+// jsonKeys marshals v and returns its top-level JSON object's keys,
+// sorted -- used to pin the field-name set stage.Candidate/Prepared
+// serialize to for the external agent hand-off (see decisions.log,
+// #59) without being fragile to dynamic values like timestamps, which
+// a literal golden-string comparison would be.
+func jsonKeys(t *testing.T, v any) []string {
+	t.Helper()
+	data, err := json.Marshal(v)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	var obj map[string]json.RawMessage
+	if err := json.Unmarshal(data, &obj); err != nil {
+		t.Fatalf("json.Unmarshal: %v", err)
+	}
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return keys
+}
+
+// TestCandidate_JSONShape_MatchesDocumentedAgentContract pins the exact
+// field-name set stage.Candidate serializes to -- the JSON shape
+// .agents/skills/apply-to-posting/SKILL.md documents for `stage list`.
+// A Go-side field rename with no matching json tag update would fail
+// this test instead of silently breaking the agent hand-off (see
+// decisions.log, #59).
+func TestCandidate_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
+	t.Parallel()
+
+	st, s, _ := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	mustMarkInterested(t, s, posting.ID)
+
+	got, err := st.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d candidates, want 1", len(got))
+	}
+
+	wantTop := []string{"Posting", "CompanyName", "ApplicationID", "ApplicationStatus"}
+	sort.Strings(wantTop)
+	if diff := cmp.Diff(wantTop, jsonKeys(t, got[0])); diff != "" {
+		t.Fatalf("Candidate top-level JSON keys mismatch (-want +got):\n%s", diff)
+	}
+
+	wantPosting := []string{
+		"ID", "CompanyID", "Source", "SourceID", "Title", "Department", "Team",
+		"Location", "EmploymentType", "WorkplaceType", "DescriptionHTML",
+		"DescriptionText", "JobURL", "ApplicationURL", "PublishedAt",
+		"RawPayload", "ListingStatus", "FirstSeenAt", "LastSeenAt",
+		"CreatedAt", "UpdatedAt",
+	}
+	sort.Strings(wantPosting)
+	if diff := cmp.Diff(wantPosting, jsonKeys(t, got[0].Posting)); diff != "" {
+		t.Fatalf("Candidate.Posting JSON keys mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestPrepared_JSONShape_MatchesDocumentedAgentContract is
+// TestCandidate_JSONShape_MatchesDocumentedAgentContract for `stage
+// prepare`'s output shape.
+func TestPrepared_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
+	t.Parallel()
+
+	st, s, _ := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	mustMarkInterested(t, s, posting.ID)
+
+	got, err := st.Prepare(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+
+	wantTop := []string{"Posting", "CompanyName", "ApplicationID", "CoverLetter", "Resume"}
+	sort.Strings(wantTop)
+	if diff := cmp.Diff(wantTop, jsonKeys(t, got)); diff != "" {
+		t.Fatalf("Prepared top-level JSON keys mismatch (-want +got):\n%s", diff)
+	}
+
+	wantDocument := []string{"Path", "Exists"}
+	sort.Strings(wantDocument)
+	if diff := cmp.Diff(wantDocument, jsonKeys(t, got.CoverLetter)); diff != "" {
+		t.Fatalf("Prepared.CoverLetter JSON keys mismatch (-want +got):\n%s", diff)
 	}
 }
 

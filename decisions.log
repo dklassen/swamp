@@ -3018,3 +3018,50 @@ notes, pressed ctrl+p, confirmed the screen stayed on the review form
 with both lines intact (didn't submit), then pressed ctrl+s and
 confirmed the review was recorded correctly (outcome=passed, both lines
 in notes) and the screen returned to posting-detail.
+
+## 2026-09-03 -- Pin the stage/CLI-to-agent JSON contract (#59)
+Context: stage.Candidate/Prepared (embedding store.Posting) were
+serialized by cmd/swamp's printJSON using Go's default reflect-based
+field names -- no json: tags anywhere in store or stage. The actual
+consumer is an external LLM agent following
+.agents/skills/apply-to-posting/SKILL.md's documented JSON examples, not
+Go code, so an ordinary field rename would silently break that hand-off
+with nothing to catch it -- confirmed via a real `stage list`/`stage
+prepare` run against seeded data before touching anything, matching
+SKILL.md's documented shape exactly (PascalCase Go field names as JSON
+keys).
+Decision: added explicit json tags to store.IngestedFields/Posting and
+stage.Candidate/Document/Prepared, each pinned to the exact name that
+already serializes today -- not a redesign, a freeze. IngestedFields'
+own embedding into Posting is deliberately left untagged so it stays
+promoted/flattened (a tag there would nest it under an "IngestedFields"
+key instead, silently changing the contract this change exists to
+freeze). Verified byte-for-byte via a real `stage list` run before and
+after: output identical except timestamps.
+Added TestCandidate_JSONShape_MatchesDocumentedAgentContract and
+TestPrepared_JSONShape_MatchesDocumentedAgentContract (stage/stage_test.go):
+marshal a real Candidate/Prepared value, unmarshal into
+map[string]json.RawMessage, and diff the sorted key set against the
+expected one -- structural (field-name-set) pinning rather than a
+literal golden string, since FirstSeenAt/CreatedAt/etc. are real
+timestamps a golden string comparison would make flaky. Verified the
+test actually catches drift by temporarily changing a json tag's value
+(not the Go field, which would just be a compile error) and confirming
+the test fails with a clear diff, then reverted.
+Considered, not done as part of this issue: store.Application isn't
+tagged, since it's never included wholesale in stage's JSON output
+(only ApplicationID/ApplicationStatus are pulled out individually) --
+out of this issue's actual blast radius.
+Noticed, not fixed: PublishedAt (plain time.Time since #67, not
+pointer) serializes as the literal string "0001-01-01T00:00:00Z" for
+any posting with no known publish date, since Go's json encoder has no
+built-in way to omit a zero-value struct field (omitempty doesn't
+recognize a zero time.Time as empty) -- an agent reading this JSON sees
+a nonsensical-looking date rather than an absent one. This is a real,
+currently-shipping oddity, not introduced by this change, but this
+change does pin it as part of the now-frozen contract. Flagged
+separately rather than folded in here, since fixing it means a real
+design decision (custom MarshalJSON on Posting, a stage-specific DTO
+that omits/nulls it, or something else) with its own tradeoffs, not a
+tag addition.
+Verified: full build/vet/test/lint/fmt clean.
