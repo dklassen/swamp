@@ -1641,6 +1641,81 @@ func TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail(t *testing.T) 
 	}
 }
 
+func TestApp_ActiveApplications_ShiftR_EntersDocumentReviewSelect(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	if app.screen != screenActiveApplications {
+		t.Fatalf("initial screen = %v, want screenActiveApplications", app.screen)
+	}
+	app, _ = sendKey(app, runeKey('R'))
+	if app.screen != screenDocumentReviewSelect {
+		t.Fatalf("screen after 'R' = %v, want screenDocumentReviewSelect", app.screen)
+	}
+}
+
+func TestApp_ActiveApplications_CancelDocumentReview_ReturnsToActiveApplications(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, runeKey('R'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	if app.screen != screenActiveApplications {
+		t.Fatalf("screen after cancelling review = %v, want screenActiveApplications (not screenPostingDetail)", app.screen)
+	}
+}
+
+// TestApp_SubmitDocumentReviewFromActiveApplications_UpdatesGlyphImmediately
+// mirrors TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail
+// above, but entering review from the active-applications screen (the
+// "application view" -- see decisions.log #83) rather than posting
+// detail, and checking the compact review-glyph column updates rather
+// than the full inline badge.
+func TestApp_SubmitDocumentReviewFromActiveApplications_UpdatesGlyphImmediately(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
+
+	status := app.documents.Status(application.ID)
+	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(status.CoverLetter.Path, []byte("# Cover Letter"), 0o644); err != nil {
+		t.Fatalf("WriteFile cover letter: %v", err)
+	}
+
+	app, _ = sendKey(app, runeKey('R'))
+	if app.screen != screenDocumentReviewSelect {
+		t.Fatalf("screen after 'R' = %v, want screenDocumentReviewSelect", app.screen)
+	}
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // select "Cover Letter" (cursor 0)
+	if app.screen != screenDocumentReviewForm {
+		t.Fatalf("screen after selecting cover letter = %v, want screenDocumentReviewForm", app.screen)
+	}
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyCtrlS}) // pass
+	if cmd == nil {
+		t.Fatal("Update on ctrl+s returned nil Cmd, want a command that saves the review")
+	}
+	app = applyCmd(t, app, cmd)
+
+	if app.screen != screenActiveApplications {
+		t.Fatalf("screen after saving review = %v, want screenActiveApplications", app.screen)
+	}
+	view := app.View()
+	if !strings.Contains(view, "CL:✓") {
+		t.Errorf("view after submitting review does not show CL:✓ without navigating away and back:\n%s", view)
+	}
+}
+
 func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
