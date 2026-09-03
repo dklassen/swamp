@@ -3389,3 +3389,35 @@ CreateDocumentReview (typed enums end to end, not raw SQL): a seeded
 flagged review round-tripped and displayed correctly on the active-
 applications screen, and submitting a fresh review live through the TUI
 (R -> select -> ctrl+s) persisted and updated the glyph as expected.
+
+## 2026-09-03 -- Add MarshalJSON to DocumentType/ReviewOutcome preemptively (#85 follow-up)
+
+Question raised in review of the above: since document_type/outcome are
+now Go enums with no DB CHECK constraint, what's the risk of a future
+reorder of the const block silently reinterpreting old data? Answer:
+none for the DB path -- String()/ParseDocumentType (and the
+ReviewOutcome equivalents) round-trip through the string form, and
+documentTypeNames/reviewOutcomeNames are keyed array literals (indexed
+by the constant itself, e.g. documentTypeNames: {DocumentTypeCoverLetter:
+"cover_letter", ...}), so a reorder can't desync the name a constant
+resolves to from what it resolved to before -- String() and Parse* stay
+mutually consistent regardless of each constant's underlying int value.
+
+The one real gap: neither type had a MarshalJSON, so Go's default
+json.Marshal on a bare `type DocumentType int` emits the raw int, not
+the string -- exactly like ApplicationStatus would without its own
+MarshalJSON (see application_status.go, added for the stage package's
+CLI JSON output). Nothing currently serializes a DocumentReview to
+JSON, so this wasn't yet a live bug, but any int written to a durable
+JSON blob (a log line, a cache, an external system) before some future
+reorder would silently resolve to the wrong value when read back after
+it, with no way to tell from the blob alone. Added MarshalJSON to both
+types now, matching ApplicationStatus's exact implementation (marshal
+String()'s output, not the int) -- cheap, and closes the gap before
+there's any real data depending on the current ordering to go stale.
+
+Verified: full build/test/lint/fmt clean. New tests:
+store.TestDocumentType_MarshalJSON_UsesDBStringNotIntValue,
+store.TestReviewOutcome_MarshalJSON_UsesDBStringNotIntValue. No manual
+TUI verification -- this is a store-only addition with no runtime-visible
+behavior change (nothing calls MarshalJSON on either type yet).
