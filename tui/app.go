@@ -24,9 +24,14 @@ import (
 )
 
 var (
-	titleStyle   = lipgloss.NewStyle().Bold(true).MarginBottom(1)
-	cursorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-	helpStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).MarginTop(1)
+	titleStyle  = lipgloss.NewStyle().Bold(true).MarginBottom(1)
+	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
+	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).MarginTop(1)
+	// dimStyle is helpStyle's same muted color without its MarginTop(1) --
+	// that margin renders a leading blank line, which is right for the
+	// screen-bottom help line helpStyle exists for but breaks any inline
+	// use (a table cell, a line that isn't the very start of the view).
+	dimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	errStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
 	passStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	fieldLabel   = lipgloss.NewStyle().Bold(true)
@@ -78,6 +83,12 @@ type App struct {
 	// screenActiveApplications both can, so the cancel/save handlers need
 	// to know which one to return to rather than assuming.
 	applicationStatusReturnScreen screen
+	// documentReviewReturnScreen is which screen entered
+	// screenDocumentReviewSelect/screenDocumentReviewForm --
+	// screenPostingDetail and screenActiveApplications both can (see
+	// decisions.log #83), same reasoning as applicationStatusReturnScreen
+	// above.
+	documentReviewReturnScreen screen
 	// activeApplications backs the home screen: every application not at
 	// a terminal dead-end status, across every company (see
 	// store.ListActiveApplications, decisions.log #43).
@@ -168,7 +179,7 @@ func documentStatusLine(label string, exists bool, path string, review store.Doc
 	}
 	line := fieldLabel.Render(label+":") + " " + status + " (" + path + ") " + reviewBadge(review, hasReview) + "\n"
 	if hasReview && review.Notes != "" {
-		line += "  " + helpStyle.Render("Notes: "+review.Notes) + "\n"
+		line += "  " + dimStyle.Render("Notes: "+review.Notes) + "\n"
 	}
 	return line
 }
@@ -179,7 +190,7 @@ func documentStatusLine(label string, exists bool, path string, review store.Doc
 // store.ReviewOutcomePassed/ReviewOutcomeFlagged.
 func reviewBadge(review store.DocumentReview, hasReview bool) string {
 	if !hasReview {
-		return helpStyle.Render("[not reviewed]")
+		return dimStyle.Render("[not reviewed]")
 	}
 	switch review.Outcome {
 	case store.ReviewOutcomePassed:
@@ -187,7 +198,33 @@ func reviewBadge(review store.DocumentReview, hasReview bool) string {
 	case store.ReviewOutcomeFlagged:
 		return errStyle.Render("[FLAGGED]")
 	default:
-		return helpStyle.Render("[" + review.Outcome + "]")
+		return dimStyle.Render("[" + review.Outcome + "]")
+	}
+}
+
+// reviewGlyphSummary renders a compact, single-line summary of an
+// application's latest cover-letter/resume review outcomes, for list
+// rows (e.g. the active-applications table) that don't have room for
+// reviewBadge's full "[FLAGGED]"/notes rendering -- see decisions.log
+// #83. A document with no entry in reviews (no review recorded yet)
+// renders as a dim "-".
+func reviewGlyphSummary(reviews map[string]store.DocumentReview) string {
+	clReview, hasCL := reviews[store.DocumentTypeCoverLetter]
+	resumeReview, hasResume := reviews[store.DocumentTypeResume]
+	return "CL:" + reviewGlyph(clReview, hasCL) + " R:" + reviewGlyph(resumeReview, hasResume)
+}
+
+func reviewGlyph(review store.DocumentReview, hasReview bool) string {
+	if !hasReview {
+		return dimStyle.Render("-")
+	}
+	switch review.Outcome {
+	case store.ReviewOutcomePassed:
+		return passStyle.Render("✓")
+	case store.ReviewOutcomeFlagged:
+		return errStyle.Render("✗")
+	default:
+		return dimStyle.Render("?")
 	}
 }
 
@@ -462,17 +499,8 @@ type documentReviewsLoadedMsg struct {
 // error.
 func loadDocumentReviews(s *store.Store, applicationID int64) tea.Cmd {
 	return func() tea.Msg {
-		reviews := make(map[string]store.DocumentReview)
-		for _, documentType := range []string{store.DocumentTypeCoverLetter, store.DocumentTypeResume} {
-			review, ok, err := s.LatestDocumentReview(context.Background(), applicationID, documentType)
-			if err != nil {
-				return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
-			}
-			if ok {
-				reviews[documentType] = review
-			}
-		}
-		return documentReviewsLoadedMsg{applicationID: applicationID, reviews: reviews}
+		reviews, err := s.LatestDocumentReviews(context.Background(), applicationID)
+		return documentReviewsLoadedMsg{applicationID: applicationID, reviews: reviews, err: err}
 	}
 }
 
@@ -850,10 +878,14 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case documentReviewCreatedMsg:
 		a.err = msg.err
 		if msg.err == nil {
-			a.screen = screenPostingDetail
-			// Rebuild so the freshly-submitted review's outcome/notes show
-			// up immediately in the inline review-status section, without
-			// having to navigate away and back (see decisions.log #83).
+			a.screen = a.documentReviewReturnScreen
+			// Reload so the freshly-submitted review's outcome/notes show up
+			// immediately wherever it's displayed, without having to
+			// navigate away and back (see decisions.log #83) -- which
+			// reload depends on which screen review was entered from.
+			if a.documentReviewReturnScreen == screenActiveApplications {
+				return a, loadActiveApplications(a.store)
+			}
 			p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
 			return a, maybeLoadDocumentReviews(a.store, hasApp, app.ID)
@@ -920,6 +952,10 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.applicationStatusReturnScreen = screenActiveApplications
 			a.screen = screenApplicationStatusSelect
 			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus)
+		case enterDocumentReviewSelectMsg:
+			a.documentReviewReturnScreen = screenActiveApplications
+			a.screen = screenDocumentReviewSelect
+			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, v.applicationID)
 		}
 		return a, cmd
 	case screenCompanyList:
@@ -988,6 +1024,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.screen = screenApplicationNotesEdit
 			a.applicationNotes = newApplicationNotesModel(a.store, v.postingID, v.currentNotes, a.width, a.listRows())
 		case enterDocumentReviewSelectMsg:
+			a.documentReviewReturnScreen = screenPostingDetail
 			a.screen = screenDocumentReviewSelect
 			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, v.applicationID)
 		}
@@ -1008,7 +1045,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd, intent := a.documentReviewSelect.Update(msg)
 		switch v := intent.(type) {
 		case cancelDocumentReviewSelectMsg:
-			a.screen = screenPostingDetail
+			a.screen = a.documentReviewReturnScreen
 		case enterDocumentReviewFormMsg:
 			a.err = v.err
 			if v.err == nil {
@@ -1020,7 +1057,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case screenDocumentReviewForm:
 		cmd, intent := a.documentReviewForm.Update(msg)
 		if _, ok := intent.(cancelDocumentReviewFormMsg); ok {
-			a.screen = screenPostingDetail
+			a.screen = a.documentReviewReturnScreen
 		}
 		return a, cmd
 	case screenFilterSelect:

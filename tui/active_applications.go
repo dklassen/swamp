@@ -59,6 +59,10 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 		if m.cursor < len(apps) {
 			return m.openDocument(apps[m.cursor], true), nil
 		}
+	case msg.String() == "R":
+		if m.cursor < len(apps) {
+			return nil, enterDocumentReviewSelectMsg{applicationID: apps[m.cursor].ID}
+		}
 	}
 	return nil, nil
 }
@@ -95,7 +99,7 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, listRows
 		start, end := visibleWindow(m.cursor, len(apps), rows)
 		cursorRow := m.cursor - start
 		t := table.New().
-			Headers("Company", "Title", "Status").
+			Headers("Company", "Title", "Status", "Review").
 			StyleFunc(func(row, _ int) lipgloss.Style {
 				style := lipgloss.NewStyle().Padding(0, 1)
 				if row == cursorRow {
@@ -109,11 +113,12 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, listRows
 				truncateCol(a.CompanyName, departmentColWidth),
 				truncateCol(a.Posting.Title, titleColWidth),
 				a.Status.String(),
+				reviewGlyphSummary(a.LatestReviews),
 			)
 		}
 		b.WriteString(t.Render() + "\n")
 	}
-	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  l: cover letter  r: resume  s: status  c: companies  q: quit"))
+	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  l: cover letter  r: resume  R: review a document  s: status  c: companies  q: quit"))
 	return b.String()
 }
 
