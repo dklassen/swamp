@@ -28,6 +28,7 @@ var (
 	cursorStyle  = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 	helpStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).MarginTop(1)
 	errStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	passStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	fieldLabel   = lipgloss.NewStyle().Bold(true)
 	focusedLabel = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
 )
@@ -155,13 +156,39 @@ func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 }
 
 // documentStatusLine renders a single "<label>: found (<path>)" or
-// "<label>: not found (<path>)" line for the documents section.
-func documentStatusLine(label string, exists bool, path string) string {
+// "<label>: not found (<path>)" line for the documents section, followed
+// by that document's latest review outcome (see reviewBadge) and, when
+// the review left notes, an indented "Notes:" line -- the reviewer's
+// record of what specifically to fix before the next cycle (see
+// decisions.log #83).
+func documentStatusLine(label string, exists bool, path string, review store.DocumentReview, hasReview bool) string {
 	status := "not found"
 	if exists {
 		status = "found"
 	}
-	return fieldLabel.Render(label+":") + " " + status + " (" + path + ")\n"
+	line := fieldLabel.Render(label+":") + " " + status + " (" + path + ") " + reviewBadge(review, hasReview) + "\n"
+	if hasReview && review.Notes != "" {
+		line += "  " + helpStyle.Render("Notes: "+review.Notes) + "\n"
+	}
+	return line
+}
+
+// reviewBadge renders a document's latest review outcome as a short
+// styled tag: dim "[not reviewed]" when hasReview is false (no review
+// recorded yet), green "[PASSED]"/red "[FLAGGED]" otherwise -- matching
+// store.ReviewOutcomePassed/ReviewOutcomeFlagged.
+func reviewBadge(review store.DocumentReview, hasReview bool) string {
+	if !hasReview {
+		return helpStyle.Render("[not reviewed]")
+	}
+	switch review.Outcome {
+	case store.ReviewOutcomePassed:
+		return passStyle.Render("[PASSED]")
+	case store.ReviewOutcomeFlagged:
+		return errStyle.Render("[FLAGGED]")
+	default:
+		return helpStyle.Render("[" + review.Outcome + "]")
+	}
 }
 
 // postingDetailContent renders a posting's fields, application state, and
@@ -179,7 +206,14 @@ func documentStatusLine(label string, exists bool, path string) string {
 // over-applying that convention (see decisions.log). When hasApplication
 // is false, no documents section is rendered at all -- "no application
 // -> show nothing".
-func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store) string {
+//
+// latestReviews is, like application, loaded async and passed in (see
+// loadDocumentReviews/documentReviewsLoadedMsg) rather than queried here
+// -- a DB read, unlike docs.Status's local os.Stat, follows the same
+// tea.Cmd/tea.Msg convention as the rest of this file's store-backed
+// state (see decisions.log #83). A document with no entry in the map
+// renders as "not reviewed".
+func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store, latestReviews map[string]store.DocumentReview) string {
 	var b strings.Builder
 	fields := []struct{ label, value string }{
 		{"Department", p.Department},
@@ -204,8 +238,10 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 		}
 		status := docs.Status(application.ID)
 		b.WriteString("\n" + fieldLabel.Render("Documents") + "\n")
-		b.WriteString(documentStatusLine("Cover Letter", status.CoverLetter.Exists, status.CoverLetter.Path))
-		b.WriteString(documentStatusLine("Resume", status.Resume.Exists, status.Resume.Path))
+		clReview, hasCLReview := latestReviews[store.DocumentTypeCoverLetter]
+		b.WriteString(documentStatusLine("Cover Letter", status.CoverLetter.Exists, status.CoverLetter.Path, clReview, hasCLReview))
+		resumeReview, hasResumeReview := latestReviews[store.DocumentTypeResume]
+		b.WriteString(documentStatusLine("Resume", status.Resume.Exists, status.Resume.Path, resumeReview, hasResumeReview))
 	} else {
 		b.WriteString(helpStyle.Render("No application started -- press 'a' to start one.") + "\n")
 	}
@@ -411,6 +447,46 @@ func loadApplication(s *store.Store, postingID int64) tea.Cmd {
 		}
 		return applicationLoadedMsg{postingID: postingID, application: app, found: true}
 	}
+}
+
+type documentReviewsLoadedMsg struct {
+	applicationID int64
+	reviews       map[string]store.DocumentReview
+	err           error
+}
+
+// loadDocumentReviews fetches the most recent review, if any, of each
+// document type for applicationID -- the data behind postingDetailContent's
+// inline review-status section (see decisions.log #83). A document type
+// with no review yet is simply absent from the returned map, not an
+// error.
+func loadDocumentReviews(s *store.Store, applicationID int64) tea.Cmd {
+	return func() tea.Msg {
+		reviews := make(map[string]store.DocumentReview)
+		for _, documentType := range []string{store.DocumentTypeCoverLetter, store.DocumentTypeResume} {
+			review, ok, err := s.LatestDocumentReview(context.Background(), applicationID, documentType)
+			if err != nil {
+				return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
+			}
+			if ok {
+				reviews[documentType] = review
+			}
+		}
+		return documentReviewsLoadedMsg{applicationID: applicationID, reviews: reviews}
+	}
+}
+
+// maybeLoadDocumentReviews returns the Cmd to (re)load applicationID's
+// latest document reviews when hasApp is true, or nil otherwise -- used
+// at every point a.postingDetail's underlying application changes, so
+// the inline review status reloads through the same async round trip the
+// rest of this screen's store-backed state uses (see
+// postingDetailContent's own doc comment).
+func maybeLoadDocumentReviews(s *store.Store, hasApp bool, applicationID int64) tea.Cmd {
+	if !hasApp {
+		return nil
+	}
+	return loadDocumentReviews(s, applicationID)
 }
 
 type applicationStatusUpdatedMsg struct {
@@ -717,7 +793,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if a.screen == screenPostingDetail {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
+				return a, maybeLoadDocumentReviews(a.store, hasApp, app.ID)
 			}
 		}
 	case applicationCreatedMsg:
@@ -727,13 +804,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.applicationsByPosting = make(map[int64]store.Application)
 			}
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
+			var reviewsCmd tea.Cmd
 			if a.screen == screenPostingDetail {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
+				reviewsCmd = maybeLoadDocumentReviews(a.store, hasApp, app.ID)
 			}
 			// A freshly-started application should show up in the active-
 			// applications list without needing a restart.
-			return a, loadActiveApplications(a.store)
+			return a, tea.Batch(loadActiveApplications(a.store), reviewsCmd)
 		}
 	case applicationStatusUpdatedMsg:
 		a.err = msg.err
@@ -743,16 +822,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			a.screen = a.applicationStatusReturnScreen
+			var reviewsCmd tea.Cmd
 			if a.screen == screenPostingDetail {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
+				reviewsCmd = maybeLoadDocumentReviews(a.store, hasApp, app.ID)
 			}
 			// The new status may have moved this application to/from a
 			// terminal status (rejected/offer_declined), changing whether
 			// it belongs in the active-applications list at all -- reload
 			// rather than patch in place so that's always correct,
 			// regardless of which screen triggered the change.
-			return a, loadActiveApplications(a.store)
+			return a, tea.Batch(loadActiveApplications(a.store), reviewsCmd)
 		}
 	case applicationNotesUpdatedMsg:
 		a.err = msg.err
@@ -763,12 +844,27 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			a.screen = screenPostingDetail
 			p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
+			return a, maybeLoadDocumentReviews(a.store, hasApp, app.ID)
 		}
 	case documentReviewCreatedMsg:
 		a.err = msg.err
 		if msg.err == nil {
 			a.screen = screenPostingDetail
+			// Rebuild so the freshly-submitted review's outcome/notes show
+			// up immediately in the inline review-status section, without
+			// having to navigate away and back (see decisions.log #83).
+			p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
+			return a, maybeLoadDocumentReviews(a.store, hasApp, app.ID)
+		}
+	case documentReviewsLoadedMsg:
+		a.err = msg.err
+		// A response for a posting/application the user has since
+		// navigated away from is simply discarded -- msg.applicationID no
+		// longer matching what's on screen means this result is stale.
+		if msg.err == nil && a.screen == screenPostingDetail && a.postingDetail.application.ID == msg.applicationID {
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), a.postingDetail.posting, a.postingDetail.application, a.postingDetail.hasApplication, msg.reviews)
 		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
@@ -858,9 +954,9 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.screen = screenCompanyList
 		case enterPostingDetailMsg:
 			p, app, hasApp := a.lookupPosting(v.postingID)
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
 			a.screen = screenPostingDetail
-			return a, loadApplication(a.store, p.ID)
+			return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, hasApp, app.ID))
 		case enterFilterSelectMsg:
 			a.screen = screenFilterSelect
 			return a, loadFilterOptions(a.store, a.selectedCompany.ID)
@@ -881,8 +977,8 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if idx >= 0 && newIdx >= 0 && newIdx < len(a.postings) {
 				p := a.postings[newIdx]
 				app, hasApp := a.applicationsByPosting[p.ID]
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
-				return a, loadApplication(a.store, p.ID)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
+				return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, hasApp, app.ID))
 			}
 		case enterApplicationStatusMsg:
 			a.applicationStatusReturnScreen = screenPostingDetail

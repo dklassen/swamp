@@ -24,6 +24,13 @@ type postingDetailModel struct {
 	posting        store.Posting
 	application    store.Application
 	hasApplication bool
+
+	// latestReviews holds the most recent DocumentReview per document
+	// type (keyed by store.DocumentTypeCoverLetter/DocumentTypeResume),
+	// loaded async via loadDocumentReviews the same way application
+	// itself is (see decisions.log #83) -- absent when not yet loaded,
+	// or nil when this posting has no application.
+	latestReviews map[string]store.DocumentReview
 }
 
 // newPostingDetailModel returns a detail screen for p, sized to
@@ -32,10 +39,10 @@ type postingDetailModel struct {
 // data changes (navigating to a different posting, an application being
 // created/updated, or a window resize), matching the pre-extraction
 // showPostingDetail's "always rebuild, always reset scroll" behavior.
-func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool) postingDetailModel {
+func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool, latestReviews map[string]store.DocumentReview) postingDetailModel {
 	vp := viewport.New(width, height)
-	vp.SetContent(wrapToWidth(postingDetailContent(p, app, hasApp, docs), width))
-	return postingDetailModel{store: s, documents: docs, viewport: vp, posting: p, application: app, hasApplication: hasApp}
+	vp.SetContent(wrapToWidth(postingDetailContent(p, app, hasApp, docs, latestReviews), width))
+	return postingDetailModel{store: s, documents: docs, viewport: vp, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews}
 }
 
 // backToPostingListMsg signals that App should switch to the
@@ -121,5 +128,5 @@ func (m *postingDetailModel) View() string {
 // posting/application data -- called on window resize while this screen
 // is active (see tea.WindowSizeMsg in App.Update).
 func (m *postingDetailModel) resize(width, height int) {
-	*m = newPostingDetailModel(m.store, m.documents, width, height, m.posting, m.application, m.hasApplication)
+	*m = newPostingDetailModel(m.store, m.documents, width, height, m.posting, m.application, m.hasApplication, m.latestReviews)
 }
