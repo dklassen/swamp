@@ -73,9 +73,11 @@ type Querier interface {
 	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)
 	// Keyspace discovery for filter selection: department is a company-
 	// specific vocabulary (not a fixed enum), so filter values are offered
-	// from what's actually been ingested, not guessed at.
-	ListDistinctDepartmentsForCompany(ctx context.Context, companyID int64) ([]sql.NullString, error)
-	ListDistinctLocationsForCompany(ctx context.Context, companyID int64) ([]sql.NullString, error)
+	// from what's actually been ingested, not guessed at. No "IS NOT NULL"
+	// check needed -- department is NOT NULL DEFAULT '' (see decisions.log,
+	// #74), so excluding '' is the only filter required.
+	ListDistinctDepartmentsForCompany(ctx context.Context, companyID int64) ([]string, error)
+	ListDistinctLocationsForCompany(ctx context.Context, companyID int64) ([]string, error)
 	// Postings the user has flagged interested and not archived, joined with
 	// their company name and -- if one has been started -- their
 	// application's id and status. Feeds the stage package's discovery of

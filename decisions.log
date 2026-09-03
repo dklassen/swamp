@@ -2822,3 +2822,63 @@ can't construct the trigger condition -- CreateCompanyFilter itself
 would be rejected by the CHECK constraint before an unsupported-field
 row could ever reach loadPostings.
 Re-verified: full build/vet/test/lint/fmt clean after the above fixes.
+
+## 2026-09-03 -- postings' optional TEXT columns become NOT NULL DEFAULT '' (#74)
+Context: #67 dropped store.IngestedFields' *string/*time.Time pointer
+types since nothing distinguished nil from empty at the Go layer. The DB
+schema stayed nullable for the same nine TEXT columns, which meant the
+possibility could leak back in at any time -- a new sqlc-generated field
+on a nullable column defaults to sql.NullString, so the next person to
+touch this area would have to rediscover "we don't distinguish nil from
+empty here" as an unenforced convention instead of the schema simply
+refusing the ambiguity. Filed as a follow-up rather than folded into #67,
+since a schema migration on the live DB is a separate, real decision.
+Asked (and answered, before implementing) whether this trades anything
+away: checked SQLite's own record format -- a NULL is serial type 0 (zero
+bytes of payload), an empty TEXT is serial type 13 (2*len+13 with len=0,
+also zero bytes of payload), both fit the same single-byte varint in the
+row header. No storage or performance difference either way; the only
+thing NULL bought here was a semantic distinction nothing in this
+codebase makes.
+Decision: department, team, location, employment_type, workplace_type,
+description_html, description_text, job_url, application_url all become
+NOT NULL DEFAULT ''. published_at (TIMESTAMP) deliberately stays
+nullable -- a NOT NULL timestamp needs a sentinel date (Go's zero value,
+0001-01-01), which is worse than nullable for anything querying this
+table outside Go ("WHERE published_at IS NOT NULL" is honest SQL,
+"WHERE published_at != '0001-01-01 00:00:00'" is a footgun) --
+nullPublishedAt (added in #67) already does the zero-time<->NULL
+translation this boundary exists for.
+Migration 00006 rebuilds postings (SQLite has no ALTER TABLE ... ALTER
+COLUMN), same pattern 00002/00003/00004 used: CREATE postings_new with
+the tightened schema, INSERT ... SELECT with COALESCE(col, '') on the
+nine columns being backfilled, DROP + RENAME, then recreate
+idx_postings_company_id/idx_postings_listing_status (DROP TABLE also
+drops a table's indexes). No PRAGMA foreign_keys dance -- this project
+has never turned FK enforcement on, and the pragma is a no-op
+mid-transaction (which goose already wraps migrations in) regardless.
+sqlc regenerated db.Posting/CreatePostingParams/UpdatePostingParams with
+plain string for the nine columns (published_at stays sql.NullTime).
+store/posting.go simplifies accordingly: postingFromRow does direct
+field assignment instead of .String unwrapping, nullString is deleted
+(no longer has any caller), and UpsertPosting's param construction drops
+the wrapping calls. ListDistinctDepartmentsForCompany/
+ListDistinctLocationsForCompany collapse to one-line passthroughs --
+sqlc now generates []string directly instead of []sql.NullString once
+the column can't be NULL, so the manual .Valid-filtering loop in each
+became dead code. Also dropped the now-always-true "department IS NOT
+NULL" clauses from db/queries/postings.sql -- redundant once the column
+can't be NULL.
+Verified: full build/vet/test/lint/fmt clean. Added three migration
+tests (db/migrations/migrations_test.go): existing NULL values backfill
+to '' on Up, an explicit NULL insert is rejected after Up (the
+constraint is actually enforced, not just a one-time backfill), and
+omitting the column entirely still succeeds via the DEFAULT. Manually
+verified the Down migration round-trips cleanly (schema reverts,
+indexes recreated) via `task migrate:up`/`migrate:down` against a
+scratch db. Manually verified via tmux: seeded a scratch db at migration
+version 5 with a NULL-department posting, launched the real binary
+(which auto-migrates to 6 via goose.Up in main.go), confirmed via
+`typeof()` in sqlite3 that the backfilled value is genuinely '' (not
+NULL), and confirmed the posting list and detail view render identically
+to before -- blank Department/Location, no crash.

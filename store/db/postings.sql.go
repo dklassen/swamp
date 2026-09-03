@@ -20,21 +20,21 @@ RETURNING id, company_id, source, source_id, title, department, team, location, 
 `
 
 type CreatePostingParams struct {
-	CompanyID       int64          `json:"company_id"`
-	Source          string         `json:"source"`
-	SourceID        string         `json:"source_id"`
-	Title           string         `json:"title"`
-	Department      sql.NullString `json:"department"`
-	Team            sql.NullString `json:"team"`
-	Location        sql.NullString `json:"location"`
-	EmploymentType  sql.NullString `json:"employment_type"`
-	WorkplaceType   sql.NullString `json:"workplace_type"`
-	DescriptionHtml sql.NullString `json:"description_html"`
-	DescriptionText sql.NullString `json:"description_text"`
-	JobUrl          sql.NullString `json:"job_url"`
-	ApplicationUrl  sql.NullString `json:"application_url"`
-	PublishedAt     sql.NullTime   `json:"published_at"`
-	RawPayload      string         `json:"raw_payload"`
+	CompanyID       int64        `json:"company_id"`
+	Source          string       `json:"source"`
+	SourceID        string       `json:"source_id"`
+	Title           string       `json:"title"`
+	Department      string       `json:"department"`
+	Team            string       `json:"team"`
+	Location        string       `json:"location"`
+	EmploymentType  string       `json:"employment_type"`
+	WorkplaceType   string       `json:"workplace_type"`
+	DescriptionHtml string       `json:"description_html"`
+	DescriptionText string       `json:"description_text"`
+	JobUrl          string       `json:"job_url"`
+	ApplicationUrl  string       `json:"application_url"`
+	PublishedAt     sql.NullTime `json:"published_at"`
+	RawPayload      string       `json:"raw_payload"`
 }
 
 func (q *Queries) CreatePosting(ctx context.Context, arg CreatePostingParams) (Posting, error) {
@@ -157,22 +157,24 @@ func (q *Queries) GetPostingBySourceAndSourceID(ctx context.Context, arg GetPost
 
 const listDistinctDepartmentsForCompany = `-- name: ListDistinctDepartmentsForCompany :many
 SELECT DISTINCT department FROM postings
-WHERE company_id = ? AND department IS NOT NULL AND department != ''
+WHERE company_id = ? AND department != ''
 ORDER BY department
 `
 
 // Keyspace discovery for filter selection: department is a company-
 // specific vocabulary (not a fixed enum), so filter values are offered
-// from what's actually been ingested, not guessed at.
-func (q *Queries) ListDistinctDepartmentsForCompany(ctx context.Context, companyID int64) ([]sql.NullString, error) {
+// from what's actually been ingested, not guessed at. No "IS NOT NULL"
+// check needed -- department is NOT NULL DEFAULT ” (see decisions.log,
+// #74), so excluding ” is the only filter required.
+func (q *Queries) ListDistinctDepartmentsForCompany(ctx context.Context, companyID int64) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listDistinctDepartmentsForCompany, companyID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []sql.NullString
+	var items []string
 	for rows.Next() {
-		var department sql.NullString
+		var department string
 		if err := rows.Scan(&department); err != nil {
 			return nil, err
 		}
@@ -189,19 +191,19 @@ func (q *Queries) ListDistinctDepartmentsForCompany(ctx context.Context, company
 
 const listDistinctLocationsForCompany = `-- name: ListDistinctLocationsForCompany :many
 SELECT DISTINCT location FROM postings
-WHERE company_id = ? AND location IS NOT NULL AND location != ''
+WHERE company_id = ? AND location != ''
 ORDER BY location
 `
 
-func (q *Queries) ListDistinctLocationsForCompany(ctx context.Context, companyID int64) ([]sql.NullString, error) {
+func (q *Queries) ListDistinctLocationsForCompany(ctx context.Context, companyID int64) ([]string, error) {
 	rows, err := q.db.QueryContext(ctx, listDistinctLocationsForCompany, companyID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []sql.NullString
+	var items []string
 	for rows.Next() {
-		var location sql.NullString
+		var location string
 		if err := rows.Scan(&location); err != nil {
 			return nil, err
 		}
@@ -396,19 +398,19 @@ RETURNING id, company_id, source, source_id, title, department, team, location, 
 `
 
 type UpdatePostingParams struct {
-	Title           string         `json:"title"`
-	Department      sql.NullString `json:"department"`
-	Team            sql.NullString `json:"team"`
-	Location        sql.NullString `json:"location"`
-	EmploymentType  sql.NullString `json:"employment_type"`
-	WorkplaceType   sql.NullString `json:"workplace_type"`
-	DescriptionHtml sql.NullString `json:"description_html"`
-	DescriptionText sql.NullString `json:"description_text"`
-	JobUrl          sql.NullString `json:"job_url"`
-	ApplicationUrl  sql.NullString `json:"application_url"`
-	PublishedAt     sql.NullTime   `json:"published_at"`
-	RawPayload      string         `json:"raw_payload"`
-	ID              int64          `json:"id"`
+	Title           string       `json:"title"`
+	Department      string       `json:"department"`
+	Team            string       `json:"team"`
+	Location        string       `json:"location"`
+	EmploymentType  string       `json:"employment_type"`
+	WorkplaceType   string       `json:"workplace_type"`
+	DescriptionHtml string       `json:"description_html"`
+	DescriptionText string       `json:"description_text"`
+	JobUrl          string       `json:"job_url"`
+	ApplicationUrl  string       `json:"application_url"`
+	PublishedAt     sql.NullTime `json:"published_at"`
+	RawPayload      string       `json:"raw_payload"`
+	ID              int64        `json:"id"`
 }
 
 // Updates ingested content fields only. Deliberately does not touch

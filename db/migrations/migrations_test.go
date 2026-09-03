@@ -347,3 +347,99 @@ func TestTrimExistingPostingWhitespace_TrimsPaddedFields(t *testing.T) {
 		t.Errorf("raw_payload = %q, want untouched", rawPayload)
 	}
 }
+
+// TestPostingsOptionalFieldsNotNull_BackfillsExistingNullsToEmptyString
+// verifies the 00006 migration's rebuild: an existing row with NULL in
+// every optional TEXT column (the pre-migration schema's default for an
+// omitted column) must come out as ” after migrating, not be dropped or
+// left NULL.
+func TestPostingsOptionalFieldsNotNull_BackfillsExistingNullsToEmptyString(t *testing.T) {
+	sqlDB := migrateTo(t, 5)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload)
+		 VALUES (1, 1, 'ashby', 'job-1', 'Software Engineer', '{}')`,
+	); err != nil {
+		t.Fatalf("insert posting with every optional column omitted (NULL): %v", err)
+	}
+
+	if err := goose.UpTo(sqlDB, ".", 6); err != nil {
+		t.Fatalf("migrate to version 6: %v", err)
+	}
+
+	var department, team, location, employmentType, workplaceType string
+	var descriptionHTML, descriptionText, jobURL, applicationURL string
+	if err := sqlDB.QueryRow(
+		`SELECT department, team, location, employment_type, workplace_type,
+		        description_html, description_text, job_url, application_url
+		 FROM postings WHERE id = 1`,
+	).Scan(
+		&department, &team, &location, &employmentType, &workplaceType,
+		&descriptionHTML, &descriptionText, &jobURL, &applicationURL,
+	); err != nil {
+		t.Fatalf("query posting (scanning into plain string, not sql.NullString, itself proves NOT NULL): %v", err)
+	}
+
+	for name, got := range map[string]string{
+		"department": department, "team": team, "location": location,
+		"employment_type": employmentType, "workplace_type": workplaceType,
+		"description_html": descriptionHTML, "description_text": descriptionText,
+		"job_url": jobURL, "application_url": applicationURL,
+	} {
+		if got != "" {
+			t.Errorf("%s = %q, want empty string (backfilled from NULL)", name, got)
+		}
+	}
+}
+
+// TestPostingsOptionalFieldsNotNull_RejectsExplicitNull verifies the NOT
+// NULL constraint is actually enforced after 00006, not just that existing
+// NULLs got backfilled once.
+func TestPostingsOptionalFieldsNotNull_RejectsExplicitNull(t *testing.T) {
+	sqlDB := migrateTo(t, 6)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO postings (id, company_id, source, source_id, title, department, raw_payload)
+		 VALUES (1, 1, 'ashby', 'job-1', 'Software Engineer', NULL, '{}')`,
+	); err == nil {
+		t.Fatal("insert with explicit NULL department succeeded, want a NOT NULL constraint failure")
+	}
+}
+
+// TestPostingsOptionalFieldsNotNull_OmittedColumnDefaultsToEmptyString
+// verifies the DEFAULT ” half of the constraint: omitting an optional
+// column entirely (as every real ingestion call site that doesn't have a
+// value for it does) must populate ” via the column default, not fail.
+func TestPostingsOptionalFieldsNotNull_OmittedColumnDefaultsToEmptyString(t *testing.T) {
+	sqlDB := migrateTo(t, 6)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload)
+		 VALUES (1, 1, 'ashby', 'job-1', 'Software Engineer', '{}')`,
+	); err != nil {
+		t.Fatalf("insert posting with department column omitted: %v", err)
+	}
+
+	var department string
+	if err := sqlDB.QueryRow(`SELECT department FROM postings WHERE id = 1`).Scan(&department); err != nil {
+		t.Fatalf("query department: %v", err)
+	}
+	if department != "" {
+		t.Fatalf("department = %q, want empty string (column default)", department)
+	}
+}
