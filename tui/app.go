@@ -43,6 +43,8 @@ const (
 	screenFilterSelect
 	screenApplicationStatusSelect
 	screenApplicationNotesEdit
+	screenDocumentReviewSelect
+	screenDocumentReviewForm
 	screenActiveApplications
 )
 
@@ -68,6 +70,8 @@ type App struct {
 	applicationsByPosting map[int64]store.Application
 	applicationStatus     applicationStatusModel
 	applicationNotes      applicationNotesModel
+	documentReviewSelect  documentReviewSelectModel
+	documentReviewForm    documentReviewFormModel
 	// applicationStatusReturnScreen is which screen entered
 	// screenApplicationStatusSelect -- screenPostingDetail and
 	// screenActiveApplications both can, so the cancel/save handlers need
@@ -760,6 +764,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp)
 		}
+	case documentReviewCreatedMsg:
+		a.err = msg.err
+		if msg.err == nil {
+			a.screen = screenPostingDetail
+		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
 		a.filterSelect = newFilterSelectModel(a.store, a.selectedCompany.ID, a.selectedCompany.Name, msg.departments, msg.locations, msg.existingFilters)
@@ -879,6 +888,9 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case enterApplicationNotesMsg:
 			a.screen = screenApplicationNotesEdit
 			a.applicationNotes = newApplicationNotesModel(a.store, v.postingID, v.currentNotes, a.width, a.listRows())
+		case enterDocumentReviewSelectMsg:
+			a.screen = screenDocumentReviewSelect
+			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, v.postingID, v.applicationID)
 		}
 		return a, cmd
 	case screenApplicationStatusSelect:
@@ -890,6 +902,25 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case screenApplicationNotesEdit:
 		cmd, intent := a.applicationNotes.Update(msg)
 		if _, ok := intent.(cancelApplicationNotesMsg); ok {
+			a.screen = screenPostingDetail
+		}
+		return a, cmd
+	case screenDocumentReviewSelect:
+		cmd, intent := a.documentReviewSelect.Update(msg)
+		switch v := intent.(type) {
+		case cancelDocumentReviewSelectMsg:
+			a.screen = screenPostingDetail
+		case enterDocumentReviewFormMsg:
+			a.err = v.err
+			if v.err == nil {
+				a.screen = screenDocumentReviewForm
+				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.postingID, v.applicationID, v.documentType, v.content, a.width, a.listRows())
+			}
+		}
+		return a, cmd
+	case screenDocumentReviewForm:
+		cmd, intent := a.documentReviewForm.Update(msg)
+		if _, ok := intent.(cancelDocumentReviewFormMsg); ok {
 			a.screen = screenPostingDetail
 		}
 		return a, cmd
@@ -949,6 +980,10 @@ func (a *App) View() string {
 		b.WriteString(a.applicationStatus.View())
 	case screenApplicationNotesEdit:
 		b.WriteString(a.applicationNotes.View())
+	case screenDocumentReviewSelect:
+		b.WriteString(a.documentReviewSelect.View())
+	case screenDocumentReviewForm:
+		b.WriteString(a.documentReviewForm.View())
 	case screenFilterSelect:
 		b.WriteString(a.filterSelect.View(a.listRows()))
 	}

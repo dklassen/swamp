@@ -130,6 +130,34 @@ func TestPostingDetailModel_N_HasApplication_ReturnsEnterNotesMsg(t *testing.T) 
 	}
 }
 
+func TestPostingDetailModel_R_HasApplication_ReturnsEnterDocumentReviewSelectMsg(t *testing.T) {
+	t.Parallel()
+
+	app := store.Application{ID: 9, PostingID: 5}
+	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, app, true)
+	cmd, intent := m.Update(runeKey('r'))
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil", cmd)
+	}
+	got, ok := intent.(enterDocumentReviewSelectMsg)
+	if !ok {
+		t.Fatalf("intent = %T, want enterDocumentReviewSelectMsg", intent)
+	}
+	if got.postingID != 5 || got.applicationID != 9 {
+		t.Fatalf("enterDocumentReviewSelectMsg = %+v, want postingID=5 applicationID=9", got)
+	}
+}
+
+func TestPostingDetailModel_R_NoApplication_NoOp(t *testing.T) {
+	t.Parallel()
+
+	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 5}, store.Application{}, false)
+	cmd, intent := m.Update(runeKey('r'))
+	if cmd != nil || intent != nil {
+		t.Fatalf("cmd, intent = %v, %v, want nil, nil (no application yet)", cmd, intent)
+	}
+}
+
 func TestPostingDetailModel_Resize_RebuildsViewportAtNewDimensions(t *testing.T) {
 	t.Parallel()
 
