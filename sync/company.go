@@ -79,6 +79,31 @@ func (s *Syncer) recordHistory(ctx context.Context, posting store.Posting, chang
 	return nil
 }
 
+// ApplyCompanyFilters replaces companyID's saved filters and re-syncs it
+// against its job board -- "changing a company's filters" as one unit,
+// testable at the store+syncer boundary with no TUI dependency, rather
+// than the two independently-triggered async round trips (save, then
+// separately kick off a resync) tui/app.go used to glue together by
+// hand. A resync is required, not optional: filter matching also gates
+// ingestion (see SyncCompany below), so postings that didn't match the
+// old filters were never stored at all -- narrowing what's already in
+// the DB isn't enough to make a filter change fully take effect, only
+// re-running ingestion under the new filters is (see decisions.log,
+// #56).
+func (s *Syncer) ApplyCompanyFilters(ctx context.Context, companyID int64, departments, locations []string) (Result, error) {
+	filters := make([]store.CompanyFilter, 0, len(departments)+len(locations))
+	for _, d := range departments {
+		filters = append(filters, store.CompanyFilter{Field: filter.FieldDepartment, Value: d})
+	}
+	for _, l := range locations {
+		filters = append(filters, store.CompanyFilter{Field: filter.FieldLocation, Value: l})
+	}
+	if err := s.store.ReplaceCompanyFilters(ctx, companyID, filters); err != nil {
+		return Result{}, fmt.Errorf("sync: replace company filters: %w", err)
+	}
+	return s.SyncCompany(ctx, companyID)
+}
+
 // SyncCompany refreshes a single company's postings: fetches its board,
 // gates new postings through the company's filters, and upserts matches
 // into store.

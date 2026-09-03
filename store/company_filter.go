@@ -53,9 +53,30 @@ func (s *Store) ListCompanyFilters(ctx context.Context, companyID int64) ([]Comp
 	return filters, nil
 }
 
-// DeleteCompanyFilters removes every filter row for a company. Used by the
-// "replace all filters on edit" workflow: the caller deletes all existing
-// filters then creates the new set, rather than diffing individual rows.
+// DeleteCompanyFilters removes every filter row for a company. Used by
+// ReplaceCompanyFilters (delete all existing filters, then create the new
+// set, rather than diffing individual rows) -- exported separately since
+// it's also useful on its own.
 func (s *Store) DeleteCompanyFilters(ctx context.Context, companyID int64) error {
 	return s.queries.DeleteCompanyFilters(ctx, companyID)
+}
+
+// ReplaceCompanyFilters replaces companyID's saved filters with filters
+// wholesale -- only each element's Field/Value is read, so callers can
+// pass freshly-built CompanyFilter values with no ID/CompanyID/CreatedAt
+// set. Deliberately field-name-agnostic (unlike sync, this package has
+// no dependency on the filter package's FieldDepartment/FieldLocation
+// constants -- see filter's own doc comment on why store/sync/filter's
+// dependency direction is one-way); the caller decides what Field values
+// mean (see decisions.log, #56).
+func (s *Store) ReplaceCompanyFilters(ctx context.Context, companyID int64, filters []CompanyFilter) error {
+	if err := s.DeleteCompanyFilters(ctx, companyID); err != nil {
+		return err
+	}
+	for _, f := range filters {
+		if _, err := s.CreateCompanyFilter(ctx, companyID, f.Field, f.Value); err != nil {
+			return err
+		}
+	}
+	return nil
 }

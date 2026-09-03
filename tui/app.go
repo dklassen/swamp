@@ -581,29 +581,20 @@ func loadFilterOptions(s *store.Store, companyID int64) tea.Cmd {
 	}
 }
 
-type companyFiltersSavedMsg struct {
-	departments []string
-	locations   []string
+// companyFiltersAppliedMsg carries the result of applying a new filter
+// selection: sync.ApplyCompanyFilters' replace-then-resync as one
+// round trip, not the three-step save/resync/reload chain this used to
+// be (see decisions.log, #56).
+type companyFiltersAppliedMsg struct {
+	companyName string
+	result      sync.Result
 	err         error
 }
 
-func saveCompanyFilters(s *store.Store, companyID int64, departments, locations []string) tea.Cmd {
+func applyCompanyFilters(syncer *sync.Syncer, companyID int64, companyName string, departments, locations []string) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-		if err := s.DeleteCompanyFilters(ctx, companyID); err != nil {
-			return companyFiltersSavedMsg{err: err}
-		}
-		for _, d := range departments {
-			if _, err := s.CreateCompanyFilter(ctx, companyID, filter.FieldDepartment, d); err != nil {
-				return companyFiltersSavedMsg{err: err}
-			}
-		}
-		for _, l := range locations {
-			if _, err := s.CreateCompanyFilter(ctx, companyID, filter.FieldLocation, l); err != nil {
-				return companyFiltersSavedMsg{err: err}
-			}
-		}
-		return companyFiltersSavedMsg{departments: departments, locations: locations}
+		result, err := syncer.ApplyCompanyFilters(context.Background(), companyID, departments, locations)
+		return companyFiltersAppliedMsg{companyName: companyName, result: result, err: err}
 	}
 }
 
@@ -781,16 +772,18 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
-		a.filterSelect = newFilterSelectModel(a.store, a.selectedCompany.ID, a.selectedCompany.Name, msg.departments, msg.locations, msg.existingFilters)
-	case companyFiltersSavedMsg:
+		a.filterSelect = newFilterSelectModel(a.selectedCompany.ID, a.selectedCompany.Name, msg.departments, msg.locations, msg.existingFilters)
+	case companyFiltersAppliedMsg:
 		a.err = msg.err
 		if msg.err == nil {
-			a.screen = screenPostingList
-			a.postings = narrowPostingsToFilters(a.postings, msg.departments, msg.locations)
-			a.activeFilterDepartments = msg.departments
-			a.activeFilterLocations = msg.locations
-			a.postingList.resetCursorIfOutOfBounds(len(a.postings))
-			return a, refreshCompany(a.syncer, a.selectedCompany.ID, a.selectedCompany.Name)
+			r := msg.result
+			a.status = fmt.Sprintf("%s: fetched %d, created %d, updated %d, closed %d, reopened %d",
+				msg.companyName, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
+			// Reload from the DB so the view becomes authoritative instead
+			// of just the optimistic narrowing applied synchronously when
+			// the filter selection was saved (see screenFilterSelect's
+			// saveFilterSelectionMsg handling in updateKeyMsg).
+			return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
 		}
 	case browserOpenedMsg:
 		a.err = msg.err
@@ -936,8 +929,22 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	case screenFilterSelect:
 		cmd, intent := a.filterSelect.Update(msg)
-		if _, ok := intent.(cancelFilterSelectMsg); ok {
+		switch v := intent.(type) {
+		case cancelFilterSelectMsg:
 			a.screen = screenPostingList
+		case saveFilterSelectionMsg:
+			// Narrowed synchronously, before applyCompanyFilters' Cmd even
+			// runs -- this needs nothing the async save/resync produces (it's
+			// the same in-memory narrowing loadPostings' own authoritative
+			// pass uses, just working off what's already loaded), so there's
+			// no reason to wait on a round trip for it the way the old
+			// three-step save/resync/reload chain did.
+			a.screen = screenPostingList
+			a.postings = narrowPostingsToFilters(a.postings, v.departments, v.locations)
+			a.activeFilterDepartments = v.departments
+			a.activeFilterLocations = v.locations
+			a.postingList.resetCursorIfOutOfBounds(len(a.postings))
+			return a, applyCompanyFilters(a.syncer, a.selectedCompany.ID, a.selectedCompany.Name, v.departments, v.locations)
 		}
 		return a, cmd
 	case screenCompanyForm:

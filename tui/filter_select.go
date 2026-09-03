@@ -11,11 +11,13 @@ import (
 )
 
 // filterSelectModel drives the department/location filter-select screen
-// for a single company. It holds the store it needs to save filters, the
-// company it's editing (fixed for this screen's lifetime), and its own
-// private selection state -- no other screen reads or writes this.
+// for a single company. It's pure UI selection state with no I/O
+// dependency of its own -- saving is App's job (see saveFilterSelectionMsg
+// below), not this model's, since applying the new filters means both a
+// store write and a syncer resync (see sync.ApplyCompanyFilters,
+// decisions.log #56), neither of which this screen needs to know about
+// directly.
 type filterSelectModel struct {
-	store       *store.Store
 	companyID   int64
 	companyName string
 
@@ -33,10 +35,9 @@ type filterSelectModel struct {
 // place this is constructed (filter options are loaded async, so this
 // can't be seeded synchronously the way a key-press-triggered screen
 // entry can).
-func newFilterSelectModel(s *store.Store, companyID int64, companyName string, departments, locations []string, existingFilters []store.CompanyFilter) filterSelectModel {
+func newFilterSelectModel(companyID int64, companyName string, departments, locations []string, existingFilters []store.CompanyFilter) filterSelectModel {
 	existingDepartments, existingLocations := splitCompanyFilters(existingFilters)
 	return filterSelectModel{
-		store:               s,
 		companyID:           companyID,
 		companyName:         companyName,
 		departmentOptions:   departments,
@@ -80,6 +81,17 @@ func (m *filterSelectModel) selectedValues() (departments, locations []string) {
 // posting-list screen without saving.
 type cancelFilterSelectMsg struct{}
 
+// saveFilterSelectionMsg signals that App should apply this department/
+// location selection: narrow the currently-displayed postings
+// immediately (a pure in-memory step App does itself), then dispatch the
+// async store-write-plus-resync (see sync.ApplyCompanyFilters). This
+// model has no store/syncer access of its own to do either part (see the
+// struct's own doc comment).
+type saveFilterSelectionMsg struct {
+	departments []string
+	locations   []string
+}
+
 func (m *filterSelectModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	total := len(m.departmentOptions) + len(m.locationOptions)
 	switch {
@@ -105,7 +117,7 @@ func (m *filterSelectModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		return nil, cancelFilterSelectMsg{}
 	case msg.Type == tea.KeyEnter:
 		departments, locations := m.selectedValues()
-		return saveCompanyFilters(m.store, m.companyID, departments, locations), nil
+		return nil, saveFilterSelectionMsg{departments: departments, locations: locations}
 	}
 	return nil, nil
 }
