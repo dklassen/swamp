@@ -52,6 +52,7 @@ const (
 	screenDocumentReviewSelect
 	screenDocumentReviewForm
 	screenActiveApplications
+	screenApplicationDetail
 )
 
 type App struct {
@@ -89,11 +90,20 @@ type App struct {
 	// decisions.log #83), same reasoning as applicationStatusReturnScreen
 	// above.
 	documentReviewReturnScreen screen
+	// postingDetailReturnScreen is which screen entered screenPostingDetail
+	// -- screenPostingList (browsing a company's postings) and
+	// screenApplicationDetail (jumping straight to an application's
+	// posting -- see decisions.log, the #86 follow-up) both can, same
+	// reasoning as applicationStatusReturnScreen above. Needed because
+	// backToPostingListMsg's name is a holdover from when screenPostingList
+	// was the only possible origin.
+	postingDetailReturnScreen screen
 	// activeApplications backs the home screen: every application not at
 	// a terminal dead-end status, across every company (see
 	// store.ListActiveApplications, decisions.log #43).
 	activeApplications    []store.ApplicationView
 	activeApplicationList activeApplicationListModel
+	applicationDetail     applicationDetailModel
 	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
 	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
@@ -160,7 +170,7 @@ func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 		companyList:           newCompanyListModel(s, syncer),
 		companyForm:           newCompanyFormModel(s),
 		postingList:           newPostingListModel(s),
-		activeApplicationList: newActiveApplicationListModel(s, docs),
+		activeApplicationList: newActiveApplicationListModel(),
 		hideArchived:          true,
 		documents:             docs,
 	}
@@ -883,12 +893,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// immediately wherever it's displayed, without having to
 			// navigate away and back (see decisions.log #83) -- which
 			// reload depends on which screen review was entered from.
-			if a.documentReviewReturnScreen == screenActiveApplications {
+			switch a.documentReviewReturnScreen {
+			case screenActiveApplications:
 				return a, loadActiveApplications(a.store)
+			case screenApplicationDetail:
+				// Also refreshes the active-applications list in the
+				// background, so its review-glyph column isn't stale by
+				// the time the user backs out of application detail.
+				return a, tea.Batch(loadDocumentReviews(a.store, a.applicationDetail.application.ID), loadActiveApplications(a.store))
+			default: // screenPostingDetail
+				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
+				return a, maybeLoadDocumentReviews(a.store, hasApp, app.ID)
 			}
-			p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
-			return a, maybeLoadDocumentReviews(a.store, hasApp, app.ID)
 		}
 	case documentReviewsLoadedMsg:
 		a.err = msg.err
@@ -897,6 +914,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// longer matching what's on screen means this result is stale.
 		if msg.err == nil && a.screen == screenPostingDetail && a.postingDetail.application.ID == msg.applicationID {
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), a.postingDetail.posting, a.postingDetail.application, a.postingDetail.hasApplication, msg.reviews)
+		}
+		if msg.err == nil && a.screen == screenApplicationDetail && a.applicationDetail.application.ID == msg.applicationID {
+			a.applicationDetail.application.LatestReviews = msg.reviews
 		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
@@ -952,10 +972,38 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.applicationStatusReturnScreen = screenActiveApplications
 			a.screen = screenApplicationStatusSelect
 			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus)
-		case enterDocumentReviewSelectMsg:
-			a.documentReviewReturnScreen = screenActiveApplications
-			a.screen = screenDocumentReviewSelect
-			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, v.applicationID)
+		case enterApplicationDetailMsg:
+			a.screen = screenApplicationDetail
+			a.applicationDetail = newApplicationDetailModel(a.documents, v.application)
+		}
+		return a, cmd
+	case screenApplicationDetail:
+		cmd, intent := a.applicationDetail.Update(msg)
+		switch v := intent.(type) {
+		case backToActiveApplicationsMsg:
+			a.screen = screenActiveApplications
+		case enterPostingDetailMsg:
+			// Unlike screenPostingList's own enterPostingDetailMsg handler,
+			// this can't use lookupPosting -- a.postings is only populated
+			// by browsing that list, which application detail (reached via
+			// active-applications) may never have done. applicationDetail's
+			// own ApplicationView already carries the full posting,
+			// application, and latest reviews (freshly loaded for the
+			// active-applications screen), so render from that directly
+			// rather than triggering loadApplication's own rebuild, which
+			// would immediately clobber this with a zero-value Posting via
+			// the same lookupPosting gap.
+			appView := a.applicationDetail.application
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), appView.Posting, appView.Application, true, appView.LatestReviews)
+			a.postingDetailReturnScreen = screenApplicationDetail
+			a.screen = screenPostingDetail
+		case enterDocumentReviewFormMsg:
+			a.err = v.err
+			if v.err == nil {
+				a.documentReviewReturnScreen = screenApplicationDetail
+				a.screen = screenDocumentReviewForm
+				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.applicationID, v.documentType, v.content, a.width, a.listRows())
+			}
 		}
 		return a, cmd
 	case screenCompanyList:
@@ -991,6 +1039,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case enterPostingDetailMsg:
 			p, app, hasApp := a.lookupPosting(v.postingID)
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
+			a.postingDetailReturnScreen = screenPostingList
 			a.screen = screenPostingDetail
 			return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, hasApp, app.ID))
 		case enterFilterSelectMsg:
@@ -1005,8 +1054,10 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd, intent := a.postingDetail.Update(msg)
 		switch v := intent.(type) {
 		case backToPostingListMsg:
-			a.screen = screenPostingList
-			a.postingList.setCursor(indexOfPosting(a.postings, a.postingDetail.posting.ID))
+			if a.postingDetailReturnScreen == screenPostingList {
+				a.postingList.setCursor(indexOfPosting(a.postings, a.postingDetail.posting.ID))
+			}
+			a.screen = a.postingDetailReturnScreen
 		case navigatePostingMsg:
 			idx := indexOfPosting(a.postings, v.postingID)
 			newIdx := idx + v.direction
@@ -1108,6 +1159,8 @@ func (a *App) View() string {
 	switch a.screen {
 	case screenActiveApplications:
 		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.listRows()))
+	case screenApplicationDetail:
+		b.WriteString(a.applicationDetail.View())
 	case screenCompanyList:
 		b.WriteString(a.companyList.View(a.companies, a.listRows()))
 	case screenCompanyForm:
