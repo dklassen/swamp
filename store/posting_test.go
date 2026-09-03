@@ -325,7 +325,7 @@ func TestListDistinctDepartmentsForCompany_ReturnsSortedUniqueValues(t *testing.
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	eng := "Engineering"
 	sales := "Sales"
-	for i, dept := range []*string{&eng, &sales, &eng} {
+	for i, dept := range []string{eng, sales, eng} {
 		_, err := s.UpsertPosting(ctx, CreatePostingParams{
 			CompanyID: acme.ID,
 			Source:    "ashby",
@@ -358,7 +358,7 @@ func TestListDistinctLocationsForCompany_ReturnsSortedUniqueValues(t *testing.T)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	remote := "Remote"
 	nyc := "New York"
-	for i, loc := range []*string{&nyc, &remote, &remote} {
+	for i, loc := range []string{nyc, remote, remote} {
 		_, err := s.UpsertPosting(ctx, CreatePostingParams{
 			CompanyID: acme.ID,
 			Source:    "ashby",

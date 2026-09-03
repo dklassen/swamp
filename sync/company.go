@@ -25,35 +25,24 @@ func toFilterPosting(p jobboard.Posting) filter.Posting {
 	return filter.Posting{Department: p.Department, Location: p.Location}
 }
 
-func stringOrNil(s string) *string {
-	if s == "" {
-		return nil
-	}
-	return &s
-}
-
 // toIngestedFields builds the fields store.Posting and
 // store.CreatePostingParams share from a fetched Posting -- the single
-// place that conversion happens (see decisions.log, #57).
+// place that conversion happens (see decisions.log, #57 and #67).
 func toIngestedFields(p jobboard.Posting) store.IngestedFields {
-	fields := store.IngestedFields{
+	return store.IngestedFields{
 		Title:           p.Title,
-		Department:      stringOrNil(p.Department),
-		Team:            stringOrNil(p.Team),
-		Location:        stringOrNil(p.Location),
-		EmploymentType:  stringOrNil(p.EmploymentType),
-		WorkplaceType:   stringOrNil(p.WorkplaceType),
-		DescriptionHTML: stringOrNil(p.DescriptionHTML),
-		DescriptionText: stringOrNil(p.DescriptionText),
-		JobURL:          stringOrNil(p.JobURL),
-		ApplicationURL:  stringOrNil(p.ApplicationURL),
+		Department:      p.Department,
+		Team:            p.Team,
+		Location:        p.Location,
+		EmploymentType:  p.EmploymentType,
+		WorkplaceType:   p.WorkplaceType,
+		DescriptionHTML: p.DescriptionHTML,
+		DescriptionText: p.DescriptionText,
+		JobURL:          p.JobURL,
+		ApplicationURL:  p.ApplicationURL,
+		PublishedAt:     p.PublishedAt,
 		RawPayload:      string(p.RawPayload),
 	}
-	if !p.PublishedAt.IsZero() {
-		t := p.PublishedAt
-		fields.PublishedAt = &t
-	}
-	return fields
 }
 
 func toCreatePostingParams(companyID int64, source string, p jobboard.Posting) store.CreatePostingParams {

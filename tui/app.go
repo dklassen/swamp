@@ -114,13 +114,6 @@ func (a *App) listRows() int {
 	return rows
 }
 
-func derefOr(s *string, fallback string) string {
-	if s == nil {
-		return fallback
-	}
-	return *s
-}
-
 func renderFilterOption(label string, checked, isCursor bool) string {
 	box := "[ ]"
 	if checked {
@@ -175,14 +168,14 @@ func documentStatusLine(label string, exists bool, path string) string {
 func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store) string {
 	var b strings.Builder
 	fields := []struct{ label, value string }{
-		{"Department", derefOr(p.Department, "")},
-		{"Team", derefOr(p.Team, "")},
-		{"Location", derefOr(p.Location, "")},
-		{"Employment type", derefOr(p.EmploymentType, "")},
-		{"Workplace type", derefOr(p.WorkplaceType, "")},
+		{"Department", p.Department},
+		{"Team", p.Team},
+		{"Location", p.Location},
+		{"Employment type", p.EmploymentType},
+		{"Workplace type", p.WorkplaceType},
 		{"Status", p.ListingStatus},
-		{"Job URL", derefOr(p.JobURL, "")},
-		{"Application URL", derefOr(p.ApplicationURL, "")},
+		{"Job URL", p.JobURL},
+		{"Application URL", p.ApplicationURL},
 	}
 	for _, f := range fields {
 		if f.value == "" {
@@ -202,7 +195,7 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 	} else {
 		b.WriteString(helpStyle.Render("No application started -- press 'a' to start one.") + "\n")
 	}
-	if desc := derefOr(p.DescriptionText, ""); desc != "" {
+	if desc := p.DescriptionText; desc != "" {
 		b.WriteString("\n" + desc + "\n")
 	}
 	return b.String()
@@ -588,7 +581,7 @@ func narrowPostingsToFilters(postings []store.Posting, departments, locations []
 
 	narrowed := make([]store.Posting, 0, len(postings))
 	for _, p := range postings {
-		fp := filter.Posting{Department: derefOr(p.Department, ""), Location: derefOr(p.Location, "")}
+		fp := filter.Posting{Department: p.Department, Location: p.Location}
 		match, err := filter.Match(fp, rules)
 		if err == nil && match {
 			narrowed = append(narrowed, p)

@@ -76,8 +76,8 @@ func (m *postingDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	case msg.Type == tea.KeyEsc, msg.String() == "b":
 		return nil, backToPostingListMsg{}
 	case msg.String() == "o":
-		if m.posting.JobURL != nil && *m.posting.JobURL != "" {
-			return openInBrowser(*m.posting.JobURL), nil
+		if m.posting.JobURL != "" {
+			return openInBrowser(m.posting.JobURL), nil
 		}
 	case msg.String() == "a":
 		if !m.hasApplication {

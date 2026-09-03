@@ -128,9 +128,8 @@ func (m *postingListModel) Update(msg tea.KeyMsg, snap postingListSnapshot) (tea
 		}
 	case msg.String() == "o":
 		if m.cursor < len(snap.postings) {
-			url := snap.postings[m.cursor].JobURL
-			if url != nil && *url != "" {
-				return openInBrowser(*url), nil
+			if url := snap.postings[m.cursor].JobURL; url != "" {
+				return openInBrowser(url), nil
 			}
 		}
 	case msg.String() == "f":
@@ -183,8 +182,8 @@ func (m *postingListModel) View(snap postingListSnapshot, listRows int) string {
 			t.Row(
 				postingMarker(snap.markup[p.ID]),
 				truncateCol(p.Title, titleColWidth),
-				truncateCol(derefOr(p.Department, ""), departmentColWidth),
-				truncateCol(derefOr(p.Location, ""), locationColWidth),
+				truncateCol(p.Department, departmentColWidth),
+				truncateCol(p.Location, locationColWidth),
 				truncateCol(p.ListingStatus, statusColWidth),
 			)
 		}

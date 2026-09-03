@@ -2672,3 +2672,53 @@ Verified: full build/test/lint/fmt clean. Manually verified via tmux
 against a seeded scratch db: interested toggle on/off, archive, and
 unarchive all still work through the TUI exactly as before (no TUI code
 changed).
+
+## 2026-09-02 -- store.Posting's optional fields become plain string/time.Time (#67)
+Context: store.IngestedFields' nine optional string fields and
+PublishedAt were *string/*time.Time, mirroring the underlying
+sql.NullString/sql.NullTime columns, even though nothing in the codebase
+distinguished nil from empty -- every consumer called
+derefOr(p.X, "")/equivalent, or (posting_detail.go, posting_list.go) did
+a `!= nil && *x != ""` check that collapses to the same thing. Deferred
+out of #57 (posting-shape mapping unification) as a separate,
+wider-blast-radius decision.
+Decision: dropped the pointer types. IngestedFields' string fields
+become plain string (empty = absent), PublishedAt becomes plain
+time.Time (zero = absent). postingFromRow now does direct field access
+(row.Department.String, row.PublishedAt.Time) instead of 9 `if
+row.X.Valid` branches, since sql.NullString{}/sql.NullTime{}'s own zero
+values already are the correct absent-value. sync.toIngestedFields
+collapses to a straight field-by-field copy (jobboard.Posting was
+already plain-typed) -- stringOrNil is deleted, now unused.
+nullString's signature changed (only ever called from posting.go) but
+nullTime's did NOT: it's shared with InterviewStage.StageDate, a
+genuinely pointer-optional field out of this issue's scope. Added a
+separate nullPublishedAt(time.Time) for IngestedFields.PublishedAt
+specifically rather than overloading nullTime's meaning across two
+different nullability contracts.
+Fixed every derefOr/`!= nil` call site this pointer removal broke:
+tui/app.go (postingDetailContent's field list, description-text check,
+splitCompanyFilters' filter.Posting conversion -- derefOr itself
+deleted, now fully unused), tui/posting_list.go (department/location
+columns, and a JobURL `!= nil && *url != ""` open-in-browser gate the
+issue's own investigation hadn't listed), tui/posting_detail.go (the
+JobURL open-in-browser gate the issue did list), sync/company_test.go
+and store/posting_test.go (test fixtures constructing pointer values).
+Real trade-off, not free (per the issue's own framing): this closes the
+door on ever distinguishing "this source has no concept of Team" from
+"this source has Team but it's genuinely blank" -- both collapse to ""
+either way now. All evidence checked said that distinction was never
+made use of.
+Noted, not acted on: store.Posting is JSON-marshaled by stage.Candidate/
+Prepared with no json: tags (see #59), so this changes the agent
+hand-off JSON shape for these fields from `"department": null` (when
+absent) to `"department": ""` -- always present now, never omitted/null.
+No test asserted on the old shape (confirming #59's own finding: zero
+structural safety net here). Left for #59 to address properly, not
+folded in here.
+Verified: full build/test/lint/fmt clean, no test assertions changed in
+meaning (only pointer-literal construction syntax). Manually verified
+via tmux against a seeded scratch db: a posting with every optional
+field populated and one with none of them render identically to before
+in both the list and detail views, and the JobURL open-in-browser gate
+correctly no-ops on the empty-JobURL posting without crashing.

@@ -19,16 +19,16 @@ import (
 // every site that needs it (see decisions.log, #57).
 type IngestedFields struct {
 	Title           string
-	Department      *string
-	Team            *string
-	Location        *string
-	EmploymentType  *string
-	WorkplaceType   *string
-	DescriptionHTML *string
-	DescriptionText *string
-	JobURL          *string
-	ApplicationURL  *string
-	PublishedAt     *time.Time
+	Department      string
+	Team            string
+	Location        string
+	EmploymentType  string
+	WorkplaceType   string
+	DescriptionHTML string
+	DescriptionText string
+	JobURL          string
+	ApplicationURL  string
+	PublishedAt     time.Time
 	RawPayload      string
 }
 
@@ -61,7 +61,7 @@ type CreatePostingParams struct {
 }
 
 func postingFromRow(row db.Posting) Posting {
-	p := Posting{
+	return Posting{
 		ID:            row.ID,
 		CompanyID:     row.CompanyID,
 		Source:        row.Source,
@@ -71,54 +71,53 @@ func postingFromRow(row db.Posting) Posting {
 		LastSeenAt:    row.LastSeenAt,
 		CreatedAt:     row.CreatedAt,
 		UpdatedAt:     row.UpdatedAt,
+		IngestedFields: IngestedFields{
+			Title:           row.Title,
+			Department:      row.Department.String,
+			Team:            row.Team.String,
+			Location:        row.Location.String,
+			EmploymentType:  row.EmploymentType.String,
+			WorkplaceType:   row.WorkplaceType.String,
+			DescriptionHTML: row.DescriptionHtml.String,
+			DescriptionText: row.DescriptionText.String,
+			JobURL:          row.JobUrl.String,
+			ApplicationURL:  row.ApplicationUrl.String,
+			PublishedAt:     row.PublishedAt.Time,
+			RawPayload:      row.RawPayload,
+		},
 	}
-	p.Title = row.Title
-	p.RawPayload = row.RawPayload
-	if row.Department.Valid {
-		p.Department = &row.Department.String
-	}
-	if row.Team.Valid {
-		p.Team = &row.Team.String
-	}
-	if row.Location.Valid {
-		p.Location = &row.Location.String
-	}
-	if row.EmploymentType.Valid {
-		p.EmploymentType = &row.EmploymentType.String
-	}
-	if row.WorkplaceType.Valid {
-		p.WorkplaceType = &row.WorkplaceType.String
-	}
-	if row.DescriptionHtml.Valid {
-		p.DescriptionHTML = &row.DescriptionHtml.String
-	}
-	if row.DescriptionText.Valid {
-		p.DescriptionText = &row.DescriptionText.String
-	}
-	if row.JobUrl.Valid {
-		p.JobURL = &row.JobUrl.String
-	}
-	if row.ApplicationUrl.Valid {
-		p.ApplicationURL = &row.ApplicationUrl.String
-	}
-	if row.PublishedAt.Valid {
-		p.PublishedAt = &row.PublishedAt.Time
-	}
-	return p
 }
 
-func nullString(s *string) sql.NullString {
-	if s == nil {
+// nullString converts s into the DB layer's nullable representation --
+// empty string means absent, matching sql.NullString{}'s own zero value,
+// so postingFromRow can read a column straight back out with no Valid
+// branch.
+func nullString(s string) sql.NullString {
+	if s == "" {
 		return sql.NullString{}
 	}
-	return sql.NullString{String: *s, Valid: true}
+	return sql.NullString{String: s, Valid: true}
 }
 
+// nullTime converts an optional *time.Time into the DB layer's nullable
+// representation -- shared with InterviewStage.StageDate, which (unlike
+// IngestedFields.PublishedAt below) is a genuinely pointer-optional field,
+// out of #67's scope.
 func nullTime(t *time.Time) sql.NullTime {
 	if t == nil {
 		return sql.NullTime{}
 	}
 	return sql.NullTime{Time: *t, Valid: true}
+}
+
+// nullPublishedAt is nullTime for IngestedFields.PublishedAt specifically:
+// the zero time means absent, since PublishedAt isn't pointer-optional
+// (see decisions.log, #67).
+func nullPublishedAt(t time.Time) sql.NullTime {
+	if t.IsZero() {
+		return sql.NullTime{}
+	}
+	return sql.NullTime{Time: t, Valid: true}
 }
 
 // UpsertPosting inserts a new posting or updates the existing one for the
@@ -161,7 +160,7 @@ func (s *Store) UpsertPosting(ctx context.Context, params CreatePostingParams) (
 			DescriptionText: nullString(params.DescriptionText),
 			JobUrl:          nullString(params.JobURL),
 			ApplicationUrl:  nullString(params.ApplicationURL),
-			PublishedAt:     nullTime(params.PublishedAt),
+			PublishedAt:     nullPublishedAt(params.PublishedAt),
 			RawPayload:      params.RawPayload,
 		})
 		if err != nil {
@@ -185,7 +184,7 @@ func (s *Store) UpsertPosting(ctx context.Context, params CreatePostingParams) (
 			DescriptionText: nullString(params.DescriptionText),
 			JobUrl:          nullString(params.JobURL),
 			ApplicationUrl:  nullString(params.ApplicationURL),
-			PublishedAt:     nullTime(params.PublishedAt),
+			PublishedAt:     nullPublishedAt(params.PublishedAt),
 			RawPayload:      params.RawPayload,
 		})
 		if err != nil {
