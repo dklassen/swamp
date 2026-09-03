@@ -143,8 +143,8 @@ func TestPostingDetailModel_R_HasApplication_ReturnsEnterDocumentReviewSelectMsg
 	if !ok {
 		t.Fatalf("intent = %T, want enterDocumentReviewSelectMsg", intent)
 	}
-	if got.postingID != 5 || got.applicationID != 9 {
-		t.Fatalf("enterDocumentReviewSelectMsg = %+v, want postingID=5 applicationID=9", got)
+	if got.applicationID != 9 {
+		t.Fatalf("enterDocumentReviewSelectMsg = %+v, want applicationID=9", got)
 	}
 }
 

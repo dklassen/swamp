@@ -70,7 +70,6 @@ type enterApplicationNotesMsg struct {
 // enterDocumentReviewSelectMsg signals that App should switch to the
 // document-review-select screen for this application.
 type enterDocumentReviewSelectMsg struct {
-	postingID     int64
 	applicationID int64
 }
 
@@ -100,7 +99,7 @@ func (m *postingDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		}
 	case msg.String() == "r":
 		if m.hasApplication {
-			return nil, enterDocumentReviewSelectMsg{postingID: m.posting.ID, applicationID: m.application.ID}
+			return nil, enterDocumentReviewSelectMsg{applicationID: m.application.ID}
 		}
 	default:
 		var cmd tea.Cmd

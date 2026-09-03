@@ -2971,3 +2971,50 @@ screen's title can scroll off-screen in a full-height terminal --
 confirmed this is pre-existing behavior shared by the notes-edit screen
 (same textarea-sized-to-listRows() pattern), not something this change
 introduced.
+
+Follow-up (same day, before push): ran a 9-angle code review (the usual
+8 plus an ad hoc SOLID-principles pass) against this change. Found and
+fixed a real bug: ctrl+p/ctrl+f were chosen as the submit bindings
+(passed/flagged) without checking against bubbles/textarea's own
+DefaultKeyMap, which already binds ctrl+p to "previous line" and ctrl+f
+to "character forward" -- pressing either while editing multi-line notes
+would have silently submitted the review instead of moving the cursor.
+Changed to ctrl+s (passed) and ctrl+g (flagged), both confirmed absent
+from textarea's keymap; added a regression test that types two lines,
+presses ctrl+p, and asserts no documentReviewCreatedMsg was produced.
+Also fixed, found independently by 4+ of the 9 angles: postingID was
+threaded dead through documentReviewSelectModel ->
+enterDocumentReviewFormMsg -> documentReviewFormModel with no consumer
+anywhere (removed from both models, the message, and their
+constructors); documentReviewSelectModel also held an unused
+*documents.Store field (only needed locally in its constructor, not
+kept). Extracted renderCursorLine (tui/app.go, alongside the existing
+renderFilterOption) since documentReviewSelectModel.View() was about to
+become a fourth near-identical copy of the same cursor-highlight
+rendering already duplicated in applicationStatusModel/company_list.go
+-- used it in the new file only, left the three pre-existing copies
+untouched (not this PR's job to retrofit working code). Fixed a real
+documentation-accuracy gap: content_sha256's comment claimed it was
+"indexed" when no index on it actually existed -- rather than walk back
+the claim, added idx_document_reviews_content_sha256 (cheap, and makes
+the documented intent true) instead of downgrading the comment.
+Considered and left as-is: the CountDocumentReviews-then-INSERT two
+round trips for cycle computation (SQLite single-writer, UNIQUE
+constraint is the real safety net either way, and the two-step form
+keeps cycle logic visible in Go next to its doc comment -- a defensible
+readability choice per the angles that raised it, not a clear mistake);
+the synchronous os.ReadFile in documentReviewSelectModel.Update (altitude
+and conventions angles agreed this extends, rather than violates, the
+existing tui/active_applications.go precedent for cheap local
+filesystem I/O in Update -- added an explicit comment saying so, since
+the prior version relied on the reader making that connection
+unprompted); the hardcoded 2-document-type list in
+newDocumentReviewSelectModel/documentTypeLabel (SOLID angle's OCP note
+-- already the deliberate, documented choice from the original entry
+above, not an oversight).
+Re-verified: full build/vet/test/lint/fmt clean after the above fixes.
+Manually re-verified the exact bug scenario via tmux: typed two lines of
+notes, pressed ctrl+p, confirmed the screen stayed on the review form
+with both lines intact (didn't submit), then pressed ctrl+s and
+confirmed the review was recorded correctly (outcome=passed, both lines
+in notes) and the screen returned to posting-detail.

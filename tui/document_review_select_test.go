@@ -23,7 +23,7 @@ func TestDocumentReviewSelectModel_New_SeedsOptionsFromDocumentStatus(t *testing
 		t.Fatalf("write cover letter: %v", err)
 	}
 
-	m := newDocumentReviewSelectModel(docs, 5, 1)
+	m := newDocumentReviewSelectModel(docs, 1)
 
 	if len(m.options) != 2 {
 		t.Fatalf("len(options) = %d, want 2", len(m.options))
@@ -39,7 +39,7 @@ func TestDocumentReviewSelectModel_New_SeedsOptionsFromDocumentStatus(t *testing
 func TestDocumentReviewSelectModel_CursorMovement_ClampsToOptions(t *testing.T) {
 	t.Parallel()
 
-	m := newDocumentReviewSelectModel(documents.NewStore(t.TempDir()), 5, 1)
+	m := newDocumentReviewSelectModel(documents.NewStore(t.TempDir()), 1)
 
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	m.Update(tea.KeyMsg{Type: tea.KeyDown})
@@ -56,7 +56,7 @@ func TestDocumentReviewSelectModel_CursorMovement_ClampsToOptions(t *testing.T) 
 func TestDocumentReviewSelectModel_Esc_ReturnsCancelMsg(t *testing.T) {
 	t.Parallel()
 
-	m := newDocumentReviewSelectModel(documents.NewStore(t.TempDir()), 5, 1)
+	m := newDocumentReviewSelectModel(documents.NewStore(t.TempDir()), 1)
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
@@ -69,7 +69,7 @@ func TestDocumentReviewSelectModel_Esc_ReturnsCancelMsg(t *testing.T) {
 func TestDocumentReviewSelectModel_Enter_OnMissingDocument_NoOp(t *testing.T) {
 	t.Parallel()
 
-	m := newDocumentReviewSelectModel(documents.NewStore(t.TempDir()), 5, 1)
+	m := newDocumentReviewSelectModel(documents.NewStore(t.TempDir()), 1)
 	// cursor starts at 0 (Cover Letter), which doesn't exist in a fresh temp dir.
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd != nil || intent != nil {
@@ -90,7 +90,7 @@ func TestDocumentReviewSelectModel_Enter_OnExistingDocument_ReturnsContentReadFr
 		t.Fatalf("write cover letter: %v", err)
 	}
 
-	m := newDocumentReviewSelectModel(docs, 5, 1)
+	m := newDocumentReviewSelectModel(docs, 1)
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
@@ -102,8 +102,8 @@ func TestDocumentReviewSelectModel_Enter_OnExistingDocument_ReturnsContentReadFr
 	if got.err != nil {
 		t.Fatalf("err = %v, want nil", got.err)
 	}
-	if got.postingID != 5 || got.applicationID != 1 {
-		t.Fatalf("postingID, applicationID = %d, %d, want 5, 1", got.postingID, got.applicationID)
+	if got.applicationID != 1 {
+		t.Fatalf("applicationID = %d, want 1", got.applicationID)
 	}
 	if got.documentType != store.DocumentTypeCoverLetter {
 		t.Fatalf("documentType = %q, want %q", got.documentType, store.DocumentTypeCoverLetter)

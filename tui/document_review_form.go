@@ -12,15 +12,14 @@ import (
 
 // documentReviewFormModel drives the document-review-form screen: enter
 // notes and submit a review outcome for one document. It holds the store
-// it needs to save the review, the posting/application/document it's
-// reviewing (fixed for this screen's lifetime), the content read from
-// disk when the review-select screen was entered (so the review's
-// snapshot is exactly what was shown to the user, not whatever the file
-// happens to contain by the time this form is submitted), and its own
-// private textarea.
+// it needs to save the review, the application/document it's reviewing
+// (fixed for this screen's lifetime), the content read from disk when
+// the review-select screen was entered (so the review's snapshot is
+// exactly what was shown to the user, not whatever the file happens to
+// contain by the time this form is submitted), and its own private
+// textarea.
 type documentReviewFormModel struct {
 	store         *store.Store
-	postingID     int64
 	applicationID int64
 	documentType  string
 	content       string
@@ -29,14 +28,13 @@ type documentReviewFormModel struct {
 
 // newDocumentReviewFormModel returns a review-form screen for
 // applicationID's documentType, sized to width/height.
-func newDocumentReviewFormModel(s *store.Store, postingID, applicationID int64, documentType, content string, width, height int) documentReviewFormModel {
+func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentType, content string, width, height int) documentReviewFormModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	ta.SetHeight(height)
 	ta.Focus()
 	return documentReviewFormModel{
 		store:         s,
-		postingID:     postingID,
 		applicationID: applicationID,
 		documentType:  documentType,
 		content:       content,
@@ -60,13 +58,18 @@ func createDocumentReview(s *store.Store, applicationID int64, documentType, con
 	}
 }
 
+// Submit bindings are ctrl+s (passed) and ctrl+g (flagged) -- deliberately
+// not ctrl+p/ctrl+f, which bubbles/textarea's own DefaultKeyMap already
+// binds to "previous line" and "character forward" respectively; using
+// them here would silently submit the review whenever the user tries to
+// move the cursor while editing multi-line notes.
 func (m *documentReviewFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	switch msg.Type {
 	case tea.KeyEsc:
 		return nil, cancelDocumentReviewFormMsg{}
-	case tea.KeyCtrlP:
+	case tea.KeyCtrlS:
 		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomePassed, m.textarea.Value()), nil
-	case tea.KeyCtrlF:
+	case tea.KeyCtrlG:
 		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomeFlagged, m.textarea.Value()), nil
 	}
 	var cmd tea.Cmd
@@ -91,6 +94,6 @@ func (m *documentReviewFormModel) View() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render("Review "+documentTypeLabel(m.documentType)) + "\n")
 	b.WriteString(m.textarea.View() + "\n")
-	b.WriteString(helpStyle.Render("ctrl+p: pass  ctrl+f: flag  esc: cancel"))
+	b.WriteString(helpStyle.Render("ctrl+s: pass  ctrl+g: flag  esc: cancel"))
 	return b.String()
 }

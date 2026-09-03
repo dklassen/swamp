@@ -10,7 +10,10 @@
 -- review that only pointed at the file's current path would become
 -- unreadable the moment the file gets redrafted. content_sha256 is a
 -- derived, indexed shortcut for "did this change since the last review"
--- without comparing full TEXT blobs.
+-- without comparing full TEXT blobs -- not queried by any code yet, but
+-- indexed now since content_snapshot itself deliberately isn't (a full
+-- TEXT index would be wasted weight for a column nothing does equality
+-- lookups against).
 --
 -- cycle is the Nth review for this (application_id, document_type) pair,
 -- computed by the store package at insert time (COUNT + 1), not supplied
@@ -34,6 +37,7 @@ CREATE TABLE document_reviews (
 );
 
 CREATE INDEX idx_document_reviews_application_id ON document_reviews(application_id);
+CREATE INDEX idx_document_reviews_content_sha256 ON document_reviews(content_sha256);
 
 -- +goose StatementEnd
 

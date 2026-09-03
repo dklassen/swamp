@@ -22,15 +22,11 @@ type documentReviewOption struct {
 
 // documentReviewSelectModel drives the document-review-select screen for
 // a single application: pick which document (cover letter or resume) to
-// review. It holds the documents store it needs to resolve paths -- and
-// reads content directly off disk itself when a selection is made, since
-// documents deliberately never reads file content (see that package's
-// doc comment); Swamp only starts doing so here, specifically to capture
-// a review snapshot (see decisions.log, #51) -- the posting/application
-// it's reviewing for, and its own private cursor.
+// review. It holds the application it's reviewing for and its own
+// private cursor; the *documents.Store passed to the constructor is only
+// needed there (to resolve options) and isn't kept, since nothing else
+// in this model touches it.
 type documentReviewSelectModel struct {
-	documents     *documents.Store
-	postingID     int64
 	applicationID int64
 	options       []documentReviewOption
 	cursor        int
@@ -38,11 +34,9 @@ type documentReviewSelectModel struct {
 
 // newDocumentReviewSelectModel returns a review-select screen for
 // applicationID, with options seeded from its current document status.
-func newDocumentReviewSelectModel(docs *documents.Store, postingID, applicationID int64) documentReviewSelectModel {
+func newDocumentReviewSelectModel(docs *documents.Store, applicationID int64) documentReviewSelectModel {
 	status := docs.Status(applicationID)
 	return documentReviewSelectModel{
-		documents:     docs,
-		postingID:     postingID,
 		applicationID: applicationID,
 		options: []documentReviewOption{
 			{label: "Cover Letter", documentType: store.DocumentTypeCoverLetter, path: status.CoverLetter.Path, exists: status.CoverLetter.Exists},
@@ -64,13 +58,21 @@ type cancelDocumentReviewSelectMsg struct{}
 // stays on the select screen rather than entering the form with no
 // content.
 type enterDocumentReviewFormMsg struct {
-	postingID     int64
 	applicationID int64
 	documentType  string
 	content       string
 	err           error
 }
 
+// Update reads the selected document's content directly off disk (via
+// os.ReadFile) rather than through a tea.Cmd round trip. This extends
+// the same reasoning tui/active_applications.go's openDocument already
+// relies on for EnsureDir/stat calls ("local filesystem I/O -- cheap
+// enough to call synchronously") to a full content read: these are small
+// agent-drafted markdown files (a few KB at most), so the read is still
+// fast enough not to block the event loop noticeably. The actual store
+// write (createDocumentReview, in the form screen this leads to) still
+// goes through the normal async tea.Cmd convention.
 func (m *documentReviewSelectModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	switch {
 	case msg.Type == tea.KeyDown, msg.String() == "j":
@@ -90,7 +92,6 @@ func (m *documentReviewSelectModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		}
 		content, err := os.ReadFile(opt.path)
 		return nil, enterDocumentReviewFormMsg{
-			postingID:     m.postingID,
 			applicationID: m.applicationID,
 			documentType:  opt.documentType,
 			content:       string(content),
@@ -108,12 +109,7 @@ func (m *documentReviewSelectModel) View() string {
 		if opt.exists {
 			status = "found"
 		}
-		line := opt.label + " (" + status + ")"
-		if i == m.cursor {
-			b.WriteString(cursorStyle.Render("> "+line) + "\n")
-		} else {
-			b.WriteString("  " + line + "\n")
-		}
+		b.WriteString(renderCursorLine(opt.label+" ("+status+")", i == m.cursor))
 	}
 	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: review  esc/b: cancel"))
 	return b.String()

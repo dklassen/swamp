@@ -130,6 +130,16 @@ func renderFilterOption(label string, checked, isCursor bool) string {
 	return "  " + line + "\n"
 }
 
+// renderCursorLine renders one line of a plain (non-checkbox) cursor
+// list, highlighted when isCursor -- the shape applicationStatusModel's
+// and documentReviewSelectModel's option lists both use.
+func renderCursorLine(line string, isCursor bool) string {
+	if isCursor {
+		return cursorStyle.Render("> "+line) + "\n"
+	}
+	return "  " + line + "\n"
+}
+
 func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 	return &App{
 		store:                 s,
@@ -890,7 +900,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.applicationNotes = newApplicationNotesModel(a.store, v.postingID, v.currentNotes, a.width, a.listRows())
 		case enterDocumentReviewSelectMsg:
 			a.screen = screenDocumentReviewSelect
-			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, v.postingID, v.applicationID)
+			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, v.applicationID)
 		}
 		return a, cmd
 	case screenApplicationStatusSelect:
@@ -914,7 +924,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.err = v.err
 			if v.err == nil {
 				a.screen = screenDocumentReviewForm
-				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.postingID, v.applicationID, v.documentType, v.content, a.width, a.listRows())
+				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.applicationID, v.documentType, v.content, a.width, a.listRows())
 			}
 		}
 		return a, cmd
