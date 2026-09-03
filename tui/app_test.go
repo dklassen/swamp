@@ -1641,7 +1641,7 @@ func TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail(t *testing.T) 
 	}
 }
 
-func TestApp_ActiveApplications_ShiftR_EntersDocumentReviewSelect(t *testing.T) {
+func TestApp_ActiveApplications_Enter_EntersApplicationDetail(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -1651,33 +1651,118 @@ func TestApp_ActiveApplications_ShiftR_EntersDocumentReviewSelect(t *testing.T) 
 	if app.screen != screenActiveApplications {
 		t.Fatalf("initial screen = %v, want screenActiveApplications", app.screen)
 	}
-	app, _ = sendKey(app, runeKey('R'))
-	if app.screen != screenDocumentReviewSelect {
-		t.Fatalf("screen after 'R' = %v, want screenDocumentReviewSelect", app.screen)
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if app.screen != screenApplicationDetail {
+		t.Fatalf("screen after enter = %v, want screenApplicationDetail", app.screen)
+	}
+	if app.applicationDetail.application.Posting.Title != "Engineer" {
+		t.Fatalf("applicationDetail.application.Posting.Title = %q, want %q", app.applicationDetail.application.Posting.Title, "Engineer")
 	}
 }
 
-func TestApp_ActiveApplications_CancelDocumentReview_ReturnsToActiveApplications(t *testing.T) {
+func TestApp_ApplicationDetail_P_EntersPostingDetail(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	app, _ = sendKey(app, runeKey('R'))
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
-	if app.screen != screenActiveApplications {
-		t.Fatalf("screen after cancelling review = %v, want screenActiveApplications (not screenPostingDetail)", app.screen)
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // active-applications -> application detail
+	// No Cmd expected: applicationDetail's ApplicationView already has the
+	// full posting/application/reviews loaded (from active-applications),
+	// so entering posting detail from here renders synchronously rather
+	// than round-tripping through a.postings-dependent lookupPosting (see
+	// decisions.log #86 follow-up).
+	app, _ = sendKey(app, runeKey('p'))
+
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after 'p' = %v, want screenPostingDetail", app.screen)
+	}
+	if app.postingDetail.posting.ID != posting.ID {
+		t.Fatalf("postingDetail.posting.ID = %d, want %d", app.postingDetail.posting.ID, posting.ID)
 	}
 }
 
-// TestApp_SubmitDocumentReviewFromActiveApplications_UpdatesGlyphImmediately
+// TestApp_PostingDetailFromApplicationDetail_Esc_ReturnsToApplicationDetail
+// is a regression test: backToPostingListMsg's handler used to
+// unconditionally set screen = screenPostingList, which is wrong when
+// posting detail was reached from application detail rather than by
+// browsing a company's postings -- a.postings is empty in that case (it's
+// only populated by screenPostingList's own loadPostings), so esc landed
+// on an empty, disconnected posting-list screen instead of back where the
+// user came from. postingDetailReturnScreen fixes this the same way
+// applicationStatusReturnScreen/documentReviewReturnScreen already solve
+// the analogous problem for their own screens (see decisions.log #86
+// follow-up).
+func TestApp_PostingDetailFromApplicationDetail_Esc_ReturnsToApplicationDetail(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // active-applications -> application detail
+	app, _ = sendKey(app, runeKey('p'))                   // application detail -> posting detail
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after 'p' = %v, want screenPostingDetail", app.screen)
+	}
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	if app.screen != screenApplicationDetail {
+		t.Fatalf("screen after esc = %v, want screenApplicationDetail (not screenPostingList, which was never browsed)", app.screen)
+	}
+}
+
+func TestApp_ApplicationDetail_ShiftR_EntersReviewFormDirectly(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	status := app.documents.Status(application.ID)
+	if err := os.MkdirAll(filepath.Dir(status.Resume.Path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(status.Resume.Path, []byte("# Resume"), 0o644); err != nil {
+		t.Fatalf("WriteFile resume: %v", err)
+	}
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // active-applications -> application detail
+	app, _ = sendKey(app, runeKey('R'))
+	if app.screen != screenDocumentReviewForm {
+		t.Fatalf("screen after 'R' = %v, want screenDocumentReviewForm (no picker step needed -- this screen already knows which document)", app.screen)
+	}
+}
+
+func TestApp_ApplicationDetail_CancelDocumentReview_ReturnsToApplicationDetail(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	status := app.documents.Status(application.ID)
+	if err := os.MkdirAll(filepath.Dir(status.Resume.Path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(status.Resume.Path, []byte("# Resume"), 0o644); err != nil {
+		t.Fatalf("WriteFile resume: %v", err)
+	}
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, _ = sendKey(app, runeKey('R'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	if app.screen != screenApplicationDetail {
+		t.Fatalf("screen after cancelling review = %v, want screenApplicationDetail (not screenActiveApplications)", app.screen)
+	}
+}
+
+// TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately
 // mirrors TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail
-// above, but entering review from the active-applications screen (the
-// "application view" -- see decisions.log #83) rather than posting
-// detail, and checking the compact review-glyph column updates rather
-// than the full inline badge.
-func TestApp_SubmitDocumentReviewFromActiveApplications_UpdatesGlyphImmediately(t *testing.T) {
+// above, but entering review from application detail (reached via the
+// active-applications "application view" -- see decisions.log #83 and
+// its #86 follow-up reorganizing this workflow).
+func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -1686,20 +1771,17 @@ func TestApp_SubmitDocumentReviewFromActiveApplications_UpdatesGlyphImmediately(
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 
 	status := app.documents.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(status.Resume.Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(status.CoverLetter.Path, []byte("# Cover Letter"), 0o644); err != nil {
-		t.Fatalf("WriteFile cover letter: %v", err)
+	if err := os.WriteFile(status.Resume.Path, []byte("# Resume"), 0o644); err != nil {
+		t.Fatalf("WriteFile resume: %v", err)
 	}
 
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 	app, _ = sendKey(app, runeKey('R'))
-	if app.screen != screenDocumentReviewSelect {
-		t.Fatalf("screen after 'R' = %v, want screenDocumentReviewSelect", app.screen)
-	}
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // select "Cover Letter" (cursor 0)
 	if app.screen != screenDocumentReviewForm {
-		t.Fatalf("screen after selecting cover letter = %v, want screenDocumentReviewForm", app.screen)
+		t.Fatalf("screen after 'R' = %v, want screenDocumentReviewForm", app.screen)
 	}
 	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyCtrlS}) // pass
 	if cmd == nil {
@@ -1707,12 +1789,12 @@ func TestApp_SubmitDocumentReviewFromActiveApplications_UpdatesGlyphImmediately(
 	}
 	app = applyCmd(t, app, cmd)
 
-	if app.screen != screenActiveApplications {
-		t.Fatalf("screen after saving review = %v, want screenActiveApplications", app.screen)
+	if app.screen != screenApplicationDetail {
+		t.Fatalf("screen after saving review = %v, want screenApplicationDetail", app.screen)
 	}
 	view := app.View()
-	if !strings.Contains(view, "CL:✓") {
-		t.Errorf("view after submitting review does not show CL:✓ without navigating away and back:\n%s", view)
+	if !strings.Contains(view, "[PASSED]") {
+		t.Errorf("view after submitting review does not show [PASSED] without navigating away and back:\n%s", view)
 	}
 }
 
