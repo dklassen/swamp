@@ -59,14 +59,16 @@ WHERE id = ?;
 -- name: ListDistinctDepartmentsForCompany :many
 -- Keyspace discovery for filter selection: department is a company-
 -- specific vocabulary (not a fixed enum), so filter values are offered
--- from what's actually been ingested, not guessed at.
+-- from what's actually been ingested, not guessed at. No "IS NOT NULL"
+-- check needed -- department is NOT NULL DEFAULT '' (see decisions.log,
+-- #74), so excluding '' is the only filter required.
 SELECT DISTINCT department FROM postings
-WHERE company_id = ? AND department IS NOT NULL AND department != ''
+WHERE company_id = ? AND department != ''
 ORDER BY department;
 
 -- name: ListDistinctLocationsForCompany :many
 SELECT DISTINCT location FROM postings
-WHERE company_id = ? AND location IS NOT NULL AND location != ''
+WHERE company_id = ? AND location != ''
 ORDER BY location;
 
 -- name: ListInterestedPostings :many

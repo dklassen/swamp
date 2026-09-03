@@ -73,30 +73,19 @@ func postingFromRow(row db.Posting) Posting {
 		UpdatedAt:     row.UpdatedAt,
 		IngestedFields: IngestedFields{
 			Title:           row.Title,
-			Department:      row.Department.String,
-			Team:            row.Team.String,
-			Location:        row.Location.String,
-			EmploymentType:  row.EmploymentType.String,
-			WorkplaceType:   row.WorkplaceType.String,
-			DescriptionHTML: row.DescriptionHtml.String,
-			DescriptionText: row.DescriptionText.String,
-			JobURL:          row.JobUrl.String,
-			ApplicationURL:  row.ApplicationUrl.String,
+			Department:      row.Department,
+			Team:            row.Team,
+			Location:        row.Location,
+			EmploymentType:  row.EmploymentType,
+			WorkplaceType:   row.WorkplaceType,
+			DescriptionHTML: row.DescriptionHtml,
+			DescriptionText: row.DescriptionText,
+			JobURL:          row.JobUrl,
+			ApplicationURL:  row.ApplicationUrl,
 			PublishedAt:     row.PublishedAt.Time,
 			RawPayload:      row.RawPayload,
 		},
 	}
-}
-
-// nullString converts s into the DB layer's nullable representation --
-// empty string means absent, matching sql.NullString{}'s own zero value,
-// so postingFromRow can read a column straight back out with no Valid
-// branch.
-func nullString(s string) sql.NullString {
-	if s == "" {
-		return sql.NullString{}
-	}
-	return sql.NullString{String: s, Valid: true}
 }
 
 // nullTime converts an optional *time.Time into the DB layer's nullable
@@ -151,15 +140,15 @@ func (s *Store) UpsertPosting(ctx context.Context, params CreatePostingParams) (
 			Source:          params.Source,
 			SourceID:        params.SourceID,
 			Title:           params.Title,
-			Department:      nullString(params.Department),
-			Team:            nullString(params.Team),
-			Location:        nullString(params.Location),
-			EmploymentType:  nullString(params.EmploymentType),
-			WorkplaceType:   nullString(params.WorkplaceType),
-			DescriptionHtml: nullString(params.DescriptionHTML),
-			DescriptionText: nullString(params.DescriptionText),
-			JobUrl:          nullString(params.JobURL),
-			ApplicationUrl:  nullString(params.ApplicationURL),
+			Department:      params.Department,
+			Team:            params.Team,
+			Location:        params.Location,
+			EmploymentType:  params.EmploymentType,
+			WorkplaceType:   params.WorkplaceType,
+			DescriptionHtml: params.DescriptionHTML,
+			DescriptionText: params.DescriptionText,
+			JobUrl:          params.JobURL,
+			ApplicationUrl:  params.ApplicationURL,
 			PublishedAt:     nullPublishedAt(params.PublishedAt),
 			RawPayload:      params.RawPayload,
 		})
@@ -175,15 +164,15 @@ func (s *Store) UpsertPosting(ctx context.Context, params CreatePostingParams) (
 		row, err = qtx.UpdatePosting(ctx, db.UpdatePostingParams{
 			ID:              existing.ID,
 			Title:           params.Title,
-			Department:      nullString(params.Department),
-			Team:            nullString(params.Team),
-			Location:        nullString(params.Location),
-			EmploymentType:  nullString(params.EmploymentType),
-			WorkplaceType:   nullString(params.WorkplaceType),
-			DescriptionHtml: nullString(params.DescriptionHTML),
-			DescriptionText: nullString(params.DescriptionText),
-			JobUrl:          nullString(params.JobURL),
-			ApplicationUrl:  nullString(params.ApplicationURL),
+			Department:      params.Department,
+			Team:            params.Team,
+			Location:        params.Location,
+			EmploymentType:  params.EmploymentType,
+			WorkplaceType:   params.WorkplaceType,
+			DescriptionHtml: params.DescriptionHTML,
+			DescriptionText: params.DescriptionText,
+			JobUrl:          params.JobURL,
+			ApplicationUrl:  params.ApplicationURL,
 			PublishedAt:     nullPublishedAt(params.PublishedAt),
 			RawPayload:      params.RawPayload,
 		})
@@ -252,31 +241,11 @@ func (s *Store) MarkPostingReopened(ctx context.Context, id int64) error {
 // keyspace to offer when picking department filter values, since
 // department is a company-specific vocabulary, not a fixed enum.
 func (s *Store) ListDistinctDepartmentsForCompany(ctx context.Context, companyID int64) ([]string, error) {
-	rows, err := s.queries.ListDistinctDepartmentsForCompany(ctx, companyID)
-	if err != nil {
-		return nil, err
-	}
-	values := make([]string, 0, len(rows))
-	for _, r := range rows {
-		if r.Valid {
-			values = append(values, r.String)
-		}
-	}
-	return values, nil
+	return s.queries.ListDistinctDepartmentsForCompany(ctx, companyID)
 }
 
 // ListDistinctLocationsForCompany is ListDistinctDepartmentsForCompany
 // for location values.
 func (s *Store) ListDistinctLocationsForCompany(ctx context.Context, companyID int64) ([]string, error) {
-	rows, err := s.queries.ListDistinctLocationsForCompany(ctx, companyID)
-	if err != nil {
-		return nil, err
-	}
-	values := make([]string, 0, len(rows))
-	for _, r := range rows {
-		if r.Valid {
-			values = append(values, r.String)
-		}
-	}
-	return values, nil
+	return s.queries.ListDistinctLocationsForCompany(ctx, companyID)
 }

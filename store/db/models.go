@@ -49,27 +49,27 @@ type InterviewStage struct {
 }
 
 type Posting struct {
-	ID              int64          `json:"id"`
-	CompanyID       int64          `json:"company_id"`
-	Source          string         `json:"source"`
-	SourceID        string         `json:"source_id"`
-	Title           string         `json:"title"`
-	Department      sql.NullString `json:"department"`
-	Team            sql.NullString `json:"team"`
-	Location        sql.NullString `json:"location"`
-	EmploymentType  sql.NullString `json:"employment_type"`
-	WorkplaceType   sql.NullString `json:"workplace_type"`
-	DescriptionHtml sql.NullString `json:"description_html"`
-	DescriptionText sql.NullString `json:"description_text"`
-	JobUrl          sql.NullString `json:"job_url"`
-	ApplicationUrl  sql.NullString `json:"application_url"`
-	PublishedAt     sql.NullTime   `json:"published_at"`
-	RawPayload      string         `json:"raw_payload"`
-	ListingStatus   string         `json:"listing_status"`
-	FirstSeenAt     time.Time      `json:"first_seen_at"`
-	LastSeenAt      time.Time      `json:"last_seen_at"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	ID              int64        `json:"id"`
+	CompanyID       int64        `json:"company_id"`
+	Source          string       `json:"source"`
+	SourceID        string       `json:"source_id"`
+	Title           string       `json:"title"`
+	Department      string       `json:"department"`
+	Team            string       `json:"team"`
+	Location        string       `json:"location"`
+	EmploymentType  string       `json:"employment_type"`
+	WorkplaceType   string       `json:"workplace_type"`
+	DescriptionHtml string       `json:"description_html"`
+	DescriptionText string       `json:"description_text"`
+	JobUrl          string       `json:"job_url"`
+	ApplicationUrl  string       `json:"application_url"`
+	PublishedAt     sql.NullTime `json:"published_at"`
+	RawPayload      string       `json:"raw_payload"`
+	ListingStatus   string       `json:"listing_status"`
+	FirstSeenAt     time.Time    `json:"first_seen_at"`
+	LastSeenAt      time.Time    `json:"last_seen_at"`
+	CreatedAt       time.Time    `json:"created_at"`
+	UpdatedAt       time.Time    `json:"updated_at"`
 }
 
 type PostingHistory struct {
