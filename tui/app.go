@@ -298,6 +298,24 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 	return b.String()
 }
 
+// rebuildPostingDetailApplication refreshes a.postingDetail after a
+// change to the application-side data (status, notes, a review) while
+// still on screenPostingDetail, keeping whichever posting is already
+// displayed rather than re-deriving it via lookupPosting. lookupPosting's
+// Posting result depends on a.postings, which is never populated when
+// posting detail was entered via application detail's fast path (see
+// decisions.log #87 follow-up) -- re-deriving it here would silently
+// clobber a correct posting with a zero value. These handlers only ever
+// change application data, never which posting is shown, so the
+// already-displayed posting is always still the right one; only
+// app/hasApp (from a.applicationsByPosting, independent of a.postings)
+// need refreshing.
+func (a *App) rebuildPostingDetailApplication() tea.Cmd {
+	_, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
+	a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), a.postingDetail.posting, app, hasApp, nil)
+	return maybeLoadDocumentReviews(a.store, hasApp, app.ID)
+}
+
 // lookupPosting finds id in a.postings, returning it along with its
 // application (if any) from a.applicationsByPosting -- used to seed a
 // fresh postingDetailModel by ID, since that model doesn't hold a
@@ -862,9 +880,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.screen = a.applicationStatusReturnScreen
 			var reviewsCmd tea.Cmd
 			if a.screen == screenPostingDetail {
-				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
-				reviewsCmd = maybeLoadDocumentReviews(a.store, hasApp, app.ID)
+				reviewsCmd = a.rebuildPostingDetailApplication()
 			}
 			// The new status may have moved this application to/from a
 			// terminal status (rejected/offer_declined), changing whether
@@ -881,9 +897,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			a.screen = screenPostingDetail
-			p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
-			return a, maybeLoadDocumentReviews(a.store, hasApp, app.ID)
+			return a, a.rebuildPostingDetailApplication()
 		}
 	case documentReviewCreatedMsg:
 		a.err = msg.err
@@ -894,17 +908,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// navigate away and back (see decisions.log #83) -- which
 			// reload depends on which screen review was entered from.
 			switch a.documentReviewReturnScreen {
-			case screenActiveApplications:
-				return a, loadActiveApplications(a.store)
 			case screenApplicationDetail:
 				// Also refreshes the active-applications list in the
 				// background, so its review-glyph column isn't stale by
 				// the time the user backs out of application detail.
 				return a, tea.Batch(loadDocumentReviews(a.store, a.applicationDetail.application.ID), loadActiveApplications(a.store))
-			default: // screenPostingDetail
-				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
-				return a, maybeLoadDocumentReviews(a.store, hasApp, app.ID)
+			case screenPostingDetail:
+				return a, a.rebuildPostingDetailApplication()
 			}
 		}
 	case documentReviewsLoadedMsg:
