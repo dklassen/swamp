@@ -25,6 +25,10 @@ When asked to work through a labeled group of issues:
 - Focus on testing behavior, not implementation details. Avoid testing unexported functions or internal state unless there's a compelling reason.
 - Prefer `github.com/google/go-cmp/cmp` (`cmp.Diff`) over manual field-by-field comparison or `==` on structs containing `time.Time` (`==` on `time.Time` is a known footgun — see Go's own docs).
 
+## Go style
+
+- Prefer a plain type (`string` empty, `time.Time` zero) over a pointer to represent "this value may be absent" when nothing in the codebase actually needs to distinguish "never set" from "set to the zero value" -- verify every call site treats them the same before making the call, don't assume it. A pointer only earns its keep when that distinction is genuinely used somewhere; otherwise it's cost (nil checks, `derefOr`-style helpers at every read site) with no corresponding benefit. See `decisions.log`, #67, for a worked example.
+
 ## Feature branch workflow
 
 Each task/feature gets its own branch off `main`, reviewed via PR and merged on GitHub when complete. Keep PRs scoped to the minimal change needed -- one issue or one fix per PR by default (see Issue-driven task workflow above); don't fold in unrelated or loosely-related work just because it's convenient to be touching the code anyway.
