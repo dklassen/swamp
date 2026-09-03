@@ -138,3 +138,59 @@ func TestListActiveApplications_IncludesCompanyNameAndApplicationFields(t *testi
 		t.Fatalf("PostingID = %d, want %d", v.PostingID, posting.ID)
 	}
 }
+
+func TestListActiveApplications_NoReviews_LatestReviewsEmpty(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	mustCreateApplication(t, s, posting.ID)
+
+	got, err := s.ListActiveApplications(ctx)
+	if err != nil {
+		t.Fatalf("ListActiveApplications: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(got) = %d, want 1", len(got))
+	}
+	if len(got[0].LatestReviews) != 0 {
+		t.Fatalf("LatestReviews = %+v, want empty (no reviews recorded)", got[0].LatestReviews)
+	}
+}
+
+func TestListActiveApplications_IncludesLatestDocumentReviews(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	app := mustCreateApplication(t, s, posting.ID)
+
+	if _, err := s.CreateDocumentReview(ctx, app.ID, DocumentTypeCoverLetter, "draft one", ReviewOutcomeFlagged, "too generic"); err != nil {
+		t.Fatalf("CreateDocumentReview (first): %v", err)
+	}
+	second, err := s.CreateDocumentReview(ctx, app.ID, DocumentTypeCoverLetter, "draft two", ReviewOutcomePassed, "")
+	if err != nil {
+		t.Fatalf("CreateDocumentReview (second): %v", err)
+	}
+
+	got, err := s.ListActiveApplications(ctx)
+	if err != nil {
+		t.Fatalf("ListActiveApplications: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("len(got) = %d, want 1", len(got))
+	}
+
+	review, ok := got[0].LatestReviews[DocumentTypeCoverLetter]
+	if !ok {
+		t.Fatalf("LatestReviews[%q] missing, want the most recent review present", DocumentTypeCoverLetter)
+	}
+	if review.ID != second.ID {
+		t.Fatalf("LatestReviews[%q].ID = %d, want %d (most recent cycle, not the first)", DocumentTypeCoverLetter, review.ID, second.ID)
+	}
+	if _, ok := got[0].LatestReviews[DocumentTypeResume]; ok {
+		t.Fatalf("LatestReviews[%q] present, want absent (no resume review recorded)", DocumentTypeResume)
+	}
+}

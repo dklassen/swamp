@@ -103,6 +103,27 @@ func (s *Store) LatestDocumentReview(ctx context.Context, applicationID int64, d
 	return reviews[0], true, nil
 }
 
+// LatestDocumentReviews resolves applicationID's latest review of each
+// document type (cover letter, resume) into a map, omitting any document
+// type with no review yet -- built on LatestDocumentReview so both stay
+// in step with its single-review semantics. Used by
+// ListActiveApplications (see application_view.go) and by the TUI
+// wherever a per-document-type review summary is needed for one
+// application (see decisions.log #83).
+func (s *Store) LatestDocumentReviews(ctx context.Context, applicationID int64) (map[string]DocumentReview, error) {
+	reviews := make(map[string]DocumentReview)
+	for _, documentType := range []string{DocumentTypeCoverLetter, DocumentTypeResume} {
+		review, ok, err := s.LatestDocumentReview(ctx, applicationID, documentType)
+		if err != nil {
+			return nil, err
+		}
+		if ok {
+			reviews[documentType] = review
+		}
+	}
+	return reviews, nil
+}
+
 // ListDocumentReviews returns applicationID's reviews for documentType,
 // most recent cycle first.
 func (s *Store) ListDocumentReviews(ctx context.Context, applicationID int64, documentType string) ([]DocumentReview, error) {
