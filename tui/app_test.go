@@ -1879,25 +1879,26 @@ func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) 
 	wantDept := app.filterSelect.departmentOptions[0]
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
 
+	// Enter narrows synchronously (no round trip needed) and returns the
+	// applyCompanyFilters Cmd that persists the selection and re-syncs.
 	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("Update on enter (save) returned nil Cmd, want a command that saves filters")
-	}
-	app, cmd = sendKey(app, cmd())
 	if app.screen != screenPostingList {
-		t.Fatalf("screen after save = %v, want screenPostingList", app.screen)
+		t.Fatalf("screen after enter = %v, want screenPostingList", app.screen)
 	}
-	if cmd == nil {
-		t.Fatal("Update on companyFiltersSavedMsg returned nil Cmd, want a command that re-syncs")
-	}
-
-	// Narrowed immediately, before the re-sync Cmd even runs.
 	if len(app.postings) != 1 {
-		t.Fatalf("postings after save = %+v, want 1 (narrowed to %s)", app.postings, wantDept)
+		t.Fatalf("postings after enter = %+v, want 1 (narrowed to %s, before applyCompanyFilters' Cmd even runs)", app.postings, wantDept)
 	}
 	if app.postings[0].Department != wantDept {
 		t.Fatalf("remaining posting department = %q, want %q", app.postings[0].Department, wantDept)
 	}
+	if cmd == nil {
+		t.Fatal("Update on enter returned nil Cmd, want a command that applies the filters")
+	}
+
+	// Run applyCompanyFilters: persists the filters, then re-syncs (hits
+	// the fake fetcher again, no new data), producing
+	// companyFiltersAppliedMsg.
+	app, cmd = sendKey(app, cmd())
 
 	saved, err := s.ListCompanyFilters(context.Background(), acme.ID)
 	if err != nil {
@@ -1906,18 +1907,14 @@ func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) 
 	if len(saved) != 1 || saved[0].Field != filter.FieldDepartment || saved[0].Value != wantDept {
 		t.Fatalf("saved filters = %+v, want one department=%s filter", saved, wantDept)
 	}
-
-	// Drive the rest of the chain: the re-sync Cmd runs (hits the fake
-	// fetcher again, no new data), producing companyRefreshedMsg, whose
-	// handler reloads postings from the DB since this is the company
-	// currently being viewed. That reload must NOT silently undo the
-	// narrowing by loading everything unfiltered -- ListPostingsByCompany
-	// itself has no notion of company_filters, so the reload has to
-	// re-apply them, not just re-fetch.
-	app, cmd = sendKey(app, cmd())
 	if cmd == nil {
-		t.Fatal("Update on companyRefreshedMsg returned nil Cmd, want a command that reloads postings")
+		t.Fatal("Update on companyFiltersAppliedMsg returned nil Cmd, want a command that reloads postings")
 	}
+
+	// Drive the reload: this must NOT silently undo the narrowing by
+	// loading everything unfiltered -- ListPostingsByCompany itself has
+	// no notion of company_filters, so the reload has to re-apply them,
+	// not just re-fetch.
 	app, _ = sendKey(app, cmd())
 
 	if len(app.postings) != 1 {
@@ -2033,11 +2030,12 @@ func TestApp_FilterSelect_Enter_UpdatesActiveFiltersImmediately(t *testing.T) {
 	app, _ = sendKey(app, cmd())
 	wantDept := app.filterSelect.departmentOptions[0]
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
-	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
-	app, _ = sendKey(app, cmd()) // companyFiltersSavedMsg
+	// Updated synchronously on enter -- no need to run the returned
+	// applyCompanyFilters Cmd to observe it, unlike the old design.
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 
 	if diff := cmp.Diff([]string{wantDept}, app.activeFilterDepartments); diff != "" {
-		t.Fatalf("activeFilterDepartments after save mismatch (-want +got):\n%s", diff)
+		t.Fatalf("activeFilterDepartments after enter mismatch (-want +got):\n%s", diff)
 	}
 }
 

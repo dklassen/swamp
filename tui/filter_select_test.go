@@ -10,7 +10,7 @@ import (
 )
 
 func newTestFilterSelectModel() *filterSelectModel {
-	m := newFilterSelectModel(nil, 1, "Acme",
+	m := newFilterSelectModel(1, "Acme",
 		[]string{"Engineering", "Sales"},
 		[]string{"Remote", "Onsite"},
 		[]store.CompanyFilter{{Field: filter.FieldDepartment, Value: "Sales"}},
@@ -91,16 +91,23 @@ func TestFilterSelectModel_Esc_ReturnsCancelMsg(t *testing.T) {
 	}
 }
 
-func TestFilterSelectModel_Enter_ReturnsSaveCmd(t *testing.T) {
+func TestFilterSelectModel_Enter_ReturnsSaveFilterSelectionMsg(t *testing.T) {
 	t.Parallel()
 
 	m := newTestFilterSelectModel()
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd == nil {
-		t.Fatal("cmd = nil, want a command that saves company filters")
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil (saving is App's job, not this model's)", cmd)
 	}
-	if intent != nil {
-		t.Fatalf("intent = %v, want nil", intent)
+	got, ok := intent.(saveFilterSelectionMsg)
+	if !ok {
+		t.Fatalf("intent = %T, want saveFilterSelectionMsg", intent)
+	}
+	if len(got.departments) != 1 || got.departments[0] != "Sales" {
+		t.Fatalf("departments = %v, want [Sales] (pre-seeded existing filter)", got.departments)
+	}
+	if len(got.locations) != 0 {
+		t.Fatalf("locations = %v, want empty", got.locations)
 	}
 }
 

@@ -3065,3 +3065,79 @@ design decision (custom MarshalJSON on Posting, a stage-specific DTO
 that omits/nulls it, or something else) with its own tradeoffs, not a
 tag addition.
 Verified: full build/vet/test/lint/fmt clean.
+
+## 2026-09-03 -- Give company filter-edit its own module (#56)
+
+Issue text flagged this as a candidate for improve-codebase's deeper
+design pass, with no comments narrowing scope: the company filter-edit
+workflow (department/location narrowing) had no single owning module --
+persistence lived in store, resync lived in sync, and tui/app.go glued
+the two together by hand across two separate async round trips (a fast
+local save, then a separately-triggered slow resync) so the fast one's
+completion message could drive an instant "optimistic narrow" of the
+displayed postings before the slow one finished.
+
+First design proposed: sync.Syncer.SaveCompanyFiltersAndSync(...), one
+method doing persistence-then-resync as a single call. Rejected on
+review: a method name joining two verbs with "And" is itself a SOLID
+SRP smell, independent of whether the implementation internally does
+the two things in sequence -- a name like that signals two reasons to
+change bundled into one unit, not necessarily two badly-factored
+implementations. Reworked into three cleanly separated pieces instead:
+
+- store.ReplaceCompanyFilters(ctx, companyID, filters) -- pure
+  persistence (delete-then-recreate the company's filter rows).
+  Deliberately field-name-agnostic: only reads each element's
+  Field/Value, so it carries no dependency on filter's
+  FieldDepartment/FieldLocation constants -- store has zero import of
+  the filter package anywhere in the codebase (confirmed via grep), and
+  this keeps it that way. The caller (sync, which already imports both
+  store and filter) decides what Field values mean.
+- sync.ApplyCompanyFilters(ctx, companyID, departments, locations) --
+  single verb, single responsibility: "changing a company's filters" as
+  one cohesive unit. Internally calls ReplaceCompanyFilters then
+  SyncCompany, but as a thin orchestrator with a name describing the one
+  concept, not the two steps. The resync is not optional: SyncCompany
+  gates ingestion itself through the company's filters (filter.Match),
+  so postings that didn't match the OLD filter set were never stored at
+  all -- narrowing what's already in the DB can't make a filter change
+  fully take effect, only re-running ingestion under the new filters
+  can.
+- tui: filterSelectModel loses its *store.Store field entirely, becoming
+  pure UI selection state with no I/O dependency of its own. Enter now
+  returns a new saveFilterSelectionMsg{departments, locations} instead
+  of directly kicking off the save. App.updateKeyMsg's
+  screenFilterSelect case handles that message by narrowing the
+  currently-displayed postings synchronously, in memory, immediately on
+  keypress (before returning the Cmd that triggers
+  sync.ApplyCompanyFilters), then separately returns that Cmd to persist
+  and resync. This is a UX improvement over the original two-round-trip
+  design, not just a refactor-neutral change: the optimistic narrow no
+  longer waits on completion of even the fast local DB write, since it's
+  now a pure computation over already-loaded data rather than a message
+  handler reacting to a save having finished.
+
+Verified: full build/vet/test/lint/fmt clean. New tests:
+store.TestReplaceCompanyFilters_ReplacesExistingFiltersWithNewSet,
+store.TestReplaceCompanyFilters_EmptySet_LeavesNoFilters,
+sync.TestApplyCompanyFilters_ReplacesFiltersThenSyncs,
+sync.TestApplyCompanyFilters_NoDepartmentsOrLocations_ClearsFilters;
+tui's existing filter-select/app tests updated for the new
+message-based, synchronous-narrow flow. Manually verified via tmux
+against a seeded scratch db: pressing 'f' then toggling a department and
+pressing Enter narrows the posting list instantly, before any network
+round trip; the new filter row persists to company_filters even when the
+subsequent resync fails (confirmed independently via direct sqlite3
+query against a company pointed at a nonexistent job board -- proves
+persistence commits before SyncCompany is attempted, and that the two
+are correctly decoupled in terms of the write succeeding); the filter
+survives a fresh, non-optimistic reload (back out and re-enter the
+posting list); and esc/cancel from the filter-select screen leaves
+company_filters completely unchanged (confirmed via sqlite3 query
+before/after), i.e. cancel makes no DB writes.
+
+Left untouched, deliberately: refreshCompany/companyRefreshedMsg in
+tui/app.go, which still serve the independent manual 'r' refresh
+keybinding on the company-list screen (tui/company_list.go) -- a
+different, still-needed code path, not a leftover of the old
+filter-save flow.

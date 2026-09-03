@@ -318,3 +318,63 @@ func TestSyncCompany_FilterValueMatchesTrimmedLocation_PostingCreated(t *testing
 		t.Fatalf("result.Created = %d, want 1", result.Created)
 	}
 }
+
+func TestApplyCompanyFilters_ReplacesFiltersThenSyncs(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	if _, err := s.CreateCompanyFilter(ctx, company.ID, "department", "Sales"); err != nil {
+		t.Fatalf("CreateCompanyFilter: %v", err)
+	}
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
+		"acme": {
+			samplePosting("job-1", "Engineer", "Engineering", "Remote"),
+			samplePosting("job-2", "Salesperson", "Sales", "Remote"),
+		},
+	}}
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+
+	result, err := syncer.ApplyCompanyFilters(ctx, company.ID, []string{"Engineering"}, nil)
+	if err != nil {
+		t.Fatalf("ApplyCompanyFilters: %v", err)
+	}
+
+	// Sync ran under the new filters (Engineering, not the old Sales
+	// filter): only the Engineering posting should have been created.
+	if result.Created != 1 {
+		t.Fatalf("result.Created = %d, want 1 (only the Engineering posting matches the new filter)", result.Created)
+	}
+
+	saved, err := s.ListCompanyFilters(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("ListCompanyFilters: %v", err)
+	}
+	if len(saved) != 1 || saved[0].Field != "department" || saved[0].Value != "Engineering" {
+		t.Fatalf("saved filters = %+v, want one department=Engineering filter (old Sales filter replaced)", saved)
+	}
+}
+
+func TestApplyCompanyFilters_NoDepartmentsOrLocations_ClearsFilters(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	if _, err := s.CreateCompanyFilter(ctx, company.ID, "department", "Sales"); err != nil {
+		t.Fatalf("CreateCompanyFilter: %v", err)
+	}
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{}}
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+
+	if _, err := syncer.ApplyCompanyFilters(ctx, company.ID, nil, nil); err != nil {
+		t.Fatalf("ApplyCompanyFilters: %v", err)
+	}
+
+	saved, err := s.ListCompanyFilters(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("ListCompanyFilters: %v", err)
+	}
+	if len(saved) != 0 {
+		t.Fatalf("saved filters = %+v, want empty", saved)
+	}
+}
