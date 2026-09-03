@@ -520,3 +520,126 @@ func TestDocumentReviewsUniqueConstraint_RejectsDuplicateCycle(t *testing.T) {
 		t.Fatal("insert with duplicate (application_id, document_type, cycle) succeeded, want a UNIQUE constraint failure")
 	}
 }
+
+// TestDropDocumentReviewsCheckConstraints_PreservesExistingRow verifies
+// 00008's table-rebuild copies existing rows over intact -- same shape as
+// TestDropApplicationStatusCheckConstraint_PreservesExistingApplicationRow
+// above, for the analogous document_reviews rebuild.
+func TestDropDocumentReviewsCheckConstraints_PreservesExistingRow(t *testing.T) {
+	sqlDB := migrateTo(t, 7)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload)
+		 VALUES (1, 1, 'ashby', 'job-1', 'Software Engineer', '{}')`,
+	); err != nil {
+		t.Fatalf("insert posting: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO applications (id, posting_id, status) VALUES (1, 1, 'application_started')`,
+	); err != nil {
+		t.Fatalf("insert application: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO document_reviews (application_id, document_type, cycle, content_snapshot, content_sha256, outcome, notes)
+		 VALUES (1, 'cover_letter', 1, 'content', 'deadbeef', 'flagged', 'too generic')`,
+	); err != nil {
+		t.Fatalf("insert document_review: %v", err)
+	}
+
+	if err := goose.UpTo(sqlDB, ".", 8); err != nil {
+		t.Fatalf("migrate to version 8: %v", err)
+	}
+	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+		t.Fatalf("GetDBVersion: %v", err)
+	} else if gotVersion != 8 {
+		t.Fatalf("DB version after UpTo(8) = %d, want 8 (migration 00008 not found?)", gotVersion)
+	}
+
+	var documentType, outcome, notes string
+	if err := sqlDB.QueryRow(`SELECT document_type, outcome, notes FROM document_reviews WHERE application_id = 1`).Scan(&documentType, &outcome, &notes); err != nil {
+		t.Fatalf("query document_reviews: %v", err)
+	}
+	if documentType != "cover_letter" || outcome != "flagged" || notes != "too generic" {
+		t.Fatalf("document_reviews row = (%q, %q, %q), want (cover_letter, flagged, too generic)", documentType, outcome, notes)
+	}
+}
+
+// TestDropDocumentReviewsCheckConstraints_ArbitraryValuesAccepted verifies
+// the CHECK constraints on document_reviews.document_type/outcome are
+// actually gone after 00008: values outside the old fixed sets, which
+// would have failed under 00007's CHECK (see
+// TestDocumentReviewsCheckConstraints_RejectInvalidValues), must now
+// insert cleanly -- same shape as
+// TestDropApplicationStatusCheckConstraint_ArbitraryStatusValueAccepted.
+func TestDropDocumentReviewsCheckConstraints_ArbitraryValuesAccepted(t *testing.T) {
+	sqlDB := migrateTo(t, 8)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload)
+		 VALUES (1, 1, 'ashby', 'job-1', 'Software Engineer', '{}')`,
+	); err != nil {
+		t.Fatalf("insert posting: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO applications (id, posting_id, status) VALUES (1, 1, 'application_started')`,
+	); err != nil {
+		t.Fatalf("insert application: %v", err)
+	}
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO document_reviews (application_id, document_type, cycle, content_snapshot, content_sha256, outcome)
+		 VALUES (1, 'cv', 1, 'content', 'deadbeef', 'great')`,
+	); err != nil {
+		t.Fatalf("insert with document_type = 'cv', outcome = 'great' = %v, want success (CHECK constraints dropped in 00008)", err)
+	}
+}
+
+// TestDropDocumentReviewsCheckConstraints_UniqueConstraintStillEnforced
+// is a regression check that the 00008 table rebuild didn't lose the
+// UNIQUE(application_id, document_type, cycle) constraint along with the
+// CHECK constraints -- see
+// TestDocumentReviewsUniqueConstraint_RejectsDuplicateCycle for the same
+// check pinned to the pre-rebuild version.
+func TestDropDocumentReviewsCheckConstraints_UniqueConstraintStillEnforced(t *testing.T) {
+	sqlDB := migrateTo(t, 8)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload)
+		 VALUES (1, 1, 'ashby', 'job-1', 'Software Engineer', '{}')`,
+	); err != nil {
+		t.Fatalf("insert posting: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO applications (id, posting_id, status) VALUES (1, 1, 'application_started')`,
+	); err != nil {
+		t.Fatalf("insert application: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO document_reviews (application_id, document_type, cycle, content_snapshot, content_sha256, outcome)
+		 VALUES (1, 'cover_letter', 1, 'content', 'deadbeef', 'passed')`,
+	); err != nil {
+		t.Fatalf("insert first review: %v", err)
+	}
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO document_reviews (application_id, document_type, cycle, content_snapshot, content_sha256, outcome)
+		 VALUES (1, 'cover_letter', 1, 'other content', 'cafebabe', 'flagged')`,
+	); err == nil {
+		t.Fatal("insert with duplicate (application_id, document_type, cycle) succeeded, want a UNIQUE constraint failure")
+	}
+}
