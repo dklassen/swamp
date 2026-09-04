@@ -3724,3 +3724,46 @@ and posting detail (via the 'p' fast path) all correctly show
 "[FLAGGED]", confirmed across a full app restart so the fix is verified
 against loadActiveApplications' actual reload path, not just in-memory
 state from a single session.
+
+## 2026-09-04 -- Fix silent os.ReadFile error swallow in the staleness filters (#94 follow-up)
+
+/code-review on the branch caught a real bug in the staleness fix
+above: stage.currentReviews and tui.currentDocumentReviews both did
+`content, err := os.ReadFile(doc.Path); if err != nil { continue }` --
+treating a permission error, a transient I/O failure, or a file
+mid-write identically to "content changed since review," and silently
+dropping the review with no error surfaced anywhere. Two independent
+review angles converged on this, one framing it precisely: it can
+reintroduce the exact bug the earlier entry was written to fix (a
+flagged document disappearing from the queue with no indication why),
+just via an I/O-error path instead of the outcome-filter path. Directly
+contradicts this project's own "On Fallbacks: fail loudly, `or {}` is a
+lie you tell yourself" convention.
+
+Fixed by having both functions return an error on a read failure
+instead of swallowing it, propagated up through every caller (stage.
+List/Prepare, tui's loadDocumentReviews/loadActiveApplications) as a
+genuine operation-failing error -- matching how every other error in
+both files already behaves (one bad candidate/application aborts the
+whole call rather than silently returning wrong data for it). Chose
+this over a partial-failure/per-item-error JSON shape: simpler, and
+consistent with the existing all-or-nothing error semantics both
+functions already had for every other error source.
+
+Verified: full build/test/lint/fmt clean. New tests:
+stage.TestList_ReturnsErrorWhenDocumentReadFails,
+stage.TestPrepare_ReturnsErrorWhenDocumentReadFails,
+tui.TestApp_LoadActiveApplications_DocumentReadFails_SetsErr. All three
+simulate a genuine read failure portably (a directory placed at the
+document's path -- os.Stat/Exists still reports true, matching a real
+file, but os.ReadFile fails with "is a directory") rather than relying
+on permission bits, which a test running as root would ignore.
+
+Remaining findings from the same review (duplicated filter logic across
+stage/tui, a documents.Status.For(documentType) helper opportunity, an
+avoidable GetApplication call in List() that the existing LEFT JOIN
+could absorb, List()'s stale doc comment, two copy-pasted test pairs
+that should be table-driven, and a couple of minor efficiency notes)
+were deliberately left unfixed here and reported back with outcome
+"skipped" -- real, but none are correctness bugs, and bundling them into
+this fix would have obscured the one change that actually mattered.
