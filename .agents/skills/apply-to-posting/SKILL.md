@@ -25,7 +25,9 @@ direnv exec . go run ./cmd/swamp stage list
 
 This is read-only -- safe to run as often as you like. It prints a JSON
 array of postings the user has marked interested and not archived, already
-filtered to exclude anything that already has both documents written:
+filtered to exclude anything that already has both documents written *and*
+no outstanding flagged review (see `LatestReviews` below -- a flagged
+document keeps its posting in this list even once both files exist):
 
 ```json
 {
@@ -37,7 +39,9 @@ filtered to exclude anything that already has both documents written:
   },
   "CompanyName": "Acme",
   "ApplicationID": null,
-  "ApplicationStatus": null
+  "ApplicationStatus": null,
+  "ApplicationNotes": "",
+  "LatestReviews": {}
 }
 ```
 
@@ -45,10 +49,35 @@ filtered to exclude anything that already has both documents written:
 started; a non-null status here means someone already started this one
 (e.g. `"application_started"`) but hasn't finished its documents.
 
-Show the user the list -- title, company, location is usually enough -- and
-ask which one to work on. Don't pick for them: the whole point of this step
-being separate from the next one is that committing to a posting is the
-user's call, not an inference you make from the queue.
+`ApplicationNotes` is the user's free-text notes on the application (empty
+string until one exists or until they've written any). `LatestReviews` is
+keyed by document type (`"cover_letter"`, `"resume"`) and holds the most
+recent human review of that document, if any:
+
+```json
+"LatestReviews": {
+  "cover_letter": {
+    "Outcome": "flagged",
+    "Notes": "too generic -- mention specific Go/distributed systems experience",
+    "Cycle": 1,
+    "CreatedAt": "2026-09-04T10:00:00Z"
+  }
+}
+```
+
+`Outcome` is `"passed"` or `"flagged"`. A document with no key in
+`LatestReviews` hasn't been reviewed yet. **A posting can still appear in
+this list even when both documents already exist on disk, if the latest
+review of either one is `"flagged"`** -- that's the signal to revise, not
+draft fresh: read `LatestReviews[...].Notes` for what specifically needs
+fixing, and read the existing file's content (once you commit to the
+posting in step 2) as your starting point rather than writing from scratch.
+
+Show the user the list -- title, company, location, and whether anything's
+flagged is usually enough -- and ask which one to work on. Don't pick for
+them: the whole point of this step being separate from the next one is that
+committing to a posting is the user's call, not an inference you make from
+the queue.
 
 ## 2. Commit to the posting
 
@@ -69,14 +98,25 @@ and makes sure the assets directory is there, then prints:
   "CompanyName": "Acme",
   "ApplicationID": 1,
   "CoverLetter": { "Path": "/abs/path/assets/1/cover_letter.md", "Exists": false },
-  "Resume": { "Path": "/abs/path/assets/1/resume.md", "Exists": false }
+  "Resume": { "Path": "/abs/path/assets/1/resume.md", "Exists": false },
+  "ApplicationNotes": "",
+  "LatestReviews": {}
 }
 ```
 
-If `CoverLetter.Exists` or `Resume.Exists` is already `true`, someone (you,
-in an earlier run, or the user directly) already wrote that file. Tell the
-user and ask before overwriting it -- don't silently clobber drafted work
-you can't see the value of from the JSON alone.
+`ApplicationNotes`/`LatestReviews` are the same shape as step 1's -- read
+again here since this is the object you're about to draft from. If
+`CoverLetter.Exists` or `Resume.Exists` is already `true`, someone (you, in
+an earlier run, or the user directly) already wrote that file. Check
+`LatestReviews` first:
+
+- A flagged review with `Notes` set: this is a **revision**, not a fresh
+  draft. Read the existing file's current content, read what the notes say
+  needs fixing, and write a revised version that addresses it -- don't
+  start from a blank page.
+- No review yet, or the only review passed: tell the user and ask before
+  overwriting it -- don't silently clobber drafted work you can't see the
+  value of from the JSON alone.
 
 ## 3. Read the background source
 
