@@ -254,13 +254,23 @@ func TestList_IncludesApplicationNotes(t *testing.T) {
 func TestList_IncludesLatestDocumentReviews(t *testing.T) {
 	t.Parallel()
 
-	st, s, _ := newTestStage(t)
+	st, s, d := newTestStage(t)
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
 	app, err := s.CreateApplication(context.Background(), posting.ID)
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
+	}
+	paths, err := d.EnsureDir(app.ID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	// The review's content must match what's on disk, or the new
+	// staleness check (see decisions.log) treats it as not describing
+	// the current document and omits it from LatestReviews.
+	if err := os.WriteFile(paths.CoverLetter, []byte("draft"), 0o644); err != nil {
+		t.Fatalf("write cover letter: %v", err)
 	}
 	if _, err := s.CreateDocumentReview(context.Background(), app.ID, store.DocumentTypeCoverLetter, "draft", store.ReviewOutcomeFlagged, "too generic, mention Go specifically"); err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)
@@ -367,6 +377,132 @@ func TestList_ExcludesPostingWithBothDocumentsWhenLatestReviewsAllPass(t *testin
 	}
 }
 
+// TestList_ExcludesPostingWhenFlaggedReviewIsStaleAfterRevision verifies
+// the companion behavior to the "keeps flagged" test above: once a
+// flagged document has actually been revised (its content on disk no
+// longer matches what was reviewed), that review is stale and no longer
+// keeps the posting in the queue -- a revised-but-not-yet-re-reviewed
+// document goes back to being treated as "done" (both files exist, no
+// active flag), the same as if it had never been reviewed. Prevents a
+// stale review from either being surfaced as if it still described the
+// current draft, or from permanently pinning a posting in the queue
+// after the feedback has already been addressed.
+func TestList_ExcludesPostingWhenFlaggedReviewIsStaleAfterRevision(t *testing.T) {
+	t.Parallel()
+
+	st, s, d := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	app, err := s.CreateApplication(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	paths, err := d.EnsureDir(app.ID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := os.WriteFile(paths.CoverLetter, []byte("original letter"), 0o644); err != nil {
+		t.Fatalf("write cover letter: %v", err)
+	}
+	if err := os.WriteFile(paths.Resume, []byte("resume"), 0o644); err != nil {
+		t.Fatalf("write resume: %v", err)
+	}
+	if _, err := s.CreateDocumentReview(context.Background(), app.ID, store.DocumentTypeCoverLetter, "original letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+	// The document gets revised in response to the flag -- content no
+	// longer matches what was reviewed, and no new review has been
+	// recorded yet.
+	if err := os.WriteFile(paths.CoverLetter, []byte("revised letter addressing the feedback"), 0o644); err != nil {
+		t.Fatalf("rewrite cover letter: %v", err)
+	}
+
+	got, err := st.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("got %d candidates, want 0 (the flagged review is stale -- content has already been revised)", len(got))
+	}
+}
+
+// TestList_LatestReviewsOmitsStaleReview verifies a stale review isn't
+// surfaced in LatestReviews at all, even for a posting that's still in
+// the queue for an unrelated reason (here, the missing resume) -- an
+// agent reading LatestReviews should never see feedback describing a
+// draft that's already been superseded.
+func TestList_LatestReviewsOmitsStaleReview(t *testing.T) {
+	t.Parallel()
+
+	st, s, d := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	app, err := s.CreateApplication(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	paths, err := d.EnsureDir(app.ID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := os.WriteFile(paths.CoverLetter, []byte("original letter"), 0o644); err != nil {
+		t.Fatalf("write cover letter: %v", err)
+	}
+	// Resume deliberately not written -- keeps this candidate in the
+	// queue regardless of the cover letter's review state, isolating
+	// what's under test (LatestReviews' content).
+	if _, err := s.CreateDocumentReview(context.Background(), app.ID, store.DocumentTypeCoverLetter, "original letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+	if err := os.WriteFile(paths.CoverLetter, []byte("revised letter"), 0o644); err != nil {
+		t.Fatalf("rewrite cover letter: %v", err)
+	}
+
+	got, err := st.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d candidates, want 1 (resume still missing)", len(got))
+	}
+	if _, ok := got[0].LatestReviews[store.DocumentTypeCoverLetter]; ok {
+		t.Errorf("LatestReviews[cover letter] present, want absent -- the recorded review is stale (content has been revised since)")
+	}
+}
+
+func TestPrepare_LatestReviewsOmitsStaleReview(t *testing.T) {
+	t.Parallel()
+
+	st, s, _ := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	mustMarkInterested(t, s, posting.ID)
+
+	first, err := st.Prepare(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("first Prepare: %v", err)
+	}
+	if err := os.WriteFile(first.Resume.Path, []byte("original resume"), 0o644); err != nil {
+		t.Fatalf("write resume: %v", err)
+	}
+	if _, err := s.CreateDocumentReview(context.Background(), first.ApplicationID, store.DocumentTypeResume, "original resume", store.ReviewOutcomeFlagged, "add metrics"); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+	if err := os.WriteFile(first.Resume.Path, []byte("revised resume with metrics"), 0o644); err != nil {
+		t.Fatalf("rewrite resume: %v", err)
+	}
+
+	got, err := st.Prepare(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("second Prepare: %v", err)
+	}
+	if _, ok := got.LatestReviews[store.DocumentTypeResume]; ok {
+		t.Errorf("LatestReviews[resume] present, want absent -- the recorded review is stale (content has been revised since)")
+	}
+}
+
 func TestPrepare_IncludesApplicationNotesAndLatestReviews(t *testing.T) {
 	t.Parallel()
 
@@ -381,6 +517,12 @@ func TestPrepare_IncludesApplicationNotesAndLatestReviews(t *testing.T) {
 	}
 	if _, err := s.UpdateApplicationNotes(context.Background(), posting.ID, "referred by a friend"); err != nil {
 		t.Fatalf("UpdateApplicationNotes: %v", err)
+	}
+	// The review's content must match what's on disk, or the new
+	// staleness check (see decisions.log) treats it as not describing
+	// the current document and omits it from LatestReviews.
+	if err := os.WriteFile(first.Resume.Path, []byte("draft"), 0o644); err != nil {
+		t.Fatalf("write resume: %v", err)
 	}
 	if _, err := s.CreateDocumentReview(context.Background(), first.ApplicationID, store.DocumentTypeResume, "draft", store.ReviewOutcomeFlagged, "add metrics"); err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)

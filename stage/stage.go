@@ -10,6 +10,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/dklassen/swamp/documents"
@@ -68,6 +69,37 @@ func latestReviewsForJSON(reviews map[store.DocumentType]store.DocumentReview) m
 	return out
 }
 
+// currentReviews filters reviews down to only those whose content hash
+// still matches each document's actual current content on disk -- a
+// review computed against a version of the file that's since been
+// revised (whether in direct response to the review, or independently)
+// no longer describes "now" and shouldn't be surfaced as if it still
+// did (see decisions.log, store.DocumentReview.IsCurrent). A document
+// with no current-matching review is treated the same as "never
+// reviewed," whether that's literally true or it's just awaiting
+// re-review after being revised.
+func currentReviews(reviews map[store.DocumentType]store.DocumentReview, status documents.Status) map[store.DocumentType]store.DocumentReview {
+	out := make(map[store.DocumentType]store.DocumentReview, len(reviews))
+	for documentType, review := range reviews {
+		doc := status.CoverLetter
+		if documentType == store.DocumentTypeResume {
+			doc = status.Resume
+		}
+		if !doc.Exists {
+			continue
+		}
+		content, err := os.ReadFile(doc.Path)
+		if err != nil {
+			continue
+		}
+		if !review.IsCurrent(string(content)) {
+			continue
+		}
+		out[documentType] = review
+	}
+	return out
+}
+
 // needsRework reports whether any of reviews' latest outcomes is
 // ReviewOutcomeFlagged -- a flagged document needs another drafting
 // pass even once its file exists on disk, so List keeps surfacing it
@@ -120,11 +152,12 @@ func (st *Stage) List(ctx context.Context) ([]Candidate, error) {
 		var notes string
 		var reviews map[store.DocumentType]store.DocumentReview
 		if p.ApplicationID != nil {
-			reviews, err = st.store.LatestDocumentReviews(ctx, *p.ApplicationID)
+			latest, err := st.store.LatestDocumentReviews(ctx, *p.ApplicationID)
 			if err != nil {
 				return nil, fmt.Errorf("stage: latest document reviews: %w", err)
 			}
 			status := st.documents.Status(*p.ApplicationID)
+			reviews = currentReviews(latest, status)
 			if status.CoverLetter.Exists && status.Resume.Exists && !needsRework(reviews) {
 				continue
 			}
@@ -180,6 +213,7 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 	if err != nil {
 		return nil, fmt.Errorf("stage: latest document reviews: %w", err)
 	}
+	reviews = currentReviews(reviews, status)
 
 	return &Prepared{
 		Posting:          posting,
