@@ -56,6 +56,30 @@ func (d DocumentType) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.String())
 }
 
+// MarshalText implements encoding.TextMarshaler -- the interface
+// encoding/json actually consults for map keys. MarshalJSON above is
+// NOT consulted there, so a map[DocumentType]X would otherwise silently
+// serialize its keys as "0"/"1" (the underlying int) instead of
+// "cover_letter"/"resume", even with MarshalJSON already correct for
+// every other position (see stage.Candidate/Prepared's LatestReviews
+// field, decisions.log).
+func (d DocumentType) MarshalText() ([]byte, error) {
+	return []byte(d.String()), nil
+}
+
+// UnmarshalText implements encoding.TextMarshaler's decode half, for
+// symmetry -- nothing in this codebase currently decodes a DocumentType
+// from JSON, but half-implementing the interface would be a surprise
+// waiting to happen.
+func (d *DocumentType) UnmarshalText(text []byte) error {
+	parsed, err := ParseDocumentType(string(text))
+	if err != nil {
+		return err
+	}
+	*d = parsed
+	return nil
+}
+
 // ParseDocumentType converts a raw DB document_type string into the typed
 // enum, failing loudly (rather than silently defaulting) if the value
 // isn't one of the known types -- since the DB no longer enforces this
