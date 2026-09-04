@@ -387,6 +387,68 @@ func TestList_ExcludesPostingWithBothDocumentsWhenLatestReviewsAllPass(t *testin
 // stale review from either being surfaced as if it still described the
 // current draft, or from permanently pinning a posting in the queue
 // after the feedback has already been addressed.
+// TestList_ReturnsErrorWhenDocumentReadFails is a regression test caught
+// in code review: currentReviews used to swallow an os.ReadFile error
+// and silently treat the document as "not reviewed" -- indistinguishable
+// from a genuinely stale review, and capable of dropping a real,
+// unaddressed flag from the queue with no indication anything went
+// wrong. A read failure must now fail List() loudly instead.
+func TestList_ReturnsErrorWhenDocumentReadFails(t *testing.T) {
+	t.Parallel()
+
+	st, s, d := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	app, err := s.CreateApplication(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	paths, err := d.EnsureDir(app.ID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if _, err := s.CreateDocumentReview(context.Background(), app.ID, store.DocumentTypeCoverLetter, "letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+	// A directory at the cover letter's path: os.Stat succeeds (so
+	// Status reports Exists=true, same as a real file) but os.ReadFile
+	// fails with "is a directory" -- simulates a genuine read failure
+	// portably, without relying on permission bits (which a test
+	// running as root would ignore).
+	if err := os.Mkdir(paths.CoverLetter, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+
+	if _, err := st.List(context.Background()); err == nil {
+		t.Fatal("List() error = nil, want an error -- a document read failure must not be silently treated as \"not reviewed\"")
+	}
+}
+
+func TestPrepare_ReturnsErrorWhenDocumentReadFails(t *testing.T) {
+	t.Parallel()
+
+	st, s, _ := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	mustMarkInterested(t, s, posting.ID)
+
+	first, err := st.Prepare(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("first Prepare: %v", err)
+	}
+	if _, err := s.CreateDocumentReview(context.Background(), first.ApplicationID, store.DocumentTypeResume, "draft", store.ReviewOutcomeFlagged, "add metrics"); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+	if err := os.Mkdir(first.Resume.Path, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+
+	if _, err := st.Prepare(context.Background(), posting.ID); err == nil {
+		t.Fatal("Prepare() error = nil, want an error -- a document read failure must not be silently treated as \"not reviewed\"")
+	}
+}
+
 func TestList_ExcludesPostingWhenFlaggedReviewIsStaleAfterRevision(t *testing.T) {
 	t.Parallel()
 

@@ -78,7 +78,7 @@ func latestReviewsForJSON(reviews map[store.DocumentType]store.DocumentReview) m
 // with no current-matching review is treated the same as "never
 // reviewed," whether that's literally true or it's just awaiting
 // re-review after being revised.
-func currentReviews(reviews map[store.DocumentType]store.DocumentReview, status documents.Status) map[store.DocumentType]store.DocumentReview {
+func currentReviews(reviews map[store.DocumentType]store.DocumentReview, status documents.Status) (map[store.DocumentType]store.DocumentReview, error) {
 	out := make(map[store.DocumentType]store.DocumentReview, len(reviews))
 	for documentType, review := range reviews {
 		doc := status.CoverLetter
@@ -90,14 +90,21 @@ func currentReviews(reviews map[store.DocumentType]store.DocumentReview, status 
 		}
 		content, err := os.ReadFile(doc.Path)
 		if err != nil {
-			continue
+			// A read failure (permissions, a transient I/O error, the
+			// file mid-write) is not the same thing as "the document
+			// changed since it was reviewed" -- silently treating it
+			// that way could drop a genuinely still-flagged review from
+			// the queue with no indication anything went wrong. Fail
+			// the whole call loudly instead, matching every other error
+			// path in this package.
+			return nil, fmt.Errorf("read %s: %w", doc.Path, err)
 		}
 		if !review.IsCurrent(string(content)) {
 			continue
 		}
 		out[documentType] = review
 	}
-	return out
+	return out, nil
 }
 
 // needsRework reports whether any of reviews' latest outcomes is
@@ -157,7 +164,10 @@ func (st *Stage) List(ctx context.Context) ([]Candidate, error) {
 				return nil, fmt.Errorf("stage: latest document reviews: %w", err)
 			}
 			status := st.documents.Status(*p.ApplicationID)
-			reviews = currentReviews(latest, status)
+			reviews, err = currentReviews(latest, status)
+			if err != nil {
+				return nil, fmt.Errorf("stage: check review currency: %w", err)
+			}
 			if status.CoverLetter.Exists && status.Resume.Exists && !needsRework(reviews) {
 				continue
 			}
@@ -213,7 +223,10 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 	if err != nil {
 		return nil, fmt.Errorf("stage: latest document reviews: %w", err)
 	}
-	reviews = currentReviews(reviews, status)
+	reviews, err = currentReviews(reviews, status)
+	if err != nil {
+		return nil, fmt.Errorf("stage: check review currency: %w", err)
+	}
 
 	return &Prepared{
 		Posting:          posting,
