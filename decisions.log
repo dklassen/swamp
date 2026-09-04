@@ -3569,3 +3569,72 @@ verified via tmux against a seeded scratch db: application detail -> 'p'
 -> posting detail (fields intact) -> 's' -> pick a new status -> confirm
 -- posting detail re-renders with Department/Location/title still shown
 and the new status ("interviewing") applied correctly.
+
+## 2026-09-04 -- Expose application notes and latest reviews in stage JSON (#94)
+
+User asked to verify the latest document review (outcome + notes) and
+application notes are exposed in stage's JSON output, so the
+apply-to-posting skill can tell a flagged document from a fresh one on a
+revision pass. Neither was exposed at all -- but the more consequential
+gap, found while checking: List()'s filter excluded a posting once both
+documents existed on disk, regardless of review outcome, so a flagged
+cover letter dropped out of the agent's queue exactly like a passed one,
+with the skill having no way to know it needed another pass. Confirmed
+both fixes with the user (AskUserQuestion) before implementing, since
+the filter change is a real behavior change to the pinned JSON contract
+(decisions.log #59), not just an additive field.
+
+Added Candidate/Prepared.ApplicationNotes (string) and .LatestReviews
+(map[store.DocumentType]LatestReview, keyed by document type). LatestReview
+is a purpose-built, leaner projection of store.DocumentReview -- Outcome,
+Notes, Cycle, CreatedAt -- deliberately omitting ContentSnapshot/
+ContentSHA256: the agent works from the document's current content on
+disk (Prepared.CoverLetter/Resume.Path), not a historical snapshot, so
+shipping the full snapshot in every stage list response would just be
+dead weight. Resolved via the existing store.LatestDocumentReviews (added
+in #85/#86) and store.GetApplication -- N+1 per candidate with an
+application, consistent with that method's own established
+personal-scale-is-fine reasoning; no SQL/migration changes needed.
+
+List()'s filter changed from "skip once both documents exist" to "skip
+once both documents exist AND neither has a flagged latest review" (see
+the new needsRework helper) -- a flagged document now keeps its posting
+in the queue indefinitely until re-reviewed and passed, matching what
+"the skill can review the status" actually requires.
+
+Along the way, hit a real encoding/json gotcha while testing
+map[store.DocumentType]LatestReview's actual output: MarshalJSON (added
+in #86 for DocumentType/ReviewOutcome) is NOT consulted for map keys --
+only encoding.TextMarshaler is. Without MarshalText, the map would have
+silently serialized as {"0": ..., "1": ...} instead of {"cover_letter":
+..., "resume": ...}, exactly the kind of silent breakage #59's own
+json-tag-pinning tests exist to catch, just one layer down (map keys,
+not field names). Added DocumentType.MarshalText/UnmarshalText,
+verified with a test that actually marshals a map (not just a bare
+value, which MarshalJSON alone already covered and would have passed
+regardless).
+
+Updated .agents/skills/apply-to-posting/SKILL.md (the documented JSON
+contract) with the new fields, an explanation of what a flagged
+LatestReviews entry means, and explicit revision-pass guidance ("read
+the existing file's current content ... write a revised version that
+addresses it -- don't start from a blank page") -- the whole point of
+exposing this data is so the skill actually changes behavior when it
+sees a flagged review, not just so the JSON has more fields in it.
+
+Verified: full build/test/lint/fmt clean. New tests:
+store.TestDocumentType_MarshalJSON_AsMapKey_UsesDBStringNotIntValue,
+stage.TestList_IncludesApplicationNotes,
+stage.TestList_IncludesLatestDocumentReviews,
+stage.TestList_KeepsPostingWithBothDocumentsWhenLatestReviewIsFlagged,
+stage.TestList_ExcludesPostingWithBothDocumentsWhenLatestReviewsAllPass,
+stage.TestPrepare_IncludesApplicationNotesAndLatestReviews. The existing
+TestCandidate_JSONShape_MatchesDocumentedAgentContract/
+TestPrepared_JSONShape_MatchesDocumentedAgentContract (the #59 pinning
+tests) were updated to include the two new top-level keys -- a
+deliberate, expected pin change, not a loosening of the contract.
+Manually verified via the built CLI against a seeded scratch db (not
+just tests): `stage list` and `stage prepare` both printed
+ApplicationNotes and LatestReviews.cover_letter with the exact shape
+SKILL.md now documents, map key included as "cover_letter" (string, not
+"0").

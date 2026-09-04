@@ -32,6 +32,24 @@ func TestReviewOutcome_MarshalJSON_UsesDBStringNotIntValue(t *testing.T) {
 	}
 }
 
+// TestDocumentType_MarshalJSON_AsMapKey_UsesDBStringNotIntValue guards
+// against a real gotcha: encoding/json does NOT consult MarshalJSON for
+// map keys, only encoding.TextMarshaler -- so a map[DocumentType]X would
+// silently serialize keys as "0"/"1" (the underlying int) without a
+// MarshalText method too, even with MarshalJSON already implemented and
+// working correctly for every other position (see the two tests above).
+func TestDocumentType_MarshalJSON_AsMapKey_UsesDBStringNotIntValue(t *testing.T) {
+	m := map[DocumentType]bool{DocumentTypeCoverLetter: true}
+	got, err := json.Marshal(m)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	want := `{"cover_letter":true}`
+	if string(got) != want {
+		t.Fatalf("json.Marshal(map[DocumentType]bool{...}) = %s, want %s", got, want)
+	}
+}
+
 func TestCreateDocumentReview_ThenList_ReturnsCreatedReview(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
