@@ -1612,6 +1612,43 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 // "[not reviewed]" for the revised document, not the stale "[FLAGGED]"
 // and its now-out-of-date notes (see decisions.log,
 // store.DocumentReview.IsCurrent).
+// TestApp_LoadActiveApplications_DocumentReadFails_SetsErr is a
+// regression test caught in code review: currentDocumentReviews used to
+// swallow an os.ReadFile error and silently treat the document as "not
+// reviewed" -- indistinguishable from a genuinely stale review, and
+// capable of rendering a real, unaddressed [FLAGGED] document as
+// [not reviewed] with no indication anything went wrong. A read failure
+// must now set app.err instead.
+func TestApp_LoadActiveApplications_DocumentReadFails_SetsErr(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	application, err := s.CreateApplication(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	app := New(s, newTestSyncer(s, nil), documents.NewStore(t.TempDir()))
+	if _, err := s.CreateDocumentReview(context.Background(), application.ID, store.DocumentTypeCoverLetter, "letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+	status := app.documents.Status(application.ID)
+	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	// A directory at the cover letter's path: os.Stat succeeds (Exists
+	// reports true, same as a real file) but os.ReadFile fails with "is
+	// a directory" -- simulates a genuine read failure portably.
+	if err := os.Mkdir(status.CoverLetter.Path, 0o755); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+
+	app = applyCmd(t, app, app.Init())
+
+	if app.err == nil {
+		t.Fatal("app.err = nil, want an error -- a document read failure must not be silently treated as \"not reviewed\"")
+	}
+}
+
 func TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")

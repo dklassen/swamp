@@ -401,7 +401,11 @@ func loadActiveApplications(s *store.Store, docs *documents.Store) tea.Cmd {
 			return activeApplicationsLoadedMsg{err: err}
 		}
 		for i, app := range apps {
-			apps[i].LatestReviews = currentDocumentReviews(docs, app.ID, app.LatestReviews)
+			reviews, err := currentDocumentReviews(docs, app.ID, app.LatestReviews)
+			if err != nil {
+				return activeApplicationsLoadedMsg{err: err}
+			}
+			apps[i].LatestReviews = reviews
 		}
 		return activeApplicationsLoadedMsg{applications: apps}
 	}
@@ -552,7 +556,10 @@ func loadDocumentReviews(s *store.Store, docs *documents.Store, applicationID in
 		if err != nil {
 			return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
 		}
-		reviews = currentDocumentReviews(docs, applicationID, reviews)
+		reviews, err = currentDocumentReviews(docs, applicationID, reviews)
+		if err != nil {
+			return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
+		}
 		return documentReviewsLoadedMsg{applicationID: applicationID, reviews: reviews}
 	}
 }
@@ -564,7 +571,7 @@ func loadDocumentReviews(s *store.Store, docs *documents.Store, applicationID in
 // filesystem access and documents deliberately never reads file content
 // (see documents.go's own doc comment), so each of this package and
 // stage compose the two themselves.
-func currentDocumentReviews(docs *documents.Store, applicationID int64, reviews map[store.DocumentType]store.DocumentReview) map[store.DocumentType]store.DocumentReview {
+func currentDocumentReviews(docs *documents.Store, applicationID int64, reviews map[store.DocumentType]store.DocumentReview) (map[store.DocumentType]store.DocumentReview, error) {
 	status := docs.Status(applicationID)
 	out := make(map[store.DocumentType]store.DocumentReview, len(reviews))
 	for documentType, review := range reviews {
@@ -577,14 +584,21 @@ func currentDocumentReviews(docs *documents.Store, applicationID int64, reviews 
 		}
 		content, err := os.ReadFile(doc.Path)
 		if err != nil {
-			continue
+			// A read failure (permissions, a transient I/O error, the
+			// file mid-write) is not the same thing as "the document
+			// changed since it was reviewed" -- silently treating it
+			// that way could drop a genuinely still-flagged review
+			// (rendering [FLAGGED] as [not reviewed]) with no
+			// indication anything went wrong. Fail loudly instead,
+			// matching stage.currentReviews.
+			return nil, fmt.Errorf("read %s: %w", doc.Path, err)
 		}
 		if !review.IsCurrent(string(content)) {
 			continue
 		}
 		out[documentType] = review
 	}
-	return out
+	return out, nil
 }
 
 // maybeLoadDocumentReviews returns the Cmd to (re)load applicationID's
