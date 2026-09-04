@@ -225,6 +225,183 @@ func TestList_IncludesPostingWithOnlyOneDocumentGenerated(t *testing.T) {
 	}
 }
 
+func TestList_IncludesApplicationNotes(t *testing.T) {
+	t.Parallel()
+
+	st, s, _ := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	if _, err := s.CreateApplication(context.Background(), posting.ID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	if _, err := s.UpdateApplicationNotes(context.Background(), posting.ID, "recruiter reached out directly"); err != nil {
+		t.Fatalf("UpdateApplicationNotes: %v", err)
+	}
+
+	got, err := st.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d candidates, want 1", len(got))
+	}
+	if got[0].ApplicationNotes != "recruiter reached out directly" {
+		t.Errorf("ApplicationNotes = %q, want %q", got[0].ApplicationNotes, "recruiter reached out directly")
+	}
+}
+
+func TestList_IncludesLatestDocumentReviews(t *testing.T) {
+	t.Parallel()
+
+	st, s, _ := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	app, err := s.CreateApplication(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	if _, err := s.CreateDocumentReview(context.Background(), app.ID, store.DocumentTypeCoverLetter, "draft", store.ReviewOutcomeFlagged, "too generic, mention Go specifically"); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+
+	got, err := st.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d candidates, want 1", len(got))
+	}
+	review, ok := got[0].LatestReviews[store.DocumentTypeCoverLetter]
+	if !ok {
+		t.Fatalf("LatestReviews[cover letter] missing, want the flagged review present")
+	}
+	if review.Outcome != store.ReviewOutcomeFlagged {
+		t.Errorf("Outcome = %v, want %v", review.Outcome, store.ReviewOutcomeFlagged)
+	}
+	if review.Notes != "too generic, mention Go specifically" {
+		t.Errorf("Notes = %q, want %q", review.Notes, "too generic, mention Go specifically")
+	}
+	if _, ok := got[0].LatestReviews[store.DocumentTypeResume]; ok {
+		t.Errorf("LatestReviews[resume] present, want absent (no resume review recorded)")
+	}
+}
+
+// TestList_KeepsPostingWithBothDocumentsWhenLatestReviewIsFlagged is the
+// key behavior change this feature exists for: previously, List treated
+// "both files exist on disk" as "done" regardless of review outcome, so
+// a flagged document silently dropped out of the agent's queue with no
+// way to know it needed another pass (see decisions.log). Now a flagged
+// latest review keeps the posting in the list even though both files
+// are present.
+func TestList_KeepsPostingWithBothDocumentsWhenLatestReviewIsFlagged(t *testing.T) {
+	t.Parallel()
+
+	st, s, d := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	app, err := s.CreateApplication(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	paths, err := d.EnsureDir(app.ID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := os.WriteFile(paths.CoverLetter, []byte("letter"), 0o644); err != nil {
+		t.Fatalf("write cover letter: %v", err)
+	}
+	if err := os.WriteFile(paths.Resume, []byte("resume"), 0o644); err != nil {
+		t.Fatalf("write resume: %v", err)
+	}
+	if _, err := s.CreateDocumentReview(context.Background(), app.ID, store.DocumentTypeCoverLetter, "letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+
+	got, err := st.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 1 {
+		t.Fatalf("got %d candidates, want 1 (flagged cover letter should keep this in the queue)", len(got))
+	}
+}
+
+// TestList_ExcludesPostingWithBothDocumentsWhenLatestReviewsAllPass is
+// the complement of the above: once every reviewed document's latest
+// outcome is passed (not flagged), "both files exist" goes back to
+// meaning "done" -- List excludes it same as before this feature.
+func TestList_ExcludesPostingWithBothDocumentsWhenLatestReviewsAllPass(t *testing.T) {
+	t.Parallel()
+
+	st, s, d := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	app, err := s.CreateApplication(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	paths, err := d.EnsureDir(app.ID)
+	if err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := os.WriteFile(paths.CoverLetter, []byte("letter"), 0o644); err != nil {
+		t.Fatalf("write cover letter: %v", err)
+	}
+	if err := os.WriteFile(paths.Resume, []byte("resume"), 0o644); err != nil {
+		t.Fatalf("write resume: %v", err)
+	}
+	if _, err := s.CreateDocumentReview(context.Background(), app.ID, store.DocumentTypeCoverLetter, "letter", store.ReviewOutcomePassed, ""); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+
+	got, err := st.List(context.Background())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(got) != 0 {
+		t.Fatalf("got %d candidates, want 0 (both documents exist and the only review passed)", len(got))
+	}
+}
+
+func TestPrepare_IncludesApplicationNotesAndLatestReviews(t *testing.T) {
+	t.Parallel()
+
+	st, s, _ := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	mustMarkInterested(t, s, posting.ID)
+
+	first, err := st.Prepare(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("first Prepare: %v", err)
+	}
+	if _, err := s.UpdateApplicationNotes(context.Background(), posting.ID, "referred by a friend"); err != nil {
+		t.Fatalf("UpdateApplicationNotes: %v", err)
+	}
+	if _, err := s.CreateDocumentReview(context.Background(), first.ApplicationID, store.DocumentTypeResume, "draft", store.ReviewOutcomeFlagged, "add metrics"); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+
+	got, err := st.Prepare(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("second Prepare: %v", err)
+	}
+	if got.ApplicationNotes != "referred by a friend" {
+		t.Errorf("ApplicationNotes = %q, want %q", got.ApplicationNotes, "referred by a friend")
+	}
+	review, ok := got.LatestReviews[store.DocumentTypeResume]
+	if !ok {
+		t.Fatalf("LatestReviews[resume] missing, want the flagged review present")
+	}
+	if review.Outcome != store.ReviewOutcomeFlagged || review.Notes != "add metrics" {
+		t.Errorf("LatestReviews[resume] = %+v, want Outcome=flagged Notes=%q", review, "add metrics")
+	}
+}
+
 func TestPrepare_CreatesApplicationWhenNoneExists(t *testing.T) {
 	t.Parallel()
 
@@ -345,7 +522,7 @@ func TestCandidate_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 		t.Fatalf("got %d candidates, want 1", len(got))
 	}
 
-	wantTop := []string{"Posting", "CompanyName", "ApplicationID", "ApplicationStatus"}
+	wantTop := []string{"Posting", "CompanyName", "ApplicationID", "ApplicationStatus", "ApplicationNotes", "LatestReviews"}
 	sort.Strings(wantTop)
 	if diff := cmp.Diff(wantTop, jsonKeys(t, got[0])); diff != "" {
 		t.Fatalf("Candidate top-level JSON keys mismatch (-want +got):\n%s", diff)
@@ -380,7 +557,7 @@ func TestPrepared_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 		t.Fatalf("Prepare: %v", err)
 	}
 
-	wantTop := []string{"Posting", "CompanyName", "ApplicationID", "CoverLetter", "Resume"}
+	wantTop := []string{"Posting", "CompanyName", "ApplicationID", "CoverLetter", "Resume", "ApplicationNotes", "LatestReviews"}
 	sort.Strings(wantTop)
 	if diff := cmp.Diff(wantTop, jsonKeys(t, got)); diff != "" {
 		t.Fatalf("Prepared top-level JSON keys mismatch (-want +got):\n%s", diff)
