@@ -98,6 +98,43 @@ func TestCreateDocumentReview_SetsCycleAndSHA256(t *testing.T) {
 	}
 }
 
+func TestDocumentReview_IsCurrent_MatchingContent_ReturnsTrue(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+
+	content := "Dear hiring manager..."
+	created, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, content, ReviewOutcomeFlagged, "too generic")
+	if err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+
+	if !created.IsCurrent(content) {
+		t.Fatal("IsCurrent(content) = false, want true (content hasn't changed since the review)")
+	}
+}
+
+func TestDocumentReview_IsCurrent_RevisedContent_ReturnsFalse(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+
+	created, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, "Dear hiring manager...", ReviewOutcomeFlagged, "too generic")
+	if err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+
+	if created.IsCurrent("Dear hiring manager, revised with specifics...") {
+		t.Fatal("IsCurrent(revised content) = true, want false -- the document has been rewritten since this review, it no longer describes what's on disk")
+	}
+}
+
 func TestCreateDocumentReview_SecondReviewSameDocument_IncrementsCycle(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

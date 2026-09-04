@@ -158,6 +158,21 @@ type DocumentReview struct {
 	CreatedAt       time.Time
 }
 
+// IsCurrent reports whether r still describes content -- i.e. whether
+// the document hasn't changed since r was recorded, computed the same
+// way CreateDocumentReview hashes content at review time, so the two can
+// never disagree about what "matches" means. A review whose content has
+// since diverged (whether the document was revised in direct response
+// to the review, or edited independently) describes a version of the
+// document that no longer exists; callers that surface "the current
+// review status" of a document (see decisions.log, stage.List/Prepare
+// and the TUI's review badges) should treat a non-current review the
+// same as no review at all, not as still describing what's on disk now.
+func (r DocumentReview) IsCurrent(content string) bool {
+	sum := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(sum[:]) == r.ContentSHA256
+}
+
 // documentReviewFromRow converts a raw sqlc row into a DocumentReview,
 // parsing the DB's document_type/outcome columns into their typed enums
 // (see ParseDocumentType/ParseReviewOutcome above) -- the DB no longer
