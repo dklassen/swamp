@@ -56,6 +56,30 @@ func (d DocumentType) MarshalJSON() ([]byte, error) {
 	return json.Marshal(d.String())
 }
 
+// MarshalText implements encoding.TextMarshaler -- the interface
+// encoding/json actually consults for map keys. MarshalJSON above is
+// NOT consulted there, so a map[DocumentType]X would otherwise silently
+// serialize its keys as "0"/"1" (the underlying int) instead of
+// "cover_letter"/"resume", even with MarshalJSON already correct for
+// every other position (see stage.Candidate/Prepared's LatestReviews
+// field, decisions.log).
+func (d DocumentType) MarshalText() ([]byte, error) {
+	return []byte(d.String()), nil
+}
+
+// UnmarshalText implements encoding.TextMarshaler's decode half, for
+// symmetry -- nothing in this codebase currently decodes a DocumentType
+// from JSON, but half-implementing the interface would be a surprise
+// waiting to happen.
+func (d *DocumentType) UnmarshalText(text []byte) error {
+	parsed, err := ParseDocumentType(string(text))
+	if err != nil {
+		return err
+	}
+	*d = parsed
+	return nil
+}
+
 // ParseDocumentType converts a raw DB document_type string into the typed
 // enum, failing loudly (rather than silently defaulting) if the value
 // isn't one of the known types -- since the DB no longer enforces this
@@ -132,6 +156,21 @@ type DocumentReview struct {
 	Outcome         ReviewOutcome
 	Notes           string
 	CreatedAt       time.Time
+}
+
+// IsCurrent reports whether r still describes content -- i.e. whether
+// the document hasn't changed since r was recorded, computed the same
+// way CreateDocumentReview hashes content at review time, so the two can
+// never disagree about what "matches" means. A review whose content has
+// since diverged (whether the document was revised in direct response
+// to the review, or edited independently) describes a version of the
+// document that no longer exists; callers that surface "the current
+// review status" of a document (see decisions.log, stage.List/Prepare
+// and the TUI's review badges) should treat a non-current review the
+// same as no review at all, not as still describing what's on disk now.
+func (r DocumentReview) IsCurrent(content string) bool {
+	sum := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(sum[:]) == r.ContentSHA256
 }
 
 // documentReviewFromRow converts a raw sqlc row into a DocumentReview,

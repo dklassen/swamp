@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -313,7 +314,7 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 func (a *App) rebuildPostingDetailApplication() tea.Cmd {
 	_, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
 	a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), a.postingDetail.posting, app, hasApp, nil)
-	return maybeLoadDocumentReviews(a.store, hasApp, app.ID)
+	return maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 }
 
 // lookupPosting finds id in a.postings, returning it along with its
@@ -376,7 +377,7 @@ func sortCompaniesByName(companies []store.Company) {
 }
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(loadCompanies(a.store), loadActiveApplications(a.store))
+	return tea.Batch(loadCompanies(a.store), loadActiveApplications(a.store, a.documents))
 }
 
 type activeApplicationsLoadedMsg struct {
@@ -384,10 +385,29 @@ type activeApplicationsLoadedMsg struct {
 	err          error
 }
 
-func loadActiveApplications(s *store.Store) tea.Cmd {
+// loadActiveApplications fetches every active application, filtering
+// each one's LatestReviews through currentDocumentReviews -- store has
+// no filesystem access (see documents.go's own doc comment) so
+// ListActiveApplications itself can't do this, and every screen this
+// list feeds (the active-applications glyph column, application detail,
+// and posting detail reached via application detail's 'p' fast path,
+// which skips its own separate load -- see decisions.log) would
+// otherwise show a stale review as if it still described the current
+// document.
+func loadActiveApplications(s *store.Store, docs *documents.Store) tea.Cmd {
 	return func() tea.Msg {
 		apps, err := s.ListActiveApplications(context.Background())
-		return activeApplicationsLoadedMsg{applications: apps, err: err}
+		if err != nil {
+			return activeApplicationsLoadedMsg{err: err}
+		}
+		for i, app := range apps {
+			reviews, err := currentDocumentReviews(docs, app.ID, app.LatestReviews)
+			if err != nil {
+				return activeApplicationsLoadedMsg{err: err}
+			}
+			apps[i].LatestReviews = reviews
+		}
+		return activeApplicationsLoadedMsg{applications: apps}
 	}
 }
 
@@ -524,12 +544,61 @@ type documentReviewsLoadedMsg struct {
 // document type for applicationID -- the data behind postingDetailContent's
 // inline review-status section (see decisions.log #83). A document type
 // with no review yet is simply absent from the returned map, not an
-// error.
-func loadDocumentReviews(s *store.Store, applicationID int64) tea.Cmd {
+// error. Reviews whose content no longer matches what's currently on
+// disk (the document was revised since being reviewed, whether in
+// direct response to that review or independently) are filtered out by
+// currentDocumentReviews -- a stale review shouldn't render as if it
+// still described the current draft (see decisions.log,
+// store.DocumentReview.IsCurrent).
+func loadDocumentReviews(s *store.Store, docs *documents.Store, applicationID int64) tea.Cmd {
 	return func() tea.Msg {
 		reviews, err := s.LatestDocumentReviews(context.Background(), applicationID)
-		return documentReviewsLoadedMsg{applicationID: applicationID, reviews: reviews, err: err}
+		if err != nil {
+			return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
+		}
+		reviews, err = currentDocumentReviews(docs, applicationID, reviews)
+		if err != nil {
+			return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
+		}
+		return documentReviewsLoadedMsg{applicationID: applicationID, reviews: reviews}
 	}
+}
+
+// currentDocumentReviews filters reviews down to only those whose
+// content hash still matches each document's actual current content on
+// disk -- mirrors stage.currentReviews (see decisions.log); kept
+// separate rather than shared since store deliberately has no
+// filesystem access and documents deliberately never reads file content
+// (see documents.go's own doc comment), so each of this package and
+// stage compose the two themselves.
+func currentDocumentReviews(docs *documents.Store, applicationID int64, reviews map[store.DocumentType]store.DocumentReview) (map[store.DocumentType]store.DocumentReview, error) {
+	status := docs.Status(applicationID)
+	out := make(map[store.DocumentType]store.DocumentReview, len(reviews))
+	for documentType, review := range reviews {
+		doc := status.CoverLetter
+		if documentType == store.DocumentTypeResume {
+			doc = status.Resume
+		}
+		if !doc.Exists {
+			continue
+		}
+		content, err := os.ReadFile(doc.Path)
+		if err != nil {
+			// A read failure (permissions, a transient I/O error, the
+			// file mid-write) is not the same thing as "the document
+			// changed since it was reviewed" -- silently treating it
+			// that way could drop a genuinely still-flagged review
+			// (rendering [FLAGGED] as [not reviewed]) with no
+			// indication anything went wrong. Fail loudly instead,
+			// matching stage.currentReviews.
+			return nil, fmt.Errorf("read %s: %w", doc.Path, err)
+		}
+		if !review.IsCurrent(string(content)) {
+			continue
+		}
+		out[documentType] = review
+	}
+	return out, nil
 }
 
 // maybeLoadDocumentReviews returns the Cmd to (re)load applicationID's
@@ -538,11 +607,11 @@ func loadDocumentReviews(s *store.Store, applicationID int64) tea.Cmd {
 // the inline review status reloads through the same async round trip the
 // rest of this screen's store-backed state uses (see
 // postingDetailContent's own doc comment).
-func maybeLoadDocumentReviews(s *store.Store, hasApp bool, applicationID int64) tea.Cmd {
+func maybeLoadDocumentReviews(s *store.Store, docs *documents.Store, hasApp bool, applicationID int64) tea.Cmd {
 	if !hasApp {
 		return nil
 	}
-	return loadDocumentReviews(s, applicationID)
+	return loadDocumentReviews(s, docs, applicationID)
 }
 
 type applicationStatusUpdatedMsg struct {
@@ -850,7 +919,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.screen == screenPostingDetail {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
 				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
-				return a, maybeLoadDocumentReviews(a.store, hasApp, app.ID)
+				return a, maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 			}
 		}
 	case applicationCreatedMsg:
@@ -864,11 +933,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.screen == screenPostingDetail {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
 				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
-				reviewsCmd = maybeLoadDocumentReviews(a.store, hasApp, app.ID)
+				reviewsCmd = maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 			}
 			// A freshly-started application should show up in the active-
 			// applications list without needing a restart.
-			return a, tea.Batch(loadActiveApplications(a.store), reviewsCmd)
+			return a, tea.Batch(loadActiveApplications(a.store, a.documents), reviewsCmd)
 		}
 	case applicationStatusUpdatedMsg:
 		a.err = msg.err
@@ -887,7 +956,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// it belongs in the active-applications list at all -- reload
 			// rather than patch in place so that's always correct,
 			// regardless of which screen triggered the change.
-			return a, tea.Batch(loadActiveApplications(a.store), reviewsCmd)
+			return a, tea.Batch(loadActiveApplications(a.store, a.documents), reviewsCmd)
 		}
 	case applicationNotesUpdatedMsg:
 		a.err = msg.err
@@ -912,7 +981,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// Also refreshes the active-applications list in the
 				// background, so its review-glyph column isn't stale by
 				// the time the user backs out of application detail.
-				return a, tea.Batch(loadDocumentReviews(a.store, a.applicationDetail.application.ID), loadActiveApplications(a.store))
+				return a, tea.Batch(loadDocumentReviews(a.store, a.documents, a.applicationDetail.application.ID), loadActiveApplications(a.store, a.documents))
 			case screenPostingDetail:
 				return a, a.rebuildPostingDetailApplication()
 			}
@@ -1051,7 +1120,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
 			a.postingDetailReturnScreen = screenPostingList
 			a.screen = screenPostingDetail
-			return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, hasApp, app.ID))
+			return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
 		case enterFilterSelectMsg:
 			a.screen = screenFilterSelect
 			return a, loadFilterOptions(a.store, a.selectedCompany.ID)
@@ -1075,7 +1144,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				p := a.postings[newIdx]
 				app, hasApp := a.applicationsByPosting[p.ID]
 				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
-				return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, hasApp, app.ID))
+				return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
 			}
 		case enterApplicationStatusMsg:
 			a.applicationStatusReturnScreen = screenPostingDetail

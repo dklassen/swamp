@@ -3569,3 +3569,201 @@ verified via tmux against a seeded scratch db: application detail -> 'p'
 -> posting detail (fields intact) -> 's' -> pick a new status -> confirm
 -- posting detail re-renders with Department/Location/title still shown
 and the new status ("interviewing") applied correctly.
+
+## 2026-09-04 -- Expose application notes and latest reviews in stage JSON (#94)
+
+User asked to verify the latest document review (outcome + notes) and
+application notes are exposed in stage's JSON output, so the
+apply-to-posting skill can tell a flagged document from a fresh one on a
+revision pass. Neither was exposed at all -- but the more consequential
+gap, found while checking: List()'s filter excluded a posting once both
+documents existed on disk, regardless of review outcome, so a flagged
+cover letter dropped out of the agent's queue exactly like a passed one,
+with the skill having no way to know it needed another pass. Confirmed
+both fixes with the user (AskUserQuestion) before implementing, since
+the filter change is a real behavior change to the pinned JSON contract
+(decisions.log #59), not just an additive field.
+
+Added Candidate/Prepared.ApplicationNotes (string) and .LatestReviews
+(map[store.DocumentType]LatestReview, keyed by document type). LatestReview
+is a purpose-built, leaner projection of store.DocumentReview -- Outcome,
+Notes, Cycle, CreatedAt -- deliberately omitting ContentSnapshot/
+ContentSHA256: the agent works from the document's current content on
+disk (Prepared.CoverLetter/Resume.Path), not a historical snapshot, so
+shipping the full snapshot in every stage list response would just be
+dead weight. Resolved via the existing store.LatestDocumentReviews (added
+in #85/#86) and store.GetApplication -- N+1 per candidate with an
+application, consistent with that method's own established
+personal-scale-is-fine reasoning; no SQL/migration changes needed.
+
+List()'s filter changed from "skip once both documents exist" to "skip
+once both documents exist AND neither has a flagged latest review" (see
+the new needsRework helper) -- a flagged document now keeps its posting
+in the queue indefinitely until re-reviewed and passed, matching what
+"the skill can review the status" actually requires.
+
+Along the way, hit a real encoding/json gotcha while testing
+map[store.DocumentType]LatestReview's actual output: MarshalJSON (added
+in #86 for DocumentType/ReviewOutcome) is NOT consulted for map keys --
+only encoding.TextMarshaler is. Without MarshalText, the map would have
+silently serialized as {"0": ..., "1": ...} instead of {"cover_letter":
+..., "resume": ...}, exactly the kind of silent breakage #59's own
+json-tag-pinning tests exist to catch, just one layer down (map keys,
+not field names). Added DocumentType.MarshalText/UnmarshalText,
+verified with a test that actually marshals a map (not just a bare
+value, which MarshalJSON alone already covered and would have passed
+regardless).
+
+Updated .agents/skills/apply-to-posting/SKILL.md (the documented JSON
+contract) with the new fields, an explanation of what a flagged
+LatestReviews entry means, and explicit revision-pass guidance ("read
+the existing file's current content ... write a revised version that
+addresses it -- don't start from a blank page") -- the whole point of
+exposing this data is so the skill actually changes behavior when it
+sees a flagged review, not just so the JSON has more fields in it.
+
+Verified: full build/test/lint/fmt clean. New tests:
+store.TestDocumentType_MarshalJSON_AsMapKey_UsesDBStringNotIntValue,
+stage.TestList_IncludesApplicationNotes,
+stage.TestList_IncludesLatestDocumentReviews,
+stage.TestList_KeepsPostingWithBothDocumentsWhenLatestReviewIsFlagged,
+stage.TestList_ExcludesPostingWithBothDocumentsWhenLatestReviewsAllPass,
+stage.TestPrepare_IncludesApplicationNotesAndLatestReviews. The existing
+TestCandidate_JSONShape_MatchesDocumentedAgentContract/
+TestPrepared_JSONShape_MatchesDocumentedAgentContract (the #59 pinning
+tests) were updated to include the two new top-level keys -- a
+deliberate, expected pin change, not a loosening of the contract.
+Manually verified via the built CLI against a seeded scratch db (not
+just tests): `stage list` and `stage prepare` both printed
+ApplicationNotes and LatestReviews.cover_letter with the exact shape
+SKILL.md now documents, map key included as "cover_letter" (string, not
+"0").
+
+## 2026-09-04 -- Stale reviews must not be surfaced as current (#94 follow-up)
+
+User, reviewing the above: "once a review is read and acted upon - the
+document is updated. it should no longer be returned. Reviews and notes
+should only be reviewed for the current document. is this behaviour we
+have captured?" It wasn't. Checked: DocumentReview.ContentSHA256 has
+existed since #51 specifically for this ("did this change since the
+last review... without comparing full ContentSnapshot values") but was
+write-only -- nothing anywhere read it back or compared it. Confirmed
+via grep before writing a line of the fix, not assumed. Concretely: a
+cover letter gets flagged, the agent or user revises the file in
+response, and every surface that reads "the latest review" -- stage
+list/prepare's LatestReviews, and the TUI's [FLAGGED] badges -- kept
+showing the stale review and its now-addressed notes indefinitely,
+until a fresh human review happened to overwrite it. Confirmed with the
+user (AskUserQuestion) whether to fix stage only or both stage and the
+TUI in one shared pass, since it's the identical bug in two presentation
+layers; chose both, sharing the comparison logic to avoid the two
+drifting apart.
+
+Added store.DocumentReview.IsCurrent(content string) bool -- pure,
+no filesystem access (matches store's existing boundary), hashes content
+the same way CreateDocumentReview does at review time so the two can
+never disagree about what "matches" means. This is the one piece
+actually shared between stage and tui.
+
+The surrounding "read the file, compare hashes, filter the map" loop is
+duplicated once in each package (stage.currentReviews,
+tui.currentDocumentReviews) rather than factored into a third shared
+location -- store deliberately has no filesystem access, and
+documents.go's own doc comment states just as deliberately that "the
+content itself is never read by this package," so neither existing
+package is the right home, and this codebase doesn't have (and doesn't
+want) a generic "shared utils" package for two ~15-line copies whose
+only failure-prone part (the hash comparison) is already centralized in
+IsCurrent.
+
+stage.List/Prepare: reviews are now filtered through currentReviews
+before either building LatestReviews or checking needsRework -- a
+document whose file no longer matches its last review is treated as "no
+current review," not as still flagged, so a revised-but-not-yet-
+re-reviewed document goes back to "done" (both files exist, no active
+flag) exactly like one that was never reviewed, rather than either
+staying permanently flagged or having its stale feedback surfaced as if
+it still applied.
+
+TUI: loadDocumentReviews (posting detail's own load) and, more subtly,
+loadActiveApplications both needed the filter -- the latter wasn't
+obvious at first. loadActiveApplications' result feeds three places: the
+active-applications glyph column, applicationDetailModel (constructed
+directly from the cached ApplicationView on enter, no reload of its
+own), and posting detail reached via application detail's 'p' "fast
+path" (which, per the #87 decisions.log entry, deliberately skips its
+own load and uses that same cached ApplicationView directly, to avoid
+the lookupPosting/a.postings clobbering bug fixed there). Missing the
+filter on loadActiveApplications meant application detail and the
+fast-path route into posting detail would have kept showing a stale
+review indefinitely no matter how many times loadDocumentReviews itself
+got called elsewhere -- caught by manually testing the fast path
+specifically, not assumed to be covered by the same fix as the direct
+load.
+
+Verified: full build/test/lint/fmt clean. New tests:
+store.TestDocumentReview_IsCurrent_MatchingContent_ReturnsTrue,
+store.TestDocumentReview_IsCurrent_RevisedContent_ReturnsFalse,
+stage.TestList_ExcludesPostingWhenFlaggedReviewIsStaleAfterRevision,
+stage.TestList_LatestReviewsOmitsStaleReview,
+stage.TestPrepare_LatestReviewsOmitsStaleReview,
+tui.TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag. Two
+tests from the same day's earlier entry (TestList_
+IncludesLatestDocumentReviews, TestPrepare_IncludesApplicationNotes
+AndLatestReviews) needed their setup updated to actually write matching
+file content to disk -- they'd been asserting review presence without
+ever creating a file for the review to match, which the new staleness
+check correctly rejects. Manually verified via tmux against a seeded
+scratch db, byte-for-byte (an early attempt using `echo` instead of
+`printf` silently introduced a trailing-newline mismatch and produced a
+false "still flagged" result -- caught by checking the file's actual
+sha256 against the stored ContentSHA256 directly rather than trusting
+the first observation): active-applications' glyph, application detail,
+and posting detail (via the 'p' fast path) all correctly show
+"[not reviewed]"/"CL:-" for a revised document instead of the stale
+"[FLAGGED]", confirmed across a full app restart so the fix is verified
+against loadActiveApplications' actual reload path, not just in-memory
+state from a single session.
+
+## 2026-09-04 -- Fix silent os.ReadFile error swallow in the staleness filters (#94 follow-up)
+
+/code-review on the branch caught a real bug in the staleness fix
+above: stage.currentReviews and tui.currentDocumentReviews both did
+`content, err := os.ReadFile(doc.Path); if err != nil { continue }` --
+treating a permission error, a transient I/O failure, or a file
+mid-write identically to "content changed since review," and silently
+dropping the review with no error surfaced anywhere. Two independent
+review angles converged on this, one framing it precisely: it can
+reintroduce the exact bug the earlier entry was written to fix (a
+flagged document disappearing from the queue with no indication why),
+just via an I/O-error path instead of the outcome-filter path. Directly
+contradicts this project's own "On Fallbacks: fail loudly, `or {}` is a
+lie you tell yourself" convention.
+
+Fixed by having both functions return an error on a read failure
+instead of swallowing it, propagated up through every caller (stage.
+List/Prepare, tui's loadDocumentReviews/loadActiveApplications) as a
+genuine operation-failing error -- matching how every other error in
+both files already behaves (one bad candidate/application aborts the
+whole call rather than silently returning wrong data for it). Chose
+this over a partial-failure/per-item-error JSON shape: simpler, and
+consistent with the existing all-or-nothing error semantics both
+functions already had for every other error source.
+
+Verified: full build/test/lint/fmt clean. New tests:
+stage.TestList_ReturnsErrorWhenDocumentReadFails,
+stage.TestPrepare_ReturnsErrorWhenDocumentReadFails,
+tui.TestApp_LoadActiveApplications_DocumentReadFails_SetsErr. All three
+simulate a genuine read failure portably (a directory placed at the
+document's path -- os.Stat/Exists still reports true, matching a real
+file, but os.ReadFile fails with "is a directory") rather than relying
+on permission bits, which a test running as root would ignore.
+
+Remaining findings from the same review (duplicated filter logic across
+stage/tui, a documents.Status.For(documentType) helper opportunity, an
+avoidable GetApplication call in List() that the existing LEFT JOIN
+could absorb, List()'s stale doc comment, two copy-pasted test pairs
+that should be table-driven, and a couple of minor efficiency notes)
+were deliberately left unfixed here and reported back with outcome
+"skipped" -- real, but none are correctness bugs, and bundling them into
+this fix would have obscured the one change that actually mattered.

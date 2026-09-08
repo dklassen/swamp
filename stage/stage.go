@@ -10,6 +10,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"time"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
@@ -26,10 +28,12 @@ import (
 // silently break that hand-off with no compiler or test catching it
 // (see decisions.log, #59).
 type Candidate struct {
-	Posting           store.Posting            `json:"Posting"`
-	CompanyName       string                   `json:"CompanyName"`
-	ApplicationID     *int64                   `json:"ApplicationID"`
-	ApplicationStatus *store.ApplicationStatus `json:"ApplicationStatus"`
+	Posting           store.Posting                       `json:"Posting"`
+	CompanyName       string                              `json:"CompanyName"`
+	ApplicationID     *int64                              `json:"ApplicationID"`
+	ApplicationStatus *store.ApplicationStatus            `json:"ApplicationStatus"`
+	ApplicationNotes  string                              `json:"ApplicationNotes"`
+	LatestReviews     map[store.DocumentType]LatestReview `json:"LatestReviews"`
 }
 
 // Document is one document's resolved path and whether it already exists
@@ -40,14 +44,92 @@ type Document struct {
 	Exists bool   `json:"Exists"`
 }
 
+// LatestReview is the parts of a store.DocumentReview an external agent
+// needs to decide whether/how to revise a document: the last verdict,
+// any notes on what to fix, how many review cycles it's already been
+// through, and when that verdict was recorded. ContentSnapshot/
+// ContentSHA256 are deliberately omitted -- the agent works from the
+// document's current content on disk (see Prepared.CoverLetter/Resume),
+// not a historical snapshot.
+type LatestReview struct {
+	Outcome   store.ReviewOutcome `json:"Outcome"`
+	Notes     string              `json:"Notes"`
+	Cycle     int64               `json:"Cycle"`
+	CreatedAt time.Time           `json:"CreatedAt"`
+}
+
+// latestReviewsForJSON converts a store.DocumentReview map (as returned
+// by store.LatestDocumentReviews) into the leaner LatestReview shape
+// this package exposes over JSON.
+func latestReviewsForJSON(reviews map[store.DocumentType]store.DocumentReview) map[store.DocumentType]LatestReview {
+	out := make(map[store.DocumentType]LatestReview, len(reviews))
+	for documentType, r := range reviews {
+		out[documentType] = LatestReview{Outcome: r.Outcome, Notes: r.Notes, Cycle: r.Cycle, CreatedAt: r.CreatedAt}
+	}
+	return out
+}
+
+// currentReviews filters reviews down to only those whose content hash
+// still matches each document's actual current content on disk -- a
+// review computed against a version of the file that's since been
+// revised (whether in direct response to the review, or independently)
+// no longer describes "now" and shouldn't be surfaced as if it still
+// did (see decisions.log, store.DocumentReview.IsCurrent). A document
+// with no current-matching review is treated the same as "never
+// reviewed," whether that's literally true or it's just awaiting
+// re-review after being revised.
+func currentReviews(reviews map[store.DocumentType]store.DocumentReview, status documents.Status) (map[store.DocumentType]store.DocumentReview, error) {
+	out := make(map[store.DocumentType]store.DocumentReview, len(reviews))
+	for documentType, review := range reviews {
+		doc := status.CoverLetter
+		if documentType == store.DocumentTypeResume {
+			doc = status.Resume
+		}
+		if !doc.Exists {
+			continue
+		}
+		content, err := os.ReadFile(doc.Path)
+		if err != nil {
+			// A read failure (permissions, a transient I/O error, the
+			// file mid-write) is not the same thing as "the document
+			// changed since it was reviewed" -- silently treating it
+			// that way could drop a genuinely still-flagged review from
+			// the queue with no indication anything went wrong. Fail
+			// the whole call loudly instead, matching every other error
+			// path in this package.
+			return nil, fmt.Errorf("read %s: %w", doc.Path, err)
+		}
+		if !review.IsCurrent(string(content)) {
+			continue
+		}
+		out[documentType] = review
+	}
+	return out, nil
+}
+
+// needsRework reports whether any of reviews' latest outcomes is
+// ReviewOutcomeFlagged -- a flagged document needs another drafting
+// pass even once its file exists on disk, so List keeps surfacing it
+// rather than treating "both files exist" as "done" (see decisions.log).
+func needsRework(reviews map[store.DocumentType]store.DocumentReview) bool {
+	for _, r := range reviews {
+		if r.Outcome == store.ReviewOutcomeFlagged {
+			return true
+		}
+	}
+	return false
+}
+
 // Prepared is everything an external agent needs to draft and write one
 // posting's cover letter and resume, once Prepare has committed to it.
 type Prepared struct {
-	Posting       store.Posting `json:"Posting"`
-	CompanyName   string        `json:"CompanyName"`
-	ApplicationID int64         `json:"ApplicationID"`
-	CoverLetter   Document      `json:"CoverLetter"`
-	Resume        Document      `json:"Resume"`
+	Posting          store.Posting                       `json:"Posting"`
+	CompanyName      string                              `json:"CompanyName"`
+	ApplicationID    int64                               `json:"ApplicationID"`
+	CoverLetter      Document                            `json:"CoverLetter"`
+	Resume           Document                            `json:"Resume"`
+	ApplicationNotes string                              `json:"ApplicationNotes"`
+	LatestReviews    map[store.DocumentType]LatestReview `json:"LatestReviews"`
 }
 
 // Stage is the single entry point for the agent hand-off mechanism,
@@ -74,17 +156,34 @@ func (st *Stage) List(ctx context.Context) ([]Candidate, error) {
 
 	candidates := make([]Candidate, 0, len(postings))
 	for _, p := range postings {
+		var notes string
+		var reviews map[store.DocumentType]store.DocumentReview
 		if p.ApplicationID != nil {
+			latest, err := st.store.LatestDocumentReviews(ctx, *p.ApplicationID)
+			if err != nil {
+				return nil, fmt.Errorf("stage: latest document reviews: %w", err)
+			}
 			status := st.documents.Status(*p.ApplicationID)
-			if status.CoverLetter.Exists && status.Resume.Exists {
+			reviews, err = currentReviews(latest, status)
+			if err != nil {
+				return nil, fmt.Errorf("stage: check review currency: %w", err)
+			}
+			if status.CoverLetter.Exists && status.Resume.Exists && !needsRework(reviews) {
 				continue
 			}
+			application, err := st.store.GetApplication(ctx, p.Posting.ID)
+			if err != nil {
+				return nil, fmt.Errorf("stage: get application: %w", err)
+			}
+			notes = application.Notes
 		}
 		candidates = append(candidates, Candidate{
 			Posting:           p.Posting,
 			CompanyName:       p.CompanyName,
 			ApplicationID:     p.ApplicationID,
 			ApplicationStatus: p.ApplicationStatus,
+			ApplicationNotes:  notes,
+			LatestReviews:     latestReviewsForJSON(reviews),
 		})
 	}
 	return candidates, nil
@@ -120,11 +219,22 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 	}
 	status := st.documents.Status(application.ID)
 
+	reviews, err := st.store.LatestDocumentReviews(ctx, application.ID)
+	if err != nil {
+		return nil, fmt.Errorf("stage: latest document reviews: %w", err)
+	}
+	reviews, err = currentReviews(reviews, status)
+	if err != nil {
+		return nil, fmt.Errorf("stage: check review currency: %w", err)
+	}
+
 	return &Prepared{
-		Posting:       posting,
-		CompanyName:   company.Name,
-		ApplicationID: application.ID,
-		CoverLetter:   Document{Path: status.CoverLetter.Path, Exists: status.CoverLetter.Exists},
-		Resume:        Document{Path: status.Resume.Path, Exists: status.Resume.Exists},
+		Posting:          posting,
+		CompanyName:      company.Name,
+		ApplicationID:    application.ID,
+		CoverLetter:      Document{Path: status.CoverLetter.Path, Exists: status.CoverLetter.Exists},
+		Resume:           Document{Path: status.Resume.Path, Exists: status.Resume.Exists},
+		ApplicationNotes: application.Notes,
+		LatestReviews:    latestReviewsForJSON(reviews),
 	}, nil
 }
