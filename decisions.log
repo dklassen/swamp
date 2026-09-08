@@ -3767,3 +3767,70 @@ that should be table-driven, and a couple of minor efficiency notes)
 were deliberately left unfixed here and reported back with outcome
 "skipped" -- real, but none are correctness bugs, and bundling them into
 this fix would have obscured the one change that actually mattered.
+
+## 2026-09-08 -- Manual refresh key on posting detail / application detail (#94 follow-up)
+
+The user asked whether the TUI would pick up a document an external agent
+(the apply-to-posting skill, running in a separate terminal) revises on
+disk after reading a flagged review's notes -- e.g. the user flags a
+cover letter, runs the skill, and wants the TUI (if still open) to
+reflect the revision without having to leave and re-enter the screen.
+
+It doesn't, automatically: nothing filesystem-watches, and document
+status/reviews are only reloaded when a screen is entered or an
+in-app action (creating an application, submitting a review, etc.)
+changes something. Sitting on posting detail or application detail
+while a file changes underneath it stays stale indefinitely.
+
+Presented the tradeoff to the user directly rather than guessing:
+automatic polling (a periodic tea.Tick re-check) vs. a manual refresh
+keybinding vs. both. Chose manual-only -- this is a personal-scale,
+single-user TUI with no filesystem-watch dependency already in play,
+and a keybinding is simpler, has no background cost, and matches the
+existing precedent of company list's 'r' (refresh from the API).
+Scoped to posting detail and application detail (where an external
+agent's document edits are actually visible); the active-applications
+list glyph column was explicitly left out of scope.
+
+Bound to 'u' on both screens ('r' was already taken for other things --
+"review document" on posting detail, "edit resume" on application
+detail -- and 'f' was already "filters" on the adjacent posting-list
+screen, so reused there would have meant the same key doing different
+things on screens the user moves between often).
+
+Posting detail's 'u' reuses the existing
+rebuildPostingDetailApplication helper (already used after
+status/notes/review changes) -- it rebuilds postingDetailModel, which
+recomputes documents.Status live, and re-triggers
+maybeLoadDocumentReviews, whose currentReviews check (see the #94
+follow-up above) already re-reads file content and drops any review
+that no longer matches. No new reload logic needed, just a new trigger
+for it.
+
+Application detail's 'u' only needs to reload document reviews
+(loadDocumentReviews) -- its View() already calls
+m.documents.Status(m.application.ID) fresh on every render, so document
+existence never goes stale there; only the cached LatestReviews map on
+the model needed a way to be re-fetched.
+
+Verified: full build/test/lint/fmt clean. New tests:
+tui.TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen,
+tui.TestApp_ApplicationDetail_PressU_RefreshesWithoutLeavingScreen --
+both revise a document's on-disk content in place (no navigating away)
+and confirm pressing 'u' flips a stale [FLAGGED] to [not reviewed]
+without leaving the screen. Also manually verified live in tmux against
+a seeded scratch DB: flagged a cover letter, revised its content on
+disk (simulating the agent), confirmed the screen still showed
+[FLAGGED] until 'u' was pressed, then flipped to [not reviewed] in
+place.
+
+While verifying manually, found and separately flagged (not fixed
+here -- out of scope) a pre-existing bug: entering posting detail via
+application detail's 'p' fast path never populates
+a.applicationsByPosting, so a later action that goes through
+rebuildPostingDetailApplication/lookupPosting (e.g. submitting a
+review from that posting-detail view) makes the screen wrongly render
+"No application started" even though the application is real. Not
+caused by this change -- rebuildPostingDetailApplication and
+lookupPosting are unmodified pre-existing code; the fast path already
+existed (see the #87 follow-up referenced in its own comment).

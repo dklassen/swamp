@@ -1083,6 +1083,8 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.screen = screenDocumentReviewForm
 				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.applicationID, v.documentType, v.content, a.width, a.listRows())
 			}
+		case refreshApplicationDetailMsg:
+			return a, loadDocumentReviews(a.store, a.documents, a.applicationDetail.application.ID)
 		}
 		return a, cmd
 	case screenCompanyList:
@@ -1157,6 +1159,8 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.documentReviewReturnScreen = screenPostingDetail
 			a.screen = screenDocumentReviewSelect
 			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, v.applicationID)
+		case refreshPostingDetailMsg:
+			return a, a.rebuildPostingDetailApplication()
 		}
 		return a, cmd
 	case screenApplicationStatusSelect:
