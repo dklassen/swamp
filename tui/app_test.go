@@ -1946,6 +1946,69 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately(t
 	}
 }
 
+// TestApp_SubmitDocumentReviewFromPostingDetailViaApplicationDetailFastPath_KeepsApplication
+// is a regression test: application detail's 'p' enters posting detail via
+// the fast path (see decisions.log #87 follow-up), which never populates
+// a.applicationsByPosting since it renders directly from the already-loaded
+// ApplicationView instead of going through loadApplication. Submitting a
+// document review from that posting-detail screen sets
+// documentReviewReturnScreen = screenPostingDetail, and
+// documentReviewCreatedMsg's handler for that case calls
+// rebuildPostingDetailApplication, which re-derives hasApp via
+// lookupPosting -- a miss against the never-populated map -- and wrongly
+// renders "No application started" even though the application is real and
+// unchanged.
+func TestApp_SubmitDocumentReviewFromPostingDetailViaApplicationDetailFastPath_KeepsApplication(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
+
+	status := app.documents.Status(application.ID)
+	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(status.CoverLetter.Path, []byte("# Cover Letter"), 0o644); err != nil {
+		t.Fatalf("WriteFile cover letter: %v", err)
+	}
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // active-applications -> application detail
+	app, _ = sendKey(app, runeKey('p'))                   // application detail -> posting detail (fast path)
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after 'p' = %v, want screenPostingDetail", app.screen)
+	}
+
+	app, _ = sendKey(app, runeKey('r')) // posting detail -> document review select
+	if app.screen != screenDocumentReviewSelect {
+		t.Fatalf("screen after 'r' = %v, want screenDocumentReviewSelect", app.screen)
+	}
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // select "Cover Letter" (cursor 0)
+	if app.screen != screenDocumentReviewForm {
+		t.Fatalf("screen after selecting cover letter = %v, want screenDocumentReviewForm", app.screen)
+	}
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyCtrlS}) // pass
+	if cmd == nil {
+		t.Fatal("Update on ctrl+s returned nil Cmd, want a command that saves the review")
+	}
+	app = applyCmd(t, app, cmd)
+
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after saving review = %v, want screenPostingDetail", app.screen)
+	}
+	if !app.postingDetail.hasApplication {
+		t.Fatal("postingDetail.hasApplication = false after submitting a review via the application-detail fast path, want true (application was never removed)")
+	}
+	view := app.View()
+	if strings.Contains(view, "No application started") {
+		t.Errorf("view after submitting review shows \"No application started\" even though the application is real and unchanged:\n%s", view)
+	}
+	if !strings.Contains(view, "[PASSED]") {
+		t.Errorf("view after submitting review does not show [PASSED]:\n%s", view)
+	}
+}
+
 func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")

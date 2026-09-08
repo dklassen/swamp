@@ -1072,7 +1072,21 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// rather than triggering loadApplication's own rebuild, which
 			// would immediately clobber this with a zero-value Posting via
 			// the same lookupPosting gap.
+			//
+			// a.applicationsByPosting must also be seeded here, the same way
+			// screenPostingList's enterPostingDetailMsg handler gets it seeded
+			// via loadApplication's applicationLoadedMsg: later handlers that
+			// change application-side data while still on screenPostingDetail
+			// (documentReviewCreatedMsg, applicationStatusUpdatedMsg, etc.) go
+			// through rebuildPostingDetailApplication -> lookupPosting, which
+			// reads only from this map, not from appView. Without seeding it
+			// here, that lookup misses and hasApp wrongly flips to false even
+			// though the application is unchanged.
 			appView := a.applicationDetail.application
+			if a.applicationsByPosting == nil {
+				a.applicationsByPosting = make(map[int64]store.Application)
+			}
+			a.applicationsByPosting[appView.Posting.ID] = appView.Application
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), appView.Posting, appView.Application, true, appView.LatestReviews)
 			a.postingDetailReturnScreen = screenApplicationDetail
 			a.screen = screenPostingDetail

@@ -3767,3 +3767,50 @@ that should be table-driven, and a couple of minor efficiency notes)
 were deliberately left unfixed here and reported back with outcome
 "skipped" -- real, but none are correctness bugs, and bundling them into
 this fix would have obscured the one change that actually mattered.
+
+## 2026-09-08 -- Fix another a.applicationsByPosting gap in the same fast path (#87 follow-up)
+
+Third bug from the same root cause as the two entries above:
+application detail's 'p' fast path (screenApplicationDetail's
+enterPostingDetailMsg handler) renders a.postingDetail straight from
+applicationDetail's already-loaded ApplicationView, bypassing
+a.postings AND a.applicationsByPosting entirely. The prior #88 fix
+addressed the a.postings half (lookupPosting's Posting result) by
+having rebuildPostingDetailApplication keep a.postingDetail.posting
+as-is instead of re-deriving it, on the stated assumption that the
+app/hasApp half "was never broken" since lookupPosting resolves that
+from a.applicationsByPosting independently of a.postings. That
+assumption held for the two call sites #88 fixed (status change, notes
+edit) because both of those flows create-or-touch the application via
+a store call whose *Msg handler unconditionally seeds
+a.applicationsByPosting first, before calling
+rebuildPostingDetailApplication. But documentReviewCreatedMsg's
+screenPostingDetail branch calls rebuildPostingDetailApplication
+directly with no such seed -- so submitting a document review from
+posting detail, when posting detail was entered via this fast path,
+hit a genuine miss: lookupPosting's map read found nothing, hasApp
+came back false, and the screen rendered "No application started --
+press 'a' to start one." even though the application was real,
+unchanged, and had just been reviewed.
+
+Fixed at the actual source of the gap: the fast-path entry point now
+seeds a.applicationsByPosting[appView.Posting.ID] = appView.Application
+itself, the same way screenPostingList's entry path gets it seeded
+(via loadApplication's applicationLoadedMsg). This closes the gap for
+every current and future call site that reads a.applicationsByPosting
+after entering via this path, rather than special-casing
+documentReviewCreatedMsg the way #88 special-cased its three call
+sites -- the map is now simply correct from the moment posting detail
+is entered this way, matching what the posting-list path already
+guarantees.
+
+Verified: full build/test/lint/fmt clean. New test:
+TestApp_SubmitDocumentReviewFromPostingDetailViaApplicationDetailFastPath_KeepsApplication
+(written first against pre-fix code, confirmed it failed with
+hasApplication=false for the expected reason, then passed after the
+fix). Manually verified via tmux against a seeded scratch db: active
+applications -> enter -> application detail -> 'p' -> posting detail
+(application status shown correctly) -> 'r' -> select cover letter ->
+ctrl+s (pass) -> posting detail re-renders with "Application status:
+application_started" and "[PASSED]" still shown, no "No application
+started" regression.
