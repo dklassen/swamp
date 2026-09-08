@@ -42,9 +42,20 @@ func (m *applicationDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		return nil, m.enterReview(store.DocumentTypeCoverLetter)
 	case msg.String() == "R":
 		return nil, m.enterReview(store.DocumentTypeResume)
+	case msg.String() == "u":
+		return nil, refreshApplicationDetailMsg{}
 	}
 	return nil, nil
 }
+
+// refreshApplicationDetailMsg signals that App should reload this
+// application's document reviews from the store without leaving
+// application detail -- e.g. after an external agent (see
+// .agents/skills/apply-to-posting) revises a document on disk while the
+// user is still looking at this screen (see decisions.log). Document
+// existence itself needs no reload: View reads m.documents.Status live
+// on every render.
+type refreshApplicationDetailMsg struct{}
 
 // openDocument ensures the application's document directory exists (most
 // editors create the file itself on save, but not the directory) and
@@ -106,6 +117,6 @@ func (m *applicationDetailModel) View() string {
 	resumeReview, hasResumeReview := m.application.LatestReviews[store.DocumentTypeResume]
 	b.WriteString(documentStatusLine("Resume", status.Resume.Exists, status.Resume.Path, resumeReview, hasResumeReview))
 
-	b.WriteString(helpStyle.Render("p: view posting  l: edit cover letter  r: edit resume  L: review cover letter  R: review resume  esc/b: back"))
+	b.WriteString(helpStyle.Render("p: view posting  l: edit cover letter  r: edit resume  L: review cover letter  R: review resume  u: refresh  esc/b: back"))
 	return b.String()
 }

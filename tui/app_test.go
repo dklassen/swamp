@@ -1702,6 +1702,65 @@ func TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag(t *testing.T) 
 	}
 }
 
+// TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen covers the
+// case an external agent revises a document on disk (e.g. the
+// apply-to-posting skill addressing a flagged review) while the user is
+// still sitting on posting detail: unlike
+// TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag, which
+// picks up the change by leaving and re-entering, this exercises the
+// manual refresh key ('u') that reloads in place.
+func TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
+	app = openPostingList(t, app)
+
+	posting := app.postings[0]
+	application, err := s.CreateApplication(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	status := app.documents.Status(application.ID)
+	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(status.CoverLetter.Path, []byte("original draft"), 0o644); err != nil {
+		t.Fatalf("WriteFile cover letter: %v", err)
+	}
+	if _, err := s.CreateDocumentReview(context.Background(), application.ID, store.DocumentTypeCoverLetter, "original draft", store.ReviewOutcomeFlagged, "too generic"); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+
+	app = openPostingDetail(t, app)
+	if !strings.Contains(app.View(), "[FLAGGED]") {
+		t.Fatalf("view before revision does not show [FLAGGED]:\n%s", app.View())
+	}
+
+	// Revise the document in place, without leaving posting detail --
+	// simulates the agent rewriting the file while the TUI stays open.
+	if err := os.WriteFile(status.CoverLetter.Path, []byte("revised draft addressing the feedback"), 0o644); err != nil {
+		t.Fatalf("rewrite cover letter: %v", err)
+	}
+
+	app, cmd := sendKey(app, runeKey('u'))
+	if cmd == nil {
+		t.Fatal("Update on 'u' returned nil Cmd, want a command that refreshes posting detail")
+	}
+	app = applyCmd(t, app, cmd)
+
+	view := app.View()
+	if strings.Contains(view, "[FLAGGED]") {
+		t.Errorf("view after 'u' still shows [FLAGGED] -- refresh should have picked up the revision:\n%s", view)
+	}
+	if !strings.Contains(view, "[not reviewed]") {
+		t.Errorf("view after 'u' does not show [not reviewed] for the revised cover letter:\n%s", view)
+	}
+}
+
 func TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
@@ -2006,6 +2065,64 @@ func TestApp_SubmitDocumentReviewFromPostingDetailViaApplicationDetailFastPath_K
 	}
 	if !strings.Contains(view, "[PASSED]") {
 		t.Errorf("view after submitting review does not show [PASSED]:\n%s", view)
+	}
+}
+
+// TestApp_ApplicationDetail_PressU_RefreshesWithoutLeavingScreen mirrors
+// TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen for
+// application detail: an external agent revising a document on disk
+// while the user is looking at this screen should be picked up by
+// pressing 'u', without having to back out and re-enter.
+func TestApp_ApplicationDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+	docs := documents.NewStore(t.TempDir())
+	status := docs.Status(application.ID)
+	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(status.CoverLetter.Path, []byte("original draft"), 0o644); err != nil {
+		t.Fatalf("WriteFile cover letter: %v", err)
+	}
+	if _, err := s.CreateDocumentReview(context.Background(), application.ID, store.DocumentTypeCoverLetter, "original draft", store.ReviewOutcomeFlagged, "too generic"); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+
+	// Constructed (and Init-loaded) only after the file/review already
+	// exist, so the initial active-applications load picks them up --
+	// mirrors a fresh TUI session started after the review already
+	// happened, distinct from the in-place refresh this test exercises.
+	app := New(s, newTestSyncer(s, nil), docs)
+	app = applyCmd(t, app, app.Init())
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if app.screen != screenApplicationDetail {
+		t.Fatalf("screen after enter = %v, want screenApplicationDetail", app.screen)
+	}
+	if !strings.Contains(app.View(), "[FLAGGED]") {
+		t.Fatalf("view before revision does not show [FLAGGED]:\n%s", app.View())
+	}
+
+	// Revise the document in place, without leaving application detail.
+	if err := os.WriteFile(status.CoverLetter.Path, []byte("revised draft addressing the feedback"), 0o644); err != nil {
+		t.Fatalf("rewrite cover letter: %v", err)
+	}
+
+	app, cmd := sendKey(app, runeKey('u'))
+	if cmd == nil {
+		t.Fatal("Update on 'u' returned nil Cmd, want a command that refreshes application detail")
+	}
+	app = applyCmd(t, app, cmd)
+
+	view := app.View()
+	if strings.Contains(view, "[FLAGGED]") {
+		t.Errorf("view after 'u' still shows [FLAGGED] -- refresh should have picked up the revision:\n%s", view)
+	}
+	if !strings.Contains(view, "[not reviewed]") {
+		t.Errorf("view after 'u' does not show [not reviewed] for the revised cover letter:\n%s", view)
 	}
 }
 

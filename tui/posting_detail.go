@@ -80,6 +80,13 @@ type enterDocumentReviewSelectMsg struct {
 	applicationID int64
 }
 
+// refreshPostingDetailMsg signals that App should reload this posting's
+// application, document status, and reviews from disk/the store without
+// leaving posting detail -- e.g. after an external agent (see
+// .agents/skills/apply-to-posting) revises a document on disk while the
+// user is still looking at this screen (see decisions.log).
+type refreshPostingDetailMsg struct{}
+
 func (m *postingDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	switch {
 	case msg.Type == tea.KeyRight, msg.String() == "l":
@@ -108,6 +115,8 @@ func (m *postingDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		if m.hasApplication {
 			return nil, enterDocumentReviewSelectMsg{applicationID: m.application.ID}
 		}
+	case msg.String() == "u":
+		return nil, refreshPostingDetailMsg{}
 	default:
 		var cmd tea.Cmd
 		m.viewport, cmd = m.viewport.Update(msg)
@@ -120,7 +129,7 @@ func (m *postingDetailModel) View() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render(m.posting.Title) + "\n")
 	b.WriteString(m.viewport.View() + "\n")
-	b.WriteString(helpStyle.Render("↑/↓ (j/k): scroll  ←/→ (h/l): prev/next posting  o: open in browser  a: start application  s: set status  n: edit notes  r: review document  esc/b: back"))
+	b.WriteString(helpStyle.Render("↑/↓ (j/k): scroll  ←/→ (h/l): prev/next posting  o: open in browser  a: start application  s: set status  n: edit notes  r: review document  u: refresh  esc/b: back"))
 	return b.String()
 }
 
