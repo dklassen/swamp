@@ -2005,6 +2005,57 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately(t
 	}
 }
 
+// TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplicationsGlyph
+// covers the gap noted in the #92 follow-up to PR #88's code review:
+// application detail's own badge was already covered (see
+// TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately
+// above), but nothing asserted that backing out to
+// screenActiveApplications afterward shows the compact glyph column
+// (reviewGlyphSummary, e.g. "R:✓") reflecting the same change --
+// currently relying on loadActiveApplications being included in
+// documentReviewCreatedMsg's tea.Batch (see also #91), with no test to
+// catch a regression if that were ever dropped.
+func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplicationsGlyph(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
+
+	status := app.documents.Status(application.ID)
+	if err := os.MkdirAll(filepath.Dir(status.Resume.Path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(status.Resume.Path, []byte("# Resume"), 0o644); err != nil {
+		t.Fatalf("WriteFile resume: %v", err)
+	}
+
+	if strings.Contains(app.View(), "R:✓") {
+		t.Fatal("active-applications view already shows R:✓ before any review was submitted")
+	}
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, _ = sendKey(app, runeKey('R'))
+	if app.screen != screenDocumentReviewForm {
+		t.Fatalf("screen after 'R' = %v, want screenDocumentReviewForm", app.screen)
+	}
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyCtrlS}) // pass
+	if cmd == nil {
+		t.Fatal("Update on ctrl+s returned nil Cmd, want a command that saves the review")
+	}
+	app = applyCmd(t, app, cmd)
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	if app.screen != screenActiveApplications {
+		t.Fatalf("screen after esc = %v, want screenActiveApplications", app.screen)
+	}
+	view := app.View()
+	if !strings.Contains(view, "R:✓") {
+		t.Errorf("active-applications view after esc does not show R:✓ for the just-passed resume review:\n%s", view)
+	}
+}
+
 // TestApp_SubmitDocumentReviewFromPostingDetailViaApplicationDetailFastPath_KeepsApplication
 // is a regression test: application detail's 'p' enters posting detail via
 // the fast path (see decisions.log #87 follow-up), which never populates
