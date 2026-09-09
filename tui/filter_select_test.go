@@ -111,81 +111,90 @@ func TestFilterSelectModel_Enter_ReturnsSaveFilterSelectionMsg(t *testing.T) {
 	}
 }
 
-func TestFilterWindow_FitsEverything_ReturnsFullRangeForBothGroups(t *testing.T) {
-	t.Parallel()
-
-	deptStart, deptEnd, locStart, locEnd := filterWindow(1, 2, 2, 10)
-	if deptStart != 0 || deptEnd != 2 {
-		t.Fatalf("dept range = (%d, %d), want (0, 2)", deptStart, deptEnd)
+func TestFilterWindow(t *testing.T) {
+	tests := []struct {
+		name                                                 string
+		cursor, numDepts, numLocs, rows                      int
+		wantDeptStart, wantDeptEnd, wantLocStart, wantLocEnd int
+	}{
+		{
+			name:          "fits everything returns full range for both groups",
+			cursor:        1,
+			numDepts:      2,
+			numLocs:       2,
+			rows:          10,
+			wantDeptStart: 0, wantDeptEnd: 2,
+			wantLocStart: 0, wantLocEnd: 2,
+		},
+		{
+			// Before the first tea.WindowSizeMsg arrives, height is 0 --
+			// don't hide anything (mirrors visibleWindow's own
+			// zero-rows behavior).
+			name:          "zero rows returns full range for both groups",
+			cursor:        4,
+			numDepts:      2,
+			numLocs:       3,
+			rows:          0,
+			wantDeptStart: 0, wantDeptEnd: 2,
+			wantLocStart: 0, wantLocEnd: 3,
+		},
+		{
+			// cursor 10 = location index 8 (10 - 2 departments) of 20
+			// locations -- window has scrolled past all departments
+			// (empty dept range), 5 rows centered on location index 8.
+			name:          "cursor deep in locations hides department group entirely",
+			cursor:        10,
+			numDepts:      2,
+			numLocs:       20,
+			rows:          5,
+			wantDeptStart: 2, wantDeptEnd: 2,
+			wantLocStart: 6, wantLocEnd: 11,
+		},
+		{
+			// Window hasn't reached locations yet (empty loc range); 5
+			// rows starting at the top of 20 departments.
+			name:          "cursor in departments hides location group entirely",
+			cursor:        1,
+			numDepts:      20,
+			numLocs:       5,
+			rows:          5,
+			wantDeptStart: 0, wantDeptEnd: 5,
+			wantLocStart: 0, wantLocEnd: 0,
+		},
+		{
+			// cursor 2 = last department (index 2) of 3 departments + 3
+			// locations, 4 rows -- window should show all 3 departments
+			// and the first location, keeping the cursor visible
+			// without hiding either header unnecessarily.
+			name:          "window straddles both groups shows part of each",
+			cursor:        2,
+			numDepts:      3,
+			numLocs:       3,
+			rows:          4,
+			wantDeptStart: 0, wantDeptEnd: 3,
+			wantLocStart: 0, wantLocEnd: 1,
+		},
+		{
+			name:          "no departments treats group as empty",
+			cursor:        2,
+			numDepts:      0,
+			numLocs:       5,
+			rows:          3,
+			wantDeptStart: 0, wantDeptEnd: 0,
+			wantLocStart: 1, wantLocEnd: 4,
+		},
 	}
-	if locStart != 0 || locEnd != 2 {
-		t.Fatalf("loc range = (%d, %d), want (0, 2)", locStart, locEnd)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-func TestFilterWindow_ZeroRows_ReturnsFullRangeForBothGroups(t *testing.T) {
-	t.Parallel()
-
-	// Before the first tea.WindowSizeMsg arrives, height is 0 -- don't
-	// hide anything (mirrors visibleWindow's own zero-rows behavior).
-	deptStart, deptEnd, locStart, locEnd := filterWindow(4, 2, 3, 0)
-	if deptStart != 0 || deptEnd != 2 {
-		t.Fatalf("dept range = (%d, %d), want (0, 2)", deptStart, deptEnd)
-	}
-	if locStart != 0 || locEnd != 3 {
-		t.Fatalf("loc range = (%d, %d), want (0, 3)", locStart, locEnd)
-	}
-}
-
-func TestFilterWindow_CursorDeepInLocations_HidesDepartmentGroupEntirely(t *testing.T) {
-	t.Parallel()
-
-	// cursor 10 = location index 8 (10 - 2 departments) of 20 locations.
-	deptStart, deptEnd, locStart, locEnd := filterWindow(10, 2, 20, 5)
-	if deptStart != deptEnd {
-		t.Fatalf("dept range = (%d, %d), want empty -- window has scrolled past all departments", deptStart, deptEnd)
-	}
-	if locStart != 6 || locEnd != 11 {
-		t.Fatalf("loc range = (%d, %d), want (6, 11) -- 5 rows centered on location index 8", locStart, locEnd)
-	}
-}
-
-func TestFilterWindow_CursorInDepartments_HidesLocationGroupEntirely(t *testing.T) {
-	t.Parallel()
-
-	deptStart, deptEnd, locStart, locEnd := filterWindow(1, 20, 5, 5)
-	if locStart != locEnd {
-		t.Fatalf("loc range = (%d, %d), want empty -- window hasn't reached locations yet", locStart, locEnd)
-	}
-	if deptEnd-deptStart != 5 {
-		t.Fatalf("dept window size = %d, want 5", deptEnd-deptStart)
-	}
-}
-
-func TestFilterWindow_WindowStraddlesBothGroups_ShowsPartOfEach(t *testing.T) {
-	t.Parallel()
-
-	// cursor 2 = last department (index 2) of 3 departments + 3 locations,
-	// 4 rows -- window should show all 3 departments and the first
-	// location, keeping the cursor visible without hiding either header
-	// unnecessarily.
-	deptStart, deptEnd, locStart, locEnd := filterWindow(2, 3, 3, 4)
-	if deptStart != 0 || deptEnd != 3 {
-		t.Fatalf("dept range = (%d, %d), want (0, 3) -- all departments visible", deptStart, deptEnd)
-	}
-	if locStart != 0 || locEnd != 1 {
-		t.Fatalf("loc range = (%d, %d), want (0, 1) -- first location visible", locStart, locEnd)
-	}
-}
-
-func TestFilterWindow_NoDepartments_TreatsGroupAsEmpty(t *testing.T) {
-	t.Parallel()
-
-	deptStart, deptEnd, locStart, locEnd := filterWindow(2, 0, 5, 3)
-	if deptStart != 0 || deptEnd != 0 {
-		t.Fatalf("dept range = (%d, %d), want (0, 0) -- no departments exist", deptStart, deptEnd)
-	}
-	if locStart != 1 || locEnd != 4 {
-		t.Fatalf("loc range = (%d, %d), want (1, 4)", locStart, locEnd)
+			deptStart, deptEnd, locStart, locEnd := filterWindow(tt.cursor, tt.numDepts, tt.numLocs, tt.rows)
+			if deptStart != tt.wantDeptStart || deptEnd != tt.wantDeptEnd {
+				t.Errorf("dept range = (%d, %d), want (%d, %d)", deptStart, deptEnd, tt.wantDeptStart, tt.wantDeptEnd)
+			}
+			if locStart != tt.wantLocStart || locEnd != tt.wantLocEnd {
+				t.Errorf("loc range = (%d, %d), want (%d, %d)", locStart, locEnd, tt.wantLocStart, tt.wantLocEnd)
+			}
+		})
 	}
 }

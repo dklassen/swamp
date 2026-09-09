@@ -2,48 +2,61 @@ package tui
 
 import "testing"
 
-func TestBrowserCommand_Darwin_UsesOpen(t *testing.T) {
-	cmd, args, err := browserCommand("darwin", "https://example.com")
-	if err != nil {
-		t.Fatalf("browserCommand: %v", err)
+func TestBrowserCommand(t *testing.T) {
+	tests := []struct {
+		name    string
+		goos    string
+		wantCmd string
+		wantArg []string
+		wantErr bool
+	}{
+		{
+			name:    "darwin uses open",
+			goos:    "darwin",
+			wantCmd: "open",
+			wantArg: []string{"https://example.com"},
+		},
+		{
+			name:    "linux uses xdg-open",
+			goos:    "linux",
+			wantCmd: "xdg-open",
+			wantArg: []string{"https://example.com"},
+		},
+		{
+			name:    "windows uses rundll32",
+			goos:    "windows",
+			wantCmd: "rundll32",
+			wantArg: []string{"url.dll,FileProtocolHandler", "https://example.com"},
+		},
+		{
+			name:    "unsupported OS returns error",
+			goos:    "plan9",
+			wantErr: true,
+		},
 	}
-	if cmd != "open" {
-		t.Fatalf("cmd = %q, want %q", cmd, "open")
-	}
-	if len(args) != 1 || args[0] != "https://example.com" {
-		t.Fatalf("args = %v, want [https://example.com]", args)
-	}
-}
-
-func TestBrowserCommand_Linux_UsesXdgOpen(t *testing.T) {
-	cmd, args, err := browserCommand("linux", "https://example.com")
-	if err != nil {
-		t.Fatalf("browserCommand: %v", err)
-	}
-	if cmd != "xdg-open" {
-		t.Fatalf("cmd = %q, want %q", cmd, "xdg-open")
-	}
-	if len(args) != 1 || args[0] != "https://example.com" {
-		t.Fatalf("args = %v, want [https://example.com]", args)
-	}
-}
-
-func TestBrowserCommand_Windows_UsesRundll32(t *testing.T) {
-	cmd, args, err := browserCommand("windows", "https://example.com")
-	if err != nil {
-		t.Fatalf("browserCommand: %v", err)
-	}
-	if cmd != "rundll32" {
-		t.Fatalf("cmd = %q, want %q", cmd, "rundll32")
-	}
-	if len(args) != 2 || args[0] != "url.dll,FileProtocolHandler" || args[1] != "https://example.com" {
-		t.Fatalf("args = %v, want [url.dll,FileProtocolHandler https://example.com]", args)
-	}
-}
-
-func TestBrowserCommand_UnsupportedOS_ReturnsError(t *testing.T) {
-	_, _, err := browserCommand("plan9", "https://example.com")
-	if err == nil {
-		t.Fatal("browserCommand: expected error for unsupported OS, got nil")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cmd, args, err := browserCommand(tt.goos, "https://example.com")
+			if tt.wantErr {
+				if err == nil {
+					t.Fatalf("browserCommand(%q, ...): expected error, got nil", tt.goos)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("browserCommand(%q, ...): %v", tt.goos, err)
+			}
+			if cmd != tt.wantCmd {
+				t.Fatalf("cmd = %q, want %q", cmd, tt.wantCmd)
+			}
+			if len(args) != len(tt.wantArg) {
+				t.Fatalf("args = %v, want %v", args, tt.wantArg)
+			}
+			for i, want := range tt.wantArg {
+				if args[i] != want {
+					t.Fatalf("args = %v, want %v", args, tt.wantArg)
+				}
+			}
+		})
 	}
 }
