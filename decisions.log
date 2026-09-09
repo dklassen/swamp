@@ -3928,3 +3928,58 @@ behavior changed (test-only), so the manual-tmux-verification step in
 AGENTS.md's feature-branch workflow doesn't apply here -- the
 fault-injection check above is the stronger equivalent for a test-only
 change.
+
+## 2026-09-09 -- More table-driven test cleanup, same pattern as #92
+
+Follow-up to #92 (table-driven tests for application_detail_test.go).
+Asked broadly which other tests in the repo could be table-driven;
+surveyed every *_test.go file rather than guessing from names, and
+converted the four clearest, highest-confidence candidates:
+
+1. greenhouse/html_test.go's 7 TestStripHTML_* functions -> one
+   TestStripHTML with input/want string pairs. The cleanest case in the
+   repo: single function, uniform assertion shape, no divergence between
+   cases beyond the input/output strings.
+2. tui/browser_test.go's 4 TestBrowserCommand_* functions -> one
+   TestBrowserCommand, keyed by GOOS with an optional wantErr case for
+   the unsupported-OS path.
+3. tui/viewport_test.go's 5 TestVisibleWindow_* functions -> one
+   TestVisibleWindow -- cursor/total/rows in, start/end out.
+4. tui/filter_select_test.go's 6 TestFilterWindow_* functions -> one
+   TestFilterWindow. Two of the original cases only asserted part of the
+   4-value return (one checked dept range equality without its exact
+   value, another checked loc-window size without its exact start) --
+   rather than guess at the missing values, ran filterWindow with those
+   exact inputs directly first (a throwaway scratch test, deleted after)
+   to confirm the real output, then encoded the full four-value result
+   as the row's want. This is a deliberate small strengthening (a table
+   needs one full assertion shape per row to stay uniform), not a guess
+   -- these are exact outputs of a pure function on fixed integer
+   inputs, not the kind of value that should legitimately drift while
+   preserving correct behavior.
+
+Explicitly NOT converted (surveyed and rejected, see the same
+conversation): filter/filter_test.go's TestMatch_* already uses a shared
+assertMatch helper, so the actual duplication (repeated assertion logic)
+this pattern exists to fix is already solved there -- the separate
+function names document distinct behaviors (case-insensitivity,
+multi-value OR, multi-field AND, etc.) more clearly than table rows
+would. documents/documents_test.go's Status true/false pair is only 2
+cases with meaningfully different setup complexity (the false case is
+trivial, the true case needs real file writes and checks an extra
+field) -- not enough duplication to be worth the abstraction.
+
+Also identified but deliberately left for a separate pass (out of
+today's scope, not fixed here): tui/posting_detail_test.go's three
+truly-identical no-op tests (A_HasApplication_NoOp,
+S_NoApplication_NoOp, R_NoApplication_NoOp -- same assertion, differ
+only by key and one bool) and tui/company_form_test.go's
+CreatesCompanyWithSelectedSource/CreatesCompanyWithLeverSource pair
+(same shape as the #92 conversions). Real candidates, not done in this
+pass because they weren't part of what was scoped when this work
+started.
+
+Verified: full build/test/lint/fmt clean. No production/runtime-visible
+behavior changed (test-only), so the manual-tmux-verification step in
+AGENTS.md's feature-branch workflow doesn't apply here, matching #92's
+same reasoning.
