@@ -51,29 +51,29 @@ func TestApplicationDetailModel_P_ReturnsEnterPostingDetailMsg(t *testing.T) {
 	}
 }
 
-func TestApplicationDetailModel_L_ReturnsOpenCoverLetterCmd(t *testing.T) {
+func TestApplicationDetailModel_OpenDocument_ReturnsEditorCmd(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationDetailModel(documents.NewStore(t.TempDir()), testApplicationView())
-	cmd, intent := m.Update(runeKey('l'))
-	if cmd == nil {
-		t.Fatal("cmd = nil, want a command that opens the cover letter in $EDITOR")
+	tests := []struct {
+		name string
+		key  rune
+	}{
+		{name: "l opens cover letter", key: 'l'},
+		{name: "r opens resume", key: 'r'},
 	}
-	if intent != nil {
-		t.Fatalf("intent = %v, want nil", intent)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-func TestApplicationDetailModel_R_ReturnsOpenResumeCmd(t *testing.T) {
-	t.Parallel()
-
-	m := newApplicationDetailModel(documents.NewStore(t.TempDir()), testApplicationView())
-	cmd, intent := m.Update(runeKey('r'))
-	if cmd == nil {
-		t.Fatal("cmd = nil, want a command that opens the resume in $EDITOR")
-	}
-	if intent != nil {
-		t.Fatalf("intent = %v, want nil", intent)
+			m := newApplicationDetailModel(documents.NewStore(t.TempDir()), testApplicationView())
+			cmd, intent := m.Update(runeKey(tt.key))
+			if cmd == nil {
+				t.Fatal("cmd = nil, want a command that opens the document in $EDITOR")
+			}
+			if intent != nil {
+				t.Fatalf("intent = %v, want nil", intent)
+			}
+		})
 	}
 }
 
@@ -87,69 +87,66 @@ func TestApplicationDetailModel_ShiftL_OnMissingCoverLetter_NoOp(t *testing.T) {
 	}
 }
 
-func TestApplicationDetailModel_ShiftL_OnExistingCoverLetter_ReturnsEnterDocumentReviewFormMsg(t *testing.T) {
+func TestApplicationDetailModel_EnterReview_OnExistingDocument_ReturnsEnterDocumentReviewFormMsg(t *testing.T) {
 	t.Parallel()
 
-	dir := t.TempDir()
-	docs := documents.NewStore(dir)
-	if _, err := docs.EnsureDir(1); err != nil {
-		t.Fatalf("EnsureDir: %v", err)
+	tests := []struct {
+		name         string
+		key          rune
+		filename     string
+		content      string
+		documentType store.DocumentType
+	}{
+		{
+			name:         "shift+L reviews cover letter",
+			key:          'L',
+			filename:     "cover_letter.md",
+			content:      "Dear hiring manager, I am excited to apply.",
+			documentType: store.DocumentTypeCoverLetter,
+		},
+		{
+			name:         "shift+R reviews resume",
+			key:          'R',
+			filename:     "resume.md",
+			content:      "# Resume",
+			documentType: store.DocumentTypeResume,
+		},
 	}
-	want := "Dear hiring manager, I am excited to apply."
-	if err := os.WriteFile(filepath.Join(dir, "1", "cover_letter.md"), []byte(want), 0o644); err != nil {
-		t.Fatalf("write cover letter: %v", err)
-	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	m := newApplicationDetailModel(docs, testApplicationView())
-	cmd, intent := m.Update(runeKey('L'))
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	got, ok := intent.(enterDocumentReviewFormMsg)
-	if !ok {
-		t.Fatalf("intent = %T, want enterDocumentReviewFormMsg", intent)
-	}
-	if got.err != nil {
-		t.Fatalf("err = %v, want nil", got.err)
-	}
-	if got.applicationID != 1 {
-		t.Fatalf("applicationID = %d, want 1", got.applicationID)
-	}
-	if got.documentType != store.DocumentTypeCoverLetter {
-		t.Fatalf("documentType = %v, want %v", got.documentType, store.DocumentTypeCoverLetter)
-	}
-	if got.content != want {
-		t.Fatalf("content = %q, want %q", got.content, want)
-	}
-}
+			dir := t.TempDir()
+			docs := documents.NewStore(dir)
+			if _, err := docs.EnsureDir(1); err != nil {
+				t.Fatalf("EnsureDir: %v", err)
+			}
+			if err := os.WriteFile(filepath.Join(dir, "1", tt.filename), []byte(tt.content), 0o644); err != nil {
+				t.Fatalf("write %s: %v", tt.filename, err)
+			}
 
-func TestApplicationDetailModel_ShiftR_OnExistingResume_ReturnsEnterDocumentReviewFormMsg(t *testing.T) {
-	t.Parallel()
-
-	dir := t.TempDir()
-	docs := documents.NewStore(dir)
-	if _, err := docs.EnsureDir(1); err != nil {
-		t.Fatalf("EnsureDir: %v", err)
-	}
-	want := "# Resume"
-	if err := os.WriteFile(filepath.Join(dir, "1", "resume.md"), []byte(want), 0o644); err != nil {
-		t.Fatalf("write resume: %v", err)
-	}
-
-	m := newApplicationDetailModel(docs, testApplicationView())
-	cmd, intent := m.Update(runeKey('R'))
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	got, ok := intent.(enterDocumentReviewFormMsg)
-	if !ok {
-		t.Fatalf("intent = %T, want enterDocumentReviewFormMsg", intent)
-	}
-	if got.documentType != store.DocumentTypeResume {
-		t.Fatalf("documentType = %v, want %v", got.documentType, store.DocumentTypeResume)
-	}
-	if got.content != want {
-		t.Fatalf("content = %q, want %q", got.content, want)
+			m := newApplicationDetailModel(docs, testApplicationView())
+			cmd, intent := m.Update(runeKey(tt.key))
+			if cmd != nil {
+				t.Fatalf("cmd = %v, want nil", cmd)
+			}
+			got, ok := intent.(enterDocumentReviewFormMsg)
+			if !ok {
+				t.Fatalf("intent = %T, want enterDocumentReviewFormMsg", intent)
+			}
+			if got.err != nil {
+				t.Fatalf("err = %v, want nil", got.err)
+			}
+			if got.applicationID != 1 {
+				t.Fatalf("applicationID = %d, want 1", got.applicationID)
+			}
+			if got.documentType != tt.documentType {
+				t.Fatalf("documentType = %v, want %v", got.documentType, tt.documentType)
+			}
+			if got.content != tt.content {
+				t.Fatalf("content = %q, want %q", got.content, tt.content)
+			}
+		})
 	}
 }
 

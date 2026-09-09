@@ -3881,3 +3881,50 @@ applications -> enter -> application detail -> 'p' -> posting detail
 ctrl+s (pass) -> posting detail re-renders with "Application status:
 application_started" and "[PASSED]" still shown, no "No application
 started" regression.
+
+## 2026-09-09 -- Table-driven tests + active-applications glyph coverage (#92)
+
+Issue #92 was filed from PR #88's code review (conventions + test-coverage
+angles), deliberately not fixed in that PR to keep its code-review-response
+commit focused on the one correctness bug it was addressing. Two asks:
+
+1. Two copy-pasted L/R-keyed test pairs in
+   tui/application_detail_test.go -- AGENTS.md's Testing section requires
+   table-driven tests for any function with multiple input/output cases.
+2. Missing coverage: no test asserted that submitting a review from
+   application detail and backing out to screenActiveApplications shows
+   the updated compact glyph column (reviewGlyphSummary, e.g. "R:✓") --
+   only application detail's own badge was covered
+   (TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately).
+   That refresh currently works only because
+   documentReviewCreatedMsg's screenApplicationDetail branch happens to
+   include loadActiveApplications in its tea.Batch (see also #91) -- with
+   no test, a future edit could drop it silently.
+
+Fix for (1): collapsed
+TestApplicationDetailModel_L_ReturnsOpenCoverLetterCmd/_R_ReturnsOpenResumeCmd
+into TestApplicationDetailModel_OpenDocument_ReturnsEditorCmd, and
+TestApplicationDetailModel_ShiftL_OnExistingCoverLetter_.../_ShiftR_OnExistingResume_...
+into TestApplicationDetailModel_EnterReview_OnExistingDocument_..., both
+as t.Run subtests per AGENTS.md's table-driven convention. Left
+TestApplicationDetailModel_ShiftL_OnMissingCoverLetter_NoOp alone -- it
+has no ShiftR counterpart to pair with (not the copy-pasted-pair problem
+the issue flagged), and adding one would be scope beyond what #92 asked
+for.
+
+Fix for (2): added
+TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplicationsGlyph,
+modeled on the existing UpdatesBadgeImmediately test but continuing past
+the save to press esc back to screenActiveApplications and assert the
+glyph column. Verified the test actually has teeth (not vacuously
+passing for an unrelated reason) by temporarily dropping
+loadActiveApplications from documentReviewCreatedMsg's tea.Batch,
+confirming the new test failed (glyph stayed "R:-" instead of "R:✓"),
+then reverting -- this is the regression the issue was worried about,
+reproduced and confirmed caught.
+
+Verified: full build/test/lint/fmt clean. No production/runtime-visible
+behavior changed (test-only), so the manual-tmux-verification step in
+AGENTS.md's feature-branch workflow doesn't apply here -- the
+fault-injection check above is the stronger equivalent for a test-only
+change.
