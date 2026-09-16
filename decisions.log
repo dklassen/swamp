@@ -3984,6 +3984,70 @@ behavior changed (test-only), so the manual-tmux-verification step in
 AGENTS.md's feature-branch workflow doesn't apply here, matching #92's
 same reasoning.
 
+## 2026-09-15 -- Bulk company import from a YAML seed file (`swamp import`)
+
+Problem: the only way to add a company was the TUI's one-at-a-time
+add-company form. Populating the db with a list of already-known
+companies (name + board + slug) meant retyping each one by hand.
+
+Decisions:
+
+1. New `seed` package does structural YAML parsing only (well-formed
+   file, no blank name/source/source_ref) -- it deliberately does NOT
+   validate that `source` is one of the supported boards. That list
+   already exists in two places (tui.companySources,
+   cmd/swamp/main.go's newSyncer map keys); adding a third hardcoded
+   copy in `seed` would just be a third place to drift out of sync.
+   Membership is instead checked downstream, against whatever fetchers
+   map the caller actually has at runtime.
+
+2. `sync.Syncer.ImportCompanies` validates each entry against its
+   source's real API before creating it, by calling the existing
+   `PostingFetcher.FetchPostings` and treating an error as "this
+   source_ref doesn't resolve to a real board" -- the same live check
+   issue #36 specs for the manual add-company form, reused here rather
+   than building a second, lighter-weight "does this slug exist" method
+   on each client. Tradeoff accepted: this means importing does one
+   throwaway fetch per company (the postings it returns are discarded,
+   not ingested) rather than a cheaper existence-only call. Ingestion
+   itself is deliberately left to the next `swamp fetch` / TUI refresh,
+   matching how adding a company through the TUI already works today
+   (creating one doesn't auto-sync it).
+
+3. Per-item isolation, same idiom as `SyncAll`: one bad row (unsupported
+   source, or a source_ref the board rejects) is recorded on that row's
+   result and does not abort the rest of the batch.
+
+4. `store.CreateCompany` was already idempotent on (source, source_ref)
+   (restores/renames a soft-deleted match instead of erroring) -- so
+   re-running the same seed file is safe for free, no new dedup logic
+   needed in the importer.
+
+5. CLI surface is a flat `swamp import <file>` subcommand (alongside
+   `fetch`/`stage`), not a `swamp company import` nested under a new
+   `company` namespace -- consistent with the existing flat verbs, and
+   there's no other company-related subcommand today that would justify
+   opening that namespace.
+
+6. `gopkg.in/yaml.v3` promoted from an indirect to a direct dependency
+   in go.mod -- it was already in the module graph transitively, so no
+   new library was introduced for this.
+
+Not done: no GitHub issue was filed for this before branching (user
+explicitly opted out, given the issue-driven workflow is normally the
+default for feature work in this repo).
+
+Verified: build/test/fmt clean. `go tool golangci-lint run` could not
+be completed in this environment -- it was reliably OOM-killed (the
+sandbox's cgroup memory cap is 1GB) on every attempt, including on an
+unrelated pre-existing package, so this looks like an environment
+limitation rather than something introduced by this change; `go vet`
+was run instead as a partial substitute. Manually verified against the
+real Greenhouse API with a mixed seed file (one real slug, one typo'd
+one): the real company imported, the typo'd one was rejected with
+Greenhouse's actual 404, and re-running the same file did not create a
+duplicate.
+
 ## 2026-09-17 -- Code review fixes on pdf-export branch (issue #45)
 
 /code-review against main on the pdf-export branch (new pdf/ package +
