@@ -1,8 +1,9 @@
 // Command swamp is the entrypoint: it launches the TUI by default, runs a
 // one-off refresh with the `fetch` subcommand, drives the agent hand-off
-// mechanism with the `stage` subcommand, or converts an application's
-// drafted documents to PDF with the `export` subcommand. Not unit tested
-// per this project's testing decisions -- verified manually.
+// mechanism with the `stage` subcommand, converts an application's
+// drafted documents to PDF with the `export` subcommand, or bulk-creates
+// companies from a YAML seed file with the `import` subcommand. Not unit
+// tested per this project's testing decisions -- verified manually.
 package main
 
 import (
@@ -27,6 +28,7 @@ import (
 	"github.com/dklassen/swamp/greenhouse"
 	"github.com/dklassen/swamp/lever"
 	"github.com/dklassen/swamp/pdf"
+	"github.com/dklassen/swamp/seed"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
@@ -80,8 +82,11 @@ func main() {
 		case "export":
 			runExport(s, documentsStore, os.Args[2:])
 			return
+		case "import":
+			runImport(s, os.Args[2:])
+			return
 		default:
-			fmt.Fprintf(os.Stderr, "usage: %s [fetch|stage|export]\n", os.Args[0])
+			fmt.Fprintf(os.Stderr, "usage: %s [fetch|stage|export|import]\n", os.Args[0])
 			os.Exit(1)
 		}
 	}
@@ -103,6 +108,44 @@ func newSyncer(s *store.Store) *sync.Syncer {
 		"greenhouse": greenhouse.NewClient(),
 		"lever":      lever.NewClient(),
 	})
+}
+
+// runImport bulk-creates companies from a YAML seed file (see the seed
+// package for its shape). Each entry is validated against its source's
+// real API before being saved, so a bad row is reported and skipped
+// rather than silently creating a dead company; re-running the same file
+// is always safe (store.CreateCompany is idempotent on source+source_ref).
+func runImport(s *store.Store, args []string) {
+	if len(args) != 1 {
+		fmt.Fprintf(os.Stderr, "usage: %s import <seed-file.yaml>\n", os.Args[0])
+		os.Exit(1)
+	}
+
+	f, err := os.Open(args[0])
+	if err != nil {
+		log.Fatalf("open seed file: %v", err)
+	}
+	defer func() {
+		if err := f.Close(); err != nil {
+			log.Printf("close seed file: %v", err)
+		}
+	}()
+
+	entries, err := seed.Parse(f)
+	if err != nil {
+		log.Fatalf("parse seed file: %v", err)
+	}
+
+	syncer := newSyncer(s)
+	results := syncer.ImportCompanies(context.Background(), entries)
+
+	for _, r := range results {
+		if r.Err != nil {
+			fmt.Printf("%s (%s/%s): error: %v\n", r.Name, r.Source, r.SourceRef, r.Err)
+			continue
+		}
+		fmt.Printf("%s (%s/%s): imported\n", r.Name, r.Source, r.SourceRef)
+	}
 }
 
 func runFetch(s *store.Store) {
