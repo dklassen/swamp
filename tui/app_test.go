@@ -822,7 +822,7 @@ func TestApp_OpenPostingDetail_WithExistingApplication_LoadsAndDisplaysStatus(t 
 	if application.Status != store.ApplicationStatusStarted {
 		t.Fatalf("loaded application.Status = %s, want %s", application.Status, store.ApplicationStatusStarted)
 	}
-	if !strings.Contains(app.postingDetail.viewport.View(), "application_started") {
+	if !strings.Contains(app.postingDetail.viewport.View(), applicationStatusLabel(store.ApplicationStatusStarted)) {
 		t.Fatalf("detail viewport view = %q, want it to contain the application status", app.postingDetail.viewport.View())
 	}
 }
@@ -1188,7 +1188,7 @@ func TestApp_PressA_OnPostingDetail_CreatedApplication_ReflectedInDetailView(t *
 	}
 	app, _ = sendKey(app, cmd())
 
-	if !strings.Contains(app.postingDetail.viewport.View(), "application_started") {
+	if !strings.Contains(app.postingDetail.viewport.View(), applicationStatusLabel(store.ApplicationStatusStarted)) {
 		t.Fatalf("detail view after creating application = %q, want it to contain the new status", app.postingDetail.viewport.View())
 	}
 }
@@ -1221,8 +1221,8 @@ func TestApp_PostingDetail_NavigatingBetweenPostings_LoadsEachPostingsOwnApplica
 	}
 	app, _ = sendKey(app, cmd())
 
-	if !strings.Contains(app.postingDetail.viewport.View(), "interviewing") {
-		t.Fatalf("detail view for Designer = %q, want it to contain %q", app.postingDetail.viewport.View(), "interviewing")
+	if !strings.Contains(app.postingDetail.viewport.View(), applicationStatusLabel(store.ApplicationStatusInterviewing)) {
+		t.Fatalf("detail view for Designer = %q, want it to contain %q", app.postingDetail.viewport.View(), applicationStatusLabel(store.ApplicationStatusInterviewing))
 	}
 	if _, ok := app.applicationsByPosting[engineerID]; ok {
 		t.Fatal("applicationsByPosting has an entry for Engineer, want none (it has no application)")
@@ -2895,5 +2895,21 @@ func TestApp_Export_Failure_SurfacesErrorAndKeepsRememberedDir(t *testing.T) {
 	}
 	if app.exportDir != before {
 		t.Errorf("exportDir = %q, want it left at %q -- a failed export shouldn't be remembered as the new default", app.exportDir, before)
+	}
+}
+
+func TestPostingDetailContent_ShowsStatusLabelNotEnumValue(t *testing.T) {
+	t.Parallel()
+
+	posting := store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}}
+	application := store.Application{ID: 1, Status: store.ApplicationStatusOfferReceived}
+
+	got := postingDetailContent(posting, application, true, documents.NewStore(t.TempDir()), nil)
+
+	if !strings.Contains(got, "Offer received") {
+		t.Errorf("postingDetailContent() = %q, want the human-readable status label", got)
+	}
+	if strings.Contains(got, "offer_received") {
+		t.Errorf("postingDetailContent() leaks the raw enum value \"offer_received\" into the UI")
 	}
 }
