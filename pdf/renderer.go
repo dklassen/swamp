@@ -62,6 +62,13 @@ func (r *renderer) renderBlock(n ast.Node) {
 		pageW, pageH := r.doc.GetPageSize()
 		_, breakMargin := r.doc.GetAutoPageBreak()
 		h := lineHeight(baseFontSize) * 1.5
+		// A rule introduces the block after it, so the two have to
+		// break together. Reserving only the rule's own height let it
+		// draw into space the following heading then couldn't fit in,
+		// stranding the rule as the last mark on the page with a band
+		// of white space beneath it and its heading orphaned onto the
+		// next page.
+		h += firstLineHeight(n.NextSibling())
 		// Line() draws directly, unlike Write/Cell -- it doesn't
 		// participate in fpdf's SetAutoPageBreak logic, so a break
 		// landing near the bottom margin needs its own explicit check
@@ -147,4 +154,19 @@ func headingFontSize(level int) float64 {
 // following the common fpdf convention of roughly half the point size.
 func lineHeight(fontSize float64) float64 {
 	return fontSize * 0.5
+}
+
+// firstLineHeight is the height of the first line n will render as,
+// used to keep a thematic break on the same page as the block it
+// introduces. A nil node is a rule with nothing after it, which needs no
+// room reserved beyond its own.
+func firstLineHeight(n ast.Node) float64 {
+	switch v := n.(type) {
+	case nil:
+		return 0
+	case *ast.Heading:
+		return lineHeight(headingFontSize(v.Level))
+	default:
+		return lineHeight(baseFontSize)
+	}
 }
