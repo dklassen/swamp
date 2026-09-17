@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -132,5 +133,33 @@ func TestActiveApplicationListModel_EmptyList_KeysDoNotPanic(t *testing.T) {
 		if cmd, intent := m.Update(key, nil); cmd != nil || intent != nil {
 			t.Fatalf("Update(%v) on empty list = %v, %v, want nil, nil", key, cmd, intent)
 		}
+	}
+}
+
+func TestActiveApplicationListModel_E_EntersExportForSelectedApplication(t *testing.T) {
+	t.Parallel()
+
+	m := newActiveApplicationListModel()
+	apps := testActiveApplications()
+	m.Update(tea.KeyMsg{Type: tea.KeyDown}, apps)
+
+	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")}, apps)
+
+	got, ok := intent.(enterApplicationExportMsg)
+	if !ok {
+		t.Fatalf("intent = %T, want enterApplicationExportMsg", intent)
+	}
+	if got.application.ID != apps[1].ID {
+		t.Errorf("exported application ID = %d, want %d (the one under the cursor)", got.application.ID, apps[1].ID)
+	}
+}
+
+func TestActiveApplicationListModel_View_AdvertisesExport(t *testing.T) {
+	t.Parallel()
+
+	m := newActiveApplicationListModel()
+
+	if got := m.View(testActiveApplications(), 20); !strings.Contains(got, "e: export") {
+		t.Errorf("View() = %q, want it to advertise the export binding", got)
 	}
 }
