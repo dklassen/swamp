@@ -10,6 +10,7 @@ import (
 
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/seed"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -198,4 +199,50 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (Result, erro
 	}
 
 	return result, nil
+}
+
+// ImportResult reports the outcome of importing one seed.Entry.
+// Company is the zero value when Err is set.
+type ImportResult struct {
+	Name      string
+	Source    string
+	SourceRef string
+	Company   store.Company
+	Err       error
+}
+
+// ImportCompanies bulk-creates companies from a parsed seed file. Each
+// entry is validated against its source's real API before being saved
+// (the same live-board check issue #36 specs for the manual add-company
+// form, reused here rather than added a second time): an unsupported
+// Source or a SourceRef that the board rejects fails that entry without
+// creating a row, and without aborting the rest of the batch -- same
+// per-item isolation as SyncAll. A successfully-fetched entry's postings
+// are discarded, not ingested -- exactly like adding a company through
+// the TUI, ingestion happens on the next fetch, not at creation time.
+// store.CreateCompany is already idempotent on (source, source_ref), so
+// re-running the same seed file is always safe.
+func (s *Syncer) ImportCompanies(ctx context.Context, entries []seed.Entry) []ImportResult {
+	results := make([]ImportResult, len(entries))
+	for i, e := range entries {
+		results[i] = ImportResult{Name: e.Name, Source: e.Source, SourceRef: e.SourceRef}
+
+		fetcher, ok := s.fetchers[e.Source]
+		if !ok {
+			results[i].Err = fmt.Errorf("sync: unsupported source %q", e.Source)
+			continue
+		}
+		if _, err := fetcher.FetchPostings(ctx, e.SourceRef); err != nil {
+			results[i].Err = fmt.Errorf("sync: %s/%s does not resolve to a real board: %w", e.Source, e.SourceRef, err)
+			continue
+		}
+
+		company, err := s.store.CreateCompany(ctx, e.Name, e.Source, e.SourceRef)
+		if err != nil {
+			results[i].Err = fmt.Errorf("sync: create company: %w", err)
+			continue
+		}
+		results[i].Company = company
+	}
+	return results
 }
