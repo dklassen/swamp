@@ -8,8 +8,11 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/charmbracelet/x/ansi v0.11.7
 	github.com/charmbracelet/x/cellbuf v0.0.15
+	github.com/go-pdf/fpdf v0.9.0
 	github.com/google/go-cmp v0.7.0
 	github.com/pressly/goose/v3 v3.27.3
+	github.com/yuin/goldmark v1.8.6
+	golang.org/x/image v0.12.0
 	golang.org/x/net v0.57.0
 	modernc.org/sqlite v1.56.0
 )
