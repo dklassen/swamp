@@ -54,6 +54,7 @@ const (
 	screenDocumentReviewForm
 	screenActiveApplications
 	screenApplicationDetail
+	screenApplicationExport
 )
 
 type App struct {
@@ -105,6 +106,13 @@ type App struct {
 	activeApplications    []store.ApplicationView
 	activeApplicationList activeApplicationListModel
 	applicationDetail     applicationDetailModel
+	applicationExport     applicationExportModel
+	// exportDir is the destination the export screen prefills: the last
+	// directory successfully exported to this session, falling back to
+	// defaultExportDir. Ephemeral and in-memory only, like hideArchived
+	// -- a remembered path is a within-session convenience, not
+	// something worth a schema change to persist.
+	exportDir string
 	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
 	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
@@ -132,6 +140,14 @@ type App struct {
 // around a list, reserved when computing how many rows are free for the
 // list itself.
 const chromeRows = 3
+
+// defaultExportDir is where the export screen points before anything has
+// been exported this session. Configured here rather than via the
+// environment or a flag: it's a starting point the user edits in the
+// prompt whenever they want elsewhere, so a code-level default is the
+// whole configuration surface it needs. A leading "~" is expanded when
+// the export actually runs (see expandPath).
+const defaultExportDir = "~/Desktop"
 
 func (a *App) listRows() int {
 	rows := a.height - chromeRows
@@ -174,6 +190,7 @@ func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 		activeApplicationList: newActiveApplicationListModel(),
 		hideArchived:          true,
 		documents:             docs,
+		exportDir:             defaultExportDir,
 	}
 }
 
@@ -968,6 +985,19 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.screen = screenPostingDetail
 			return a, a.rebuildPostingDetailApplication()
 		}
+	case applicationExportedMsg:
+		a.err = msg.err
+		if msg.err != nil {
+			// Stay on the export screen: the overwhelmingly likely
+			// failure is a mistyped destination, and returning to the
+			// list would make the user re-select the application just to
+			// fix a path they can still see.
+			return a, nil
+		}
+		a.exportDir = msg.dir
+		a.status = exportStatusLine(msg)
+		a.screen = screenActiveApplications
+		return a, nil
 	case documentReviewCreatedMsg:
 		a.err = msg.err
 		if msg.err == nil {
@@ -1054,6 +1084,9 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case enterApplicationDetailMsg:
 			a.screen = screenApplicationDetail
 			a.applicationDetail = newApplicationDetailModel(a.documents, v.application)
+		case enterApplicationExportMsg:
+			a.screen = screenApplicationExport
+			a.applicationExport = newApplicationExportModel(a.documents, v.application, a.exportDir, a.width)
 		}
 		return a, cmd
 	case screenApplicationDetail:
@@ -1183,6 +1216,12 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.screen = a.applicationStatusReturnScreen
 		}
 		return a, cmd
+	case screenApplicationExport:
+		cmd, intent := a.applicationExport.Update(msg)
+		if _, ok := intent.(cancelApplicationExportMsg); ok {
+			a.screen = screenActiveApplications
+		}
+		return a, cmd
 	case screenApplicationNotesEdit:
 		cmd, intent := a.applicationNotes.Update(msg)
 		if _, ok := intent.(cancelApplicationNotesMsg); ok {
@@ -1278,6 +1317,8 @@ func (a *App) View() string {
 		b.WriteString(a.postingDetail.View())
 	case screenApplicationStatusSelect:
 		b.WriteString(a.applicationStatus.View())
+	case screenApplicationExport:
+		b.WriteString(a.applicationExport.View())
 	case screenApplicationNotesEdit:
 		b.WriteString(a.applicationNotes.View())
 	case screenDocumentReviewSelect:

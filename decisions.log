@@ -4144,6 +4144,101 @@ URL and email autolinks -- confirmed H1/H2 render at 20pt/16pt (not
 11pt), both autolinks resolve (including the mailto: prefix), and list
 items render as separate bullets, matching the unit-level fixes.
 
+## 2026-09-17 -- TUI: export an application's documents to PDF
+
+The drafted cover letter/resume only become useful once they're a file
+the user can drag into a job board's upload field. `swamp export <id>`
+already converted them, but only into assets/<id>/ and only from the
+CLI -- so the actual workflow was "leave the TUI, find the application
+id, run a command, then go dig the PDF out of the assets tree". This
+adds an 'e' binding on the active-applications screen that prompts for
+a destination folder and generates the PDFs there.
+
+Decisions:
+
+1. New `export` package rather than growing cmd/swamp, documents, or
+   pdf. documents deliberately never reads file content (see its own
+   doc comment) and pdf deliberately knows nothing about where a
+   document lives -- converting a file on disk into a PDF at a chosen
+   path is exactly the seam neither of them owns. cmd/swamp's
+   exportDocumentPDF now delegates to it, so the CLI and the TUI can't
+   drift on how a document becomes a PDF. The CLI's own behavior
+   (sibling .pdf next to the .md) is unchanged.
+
+2. The TUI names files <company>-<title>-<type>.pdf; the CLI keeps
+   plain cover_letter.pdf/resume.pdf. Not an inconsistency: the CLI
+   writes into assets/<id>/, where the directory already identifies the
+   application, while the TUI writes into a shared folder (typically
+   the desktop) where plain names would collide across applications and
+   silently overwrite each other -- and wouldn't say which application
+   they belonged to at the moment of the drag. User chose this over a
+   subfolder-per-application layout, on the grounds that a subfolder
+   adds a navigation step at exactly the moment the point is grabbing
+   the file. Nothing is truncated; posting titles are short enough that
+   a lossless name stays well inside any filesystem limit.
+
+3. The destination is remembered for the session (App.exportDir) and
+   falls back to a code-level `defaultExportDir = "~/Desktop"`.
+   In-memory only, like hideArchived -- a remembered path is a
+   within-session convenience, not worth a schema change. Deliberately
+   a constant rather than an env var or flag (user asked for
+   "code configurable"): it's only ever a prefill the user edits in the
+   prompt, so a code-level default is the whole configuration surface
+   it needs.
+
+4. expandPath resolves a leading "~". The prompt is free text and
+   "~/Desktop" is what a person actually types there; without this it
+   would create a literal "~" directory under the working directory.
+
+5. The destination is created (MkdirAll) rather than required to
+   exist -- refusing a not-yet-existing desktop subfolder would just
+   send the user to a shell to mkdir it.
+
+6. Export is not gated on review outcome, matching runExport: a flagged
+   or unreviewed draft can still be worth seeing as a PDF, and the
+   active-applications list already shows review state per application,
+   so gating here would hide work without explaining why.
+
+7. An undrafted document is skipped, not an error -- the status line
+   says so explicitly ("Exported 1 PDF to /... (skipped resume -- not
+   drafted yet)"), mirroring the CLI's "no document on disk, skipped".
+
+8. A failed export keeps the user on the export screen and does not
+   update the remembered directory. The overwhelmingly likely failure
+   is a mistyped destination, and bouncing back to the list would make
+   them re-select the application just to fix a path still on screen.
+
+9. The per-document-type dispatch (`doc := status.CoverLetter; if
+   documentType == ... doc = status.Resume`) is duplicated once more
+   here rather than introducing documents.Status.Doc(documentType).
+   That accessor was already considered and deliberately declined in
+   the #45 review pass (see the 2026-09-17 entry above) because
+   documents has no dependency on store; reversing that boundary
+   decision unilaterally isn't this change's call to make.
+
+TDD note, recorded rather than glossed: the skip-undrafted and
+tilde-expansion behaviors were implemented in the same chunk as the
+enter-exports behavior, so their tests did not go red first, contrary
+to the one-behavior-at-a-time rule. Rather than rewrite history, both
+were verified after the fact by mutation: removing each behavior
+individually and confirming the corresponding test fails, then
+restoring. Every other behavior on this branch followed the normal
+red-green cycle.
+
+Verified: build/test/lint/fmt all clean (golangci-lint ran fine here --
+0 issues -- unlike the OOM noted in the entry above). Manually verified
+the runtime behavior end-to-end against a copy of the real DB and the
+real assets tree, driving the actual tea.Program with scripted
+keystrokes: 'e' opened the export screen naming the selected
+application with "~/Desktop" prefilled; typing a destination and
+pressing enter wrote
+stackadapt-senior-software-engineer-integrations-{cover_letter,resume}.pdf
+(both real %PDF files) and returned to the list showing "Exported 2
+PDFs to /tmp/manual-export"; a second run against an application with
+no resume on disk left the default in place, expanded it to
+/root/Desktop, created it, and reported "Exported 1 PDF to /root/Desktop
+(skipped resume -- not drafted yet)".
+
 ## 2026-09-17 -- pdf: keep a thematic break on the same page as the block it introduces
 
 Reported as a rendering artifact: a large band of empty space in one of

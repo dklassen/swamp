@@ -25,9 +25,9 @@ import (
 	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/export"
 	"github.com/dklassen/swamp/greenhouse"
 	"github.com/dklassen/swamp/lever"
-	"github.com/dklassen/swamp/pdf"
 	"github.com/dklassen/swamp/seed"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
@@ -303,20 +303,13 @@ func currentDocumentReviews(status documents.Status, reviews map[store.DocumentT
 }
 
 // exportDocumentPDF renders mdPath's markdown content to a sibling .pdf
-// file (same directory, extension swapped) via the pdf package, and
-// returns its path.
+// file (same directory, extension swapped) via the export package, and
+// returns its path -- the CLI's fixed destination convention, unlike the
+// TUI's export screen, where the user picks the directory.
 func exportDocumentPDF(mdPath string) (string, error) {
-	content, err := os.ReadFile(mdPath)
-	if err != nil {
-		return "", fmt.Errorf("read %s: %w", mdPath, err)
-	}
-	rendered, err := pdf.Render(content)
-	if err != nil {
-		return "", fmt.Errorf("render pdf: %w", err)
-	}
 	outPath := strings.TrimSuffix(mdPath, filepath.Ext(mdPath)) + ".pdf"
-	if err := os.WriteFile(outPath, rendered, 0o644); err != nil {
-		return "", fmt.Errorf("write %s: %w", outPath, err)
+	if err := export.Document(mdPath, outPath); err != nil {
+		return "", err
 	}
 	return outPath, nil
 }

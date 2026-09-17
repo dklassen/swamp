@@ -35,6 +35,13 @@ type enterApplicationDetailMsg struct {
 	application store.ApplicationView
 }
 
+// enterApplicationExportMsg signals that App should switch to the
+// export screen for this application, where the user picks the
+// destination folder for its generated PDFs.
+type enterApplicationExportMsg struct {
+	application store.ApplicationView
+}
+
 // Update handles one key press. The returned tea.Cmd (if non-nil) is a
 // real async command for App to run through bubbletea as usual. The
 // returned tea.Msg (if non-nil) is an intent for App to apply
@@ -57,6 +64,10 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 		if m.cursor < len(apps) {
 			a := apps[m.cursor]
 			return nil, enterApplicationStatusMsg{postingID: a.Posting.ID, currentStatus: a.Status}
+		}
+	case msg.String() == "e":
+		if m.cursor < len(apps) {
+			return nil, enterApplicationExportMsg{application: apps[m.cursor]}
 		}
 	case msg.Type == tea.KeyEnter:
 		if m.cursor < len(apps) {
@@ -98,7 +109,7 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, listRows
 		}
 		b.WriteString(t.Render() + "\n")
 	}
-	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: application detail  s: status  c: companies  q: quit"))
+	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: application detail  s: status  e: export PDFs  c: companies  q: quit"))
 	return b.String()
 }
 
