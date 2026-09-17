@@ -2,6 +2,7 @@ package pdf
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"regexp"
 	"strconv"
@@ -440,4 +441,84 @@ func TestRender_HeadingTextUsesHeadingFontSize(t *testing.T) {
 	if want := headingFontSize(1); size != want {
 		t.Errorf("heading text drawn at font size %v, want %v (headingFontSize(1))", size, want)
 	}
+}
+
+// TestRender_ThematicBreakIsNeverTheLastMarkOnAPage guards the
+// section-divider orphan: a "---" whose own height fits in the space
+// left at the bottom of a page, but whose following heading doesn't,
+// used to leave the rule stranded as the last thing on the page with a
+// band of white space under it and the heading pushed to the next page.
+//
+// Swept across a range of document lengths rather than pinned to the one
+// paragraph count that reproduced it, so the property still holds if the
+// spacing constants change and the failing length moves (see
+// decisions.log on not pinning fpdf's internal point math in tests).
+func TestRender_ThematicBreakIsNeverTheLastMarkOnAPage(t *testing.T) {
+	t.Parallel()
+
+	for filler := 1; filler <= 45; filler++ {
+		var b strings.Builder
+		b.WriteString("# Title\n\n")
+		for i := 0; i < filler; i++ {
+			fmt.Fprintf(&b, "Filler paragraph number %d.\n\n", i)
+		}
+		b.WriteString("---\n\n## Education\n\nBody under heading.\n")
+
+		got, err := Render([]byte(b.String()))
+		if err != nil {
+			t.Fatalf("Render (filler=%d): %v", filler, err)
+		}
+		for pageNum, page := range pagesOfMarks(got) {
+			if len(page) == 0 {
+				continue
+			}
+			if last := page[len(page)-1]; last.isRule {
+				t.Errorf("filler=%d: page %d ends with a thematic-break rule at y=%.1f and nothing after it -- the heading it introduces was orphaned onto the next page, leaving a blank band", filler, pageNum+1, last.y)
+			}
+		}
+	}
+}
+
+// mark is one drawn element in the rendered content stream: either a
+// line of text or a thematic-break rule, with its y coordinate.
+type mark struct {
+	y      float64
+	isRule bool
+}
+
+var markPattern = regexp.MustCompile(`BT [0-9.]+ ([0-9.]+) Td|[0-9.]+ ([0-9.]+) m [0-9.]+ [0-9.]+ l S`)
+
+// pagesOfMarks parses pdfBytes' (uncompressed) content stream into the
+// drawn marks per page, in draw order. Pages are split where y jumps
+// back up the page, which is what starting a new page looks like in a
+// document that otherwise only ever moves down.
+func pagesOfMarks(pdfBytes []byte) [][]mark {
+	var marks []mark
+	for _, g := range markPattern.FindAllStringSubmatch(string(pdfBytes), -1) {
+		switch {
+		case g[1] != "":
+			y, err := strconv.ParseFloat(g[1], 64)
+			if err != nil {
+				continue
+			}
+			marks = append(marks, mark{y: y})
+		case g[2] != "":
+			y, err := strconv.ParseFloat(g[2], 64)
+			if err != nil {
+				continue
+			}
+			marks = append(marks, mark{y: y, isRule: true})
+		}
+	}
+
+	var pages [][]mark
+	var current []mark
+	for i, m := range marks {
+		if i > 0 && m.y > marks[i-1].y+5 {
+			pages = append(pages, current)
+			current = nil
+		}
+		current = append(current, m)
+	}
+	return append(pages, current)
 }

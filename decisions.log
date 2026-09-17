@@ -4238,3 +4238,63 @@ PDFs to /tmp/manual-export"; a second run against an application with
 no resume on disk left the default in place, expanded it to
 /root/Desktop, created it, and reported "Exported 1 PDF to /root/Desktop
 (skipped resume -- not drafted yet)".
+
+## 2026-09-17 -- pdf: keep a thematic break on the same page as the block it introduces
+
+Reported as a rendering artifact: a large band of empty space in one of
+the exported resume PDFs.
+
+Diagnosis. renderBlock's ThematicBreak case does its own page-break
+check, because fpdf's Line() draws directly and doesn't participate in
+SetAutoPageBreak (that part was already understood and commented). But
+it only reserved the rule's own height, lineHeight(baseFontSize) * 1.5.
+So a rule near the bottom of a page would pass its own check and draw,
+and then the heading immediately after it, rendered at a larger font
+and therefore a taller line, would trip fpdf's auto page break and move
+to the next page. The result is a section divider stranded as the last
+mark on the page, a band of white space beneath it, and the heading it
+introduces orphaned onto the following page.
+
+Confirmed on real content before changing anything: in assets/12/
+resume.md, the rule drew at y=94.82 as the last mark on page 2 with the
+last line of text at y=114.90 and the bottom margin at 56.7, with
+"Education" pushed to page 3. assets/15/resume.md had the same shape.
+A minimal synthetic reproduction is 26 filler paragraphs followed by
+"---" and an H2.
+
+Fix: reserve room for the rule plus the first line of whatever follows
+it (firstLineHeight, which uses the heading's own font size when the
+next sibling is a heading, the base size otherwise, and zero when the
+rule is the last block in the document). The rule and the block it
+introduces now break together.
+
+Test approach. The property asserted is "a thematic break is never the
+last mark on a page", swept across document lengths from 1 to 45 filler
+paragraphs rather than pinned to the single paragraph count that
+reproduced it. Pinning 26 would have encoded today's spacing constants
+into the test and gone green for the wrong reason the moment any of
+them changed; the sweep keeps finding whatever length puts a rule near
+the bottom. This follows the caution recorded in the 2026-09-17 pdf
+review entry about not pinning fpdf's internal point math in tests. The
+test parses the uncompressed content stream for both text (BT ... Td)
+and rule (... l S) operators, which the package already relies on
+elsewhere for exactly this reason.
+
+Note on what this does and does not change. The white space itself at
+the bottom of that page is not removed, and is marginally larger than
+before (58pt rather than the 38pt below the old stranded rule): moving
+a section divider to the next page necessarily leaves the previous page
+ending earlier. What the fix removes is the orphaned rule floating in
+that space, which is the part that read as a rendering error rather
+than as an ordinary section break. After the fix the rule and heading
+sit together at the top of page 3 (rule at y=727.51, just inside the
+top margin).
+
+A ranked sweep of the vertical gaps in all 29 currently drafted
+documents confirms nothing larger is outstanding: the two 58pt bands on
+assets/12 and assets/15 are the largest gaps anywhere, and every other
+gap in the corpus is the 51.8pt spacing a "---" divider is designed to
+produce.
+
+Verified: build/test/lint/fmt all clean, and re-rendered all 29 drafted
+documents before and after to compare.
