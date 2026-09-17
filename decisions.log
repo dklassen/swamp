@@ -3983,3 +3983,99 @@ Verified: full build/test/lint/fmt clean. No production/runtime-visible
 behavior changed (test-only), so the manual-tmux-verification step in
 AGENTS.md's feature-branch workflow doesn't apply here, matching #92's
 same reasoning.
+
+## 2026-09-17 -- Code review fixes on pdf-export branch (issue #45)
+
+/code-review against main on the pdf-export branch (new pdf/ package +
+cmd/swamp/main.go's `export` subcommand) surfaced 10 findings. Fixed 8,
+via TDD (one failing test at a time, see pdf/pdf_test.go's new Test*
+funcs); deliberately left 2 unfixed, both explained below.
+
+Fixed, all in the pdf package unless noted:
+1. Headings rendered at body font size, not their level-based size --
+   renderInline's *ast.Text/*ast.Link cases hardcoded SetFont(...,
+   baseFontSize), clobbering the size renderBlock had just set for a
+   heading. Threaded size through renderInlineChildren/renderInline as
+   a parameter instead of hardcoding it.
+2. cmd/swamp/main.go's runExport skipped the IsCurrent staleness check
+   that stage.currentReviews and tui.currentDocumentReviews both do on
+   top of LatestDocumentReviews -- a document edited after being
+   reviewed would still show the stale review's outcome/notes. Added a
+   local currentDocumentReviews (unexported, package main) mirroring
+   the exact same pattern -- kept as its own copy rather than shared,
+   matching why stage's and tui's versions are already separate (store
+   has no filesystem access, documents never reads file content, so
+   each caller composes the two itself; see documents.go's doc comment).
+3. renderList's per-item loop called renderInlineChildren directly on
+   every child block, so a loose list item's second paragraph ran onto
+   the same line as its first with no break. Only the item's first
+   block continues on the bullet/ordinal's line now; later blocks get
+   their own Ln + reset to the item's indent.
+4. renderBlock's switch had no default case, so a blockquote/code
+   block/fenced code block/HTML block -- all outside this package's
+   documented subset (see pdf.go's doc comment) -- was silently dropped
+   with no error. Added a default case that sets a sticky renderer.err,
+   surfaced from Render, so an unsupported block now fails loudly
+   instead of quietly producing an incomplete PDF.
+5. renderInline's default case assumed an unknown inline node's text
+   was reachable via child *ast.Text nodes, but *ast.AutoLink stores its
+   text as a private value with no child node, so a CommonMark autolink
+   like <https://example.com> rendered nothing. Added an explicit
+   *ast.AutoLink case. Caught in manual verification of this fix: an
+   email autolink's target lacked a mailto: prefix, because goldmark's
+   default parser never sets AutoLink.Protocol despite its doc comment
+   implying URL() would already include one -- added the mailto: prefix
+   ourselves for AutoLinkEmail.
+6. go.mod had fpdf/goldmark/x-image marked `// indirect` despite being
+   directly imported by pdf/ -- hand-edited rather than produced by `go
+   get`. Ran `go mod tidy` (verified via `-diff` first) to correct it.
+7. renderList's `if ordinal == 0 { ordinal = 1 }` conflated goldmark's
+   legitimate "list starts at 0" value with "unset" -- but per
+   parser/list.go, an ordered list's Start is always the literal number
+   that opened it (via strconv.Atoi), never a sentinel needing a
+   default; only a bullet list leaves it at Go's zero value, and
+   ordinal is never displayed for those. Removed the fallback entirely.
+8. ThematicBreak drew via doc.Line(), which doesn't participate in
+   fpdf's SetAutoPageBreak logic the way Write/Cell do, so a break near
+   the bottom margin could draw past the printable area. Added an
+   explicit check against GetAutoPageBreak()'s margin before drawing,
+   calling AddPage() first when needed. Not covered by an automated
+   test -- pinning fpdf's exact internal point-space math for "content
+   this close to the margin" reliably without instrumenting the
+   renderer itself would be disproportionately fragile for this fix;
+   verified manually instead by sweeping paragraph counts 1..60 before
+   a break and confirming no render error and no page-count regression
+   at any point (see this entry's own session, not committed as a test).
+
+Deliberately NOT fixed (both flagged to the user rather than forced):
+- cmd/swamp/main.go's per-document-type dispatch (`doc :=
+  status.CoverLetter; if documentType == ... doc = status.Resume`) is
+  now a 4th copy of a block also in tui/app.go, tui/application_detail.go,
+  and stage/stage.go. The review suggested a shared
+  documents.Status.Doc(documentType) accessor, but documents
+  deliberately has no dependency on store today, and the existing
+  triplicate (not just this branch's copy) is itself evidence the
+  project already chose duplication over that cross-package coupling at
+  this exact boundary (see currentReviews/currentDocumentReviews's own
+  doc comments, fixed in #2 above). Adding the accessor would reverse
+  that established boundary decision unilaterally rather than fix a
+  bug -- worth its own discussion, not folded into a review-fix pass.
+- runExport doesn't verify applicationID exists before proceeding, so
+  `swamp export <bogus-id>` prints the same "no document on disk,
+  skipped" output as a real application with no drafts yet, silently
+  exiting 0. No existing store method looks up an application by its
+  own primary-key ID -- every application query in the codebase today
+  keys off posting_id instead (store.GetApplication, and everywhere
+  else). Closing this properly means adding a new sqlc query/store
+  method for an access pattern that doesn't exist anywhere else in the
+  codebase -- a real, larger unit of work than the rest of this review
+  pass, and a new capability decision better made deliberately than
+  folded in here.
+
+Verified: full build/test/lint/fmt clean. Manually verified runtime
+behavior end-to-end (not just unit tests) by building ./bin/swamp and
+running `swamp export` against a scratch DB/documents dir with a
+resume.md exercising headings, a bullet list, a markdown link, and both
+URL and email autolinks -- confirmed H1/H2 render at 20pt/16pt (not
+11pt), both autolinks resolve (including the mailto: prefix), and list
+items render as separate bullets, matching the unit-level fixes.
