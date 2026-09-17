@@ -1,7 +1,8 @@
-// Command swamp is the entrypoint: it launches the TUI by default, or
-// runs a one-off refresh with the `fetch` subcommand, or drives the agent
-// hand-off mechanism with the `stage` subcommand. Not unit tested per
-// this project's testing decisions -- verified manually.
+// Command swamp is the entrypoint: it launches the TUI by default, runs a
+// one-off refresh with the `fetch` subcommand, drives the agent hand-off
+// mechanism with the `stage` subcommand, or converts an application's
+// drafted documents to PDF with the `export` subcommand. Not unit tested
+// per this project's testing decisions -- verified manually.
 package main
 
 import (
@@ -11,7 +12,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path/filepath"
 	"strconv"
+	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/pressly/goose/v3"
@@ -23,6 +26,7 @@ import (
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/greenhouse"
 	"github.com/dklassen/swamp/lever"
+	"github.com/dklassen/swamp/pdf"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
@@ -73,8 +77,11 @@ func main() {
 		case "stage":
 			runStage(s, documentsStore, os.Args[2:])
 			return
+		case "export":
+			runExport(s, documentsStore, os.Args[2:])
+			return
 		default:
-			fmt.Fprintf(os.Stderr, "usage: %s [fetch|stage]\n", os.Args[0])
+			fmt.Fprintf(os.Stderr, "usage: %s [fetch|stage|export]\n", os.Args[0])
 			os.Exit(1)
 		}
 	}
@@ -166,6 +173,124 @@ func runStage(s *store.Store, d *documents.Store, args []string) {
 	default:
 		usage()
 	}
+}
+
+// runExport converts an application's existing cover_letter.md/resume.md
+// into PDFs alongside them, one sibling <name>.pdf per document that
+// exists -- most job boards' file-upload fields don't accept raw
+// markdown, and raw markdown syntax in a submission reads unprofessionally
+// regardless (see decisions.log, issue #45). Only documents that already
+// exist on disk are converted; a document that hasn't been drafted yet is
+// reported and skipped, not treated as an error. Exporting doesn't
+// require a passed review -- a flagged or unreviewed draft can still be
+// useful to preview as a PDF -- but each line reports the latest review
+// outcome so the caller can tell a ready-to-submit document from one that
+// still needs work.
+func runExport(s *store.Store, d *documents.Store, args []string) {
+	if len(args) != 1 {
+		fmt.Fprintf(os.Stderr, "usage: %s export <application-id>\n", os.Args[0])
+		os.Exit(1)
+	}
+	applicationID, err := strconv.ParseInt(args[0], 10, 64)
+	if err != nil {
+		log.Fatalf("invalid application id %q: %v", args[0], err)
+	}
+
+	ctx := context.Background()
+	reviews, err := s.LatestDocumentReviews(ctx, applicationID)
+	if err != nil {
+		log.Fatalf("export: latest document reviews: %v", err)
+	}
+
+	status := d.Status(applicationID)
+	reviews, err = currentDocumentReviews(status, reviews)
+	if err != nil {
+		log.Fatalf("export: current document reviews: %v", err)
+	}
+
+	for _, documentType := range []store.DocumentType{store.DocumentTypeCoverLetter, store.DocumentTypeResume} {
+		doc := status.CoverLetter
+		if documentType == store.DocumentTypeResume {
+			doc = status.Resume
+		}
+		if !doc.Exists {
+			fmt.Printf("%s: no document on disk, skipped\n", documentType)
+			continue
+		}
+
+		outPath, err := exportDocumentPDF(doc.Path)
+		if err != nil {
+			fmt.Printf("%s: error: %v\n", documentType, err)
+			continue
+		}
+		fmt.Printf("%s: exported to %s (%s)\n", documentType, outPath, reviewSummary(reviews[documentType]))
+	}
+}
+
+// currentDocumentReviews filters reviews down to only those whose
+// content hash still matches each document's actual current content on
+// disk -- mirrors stage.currentReviews and tui.currentDocumentReviews
+// (see decisions.log, store.DocumentReview.IsCurrent): a review whose
+// content has since diverged describes a version of the document that
+// no longer exists and must not be surfaced as if it still described
+// what's on disk now. Kept as its own local copy rather than shared
+// across packages since store deliberately has no filesystem access and
+// documents deliberately never reads file content (see documents.go's
+// own doc comment), so each caller composes the two itself.
+func currentDocumentReviews(status documents.Status, reviews map[store.DocumentType]store.DocumentReview) (map[store.DocumentType]store.DocumentReview, error) {
+	out := make(map[store.DocumentType]store.DocumentReview, len(reviews))
+	for documentType, review := range reviews {
+		doc := status.CoverLetter
+		if documentType == store.DocumentTypeResume {
+			doc = status.Resume
+		}
+		if !doc.Exists {
+			continue
+		}
+		content, err := os.ReadFile(doc.Path)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", doc.Path, err)
+		}
+		if !review.IsCurrent(string(content)) {
+			continue
+		}
+		out[documentType] = review
+	}
+	return out, nil
+}
+
+// exportDocumentPDF renders mdPath's markdown content to a sibling .pdf
+// file (same directory, extension swapped) via the pdf package, and
+// returns its path.
+func exportDocumentPDF(mdPath string) (string, error) {
+	content, err := os.ReadFile(mdPath)
+	if err != nil {
+		return "", fmt.Errorf("read %s: %w", mdPath, err)
+	}
+	rendered, err := pdf.Render(content)
+	if err != nil {
+		return "", fmt.Errorf("render pdf: %w", err)
+	}
+	outPath := strings.TrimSuffix(mdPath, filepath.Ext(mdPath)) + ".pdf"
+	if err := os.WriteFile(outPath, rendered, 0o644); err != nil {
+		return "", fmt.Errorf("write %s: %w", outPath, err)
+	}
+	return outPath, nil
+}
+
+// reviewSummary describes review's outcome for the export CLI's output --
+// review is the zero value when the document has no recorded review yet
+// (store.LatestDocumentReviews omits any document type it has no review
+// for), which is a real, distinct state from either outcome and worth
+// saying so explicitly rather than defaulting to one.
+func reviewSummary(review store.DocumentReview) string {
+	if review.CreatedAt.IsZero() {
+		return "not yet reviewed"
+	}
+	if review.Outcome == store.ReviewOutcomeFlagged {
+		return "flagged: " + review.Notes
+	}
+	return "passed"
 }
 
 func printJSON(v any) {
