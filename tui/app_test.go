@@ -2802,3 +2802,98 @@ func TestApp_PostingsLoadedMsgWithErr_ClearsPostingsAndMarkup(t *testing.T) {
 		t.Fatal("app.err = nil, want the propagated error")
 	}
 }
+
+// exportTestApp builds an app sitting on the active-applications screen
+// with one application whose resume is drafted on disk -- the starting
+// point every export wiring test needs.
+func exportTestApp(t *testing.T) *App {
+	t.Helper()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Staff Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	status := app.documents.Status(application.ID)
+	if err := os.MkdirAll(filepath.Dir(status.Resume.Path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(status.Resume.Path, []byte("# Resume\n\nBody.\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile resume: %v", err)
+	}
+	return app
+}
+
+func TestApp_ActiveApplications_E_EntersExportScreenPrefilledWithDefaultDir(t *testing.T) {
+	app := exportTestApp(t)
+
+	app, _ = sendKey(app, runeKey('e'))
+
+	if app.screen != screenApplicationExport {
+		t.Fatalf("screen after 'e' = %v, want screenApplicationExport", app.screen)
+	}
+	if got := app.applicationExport.textinput.Value(); got != app.exportDir {
+		t.Errorf("destination prefill = %q, want the app's default export dir %q", got, app.exportDir)
+	}
+}
+
+func TestApp_ExportScreen_Esc_ReturnsToActiveApplications(t *testing.T) {
+	app := exportTestApp(t)
+
+	app, _ = sendKey(app, runeKey('e'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+
+	if app.screen != screenActiveApplications {
+		t.Fatalf("screen after cancelling export = %v, want screenActiveApplications", app.screen)
+	}
+}
+
+func TestApp_Export_ReportsWhereFilesWentAndRemembersTheDirectory(t *testing.T) {
+	app := exportTestApp(t)
+	dest := t.TempDir()
+
+	app, _ = sendKey(app, runeKey('e'))
+	app.applicationExport.textinput.SetValue(dest)
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = applyCmd(t, app, cmd)
+
+	if app.screen != screenActiveApplications {
+		t.Fatalf("screen after export = %v, want screenActiveApplications", app.screen)
+	}
+	if app.err != nil {
+		t.Fatalf("app.err = %v, want nil", app.err)
+	}
+	if !strings.Contains(app.status, dest) {
+		t.Errorf("status = %q, want it to name the destination %q so the user knows where to drag from", app.status, dest)
+	}
+	if app.exportDir != dest {
+		t.Errorf("exportDir = %q, want %q remembered for the next export", app.exportDir, dest)
+	}
+	exported := filepath.Join(dest, "acme-staff-engineer-resume.pdf")
+	if _, err := os.Stat(exported); err != nil {
+		t.Errorf("stat %s: %v", exported, err)
+	}
+}
+
+func TestApp_Export_Failure_SurfacesErrorAndKeepsRememberedDir(t *testing.T) {
+	app := exportTestApp(t)
+	before := app.exportDir
+
+	// A path under a regular file can't be created as a directory.
+	blocker := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	app, _ = sendKey(app, runeKey('e'))
+	app.applicationExport.textinput.SetValue(filepath.Join(blocker, "sub"))
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = applyCmd(t, app, cmd)
+
+	if app.err == nil {
+		t.Fatal("app.err = nil, want the export failure surfaced")
+	}
+	if app.exportDir != before {
+		t.Errorf("exportDir = %q, want it left at %q -- a failed export shouldn't be remembered as the new default", app.exportDir, before)
+	}
+}
