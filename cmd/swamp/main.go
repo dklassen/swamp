@@ -10,6 +10,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -240,6 +241,19 @@ func runExport(s *store.Store, d *documents.Store, args []string) {
 	}
 
 	ctx := context.Background()
+	// Validate the ID against a real row before anything else. Without
+	// this, a typo'd or stale ID walks the same path as a real
+	// application with nothing drafted yet -- empty reviews, a Status
+	// with Exists false for both documents -- and prints the identical
+	// "no document on disk, skipped" lines while exiting 0 (see
+	// decisions.log, issue #102).
+	if _, err := s.GetApplicationByID(ctx, applicationID); err != nil {
+		if errors.Is(err, store.ErrNotFound) {
+			log.Fatalf("export: no application with id %d", applicationID)
+		}
+		log.Fatalf("export: look up application %d: %v", applicationID, err)
+	}
+
 	reviews, err := s.LatestDocumentReviews(ctx, applicationID)
 	if err != nil {
 		log.Fatalf("export: latest document reviews: %v", err)
