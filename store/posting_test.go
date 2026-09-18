@@ -1,10 +1,13 @@
 package store
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -381,5 +384,75 @@ func TestListDistinctLocationsForCompany_ReturnsSortedUniqueValues(t *testing.T)
 	want := []string{"New York", "Remote"}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("ListDistinctLocationsForCompany mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestPosting_MarshalJSON_ZeroPublishedAtSerializesAsNull covers #80.
+// PublishedAt is an OptionalTime, whose zero value means "not known"
+// (it is not a pointer -- see #67, nothing in Go distinguishes never-set
+// from the zero value). The consumer of this JSON is an external agent,
+// and "0001-01-01T00:00:00Z" is noise in that contract where null is a
+// clean absence. Also catches OptionalTime.MarshalJSON being removed,
+// which would silently degrade to the embedded time.Time's own.
+func TestPosting_MarshalJSON_ZeroPublishedAtSerializesAsNull(t *testing.T) {
+	t.Parallel()
+
+	encoded, err := json.Marshal(Posting{ID: 1})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !bytes.Contains(encoded, []byte(`"PublishedAt":null`)) {
+		t.Errorf("Posting with no publish date encoded as %s, want \"PublishedAt\":null", encoded)
+	}
+	// Scoped to PublishedAt: FirstSeenAt/CreatedAt/UpdatedAt are NOT NULL
+	// columns that are always set in practice, so their zero value in a
+	// synthetic struct is not the contract problem this fixes.
+	if bytes.Contains(encoded, []byte(`"PublishedAt":"0001-01-01`)) {
+		t.Errorf("Posting encoded as %s, want no zero-time sentinel for PublishedAt in the agent contract", encoded)
+	}
+}
+
+func TestPosting_MarshalJSON_RealPublishedAtIsPreserved(t *testing.T) {
+	t.Parallel()
+
+	published := time.Date(2026, 8, 24, 13, 15, 0, 0, time.UTC)
+	encoded, err := json.Marshal(Posting{ID: 1, IngestedFields: IngestedFields{PublishedAt: OptionalTime{Time: published}}})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	if !bytes.Contains(encoded, []byte(`"PublishedAt":"2026-08-24T13:15:00Z"`)) {
+		t.Errorf("Posting encoded as %s, want the real publish date preserved", encoded)
+	}
+}
+
+// TestPosting_MarshalJSON_KeepsEveryField guards against a struct-level
+// MarshalJSON reappearing on Posting or on the IngestedFields it embeds.
+// IngestedFields is embedded untagged so its fields stay promoted into
+// Posting's JSON object (#59); a MarshalJSON on it would be promoted too
+// and hijack the whole object, dropping ID, ListingStatus and the
+// timestamps from the agent contract with no error. Encoding the
+// optionality on OptionalTime instead of on a struct is what avoids
+// that, and this test fails if anyone reintroduces the struct-level form.
+func TestPosting_MarshalJSON_KeepsEveryField(t *testing.T) {
+	t.Parallel()
+
+	encoded, err := json.Marshal(Posting{ID: 7, IngestedFields: IngestedFields{Title: "Engineer"}})
+	if err != nil {
+		t.Fatalf("Marshal: %v", err)
+	}
+	var decoded map[string]any
+	if err := json.Unmarshal(encoded, &decoded); err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	for _, key := range []string{
+		"ID", "CompanyID", "Source", "SourceID", "Title", "Department", "Team",
+		"Location", "EmploymentType", "WorkplaceType", "DescriptionHTML",
+		"DescriptionText", "JobURL", "ApplicationURL", "PublishedAt",
+		"RawPayload", "ListingStatus", "FirstSeenAt", "LastSeenAt",
+		"CreatedAt", "UpdatedAt",
+	} {
+		if _, ok := decoded[key]; !ok {
+			t.Errorf("encoded Posting is missing key %q; got %s", key, encoded)
+		}
 	}
 }
