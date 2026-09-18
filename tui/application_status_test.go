@@ -81,6 +81,7 @@ func TestApplicationStatusLabel(t *testing.T) {
 		{store.ApplicationStatusOfferReceived, "Offer received"},
 		{store.ApplicationStatusOfferAccepted, "Offer accepted"},
 		{store.ApplicationStatusOfferDeclined, "Offer declined"},
+		{store.ApplicationStatusPostingClosed, "Posting closed"},
 	}
 
 	for _, tt := range tests {

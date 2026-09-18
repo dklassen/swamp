@@ -37,7 +37,11 @@ type Result struct {
 	Updated   int
 	Closed    int
 	Reopened  int
-	Err       error
+	// ApplicationsClosed counts applications moved to posting_closed
+	// because the posting they were for was taken down -- see
+	// closeApplicationForClosedPosting (issue #105).
+	ApplicationsClosed int
+	Err                error
 }
 
 // Syncer routes each company to the PostingFetcher for its source

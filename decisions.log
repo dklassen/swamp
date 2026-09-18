@@ -4348,3 +4348,94 @@ of the real DB by driving the actual tea.Program: the list's Status
 column now reads "Started" (and is 12 characters narrower as a result),
 and the picker lists Started / Submitted / Interviewing / Rejected /
 Offer received / Offer accepted / Offer declined.
+
+## 2026-09-18 -- Close applications when their posting closes (issue #105)
+
+The syncer already marked a posting closed when it stopped appearing in
+a company's board fetch, but the application attached to it carried on
+as if nothing had happened and stayed on the active-applications screen
+indefinitely. Three of the real DB's active applications were in that
+state (apps 3, 5, 10, all at application_started).
+
+Approach chosen, of the three the issue laid out: auto-transition on
+close, but only from early statuses. Rejected alternatives:
+
+- Derive at read time (just filter closed postings out of
+  ListActiveApplications). Cheapest and reversible, but "closed" never
+  becomes a real state you can see or filter, and it would silently hide
+  applications the user may still be interviewing for.
+- Surface only, never auto-change. Safe but leaves the common case
+  (drafted or submitted, listing vanished, it's over) as manual busywork
+  for every posting that comes down.
+
+Decisions:
+
+1. New terminal status `posting_closed`, distinct from `rejected`
+   (nobody rejected anything) and from `offer_declined`. Go-only change:
+   applications.status lost its CHECK constraint in migration 00004, so
+   the enum in store/application_status.go is the sole source of truth.
+   Appended at the end of the enum rather than inserted in sequence --
+   the int values aren't persisted (the strings are), but appending
+   keeps the picker's canonical order stable and puts an automatic
+   terminal state last, where it belongs in a list the user chooses from.
+
+2. Only application_started and application_submitted auto-close. This
+   is the whole point of the design: a company routinely pulls a listing
+   while still interviewing the people already in its pipeline, so an
+   application at interviewing or beyond is a live process, and
+   overwriting a status the user set by hand (with no way to get it
+   back) would be actively wrong. earlyApplicationStatuses in
+   sync/company.go is the single place that rule lives.
+
+3. The transition lives in the syncer, which is a deliberate widening of
+   what a sync does -- until now it touched only postings and posting
+   history, never application state. Accepted because the close is
+   genuinely a consequence of what the sync observed, and anywhere else
+   would need its own trigger for the same event.
+
+4. No automatic reopen. Postings do reopen (MarkPostingReopened), but we
+   can't restore what the application's status was before the close: it
+   was overwritten, and there's no application-side history table the
+   way posting_history exists for postings. Restoring to a guessed
+   status would be worse than leaving it for the user to set. Noted as a
+   known one-way door rather than silently accepted; an application
+   history table would be the fix if this proves annoying.
+
+5. One-time backfill migration (00009) for postings already closed
+   before this existed. The syncer only acts on the open -> closed
+   transition, which those will never produce again. The migration
+   applies exactly the syncer's rule. Its Down is lossy on purpose and
+   says so: the Up collapsed two statuses into one and nothing records
+   which was which, so everything comes back as application_started, the
+   safer of the two to re-derive. Status strings are written literally in
+   the migration rather than referencing the Go enum, since a migration
+   is a record of what ran at a point in time and must not change meaning
+   if the enum is later refactored.
+
+6. Active-applications list gains a "Posting" column showing "closed",
+   blank otherwise. Without it the applications decision 2 deliberately
+   leaves alone would give the user no indication the listing is gone.
+   Only the exceptional value is rendered; labelling every row "open"
+   would be noise in a column that exists to catch the eye.
+
+TDD note, recorded rather than glossed: the live-application guard and
+the no-application-is-not-an-error case were implemented in the same
+chunk as the closing behaviour, so their tests did not go red first.
+Both were verified after the fact by mutation (adding the live statuses
+to earlyApplicationStatuses, and turning the ErrNotFound branch into an
+error), confirming each test fails without its guard. An initial attempt
+at the first mutation replaced the condition with `if false`, which
+doesn't compile (unused import and variable) and proved nothing; redone
+with a mutation that builds.
+
+Verified: build/test/lint/fmt all clean. Manually verified end-to-end
+against a copy of the real DB: migration 00009 ran on startup and moved
+apps 3, 5, and 10 to posting_closed, taking ListActiveApplications from
+26 rows to 23 with none left on a closed posting; putting one of them
+back to interviewing showed it still in the list with "closed" in the
+new Posting column.
+
+Interaction worth flagging: the unmerged branch
+application-status-display-labels adds a test that fails if a status has
+no display label, so it will need a label for posting_closed added
+before it merges. That is the guard working as intended, not a conflict.

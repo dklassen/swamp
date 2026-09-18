@@ -2,9 +2,11 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/store"
 )
 
 func TestSyncCompany_NewPostingNoFilters_Created(t *testing.T) {
@@ -376,5 +378,127 @@ func TestApplyCompanyFilters_NoDepartmentsOrLocations_ClearsFilters(t *testing.T
 	}
 	if len(saved) != 0 {
 		t.Fatalf("saved filters = %+v, want empty", saved)
+	}
+}
+
+// closeOnlyPosting syncs one posting into existence, then syncs again
+// with an empty fetch so that posting closes. It returns the posting's
+// ID and the closing sync's result -- the setup every
+// application-closing test below needs (see #105).
+func closeOnlyPosting(t *testing.T, s *store.Store, applyBeforeClose func(postingID int64)) (int64, Result) {
+	t.Helper()
+	ctx := context.Background()
+
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
+		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
+	}}
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+
+	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
+		t.Fatalf("initial SyncCompany: %v", err)
+	}
+	postings, err := s.ListPostingsByCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("ListPostingsByCompany: %v", err)
+	}
+	if len(postings) != 1 {
+		t.Fatalf("got %d postings, want 1", len(postings))
+	}
+
+	if applyBeforeClose != nil {
+		applyBeforeClose(postings[0].ID)
+	}
+
+	fetcher.postings["acme"] = nil
+	result, err := syncer.SyncCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("closing SyncCompany: %v", err)
+	}
+	return postings[0].ID, result
+}
+
+func TestSyncCompany_PostingCloses_EarlyStageApplicationClosedToo(t *testing.T) {
+	ctx := context.Background()
+
+	for _, start := range []store.ApplicationStatus{
+		store.ApplicationStatusStarted,
+		store.ApplicationStatusSubmitted,
+	} {
+		t.Run(start.String(), func(t *testing.T) {
+			s := newTestStore(t)
+			postingID, result := closeOnlyPosting(t, s, func(postingID int64) {
+				if _, err := s.CreateApplication(ctx, postingID); err != nil {
+					t.Fatalf("CreateApplication: %v", err)
+				}
+				if _, err := s.UpdateApplicationStatus(ctx, postingID, start); err != nil {
+					t.Fatalf("UpdateApplicationStatus: %v", err)
+				}
+			})
+
+			application, err := s.GetApplication(ctx, postingID)
+			if err != nil {
+				t.Fatalf("GetApplication: %v", err)
+			}
+			if application.Status != store.ApplicationStatusPostingClosed {
+				t.Errorf("application status = %s, want %s -- an application still at %s when its posting is taken down is over", application.Status, store.ApplicationStatusPostingClosed, start)
+			}
+			if result.ApplicationsClosed != 1 {
+				t.Errorf("result.ApplicationsClosed = %d, want 1", result.ApplicationsClosed)
+			}
+		})
+	}
+}
+
+// TestSyncCompany_PostingCloses_LiveApplicationLeftAlone is the guard on
+// the whole feature: a company pulling its listing while you're mid
+// process is normal, and the syncer must not overwrite a status the user
+// set and can't get back (see #105).
+func TestSyncCompany_PostingCloses_LiveApplicationLeftAlone(t *testing.T) {
+	ctx := context.Background()
+
+	for _, start := range []store.ApplicationStatus{
+		store.ApplicationStatusInterviewing,
+		store.ApplicationStatusOfferReceived,
+		store.ApplicationStatusOfferAccepted,
+	} {
+		t.Run(start.String(), func(t *testing.T) {
+			s := newTestStore(t)
+			postingID, result := closeOnlyPosting(t, s, func(postingID int64) {
+				if _, err := s.CreateApplication(ctx, postingID); err != nil {
+					t.Fatalf("CreateApplication: %v", err)
+				}
+				if _, err := s.UpdateApplicationStatus(ctx, postingID, start); err != nil {
+					t.Fatalf("UpdateApplicationStatus: %v", err)
+				}
+			})
+
+			application, err := s.GetApplication(ctx, postingID)
+			if err != nil {
+				t.Fatalf("GetApplication: %v", err)
+			}
+			if application.Status != start {
+				t.Errorf("application status = %s, want it left at %s -- a listing coming down doesn't end a process already underway", application.Status, start)
+			}
+			if result.ApplicationsClosed != 0 {
+				t.Errorf("result.ApplicationsClosed = %d, want 0", result.ApplicationsClosed)
+			}
+		})
+	}
+}
+
+func TestSyncCompany_PostingCloses_NoApplication_IsNotAnError(t *testing.T) {
+	s := newTestStore(t)
+
+	postingID, result := closeOnlyPosting(t, s, nil)
+
+	if result.Closed != 1 {
+		t.Errorf("result.Closed = %d, want 1 (the posting still closes)", result.Closed)
+	}
+	if result.ApplicationsClosed != 0 {
+		t.Errorf("result.ApplicationsClosed = %d, want 0 (there was no application)", result.ApplicationsClosed)
+	}
+	if _, err := s.GetApplication(context.Background(), postingID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetApplication err = %v, want ErrNotFound -- closing a posting must not conjure an application", err)
 	}
 }
