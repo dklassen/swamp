@@ -4643,3 +4643,53 @@ against a copy of the real DB by driving the actual tea.Program:
 application detail -> 'p' renders a help line with no h/l hint, while
 companies -> postings -> detail still renders "←/→ (h/l): prev/next
 posting".
+
+## 2026-09-18 -- README's markup model brought back in line with the schema (issue #3)
+
+README still described markup as a single status field on a posting
+(new / interested / applied / interviewing / rejected / archived). That
+model was replaced on 2026-08-14 by the posting/application split, and has
+drifted further since: the application lifecycle has gained
+`posting_closed` and `withdrawn` this week.
+
+Rewrote the "Markup model" bullet to describe the split as a split, with
+the reason rather than just the field list: a posting carries triage
+markup (independent interested_at/archived_at flags, notes, tags), while
+an application is a separate 1:1 row created only when you actually start
+applying, carrying the status lifecycle, its own notes, its drafted
+documents and its interview stages. Triage and pursuit are different
+questions with different lifetimes, and most postings never become
+applications.
+
+User stories were the other half of the staleness. Story 11's single
+status enum is now two stories (triage flags, then application
+lifecycle), which renumbered 12-15 into 13-16. Also corrected in passing,
+because they described the same dead model: interview stages hang off an
+application rather than a posting (story 13), notes exist at both levels
+(14), and tags are "beyond the built-in triage flags" rather than beyond a
+status field (15).
+
+Deliberately left alone, as out of scope for this issue but worth filing:
+the README is stale in three further places that have nothing to do with
+the posting/application split.
+- Story 1 and the "Ashby integration" bullet describe Ashby as the only
+  source; there are three now (ashby, greenhouse, lever, all returning
+  jobboard.Posting).
+- The Modules list covers ashby/filter/store/sync only, missing
+  greenhouse, lever, jobboard, documents, pdf, export, stage, seed and
+  tui.
+- The "Future-proofing" bullet claims "no schema/tables added now for
+  capabilities or resume/cover-letter generation", which is flatly false
+  since document_reviews, on-disk documents, pdf export and the stage
+  hand-off all exist.
+
+Process note: while this branch was being worked on, a background task
+running `git checkout main` in the same working directory switched
+branches underneath the edit, leaving uncommitted README changes on main
+and the feature branch cut from the wrong base. Caught before committing;
+the branch was recreated from main with the working-tree changes carried
+over and nothing was left on main. Background tasks in this repo should
+not run git commands that move HEAD.
+
+Verified: build/test/lint/fmt clean (no code changed -- README and
+decisions.log only).
