@@ -103,7 +103,7 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, listRows
 			t.Row(
 				truncateCol(a.CompanyName, departmentColWidth),
 				truncateCol(a.Posting.Title, titleColWidth),
-				a.Status.String(),
+				applicationStatusLabel(a.Status),
 				reviewGlyphSummary(a.LatestReviews),
 			)
 		}

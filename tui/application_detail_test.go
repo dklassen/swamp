@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -163,5 +164,24 @@ func TestApplicationDetailModel_View_ShowsOutcomeAndNotes(t *testing.T) {
 	got := m.View()
 	if !containsAll(got, "Engineer", "Acme", "[FLAGGED]", "too generic", "[PASSED]") {
 		t.Fatalf("View() = %q, want title, company, and both review outcomes with notes", got)
+	}
+}
+
+func TestApplicationDetailModel_View_ShowsStatusLabelNotEnumValue(t *testing.T) {
+	t.Parallel()
+
+	app := store.ApplicationView{
+		Application: store.Application{ID: 1, Status: store.ApplicationStatusOfferReceived},
+		Posting:     store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}},
+		CompanyName: "Acme",
+	}
+	m := newApplicationDetailModel(documents.NewStore(t.TempDir()), app)
+	got := m.View()
+
+	if !strings.Contains(got, "Offer received") {
+		t.Errorf("View() = %q, want the human-readable status label", got)
+	}
+	if strings.Contains(got, "offer_received") {
+		t.Errorf("View() leaks the raw enum value \"offer_received\" into the UI")
 	}
 }

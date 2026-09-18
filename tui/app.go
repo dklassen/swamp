@@ -297,7 +297,7 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 		b.WriteString(fieldLabel.Render(f.label+":") + " " + f.value + "\n")
 	}
 	if hasApplication {
-		b.WriteString(fieldLabel.Render("Application status:") + " " + application.Status.String() + "\n")
+		b.WriteString(fieldLabel.Render("Application status:") + " " + applicationStatusLabel(application.Status) + "\n")
 		if application.Notes != "" {
 			b.WriteString(fieldLabel.Render("Application notes:") + " " + application.Notes + "\n")
 		}

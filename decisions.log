@@ -4298,3 +4298,53 @@ produce.
 
 Verified: build/test/lint/fmt all clean, and re-rendered all 29 drafted
 documents before and after to compare.
+
+## 2026-09-17 -- TUI: display labels for application status
+
+The active-applications list, both detail screens, and the status picker
+all rendered ApplicationStatus.String() directly, so the UI showed raw
+DB values: "application_started", "offer_received". Replaced with
+human-readable labels ("Started", "Offer received").
+
+Decisions:
+
+1. The mapping lives in the tui package (applicationStatusLabel), not on
+   store.ApplicationStatus. String() is the value persisted to the
+   applications.status column, so prettifying at the source would change
+   what gets written to the DB. This mirrors documentTypeLabel, which
+   already does exactly this for store.DocumentType.
+
+2. No pipeline position indicator. The first proposal was a progress
+   track (dots, or "3/5") showing where an application sits in the
+   pipeline, since a bare label says the stage but not the progression.
+   User declined: the pipeline isn't well defined and is likely to
+   change, so encoding a stage order in the UI would mean maintaining a
+   shape the domain doesn't actually commit to yet. Worth noting the
+   enum order wouldn't have served as that shape anyway -- rejected sits
+   at index 3, between interviewing and offer_received -- so any
+   positional indicator would have needed its own separate stage
+   mapping, which is exactly the thing that would go stale.
+
+3. Applied to every display site, not just the list that prompted it:
+   the active-applications table, applicationDetailModel.View,
+   postingDetailContent, and the status picker. Changing only the list
+   would have left the same value rendering two different ways on
+   adjacent screens, which is a worse state than either end.
+
+4. The default case falls back to String() so an unmapped status still
+   renders something, but TestApplicationStatusLabel_CoversEveryStatus
+   fails if any status in store.ApplicationStatuses() reaches it -- the
+   fallback is a safety net, not a way for a new status to quietly leak
+   the raw enum into the UI.
+
+5. Three existing tests asserted the raw strings ("application_started",
+   "interviewing") against rendered views and correctly failed. Updated
+   to assert through applicationStatusLabel rather than hardcoding the
+   new display text, so they track the mapping instead of duplicating
+   it.
+
+Verified: build/test/lint/fmt all clean. Manually verified against a copy
+of the real DB by driving the actual tea.Program: the list's Status
+column now reads "Started" (and is 12 characters narrower as a result),
+and the picker lists Started / Submitted / Interviewing / Rejected /
+Offer received / Offer accepted / Offer declined.
