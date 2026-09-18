@@ -4439,3 +4439,66 @@ Interaction worth flagging: the unmerged branch
 application-status-display-labels adds a test that fails if a status has
 no display label, so it will need a label for posting_closed added
 before it merges. That is the guard working as intended, not a conflict.
+
+## 2026-09-18 -- Manual withdrawal: a user-set terminal status
+
+There was no honest way for the user to end an application they'd
+changed their mind about. Everything that would get it off the
+active-applications screen falsified the record:
+
+- rejected: claims a company rejected them; nobody did.
+- offer_declined: claims they turned down an offer that never existed.
+- posting_closed: claims the listing came down when it's still open, and
+  since yesterday that status is also written automatically by the
+  syncer, so a manual one would be indistinguishable from a real close.
+
+Archiving the posting doesn't help either -- ListActiveApplications
+filters on terminal status only and never looks at posting_markup, so
+the application stays on the screen regardless. This matters because the
+data is a record the user reads back later: "I changed my mind about
+Acme" and "Acme rejected me" are different facts to have in a history.
+
+Decisions:
+
+1. New terminal status `withdrawn`, appended to the enum, same Go-only
+   change as posting_closed (applications.status has had no CHECK
+   constraint since migration 00004).
+
+2. No new screen, keybinding, or confirmation flow. The status picker
+   already renders every value in store.ApplicationStatuses(), so adding
+   the status *is* the feature: press s, choose Withdrawn. Building a
+   dedicated "withdraw" action would have been a second way to do
+   something the existing screen already does.
+
+3. withdrawn and posting_closed are deliberately a pair, and neither is
+   ever written by the other's mechanism: posting_closed means the world
+   ended it and is only ever set by the syncer; withdrawn means the user
+   ended it and is only ever set by hand. Covered by a test that a
+   posting closing does not rewrite a withdrawn application, so the
+   syncer can't retroactively attribute the user's own decision to the
+   company.
+
+4. `posting_closed` is left in the picker even though it's meant to be
+   syncer-set. Argued both ways and left alone deliberately: a user may
+   notice a dead listing before the next sync does, and removing it
+   would be a separate decision about what the picker is for. Flagged
+   rather than quietly changed.
+
+5. Renamed TestTerminalApplicationStatuses_IsRejectedAndOfferDeclined
+   Only -> _AreTheDeadEndStatuses. The set has now grown twice and a name
+   that lists its members has to be rewritten each time, which makes the
+   diff look like the test changed when only the data did.
+
+Test note: two of these tests (the picker offering Withdrawn, and the
+syncer leaving a withdrawn application alone) passed the moment they were
+written, because both properties fall out of existing code -- the picker
+renders the whole enum, and withdrawn simply isn't in
+earlyApplicationStatuses. They're guard tests rather than red-green
+cycles, and are recorded as such. The syncer one was mutation-checked
+(adding withdrawn to earlyApplicationStatuses makes it fail); the picker
+one guards against a future change that filters the picker's options.
+
+Verified: build/test/lint/fmt all clean. Manually verified the real path
+against a copy of the real DB by driving the actual tea.Program: pressed
+s on an application at Submitted, the picker listed Withdrawn last,
+selecting it removed that application from the active list.

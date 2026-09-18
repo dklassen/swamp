@@ -82,6 +82,7 @@ func TestApplicationStatusLabel(t *testing.T) {
 		{store.ApplicationStatusOfferAccepted, "Offer accepted"},
 		{store.ApplicationStatusOfferDeclined, "Offer declined"},
 		{store.ApplicationStatusPostingClosed, "Posting closed"},
+		{store.ApplicationStatusWithdrawn, "Withdrawn"},
 	}
 
 	for _, tt := range tests {
@@ -118,5 +119,20 @@ func TestApplicationStatusModel_View_ShowsLabelsNotEnumValues(t *testing.T) {
 	}
 	if strings.Contains(got, "offer_received") {
 		t.Errorf("View() leaks the raw enum value \"offer_received\" into the picker")
+	}
+}
+
+// TestApplicationStatusModel_View_OffersWithdrawn is the whole manual
+// close path: the picker renders every status in the enum, so adding
+// withdrawn is what gives the user a way to end an application they've
+// changed their mind about. If the picker ever stops offering the full
+// set, this is the test that says the path is gone.
+func TestApplicationStatusModel_View_OffersWithdrawn(t *testing.T) {
+	t.Parallel()
+
+	m := newApplicationStatusModel(nil, 7, store.ApplicationStatusStarted)
+
+	if got := m.View(); !strings.Contains(got, "Withdrawn") {
+		t.Errorf("View() = %q, want Withdrawn offered -- it's the only way to close an application by hand without claiming a rejection that never happened", got)
 	}
 }

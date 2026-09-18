@@ -23,6 +23,7 @@ const (
 	ApplicationStatusOfferAccepted
 	ApplicationStatusOfferDeclined
 	ApplicationStatusPostingClosed
+	ApplicationStatusWithdrawn
 )
 
 // applicationStatusNames holds the DB string form for each
@@ -38,6 +39,7 @@ var applicationStatusNames = [...]string{
 	ApplicationStatusOfferAccepted: "offer_accepted",
 	ApplicationStatusOfferDeclined: "offer_declined",
 	ApplicationStatusPostingClosed: "posting_closed",
+	ApplicationStatusWithdrawn:     "withdrawn",
 }
 
 // String implements fmt.Stringer, and is also the value persisted to the
@@ -92,6 +94,7 @@ var terminalApplicationStatuses = []ApplicationStatus{
 	ApplicationStatusRejected,
 	ApplicationStatusOfferDeclined,
 	ApplicationStatusPostingClosed,
+	ApplicationStatusWithdrawn,
 }
 
 // TerminalApplicationStatuses returns the statuses that count as a dead

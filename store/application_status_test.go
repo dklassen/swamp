@@ -43,9 +43,19 @@ func TestParseApplicationStatus_UnknownValue_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestTerminalApplicationStatuses_IsRejectedOfferDeclinedAndPostingClosed(t *testing.T) {
+// TestTerminalApplicationStatuses_AreTheDeadEndStatuses pins the exact
+// set, in order. Deliberately not named after its members: the set has
+// grown twice (posting_closed, withdrawn) and a name listing them has to
+// be rewritten every time, which obscures that the test itself never
+// changed.
+func TestTerminalApplicationStatuses_AreTheDeadEndStatuses(t *testing.T) {
 	got := TerminalApplicationStatuses()
-	want := []ApplicationStatus{ApplicationStatusRejected, ApplicationStatusOfferDeclined, ApplicationStatusPostingClosed}
+	want := []ApplicationStatus{
+		ApplicationStatusRejected,
+		ApplicationStatusOfferDeclined,
+		ApplicationStatusPostingClosed,
+		ApplicationStatusWithdrawn,
+	}
 	if len(got) != len(want) {
 		t.Fatalf("TerminalApplicationStatuses() = %v, want %v", got, want)
 	}
@@ -86,5 +96,26 @@ func TestApplicationStatusPostingClosed_IsTerminal(t *testing.T) {
 	}
 	if !found {
 		t.Errorf("TerminalApplicationStatuses() = %v, want it to include posting_closed -- a closed posting's application is a dead end and must drop out of the active list", TerminalApplicationStatuses())
+	}
+}
+
+// TestApplicationStatusWithdrawn_IsTerminal covers the manual
+// counterpart to posting_closed: the user changed their mind and is no
+// longer applying. Distinct from rejected (nobody rejected them) and
+// from offer_declined (there was no offer), both of which would put a
+// false fact in a record the user reads back later.
+func TestApplicationStatusWithdrawn_IsTerminal(t *testing.T) {
+	if got := ApplicationStatusWithdrawn.String(); got != "withdrawn" {
+		t.Errorf("ApplicationStatusWithdrawn.String() = %q, want %q", got, "withdrawn")
+	}
+
+	var found bool
+	for _, status := range TerminalApplicationStatuses() {
+		if status == ApplicationStatusWithdrawn {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("TerminalApplicationStatuses() = %v, want it to include withdrawn -- withdrawing is a dead end and must drop out of the active list", TerminalApplicationStatuses())
 	}
 }
