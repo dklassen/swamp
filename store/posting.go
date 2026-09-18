@@ -25,18 +25,18 @@ import (
 // (.agents/skills/apply-to-posting/SKILL.md), not changing that contract
 // now (see decisions.log, #59).
 type IngestedFields struct {
-	Title           string    `json:"Title"`
-	Department      string    `json:"Department"`
-	Team            string    `json:"Team"`
-	Location        string    `json:"Location"`
-	EmploymentType  string    `json:"EmploymentType"`
-	WorkplaceType   string    `json:"WorkplaceType"`
-	DescriptionHTML string    `json:"DescriptionHTML"`
-	DescriptionText string    `json:"DescriptionText"`
-	JobURL          string    `json:"JobURL"`
-	ApplicationURL  string    `json:"ApplicationURL"`
-	PublishedAt     time.Time `json:"PublishedAt"`
-	RawPayload      string    `json:"RawPayload"`
+	Title           string       `json:"Title"`
+	Department      string       `json:"Department"`
+	Team            string       `json:"Team"`
+	Location        string       `json:"Location"`
+	EmploymentType  string       `json:"EmploymentType"`
+	WorkplaceType   string       `json:"WorkplaceType"`
+	DescriptionHTML string       `json:"DescriptionHTML"`
+	DescriptionText string       `json:"DescriptionText"`
+	JobURL          string       `json:"JobURL"`
+	ApplicationURL  string       `json:"ApplicationURL"`
+	PublishedAt     OptionalTime `json:"PublishedAt"`
+	RawPayload      string       `json:"RawPayload"`
 }
 
 // Posting is a source-agnostic job posting: canonical fields are
@@ -96,7 +96,7 @@ func postingFromRow(row db.Posting) Posting {
 			DescriptionText: row.DescriptionText,
 			JobURL:          row.JobUrl,
 			ApplicationURL:  row.ApplicationUrl,
-			PublishedAt:     row.PublishedAt.Time,
+			PublishedAt:     OptionalTime{Time: row.PublishedAt.Time},
 			RawPayload:      row.RawPayload,
 		},
 	}
@@ -116,11 +116,11 @@ func nullTime(t *time.Time) sql.NullTime {
 // nullPublishedAt is nullTime for IngestedFields.PublishedAt specifically:
 // the zero time means absent, since PublishedAt isn't pointer-optional
 // (see decisions.log, #67).
-func nullPublishedAt(t time.Time) sql.NullTime {
+func nullPublishedAt(t OptionalTime) sql.NullTime {
 	if t.IsZero() {
 		return sql.NullTime{}
 	}
-	return sql.NullTime{Time: t, Valid: true}
+	return sql.NullTime{Time: t.Time, Valid: true}
 }
 
 // UpsertPosting inserts a new posting or updates the existing one for the

@@ -48,7 +48,7 @@ func toIngestedFields(p jobboard.Posting) store.IngestedFields {
 		DescriptionText: p.DescriptionText,
 		JobURL:          p.JobURL,
 		ApplicationURL:  p.ApplicationURL,
-		PublishedAt:     p.PublishedAt,
+		PublishedAt:     store.OptionalTime{Time: p.PublishedAt},
 		RawPayload:      string(p.RawPayload),
 	}
 }

@@ -4502,3 +4502,90 @@ Verified: build/test/lint/fmt all clean. Manually verified the real path
 against a copy of the real DB by driving the actual tea.Program: pressed
 s on an application at Submitted, the picker listed Withdrawn last,
 selecting it removed that application from the active list.
+
+## 2026-09-18 -- PublishedAt serializes as null, not a zero-time sentinel (issue #80)
+
+A posting with no known publish date serialized as
+"PublishedAt": "0001-01-01T00:00:00Z" in the stage CLI's JSON, which is
+read by an external LLM agent, not by Go. A sentinel date is noise in
+that contract where null is a clean "not known".
+
+Chose the first of the three options the issue listed: a custom
+MarshalJSON on store.Posting. Rejected the alternatives:
+
+- A stage-specific DTO nulling it at the boundary would mean duplicating
+  Posting's entire field list to change one field's encoding, and the
+  embedded IngestedFields is deliberately promoted (see #59) so the DTO
+  would have to reproduce that flattening too.
+- Documenting the sentinel in SKILL.md instead leaves a wrong-looking
+  date in the data and asks every future consumer to know a convention.
+
+Keeping the encoding inside store follows this package's existing line rather
+than introducing a new one: ApplicationStatus, DocumentType and
+ReviewOutcome already define their own MarshalJSON precisely so callers
+outside store don't need to know the internal representation.
+
+The encoding lives on the field's own type, store.OptionalTime (a struct
+embedding time.Time, with MarshalJSON returning null for the zero value),
+not on Posting or on the IngestedFields that holds the field. The first
+attempt did put it on Posting; that works, but it is a trap worth
+spelling out because getting it wrong is silent.
+
+PublishedAt lives in IngestedFields, which Posting embeds anonymously and
+deliberately leaves untagged so its fields stay promoted into Posting's
+own JSON object (#59). A MarshalJSON defined on IngestedFields is
+promoted along with those fields and hijacks the whole of Posting's
+encoding: it emits only IngestedFields' fields and drops ID, CompanyID,
+Source, SourceID, ListingStatus and every timestamp from the agent
+contract, with no error anywhere. Defining it on Posting instead avoids
+that, but needs a local `type posting Posting` to shed methods and dodge
+infinite recursion, plus a shadowing field at depth 0 to beat the
+promoted one at depth 2 -- hand-maintained cleverness the next person has
+to re-derive from scratch.
+
+Moving the encoding onto OptionalTime removes the whole class of problem
+rather than guarding it. The optionality lives with the value that is
+optional, nothing encloses anything, no alias trick is needed, and the
+worst a future edit can do is change how one scalar renders instead of
+silently dropping fields from a contract. Deleting OptionalTime.
+MarshalJSON degrades to the embedded time.Time's own, i.e. back to the
+sentinel string: noisy but not destructive.
+
+TestPosting_MarshalJSON_KeepsEveryField is kept, with its rationale
+restated: it now guards against a struct-level MarshalJSON reappearing on
+either struct. Verified by reintroducing exactly that method and
+confirming the test fails naming the dropped keys (ID, CompanyID, Source,
+SourceID), while "PublishedAt": null still rendered correctly -- proof
+the null encoding no longer depends on any struct-level marshaller.
+
+Blast radius of the type change was small: three call sites in
+store/posting.go (row conversion, and nullPublishedAt's signature, which
+already encoded the same "zero means absent" idea at the DB boundary),
+one in sync/company.go, and one test literal. The source clients are
+unaffected -- they populate jobboard.Posting, a different type.
+store.Posting is never unmarshalled from JSON anywhere, so no
+UnmarshalJSON is needed.
+
+Only PublishedAt is treated this way. FirstSeenAt/LastSeenAt/CreatedAt/
+UpdatedAt are NOT NULL columns with defaults and are always set in
+practice, so a zero value there is a bug to surface, not an absence to
+encode.
+
+Finding worth recording against the issue's framing: the issue called
+this a "currently-shipping side effect", but 0 of the 1778 postings in
+the real DB have a NULL published_at -- both Ashby and Greenhouse always
+supply one. So the sentinel never actually reaches an agent today with
+real data. The fix is still worth having as a contract guarantee, but it
+was verified against a deliberately seeded dateless posting rather than
+anything the real dataset produces.
+
+Key order is unchanged from before the fix: PublishedAt still
+serializes in its natural field position. (The earlier Posting-level
+version moved it to the end of the object, since the shadowing field
+was declared after the embedded struct.)
+
+Verified: build/test/lint/fmt all clean, the #59 agent-contract shape
+tests still pass unchanged (they assert key presence, and the key is
+still present with a null value), and `stage list` against a copy of the
+real DB with a seeded NULL-published_at posting emits
+"PublishedAt": null.
