@@ -75,11 +75,44 @@ func (m *applicationStatusModel) View() string {
 	b.WriteString(titleStyle.Render("Set application status") + "\n")
 	for i, st := range applicationStatuses {
 		if i == m.cursor {
-			b.WriteString(cursorStyle.Render("> "+st.String()) + "\n")
+			b.WriteString(cursorStyle.Render("> "+applicationStatusLabel(st)) + "\n")
 		} else {
-			b.WriteString("  " + st.String() + "\n")
+			b.WriteString("  " + applicationStatusLabel(st) + "\n")
 		}
 	}
 	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: save  esc/b: cancel"))
 	return b.String()
+}
+
+// applicationStatusLabel renders an ApplicationStatus as display text.
+// ApplicationStatus.String() is the value persisted to the DB (see
+// store.ApplicationStatus), so it can't be prettified at the source
+// without changing what's written to applications.status -- the
+// presentation form lives here instead, the same way documentTypeLabel
+// handles store.DocumentType.
+//
+// The default case falls back to String() so an unmapped status still
+// renders something rather than an empty cell; TestApplicationStatus
+// Label_CoversEveryStatus fails if a new status ever reaches it.
+func applicationStatusLabel(status store.ApplicationStatus) string {
+	switch status {
+	case store.ApplicationStatusStarted:
+		return "Started"
+	case store.ApplicationStatusSubmitted:
+		return "Submitted"
+	case store.ApplicationStatusInterviewing:
+		return "Interviewing"
+	case store.ApplicationStatusRejected:
+		return "Rejected"
+	case store.ApplicationStatusOfferReceived:
+		return "Offer received"
+	case store.ApplicationStatusOfferAccepted:
+		return "Offer accepted"
+	case store.ApplicationStatusOfferDeclined:
+		return "Offer declined"
+	case store.ApplicationStatusPostingClosed:
+		return "Posting closed"
+	default:
+		return status.String()
+	}
 }

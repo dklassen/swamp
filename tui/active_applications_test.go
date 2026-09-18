@@ -164,6 +164,26 @@ func TestActiveApplicationListModel_View_AdvertisesExport(t *testing.T) {
 	}
 }
 
+func TestActiveApplicationListModel_View_ShowsStatusLabelNotEnumValue(t *testing.T) {
+	t.Parallel()
+
+	apps := testActiveApplications()
+	apps[0].Status = store.ApplicationStatusOfferReceived
+	apps[1].Status = store.ApplicationStatusStarted
+
+	m := newActiveApplicationListModel()
+	got := m.View(apps, 20)
+
+	if !containsAll(got, "Offer received", "Started") {
+		t.Errorf("View() = %q, want human-readable status labels", got)
+	}
+	for _, raw := range []string{"offer_received", "application_started"} {
+		if strings.Contains(got, raw) {
+			t.Errorf("View() leaks the raw enum value %q into the UI", raw)
+		}
+	}
+}
+
 // TestActiveApplicationListModel_View_FlagsClosedPosting covers the
 // other half of #105: the syncer deliberately leaves an application at
 // interviewing or beyond alone when its posting comes down, so the list
