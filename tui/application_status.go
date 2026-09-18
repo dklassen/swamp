@@ -112,6 +112,8 @@ func applicationStatusLabel(status store.ApplicationStatus) string {
 		return "Offer declined"
 	case store.ApplicationStatusPostingClosed:
 		return "Posting closed"
+	case store.ApplicationStatusWithdrawn:
+		return "Withdrawn"
 	default:
 		return status.String()
 	}

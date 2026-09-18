@@ -502,3 +502,33 @@ func TestSyncCompany_PostingCloses_NoApplication_IsNotAnError(t *testing.T) {
 		t.Errorf("GetApplication err = %v, want ErrNotFound -- closing a posting must not conjure an application", err)
 	}
 }
+
+// TestSyncCompany_PostingCloses_WithdrawnApplicationLeftAlone keeps the
+// two close paths from colliding: withdrawing is the user's own record
+// of their decision, and a listing later coming down must not rewrite it
+// as posting_closed, which would attribute the ending to the company
+// instead of to them.
+func TestSyncCompany_PostingCloses_WithdrawnApplicationLeftAlone(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+
+	postingID, result := closeOnlyPosting(t, s, func(postingID int64) {
+		if _, err := s.CreateApplication(ctx, postingID); err != nil {
+			t.Fatalf("CreateApplication: %v", err)
+		}
+		if _, err := s.UpdateApplicationStatus(ctx, postingID, store.ApplicationStatusWithdrawn); err != nil {
+			t.Fatalf("UpdateApplicationStatus: %v", err)
+		}
+	})
+
+	application, err := s.GetApplication(ctx, postingID)
+	if err != nil {
+		t.Fatalf("GetApplication: %v", err)
+	}
+	if application.Status != store.ApplicationStatusWithdrawn {
+		t.Errorf("application status = %s, want it left at withdrawn -- the user ended this one, not the company", application.Status)
+	}
+	if result.ApplicationsClosed != 0 {
+		t.Errorf("result.ApplicationsClosed = %d, want 0", result.ApplicationsClosed)
+	}
+}
