@@ -14,6 +14,16 @@ RETURNING *;
 SELECT * FROM applications
 WHERE posting_id = ?;
 
+-- name: GetApplicationByID :one
+-- Looks an application up by its own surrogate primary key, rather than
+-- by posting_id like every other query in this file. Needed wherever an
+-- application ID is what the caller actually holds -- `swamp export
+-- <application-id>` takes one on the command line and has no posting ID
+-- to reach for (see decisions.log, issue #102) -- so the ID can be
+-- validated instead of silently producing empty results.
+SELECT * FROM applications
+WHERE id = ?;
+
 -- name: UpdateApplicationStatus :one
 UPDATE applications
 SET status = ?, updated_at = CURRENT_TIMESTAMP

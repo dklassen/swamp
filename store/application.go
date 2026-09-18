@@ -82,6 +82,26 @@ func (s *Store) GetApplication(ctx context.Context, postingID int64) (Applicatio
 	return applicationFromRow(row)
 }
 
+// GetApplicationByID looks an application up by its own surrogate ID
+// rather than by the posting it belongs to, which is how every other
+// application lookup in this package keys off (GetApplication and
+// friends all take a postingID). Callers that only hold an application
+// ID -- `swamp export <application-id>`, which reads one off the command
+// line -- have no posting ID to reach for, and without this they can't
+// tell an unknown ID from a real application with nothing drafted yet
+// (see decisions.log, issue #102). Returns ErrNotFound for an ID with no
+// row, matching GetApplication.
+func (s *Store) GetApplicationByID(ctx context.Context, id int64) (Application, error) {
+	row, err := s.queries.GetApplicationByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Application{}, ErrNotFound
+		}
+		return Application{}, err
+	}
+	return applicationFromRow(row)
+}
+
 func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, status ApplicationStatus) (Application, error) {
 	row, err := s.queries.UpdateApplicationStatus(ctx, db.UpdateApplicationStatusParams{
 		PostingID: postingID,
