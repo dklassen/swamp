@@ -2913,3 +2913,50 @@ func TestPostingDetailContent_ShowsStatusLabelNotEnumValue(t *testing.T) {
 		t.Errorf("postingDetailContent() leaks the raw enum value \"offer_received\" into the UI")
 	}
 }
+
+// TestApp_PostingDetailViaApplicationDetail_HelpOmitsPostingNavigation is
+// the scenario #93 reports: application detail -> 'p' -> the help line
+// used to advertise "←/→ (h/l): prev/next posting" even though a.postings
+// was never loaded on that path, so pressing it did nothing with no
+// indication why.
+func TestApp_PostingDetailViaApplicationDetail_HelpOmitsPostingNavigation(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // active applications -> application detail
+	app, cmd := sendKey(app, runeKey('p'))                // fast path -> posting detail
+	app = applyCmd(t, app, cmd)
+
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after 'p' = %v, want screenPostingDetail", app.screen)
+	}
+	if got := app.postingDetail.View(); strings.Contains(got, "prev/next posting") {
+		t.Errorf("posting detail reached via application detail advertises h/l, but a.postings is empty so it does nothing; view = %q", got)
+	}
+}
+
+// TestApp_PostingDetailViaPostingList_HelpKeepsPostingNavigation is the
+// other half: browsing a company's postings does populate a.postings, so
+// the hint must still be there.
+func TestApp_PostingDetailViaPostingList_HelpKeepsPostingNavigation(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, runeKey('c'))                      // active applications -> company list
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // -> posting list
+	app = applyCmd(t, app, cmd)
+	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // -> posting detail
+	app = applyCmd(t, app, cmd)
+
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen = %v, want screenPostingDetail", app.screen)
+	}
+	if got := app.postingDetail.View(); !strings.Contains(got, "prev/next posting") {
+		t.Errorf("posting detail reached by browsing = %q, want the h/l hint present", got)
+	}
+}

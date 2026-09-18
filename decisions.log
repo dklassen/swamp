@@ -4589,3 +4589,57 @@ tests still pass unchanged (they assert key presence, and the key is
 still present with a null value), and `stage list` against a copy of the
 real DB with a seeded NULL-published_at posting emits
 "PublishedAt": null.
+
+## 2026-09-18 -- Posting detail stops advertising navigation it can't do (issue #93)
+
+Posting detail's help line unconditionally offered "←/→ (h/l): prev/next
+posting", but that navigation resolves siblings out of App.postings,
+which is only populated by browsing a company's posting list. Reached via
+application detail's 'p' fast path, App.postings is empty, so
+indexOfPosting always returns -1 and the keys silently did nothing.
+
+Of the two fixes the issue floated, took the second (hide the hint when
+there's nothing to navigate) over the first (lazily load siblings on
+first h/l press):
+
+- Lazy loading would have to invent an answer to "which siblings?".
+  Browsing produces a set already narrowed by hideArchived and the
+  company's saved filters (see loadPostings); reconstructing that on a
+  keypress risks a sibling set that differs from what the same user would
+  see by browsing, which is a worse kind of surprise than the keys doing
+  nothing. Deciding what that set should be is a real design question,
+  not a detail of this fix.
+- The bug as reported is the interface promising a move it can't make.
+  Removing the promise resolves exactly that, and leaves the capability
+  question open rather than answering it by accident.
+
+So the capability genuinely remains unavailable on that path. If it turns
+out to be wanted, loading the company's postings on entry to the fast
+path is a follow-up with its own filtering decision to make.
+
+Two implementation notes:
+
+1. canNavigateSiblings is a required constructor parameter on
+   newPostingDetailModel, not a field set afterwards. There are eight
+   construction sites; a setter would let a future ninth silently inherit
+   the wrong value, which is precisely the class of bug #89 describes
+   (three return-screen fields that every new entry point has to remember
+   to set). Making it a parameter means the compiler asks the question at
+   each site.
+
+2. It's recomputed at every construction from the current App.postings
+   rather than carried forward, so it reflects what the app holds now.
+   A user who browses a company and then arrives at one of its postings
+   via an application gets working navigation, correctly.
+
+Test note: the posting-detail unit test drove the change (red on the new
+parameter, then on the behaviour). The two app-level scenario tests were
+written after the implementation and passed immediately, so they were
+mutation-checked instead -- forcing canNavigateSiblings to return true
+makes the application-detail one fail.
+
+Verified: build/test/lint/fmt all clean. Manually verified both paths
+against a copy of the real DB by driving the actual tea.Program:
+application detail -> 'p' renders a help line with no h/l hint, while
+companies -> postings -> detail still renders "←/→ (h/l): prev/next
+posting".
