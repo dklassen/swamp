@@ -90,7 +90,7 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, listRows
 		start, end := visibleWindow(m.cursor, len(apps), rows)
 		cursorRow := m.cursor - start
 		t := table.New().
-			Headers("Company", "Title", "Status", "Review").
+			Headers("Company", "Title", "Status", "Posting", "Review").
 			StyleFunc(func(row, _ int) lipgloss.Style {
 				style := lipgloss.NewStyle().Padding(0, 1)
 				if row == cursorRow {
@@ -104,6 +104,7 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, listRows
 				truncateCol(a.CompanyName, departmentColWidth),
 				truncateCol(a.Posting.Title, titleColWidth),
 				a.Status.String(),
+				postingListingFlag(a.Posting.ListingStatus),
 				reviewGlyphSummary(a.LatestReviews),
 			)
 		}
@@ -121,4 +122,21 @@ func (m *activeApplicationListModel) resetCursorIfOutOfBounds(n int) {
 	if m.cursor >= n {
 		m.cursor = 0
 	}
+}
+
+// postingListingFlag renders a posting's listing status for the
+// active-applications table: "closed" when the listing has come down,
+// empty otherwise. Only the exceptional case is shown, since an open
+// posting is the norm and labelling every row "open" would be noise in
+// a column that exists to catch the eye (see issue #105).
+//
+// This only ever appears next to an application the syncer deliberately
+// left alone -- one at interviewing or beyond. An early-stage
+// application on a closed posting is moved to posting_closed, which is
+// terminal, so it isn't in this list at all.
+func postingListingFlag(listingStatus string) string {
+	if listingStatus == "closed" {
+		return "closed"
+	}
+	return ""
 }

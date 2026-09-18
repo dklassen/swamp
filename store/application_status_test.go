@@ -43,9 +43,9 @@ func TestParseApplicationStatus_UnknownValue_ReturnsError(t *testing.T) {
 	}
 }
 
-func TestTerminalApplicationStatuses_IsRejectedAndOfferDeclinedOnly(t *testing.T) {
+func TestTerminalApplicationStatuses_IsRejectedOfferDeclinedAndPostingClosed(t *testing.T) {
 	got := TerminalApplicationStatuses()
-	want := []ApplicationStatus{ApplicationStatusRejected, ApplicationStatusOfferDeclined}
+	want := []ApplicationStatus{ApplicationStatusRejected, ApplicationStatusOfferDeclined, ApplicationStatusPostingClosed}
 	if len(got) != len(want) {
 		t.Fatalf("TerminalApplicationStatuses() = %v, want %v", got, want)
 	}
@@ -65,5 +65,26 @@ func TestTerminalApplicationStatuses_EveryValueIsAKnownStatus(t *testing.T) {
 		if !known[terminal] {
 			t.Fatalf("TerminalApplicationStatuses() contains %v, not in ApplicationStatuses()", terminal)
 		}
+	}
+}
+
+// TestApplicationStatusPostingClosed_IsTerminal covers the status added
+// for #105: an application ended because its posting was taken down, as
+// distinct from being rejected (nobody rejected anything) or declining
+// an offer. Being terminal is what drops it out of
+// ListActiveApplications.
+func TestApplicationStatusPostingClosed_IsTerminal(t *testing.T) {
+	if got := ApplicationStatusPostingClosed.String(); got != "posting_closed" {
+		t.Errorf("ApplicationStatusPostingClosed.String() = %q, want %q", got, "posting_closed")
+	}
+
+	var found bool
+	for _, status := range TerminalApplicationStatuses() {
+		if status == ApplicationStatusPostingClosed {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("TerminalApplicationStatuses() = %v, want it to include posting_closed -- a closed posting's application is a dead end and must drop out of the active list", TerminalApplicationStatuses())
 	}
 }

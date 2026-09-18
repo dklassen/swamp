@@ -2,6 +2,7 @@ package migrations
 
 import (
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -641,5 +642,69 @@ func TestDropDocumentReviewsCheckConstraints_UniqueConstraintStillEnforced(t *te
 		 VALUES (1, 'cover_letter', 1, 'other content', 'cafebabe', 'flagged')`,
 	); err == nil {
 		t.Fatal("insert with duplicate (application_id, document_type, cycle) succeeded, want a UNIQUE constraint failure")
+	}
+}
+
+// TestCloseApplicationsForClosedPostings_BacksFillsEarlyStagesOnly covers
+// the one-time backfill for #105. The syncer only closes an application
+// on the open->closed transition, so postings that were already closed
+// before that logic existed would never be caught -- this migration
+// catches them once, under exactly the same early-status rule the syncer
+// applies from then on.
+func TestCloseApplicationsForClosedPostings_BacksFillsEarlyStagesOnly(t *testing.T) {
+	sqlDB := migrateTo(t, 8)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	for id, listingStatus := range map[int]string{1: "closed", 2: "closed", 3: "closed", 4: "closed", 5: "open"} {
+		if _, err := sqlDB.Exec(
+			`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload, listing_status)
+			 VALUES (?, 1, 'ashby', ?, 'Engineer', '{}', ?)`,
+			id, fmt.Sprintf("job-%d", id), listingStatus,
+		); err != nil {
+			t.Fatalf("insert posting %d: %v", id, err)
+		}
+	}
+
+	// posting 1/2 closed + early status -> backfilled.
+	// posting 3 closed but mid-process -> left alone.
+	// posting 4 closed and already terminal -> left alone.
+	// posting 5 still open -> left alone.
+	for postingID, status := range map[int]string{
+		1: "application_started",
+		2: "application_submitted",
+		3: "interviewing",
+		4: "rejected",
+		5: "application_started",
+	} {
+		if _, err := sqlDB.Exec(
+			`INSERT INTO applications (posting_id, status) VALUES (?, ?)`, postingID, status,
+		); err != nil {
+			t.Fatalf("insert application for posting %d: %v", postingID, err)
+		}
+	}
+
+	if err := goose.UpTo(sqlDB, ".", 9); err != nil {
+		t.Fatalf("migrate to version 9: %v", err)
+	}
+
+	want := map[int]string{
+		1: "posting_closed",
+		2: "posting_closed",
+		3: "interviewing",
+		4: "rejected",
+		5: "application_started",
+	}
+	for postingID, wantStatus := range want {
+		var got string
+		if err := sqlDB.QueryRow(`SELECT status FROM applications WHERE posting_id = ?`, postingID).Scan(&got); err != nil {
+			t.Fatalf("query application for posting %d: %v", postingID, err)
+		}
+		if got != wantStatus {
+			t.Errorf("application for posting %d has status %q, want %q", postingID, got, wantStatus)
+		}
 	}
 }

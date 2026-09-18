@@ -163,3 +163,26 @@ func TestActiveApplicationListModel_View_AdvertisesExport(t *testing.T) {
 		t.Errorf("View() = %q, want it to advertise the export binding", got)
 	}
 }
+
+// TestActiveApplicationListModel_View_FlagsClosedPosting covers the
+// other half of #105: the syncer deliberately leaves an application at
+// interviewing or beyond alone when its posting comes down, so the list
+// has to say the posting is gone or that fact is invisible.
+func TestActiveApplicationListModel_View_FlagsClosedPosting(t *testing.T) {
+	t.Parallel()
+
+	apps := testActiveApplications()
+	apps[0].Status = store.ApplicationStatusInterviewing
+	apps[0].Posting.ListingStatus = "closed"
+	apps[1].Posting.ListingStatus = "open"
+
+	m := newActiveApplicationListModel()
+	got := m.View(apps, 20)
+
+	if !strings.Contains(got, "closed") {
+		t.Errorf("View() = %q, want the closed posting flagged", got)
+	}
+	if strings.Count(got, "closed") != 1 {
+		t.Errorf("View() marks %d rows closed, want exactly 1 (only the application whose posting came down)", strings.Count(got, "closed"))
+	}
+}
