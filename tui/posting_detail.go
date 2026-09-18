@@ -25,6 +25,15 @@ type postingDetailModel struct {
 	application    store.Application
 	hasApplication bool
 
+	// canNavigateSiblings reports whether prev/next posting navigation
+	// can actually do anything here: it needs App.postings to contain this
+	// posting, which it does when the screen was reached by browsing a
+	// company's posting list, but not via application detail's 'p' fast
+	// path. The keys themselves no-op safely either way; this exists so
+	// the help line stops advertising a move that silently does nothing
+	// (see issue #93).
+	canNavigateSiblings bool
+
 	// latestReviews holds the most recent DocumentReview per document
 	// type (keyed by store.DocumentTypeCoverLetter/DocumentTypeResume),
 	// loaded async via loadDocumentReviews the same way application
@@ -39,10 +48,10 @@ type postingDetailModel struct {
 // data changes (navigating to a different posting, an application being
 // created/updated, or a window resize), matching the pre-extraction
 // showPostingDetail's "always rebuild, always reset scroll" behavior.
-func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool, latestReviews map[store.DocumentType]store.DocumentReview) postingDetailModel {
+func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool, latestReviews map[store.DocumentType]store.DocumentReview, canNavigateSiblings bool) postingDetailModel {
 	vp := viewport.New(width, height)
 	vp.SetContent(wrapToWidth(postingDetailContent(p, app, hasApp, docs, latestReviews), width))
-	return postingDetailModel{store: s, documents: docs, viewport: vp, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews}
+	return postingDetailModel{store: s, documents: docs, viewport: vp, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews, canNavigateSiblings: canNavigateSiblings}
 }
 
 // backToPostingListMsg signals that App should switch to the
@@ -129,7 +138,12 @@ func (m *postingDetailModel) View() string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render(m.posting.Title) + "\n")
 	b.WriteString(m.viewport.View() + "\n")
-	b.WriteString(helpStyle.Render("↑/↓ (j/k): scroll  ←/→ (h/l): prev/next posting  o: open in browser  a: start application  s: set status  n: edit notes  r: review document  u: refresh  esc/b: back"))
+	help := "↑/↓ (j/k): scroll  "
+	if m.canNavigateSiblings {
+		help += "←/→ (h/l): prev/next posting  "
+	}
+	help += "o: open in browser  a: start application  s: set status  n: edit notes  r: review document  u: refresh  esc/b: back"
+	b.WriteString(helpStyle.Render(help))
 	return b.String()
 }
 
@@ -137,5 +151,5 @@ func (m *postingDetailModel) View() string {
 // posting/application data -- called on window resize while this screen
 // is active (see tea.WindowSizeMsg in App.Update).
 func (m *postingDetailModel) resize(width, height int) {
-	*m = newPostingDetailModel(m.store, m.documents, width, height, m.posting, m.application, m.hasApplication, m.latestReviews)
+	*m = newPostingDetailModel(m.store, m.documents, width, height, m.posting, m.application, m.hasApplication, m.latestReviews, m.canNavigateSiblings)
 }

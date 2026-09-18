@@ -330,7 +330,7 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 // need refreshing.
 func (a *App) rebuildPostingDetailApplication() tea.Cmd {
 	_, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-	a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), a.postingDetail.posting, app, hasApp, nil)
+	a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), a.postingDetail.posting, app, hasApp, nil, a.canNavigateSiblings(a.postingDetail.posting.ID))
 	return maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 }
 
@@ -935,7 +935,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if a.screen == screenPostingDetail {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 				return a, maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 			}
 		}
@@ -949,7 +949,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var reviewsCmd tea.Cmd
 			if a.screen == screenPostingDetail {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 				reviewsCmd = maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 			}
 			// A freshly-started application should show up in the active-
@@ -1022,7 +1022,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// navigated away from is simply discarded -- msg.applicationID no
 		// longer matching what's on screen means this result is stale.
 		if msg.err == nil && a.screen == screenPostingDetail && a.postingDetail.application.ID == msg.applicationID {
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), a.postingDetail.posting, a.postingDetail.application, a.postingDetail.hasApplication, msg.reviews)
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), a.postingDetail.posting, a.postingDetail.application, a.postingDetail.hasApplication, msg.reviews, a.canNavigateSiblings(a.postingDetail.posting.ID))
 		}
 		if msg.err == nil && a.screen == screenApplicationDetail && a.applicationDetail.application.ID == msg.applicationID {
 			a.applicationDetail.application.LatestReviews = msg.reviews
@@ -1120,7 +1120,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.applicationsByPosting = make(map[int64]store.Application)
 			}
 			a.applicationsByPosting[appView.Posting.ID] = appView.Application
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), appView.Posting, appView.Application, true, appView.LatestReviews)
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), appView.Posting, appView.Application, true, appView.LatestReviews, a.canNavigateSiblings(appView.Posting.ID))
 			a.postingDetailReturnScreen = screenApplicationDetail
 			a.screen = screenPostingDetail
 		case enterDocumentReviewFormMsg:
@@ -1166,7 +1166,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.screen = screenCompanyList
 		case enterPostingDetailMsg:
 			p, app, hasApp := a.lookupPosting(v.postingID)
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 			a.postingDetailReturnScreen = screenPostingList
 			a.screen = screenPostingDetail
 			return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
@@ -1192,7 +1192,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if idx >= 0 && newIdx >= 0 && newIdx < len(a.postings) {
 				p := a.postings[newIdx]
 				app, hasApp := a.applicationsByPosting[p.ID]
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil)
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 				return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
 			}
 		case enterApplicationStatusMsg:
@@ -1330,4 +1330,17 @@ func (a *App) View() string {
 	}
 
 	return b.String()
+}
+
+// canNavigateSiblings reports whether prev/next posting navigation can
+// actually move anywhere from postingID. It needs a.postings to contain
+// that posting, which holds when the user reached posting detail by
+// browsing a company's list, but not via application detail's 'p' fast
+// path, where a.postings was never loaded (see issue #93).
+//
+// Recomputed at every posting-detail construction rather than carried
+// along, so it always reflects what a.postings holds now rather than
+// what it held when the screen was first entered.
+func (a *App) canNavigateSiblings(postingID int64) bool {
+	return indexOfPosting(a.postings, postingID) >= 0
 }
