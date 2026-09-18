@@ -38,11 +38,12 @@ Resume/cover-letter generation and autonomous agents (see original vision below)
 8. As a user, I want to browse and filter postings in a TUI, so that I can quickly find roles worth pursuing.
 9. As a user, I want to view a posting's full detail (description, location, employment type, etc.), so that I can evaluate fit.
 10. As a user, I want to open a posting's application URL in my browser directly from the TUI, so that I can apply without retyping a link.
-11. As a user, I want to set a status on a posting (new, interested, applied, interviewing, rejected, archived), so that I can track where each opportunity stands.
-12. As a user, I want to record interview stages/rounds on a posting (e.g. recruiter screen, technical, onsite) with date and outcome, so that I can track progress through a company's process.
-13. As a user, I want to attach free-text notes to a posting, so that I can capture context that doesn't fit a status field.
-14. As a user, I want to tag postings with my own labels, so that I can organize them flexibly beyond the built-in status field.
-15. As a user, I want to pause a company (stop fetching new postings) without losing its stored postings or my markup on them, so that I can deprioritize without losing history.
+11. As a user, I want to mark a posting as interested or archived, so that I can triage what's worth pursuing without committing to applying.
+12. As a user, I want to start an application against a posting I'm interested in and move it through a status lifecycle (started, submitted, interviewing, offer received/accepted/declined, rejected, withdrawn, or closed because the posting came down), so that I can see where each opportunity actually stands.
+13. As a user, I want to record interview stages/rounds against an application (e.g. recruiter screen, technical, onsite) with date and outcome, so that I can track progress through a company's process.
+14. As a user, I want to attach free-text notes to a posting and to an application, so that I can capture context that doesn't fit a status.
+15. As a user, I want to tag postings with my own labels, so that I can organize them flexibly beyond the built-in triage flags.
+16. As a user, I want to pause a company (stop fetching new postings) without losing its stored postings or my markup on them, so that I can deprioritize without losing history.
 
 ## Implementation Decisions
 
@@ -58,7 +59,7 @@ Resume/cover-letter generation and autonomous agents (see original vision below)
 - **Filtering**: evaluated at fetch time; postings that don't match a company's filters are never stored. v1 filter fields: department, location — designed to be extended with more fields later. Changing a company's filters triggers a full re-fetch for that company.
 - **Refresh model**: manual only in v1, via a CLI command (e.g. `swamp fetch`). No background scheduler/daemon.
 - **Change handling**: postings are upserted with status + history tracked, not deleted. A posting missing from a fetch is marked closed rather than removed.
-- **Markup model**: status field (new / interested / applied / interviewing / rejected / archived), free-text notes, user-defined tags, and a list of interview stage records (name, date, outcome) per posting.
+- **Markup model**: split in two, deliberately (see `decisions.log`, 2026-08-14). A **posting** carries lightweight triage markup — independent `interested_at`/`archived_at` timestamp flags rather than a single status enum, plus free-text notes and user-defined tags. An **application** is a separate row, 1:1 with a posting and created only when you actually start applying, carrying its own status lifecycle (`application_started` → `application_submitted` → `interviewing` → `offer_received` → `offer_accepted`, with `rejected`, `offer_declined`, `withdrawn` and `posting_closed` as dead ends), its own notes, its drafted cover letter/resume, and its interview stage records. The point of the split is that triage ("worth a look?") and pursuit ("where is this in the pipeline?") are different questions with different lifetimes: most postings get triaged and never become applications.
 - **Company lifecycle**: soft pause/resume only in v1; no hard delete. Paused companies stop being fetched but retain all stored postings and markup.
 - **Future-proofing**: no schema/tables added now for capabilities or resume/cover-letter generation. Keep the posting/company data model clean and normalized so that future work isn't blocked, without building anything for it yet.
 
