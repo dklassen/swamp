@@ -35,12 +35,8 @@ type Querier interface {
 	DeleteCompanyFilters(ctx context.Context, companyID int64) error
 	DeleteInterviewStage(ctx context.Context, id int64) error
 	GetApplication(ctx context.Context, postingID int64) (Application, error)
-	// Looks an application up by its own surrogate primary key, rather than
-	// by posting_id like every other query in this file. Needed wherever an
-	// application ID is what the caller actually holds -- `swamp export
-	// <application-id>` takes one on the command line and has no posting ID
-	// to reach for (see decisions.log, issue #102) -- so the ID can be
-	// validated instead of silently producing empty results.
+	// Keyed by the application's own primary key, unlike every other query
+	// here (see store.GetApplicationByID).
 	GetApplicationByID(ctx context.Context, id int64) (Application, error)
 	GetCompany(ctx context.Context, id int64) (Company, error)
 	// Deliberately ignores deleted_at: source+source_ref is UNIQUE across all
