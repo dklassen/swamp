@@ -4693,3 +4693,88 @@ not run git commands that move HEAD.
 
 Verified: build/test/lint/fmt clean (no code changed -- README and
 decisions.log only).
+
+## 2026-09-18 -- store: look an application up by its own ID (issue #102)
+
+`swamp export <application-id>` never checked that the ID it was handed
+named a real row. A typo'd or stale ID took exactly the same path as a
+real application with nothing drafted yet -- `LatestDocumentReviews`
+returns an empty map rather than an error for an unknown ID, and
+`documents.Status` reports `Exists: false` for both document types
+because the directory simply isn't there -- so both printed
+
+    cover_letter: no document on disk, skipped
+    resume: no document on disk, skipped
+
+and exited 0. Verified on a copy of the real DB before changing
+anything: id 99999 (no such row) and id 16 (a real application with an
+empty assets dir) produced byte-identical output.
+
+This was deliberately left unfixed during the #45 review pass (see the
+2026-09-17 entry) because closing it properly meant introducing an
+access pattern the codebase didn't have: every application query keys
+off `posting_id` (`GetApplication`, `UpdateApplicationStatus`,
+`UpdateApplicationNotes`, `ListActiveApplications`), never off
+`applications.id`. That was flagged as a capability decision worth
+making deliberately rather than folding into a review-fix pass. The
+user has now made it.
+
+Decisions:
+
+1. Added `GetApplicationByID` -- a full row fetch -- rather than the
+   minimal `ApplicationExists(ctx, id) (bool, error)` the issue also
+   floated. Existence is the only thing `runExport` needs today, but a
+   bool-returning query is a dead end: the next caller that wants the
+   application's status or posting ID (the TUI and `stage` both work in
+   these terms) would have to replace it rather than reuse it, and
+   `GetApplicationByID` costs nothing extra -- same single-row lookup,
+   same `applicationFromRow` conversion, same `ErrNotFound` contract as
+   the sibling `GetApplication` right above it. Nothing about the
+   heavier return type makes the validation call site worse: it
+   discards the row with `_`.
+
+2. Kept the existing `export <application-id>` argument rather than
+   switching the subcommand to take a posting ID for consistency with
+   `stage prepare`, the other option the issue raised. An application ID
+   is what `export` genuinely operates on -- documents live under
+   `assets/<application-id>/` and `document_reviews` keys off the
+   application -- so taking a posting ID would mean translating back to
+   an application on every invocation, and would silently change the
+   meaning of a bare number for anyone with the current command in
+   their shell history. The ambiguity in the issue was never that the
+   argument was the wrong kind of ID; it was that a bad one wasn't
+   detected.
+
+3. Validation happens first, before `LatestDocumentReviews` and before
+   `documents.Status`, and fails via `log.Fatalf` (non-zero exit) with
+   "export: no application with id N". That phrasing is what makes the
+   two cases distinguishable: an unknown ID now names itself as
+   unknown, while a real application with nothing drafted keeps the
+   existing per-document "no document on disk, skipped" lines and its
+   exit 0. The skip message was deliberately left as-is -- it's correct
+   and unambiguous now that the only way to reach it is with an ID that
+   does exist.
+
+4. No test in `cmd/swamp` -- that package is documented as not unit
+   tested (see its package comment). The TDD effort went into the store
+   method, which is where the new behavior actually lives; the CLI
+   wiring was verified manually against a copy of the real DB and
+   assets tree.
+
+TDD note: the happy-path test went red first (undefined method), then
+green on the new sqlc query plus the store wrapper. The `ErrNotFound`
+test was written after its production branch already existed, so rather
+than claim a red-green cycle it didn't have, the branch was removed,
+the test confirmed failing for the right reason ("error = sql: no rows
+in result set, want ErrNotFound"), and then restored.
+
+Verified: build/test/lint/fmt all clean. Manual verification against a
+copy of the real DB (79MB, 26 applications) and assets tree, comparing
+a binary built from main against one built from this branch. Before:
+`export 99999` and `export 16` both printed the two "skipped" lines and
+exited 0. After: `export 99999` prints "export: no application with id
+99999" and exits 1; `export 16` is unchanged (two "skipped" lines, exit
+0); `export 26` (a real application with both drafts) still exports
+both PDFs. Non-numeric and out-of-range arguments still fail at the
+existing `strconv.ParseInt` check; `export 0` and `export 27` (past the
+highest real ID) both report no such application.

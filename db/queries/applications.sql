@@ -14,6 +14,12 @@ RETURNING *;
 SELECT * FROM applications
 WHERE posting_id = ?;
 
+-- name: GetApplicationByID :one
+-- Keyed by the application's own primary key, unlike every other query
+-- here (see store.GetApplicationByID).
+SELECT * FROM applications
+WHERE id = ?;
+
 -- name: UpdateApplicationStatus :one
 UPDATE applications
 SET status = ?, updated_at = CURRENT_TIMESTAMP

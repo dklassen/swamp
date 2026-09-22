@@ -122,3 +122,34 @@ func TestUpdateApplicationNotes_UpdatesNotes(t *testing.T) {
 		t.Fatalf("Notes = %q, want %q", updated.Notes, "Follow up next week")
 	}
 }
+
+func TestGetApplicationByID_ReturnsTheApplication(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	created := mustCreateApplication(t, s, posting.ID)
+
+	got, err := s.GetApplicationByID(ctx, created.ID)
+	if err != nil {
+		t.Fatalf("GetApplicationByID: %v", err)
+	}
+	if diff := cmp.Diff(created, got); diff != "" {
+		t.Fatalf("GetApplicationByID mismatch (-created +got):\n%s", diff)
+	}
+}
+
+// TestGetApplicationByID_NonexistentID_ReturnsErrNotFound is the whole
+// point of this lookup existing: callers holding only an application ID
+// (`swamp export <application-id>`) need to tell an ID that names no row
+// from one whose application simply has nothing drafted yet.
+func TestGetApplicationByID_NonexistentID_ReturnsErrNotFound(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	_, err := s.GetApplicationByID(ctx, 999)
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("GetApplicationByID error = %v, want ErrNotFound", err)
+	}
+}

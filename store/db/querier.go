@@ -35,6 +35,9 @@ type Querier interface {
 	DeleteCompanyFilters(ctx context.Context, companyID int64) error
 	DeleteInterviewStage(ctx context.Context, id int64) error
 	GetApplication(ctx context.Context, postingID int64) (Application, error)
+	// Keyed by the application's own primary key, unlike every other query
+	// here (see store.GetApplicationByID).
+	GetApplicationByID(ctx context.Context, id int64) (Application, error)
 	GetCompany(ctx context.Context, id int64) (Company, error)
 	// Deliberately ignores deleted_at: source+source_ref is UNIQUE across all
 	// rows regardless of soft-delete state, so re-adding a company (CreateCompany)
