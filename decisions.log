@@ -924,11 +924,11 @@ letter/resume document storage, different worktree/branch) is also
 adding an App field and an async GetApplication fetch on entering
 posting detail, purely to detect document-file presence -- likely to
 collide with applicationsByPosting/loadApplication here at PR-review/
-rebase time. Not resolved here; flagged for Dana to reconcile when
-both PRs are ready.
+rebase time. Not resolved here; flagged to reconcile when both PRs
+are ready.
 
 ## 2026-08-19 — Application status becomes a Go enum; DB CHECK constraint dropped (PR #16 review)
-Context: Dana's inline review on PR #16 (tui/app.go line 34,
+Context: inline review on PR #16 (tui/app.go line 34,
 comment id 3813059905): "this should be using a const iota pattern to
 simulate an enum implementing the stringer interface. We can mark/
 drop the constraint in the database and have the check here in code
@@ -986,8 +986,8 @@ String() produces the same DB-format strings the old []string literal
 did, so this is a pure internal refactor with no user-visible
 behavior change.
 Landed as its own PR (application-status-enum, stacked on top of
-wire-up-application-lifecycle/#16), not bundled into #16 -- Dana's
-call, made right after the review comment above: #16 should stay
+wire-up-application-lifecycle/#16), not bundled into #16 -- a call
+made right after the review comment above: #16 should stay
 scoped to the original application-lifecycle feature it was already
 reviewed against, with the enum/constraint-drop as an isolated,
 separately-reviewable diff on top rather than silently expanding #16
@@ -4948,13 +4948,13 @@ dev db: started `mcp-serve`, connected with the SDK's own
 `StreamableClientTransport` client, called all three tools against real
 posting data, confirmed `write_document` both writes correctly and rejects
 an invalid `DocumentType`. Full container-to-host verification (via
-Apple's `container` framework) is still Dana's environment step to
+Apple's `container` framework) is still an environment step to
 confirm.
 
 ## 2026-09-23 -- Correction: container-to-host verification found a real bug (DNS-rebinding protection)
 
-The entry above said full container verification was still Dana's step to
-confirm. Did it directly instead, since Apple's `container` CLI was
+The entry above said full container verification was still an environment
+step to confirm. Did it directly instead, since Apple's `container` CLI was
 already installed: `container system dns list` showed a pre-existing
 `host.container.internal` local DNS domain (Docker's `host.docker.internal`
 equivalent -- `container system dns create --help` confirms its
@@ -4986,8 +4986,9 @@ issue in this shell, not a `container`/mcp-serve problem); non-interactive
 
 ## 2026-09-23 -- Narrowed the default bind from 0.0.0.0 to 127.0.0.1
 
-Dana asked whether binding to "the appropriate local address" instead of
-0.0.0.0 could avoid needing DisableLocalhostProtection. Checked the SDK
+The question came up whether binding to "the appropriate local address"
+instead of 0.0.0.0 could avoid needing DisableLocalhostProtection. Checked
+the SDK
 source (mcp/streamable.go) rather than just the doc comment: the check is
 `util.IsLoopback(localAddr) && !util.IsLoopback(req.Host)`, where
 `localAddr` comes from Go's per-connection `http.LocalAddrContextKey` --
