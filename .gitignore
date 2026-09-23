@@ -4,3 +4,5 @@
 /assets/
 .direnv/
 /PROFILE_REFERENCE.md
+
+*.bak
