@@ -4877,3 +4877,76 @@ pre-stack code did the same) and the stack stays balanced either way.
 A proper fix tags each visit (a counter or the model's ID carried in
 the result message), which touches the message types and is its own
 change.
+
+## 2026-09-23 -- swamp gains an MCP server mode (new `mcpserver` package, `mcp-serve` subcommand)
+
+Motivation: Claude (this session's driver) started running inside a
+container (Apple's `container` framework) that can't spawn or reach the
+`swamp` binary or its sqlite db directly -- breaking the `apply-to-posting`
+skill's CLI-based hand-off (`stage list` / `stage prepare` via `direnv exec
+. go run ./cmd/swamp ...`), which had been working fine as long as Claude
+ran on the same host.
+
+Why MCP over gRPC or a plain REST API: this isn't a general protocol
+preference, it's a forced move. The Claude host already ships a pre-built
+MCP client; there's no equivalent pre-built gRPC client to connect to, and
+no generic HTTP-executing capability guaranteed to exist on the Claude
+side either (a REST API would need Claude to have shell/curl access,
+which isn't true of every host, e.g. Claude Desktop). MCP's schema-as-data
+discovery (`tools/list`) also means the tool contract can't silently drift
+the way a hand-maintained REST-API skill description could.
+
+Why Streamable HTTP over stdio: MCP's stdio transport assumes the client
+spawns the server as a subprocess in the same process/filesystem
+namespace. That assumption breaks across the container boundary, so this
+needed MCP's Streamable HTTP transport instead -- a real persistent server
+process (`swamp mcp-serve`) the container reaches over the network.
+
+Why bind to `0.0.0.0`, not `127.0.0.1`: from inside a container,
+`127.0.0.1` resolves to the container's own loopback, not the host's, so a
+localhost-only bind would be unreachable regardless of which container
+framework's DNS bridging is in use (Docker's `host.docker.internal`,
+Apple's `container` framework's equivalent, etc.).
+
+Why no auth on the endpoint (for now): single-user local dev machine, same
+trust level as running `swamp` directly already implies. Deliberate,
+revisit with a bearer-token check if this ever needs to be reachable
+beyond this Mac -- not a thing that was overlooked.
+
+Tool set (`mcpserver` package): `list_postings`, `stage_prepare`,
+`write_document` -- thin wrappers over the existing `stage` package (no
+new business logic), covering exactly the `apply-to-posting` round trip.
+`write_document` is new: previously the actual file write happened via
+Claude Code's own `Write` tool on the local filesystem, which doesn't
+reach the host from inside a container, so drafting would otherwise stall
+right after `stage_prepare` returned a path nothing could write to.
+
+Implementation note / library quirk: `mcp.AddTool`'s automatic JSON Schema
+inference (github.com/modelcontextprotocol/go-sdk v1.8.0) panics on
+`stage.Candidate`/`stage.Prepared` as typed output values -- both embed
+`store.Posting`, which embeds `IngestedFields`, which has a `PublishedAt
+OptionalTime` field with a custom `MarshalJSON` returning a JSON string;
+the inference library requires embedded-struct fields with custom
+marshalers to marshal to an object. Worked around by using `any` as the
+`Out` type parameter for those two tools (skips schema inference; the
+concrete returned value still populates `CallToolResult.StructuredContent`
+normally) rather than changing `stage`'s existing, already-pinned JSON
+shape (see #59 above) to suit the schema library.
+
+Alternatives considered:
+- REST API + a Claude skill describing it. Rejected: only works for hosts
+  with generic HTTP-execution ability (true of Claude Code via Bash, not
+  guaranteed elsewhere), and a hand-written skill can silently drift from
+  the real API shape with nothing to catch it, unlike MCP's live
+  `tools/list` discovery.
+- gRPC. Rejected for the same reason as REST, more sharply: no MCP host
+  ships a generic gRPC client, and gRPC's typed contract would need to be
+  compiled into that client ahead of time regardless.
+
+Verified manually (not just unit tests) against a scratch copy of the real
+dev db: started `mcp-serve`, connected with the SDK's own
+`StreamableClientTransport` client, called all three tools against real
+posting data, confirmed `write_document` both writes correctly and rejects
+an invalid `DocumentType`. Full container-to-host verification (via
+Apple's `container` framework) is still Dana's environment step to
+confirm.
