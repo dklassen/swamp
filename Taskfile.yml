@@ -67,6 +67,6 @@ tasks:
       - ./bin/swamp
 
   mcp-serve:
-    desc: "Run swamp as an MCP server over Streamable HTTP (SWAMP_MCP_ADDR, default 0.0.0.0:8787)"
+    desc: "Run swamp as an MCP server over Streamable HTTP (SWAMP_MCP_ADDR, default 127.0.0.1:8787)"
     cmds:
       - ./bin/swamp mcp-serve

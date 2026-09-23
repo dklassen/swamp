@@ -4983,3 +4983,34 @@ completed the MCP `initialize` handshake successfully.
 `-it` failed with "Operation not supported by device" (TTY allocation
 issue in this shell, not a `container`/mcp-serve problem); non-interactive
 `sh -c '...'` worked fine and was sufficient to prove reachability.
+
+## 2026-09-23 -- Narrowed the default bind from 0.0.0.0 to 127.0.0.1
+
+Dana asked whether binding to "the appropriate local address" instead of
+0.0.0.0 could avoid needing DisableLocalhostProtection. Checked the SDK
+source (mcp/streamable.go) rather than just the doc comment: the check is
+`util.IsLoopback(localAddr) && !util.IsLoopback(req.Host)`, where
+`localAddr` comes from Go's per-connection `http.LocalAddrContextKey` --
+the actual local address of that accepted socket, not the server's bind
+address.
+
+Verified what that actually is for a real container request with a
+throwaway probe (a bare http.Server logging Host/RemoteAddr/LocalAddr,
+hit from `container run` via host.container.internal): RemoteAddr showed
+the container's real vmnet address (192.168.64.10), but LocalAddr came
+through as 127.0.0.1 regardless of the server's bind address. This
+matches `container system dns create --help`'s `--localhost` flag
+description ("set the ip address to be redirected to localhost") --
+host.container.internal is implemented as a redirect-to-loopback on the
+host side, not a route to the vmnet gateway (192.168.64.1). So no bind
+address choice avoids the DNS-rebinding check firing for this traffic;
+0.0.0.0 was never buying anything host.container.internal-reachability
+wise, only exposing swamp on the LAN for no benefit.
+
+Changed SWAMP_MCP_ADDR's default to "127.0.0.1:8787" (cmd/swamp/main.go,
+Taskfile.yml's mcp-serve task description). Reverified against the real
+container with the narrower bind: same successful `initialize` handshake
+as before. DisableLocalhostProtection is still required and still correct
+to leave on -- narrowing the bind doesn't remove the need for it, since
+the redirect-to-loopback mechanism is what triggers the check in the
+first place, independent of what swamp binds to.

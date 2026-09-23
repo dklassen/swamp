@@ -232,27 +232,34 @@ func runStage(s *store.Store, d *documents.Store, args []string) {
 // container. See decisions.log for why MCP/Streamable-HTTP specifically,
 // rather than gRPC or a plain REST API, is the right fit here.
 //
-// Binds to SWAMP_MCP_ADDR (default "0.0.0.0:8787"). Must bind to a
-// non-loopback address: from inside a container, 127.0.0.1 resolves to
-// the container's own loopback, not the host's, so a localhost-only bind
-// would be unreachable regardless of which container framework's DNS
-// bridging is in use. No auth on this endpoint for now -- single-user
-// local dev machine, same trust level as running swamp directly (see
-// decisions.log); add a bearer-token check before this is ever reachable
-// beyond this Mac.
+// Binds to SWAMP_MCP_ADDR (default "127.0.0.1:8787"). 127.0.0.1 is
+// correct, not just safe, for Apple's `container` framework: its
+// host.container.internal DNS entry is implemented as a redirect-to-
+// localhost on the host side (see `container system dns create --help`'s
+// --localhost flag), verified directly by logging http.Request's
+// LocalAddrContextKey for a real container request -- RemoteAddr showed
+// the container's real vmnet address, but LocalAddr was 127.0.0.1
+// regardless. So the traffic that matters here never actually arrives on
+// any other host interface; binding wider than loopback would just
+// expose this on the LAN for no reachability benefit. No auth on this
+// endpoint for now -- single-user local dev machine, same trust level as
+// running swamp directly (see decisions.log); add a bearer-token check
+// before this is ever reachable beyond this Mac.
 //
 // DisableLocalhostProtection is set because the SDK's default DNS-rebinding
-// protection rejects any request whose Host header isn't a recognized
-// localhost value (127.0.0.1/[::1]/"localhost") -- verified against a real
-// Apple `container` instance reaching this over host.container.internal,
-// which got 403 "invalid Host header" until this was set. Safe to disable
-// here for the same reason auth is skipped: single-user local dev machine,
-// deliberately reached by a known local container over a known DNS name,
-// not the untrusted-browser threat this protection exists for.
+// protection rejects any request whose local address is loopback but whose
+// Host header isn't a recognized localhost value -- which every
+// host.container.internal request is, by the mechanism above. Confirmed
+// there's no way around this by choosing a different bind address: the
+// redirect targets loopback specifically, so the protection's loopback
+// check will always fire for this traffic. Safe to disable here for the
+// same reason auth is skipped: single-user local dev machine, deliberately
+// reached by a known local container over a known DNS name, not the
+// untrusted-browser threat this protection exists for.
 func runMCPServe(s *store.Store, d *documents.Store) {
 	addr := os.Getenv("SWAMP_MCP_ADDR")
 	if addr == "" {
-		addr = "0.0.0.0:8787"
+		addr = "127.0.0.1:8787"
 	}
 
 	st := stage.New(s, d)
