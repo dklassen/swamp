@@ -240,6 +240,15 @@ func runStage(s *store.Store, d *documents.Store, args []string) {
 // local dev machine, same trust level as running swamp directly (see
 // decisions.log); add a bearer-token check before this is ever reachable
 // beyond this Mac.
+//
+// DisableLocalhostProtection is set because the SDK's default DNS-rebinding
+// protection rejects any request whose Host header isn't a recognized
+// localhost value (127.0.0.1/[::1]/"localhost") -- verified against a real
+// Apple `container` instance reaching this over host.container.internal,
+// which got 403 "invalid Host header" until this was set. Safe to disable
+// here for the same reason auth is skipped: single-user local dev machine,
+// deliberately reached by a known local container over a known DNS name,
+// not the untrusted-browser threat this protection exists for.
 func runMCPServe(s *store.Store, d *documents.Store) {
 	addr := os.Getenv("SWAMP_MCP_ADDR")
 	if addr == "" {
@@ -251,7 +260,7 @@ func runMCPServe(s *store.Store, d *documents.Store) {
 
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server
-	}, nil)
+	}, &mcp.StreamableHTTPOptions{DisableLocalhostProtection: true})
 
 	log.Printf("swamp mcp-serve: listening on %s", addr)
 	if err := http.ListenAndServe(addr, handler); err != nil {
