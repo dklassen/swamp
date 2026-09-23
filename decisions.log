@@ -4950,3 +4950,36 @@ posting data, confirmed `write_document` both writes correctly and rejects
 an invalid `DocumentType`. Full container-to-host verification (via
 Apple's `container` framework) is still Dana's environment step to
 confirm.
+
+## 2026-09-23 -- Correction: container-to-host verification found a real bug (DNS-rebinding protection)
+
+The entry above said full container verification was still Dana's step to
+confirm. Did it directly instead, since Apple's `container` CLI was
+already installed: `container system dns list` showed a pre-existing
+`host.container.internal` local DNS domain (Docker's `host.docker.internal`
+equivalent -- `container system dns create --help` confirms its
+`--localhost` flag redirects that domain to the host), and `container
+network list` showed the default network's gateway at 192.168.64.1.
+
+First attempt failed: a real container hitting `mcp-serve` via
+`host.container.internal:8787` got `403 Forbidden: invalid Host header`.
+Reproduced the identical rejection locally (`curl` to 127.0.0.1 with a
+spoofed `Host: host.container.internal` header) to confirm the cause
+before changing anything, per this project's failure-diagnosis norm --
+the go-sdk's Streamable HTTP handler defaults to DNS-rebinding protection
+(`StreamableHTTPOptions.DisableLocalhostProtection`, default false) that
+rejects any request whose Host header isn't a recognized localhost value,
+regardless of bind address. This was flagged as a risk during planning
+(see the SDK doc excerpt pulled then) but left untested; it was real.
+
+Fix: set `DisableLocalhostProtection: true` in `runMCPServe`
+(cmd/swamp/main.go). Same trust-boundary reasoning as the no-auth
+decision above -- single-user local dev machine, a known local container
+reaching it over a known DNS name, not the untrusted-browser scenario
+this protection exists for. Rebuilt and reran the container test: it
+completed the MCP `initialize` handshake successfully.
+
+`container run` also needed `--rm` without `-it` in this environment --
+`-it` failed with "Operation not supported by device" (TTY allocation
+issue in this shell, not a `container`/mcp-serve problem); non-interactive
+`sh -c '...'` worked fine and was sufficient to prove reachability.
