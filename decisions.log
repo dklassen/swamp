@@ -4778,3 +4778,102 @@ exited 0. After: `export 99999` prints "export: no application with id
 both PDFs. Non-numeric and out-of-range arguments still fail at the
 existing `strconv.ParseInt` check; `export 0` and `export 27` (past the
 highest real ID) both report no such application.
+
+## 2026-09-23 -- Late save results no longer yank the screen back (issue #89, part 1)
+
+Found while planning #89's return-screen stack. Nothing blocks esc on
+the status-select or review-form screens while their save is in flight
+(unlike company edit's `saving` guard), so `applicationStatusUpdatedMsg`
+and `documentReviewCreatedMsg` can arrive after the user has already
+backed out. Both handlers unconditionally set `a.screen` to the stored
+return screen, so a user who had moved on got pulled back to a screen
+they'd already left.
+
+Fix: both handlers only navigate if the user is still on the screen
+that started the save. `documentReviewCreatedMsg`'s reload now keys on
+the screen the user is actually on rather than the stored return
+screen, so a late result still refreshes whichever detail screen is
+showing.
+
+Why now, and not in a separate issue: the stack in part 2 makes this a
+correctness requirement, not just a UX fix. With a stack, a late result
+that pops unconditionally would pop an entry the user's own esc already
+consumed, which breaks every later "back" (see the stack entry below).
+
+Alternative considered: a `saving` guard that blocks esc until the save
+resolves, as company edit does. Rejected because it's more code on two
+more screens and makes the user wait on something they've chosen to
+leave; the save still completes and its data reload still runs.
+
+## 2026-09-23 -- One return-screen stack instead of three fields (issue #89, part 2)
+
+`applicationStatusReturnScreen`, `documentReviewReturnScreen`, and
+`postingDetailReturnScreen` were three identical fields, added one PR at
+a time as each screen became reachable from a second place. They are
+now one `App.returnStack []screen` with two helpers: `enterFrom(next)`
+pushes the current screen and switches, and `returnBack()` pops and
+switches (returning the screen it landed on, so posting detail's back
+handler can still restore the posting-list cursor).
+
+Why a stack: these screens nest (posting list -> posting detail ->
+status select), and the fields only worked because each nesting level
+happened to use a different field. A stack handles nesting by
+push/pop order, and a new multi-entry screen needs only a push at
+entry and a pop at exit, not a new field. The per-field pattern is
+what let PR #88's lookupPosting bug through.
+
+Scope: only the three screens that had a return field use the stack.
+Single-origin screens (notes edit, export, filter select, company
+form/edit) keep their hardcoded returns. Pushing for them would add
+code for nothing, and the stack stays balanced either way because
+they return to a screen whose own entry is still on the stack.
+Review select -> review form is a replacement, not a push: the form's
+cancel/save returns to wherever review was entered from, as before.
+
+Invariant: every push has exactly one pop. That's why part 1 (the
+late-save guard) had to come first; an async save result popping after
+the user's own esc had already popped would break every later back.
+An empty stack on pop falls back to the home screen rather than
+panicking. That's only reachable if a push is missed somewhere, and
+landing somewhere sane beats crashing.
+
+Alternatives considered:
+- Keep the per-field pattern. Rejected for the reasons above; #89
+  exists because it had already caused one bug.
+- #55's full rework (screens own their transitions). Much larger and
+  still undecided; the stack is a step toward it, not a conflict.
+
+TDD note: this is a behavior-preserving refactor, so there was no
+red phase. TestApp_NestedBackOut_RetracesPath was added first as a
+safety net for the nested two-level back-out, which no existing test
+covered, and passed before and after. The full existing TUI suite
+also passed before and after.
+
+## 2026-09-23 -- Correction: notes edit needed the late-save guard too (issue #89, review follow-up)
+
+The part-2 entry above says single-origin screens keep the stack balanced
+"because they return to a screen whose own entry is still on the stack."
+Code review on PR #114 showed that's false for notes edit.
+`applicationNotesUpdatedMsg` unconditionally set screen = posting detail,
+so a notes save resolving after the user had already backed out of
+posting detail put them back there with posting detail's stack entry
+already popped. The next esc then fell through to the empty-stack home
+fallback instead of the posting list or application detail.
+
+Fix: the same guard as the status and review handlers. Navigate only if
+still on screenApplicationNotesEdit, and rebuild posting detail only if
+that's where the user is. Test:
+TestApp_NotesSaveResolvingAfterUserLeft_DoesNotYankScreenBack (red first).
+
+The corrected invariant: any async result handler that changes a.screen
+must first check the user is still on the screen that started it. Hardcoded
+returns are fine for key-driven cancels, not for async results.
+
+Known remaining gap (filed as a follow-up, not fixed here): the guard
+checks the screen type, not the specific visit. A stale save arriving
+after the user has left and re-entered the same screen (e.g. esc, then
+'s' again) still closes the new visit. This isn't a regression (the
+pre-stack code did the same) and the stack stays balanced either way.
+A proper fix tags each visit (a counter or the model's ID carried in
+the result message), which touches the message types and is its own
+change.
