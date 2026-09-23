@@ -81,25 +81,16 @@ type App struct {
 	applicationNotes      applicationNotesModel
 	documentReviewSelect  documentReviewSelectModel
 	documentReviewForm    documentReviewFormModel
-	// applicationStatusReturnScreen is which screen entered
-	// screenApplicationStatusSelect -- screenPostingDetail and
-	// screenActiveApplications both can, so the cancel/save handlers need
-	// to know which one to return to rather than assuming.
-	applicationStatusReturnScreen screen
-	// documentReviewReturnScreen is which screen entered
-	// screenDocumentReviewSelect/screenDocumentReviewForm --
-	// screenPostingDetail and screenActiveApplications both can (see
-	// decisions.log #83), same reasoning as applicationStatusReturnScreen
-	// above.
-	documentReviewReturnScreen screen
-	// postingDetailReturnScreen is which screen entered screenPostingDetail
-	// -- screenPostingList (browsing a company's postings) and
-	// screenApplicationDetail (jumping straight to an application's
-	// posting -- see decisions.log, the #86 follow-up) both can, same
-	// reasoning as applicationStatusReturnScreen above. Needed because
-	// backToPostingListMsg's name is a holdover from when screenPostingList
-	// was the only possible origin.
-	postingDetailReturnScreen screen
+	// returnStack records where the user came from for each screen that
+	// can be entered from more than one place: screenPostingDetail,
+	// screenApplicationStatusSelect, and the document review screens
+	// (select and form count as one step). Entering one pushes the
+	// screen being left; backing out or finishing pops it. It's a stack
+	// rather than one field per screen because these nest (e.g. posting
+	// list -> posting detail -> status select), and one push/pop pair
+	// per transition keeps a new entry point from needing its own field.
+	// See decisions.log, issue #89.
+	returnStack []screen
 	// activeApplications backs the home screen: every application not at
 	// a terminal dead-end status, across every company (see
 	// store.ListActiveApplications, decisions.log #43).
@@ -314,6 +305,25 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 		b.WriteString("\n" + desc + "\n")
 	}
 	return b.String()
+}
+
+// enterFrom switches to next, pushing the current screen onto
+// returnStack so returnBack can come back to it.
+func (a *App) enterFrom(next screen) {
+	a.returnStack = append(a.returnStack, a.screen)
+	a.screen = next
+}
+
+// returnBack pops returnStack and switches to the screen on top,
+// returning it. An empty stack means a push was missed somewhere; falling
+// back to the home screen beats panicking or staying stuck.
+func (a *App) returnBack() screen {
+	a.screen = screenActiveApplications
+	if n := len(a.returnStack); n > 0 {
+		a.screen = a.returnStack[n-1]
+		a.returnStack = a.returnStack[:n-1]
+	}
+	return a.screen
 }
 
 // rebuildPostingDetailApplication refreshes a.postingDetail after a
@@ -966,7 +976,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Nothing blocks esc while the save is in flight, so the user
 			// may already have left -- only navigate if they're still here.
 			if a.screen == screenApplicationStatusSelect {
-				a.screen = a.applicationStatusReturnScreen
+				a.returnBack()
 			}
 			var reviewsCmd tea.Cmd
 			if a.screen == screenPostingDetail {
@@ -1008,7 +1018,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Nothing blocks esc while the save is in flight, so the user
 			// may already have left -- only navigate if they're still here.
 			if a.screen == screenDocumentReviewForm {
-				a.screen = a.documentReviewReturnScreen
+				a.returnBack()
 			}
 			// Reload so the freshly-submitted review's outcome/notes show up
 			// immediately wherever it's displayed, without having to
@@ -1086,8 +1096,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case backToCompanyListMsg:
 			a.screen = screenCompanyList
 		case enterApplicationStatusMsg:
-			a.applicationStatusReturnScreen = screenActiveApplications
-			a.screen = screenApplicationStatusSelect
+			a.enterFrom(screenApplicationStatusSelect)
 			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus)
 		case enterApplicationDetailMsg:
 			a.screen = screenApplicationDetail
@@ -1129,13 +1138,11 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			a.applicationsByPosting[appView.Posting.ID] = appView.Application
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), appView.Posting, appView.Application, true, appView.LatestReviews, a.canNavigateSiblings(appView.Posting.ID))
-			a.postingDetailReturnScreen = screenApplicationDetail
-			a.screen = screenPostingDetail
+			a.enterFrom(screenPostingDetail)
 		case enterDocumentReviewFormMsg:
 			a.err = v.err
 			if v.err == nil {
-				a.documentReviewReturnScreen = screenApplicationDetail
-				a.screen = screenDocumentReviewForm
+				a.enterFrom(screenDocumentReviewForm)
 				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.applicationID, v.documentType, v.content, a.width, a.listRows())
 			}
 		case refreshApplicationDetailMsg:
@@ -1175,8 +1182,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case enterPostingDetailMsg:
 			p, app, hasApp := a.lookupPosting(v.postingID)
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
-			a.postingDetailReturnScreen = screenPostingList
-			a.screen = screenPostingDetail
+			a.enterFrom(screenPostingDetail)
 			return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
 		case enterFilterSelectMsg:
 			a.screen = screenFilterSelect
@@ -1190,10 +1196,9 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd, intent := a.postingDetail.Update(msg)
 		switch v := intent.(type) {
 		case backToPostingListMsg:
-			if a.postingDetailReturnScreen == screenPostingList {
+			if a.returnBack() == screenPostingList {
 				a.postingList.setCursor(indexOfPosting(a.postings, a.postingDetail.posting.ID))
 			}
-			a.screen = a.postingDetailReturnScreen
 		case navigatePostingMsg:
 			idx := indexOfPosting(a.postings, v.postingID)
 			newIdx := idx + v.direction
@@ -1204,15 +1209,13 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
 			}
 		case enterApplicationStatusMsg:
-			a.applicationStatusReturnScreen = screenPostingDetail
-			a.screen = screenApplicationStatusSelect
+			a.enterFrom(screenApplicationStatusSelect)
 			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus)
 		case enterApplicationNotesMsg:
 			a.screen = screenApplicationNotesEdit
 			a.applicationNotes = newApplicationNotesModel(a.store, v.postingID, v.currentNotes, a.width, a.listRows())
 		case enterDocumentReviewSelectMsg:
-			a.documentReviewReturnScreen = screenPostingDetail
-			a.screen = screenDocumentReviewSelect
+			a.enterFrom(screenDocumentReviewSelect)
 			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, v.applicationID)
 		case refreshPostingDetailMsg:
 			return a, a.rebuildPostingDetailApplication()
@@ -1221,7 +1224,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case screenApplicationStatusSelect:
 		cmd, intent := a.applicationStatus.Update(msg)
 		if _, ok := intent.(cancelApplicationStatusMsg); ok {
-			a.screen = a.applicationStatusReturnScreen
+			a.returnBack()
 		}
 		return a, cmd
 	case screenApplicationExport:
@@ -1240,7 +1243,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd, intent := a.documentReviewSelect.Update(msg)
 		switch v := intent.(type) {
 		case cancelDocumentReviewSelectMsg:
-			a.screen = a.documentReviewReturnScreen
+			a.returnBack()
 		case enterDocumentReviewFormMsg:
 			a.err = v.err
 			if v.err == nil {
@@ -1252,7 +1255,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case screenDocumentReviewForm:
 		cmd, intent := a.documentReviewForm.Update(msg)
 		if _, ok := intent.(cancelDocumentReviewFormMsg); ok {
-			a.screen = a.documentReviewReturnScreen
+			a.returnBack()
 		}
 		return a, cmd
 	case screenFilterSelect:

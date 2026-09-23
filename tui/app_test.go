@@ -989,8 +989,7 @@ func TestApp_ActiveApplications_C_ThenEsc_ReturnsHome(t *testing.T) {
 }
 
 // TestApp_ActiveApplications_StatusChange_ReturnsToActiveApplications
-// exercises the return-screen tracking applicationStatusReturnScreen
-// exists for: screenApplicationStatusSelect is reachable from both
+// exercises the return-screen tracking returnStack exists for: screenApplicationStatusSelect is reachable from both
 // screenPostingDetail and screenActiveApplications now, so saving (or
 // cancelling) must land back on whichever one entered it, not a
 // hardcoded screen.
@@ -1857,10 +1856,9 @@ func TestApp_ApplicationDetail_P_EntersPostingDetail(t *testing.T) {
 // browsing a company's postings -- a.postings is empty in that case (it's
 // only populated by screenPostingList's own loadPostings), so esc landed
 // on an empty, disconnected posting-list screen instead of back where the
-// user came from. postingDetailReturnScreen fixes this the same way
-// applicationStatusReturnScreen/documentReviewReturnScreen already solve
-// the analogous problem for their own screens (see decisions.log #86
-// follow-up).
+// user came from. returnStack now tracks where posting detail was entered
+// from, the same way it does for the other multi-entry screens (see
+// decisions.log #86 follow-up and #89).
 func TestApp_PostingDetailFromApplicationDetail_Esc_ReturnsToApplicationDetail(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
@@ -2061,8 +2059,8 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplications
 // the fast path (see decisions.log #87 follow-up), which never populates
 // a.applicationsByPosting since it renders directly from the already-loaded
 // ApplicationView instead of going through loadApplication. Submitting a
-// document review from that posting-detail screen sets
-// documentReviewReturnScreen = screenPostingDetail, and
+// document review from that posting-detail screen returns to
+// screenPostingDetail, and
 // documentReviewCreatedMsg's handler for that case calls
 // rebuildPostingDetailApplication, which re-derives hasApp via
 // lookupPosting -- a miss against the never-populated map -- and wrongly
@@ -3033,5 +3031,45 @@ func TestApp_ReviewSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 
 	if app.screen != screenApplicationDetail {
 		t.Fatalf("screen after late save result = %v, want screenApplicationDetail (where the user already was)", app.screen)
+	}
+}
+
+// TestApp_NestedBackOut_RetracesPath backs out of a transient screen
+// entered from posting detail, itself entered from application detail:
+// each esc must land one step back along the path the user actually took,
+// ending at application detail rather than the never-browsed posting list.
+func TestApp_NestedBackOut_RetracesPath(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name      string
+		key       rune
+		transient screen
+	}{
+		{name: "status select", key: 's', transient: screenApplicationStatusSelect},
+		{name: "document review select", key: 'r', transient: screenDocumentReviewSelect},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := newTestStore(t)
+			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+			mustCreateApplication(t, s, posting.ID)
+			app := newTestApp(t, s, newTestSyncer(s, nil))
+
+			app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // active-applications -> application detail
+			app, _ = sendKey(app, runeKey('p'))                   // application detail -> posting detail
+			app, _ = sendKey(app, runeKey(tt.key))
+			if app.screen != tt.transient {
+				t.Fatalf("screen after %q = %v, want %v", tt.key, app.screen, tt.transient)
+			}
+
+			for _, want := range []screen{screenPostingDetail, screenApplicationDetail, screenActiveApplications} {
+				app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+				if app.screen != want {
+					t.Fatalf("screen after esc = %v, want %v", app.screen, want)
+				}
+			}
+		})
 	}
 }
