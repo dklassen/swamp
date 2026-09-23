@@ -13,12 +13,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pressly/goose/v3"
 
 	_ "modernc.org/sqlite"
@@ -29,6 +31,7 @@ import (
 	"github.com/dklassen/swamp/export"
 	"github.com/dklassen/swamp/greenhouse"
 	"github.com/dklassen/swamp/lever"
+	"github.com/dklassen/swamp/mcpserver"
 	"github.com/dklassen/swamp/seed"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
@@ -86,8 +89,11 @@ func main() {
 		case "import":
 			runImport(s, os.Args[2:])
 			return
+		case "mcp-serve":
+			runMCPServe(s, documentsStore)
+			return
 		default:
-			fmt.Fprintf(os.Stderr, "usage: %s [fetch|stage|export|import]\n", os.Args[0])
+			fmt.Fprintf(os.Stderr, "usage: %s [fetch|stage|export|import|mcp-serve]\n", os.Args[0])
 			os.Exit(1)
 		}
 	}
@@ -216,6 +222,40 @@ func runStage(s *store.Store, d *documents.Store, args []string) {
 		printJSON(prepared)
 	default:
 		usage()
+	}
+}
+
+// runMCPServe runs swamp's agent hand-off mechanism as an MCP server over
+// the Streamable HTTP transport rather than one-off CLI calls -- needed
+// when the caller (an MCP-capable Claude host) is running somewhere that
+// can't spawn or reach the swamp binary directly, e.g. inside a
+// container. See decisions.log for why MCP/Streamable-HTTP specifically,
+// rather than gRPC or a plain REST API, is the right fit here.
+//
+// Binds to SWAMP_MCP_ADDR (default "0.0.0.0:8787"). Must bind to a
+// non-loopback address: from inside a container, 127.0.0.1 resolves to
+// the container's own loopback, not the host's, so a localhost-only bind
+// would be unreachable regardless of which container framework's DNS
+// bridging is in use. No auth on this endpoint for now -- single-user
+// local dev machine, same trust level as running swamp directly (see
+// decisions.log); add a bearer-token check before this is ever reachable
+// beyond this Mac.
+func runMCPServe(s *store.Store, d *documents.Store) {
+	addr := os.Getenv("SWAMP_MCP_ADDR")
+	if addr == "" {
+		addr = "0.0.0.0:8787"
+	}
+
+	st := stage.New(s, d)
+	server := mcpserver.New(st, d)
+
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+		return server
+	}, nil)
+
+	log.Printf("swamp mcp-serve: listening on %s", addr)
+	if err := http.ListenAndServe(addr, handler); err != nil {
+		log.Fatalf("mcp-serve: %v", err)
 	}
 }
 
