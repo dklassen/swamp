@@ -45,6 +45,13 @@ func New(st *stage.Stage, d *documents.Store) *mcp.Server {
 
 type listPostingsInput struct{}
 
+// listPostingsOutput wraps the candidate list because the MCP spec requires
+// a tool's structuredContent to be a JSON object -- a bare array is rejected
+// by spec-conforming clients such as Claude Code.
+type listPostingsOutput struct {
+	Postings []stage.Candidate
+}
+
 // The output type parameter is 'any' rather than []stage.Candidate: the
 // SDK's automatic JSON Schema inference panics on store.Posting's shape
 // (it embeds IngestedFields, which has an OptionalTime field whose custom
@@ -58,7 +65,7 @@ func listPostingsHandler(st *stage.Stage) mcp.ToolHandlerFor[listPostingsInput, 
 		if err != nil {
 			return nil, nil, fmt.Errorf("list_postings: %w", err)
 		}
-		return nil, candidates, nil
+		return nil, listPostingsOutput{Postings: candidates}, nil
 	}
 }
 

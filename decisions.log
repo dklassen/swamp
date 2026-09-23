@@ -5015,3 +5015,27 @@ as before. DisableLocalhostProtection is still required and still correct
 to leave on -- narrowing the bind doesn't remove the need for it, since
 the redirect-to-loopback mechanism is what triggers the check in the
 first place, independent of what swamp binds to.
+
+## 2026-09-23 -- Correction: `list_postings` returned a bare array as structuredContent
+
+First real use of the MCP path from Claude Code failed on `list_postings`
+with a client-side schema-validation error ("structuredContent: expected
+record"). The MCP spec requires a tool result's `structuredContent` to be
+a JSON object; the handler returned `[]stage.Candidate` directly, which
+serialized as an array. `stage_prepare`/`write_document` were unaffected
+(both already return single objects). The in-process tests didn't catch
+it because the go-sdk's own client doesn't enforce the object rule.
+
+Fix: `list_postings` now returns `{"Postings": [...]}` (new
+`listPostingsOutput` struct). The test helper `callTool` now asserts every
+tool's structuredContent is a JSON object, so all three tools are guarded
+against a repeat, not just this one.
+
+Alternatives considered: returning the array only in the text `Content`
+and omitting structuredContent -- rejected, since structured output is
+what lets a client consume the result without re-parsing text, and the
+other two tools already provide it. This does mean the MCP shape of
+`list_postings` now differs from `swamp stage list`'s CLI output (bare
+array); left the CLI alone since it has no such constraint and changing
+it would break its existing contract. The apply-to-posting skill notes
+the difference.

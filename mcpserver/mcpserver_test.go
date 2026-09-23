@@ -94,6 +94,13 @@ func callTool[Out any](t *testing.T, cs *mcp.ClientSession, name string, args an
 	if err != nil {
 		t.Fatalf("marshal structured content: %v", err)
 	}
+	// The MCP spec requires structuredContent to be a JSON object, and
+	// real clients (e.g. Claude Code) reject anything else -- the SDK's
+	// own client doesn't check, so this helper has to.
+	var obj map[string]any
+	if err := json.Unmarshal(raw, &obj); err != nil {
+		t.Fatalf("CallTool(%s) structured content is not a JSON object: %s", name, raw)
+	}
 	var out Out
 	if err := json.Unmarshal(raw, &out); err != nil {
 		t.Fatalf("unmarshal structured content into %T: %v", out, err)
@@ -144,7 +151,7 @@ func TestListPostings_ReturnsInterestedCandidates(t *testing.T) {
 
 	cs := connectClient(t, srv)
 
-	got := callTool[[]stage.Candidate](t, cs, "list_postings", map[string]any{})
+	got := callTool[listPostingsOutput](t, cs, "list_postings", map[string]any{}).Postings
 
 	if len(got) != 1 {
 		t.Fatalf("len(got) = %d, want 1 (%+v)", len(got), got)

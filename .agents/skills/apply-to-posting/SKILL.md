@@ -21,7 +21,9 @@ prefix each `swamp` invocation with `direnv exec .` so `SWAMP_DB_PATH` and
 container that can't reach the swamp binary or its sqlite db directly),
 use the `swamp` MCP server instead -- it's declared in this repo's
 `.mcp.json` and exposes the same three operations this skill needs as
-tools, over the same JSON shapes documented below:
+tools, over the same JSON shapes documented below (except that
+`list_postings` wraps the array in an object: `{"Postings": [...]}`, since
+MCP requires structured tool results to be objects):
 
 | CLI (steps below)             | MCP tool          | Arguments                                           |
 | ------------------------------ | ------------------ | ---------------------------------------------------- |
