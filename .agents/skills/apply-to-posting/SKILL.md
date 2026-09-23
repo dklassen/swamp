@@ -17,6 +17,28 @@ prefix each `swamp` invocation with `direnv exec .` so `SWAMP_DB_PATH` and
 `SWAMP_DOCUMENTS_PATH` are set from `.envrc`. Use `go run ./cmd/swamp
 <args>` rather than assuming a built binary exists.
 
+**If you don't have shell access to this repo** (e.g. you're running in a
+container that can't reach the swamp binary or its sqlite db directly),
+use the `swamp` MCP server instead -- it's declared in this repo's
+`.mcp.json` and exposes the same three operations this skill needs as
+tools, over the same JSON shapes documented below (except that
+`list_postings` wraps the array in an object: `{"Postings": [...]}`, since
+MCP requires structured tool results to be objects):
+
+| CLI (steps below)             | MCP tool          | Arguments                                           |
+| ------------------------------ | ------------------ | ---------------------------------------------------- |
+| `swamp stage list`             | `list_postings`   | none                                                 |
+| `swamp stage prepare <id>`     | `stage_prepare`   | `PostingID`                                          |
+| writing the drafted file directly | `write_document`  | `ApplicationID`, `DocumentType` (`cover_letter`\|`resume`), `Content` |
+
+The MCP path needs `swamp mcp-serve` actually running on the host first
+(`task mcp-serve`, or `direnv exec . go run ./cmd/swamp mcp-serve`) --
+unlike the CLI, this is a persistent server, not something spawned
+per-call. See `decisions.log` for why MCP/Streamable-HTTP is the
+mechanism here rather than gRPC or a REST API, and for the
+`host.container.internal` DNS/bind-address details if the server seems
+unreachable from inside a container.
+
 ## 1. Discover eligible postings
 
 ```
@@ -133,6 +155,12 @@ point of this step is that the draft comes from real, user-provided
 material -- a cover letter written without it isn't a shortcut, it's a
 different (and much worse) task.
 
+**No MCP tool exposes this file yet.** The `swamp` MCP server (see the
+table above) only covers steps 1, 2, and 4's write -- if you're on the
+MCP path because you have no filesystem access at all, there's currently
+no way to complete this step, and the skill can't proceed past it as-is.
+Tell the user rather than drafting without the profile.
+
 ## 4. Draft the documents
 
 Write a cover letter and a resume, both in markdown, tailored to this
@@ -149,7 +177,11 @@ specific posting:
   to sound like the user.
 
 Write the cover letter to `CoverLetter.Path` and the resume to
-`Resume.Path` from step 2's output.
+`Resume.Path` from step 2's output -- directly, if you have filesystem
+access to the repo. Otherwise, call the `write_document` MCP tool once per
+document (`ApplicationID` from step 2's output, `DocumentType` set to
+`"cover_letter"` or `"resume"`, `Content` the full document text), which
+has the same effect.
 
 ## 5. Review checkpoint
 

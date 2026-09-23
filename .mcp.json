@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "swamp": {
+      "type": "http",
+      "url": "http://host.container.internal:8787"
+    }
+  }
+}

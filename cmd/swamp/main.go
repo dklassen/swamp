@@ -13,12 +13,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pressly/goose/v3"
 
 	_ "modernc.org/sqlite"
@@ -29,6 +31,7 @@ import (
 	"github.com/dklassen/swamp/export"
 	"github.com/dklassen/swamp/greenhouse"
 	"github.com/dklassen/swamp/lever"
+	"github.com/dklassen/swamp/mcpserver"
 	"github.com/dklassen/swamp/seed"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
@@ -86,8 +89,11 @@ func main() {
 		case "import":
 			runImport(s, os.Args[2:])
 			return
+		case "mcp-serve":
+			runMCPServe(s, documentsStore)
+			return
 		default:
-			fmt.Fprintf(os.Stderr, "usage: %s [fetch|stage|export|import]\n", os.Args[0])
+			fmt.Fprintf(os.Stderr, "usage: %s [fetch|stage|export|import|mcp-serve]\n", os.Args[0])
 			os.Exit(1)
 		}
 	}
@@ -216,6 +222,56 @@ func runStage(s *store.Store, d *documents.Store, args []string) {
 		printJSON(prepared)
 	default:
 		usage()
+	}
+}
+
+// runMCPServe runs swamp's agent hand-off mechanism as an MCP server over
+// the Streamable HTTP transport rather than one-off CLI calls -- needed
+// when the caller (an MCP-capable Claude host) is running somewhere that
+// can't spawn or reach the swamp binary directly, e.g. inside a
+// container. See decisions.log for why MCP/Streamable-HTTP specifically,
+// rather than gRPC or a plain REST API, is the right fit here.
+//
+// Binds to SWAMP_MCP_ADDR (default "127.0.0.1:8787"). 127.0.0.1 is
+// correct, not just safe, for Apple's `container` framework: its
+// host.container.internal DNS entry is implemented as a redirect-to-
+// localhost on the host side (see `container system dns create --help`'s
+// --localhost flag), verified directly by logging http.Request's
+// LocalAddrContextKey for a real container request -- RemoteAddr showed
+// the container's real vmnet address, but LocalAddr was 127.0.0.1
+// regardless. So the traffic that matters here never actually arrives on
+// any other host interface; binding wider than loopback would just
+// expose this on the LAN for no reachability benefit. No auth on this
+// endpoint for now -- single-user local dev machine, same trust level as
+// running swamp directly (see decisions.log); add a bearer-token check
+// before this is ever reachable beyond this Mac.
+//
+// DisableLocalhostProtection is set because the SDK's default DNS-rebinding
+// protection rejects any request whose local address is loopback but whose
+// Host header isn't a recognized localhost value -- which every
+// host.container.internal request is, by the mechanism above. Confirmed
+// there's no way around this by choosing a different bind address: the
+// redirect targets loopback specifically, so the protection's loopback
+// check will always fire for this traffic. Safe to disable here for the
+// same reason auth is skipped: single-user local dev machine, deliberately
+// reached by a known local container over a known DNS name, not the
+// untrusted-browser threat this protection exists for.
+func runMCPServe(s *store.Store, d *documents.Store) {
+	addr := os.Getenv("SWAMP_MCP_ADDR")
+	if addr == "" {
+		addr = "127.0.0.1:8787"
+	}
+
+	st := stage.New(s, d)
+	server := mcpserver.New(st, d)
+
+	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
+		return server
+	}, &mcp.StreamableHTTPOptions{DisableLocalhostProtection: true})
+
+	log.Printf("swamp mcp-serve: listening on %s", addr)
+	if err := http.ListenAndServe(addr, handler); err != nil {
+		log.Fatalf("mcp-serve: %v", err)
 	}
 }
 

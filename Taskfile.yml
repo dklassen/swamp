@@ -65,3 +65,8 @@ tasks:
     desc: Run the swamp binary with the local sqlite db
     cmds:
       - ./bin/swamp
+
+  mcp-serve:
+    desc: "Run swamp as an MCP server over Streamable HTTP (SWAMP_MCP_ADDR, default 127.0.0.1:8787)"
+    cmds:
+      - ./bin/swamp mcp-serve
