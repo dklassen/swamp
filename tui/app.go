@@ -996,8 +996,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.applicationsByPosting = make(map[int64]store.Application)
 			}
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
-			a.screen = screenPostingDetail
-			return a, a.rebuildPostingDetailApplication()
+			// Same late-save guard as applicationStatusUpdatedMsg: yanking
+			// the user back to posting detail after their own esc already
+			// popped its returnStack entry would strand the next esc.
+			if a.screen == screenApplicationNotesEdit {
+				a.screen = screenPostingDetail
+			}
+			if a.screen == screenPostingDetail {
+				return a, a.rebuildPostingDetailApplication()
+			}
 		}
 	case applicationExportedMsg:
 		a.err = msg.err

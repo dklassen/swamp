@@ -4848,3 +4848,32 @@ red phase. TestApp_NestedBackOut_RetracesPath was added first as a
 safety net for the nested two-level back-out, which no existing test
 covered, and passed before and after. The full existing TUI suite
 also passed before and after.
+
+## 2026-09-23 -- Correction: notes edit needed the late-save guard too (issue #89, review follow-up)
+
+The part-2 entry above says single-origin screens keep the stack balanced
+"because they return to a screen whose own entry is still on the stack."
+Code review on PR #114 showed that's false for notes edit.
+`applicationNotesUpdatedMsg` unconditionally set screen = posting detail,
+so a notes save resolving after the user had already backed out of
+posting detail put them back there with posting detail's stack entry
+already popped. The next esc then fell through to the empty-stack home
+fallback instead of the posting list or application detail.
+
+Fix: the same guard as the status and review handlers. Navigate only if
+still on screenApplicationNotesEdit, and rebuild posting detail only if
+that's where the user is. Test:
+TestApp_NotesSaveResolvingAfterUserLeft_DoesNotYankScreenBack (red first).
+
+The corrected invariant: any async result handler that changes a.screen
+must first check the user is still on the screen that started it. Hardcoded
+returns are fine for key-driven cancels, not for async results.
+
+Known remaining gap (filed as a follow-up, not fixed here): the guard
+checks the screen type, not the specific visit. A stale save arriving
+after the user has left and re-entered the same screen (e.g. esc, then
+'s' again) still closes the new visit. This isn't a regression (the
+pre-stack code did the same) and the stack stays balanced either way.
+A proper fix tags each visit (a counter or the model's ID carried in
+the result message), which touches the message types and is its own
+change.
