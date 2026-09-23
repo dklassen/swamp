@@ -4778,3 +4778,29 @@ exited 0. After: `export 99999` prints "export: no application with id
 both PDFs. Non-numeric and out-of-range arguments still fail at the
 existing `strconv.ParseInt` check; `export 0` and `export 27` (past the
 highest real ID) both report no such application.
+
+## 2026-09-23 -- Late save results no longer yank the screen back (issue #89, part 1)
+
+Found while planning #89's return-screen stack. Nothing blocks esc on
+the status-select or review-form screens while their save is in flight
+(unlike company edit's `saving` guard), so `applicationStatusUpdatedMsg`
+and `documentReviewCreatedMsg` can arrive after the user has already
+backed out. Both handlers unconditionally set `a.screen` to the stored
+return screen, so a user who had moved on got pulled back to a screen
+they'd already left.
+
+Fix: both handlers only navigate if the user is still on the screen
+that started the save. `documentReviewCreatedMsg`'s reload now keys on
+the screen the user is actually on rather than the stored return
+screen, so a late result still refreshes whichever detail screen is
+showing.
+
+Why now, and not in a separate issue: the stack in part 2 makes this a
+correctness requirement, not just a UX fix. With a stack, a late result
+that pops unconditionally would pop an entry the user's own esc already
+consumed, which breaks every later "back" (see the stack entry below).
+
+Alternative considered: a `saving` guard that blocks esc until the save
+resolves, as company edit does. Rejected because it's more code on two
+more screens and makes the user wait on something they've chosen to
+leave; the save still completes and its data reload still runs.

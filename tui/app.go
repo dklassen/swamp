@@ -963,7 +963,11 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.applicationsByPosting = make(map[int64]store.Application)
 			}
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
-			a.screen = a.applicationStatusReturnScreen
+			// Nothing blocks esc while the save is in flight, so the user
+			// may already have left -- only navigate if they're still here.
+			if a.screen == screenApplicationStatusSelect {
+				a.screen = a.applicationStatusReturnScreen
+			}
 			var reviewsCmd tea.Cmd
 			if a.screen == screenPostingDetail {
 				reviewsCmd = a.rebuildPostingDetailApplication()
@@ -1001,12 +1005,16 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case documentReviewCreatedMsg:
 		a.err = msg.err
 		if msg.err == nil {
-			a.screen = a.documentReviewReturnScreen
+			// Nothing blocks esc while the save is in flight, so the user
+			// may already have left -- only navigate if they're still here.
+			if a.screen == screenDocumentReviewForm {
+				a.screen = a.documentReviewReturnScreen
+			}
 			// Reload so the freshly-submitted review's outcome/notes show up
 			// immediately wherever it's displayed, without having to
 			// navigate away and back (see decisions.log #83) -- which
-			// reload depends on which screen review was entered from.
-			switch a.documentReviewReturnScreen {
+			// reload depends on which screen the user is now on.
+			switch a.screen {
 			case screenApplicationDetail:
 				// Also refreshes the active-applications list in the
 				// background, so its review-glyph column isn't stale by
