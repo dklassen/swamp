@@ -48,10 +48,9 @@ on the host running the server, not something to open or write yourself.
 If a document already exists, check `LatestReviews` first:
 
 - A flagged review with `Notes` set: this is a **revision**, not a fresh
-  draft. No MCP tool returns a document's current content yet, so ask the
-  user to paste the existing draft (or confirm you should redraft from
-  scratch), then write a version that addresses the notes -- don't
-  silently start from a blank page.
+  draft. Read the existing draft with `read_document`, then write a
+  version that addresses the notes -- don't silently start from a blank
+  page.
 - No review yet, or the only review passed: tell the user and ask before
   overwriting it -- don't silently clobber drafted work you can't see.
 
