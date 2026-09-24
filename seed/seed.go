@@ -11,12 +11,13 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// Entry is one company row from a seed file, matching store.CreateCompany's
-// params directly.
+// Entry is one company row from a seed file: store.CreateCompany's params,
+// plus an optional Description of who the company is.
 type Entry struct {
-	Name      string `yaml:"name"`
-	Source    string `yaml:"source"`
-	SourceRef string `yaml:"source_ref"`
+	Name        string `yaml:"name"`
+	Source      string `yaml:"source"`
+	SourceRef   string `yaml:"source_ref"`
+	Description string `yaml:"description"`
 }
 
 type file struct {

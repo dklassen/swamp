@@ -172,3 +172,51 @@ func TestImportCompanies_ReimportExistingCompany_DoesNotDuplicate(t *testing.T) 
 		t.Fatalf("got %d companies in store, want 1 (no duplicate)", len(companies))
 	}
 }
+
+// A seed entry's description is applied when the company has none yet
+// (new, or existing without one) and never overwrites one already there,
+// the same rule as AddCompany.
+func TestImportCompanies_Description_FillsOnlyMissing(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name, existing, want string
+		preexisting          bool
+	}{
+		{name: "new company", want: "from seed"},
+		{name: "existing without a description", preexisting: true, want: "from seed"},
+		{name: "existing with a description", preexisting: true, existing: "written by hand", want: "written by hand"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := newTestStore(t)
+			ctx := context.Background()
+			if tc.preexisting {
+				acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+				if tc.existing != "" {
+					if _, err := s.UpdateCompanyDescription(ctx, acme.ID, tc.existing); err != nil {
+						t.Fatalf("UpdateCompanyDescription: %v", err)
+					}
+				}
+			}
+			fetcher := &perBoardFetcher{postings: map[string][]jobboard.Posting{"acme": nil}}
+			syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+
+			results := syncer.ImportCompanies(ctx, []seed.Entry{
+				{Name: "Acme", Source: "ashby", SourceRef: "acme", Description: "from seed"},
+			})
+			if results[0].Err != nil {
+				t.Fatalf("ImportCompanies: %v", results[0].Err)
+			}
+
+			got, err := s.GetCompany(ctx, results[0].Company.ID)
+			if err != nil {
+				t.Fatalf("GetCompany: %v", err)
+			}
+			if got.Description != tc.want {
+				t.Errorf("Description = %q, want %q", got.Description, tc.want)
+			}
+		})
+	}
+}
