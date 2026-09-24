@@ -5450,3 +5450,22 @@ size), set apart by bold weight alone. Pinned by explicit sizes in a
 table-driven test; the existing regression test compares against
 headingFontSize(1), so it guards the size being applied but passes
 whatever the size is.
+
+## 2026-09-24 -- PDF headings get space above, less below
+
+Headings only had space after them (1.5 line heights) and none before,
+so a heading sat as close to the end of the previous section as to its
+own content (about 25pt baseline to baseline both ways). Now a heading
+gets half a line height of extra space above it (skipped at the top of
+a page) and 1.15 line heights below, so it groups with what follows.
+
+Decisions:
+- The test asserts the proximity rule (space above at least 1.25x the
+  space below, baseline to baseline) rather than exact offsets, in line
+  with the 2026-09-17 note about not pinning fpdf's point math.
+- `firstLineHeight` now includes a heading's space-above, so a thematic
+  break still reserves room for the heading it introduces. The existing
+  orphan sweep stepped one paragraph (~8mm) at a time and missed the
+  new ~3mm window, so it now also varies a short list before the rule
+  for finer steps. It fails without the reservation (24 paragraphs + 2
+  items) and passes with it. pdf tests take ~1.6s instead of ~0.35s.

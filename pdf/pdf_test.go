@@ -545,6 +545,39 @@ func TestRender_HeadingSizesFollowResumeConventions(t *testing.T) {
 	}
 }
 
+// TestRender_HeadingSitsCloserToItsContentThanToWhatPrecedesIt checks the
+// basic proximity rule for headings: more space above a heading than
+// below it, so it visibly belongs to the section it introduces. Headings
+// used to get space only after them, which left each one floating nearer
+// the previous section than its own. Measured baseline to baseline, and
+// required to be clearly larger rather than just larger, so rounding in
+// the content stream can't satisfy it by accident.
+func TestRender_HeadingSitsCloserToItsContentThanToWhatPrecedesIt(t *testing.T) {
+	t.Parallel()
+
+	for _, heading := range []string{"## Section", "### Section"} {
+		t.Run(heading, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := Render([]byte("Previous text.\n\n" + heading + "\n\nFollowing text."))
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			yPrev, ok1 := textStartY(t, got, "Previous text.")
+			yHead, ok2 := textStartY(t, got, "Section")
+			yNext, ok3 := textStartY(t, got, "Following text.")
+			if !ok1 || !ok2 || !ok3 {
+				t.Fatalf("could not locate one or more text positions")
+			}
+			// PDF y grows upward, so earlier blocks have larger y.
+			above, below := yPrev-yHead, yHead-yNext
+			if above < below*1.25 {
+				t.Errorf("space above heading %.1fpt, below %.1fpt -- want above at least 1.25x below", above, below)
+			}
+		})
+	}
+}
+
 // TestRender_ThematicBreakIsNeverTheLastMarkOnAPage guards the
 // section-divider orphan: a "---" whose own height fits in the space
 // left at the bottom of a page, but whose following heading doesn't,
@@ -558,24 +591,33 @@ func TestRender_HeadingSizesFollowResumeConventions(t *testing.T) {
 func TestRender_ThematicBreakIsNeverTheLastMarkOnAPage(t *testing.T) {
 	t.Parallel()
 
+	// Paragraphs and list items advance the page by different amounts, so
+	// combining them steps the rule's position in much finer increments
+	// than paragraphs alone -- fine enough to land inside the few
+	// millimetres of a heading's space-above.
 	for filler := 1; filler <= 45; filler++ {
-		var b strings.Builder
-		b.WriteString("# Title\n\n")
-		for i := 0; i < filler; i++ {
-			fmt.Fprintf(&b, "Filler paragraph number %d.\n\n", i)
-		}
-		b.WriteString("---\n\n## Education\n\nBody under heading.\n")
-
-		got, err := Render([]byte(b.String()))
-		if err != nil {
-			t.Fatalf("Render (filler=%d): %v", filler, err)
-		}
-		for pageNum, page := range pagesOfMarks(got) {
-			if len(page) == 0 {
-				continue
+		for items := 0; items <= 4; items++ {
+			var b strings.Builder
+			b.WriteString("# Title\n\n")
+			for i := 0; i < filler; i++ {
+				fmt.Fprintf(&b, "Filler paragraph number %d.\n\n", i)
 			}
-			if last := page[len(page)-1]; last.isRule {
-				t.Errorf("filler=%d: page %d ends with a thematic-break rule at y=%.1f and nothing after it -- the heading it introduces was orphaned onto the next page, leaving a blank band", filler, pageNum+1, last.y)
+			for i := 0; i < items; i++ {
+				fmt.Fprintf(&b, "- Filler item %d\n", i)
+			}
+			b.WriteString("\n---\n\n## Education\n\nBody under heading.\n")
+
+			got, err := Render([]byte(b.String()))
+			if err != nil {
+				t.Fatalf("Render (filler=%d, items=%d): %v", filler, items, err)
+			}
+			for pageNum, page := range pagesOfMarks(got) {
+				if len(page) == 0 {
+					continue
+				}
+				if last := page[len(page)-1]; last.isRule {
+					t.Errorf("filler=%d, items=%d: page %d ends with a thematic-break rule at y=%.1f and nothing after it -- the heading it introduces was orphaned onto the next page, leaving a blank band", filler, items, pageNum+1, last.y)
+				}
 			}
 		}
 	}

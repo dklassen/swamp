@@ -42,15 +42,22 @@ func (r *renderer) renderChildren(n ast.Node) {
 // list's indented X even after renderList restores the margin itself
 // (restoring the margin doesn't retroactively move the cursor).
 func (r *renderer) renderBlock(n ast.Node) {
-	left, _, _, _ := r.doc.GetMargins()
+	left, top, _, _ := r.doc.GetMargins()
 	r.doc.SetX(left)
 
 	switch v := n.(type) {
 	case *ast.Heading:
 		size := headingFontSize(v.Level)
+		// A heading belongs to what follows it, so it gets extra space
+		// above and less below than a paragraph does -- except at the
+		// top of a page, where space above would only push it down.
+		if r.doc.GetY() > top {
+			r.doc.Ln(headingSpaceBefore(size))
+			r.doc.SetX(left)
+		}
 		r.doc.SetFont(fontFamily, "B", size)
 		r.renderInlineChildren(n, "B", size)
-		r.doc.Ln(lineHeight(size) * 1.5)
+		r.doc.Ln(lineHeight(size) * 1.15)
 	case *ast.Paragraph, *ast.TextBlock:
 		r.doc.SetFont(fontFamily, "", baseFontSize)
 		r.renderInlineChildren(n, "", baseFontSize)
@@ -149,6 +156,12 @@ func headingFontSize(level int) float64 {
 	}
 }
 
+// headingSpaceBefore is the extra space (mm) above a heading of fontSize
+// (pt), on top of whatever the preceding block already left below itself.
+func headingSpaceBefore(fontSize float64) float64 {
+	return lineHeight(fontSize) * 0.5
+}
+
 // lineHeight returns a comfortable line height (mm) for fontSize (pt),
 // following the common fpdf convention of roughly half the point size.
 func lineHeight(fontSize float64) float64 {
@@ -156,15 +169,16 @@ func lineHeight(fontSize float64) float64 {
 }
 
 // firstLineHeight is the height of the first line n will render as,
-// used to keep a thematic break on the same page as the block it
-// introduces. A nil node is a rule with nothing after it, which needs no
-// room reserved beyond its own.
+// including a heading's space above it, used to keep a thematic break on
+// the same page as the block it introduces. A nil node is a rule with
+// nothing after it, which needs no room reserved beyond its own.
 func firstLineHeight(n ast.Node) float64 {
 	switch v := n.(type) {
 	case nil:
 		return 0
 	case *ast.Heading:
-		return lineHeight(headingFontSize(v.Level))
+		size := headingFontSize(v.Level)
+		return headingSpaceBefore(size) + lineHeight(size)
 	default:
 		return lineHeight(baseFontSize)
 	}
