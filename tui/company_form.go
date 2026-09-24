@@ -6,7 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/sync"
 )
 
 // companySources are the store.Company.Source values this form can
@@ -35,26 +35,33 @@ const (
 	formFieldCount
 )
 
-// companyFormModel drives the add-company screen. It holds the store it
-// needs to dispatch createCompany, and the form's own private input/focus
-// state -- no other screen reads or writes this state.
+// companyFormModel drives the add-company screen. It holds the syncer it
+// needs to dispatch createCompany (which checks the board before
+// saving), and the form's own private input/focus state -- no other
+// screen reads or writes this state.
 type companyFormModel struct {
-	store       *store.Store
+	syncer      *sync.Syncer
 	sourceIndex int
 	inputs      []textinput.Model
 	focus       int
+	// checking is true from the moment Enter dispatches createCompany
+	// until checkResolved is called with its result. The form ignores
+	// keys meanwhile: bubbletea can't cancel a dispatched command, so Esc
+	// would race the save (as on the edit screen, decisions.log #37) and a
+	// second Enter would start a duplicate check.
+	checking bool
 }
 
 // newCompanyFormModel returns a fresh, blank form with the source picker
 // focused first (defaulting to companySources[0]) -- constructed anew
 // each time the screen is entered, replacing the previous reset-in-place
 // pattern (App.formInputs[i].SetValue("")).
-func newCompanyFormModel(s *store.Store) companyFormModel {
+func newCompanyFormModel(syncer *sync.Syncer) companyFormModel {
 	inputs := make([]textinput.Model, formFieldCount)
 	for i := range inputs {
 		inputs[i] = textinput.New()
 	}
-	return companyFormModel{store: s, inputs: inputs}
+	return companyFormModel{syncer: syncer, inputs: inputs}
 }
 
 // cancelCompanyFormMsg signals that App should switch back to the
@@ -81,6 +88,9 @@ func (m *companyFormModel) cycleSource(direction int) {
 }
 
 func (m *companyFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
+	if m.checking {
+		return nil, nil
+	}
 	switch {
 	case msg.Type == tea.KeyEsc:
 		return nil, cancelCompanyFormMsg{}
@@ -101,7 +111,8 @@ func (m *companyFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		if name == "" || sourceRef == "" {
 			return nil, nil
 		}
-		return createCompany(m.store, name, companySources[m.sourceIndex], sourceRef), nil
+		m.checking = true
+		return createCompany(m.syncer, name, companySources[m.sourceIndex], sourceRef), nil
 	}
 	if m.focus == formFieldSource {
 		return nil, nil
@@ -109,6 +120,13 @@ func (m *companyFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	var cmd tea.Cmd
 	m.inputs[m.focus], cmd = m.inputs[m.focus].Update(msg)
 	return cmd, nil
+}
+
+// checkResolved marks the in-flight board check (if any) as done. Called
+// by App once companyCreatedMsg arrives, success or failure -- on failure
+// the form stays open with its inputs intact so a typo can be fixed.
+func (m *companyFormModel) checkResolved() {
+	m.checking = false
 }
 
 // renderSourcePicker shows every source with the selected one boxed and
@@ -148,6 +166,9 @@ func (m *companyFormModel) View() string {
 		b.WriteString(label.Render(labels[field]+":") + " " + m.inputs[field].View() + "\n")
 	}
 
+	if m.checking {
+		b.WriteString(helpStyle.Render("Checking board...") + "\n")
+	}
 	b.WriteString(helpStyle.Render("tab: next field  ←/→: change source  enter: save  esc: cancel"))
 	return b.String()
 }

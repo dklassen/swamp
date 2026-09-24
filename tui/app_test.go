@@ -165,6 +165,36 @@ func TestApp_PressA_EntersCompanyForm(t *testing.T) {
 	}
 }
 
+func TestApp_SubmitForm_BoardRejectsSourceRef_StaysOnFormToRetry(t *testing.T) {
+	s := newTestStore(t)
+	syncer := sync.New(s, map[string]sync.PostingFetcher{
+		"ashby": &fakeFetcher{errBoards: map[string]error{"acmee": errors.New("404 not found")}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, runeKey('a'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab}) // source (default "ashby") -> name
+	app, _ = sendKey(app, runeKey('A', 'c', 'm', 'e'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab}) // name -> sourceRef
+	app, _ = sendKey(app, runeKey('a', 'c', 'm', 'e', 'e'))
+
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = applyCmd(t, app, cmd)
+
+	if app.screen != screenCompanyForm {
+		t.Fatalf("screen after rejected submit = %v, want screenCompanyForm", app.screen)
+	}
+	if app.err == nil {
+		t.Fatal("app.err = nil, want the board check error shown")
+	}
+	if got := app.companyForm.inputs[formFieldSourceRef].Value(); got != "acmee" {
+		t.Fatalf("sourceRef = %q, want %q kept for correction", got, "acmee")
+	}
+	if _, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {
+		t.Fatal("enter after a rejected submit: cmd = nil, want a retry")
+	}
+}
+
 func TestApp_TypingInForm_UpdatesFocusedField(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))

@@ -2,9 +2,13 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/sync"
 )
 
 func TestCompanyFormModel_New_FocusesSourceFieldFirst(t *testing.T) {
@@ -142,7 +146,7 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithSelectedSource(t *testing.T) {
 	t.Parallel()
 
 	s := newTestStore(t)
-	m := newCompanyFormModel(s)
+	m := newCompanyFormModel(newFormTestSyncer(s))
 	m.Update(tea.KeyMsg{Type: tea.KeyRight}) // switch source to greenhouse
 	m.inputs[formFieldName].SetValue("Acme")
 	m.inputs[formFieldSourceRef].SetValue("acme-token")
@@ -177,7 +181,7 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithLeverSource(t *testing.T) {
 	t.Parallel()
 
 	s := newTestStore(t)
-	m := newCompanyFormModel(s)
+	m := newCompanyFormModel(newFormTestSyncer(s))
 	m.Update(tea.KeyMsg{Type: tea.KeyLeft}) // wraps backward to lever, the last source
 	if companySources[m.sourceIndex] != "lever" {
 		t.Fatalf("source after left = %q, want lever", companySources[m.sourceIndex])
@@ -228,7 +232,7 @@ func TestCompanyFormModel_Enter_TrimsSavedName(t *testing.T) {
 	t.Parallel()
 
 	s := newTestStore(t)
-	m := newCompanyFormModel(s)
+	m := newCompanyFormModel(newFormTestSyncer(s))
 	m.inputs[formFieldName].SetValue("  Acme  ")
 	m.inputs[formFieldSourceRef].SetValue("acme")
 
@@ -246,5 +250,75 @@ func TestCompanyFormModel_Enter_TrimsSavedName(t *testing.T) {
 	}
 	if created.company.Name != "Acme" {
 		t.Fatalf("created company Name = %q, want %q (trimmed)", created.company.Name, "Acme")
+	}
+}
+
+func TestCompanyFormModel_Enter_BoardRejectsSourceRef_NoCompanyCreated(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	syncer := sync.New(s, map[string]sync.PostingFetcher{
+		"ashby": &fakeFetcher{errBoards: map[string]error{"acmee": errors.New("404 not found")}},
+	})
+	m := newCompanyFormModel(syncer)
+	m.inputs[formFieldName].SetValue("Acme")
+	m.inputs[formFieldSourceRef].SetValue("acmee")
+
+	cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if cmd == nil {
+		t.Fatal("cmd = nil, want a command that checks the board and creates the company")
+	}
+	created, ok := cmd().(companyCreatedMsg)
+	if !ok {
+		t.Fatal("msg is not a companyCreatedMsg")
+	}
+	if created.err == nil {
+		t.Fatal("companyCreatedMsg.err = nil, want an error for a board that doesn't resolve")
+	}
+
+	companies, err := s.ListActiveCompanies(context.Background())
+	if err != nil {
+		t.Fatalf("ListActiveCompanies: %v", err)
+	}
+	if len(companies) != 0 {
+		t.Fatalf("companies = %+v, want none created", companies)
+	}
+}
+
+// newFormTestSyncer returns a syncer whose board check accepts any source
+// ref for every source the form can pick.
+func newFormTestSyncer(s *store.Store) *sync.Syncer {
+	fetchers := make(map[string]sync.PostingFetcher, len(companySources))
+	for _, src := range companySources {
+		fetchers[src] = &fakeFetcher{}
+	}
+	return sync.New(s, fetchers)
+}
+
+func TestCompanyFormModel_WhileBoardCheckInFlight(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		key  tea.KeyType
+	}{
+		{name: "enter does not dispatch a second check", key: tea.KeyEnter},
+		{name: "esc does not cancel", key: tea.KeyEsc},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := newCompanyFormModel(nil)
+			m.inputs[formFieldName].SetValue("Acme")
+			m.inputs[formFieldSourceRef].SetValue("acme")
+			if cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter}); cmd == nil {
+				t.Fatal("first enter: cmd = nil, want the board check")
+			}
+
+			cmd, intent := m.Update(tea.KeyMsg{Type: tt.key})
+			if cmd != nil || intent != nil {
+				t.Fatalf("cmd, intent = %v, %v, want nil, nil while the check is in flight", cmd, intent)
+			}
+		})
 	}
 }

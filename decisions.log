@@ -5297,3 +5297,31 @@ Decisions:
 Verified: `swamp import` into a brand-new db recreated all 40 companies
 with the 22 descriptions, checking each board live. A second import
 changed nothing.
+
+## 2026-09-24 -- Add-company form checks the board before saving (#36)
+
+The TUI add-company form saved any slug typed into it. A typo only
+showed up later as a fetch error, or as zero postings. Seed import and
+the MCP `add_company` tool already checked the board live; the form was
+the last way in that didn't.
+
+Decisions (#36 left these open):
+- The check moved into `sync.Syncer.CreateCompany`, which both the form
+  and `ImportCompanies` now use, so it isn't written a second time. The
+  form now holds the syncer instead of the store. That's the new
+  coupling #36 anticipated, but it goes through `sync` rather than the
+  form calling ashby/greenhouse/lever clients directly.
+- A failed check blocks the save; it doesn't just warn. That matches
+  import and `add_company`. The form stays open with the inputs kept and
+  the error shown, so the typo can be fixed and Enter pressed again.
+- It fails closed: a timeout or unreachable API is treated like a 404.
+  The source clients use `http.Client`'s default, which has no timeout,
+  so the form's check gets a 15s context deadline. Otherwise a hung API
+  would leave the form waiting forever. Considered failing open on
+  network errors (save anyway, catch it on the next fetch), but the
+  whole point is not saving unverified slugs, and a retry is one key.
+- While the check runs, the form shows "Checking board..." and ignores
+  keys, including Esc, the same way the edit screen blocks Esc during a
+  save (#37): bubbletea can't cancel a dispatched command, and a second
+  Enter would start a duplicate check. No spinner, since a board check
+  takes well under a second normally.

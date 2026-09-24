@@ -14,6 +14,7 @@ import (
 	"os"
 	"sort"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -179,7 +180,7 @@ func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 		syncer:                syncer,
 		screen:                screenActiveApplications,
 		companyList:           newCompanyListModel(s, syncer),
-		companyForm:           newCompanyFormModel(s),
+		companyForm:           newCompanyFormModel(syncer),
 		postingList:           newPostingListModel(s),
 		activeApplicationList: newActiveApplicationListModel(),
 		hideArchived:          true,
@@ -454,9 +455,19 @@ type companyCreatedMsg struct {
 	err     error
 }
 
-func createCompany(s *store.Store, name, source, sourceRef string) tea.Cmd {
+// boardCheckTimeout bounds createCompany's live board check, so an
+// unreachable API fails the add (closed) instead of leaving the form
+// waiting indefinitely -- the source clients use http.Client's default,
+// which has no timeout of its own (see decisions.log, #36).
+const boardCheckTimeout = 15 * time.Second
+
+// createCompany saves a company only once its source ref resolves to a
+// real board (see sync.Syncer.CreateCompany).
+func createCompany(syncer *sync.Syncer, name, source, sourceRef string) tea.Cmd {
 	return func() tea.Msg {
-		company, err := s.CreateCompany(context.Background(), name, source, sourceRef)
+		ctx, cancel := context.WithTimeout(context.Background(), boardCheckTimeout)
+		defer cancel()
+		company, err := syncer.CreateCompany(ctx, name, source, sourceRef)
 		return companyCreatedMsg{company: company, err: err}
 	}
 }
@@ -901,6 +912,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.activeApplicationList.resetCursorIfOutOfBounds(len(a.activeApplications))
 	case companyCreatedMsg:
 		a.err = msg.err
+		a.companyForm.checkResolved()
 		if msg.err == nil {
 			a.companies = append(a.companies, msg.company)
 			sortCompaniesByName(a.companies)
@@ -1199,7 +1211,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch v := intent.(type) {
 		case enterCompanyFormMsg:
 			a.screen = screenCompanyForm
-			a.companyForm = newCompanyFormModel(a.store)
+			a.companyForm = newCompanyFormModel(a.syncer)
 		case enterCompanyEditMsg:
 			a.screen = screenCompanyEdit
 			a.companyEdit = newCompanyEditModel(a.store, v.company.ID, v.company.Name)
