@@ -1,8 +1,10 @@
-// Package mcpserver exposes the same agent hand-off operations the
-// `apply-to-posting` skill already drives via the `swamp stage` CLI
-// subcommand, as MCP tools instead. It's a thin protocol adapter over the
-// stage package -- no business logic lives here, only translation between
-// MCP's tools/call convention and stage.Stage's existing Go API. See
+// Package mcpserver exposes swamp's agent hand-off operations as MCP
+// tools -- the interface the `apply-to-posting` skill uses to reach
+// Swamp data. The tool definitions here are the source of truth for each
+// tool's arguments and behavior; the skill only says which tool to call
+// when. It's a thin protocol adapter over the stage, documents and sync
+// packages -- no business logic lives here, only translation between
+// MCP's tools/call convention and their existing Go APIs. See
 // decisions.log for why MCP (and specifically its Streamable HTTP
 // transport) is required here rather than gRPC or a plain REST API.
 package mcpserver
