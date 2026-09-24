@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"database/sql"
 
 	"github.com/dklassen/swamp/store/db"
 )
@@ -53,12 +52,7 @@ func applicationViewFromRow(row db.ListActiveApplicationsRow) (ApplicationView, 
 // reusing LatestDocumentReview keeps this in step with its own
 // single-review semantics rather than duplicating that logic in SQL.
 func (s *Store) ListActiveApplications(ctx context.Context) ([]ApplicationView, error) {
-	terminal := TerminalApplicationStatuses()
-	excluded := make([]sql.NullString, len(terminal))
-	for i, status := range terminal {
-		excluded[i] = sql.NullString{String: status.String(), Valid: true}
-	}
-	rows, err := s.queries.ListActiveApplications(ctx, excluded)
+	rows, err := s.queries.ListActiveApplications(ctx, terminalStatusParams())
 	if err != nil {
 		return nil, err
 	}

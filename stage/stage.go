@@ -145,9 +145,10 @@ func New(s *store.Store, d *documents.Store) *Stage {
 }
 
 // List returns interested, non-archived postings that don't yet have both
-// documents on disk. Read-only: it never creates an application or
-// touches the filesystem, so it's safe to call as often as needed to
-// check on outstanding work.
+// documents on disk, skipping any whose application is at a terminal
+// status (rejected, withdrawn, posting closed...). Read-only: it never
+// creates an application or touches the filesystem, so it's safe to call
+// as often as needed to check on outstanding work.
 func (st *Stage) List(ctx context.Context) ([]Candidate, error) {
 	postings, err := st.store.ListInterestedPostings(ctx)
 	if err != nil {

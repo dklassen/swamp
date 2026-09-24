@@ -49,9 +49,10 @@ func interestedPostingFromRow(row db.ListInterestedPostingsRow) (InterestedPosti
 
 // ListInterestedPostings returns postings with interested_at set and
 // archived_at unset, each joined with its company name and, if one
-// exists, its application's id/status.
+// exists, its application's id/status. Postings whose application is at
+// a terminal status (see TerminalApplicationStatuses) are excluded.
 func (s *Store) ListInterestedPostings(ctx context.Context) ([]InterestedPosting, error) {
-	rows, err := s.queries.ListInterestedPostings(ctx)
+	rows, err := s.queries.ListInterestedPostings(ctx, terminalStatusParams())
 	if err != nil {
 		return nil, err
 	}

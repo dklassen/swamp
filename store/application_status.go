@@ -1,6 +1,7 @@
 package store
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 )
@@ -103,4 +104,16 @@ func TerminalApplicationStatuses() []ApplicationStatus {
 	out := make([]ApplicationStatus, len(terminalApplicationStatuses))
 	copy(out, terminalApplicationStatuses)
 	return out
+}
+
+// terminalStatusParams converts TerminalApplicationStatuses into the
+// sqlc.slice('terminal_statuses') argument the queries that exclude
+// dead-end applications take.
+func terminalStatusParams() []sql.NullString {
+	terminal := TerminalApplicationStatuses()
+	params := make([]sql.NullString, len(terminal))
+	for i, status := range terminal {
+		params[i] = sql.NullString{String: status.String(), Valid: true}
+	}
+	return params
 }

@@ -85,6 +85,14 @@ ORDER BY location;
 -- embedded struct on sqlite (sqlc-dev/sqlc#2997) -- kept as individually
 -- aliased nullable columns, handled by the existing sql.NullInt64/
 -- sql.NullString .Valid checks in interestedPostingFromRow.
+--
+-- Postings whose application is at a terminal status are excluded: a
+-- dead-end application isn't drafting work (#121). Same sqlc.slice
+-- approach as ListActiveApplications, so store.TerminalApplicationStatuses
+-- stays the sole source of truth for "terminal" -- including its caveat
+-- that sqlc.slice can't safely combine with other bound parameters on
+-- sqlite; this query has none. The applications.id IS NULL branch keeps
+-- postings with no application yet, which the LEFT JOIN yields as NULLs.
 SELECT
     sqlc.embed(postings),
     companies.name AS company_name,
@@ -96,4 +104,5 @@ JOIN companies ON companies.id = postings.company_id
 LEFT JOIN applications ON applications.posting_id = postings.id
 WHERE posting_markup.interested_at IS NOT NULL
   AND posting_markup.archived_at IS NULL
+  AND (applications.id IS NULL OR applications.status NOT IN (sqlc.slice('terminal_statuses')))
 ORDER BY posting_markup.interested_at DESC;
