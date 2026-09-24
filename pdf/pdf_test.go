@@ -509,6 +509,42 @@ func TestRender_HeadingTextUsesHeadingFontSize(t *testing.T) {
 	}
 }
 
+// TestRender_HeadingSizesFollowResumeConventions pins heading sizes to
+// what a resume looks like rather than a web page: a prominent name
+// (H1), section headings a step above body text (H2), and job/role
+// headings at body size, distinguished by weight alone (H3 and below).
+// The drafts use exactly that structure (see testdata/resume.md).
+func TestRender_HeadingSizesFollowResumeConventions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		markdown string
+		want     float64
+	}{
+		{"# Heading", 20},
+		{"## Heading", 13},
+		{"### Heading", 11},
+		{"#### Heading", 11},
+	}
+	for _, tt := range tests {
+		t.Run(tt.markdown, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := Render([]byte(tt.markdown + "\n\nBody text."))
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			size, ok := fontSizeBeforeText(t, got, "Heading")
+			if !ok {
+				t.Fatalf("could not locate heading text's preceding Tf font size")
+			}
+			if size != tt.want {
+				t.Errorf("heading drawn at %vpt, want %vpt", size, tt.want)
+			}
+		})
+	}
+}
+
 // TestRender_ThematicBreakIsNeverTheLastMarkOnAPage guards the
 // section-divider orphan: a "---" whose own height fits in the space
 // left at the bottom of a page, but whose following heading doesn't,

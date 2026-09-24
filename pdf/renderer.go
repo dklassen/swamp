@@ -133,18 +133,17 @@ func (r *renderer) renderList(list *ast.List) {
 }
 
 // headingFontSize returns the point size for a heading of the given level
-// (1-6), stepping down from a prominent H1 to a size indistinguishable
-// from body text by H5/H6.
+// (1-6), following resume conventions rather than a web page's: a
+// prominent H1 (the name), H2 (section headings) a step above body text,
+// and H3 onward (job/role headings) at body size, set apart by bold
+// weight alone. The earlier 16/14/12pt steps made every job title
+// shout.
 func headingFontSize(level int) float64 {
 	switch level {
 	case 1:
 		return 20
 	case 2:
-		return 16
-	case 3:
-		return 14
-	case 4:
-		return 12
+		return 13
 	default:
 		return baseFontSize
 	}

@@ -5439,3 +5439,14 @@ Decisions:
 - The test reads the font name out of each embedded font program rather
   than checking `/BaseFont`, because fpdf names `/BaseFont` after the
   family label passed to `AddUTF8FontFromBytes`, not the font itself.
+
+## 2026-09-24 -- PDF heading sizes follow resume conventions
+
+Heading sizes were 20/16/14/12pt for H1-H4 over 11pt body text. The
+drafts use H1 for the name, H2 for sections, and H3 for each job, so
+every job title rendered three points above body text and the resume
+read like a web page. Now H1 20pt, H2 13pt, H3 and below 11pt (body
+size), set apart by bold weight alone. Pinned by explicit sizes in a
+table-driven test; the existing regression test compares against
+headingFontSize(1), so it guards the size being applied but passes
+whatever the size is.
