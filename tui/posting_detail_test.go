@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
@@ -232,4 +233,58 @@ func TestPostingDetailModel_View_HelpAdvertisesNavigationOnlyWhenAvailable(t *te
 			t.Errorf("View() with no siblings = %q, want it to still offer %q", withoutSiblings.View(), want)
 		}
 	}
+}
+
+// TestPostingDetailModel_View_GroupsContentIntoSections checks the detail
+// body is split into Posting, Application, and Description sections, in
+// that order, with each piece of content under its own heading -- the
+// metadata used to run straight into the application state and the
+// description with nothing marking where one ended and the next began.
+func TestPostingDetailModel_View_GroupsContentIntoSections(t *testing.T) {
+	t.Parallel()
+
+	p := store.Posting{ID: 5, IngestedFields: store.IngestedFields{
+		Title:           "Engineer",
+		Location:        "Ottawa, ON",
+		DescriptionText: "We build tools for practitioners.",
+	}}
+	app := store.Application{ID: 9, PostingID: 5, Status: store.ApplicationStatusStarted}
+	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 60, p, app, true, nil, true)
+	lines := strings.Split(ansi.Strip(m.View()), "\n")
+
+	// Each entry must appear on a later line than the one before it.
+	// Headings are matched as headings, not substrings -- "Posting" also
+	// appears in the temp directory path of the document lines.
+	order := []struct {
+		text    string
+		heading bool
+	}{
+		{"Posting", true},
+		{"Ottawa, ON", false},
+		{"Application", true},
+		{applicationStatusLabel(store.ApplicationStatusStarted), false},
+		{"Cover Letter", false},
+		{"Description", true},
+		{"We build tools for practitioners.", false},
+	}
+	prev := -1
+	for _, want := range order {
+		idx := -1
+		for i := prev + 1; i < len(lines); i++ {
+			if want.heading && isSectionHeading(lines[i], want.text) || !want.heading && strings.Contains(lines[i], want.text) {
+				idx = i
+				break
+			}
+		}
+		if idx < 0 {
+			t.Fatalf("%q (heading: %v) not found after line %d in view:\n%s", want.text, want.heading, prev, strings.Join(lines, "\n"))
+		}
+		prev = idx
+	}
+}
+
+// isSectionHeading reports whether line is the section heading for name:
+// the name, then a horizontal rule on the same line.
+func isSectionHeading(line, name string) bool {
+	return strings.HasPrefix(strings.TrimSpace(line), name+" ─")
 }

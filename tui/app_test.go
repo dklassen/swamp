@@ -2981,7 +2981,7 @@ func TestPostingDetailContent_ShowsStatusLabelNotEnumValue(t *testing.T) {
 	posting := store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}}
 	application := store.Application{ID: 1, Status: store.ApplicationStatusOfferReceived}
 
-	got := postingDetailContent(posting, application, true, documents.NewStore(t.TempDir()), nil)
+	got := postingDetailContent(posting, application, true, documents.NewStore(t.TempDir()), nil, 80)
 
 	if !strings.Contains(got, "Offer received") {
 		t.Errorf("postingDetailContent() = %q, want the human-readable status label", got)

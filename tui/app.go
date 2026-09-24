@@ -38,6 +38,7 @@ var (
 	passStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	fieldLabel   = lipgloss.NewStyle().Bold(true)
 	focusedLabel = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
+	sectionStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
 )
 
 type screen int
@@ -273,8 +274,9 @@ func reviewGlyph(review store.DocumentReview, hasReview bool) string {
 // tea.Cmd/tea.Msg convention as the rest of this file's store-backed
 // state (see decisions.log #83). A document with no entry in the map
 // renders as "not reviewed".
-func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store, latestReviews map[store.DocumentType]store.DocumentReview) string {
+func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store, latestReviews map[store.DocumentType]store.DocumentReview, width int) string {
 	var b strings.Builder
+	b.WriteString(sectionHeading("Posting", width) + "\n")
 	fields := []struct{ label, value string }{
 		{"Department", p.Department},
 		{"Team", p.Team},
@@ -291,6 +293,7 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 		}
 		b.WriteString(fieldLabel.Render(f.label+":") + " " + f.value + "\n")
 	}
+	b.WriteString("\n" + sectionHeading("Application", width) + "\n")
 	if hasApplication {
 		b.WriteString(fieldLabel.Render("Application status:") + " " + applicationStatusLabel(application.Status) + "\n")
 		if application.Notes != "" {
@@ -306,7 +309,7 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 		b.WriteString(helpStyle.Render("No application started -- press 'a' to start one.") + "\n")
 	}
 	if desc := p.DescriptionText; desc != "" {
-		b.WriteString("\n" + desc + "\n")
+		b.WriteString("\n" + sectionHeading("Description", width) + "\n" + desc + "\n")
 	}
 	return b.String()
 }
@@ -1415,4 +1418,16 @@ func (a *App) View() string {
 // what it held when the screen was first entered.
 func (a *App) canNavigateSiblings(postingID int64) bool {
 	return indexOfPosting(a.postings, postingID) >= 0
+}
+
+// sectionHeading renders a posting-detail section heading: name, then a
+// dim horizontal rule filling the rest of width, so each section reads as
+// its own block. width <= 0 (before the first tea.WindowSizeMsg) gets a
+// short fixed rule rather than none.
+func sectionHeading(name string, width int) string {
+	ruleWidth := 3
+	if rest := width - lipgloss.Width(name) - 1; rest > ruleWidth {
+		ruleWidth = rest
+	}
+	return sectionStyle.Render(name) + " " + dimStyle.Render(strings.Repeat("─", ruleWidth))
 }

@@ -50,7 +50,7 @@ type postingDetailModel struct {
 // showPostingDetail's "always rebuild, always reset scroll" behavior.
 func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool, latestReviews map[store.DocumentType]store.DocumentReview, canNavigateSiblings bool) postingDetailModel {
 	vp := viewport.New(width, height)
-	vp.SetContent(wrapToWidth(postingDetailContent(p, app, hasApp, docs, latestReviews), width))
+	vp.SetContent(wrapToWidth(postingDetailContent(p, app, hasApp, docs, latestReviews, width), width))
 	return postingDetailModel{store: s, documents: docs, viewport: vp, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews, canNavigateSiblings: canNavigateSiblings}
 }
 
