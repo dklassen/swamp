@@ -161,7 +161,7 @@ func (m *postingListModel) View(snap postingListSnapshot, listRows int) string {
 	descriptionRows := 0
 	if snap.companyDescription != "" {
 		description := strings.Join(strings.Fields(snap.companyDescription), " ")
-		b.WriteString(helpStyle.Render(truncateCol(description, descriptionColWidth)) + "\n")
+		b.WriteString(dimStyle.Render(truncateCol(description, descriptionColWidth)) + "\n")
 		descriptionRows = 1
 	}
 	if summary := filterSummaryLine(snap.activeFilterDepartments, snap.activeFilterLocations); summary != "" {

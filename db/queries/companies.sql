@@ -36,6 +36,12 @@ SET description = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND deleted_at IS NULL
 RETURNING *;
 
+-- name: MarkCompanyFetched :exec
+-- Records a successful fetch of this company's postings (see sync.SyncCompany).
+UPDATE companies
+SET last_fetched_at = CURRENT_TIMESTAMP
+WHERE id = ?;
+
 -- name: ListActiveCompanies :many
 SELECT * FROM companies
 WHERE deleted_at IS NULL

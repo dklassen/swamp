@@ -172,3 +172,20 @@ func TestPostingListModel_View_ShowsCompanyDescription(t *testing.T) {
 		t.Errorf("View missing company description %q:\n%s", snap.companyDescription, got)
 	}
 }
+
+// The description line costs the table exactly one row, so it must render
+// as exactly one line.
+func TestPostingListModel_View_DescriptionAddsExactlyOneLine(t *testing.T) {
+	t.Parallel()
+
+	m := newPostingListModel(nil)
+	snap := testPostingListSnapshot()
+	without := strings.Count(m.View(snap, 40), "\n")
+
+	snap.companyDescription = "Acme builds rockets for roadrunner enthusiasts."
+	with := strings.Count(m.View(snap, 40), "\n")
+
+	if with != without+1 {
+		t.Errorf("View with description = %d lines, want %d (one more than without)", with, without+1)
+	}
+}

@@ -12,6 +12,12 @@ import (
 type Querier interface {
 	AddTagToPosting(ctx context.Context, arg AddTagToPostingParams) error
 	CountDocumentReviews(ctx context.Context, arg CountDocumentReviewsParams) (int64, error)
+	// Per-company count of what a company's posting list shows by default:
+	// listings still open on the job board that the user hasn't archived.
+	// Feeds the company list's "Open" column. Doesn't apply company_filters:
+	// postings are already gated by filters at ingestion, and a filter added
+	// later only narrows the posting list's display, not this count.
+	CountOpenPostingsByCompany(ctx context.Context) ([]CountOpenPostingsByCompanyRow, error)
 	// Unlike posting_markup, not auto-created for every posting -- an
 	// application exists only once the user takes an explicit "start
 	// application" action. status is supplied explicitly by the caller
@@ -121,6 +127,8 @@ type Querier interface {
 	// historical record and should keep showing even if the tag itself was
 	// later soft-deleted (see schema comment on posting_tags).
 	ListTagsForPosting(ctx context.Context, postingID int64) ([]Tag, error)
+	// Records a successful fetch of this company's postings (see sync.SyncCompany).
+	MarkCompanyFetched(ctx context.Context, id int64) error
 	MarkPostingClosed(ctx context.Context, id int64) error
 	MarkPostingReopened(ctx context.Context, id int64) error
 	RemoveTagFromPosting(ctx context.Context, arg RemoveTagFromPostingParams) error

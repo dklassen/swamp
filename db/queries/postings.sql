@@ -106,3 +106,16 @@ WHERE posting_markup.interested_at IS NOT NULL
   AND posting_markup.archived_at IS NULL
   AND (applications.id IS NULL OR applications.status NOT IN (sqlc.slice('terminal_statuses')))
 ORDER BY posting_markup.interested_at DESC;
+
+-- name: CountOpenPostingsByCompany :many
+-- Per-company count of what a company's posting list shows by default:
+-- listings still open on the job board that the user hasn't archived.
+-- Feeds the company list's "Open" column. Doesn't apply company_filters:
+-- postings are already gated by filters at ingestion, and a filter added
+-- later only narrows the posting list's display, not this count.
+SELECT postings.company_id, COUNT(*) AS open_postings
+FROM postings
+JOIN posting_markup ON posting_markup.posting_id = postings.id
+WHERE postings.listing_status = 'open'
+  AND posting_markup.archived_at IS NULL
+GROUP BY postings.company_id;

@@ -5181,3 +5181,97 @@ if duplicates show up.
 Not in scope, possible follow-ups: a `list_companies` tool (so an agent
 can skip companies already tracked before checking them) and a way to
 set descriptions on the existing companies.
+
+## 2026-09-24 -- Company list becomes a table: open postings, last fetched, description
+
+The company list showed only `Name (slug)`. The user wanted each
+company's description next to when it was last fetched and how many open
+postings it has. Choices made with the user:
+
+- **A table on the company list, not a new detail screen.** Columns are
+  Name, Open and Last fetched, with the selected company's description
+  wrapped underneath. Board and slug columns were tried and dropped at
+  the user's call: they don't help decide where to look next. (Neither is
+  shown anywhere else in the TUI now; the edit screen only has the name.)
+- **`companies.last_fetched_at`** (migration 00011), set by
+  `SyncCompany` after a fetch and its processing succeed. A failed fetch
+  leaves it alone, so a stale time is a visible sign of trouble. Rejected
+  alternative: deriving it from the newest posting's `last_seen_at`. No
+  migration needed, but wrong for companies with no postings, and it
+  can't tell a failed sync from a quiet board. Nullable in SQL (#74's
+  rule for timestamps), a plain `time.Time` in Go where zero means never.
+- **"Open" means what the posting list shows by default**: open listings
+  not archived, counted per company in one query
+  (`CountOpenPostingsByCompany`) instead of loading every posting's raw
+  payload. It doesn't apply `company_filters`, which only narrow the
+  posting list's display after ingestion, so it can be higher than what
+  a filtered list shows.
+
+Keeping it current: the company list reloads after a successful refresh
+(the fetch time and counts just changed) and when you return to it from
+the posting list or active applications (archiving changes counts). An
+existing test asserted that refreshing a different company returns no
+command; it now checks what it was actually protecting, that postings
+aren't reloaded.
+
+The description takes rows from the table's budget, so the list still
+fits in `listRows`.
+
+Migration 00011 reached the real db before merge, because the user ran a
+binary built from this branch's working tree. It recorded a fetch time
+for every company on their next refresh, which confirms the tracking
+works on real data.
+
+## 2026-09-24 -- Company list: description moves into a column; fixed column widths
+
+Follow-up to the previous entry, from the user trying it:
+
+- The wrapped description under the table made the table jump as the
+  cursor moved, because its height varied by company. An interim fix
+  reserved a fixed 3-line block, but the user found under-the-table the
+  wrong place for it anyway. The description is now a fourth column,
+  one line per row, cut off with an ellipsis. Every company's
+  description is visible at once, and the list's height no longer
+  depends on which company is selected.
+- Columns are now padded to fixed widths (`padCol`). lipgloss/table sizes
+  columns to the rows currently rendered, so scrolling to a window of
+  shorter names or all-"never" timestamps made the table change width.
+- The description column then turned out too narrow at a fixed 50
+  characters (descriptions run 170-236). At the user's choice it now
+  fills whatever width the terminal has left after Name (22), Open and
+  Last fetched, so rows stay one line and wider terminals show more.
+  It falls back to 50 before the terminal reports its size and never
+  goes below 20. Rejected: wrapping inside the cell (multi-line rows, far
+  fewer companies on screen) and capping descriptions at ~80 characters
+  (loses the stack and remote-policy detail that makes them useful).
+- Found along the way: `helpStyle` has `MarginTop(1)`, so every inline
+  use renders an extra blank line. The posting list's company description
+  line (#125) used it and budgeted one row while taking two, which could
+  push the bottom posting off screen. Switched to `dimStyle`, which the
+  code already provides for inline muted text, with a test that the line
+  costs exactly one row.
+
+## 2026-09-24 -- Company descriptions move to a toggleable info box
+
+Descriptions (170-236 characters) didn't fit a table column, even one
+filling the terminal. At the user's suggestion they now live in an info
+box under the table, toggled with `i`. The Description column is gone,
+so the table is back to Name / Open / Last fetched.
+
+Choices made with the user:
+- **Below the table, not beside it.** A side panel would need 120+
+  columns and a fallback for narrow terminals.
+- **Closed by default.** It stays open while you move around until you
+  press `i` again. Ephemeral, like the cursor, so it's closed each time
+  the app starts.
+- The box shows the company name, board/slug (the only place they appear
+  in the TUI now) and the description wrapped to at most 4 lines, ending
+  with an ellipsis if longer, or "No description yet." if empty. Text
+  width follows the terminal, capped at 96 for readability.
+
+The box is always 7 lines tall while open, and the table gives up exactly
+that many rows, so moving the cursor never shifts anything and opening it
+doesn't make the view taller than its space. A test for the second part
+caught `titleStyle`'s `MarginBottom(1)` adding a hidden eighth line to the
+box header, the same class of bug as `helpStyle` earlier today. The
+header is now plain bold.

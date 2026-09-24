@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -530,5 +531,52 @@ func TestSyncCompany_PostingCloses_WithdrawnApplicationLeftAlone(t *testing.T) {
 	}
 	if result.ApplicationsClosed != 0 {
 		t.Errorf("result.ApplicationsClosed = %d, want 0", result.ApplicationsClosed)
+	}
+}
+
+// A successful sync records when the company was fetched; a failed fetch
+// leaves it alone, so a stale "last fetched" is a visible sign of trouble.
+func TestSyncCompany_RecordsLastFetchedAtOnlyOnSuccess(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name        string
+		fetchErr    error
+		wantFetched bool
+	}{
+		{"fetch succeeds", nil, true},
+		{"fetch fails", errors.New("board unavailable"), false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := newTestStore(t)
+			ctx := context.Background()
+
+			company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			fetcher := &fakeFetcher{
+				postings: map[string][]jobboard.Posting{"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")}},
+				err:      tc.fetchErr,
+			}
+			syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+
+			before := time.Now().Add(-2 * time.Second)
+			_, err := syncer.SyncCompany(ctx, company.ID)
+			if (err == nil) != tc.wantFetched {
+				t.Fatalf("SyncCompany error = %v, want error: %v", err, !tc.wantFetched)
+			}
+
+			got, err := s.GetCompany(ctx, company.ID)
+			if err != nil {
+				t.Fatalf("GetCompany: %v", err)
+			}
+			if tc.wantFetched {
+				if got.LastFetchedAt.Before(before) {
+					t.Errorf("LastFetchedAt = %v, want a time at or after %v", got.LastFetchedAt, before)
+				}
+			} else if !got.LastFetchedAt.IsZero() {
+				t.Errorf("LastFetchedAt = %v, want zero (never fetched)", got.LastFetchedAt)
+			}
+		})
 	}
 }

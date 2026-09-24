@@ -16,9 +16,12 @@ type Company struct {
 	Source      string
 	SourceRef   string
 	Description string
-	DeletedAt   *time.Time
-	CreatedAt   time.Time
-	UpdatedAt   time.Time
+	// LastFetchedAt is when this company's postings were last fetched
+	// successfully; the zero value means never.
+	LastFetchedAt time.Time
+	DeletedAt     *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 func companyFromRow(row db.Company) Company {
@@ -33,6 +36,9 @@ func companyFromRow(row db.Company) Company {
 	}
 	if row.DeletedAt.Valid {
 		c.DeletedAt = &row.DeletedAt.Time
+	}
+	if row.LastFetchedAt.Valid {
+		c.LastFetchedAt = row.LastFetchedAt.Time
 	}
 	return c
 }
@@ -119,6 +125,12 @@ func (s *Store) UpdateCompanyName(ctx context.Context, id int64, name string) (C
 		return Company{}, err
 	}
 	return companyFromRow(row), nil
+}
+
+// MarkCompanyFetched records that id's postings were just fetched
+// successfully.
+func (s *Store) MarkCompanyFetched(ctx context.Context, id int64) error {
+	return s.queries.MarkCompanyFetched(ctx, id)
 }
 
 // GetCompanyBySourceRef finds the company for a job board slug, including a

@@ -742,3 +742,34 @@ func TestCompanyDescription_ExistingCompaniesGetEmptyDescription(t *testing.T) {
 		t.Fatalf("companies.description = %q, want empty", description)
 	}
 }
+
+// TestCompanyLastFetchedAt_ExistingCompaniesStartNeverFetched verifies the
+// 00011 migration adds companies.last_fetched_at as NULL for existing rows:
+// nothing recorded when they were last fetched, so they read as never
+// fetched until their next sync.
+func TestCompanyLastFetchedAt_ExistingCompaniesStartNeverFetched(t *testing.T) {
+	sqlDB := migrateTo(t, 10)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+
+	if err := goose.UpTo(sqlDB, ".", 11); err != nil {
+		t.Fatalf("migrate to version 11: %v", err)
+	}
+	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+		t.Fatalf("GetDBVersion: %v", err)
+	} else if gotVersion != 11 {
+		t.Fatalf("DB version after UpTo(11) = %d, want 11 (migration 00011 not found?)", gotVersion)
+	}
+
+	var lastFetched sql.NullTime
+	if err := sqlDB.QueryRow(`SELECT last_fetched_at FROM companies WHERE id = 1`).Scan(&lastFetched); err != nil {
+		t.Fatalf("query companies: %v", err)
+	}
+	if lastFetched.Valid {
+		t.Fatalf("companies.last_fetched_at = %v, want NULL", lastFetched.Time)
+	}
+}
