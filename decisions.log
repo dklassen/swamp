@@ -5106,3 +5106,36 @@ choice, so a way to bring it back makes sense. Closed is a fact about the
 job board with nothing to act on, so a toggle would only add state, a key
 binding and a notice line for no workflow benefit. Started down this path
 and dropped it at the user's call.
+
+## 2026-09-24 -- Companies get a description (who the company is)
+
+Companies were just a name and a job board slug. With agents starting to
+discover and add companies (e.g. from HN "Who is hiring?" threads), a
+company in the list needs to say what it is without opening its website.
+
+Decisions:
+- `companies.description TEXT NOT NULL DEFAULT ''` (migration 00010),
+  plain `string` on `store.Company`. Nothing distinguishes "never
+  described" from "described as empty" (#74, #67).
+- Written through a separate `UpdateCompanyDescription` rather than a new
+  `CreateCompany` parameter. `CreateCompany` has 10 call sites, most of
+  which have no description to give, and a standalone update is also what
+  back-filling descriptions for existing companies needs. It excludes
+  soft-deleted companies, same as `UpdateCompanyName`.
+- Shown as one line under the posting list's title, since there's no
+  company detail screen. Newlines are collapsed and it's truncated to
+  roughly the table's width, and it takes one row from the table's budget
+  so the list still fits in `listRows`. (Separately, the list's filter
+  summary and "archived hidden" lines already take space `chromeRows`
+  doesn't account for. That overflow predates this change and is left
+  for its own fix.)
+
+Split deliberately from the MCP `add_company` tool that will write
+descriptions (next PR), per the one-change-per-PR default. Decisions for
+that tool made with the user up front: skip and report previously deleted
+companies rather than restoring them, reject slugs the board's API
+doesn't recognize, and don't sync on add.
+
+Verified: migration 00010 up and down against a copy of the real db. All
+26 companies read back with an empty description after up, and the column
+is gone after down.

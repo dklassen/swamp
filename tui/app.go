@@ -1197,6 +1197,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case screenPostingList:
 		snap := postingListSnapshot{
 			companyName:             a.selectedCompany.Name,
+			companyDescription:      a.selectedCompany.Description,
 			postings:                a.postings,
 			markup:                  a.postingMarkup,
 			hideArchived:            a.hideArchived,
@@ -1345,6 +1346,7 @@ func (a *App) View() string {
 	case screenPostingList:
 		snap := postingListSnapshot{
 			companyName:             a.selectedCompany.Name,
+			companyDescription:      a.selectedCompany.Description,
 			postings:                a.postings,
 			markup:                  a.postingMarkup,
 			hideArchived:            a.hideArchived,
