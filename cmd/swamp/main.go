@@ -263,7 +263,7 @@ func runMCPServe(s *store.Store, d *documents.Store) {
 	}
 
 	st := stage.New(s, d)
-	server := mcpserver.New(st, d)
+	server := mcpserver.New(st, d, newSyncer(s))
 
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server

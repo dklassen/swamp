@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"os"
 	"testing"
 
@@ -16,9 +17,25 @@ import (
 
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
+	swampsync "github.com/dklassen/swamp/sync"
 )
+
+// fakeFetcher stands in for a job board API: a slug with an entry in boards
+// resolves to those postings, any other slug is rejected like a 404.
+type fakeFetcher struct {
+	boards map[string][]jobboard.Posting
+}
+
+func (f fakeFetcher) FetchPostings(_ context.Context, slug string) ([]jobboard.Posting, error) {
+	postings, ok := f.boards[slug]
+	if !ok {
+		return nil, fmt.Errorf("board %q not found", slug)
+	}
+	return postings, nil
+}
 
 func newTestServer(t *testing.T) (*mcp.Server, *store.Store, *documents.Store) {
 	t.Helper()
@@ -43,7 +60,11 @@ func newTestServer(t *testing.T) (*mcp.Server, *store.Store, *documents.Store) {
 
 	s := store.New(sqlDB)
 	d := documents.NewStore(t.TempDir())
-	return New(stage.New(s, d), d), s, d
+	fetcher := fakeFetcher{boards: map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}, {SourceID: "job-2", Title: "Designer"}},
+	}}
+	syncer := swampsync.New(s, map[string]swampsync.PostingFetcher{"ashby": fetcher})
+	return New(stage.New(s, d), d, syncer), s, d
 }
 
 // connectClient wires an in-process MCP client to srv over an in-memory
@@ -267,5 +288,101 @@ func TestWriteDocument_RejectsInvalidDocumentType(t *testing.T) {
 	}
 	if !res.IsError {
 		t.Fatal("IsError = false, want true for an invalid DocumentType")
+	}
+}
+
+func TestAddCompany_NewBoard_CreatesCompanyWithDescription(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	cs := connectClient(t, srv)
+
+	const description = "Acme builds rockets for roadrunner enthusiasts."
+	got := callTool[addCompanyOutput](t, cs, "add_company", map[string]any{
+		"Name":        "Acme",
+		"Source":      "ashby",
+		"Slug":        "acme",
+		"Description": description,
+	})
+
+	want := addCompanyOutput{Outcome: "created", CompanyID: got.CompanyID, Name: "Acme", OpenJobs: 2}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("add_company result mismatch (-want +got):\n%s", diff)
+	}
+
+	stored, err := s.GetCompany(context.Background(), got.CompanyID)
+	if err != nil {
+		t.Fatalf("GetCompany(%d): %v", got.CompanyID, err)
+	}
+	if stored.Description != description {
+		t.Errorf("stored Description = %q, want %q", stored.Description, description)
+	}
+}
+
+func TestAddCompany_ExistingCompany_ReportsOutcome(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name       string
+		softDelete bool
+		want       string
+	}{
+		{"active company", false, "already_exists"},
+		{"company the user deleted", true, "skipped_deleted"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv, s, _ := newTestServer(t)
+			acme, err := s.CreateCompany(context.Background(), "Acme", "ashby", "acme")
+			if err != nil {
+				t.Fatalf("CreateCompany: %v", err)
+			}
+			if tc.softDelete {
+				if err := s.SoftDeleteCompany(context.Background(), acme.ID); err != nil {
+					t.Fatalf("SoftDeleteCompany: %v", err)
+				}
+			}
+			cs := connectClient(t, srv)
+
+			got := callTool[addCompanyOutput](t, cs, "add_company", map[string]any{
+				"Name": "Acme", "Source": "ashby", "Slug": "acme", "Description": "whatever",
+			})
+
+			if got.Outcome != tc.want {
+				t.Errorf("Outcome = %q, want %q", got.Outcome, tc.want)
+			}
+			if got.CompanyID != acme.ID {
+				t.Errorf("CompanyID = %d, want existing company's id %d", got.CompanyID, acme.ID)
+			}
+		})
+	}
+}
+
+func TestAddCompany_BoardRejectsSlug_ReturnsToolErrorAndCreatesNothing(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	cs := connectClient(t, srv)
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name: "add_company",
+		Arguments: map[string]any{
+			"Name": "Nope", "Source": "ashby", "Slug": "nope", "Description": "whatever",
+		},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("IsError = false, want true for a slug the board rejects")
+	}
+
+	companies, err := s.ListActiveCompanies(context.Background())
+	if err != nil {
+		t.Fatalf("ListActiveCompanies: %v", err)
+	}
+	if len(companies) != 0 {
+		t.Fatalf("got %d companies, want 0", len(companies))
 	}
 }

@@ -16,13 +16,15 @@ import (
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/stage"
+	"github.com/dklassen/swamp/sync"
 )
 
-// New builds an MCP server exposing st and d's operations as tools. The
+// New builds an MCP server exposing st and d's operations as tools, plus
+// add_company via syncer (which also checks new slugs against their board). The
 // returned server has no active session yet -- connect it to a transport
 // (Server.Run for a single stdio-style session, or mount a
 // StreamableHTTPHandler for concurrent HTTP sessions) to start serving.
-func New(st *stage.Stage, d *documents.Store) *mcp.Server {
+func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "swamp", Version: "v0.1.0"}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -39,6 +41,10 @@ func New(st *stage.Stage, d *documents.Store) *mcp.Server {
 		Name:        "write_document",
 		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have. DocumentType must be \"cover_letter\" or \"resume\".",
 	}, writeDocumentHandler(d))
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "add_company",
+		Description: "Add a company to track, by its job board (ashby, greenhouse or lever) and board slug, with a short description of who the company is. The slug is checked against the board first. Never restores a company the user deleted or renames an existing one; postings are fetched on the user's next sync, not now.",
+	}, addCompanyHandler(syncer))
 
 	return server
 }
@@ -119,5 +125,41 @@ func writeDocumentHandler(d *documents.Store) mcp.ToolHandlerFor[writeDocumentIn
 		}
 
 		return nil, writeDocumentOutput{Path: path, BytesWritten: int64(len(in.Content))}, nil
+	}
+}
+
+type addCompanyInput struct {
+	Name        string `json:"Name" jsonschema:"the company's display name"`
+	Source      string `json:"Source" jsonschema:"the job board: ashby, greenhouse or lever"`
+	Slug        string `json:"Slug" jsonschema:"the company's slug on that board, e.g. acme in jobs.ashbyhq.com/acme"`
+	Description string `json:"Description" jsonschema:"one or two sentences on who the company is: what it builds, stage, domain"`
+}
+
+// addCompanyOutcomes names each sync.AddCompanyOutcome for the tool's result.
+var addCompanyOutcomes = map[sync.AddCompanyOutcome]string{
+	sync.AddCompanyCreated:        "created",
+	sync.AddCompanyAlreadyExists:  "already_exists",
+	sync.AddCompanySkippedDeleted: "skipped_deleted",
+}
+
+type addCompanyOutput struct {
+	Outcome   string `json:"Outcome"`
+	CompanyID int64  `json:"CompanyID"`
+	Name      string `json:"Name"`
+	OpenJobs  int    `json:"OpenJobs"`
+}
+
+func addCompanyHandler(syncer *sync.Syncer) mcp.ToolHandlerFor[addCompanyInput, addCompanyOutput] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in addCompanyInput) (*mcp.CallToolResult, addCompanyOutput, error) {
+		res, err := syncer.AddCompany(ctx, in.Name, in.Source, in.Slug, in.Description)
+		if err != nil {
+			return nil, addCompanyOutput{}, fmt.Errorf("add_company: %w", err)
+		}
+		return nil, addCompanyOutput{
+			Outcome:   addCompanyOutcomes[res.Outcome],
+			CompanyID: res.Company.ID,
+			Name:      res.Company.Name,
+			OpenJobs:  res.OpenJobs,
+		}, nil
 	}
 }
