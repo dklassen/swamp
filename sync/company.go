@@ -212,6 +212,28 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (Result, erro
 	return result, nil
 }
 
+// CreateCompany creates a company after confirming sourceRef resolves to
+// a real board on source's API (issue #36), so a typo'd slug is rejected
+// up front instead of surfacing later as a fetch error, or silently as
+// zero postings. It fails closed: any fetch error, including a timeout,
+// blocks the create. The fetched postings are discarded; ingestion waits
+// for the next sync, after the user has had a chance to set filters.
+// Shared by the TUI's add-company form and ImportCompanies.
+func (s *Syncer) CreateCompany(ctx context.Context, name, source, sourceRef string) (store.Company, error) {
+	fetcher, ok := s.fetchers[source]
+	if !ok {
+		return store.Company{}, fmt.Errorf("sync: unsupported source %q", source)
+	}
+	if _, err := fetcher.FetchPostings(ctx, sourceRef); err != nil {
+		return store.Company{}, fmt.Errorf("sync: %s/%s does not resolve to a real board: %w", source, sourceRef, err)
+	}
+	company, err := s.store.CreateCompany(ctx, name, source, sourceRef)
+	if err != nil {
+		return store.Company{}, fmt.Errorf("sync: create company: %w", err)
+	}
+	return company, nil
+}
+
 // ImportResult reports the outcome of importing one seed.Entry.
 // Company is the zero value when Err is set.
 type ImportResult struct {
@@ -223,9 +245,8 @@ type ImportResult struct {
 }
 
 // ImportCompanies bulk-creates companies from a parsed seed file. Each
-// entry is validated against its source's real API before being saved
-// (the same live-board check issue #36 specs for the manual add-company
-// form, reused here rather than added a second time): an unsupported
+// entry goes through CreateCompany, so it's validated against its
+// source's real API before being saved (issue #36): an unsupported
 // Source or a SourceRef that the board rejects fails that entry without
 // creating a row, and without aborting the rest of the batch -- same
 // per-item isolation as SyncAll. A successfully-fetched entry's postings
@@ -240,19 +261,9 @@ func (s *Syncer) ImportCompanies(ctx context.Context, entries []seed.Entry) []Im
 	for i, e := range entries {
 		results[i] = ImportResult{Name: e.Name, Source: e.Source, SourceRef: e.SourceRef}
 
-		fetcher, ok := s.fetchers[e.Source]
-		if !ok {
-			results[i].Err = fmt.Errorf("sync: unsupported source %q", e.Source)
-			continue
-		}
-		if _, err := fetcher.FetchPostings(ctx, e.SourceRef); err != nil {
-			results[i].Err = fmt.Errorf("sync: %s/%s does not resolve to a real board: %w", e.Source, e.SourceRef, err)
-			continue
-		}
-
-		company, err := s.store.CreateCompany(ctx, e.Name, e.Source, e.SourceRef)
+		company, err := s.CreateCompany(ctx, e.Name, e.Source, e.SourceRef)
 		if err != nil {
-			results[i].Err = fmt.Errorf("sync: create company: %w", err)
+			results[i].Err = err
 			continue
 		}
 		// Fill in the description only if the company has none, so re-importing
