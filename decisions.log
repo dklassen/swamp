@@ -5469,3 +5469,14 @@ Decisions:
   new ~3mm window, so it now also varies a short list before the rule
   for finer steps. It fails without the reservation (24 paragraphs + 2
   items) and passes with it. pdf tests take ~1.6s instead of ~0.35s.
+
+## 2026-09-24 -- PDF line spacing 1.25x font size
+
+`lineHeight` followed the common fpdf convention of half the point size
+in mm, which is ~1.42x the font size. Loose enough that a real two-page
+resume (application 29, Fullscript WMS) spilled its Education line onto
+a third page even after the heading size and spacing fixes. Now
+`leading` (1.25) times the size converted from points to mm, the usual
+range for a dense one-to-two page document. Paragraph, list, and heading
+spacing are all multiples of `lineHeight`, so they tighten
+proportionally. Verified on that resume: three pages became two.

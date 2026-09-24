@@ -578,6 +578,28 @@ func TestRender_HeadingSitsCloserToItsContentThanToWhatPrecedesIt(t *testing.T) 
 	}
 }
 
+// TestRender_LineSpacingIsAboutOneAndAQuarterTimesFontSize checks line
+// spacing (baseline to baseline within one paragraph) against the
+// ~1.2-1.3x of font size a dense one-to-two page document typically uses.
+// It was ~1.42x, loose enough that a real two-page resume spilled its
+// last section onto a third page.
+func TestRender_LineSpacingIsAboutOneAndAQuarterTimesFontSize(t *testing.T) {
+	t.Parallel()
+
+	got, err := Render([]byte("First line\\\nSecond line"))
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	y1, ok1 := textStartY(t, got, "First line")
+	y2, ok2 := textStartY(t, got, "Second line")
+	if !ok1 || !ok2 {
+		t.Fatalf("could not locate one or both lines' starting Td position")
+	}
+	if ratio := (y1 - y2) / baseFontSize; ratio < 1.2 || ratio > 1.3 {
+		t.Errorf("line spacing is %.2fx the font size, want 1.2-1.3x", ratio)
+	}
+}
+
 // TestRender_ThematicBreakIsNeverTheLastMarkOnAPage guards the
 // section-divider orphan: a "---" whose own height fits in the space
 // left at the bottom of a page, but whose following heading doesn't,

@@ -162,10 +162,18 @@ func headingSpaceBefore(fontSize float64) float64 {
 	return lineHeight(fontSize) * 0.5
 }
 
-// lineHeight returns a comfortable line height (mm) for fontSize (pt),
-// following the common fpdf convention of roughly half the point size.
+// leading is line height as a multiple of font size -- the ~1.25x a
+// dense one-to-two page document typically uses. The common fpdf
+// convention of half the point size in mm works out to ~1.42x, loose
+// enough to push a two-page resume onto a third page.
+const leading = 1.25
+
+// mmPerPoint converts a font size in points to the document's mm units.
+const mmPerPoint = 25.4 / 72
+
+// lineHeight returns the line height (mm) for fontSize (pt).
 func lineHeight(fontSize float64) float64 {
-	return fontSize * 0.5
+	return fontSize * leading * mmPerPoint
 }
 
 // firstLineHeight is the height of the first line n will render as,
