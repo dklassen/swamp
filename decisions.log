@@ -5325,3 +5325,26 @@ Decisions (#36 left these open):
   save (#37): bubbletea can't cancel a dispatched command, and a second
   Enter would start a duplicate check. No spinner, since a board check
   takes well under a second normally.
+
+## 2026-09-24 -- apply-to-posting skill uses only the MCP server
+
+The skill used the `swamp stage` CLI subcommand
+by default and kept the `swamp` MCP server as a fallback for sessions
+without shell access. It now uses only the MCP tools: `list_postings`,
+`stage_prepare`, `write_document`. There's one way to reach Swamp data
+instead of two, and agent sessions (usually in a container) no longer
+depend on the host's toolchain, sqlite db, or `.envrc`.
+
+Decisions:
+- The skill doesn't mention the CLI at all, not even to rule it out. If
+  the server isn't reachable, it tells the user to run `task mcp-serve`.
+- `stage_prepare`'s `Path` values are host paths, so the skill treats
+  them as informational and saves documents only through
+  `write_document`.
+- `PROFILE_REFERENCE.md` is still read as a plain file from the
+  checkout. It's the user's own file, not Swamp data, and no MCP tool
+  serves it.
+- Known gap: no MCP tool returns a document's current content, so a
+  flagged-revision pass asks the user to paste the existing draft. The
+  alternative was reading the file off disk, which is what this change
+  removes. A `read_document` tool would close the gap.

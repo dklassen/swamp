@@ -1,6 +1,6 @@
 ---
 name: apply-to-posting
-description: Draft a tailored cover letter and resume for a job posting tracked in Swamp (the job-search CLI/TUI in this repo), using the `swamp stage list`/`stage prepare` mechanism and the user's PROFILE_REFERENCE.md background file. Use this skill whenever the user asks to work on job applications, wants to draft a cover letter or resume for a posting, wants to work through their "interested" postings queue, or asks what to apply to next -- even if they don't mention "stage" or the CLI by name. Always confirm which posting to work on and show drafts for review before finishing; never submit an application or advance its status.
+description: Draft a tailored cover letter and resume for a job posting tracked in Swamp (the job-search tool in this repo), using the `swamp` MCP server's `list_postings`/`stage_prepare`/`write_document` tools and the user's PROFILE_REFERENCE.md background file. Use this skill whenever the user asks to work on job applications, wants to draft a cover letter or resume for a posting, wants to work through their "interested" postings queue, or asks what to apply to next -- even if they don't mention "stage" or MCP by name. Always confirm which posting to work on and show drafts for review before finishing; never submit an application or advance its status.
 ---
 
 # Apply to a posting
@@ -11,46 +11,36 @@ interactive-first: a human picks which posting to work on and reviews what
 gets written before anything is considered done. There is no autonomous or
 scheduled mode -- only run this with a person present in the session.
 
-Run every command below from the repo root (`cd
-/Users/dana/Documents/Code/lang/go/swamp` if you're not already there), and
-prefix each `swamp` invocation with `direnv exec .` so `SWAMP_DB_PATH` and
-`SWAMP_DOCUMENTS_PATH` are set from `.envrc`. Use `go run ./cmd/swamp
-<args>` rather than assuming a built binary exists.
+All Swamp data access goes through the `swamp` MCP server, declared in
+this repo's `.mcp.json`. Don't read or write the sqlite db or the
+assets directory directly -- these tools are the only interface this
+skill uses:
 
-**If you don't have shell access to this repo** (e.g. you're running in a
-container that can't reach the swamp binary or its sqlite db directly),
-use the `swamp` MCP server instead -- it's declared in this repo's
-`.mcp.json` and exposes the same three operations this skill needs as
-tools, over the same JSON shapes documented below (except that
-`list_postings` wraps the array in an object: `{"Postings": [...]}`, since
-MCP requires structured tool results to be objects):
+| Step                   | MCP tool         | Arguments                                                              |
+| ---------------------- | ---------------- | ---------------------------------------------------------------------- |
+| 1. Discover postings   | `list_postings`  | none                                                                   |
+| 2. Commit to a posting | `stage_prepare`  | `PostingID`                                                            |
+| 4. Save each document  | `write_document` | `ApplicationID`, `DocumentType` (`cover_letter`\|`resume`), `Content` |
 
-| CLI (steps below)             | MCP tool          | Arguments                                           |
-| ------------------------------ | ------------------ | ---------------------------------------------------- |
-| `swamp stage list`             | `list_postings`   | none                                                 |
-| `swamp stage prepare <id>`     | `stage_prepare`   | `PostingID`                                          |
-| writing the drafted file directly | `write_document`  | `ApplicationID`, `DocumentType` (`cover_letter`\|`resume`), `Content` |
-
-The MCP path needs `swamp mcp-serve` actually running on the host first
-(`task mcp-serve`, or `direnv exec . go run ./cmd/swamp mcp-serve`) --
-unlike the CLI, this is a persistent server, not something spawned
-per-call. See `decisions.log` for why MCP/Streamable-HTTP is the
-mechanism here rather than gRPC or a REST API, and for the
-`host.container.internal` DNS/bind-address details if the server seems
-unreachable from inside a container.
+The server has to be running on the host before the session starts
+(`task mcp-serve`) -- it's a persistent Streamable HTTP server, not
+something spawned per call. If the `swamp` tools aren't available or calls
+fail to connect, stop and tell the user to start it rather than falling
+back to anything else. See `decisions.log` for why MCP is the mechanism
+here, and for the `host.container.internal` DNS/bind-address details if
+the server seems unreachable from inside a container.
 
 ## 1. Discover eligible postings
 
-```
-direnv exec . go run ./cmd/swamp stage list
-```
+Call `list_postings` (no arguments).
 
-This is read-only -- safe to run as often as you like. It prints a JSON
-array of postings the user has marked interested and not archived, already
-filtered to exclude applications at a dead-end status (rejected, withdrawn,
-posting closed, offer declined) and anything that already has both documents written *and*
-no outstanding flagged review (see `LatestReviews` below -- a flagged
-document keeps its posting in this list even once both files exist):
+This is read-only -- safe to call as often as you like. It returns
+`{"Postings": [...]}`: the postings the user has marked interested and not
+archived, already filtered to exclude applications at a dead-end status
+(rejected, withdrawn, posting closed, offer declined) and anything that
+already has both documents written *and* no outstanding flagged review
+(see `LatestReviews` below -- a flagged document keeps its posting in this
+list even once both documents exist). Each element looks like:
 
 ```json
 {
@@ -90,11 +80,10 @@ recent human review of that document, if any:
 
 `Outcome` is `"passed"` or `"flagged"`. A document with no key in
 `LatestReviews` hasn't been reviewed yet. **A posting can still appear in
-this list even when both documents already exist on disk, if the latest
-review of either one is `"flagged"`** -- that's the signal to revise, not
-draft fresh: read `LatestReviews[...].Notes` for what specifically needs
-fixing, and read the existing file's content (once you commit to the
-posting in step 2) as your starting point rather than writing from scratch.
+this list even when both documents already exist, if the latest review of
+either one is `"flagged"`** -- that's the signal to revise, not draft
+fresh: read `LatestReviews[...].Notes` for what specifically needs fixing
+(see step 2 for how to handle the revision).
 
 Show the user the list -- title, company, location, and whether anything's
 flagged is usually enough -- and ask which one to work on. Don't pick for
@@ -104,16 +93,13 @@ the queue.
 
 ## 2. Commit to the posting
 
-Once the user names a posting (by its `Posting.ID`):
+Once the user names a posting, call `stage_prepare` with `PostingID` set to
+its `Posting.ID`.
 
-```
-direnv exec . go run ./cmd/swamp stage prepare <posting-id>
-```
-
-This is the one mutating step in the whole workflow, and it's idempotent --
-safe to re-run if you need to fetch this information again later in the
-same session. It creates the application record if one doesn't exist yet
-and makes sure the assets directory is there, then prints:
+This is the one mutating step before drafting, and it's idempotent -- safe
+to call again if you need to fetch this information later in the same
+session. It creates the application record if one doesn't exist yet and
+makes sure the document directory is there, then returns:
 
 ```json
 {
@@ -127,16 +113,19 @@ and makes sure the assets directory is there, then prints:
 }
 ```
 
+The `Path` values are locations on the host running the server --
+informational only, not something to open or write to yourself.
 `ApplicationNotes`/`LatestReviews` are the same shape as step 1's -- read
 again here since this is the object you're about to draft from. If
 `CoverLetter.Exists` or `Resume.Exists` is already `true`, someone (you, in
-an earlier run, or the user directly) already wrote that file. Check
+an earlier run, or the user directly) already wrote that document. Check
 `LatestReviews` first:
 
 - A flagged review with `Notes` set: this is a **revision**, not a fresh
-  draft. Read the existing file's current content, read what the notes say
-  needs fixing, and write a revised version that addresses it -- don't
-  start from a blank page.
+  draft. No MCP tool returns a document's current content yet, so ask the
+  user to paste the existing draft (or confirm you should redraft from
+  scratch), then write a version that addresses what the notes say needs
+  fixing -- don't silently start from a blank page.
 - No review yet, or the only review passed: tell the user and ask before
   overwriting it -- don't silently clobber drafted work you can't see the
   value of from the JSON alone.
@@ -150,17 +139,14 @@ write in. Read and follow whatever guidance is actually in the file rather
 than assuming its structure in advance; it's the user's document and may
 change.
 
-**If the file doesn't exist, stop and tell the user** rather than drafting
-from general knowledge or assumptions about their background. The entire
-point of this step is that the draft comes from real, user-provided
-material -- a cover letter written without it isn't a shortcut, it's a
-different (and much worse) task.
+This file isn't Swamp data and no MCP tool serves it -- read it from the
+repo checkout as a plain file.
 
-**No MCP tool exposes this file yet.** The `swamp` MCP server (see the
-table above) only covers steps 1, 2, and 4's write -- if you're on the
-MCP path because you have no filesystem access at all, there's currently
-no way to complete this step, and the skill can't proceed past it as-is.
-Tell the user rather than drafting without the profile.
+**If the file doesn't exist or you can't read it, stop and tell the user**
+rather than drafting from general knowledge or assumptions about their
+background. The entire point of this step is that the draft comes from
+real, user-provided material -- a cover letter written without it isn't a
+shortcut, it's a different (and much worse) task.
 
 ## 4. Draft the documents
 
@@ -168,7 +154,7 @@ Write a cover letter and a resume, both in markdown, tailored to this
 specific posting:
 
 - Pull the posting's actual content (title, company, description, any
-  specifics worth responding to) from what `stage prepare` returned.
+  specifics worth responding to) from what `stage_prepare` returned.
 - Pull background, framing, and voice from `PROFILE_REFERENCE.md` --
   don't invent experience, skills, or achievements that aren't in there.
   If the posting wants something the profile doesn't cover, that's worth
@@ -177,17 +163,16 @@ specific posting:
   can; it exists precisely so drafts don't need a separate editing pass
   to sound like the user.
 
-Write the cover letter to `CoverLetter.Path` and the resume to
-`Resume.Path` from step 2's output -- directly, if you have filesystem
-access to the repo. Otherwise, call the `write_document` MCP tool once per
-document (`ApplicationID` from step 2's output, `DocumentType` set to
-`"cover_letter"` or `"resume"`, `Content` the full document text), which
-has the same effect.
+Save each one by calling `write_document` -- once per document, with
+`ApplicationID` from step 2's output, `DocumentType` set to
+`"cover_letter"` or `"resume"`, and `Content` the full document text. It
+replaces whatever is there and returns the `Path` it wrote to.
 
 ## 5. Review checkpoint
 
 Show the user what you wrote -- the content itself, or at minimum a
-summary plus the two file paths -- and stop there. Do not:
+summary plus the two `Path`s `write_document` returned -- and stop there.
+Do not:
 
 - mark the application submitted or change its status (that's a manual
   action in the Swamp TUI, entirely outside this skill's scope)
