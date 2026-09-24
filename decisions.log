@@ -5348,3 +5348,10 @@ Decisions:
   flagged-revision pass asks the user to paste the existing draft. The
   alternative was reading the file off disk, which is what this change
   removes. A `read_document` tool would close the gap.
+- The skill doesn't restate tool arguments, result JSON shapes, or tool
+  behavior (idempotency, what each call creates). Those are declared in
+  the MCP tool definitions (`mcpserver/mcpserver.go`) and are what the
+  agent sees at call time, so copying them into the skill would drift.
+  The skill names which tool to call at each step, plus the few result
+  fields its workflow depends on: `LatestReviews` and its `"flagged"`
+  outcome and `Notes`, and `ApplicationNotes`.
