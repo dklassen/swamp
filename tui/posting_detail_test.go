@@ -288,3 +288,35 @@ func TestPostingDetailModel_View_GroupsContentIntoSections(t *testing.T) {
 func isSectionHeading(line, name string) bool {
 	return strings.HasPrefix(strings.TrimSpace(line), name+" ─")
 }
+
+// TestPostingDetailModel_View_PadsTitleAndBody checks the title and the
+// scrollable body keep a two-column margin on both sides: no text starts
+// in the first two columns or runs into the last two, including wrapped
+// description text and long values like URLs and document paths.
+func TestPostingDetailModel_View_PadsTitleAndBody(t *testing.T) {
+	t.Parallel()
+
+	const width, pad = 60, 2
+	p := store.Posting{ID: 5, IngestedFields: store.IngestedFields{
+		Title:           "Engineer",
+		JobURL:          "https://jobs.example.com/a-very-long-path/that-needs-to-wrap/somewhere-sensible",
+		DescriptionText: strings.Repeat("We build tools for practitioners. ", 8),
+	}}
+	app := store.Application{ID: 9, PostingID: 5}
+	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), width, 60, p, app, true, nil, true)
+
+	title := strings.Split(ansi.Strip(m.View()), "\n")[0]
+	body := strings.Split(ansi.Strip(m.viewport.View()), "\n")
+	for i, line := range append([]string{title}, body...) {
+		text := strings.TrimRight(line, " ")
+		if text == "" {
+			continue
+		}
+		if indent := len(text) - len(strings.TrimLeft(text, " ")); indent < pad {
+			t.Errorf("line %d starts at column %d, want at least %d: %q", i, indent, pad, text)
+		}
+		if w := ansi.StringWidth(text); w > width-pad {
+			t.Errorf("line %d runs to column %d, want at most %d: %q", i, w, width-pad, text)
+		}
+	}
+}

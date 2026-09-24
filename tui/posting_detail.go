@@ -21,6 +21,7 @@ type postingDetailModel struct {
 	store          *store.Store
 	documents      *documents.Store
 	viewport       viewport.Model
+	width          int
 	posting        store.Posting
 	application    store.Application
 	hasApplication bool
@@ -49,9 +50,38 @@ type postingDetailModel struct {
 // created/updated, or a window resize), matching the pre-extraction
 // showPostingDetail's "always rebuild, always reset scroll" behavior.
 func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool, latestReviews map[store.DocumentType]store.DocumentReview, canNavigateSiblings bool) postingDetailModel {
+	inner := detailInnerWidth(width)
 	vp := viewport.New(width, height)
-	vp.SetContent(wrapToWidth(postingDetailContent(p, app, hasApp, docs, latestReviews, width), width))
-	return postingDetailModel{store: s, documents: docs, viewport: vp, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews, canNavigateSiblings: canNavigateSiblings}
+	vp.SetContent(indentLines(wrapToWidth(postingDetailContent(p, app, hasApp, docs, latestReviews, inner), inner), detailPadding))
+	return postingDetailModel{store: s, documents: docs, viewport: vp, width: width, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews, canNavigateSiblings: canNavigateSiblings}
+}
+
+// detailPadding is the margin (columns) kept clear on each side of the
+// title and body, so text doesn't sit hard against the terminal edges.
+const detailPadding = 2
+
+// detailInnerWidth is the width left for text once detailPadding is taken
+// off both sides. width <= 0 (before the first tea.WindowSizeMsg) stays
+// unconstrained, as wrapToWidth expects; a terminal too narrow for the
+// margins gets the full width rather than a nonsensical one.
+func detailInnerWidth(width int) int {
+	if width <= 2*detailPadding {
+		return width
+	}
+	return width - 2*detailPadding
+}
+
+// indentLines prefixes every non-empty line of s with n spaces. Empty
+// lines stay empty rather than becoming trailing whitespace.
+func indentLines(s string, n int) string {
+	prefix := strings.Repeat(" ", n)
+	lines := strings.Split(s, "\n")
+	for i, line := range lines {
+		if line != "" {
+			lines[i] = prefix + line
+		}
+	}
+	return strings.Join(lines, "\n")
 }
 
 // backToPostingListMsg signals that App should switch to the
@@ -136,7 +166,13 @@ func (m *postingDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 
 func (m *postingDetailModel) View() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render(m.posting.Title) + "\n")
+	// Truncated rather than wrapped: the title sits outside the viewport,
+	// and a second title line would push the help line off the screen.
+	title := m.posting.Title
+	if inner := detailInnerWidth(m.width); inner > 0 {
+		title = truncateCol(title, inner)
+	}
+	b.WriteString(indentLines(titleStyle.Render(title), detailPadding) + "\n")
 	b.WriteString(m.viewport.View() + "\n")
 	help := "↑/↓ (j/k): scroll  "
 	if m.canNavigateSiblings {
