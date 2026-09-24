@@ -463,3 +463,42 @@ func TestReadDocument_ReturnsToolError(t *testing.T) {
 		})
 	}
 }
+
+func TestDocumentTools_AdvertiseDocumentTypeAsStringEnum(t *testing.T) {
+	t.Parallel()
+
+	srv, _, _ := newTestServer(t)
+	cs := connectClient(t, srv)
+
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	schemas := map[string]any{}
+	for _, tool := range res.Tools {
+		schemas[tool.Name] = tool.InputSchema
+	}
+
+	want := map[string]any{
+		"type":        "string",
+		"enum":        []any{"cover_letter", "resume"},
+		"description": "either cover_letter or resume",
+	}
+	for _, name := range []string{"write_document", "read_document"} {
+		t.Run(name, func(t *testing.T) {
+			raw, err := json.Marshal(schemas[name])
+			if err != nil {
+				t.Fatalf("marshal %s input schema: %v", name, err)
+			}
+			var schema struct {
+				Properties map[string]map[string]any `json:"properties"`
+			}
+			if err := json.Unmarshal(raw, &schema); err != nil {
+				t.Fatalf("unmarshal %s input schema: %v", name, err)
+			}
+			if diff := cmp.Diff(want, schema.Properties["DocumentType"]); diff != "" {
+				t.Errorf("DocumentType schema mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

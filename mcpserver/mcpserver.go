@@ -13,7 +13,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"reflect"
 
+	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dklassen/swamp/documents"
@@ -42,12 +44,14 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "write_document",
-		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have. DocumentType must be \"cover_letter\" or \"resume\".",
+		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have.",
+		InputSchema: documentInputSchema[writeDocumentInput](),
 	}, writeDocumentHandler(d))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_document",
-		Description: "Read an application's current cover letter or resume content, e.g. the existing draft to revise when its latest review was flagged. DocumentType must be \"cover_letter\" or \"resume\". Returns a tool error if that document hasn't been written yet.",
+		Description: "Read an application's current cover letter or resume content, e.g. the existing draft to revise when its latest review was flagged. Returns a tool error if that document hasn't been written yet.",
+		InputSchema: documentInputSchema[readDocumentInput](),
 	}, readDocumentHandler(d))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -102,9 +106,9 @@ func stagePrepareHandler(st *stage.Stage) mcp.ToolHandlerFor[stagePrepareInput, 
 }
 
 type writeDocumentInput struct {
-	ApplicationID int64  `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
-	DocumentType  string `json:"DocumentType" jsonschema:"either cover_letter or resume"`
-	Content       string `json:"Content" jsonschema:"the full document content to write, replacing whatever is there"`
+	ApplicationID int64              `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
+	DocumentType  store.DocumentType `json:"DocumentType" jsonschema:"either cover_letter or resume"`
+	Content       string             `json:"Content" jsonschema:"the full document content to write, replacing whatever is there"`
 }
 
 type writeDocumentOutput struct {
@@ -133,8 +137,8 @@ func writeDocumentHandler(d *documents.Store) mcp.ToolHandlerFor[writeDocumentIn
 }
 
 type readDocumentInput struct {
-	ApplicationID int64  `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
-	DocumentType  string `json:"DocumentType" jsonschema:"either cover_letter or resume"`
+	ApplicationID int64              `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
+	DocumentType  store.DocumentType `json:"DocumentType" jsonschema:"either cover_letter or resume"`
 }
 
 type readDocumentOutput struct {
@@ -162,24 +166,42 @@ func readDocumentHandler(d *documents.Store) mcp.ToolHandlerFor[readDocumentInpu
 	}
 }
 
-// documentPath picks documentType's path out of paths. documentType is
-// the DocumentType argument write_document and read_document accept,
-// parsed into store.DocumentType. The input field stays a string because
-// store.DocumentType is an int underneath, so schema inference would
-// advertise it to clients as an integer.
-func documentPath(paths documents.Paths, documentType string) (string, error) {
-	parsed, err := store.ParseDocumentType(documentType)
-	if err != nil {
-		return "", fmt.Errorf("DocumentType must be \"cover_letter\" or \"resume\": %w", err)
-	}
-	switch parsed {
+// documentPath picks documentType's path out of paths. The default case
+// only fires if store gains a DocumentType without a documents.Paths field
+// -- the input schema already rejects any value store doesn't know.
+func documentPath(paths documents.Paths, documentType store.DocumentType) (string, error) {
+	switch documentType {
 	case store.DocumentTypeCoverLetter:
 		return paths.CoverLetter, nil
 	case store.DocumentTypeResume:
 		return paths.Resume, nil
 	default:
-		return "", fmt.Errorf("DocumentType %s has no document path", parsed)
+		return "", fmt.Errorf("DocumentType %s has no document path", documentType)
 	}
+}
+
+// documentInputSchema infers In's input schema, advertising any
+// store.DocumentType field as a string enum of store.DocumentTypes()'
+// names. Without the override, inference would see DocumentType's
+// underlying int and advertise an integer; the SDK validates arguments
+// against this schema before the handler runs, so an unknown value is a
+// tool error there. Decoding into store.DocumentType goes through its
+// UnmarshalText. Panics like mcp.AddTool does on an uninferrable schema,
+// since that's a programming error caught at startup.
+func documentInputSchema[In any]() *jsonschema.Schema {
+	var names []any
+	for _, documentType := range store.DocumentTypes() {
+		names = append(names, documentType.String())
+	}
+	schema, err := jsonschema.For[In](&jsonschema.ForOptions{
+		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
+			reflect.TypeFor[store.DocumentType](): {Type: "string", Enum: names},
+		},
+	})
+	if err != nil {
+		panic(fmt.Sprintf("mcpserver: infer %T input schema: %v", *new(In), err))
+	}
+	return schema
 }
 
 type addCompanyInput struct {

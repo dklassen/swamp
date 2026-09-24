@@ -249,3 +249,12 @@ func TestListDocumentReviews_ReturnsMostRecentCycleFirst(t *testing.T) {
 		t.Fatalf("ListDocumentReviews mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestDocumentTypes_ReturnsEveryDocumentTypeInOrder(t *testing.T) {
+	t.Parallel()
+
+	want := []DocumentType{DocumentTypeCoverLetter, DocumentTypeResume}
+	if diff := cmp.Diff(want, DocumentTypes()); diff != "" {
+		t.Errorf("DocumentTypes() mismatch (-want +got):\n%s", diff)
+	}
+}

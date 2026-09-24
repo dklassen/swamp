@@ -36,6 +36,17 @@ var documentTypeNames = [...]string{
 	DocumentTypeResume:      "resume",
 }
 
+// DocumentTypes returns every DocumentType, in const order -- derived
+// from documentTypeNames so a new type shows up here without a second
+// list to update.
+func DocumentTypes() []DocumentType {
+	types := make([]DocumentType, len(documentTypeNames))
+	for i := range documentTypeNames {
+		types[i] = DocumentType(i)
+	}
+	return types
+}
+
 // String implements fmt.Stringer, and is also the value persisted to the
 // document_reviews.document_type DB column.
 func (d DocumentType) String() string {
