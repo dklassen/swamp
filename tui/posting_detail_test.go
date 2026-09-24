@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strconv"
 	"strings"
 	"testing"
 
@@ -189,8 +190,13 @@ func TestPostingDetailModel_Resize_RebuildsViewportAtNewDimensions(t *testing.T)
 
 	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}}, store.Application{}, false, nil, true)
 	m.resize(40, 10)
-	if m.viewport.Width != 40 || m.viewport.Height != 10 {
-		t.Fatalf("viewport dims = %dx%d, want 40x10", m.viewport.Width, m.viewport.Height)
+	if m.viewport.Width != 40 {
+		t.Fatalf("viewport width = %d, want 40", m.viewport.Width)
+	}
+	// The viewport itself is shorter than 10: it gives up whatever rows the
+	// title and help need beyond chromeRows (see newPostingDetailModel).
+	if lines := strings.Count(m.View(), "\n") + 1; lines > 10+chromeRows {
+		t.Fatalf("View() after resize is %d lines, want at most %d (the new terminal height)", lines, 10+chromeRows)
 	}
 	if !strings.Contains(m.View(), "Engineer") {
 		t.Fatalf("View() after resize = %q, want it to still contain the title", m.View())
@@ -394,5 +400,41 @@ func TestPostingDetailModel_View_NeverSplitsAReviewBadge(t *testing.T) {
 		if n := strings.Count(view, "[not reviewed]"); n != 2 {
 			t.Errorf("width %d: found %d intact [not reviewed] badges, want 2 in view:\n%s", width, n, view)
 		}
+	}
+}
+
+// TestPostingDetailModel_View_FitsTheTerminal checks the whole screen --
+// title, scrollable body, and help line -- fits in the terminal, so the
+// title stays visible at the top. App sizes the model with listRows(), the
+// terminal height minus chromeRows; the detail screen spends more than
+// that on its own title and help, and the help line wraps on narrower
+// terminals, so the view used to run past the bottom and push the title
+// off the top.
+func TestPostingDetailModel_View_FitsTheTerminal(t *testing.T) {
+	t.Parallel()
+
+	const termHeight = 30
+	p := store.Posting{ID: 5, IngestedFields: store.IngestedFields{
+		Title:           "Senior Developer, Fullstack",
+		DescriptionText: strings.Repeat("A long description paragraph that fills the body.\n\n", 40),
+	}}
+	for _, width := range []int{60, 80, 110, 200} {
+		t.Run(strconv.Itoa(width), func(t *testing.T) {
+			t.Parallel()
+
+			m := newPostingDetailModel(nil, nil, width, termHeight-chromeRows, p, store.Application{}, false, nil, true)
+			lines := strings.Split(ansi.Strip(m.View()), "\n")
+			if len(lines) > termHeight {
+				t.Errorf("view is %d lines, want at most %d (the terminal height)", len(lines), termHeight)
+			}
+			if !strings.Contains(lines[0], "Senior Developer, Fullstack") {
+				t.Errorf("first line = %q, want the posting title", lines[0])
+			}
+			for i, line := range lines {
+				if w := ansi.StringWidth(line); w > width {
+					t.Errorf("line %d is %d columns, want at most %d: %q", i, w, width, line)
+				}
+			}
+		})
 	}
 }

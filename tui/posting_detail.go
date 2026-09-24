@@ -22,6 +22,7 @@ type postingDetailModel struct {
 	documents      *documents.Store
 	viewport       viewport.Model
 	width          int
+	help           string
 	posting        store.Posting
 	application    store.Application
 	hasApplication bool
@@ -51,9 +52,16 @@ type postingDetailModel struct {
 // showPostingDetail's "always rebuild, always reset scroll" behavior.
 func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool, latestReviews map[store.DocumentType]store.DocumentReview, canNavigateSiblings bool) postingDetailModel {
 	inner := detailInnerWidth(width)
-	vp := viewport.New(width, height)
+	help := indentLines(wrapToWidth(postingDetailHelp(canNavigateSiblings), inner), detailPadding)
+	// height is App.listRows(), which only reserves chromeRows for the
+	// screen's own chrome. This screen spends two rows on the title and
+	// its margin and one on the help line's margin plus the help itself,
+	// which wraps on narrower terminals -- so the viewport gives up the
+	// difference, or the screen overflows and pushes the title off the top.
+	helpRows := strings.Count(help, "\n") + 1
+	vp := viewport.New(width, max(height-(3+helpRows-chromeRows), 0))
 	vp.SetContent(indentLines(wrapToWidth(postingDetailContent(p, app, hasApp, docs, latestReviews, inner), inner), detailPadding))
-	return postingDetailModel{store: s, documents: docs, viewport: vp, width: width, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews, canNavigateSiblings: canNavigateSiblings}
+	return postingDetailModel{store: s, documents: docs, viewport: vp, width: width, help: help, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews, canNavigateSiblings: canNavigateSiblings}
 }
 
 // detailPadding is the margin (columns) kept clear on each side of the
@@ -174,12 +182,7 @@ func (m *postingDetailModel) View() string {
 	}
 	b.WriteString(indentLines(titleStyle.Render(title), detailPadding) + "\n")
 	b.WriteString(m.viewport.View() + "\n")
-	help := "↑/↓ (j/k): scroll  "
-	if m.canNavigateSiblings {
-		help += "←/→ (h/l): prev/next posting  "
-	}
-	help += "o: open in browser  a: start application  s: set status  n: edit notes  r: review document  u: refresh  esc/b: back"
-	b.WriteString(helpStyle.Render(help))
+	b.WriteString(helpStyle.Render(m.help))
 	return b.String()
 }
 
@@ -188,4 +191,15 @@ func (m *postingDetailModel) View() string {
 // is active (see tea.WindowSizeMsg in App.Update).
 func (m *postingDetailModel) resize(width, height int) {
 	*m = newPostingDetailModel(m.store, m.documents, width, height, m.posting, m.application, m.hasApplication, m.latestReviews, m.canNavigateSiblings)
+}
+
+// postingDetailHelp is the detail screen's key help, advertising prev/next
+// navigation only when it can actually do something (see
+// canNavigateSiblings).
+func postingDetailHelp(canNavigateSiblings bool) string {
+	help := "↑/↓ (j/k): scroll  "
+	if canNavigateSiblings {
+		help += "←/→ (h/l): prev/next posting  "
+	}
+	return help + "o: open in browser  a: start application  s: set status  n: edit notes  r: review document  u: refresh  esc/b: back"
 }
