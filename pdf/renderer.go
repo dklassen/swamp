@@ -42,15 +42,22 @@ func (r *renderer) renderChildren(n ast.Node) {
 // list's indented X even after renderList restores the margin itself
 // (restoring the margin doesn't retroactively move the cursor).
 func (r *renderer) renderBlock(n ast.Node) {
-	left, _, _, _ := r.doc.GetMargins()
+	left, top, _, _ := r.doc.GetMargins()
 	r.doc.SetX(left)
 
 	switch v := n.(type) {
 	case *ast.Heading:
 		size := headingFontSize(v.Level)
+		// A heading belongs to what follows it, so it gets extra space
+		// above and less below than a paragraph does -- except at the
+		// top of a page, where space above would only push it down.
+		if r.doc.GetY() > top {
+			r.doc.Ln(headingSpaceBefore(size))
+			r.doc.SetX(left)
+		}
 		r.doc.SetFont(fontFamily, "B", size)
 		r.renderInlineChildren(n, "B", size)
-		r.doc.Ln(lineHeight(size) * 1.5)
+		r.doc.Ln(lineHeight(size) * 1.15)
 	case *ast.Paragraph, *ast.TextBlock:
 		r.doc.SetFont(fontFamily, "", baseFontSize)
 		r.renderInlineChildren(n, "", baseFontSize)
@@ -133,39 +140,53 @@ func (r *renderer) renderList(list *ast.List) {
 }
 
 // headingFontSize returns the point size for a heading of the given level
-// (1-6), stepping down from a prominent H1 to a size indistinguishable
-// from body text by H5/H6.
+// (1-6), following resume conventions rather than a web page's: a
+// prominent H1 (the name), H2 (section headings) a step above body text,
+// and H3 onward (job/role headings) at body size, set apart by bold
+// weight alone. The earlier 16/14/12pt steps made every job title
+// shout.
 func headingFontSize(level int) float64 {
 	switch level {
 	case 1:
 		return 20
 	case 2:
-		return 16
-	case 3:
-		return 14
-	case 4:
-		return 12
+		return 13
 	default:
 		return baseFontSize
 	}
 }
 
-// lineHeight returns a comfortable line height (mm) for fontSize (pt),
-// following the common fpdf convention of roughly half the point size.
+// headingSpaceBefore is the extra space (mm) above a heading of fontSize
+// (pt), on top of whatever the preceding block already left below itself.
+func headingSpaceBefore(fontSize float64) float64 {
+	return lineHeight(fontSize) * 0.5
+}
+
+// leading is line height as a multiple of font size -- the ~1.25x a
+// dense one-to-two page document typically uses. The common fpdf
+// convention of half the point size in mm works out to ~1.42x, loose
+// enough to push a two-page resume onto a third page.
+const leading = 1.25
+
+// mmPerPoint converts a font size in points to the document's mm units.
+const mmPerPoint = 25.4 / 72
+
+// lineHeight returns the line height (mm) for fontSize (pt).
 func lineHeight(fontSize float64) float64 {
-	return fontSize * 0.5
+	return fontSize * leading * mmPerPoint
 }
 
 // firstLineHeight is the height of the first line n will render as,
-// used to keep a thematic break on the same page as the block it
-// introduces. A nil node is a rule with nothing after it, which needs no
-// room reserved beyond its own.
+// including a heading's space above it, used to keep a thematic break on
+// the same page as the block it introduces. A nil node is a rule with
+// nothing after it, which needs no room reserved beyond its own.
 func firstLineHeight(n ast.Node) float64 {
 	switch v := n.(type) {
 	case nil:
 		return 0
 	case *ast.Heading:
-		return lineHeight(headingFontSize(v.Level))
+		size := headingFontSize(v.Level)
+		return headingSpaceBefore(size) + lineHeight(size)
 	default:
 		return lineHeight(baseFontSize)
 	}

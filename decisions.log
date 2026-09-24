@@ -5411,3 +5411,72 @@ Decisions:
 - `documentInputSchema` panics if inference fails, matching
   `mcp.AddTool`'s own behavior for an uninferrable schema. It's a
   programming error caught at startup, not a runtime condition.
+
+## 2026-09-24 -- PDF document font: Source Sans 3 instead of gofont
+
+Exported resumes and cover letters were set in Go's bundled gofont
+family, picked for its Unicode coverage (the cp1252 core fonts silently
+turned "→" into ".") and because it needed no vendored files. In
+practice it reads as recognizably "the Go font", which stands out on a
+resume more than a job-search document should.
+
+Decisions:
+- Source Sans 3 (Adobe, SIL OFL 1.1), static TTFs for Regular, Bold,
+  Italic, and Bold Italic, embedded with `//go:embed` from `pdf/fonts/`
+  with the licence alongside as `OFL.md`. It covers every non-ASCII
+  character current drafts use (→ • — – curly quotes, accented letters),
+  checked against each style's cmap before switching.
+- Considered: Carlito or Liberation Sans (metric clones of Calibri and
+  Arial, the most "default"-looking option), IBM Plex Sans, Noto Sans,
+  and going back to core Helvetica with an explicit character
+  substitution pass. Source Sans 3 is a neutral document sans with full
+  coverage; the core-font route reintroduces lossy substitution.
+- Cost: about 1.5 MB of font files in the repo and binary, reversing
+  the original "no vendored font" reasoning. fpdf subsets on output, so
+  exported PDFs stay small. Render now parses 400 KB TTFs per call
+  (pdf tests went from ~10 ms to ~350 ms), which is irrelevant for an
+  interactive export.
+- The test reads the font name out of each embedded font program rather
+  than checking `/BaseFont`, because fpdf names `/BaseFont` after the
+  family label passed to `AddUTF8FontFromBytes`, not the font itself.
+
+## 2026-09-24 -- PDF heading sizes follow resume conventions
+
+Heading sizes were 20/16/14/12pt for H1-H4 over 11pt body text. The
+drafts use H1 for the name, H2 for sections, and H3 for each job, so
+every job title rendered three points above body text and the resume
+read like a web page. Now H1 20pt, H2 13pt, H3 and below 11pt (body
+size), set apart by bold weight alone. Pinned by explicit sizes in a
+table-driven test; the existing regression test compares against
+headingFontSize(1), so it guards the size being applied but passes
+whatever the size is.
+
+## 2026-09-24 -- PDF headings get space above, less below
+
+Headings only had space after them (1.5 line heights) and none before,
+so a heading sat as close to the end of the previous section as to its
+own content (about 25pt baseline to baseline both ways). Now a heading
+gets half a line height of extra space above it (skipped at the top of
+a page) and 1.15 line heights below, so it groups with what follows.
+
+Decisions:
+- The test asserts the proximity rule (space above at least 1.25x the
+  space below, baseline to baseline) rather than exact offsets, in line
+  with the 2026-09-17 note about not pinning fpdf's point math.
+- `firstLineHeight` now includes a heading's space-above, so a thematic
+  break still reserves room for the heading it introduces. The existing
+  orphan sweep stepped one paragraph (~8mm) at a time and missed the
+  new ~3mm window, so it now also varies a short list before the rule
+  for finer steps. It fails without the reservation (24 paragraphs + 2
+  items) and passes with it. pdf tests take ~1.6s instead of ~0.35s.
+
+## 2026-09-24 -- PDF line spacing 1.25x font size
+
+`lineHeight` followed the common fpdf convention of half the point size
+in mm, which is ~1.42x the font size. Loose enough that a real two-page
+resume (application 29, Fullscript WMS) spilled its Education line onto
+a third page even after the heading size and spacing fixes. Now
+`leading` (1.25) times the size converted from points to mm, the usual
+range for a dense one-to-two page document. Paragraph, list, and heading
+spacing are all multiples of `lineHeight`, so they tighten
+proportionally. Verified on that resume: three pages became two.

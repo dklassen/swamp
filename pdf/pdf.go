@@ -11,30 +11,39 @@ package pdf
 
 import (
 	"bytes"
+	_ "embed"
 	"fmt"
 
 	"github.com/go-pdf/fpdf"
 	"github.com/yuin/goldmark"
 	"github.com/yuin/goldmark/text"
-	"golang.org/x/image/font/gofont/gobold"
-	"golang.org/x/image/font/gofont/gobolditalic"
-	"golang.org/x/image/font/gofont/goitalic"
-	"golang.org/x/image/font/gofont/goregular"
 )
 
 const (
 	baseFontSize = 11.0
-	// fontFamily is registered from Go's own bundled "Go" font family
-	// (golang.org/x/image/font/gofont) rather than a core PDF font
+	// fontFamily is Adobe's Source Sans 3, embedded from fonts/ (SIL Open
+	// Font License, see fonts/OFL.md) rather than a core PDF font
 	// (Helvetica) translated through a WinAnsi/cp1252 codepage -- real
 	// resume content uses characters cp1252 has no glyph for at all
 	// (e.g. "->" arrows in a pipeline description), which the
 	// translator was silently mangling into "." instead of erroring.
-	// gofont's broad Unicode coverage, written as native UTF-8 through
-	// AddUTF8FontFromBytes, avoids that whole class of silent corruption
-	// -- and needs no vendored font file, since it ships as Go source
-	// under the Go project's own BSD-style license.
-	fontFamily = "Go"
+	// Source Sans 3 covers those characters, written as native UTF-8
+	// through AddUTF8FontFromBytes. It replaced Go's own bundled gofont
+	// family, which had the same coverage and needed no vendored files
+	// but read as recognizably "the Go font" on a resume or cover letter
+	// (see decisions.log).
+	fontFamily = "SourceSans3"
+)
+
+var (
+	//go:embed fonts/SourceSans3-Regular.ttf
+	fontRegular []byte
+	//go:embed fonts/SourceSans3-Bold.ttf
+	fontBold []byte
+	//go:embed fonts/SourceSans3-It.ttf
+	fontItalic []byte
+	//go:embed fonts/SourceSans3-BoldIt.ttf
+	fontBoldItalic []byte
 )
 
 // Render converts markdown source into PDF-encoded bytes.
@@ -44,10 +53,10 @@ func Render(source []byte) ([]byte, error) {
 	doc := fpdf.New("P", "mm", "Letter", "")
 	doc.SetMargins(20, 20, 20)
 	doc.SetAutoPageBreak(true, 20)
-	doc.AddUTF8FontFromBytes(fontFamily, "", goregular.TTF)
-	doc.AddUTF8FontFromBytes(fontFamily, "B", gobold.TTF)
-	doc.AddUTF8FontFromBytes(fontFamily, "I", goitalic.TTF)
-	doc.AddUTF8FontFromBytes(fontFamily, "BI", gobolditalic.TTF)
+	doc.AddUTF8FontFromBytes(fontFamily, "", fontRegular)
+	doc.AddUTF8FontFromBytes(fontFamily, "B", fontBold)
+	doc.AddUTF8FontFromBytes(fontFamily, "I", fontItalic)
+	doc.AddUTF8FontFromBytes(fontFamily, "BI", fontBoldItalic)
 	doc.AddPage()
 	doc.SetFont(fontFamily, "", baseFontSize)
 	// Keeps the content stream as literal, greppable text instead of

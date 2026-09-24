@@ -2,12 +2,18 @@ package pdf
 
 import (
 	"bytes"
+	"compress/zlib"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"golang.org/x/image/font/sfnt"
 )
 
 // containsText reports whether pdfBytes' content stream contains s. The
@@ -250,6 +256,66 @@ func TestRender_PreservesUnicodePunctuationAndSymbols(t *testing.T) {
 	}
 }
 
+// TestRender_EmbedsSourceSans3 pins the document typeface: Go's bundled
+// gofont family read as recognizably "the Go font" on a resume or cover
+// letter, so the text is set in Source Sans 3 instead (see pdf.go's
+// fontFamily doc comment).
+func TestRender_EmbedsSourceSans3(t *testing.T) {
+	t.Parallel()
+
+	got, err := Render([]byte("Plain, **bold**, *italic*, and ***both***."))
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	want := []string{
+		"Source Sans 3", // the regular weight's full name carries no style suffix
+		"Source Sans 3 Bold",
+		"Source Sans 3 Bold Italic",
+		"Source Sans 3 Italic",
+	}
+	if diff := cmp.Diff(want, embeddedFontNames(t, got)); diff != "" {
+		t.Errorf("embedded fonts mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// embeddedFontStream matches the header of an embedded TrueType font
+// program -- fpdf writes each as a Flate-compressed stream carrying a
+// /Length1 (uncompressed length) entry, which no other stream it emits
+// has. Font streams are compressed even with SetCompression(false),
+// which only covers page content.
+var embeddedFontStream = regexp.MustCompile(`<</Length \d+\n/Filter /FlateDecode\n/Length1 \d+\n>>\nstream\n`)
+
+// embeddedFontNames returns the sorted full names (e.g. "Source Sans 3
+// Bold") read from the name table of every font program embedded in
+// pdfBytes. fpdf labels each font's /BaseFont after the family name
+// passed to AddUTF8FontFromBytes, not the font file's own name, so the
+// font data itself is the only reliable record of what was embedded.
+func embeddedFontNames(t *testing.T, pdfBytes []byte) []string {
+	t.Helper()
+	var names []string
+	for _, loc := range embeddedFontStream.FindAllIndex(pdfBytes, -1) {
+		zr, err := zlib.NewReader(bytes.NewReader(pdfBytes[loc[1]:]))
+		if err != nil {
+			t.Fatalf("open embedded font stream: %v", err)
+		}
+		program, err := io.ReadAll(zr)
+		if err != nil {
+			t.Fatalf("decompress embedded font stream: %v", err)
+		}
+		f, err := sfnt.Parse(program)
+		if err != nil {
+			t.Fatalf("parse embedded font: %v", err)
+		}
+		name, err := f.Name(nil, sfnt.NameIDFull)
+		if err != nil {
+			t.Fatalf("read embedded font name: %v", err)
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
+}
+
 // TestRender_HeadingAfterListStartsAtLeftMargin is a regression test for
 // a bug caught in manual verification: a heading immediately following a
 // bullet list rendered indented under the list, because renderList's
@@ -443,6 +509,97 @@ func TestRender_HeadingTextUsesHeadingFontSize(t *testing.T) {
 	}
 }
 
+// TestRender_HeadingSizesFollowResumeConventions pins heading sizes to
+// what a resume looks like rather than a web page: a prominent name
+// (H1), section headings a step above body text (H2), and job/role
+// headings at body size, distinguished by weight alone (H3 and below).
+// The drafts use exactly that structure (see testdata/resume.md).
+func TestRender_HeadingSizesFollowResumeConventions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		markdown string
+		want     float64
+	}{
+		{"# Heading", 20},
+		{"## Heading", 13},
+		{"### Heading", 11},
+		{"#### Heading", 11},
+	}
+	for _, tt := range tests {
+		t.Run(tt.markdown, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := Render([]byte(tt.markdown + "\n\nBody text."))
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			size, ok := fontSizeBeforeText(t, got, "Heading")
+			if !ok {
+				t.Fatalf("could not locate heading text's preceding Tf font size")
+			}
+			if size != tt.want {
+				t.Errorf("heading drawn at %vpt, want %vpt", size, tt.want)
+			}
+		})
+	}
+}
+
+// TestRender_HeadingSitsCloserToItsContentThanToWhatPrecedesIt checks the
+// basic proximity rule for headings: more space above a heading than
+// below it, so it visibly belongs to the section it introduces. Headings
+// used to get space only after them, which left each one floating nearer
+// the previous section than its own. Measured baseline to baseline, and
+// required to be clearly larger rather than just larger, so rounding in
+// the content stream can't satisfy it by accident.
+func TestRender_HeadingSitsCloserToItsContentThanToWhatPrecedesIt(t *testing.T) {
+	t.Parallel()
+
+	for _, heading := range []string{"## Section", "### Section"} {
+		t.Run(heading, func(t *testing.T) {
+			t.Parallel()
+
+			got, err := Render([]byte("Previous text.\n\n" + heading + "\n\nFollowing text."))
+			if err != nil {
+				t.Fatalf("Render: %v", err)
+			}
+			yPrev, ok1 := textStartY(t, got, "Previous text.")
+			yHead, ok2 := textStartY(t, got, "Section")
+			yNext, ok3 := textStartY(t, got, "Following text.")
+			if !ok1 || !ok2 || !ok3 {
+				t.Fatalf("could not locate one or more text positions")
+			}
+			// PDF y grows upward, so earlier blocks have larger y.
+			above, below := yPrev-yHead, yHead-yNext
+			if above < below*1.25 {
+				t.Errorf("space above heading %.1fpt, below %.1fpt -- want above at least 1.25x below", above, below)
+			}
+		})
+	}
+}
+
+// TestRender_LineSpacingIsAboutOneAndAQuarterTimesFontSize checks line
+// spacing (baseline to baseline within one paragraph) against the
+// ~1.2-1.3x of font size a dense one-to-two page document typically uses.
+// It was ~1.42x, loose enough that a real two-page resume spilled its
+// last section onto a third page.
+func TestRender_LineSpacingIsAboutOneAndAQuarterTimesFontSize(t *testing.T) {
+	t.Parallel()
+
+	got, err := Render([]byte("First line\\\nSecond line"))
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	y1, ok1 := textStartY(t, got, "First line")
+	y2, ok2 := textStartY(t, got, "Second line")
+	if !ok1 || !ok2 {
+		t.Fatalf("could not locate one or both lines' starting Td position")
+	}
+	if ratio := (y1 - y2) / baseFontSize; ratio < 1.2 || ratio > 1.3 {
+		t.Errorf("line spacing is %.2fx the font size, want 1.2-1.3x", ratio)
+	}
+}
+
 // TestRender_ThematicBreakIsNeverTheLastMarkOnAPage guards the
 // section-divider orphan: a "---" whose own height fits in the space
 // left at the bottom of a page, but whose following heading doesn't,
@@ -456,24 +613,33 @@ func TestRender_HeadingTextUsesHeadingFontSize(t *testing.T) {
 func TestRender_ThematicBreakIsNeverTheLastMarkOnAPage(t *testing.T) {
 	t.Parallel()
 
+	// Paragraphs and list items advance the page by different amounts, so
+	// combining them steps the rule's position in much finer increments
+	// than paragraphs alone -- fine enough to land inside the few
+	// millimetres of a heading's space-above.
 	for filler := 1; filler <= 45; filler++ {
-		var b strings.Builder
-		b.WriteString("# Title\n\n")
-		for i := 0; i < filler; i++ {
-			fmt.Fprintf(&b, "Filler paragraph number %d.\n\n", i)
-		}
-		b.WriteString("---\n\n## Education\n\nBody under heading.\n")
-
-		got, err := Render([]byte(b.String()))
-		if err != nil {
-			t.Fatalf("Render (filler=%d): %v", filler, err)
-		}
-		for pageNum, page := range pagesOfMarks(got) {
-			if len(page) == 0 {
-				continue
+		for items := 0; items <= 4; items++ {
+			var b strings.Builder
+			b.WriteString("# Title\n\n")
+			for i := 0; i < filler; i++ {
+				fmt.Fprintf(&b, "Filler paragraph number %d.\n\n", i)
 			}
-			if last := page[len(page)-1]; last.isRule {
-				t.Errorf("filler=%d: page %d ends with a thematic-break rule at y=%.1f and nothing after it -- the heading it introduces was orphaned onto the next page, leaving a blank band", filler, pageNum+1, last.y)
+			for i := 0; i < items; i++ {
+				fmt.Fprintf(&b, "- Filler item %d\n", i)
+			}
+			b.WriteString("\n---\n\n## Education\n\nBody under heading.\n")
+
+			got, err := Render([]byte(b.String()))
+			if err != nil {
+				t.Fatalf("Render (filler=%d, items=%d): %v", filler, items, err)
+			}
+			for pageNum, page := range pagesOfMarks(got) {
+				if len(page) == 0 {
+					continue
+				}
+				if last := page[len(page)-1]; last.isRule {
+					t.Errorf("filler=%d, items=%d: page %d ends with a thematic-break rule at y=%.1f and nothing after it -- the heading it introduces was orphaned onto the next page, leaving a blank band", filler, items, pageNum+1, last.y)
+				}
 			}
 		}
 	}
