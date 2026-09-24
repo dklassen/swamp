@@ -77,10 +77,14 @@ func mustCreateApplication(t *testing.T, s *store.Store, postingID int64) store.
 // fakeFetcher is a sync.PostingFetcher whose FetchPostings return value is
 // configured per test, so tui tests never make real HTTP calls.
 type fakeFetcher struct {
-	postings map[string][]jobboard.Posting
+	postings  map[string][]jobboard.Posting
+	errBoards map[string]error // boardSlug -> error FetchPostings returns for it
 }
 
 func (f *fakeFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error) {
+	if err, ok := f.errBoards[boardSlug]; ok {
+		return nil, err
+	}
 	return f.postings[boardSlug], nil
 }
 
