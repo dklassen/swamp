@@ -5077,3 +5077,32 @@ result spelled out per status rather than derived from the production
 list. It failed for exactly the four terminal statuses before the fix.
 Against a copy of the real db, `stage list` went from 32 to 30
 candidates, dropping exactly 285 and 392 and adding nothing.
+
+## 2026-09-24 -- Company posting list always hides closed postings
+
+Closed postings were always listed in the company's posting list. That
+list is for triage, finding postings to act on, and a listing that has
+closed on the job board can't be applied to.
+
+Decision: `loadPostings` always drops postings with
+`listing_status = 'closed'`, with no toggle. Nothing is lost:
+- Closed postings stay in the db with their markup, notes and
+  posting_history. The 2026-08-10 "never deleted" decision is about
+  storage, not display.
+- Applications on closed postings (which #105 deliberately leaves active
+  if they're past the early statuses) are reached from the
+  active-applications screen. That screen opens posting detail from its
+  own data, not from the posting list, and already marks closed postings.
+- A posting that reopens reappears on the next load, since the filter
+  checks current status.
+
+Filtered in the TUI rather than in `ListPostingsByCompany`, because sync
+also uses that query to find open postings to close and needs every
+posting.
+
+Alternative considered and rejected: mirroring the archived toggle (hide
+by default, a `C` key to show). Archived is the user's own reversible
+choice, so a way to bring it back makes sense. Closed is a fact about the
+job board with nothing to act on, so a toggle would only add state, a key
+binding and a notice line for no workflow benefit. Started down this path
+and dropped it at the user's call.

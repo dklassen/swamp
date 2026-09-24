@@ -679,6 +679,49 @@ func TestApp_PressA_OnPostingList_TogglesArchivedPostingsBackIntoView(t *testing
 	}
 }
 
+// A closed listing can't be applied to, so it never belongs in the
+// company's posting list. Applications on closed postings stay reachable
+// from the active-applications screen.
+func TestApp_PostingList_NeverShowsClosedPostings(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {
+			{SourceID: "job-1", Title: "Engineer"},
+			{SourceID: "job-2", Title: "Designer"},
+		},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+
+	var closedID int64
+	for _, p := range app.postings {
+		if p.Title == "Designer" {
+			closedID = p.ID
+		}
+	}
+	if closedID == 0 {
+		t.Fatal("could not find Designer posting to close")
+	}
+	if err := s.MarkPostingClosed(context.Background(), closedID); err != nil {
+		t.Fatalf("MarkPostingClosed: %v", err)
+	}
+
+	// Showing archived postings mustn't bring closed ones back.
+	app, cmd := sendKey(app, runeKey('A'))
+	if cmd == nil {
+		t.Fatal("Update on 'A' returned nil Cmd")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if len(app.postings) != 1 {
+		t.Fatalf("postings after reload = %d, want 1 (closed one never shown)", len(app.postings))
+	}
+	if app.postings[0].Title != "Engineer" {
+		t.Fatalf("visible posting = %q, want %q", app.postings[0].Title, "Engineer")
+	}
+}
+
 func TestApp_PressX_WhileHidingArchived_RemovesPostingFromViewAndClampsCursor(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")

@@ -687,6 +687,14 @@ type postingsLoadedMsg struct {
 // in UpsertPosting), so N+1 here is N cheap local sqlite reads, not N
 // round trips to a remote service.
 //
+// Closed postings are always dropped: a listing that has closed on the job
+// board can't be applied to, so it has no place in a list for finding
+// postings to act on. They stay in the db (never deleted, see
+// decisions.log), applications on them stay reachable from the
+// active-applications screen, and a posting that reopens reappears on the
+// next load. Filtered here rather than in ListPostingsByCompany because
+// sync also uses that query and needs every posting, closed ones included.
+//
 // hideArchived additionally drops archived postings from the result --
 // ephemeral TUI display state (see the App.hideArchived field), not a
 // company_filters row, so it's applied here rather than at the
@@ -698,6 +706,7 @@ func loadPostings(s *store.Store, companyID int64, hideArchived bool) tea.Cmd {
 		if err != nil {
 			return postingsLoadedMsg{err: err}
 		}
+		postings = filterOutClosed(postings)
 		companyFilters, err := s.ListCompanyFilters(ctx, companyID)
 		if err != nil {
 			return postingsLoadedMsg{err: err}
@@ -723,6 +732,18 @@ func loadPostings(s *store.Store, companyID int64, hideArchived bool) tea.Cmd {
 
 		return postingsLoadedMsg{postings: postings, markup: markup, departments: departments, locations: locations}
 	}
+}
+
+// filterOutClosed drops postings whose listing has closed on the job board.
+func filterOutClosed(postings []store.Posting) []store.Posting {
+	visible := make([]store.Posting, 0, len(postings))
+	for _, p := range postings {
+		if p.ListingStatus == "closed" {
+			continue
+		}
+		visible = append(visible, p)
+	}
+	return visible
 }
 
 // filterOutArchived drops postings whose markup has ArchivedAt set.
