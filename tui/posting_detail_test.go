@@ -320,3 +320,79 @@ func TestPostingDetailModel_View_PadsTitleAndBody(t *testing.T) {
 		}
 	}
 }
+
+// TestPostingDetailModel_View_AlignsFieldValues checks field values line
+// up in one column across the Posting and Application sections, and that
+// a value too long for one line (a URL, a document path with its review
+// badge) continues under its own value column rather than wrapping back
+// to the margin underneath the labels.
+func TestPostingDetailModel_View_AlignsFieldValues(t *testing.T) {
+	t.Parallel()
+
+	p := store.Posting{ID: 5, IngestedFields: store.IngestedFields{
+		Title:      "Engineer",
+		Department: "Engineering",
+		Location:   "Ottawa, ON",
+		JobURL:     "https://jobs.example.com/a-very-long-path/that-needs-to-wrap/somewhere-sensible",
+	}}
+	app := store.Application{ID: 9, PostingID: 5, Status: store.ApplicationStatusStarted}
+	reviews := map[store.DocumentType]store.DocumentReview{
+		store.DocumentTypeCoverLetter: {Outcome: store.ReviewOutcomeFlagged, Notes: "too generic"},
+	}
+	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 70, 60, p, app, true, reviews, true)
+	lines := strings.Split(ansi.Strip(m.viewport.View()), "\n")
+
+	// column is where text starts on its line or, for text on a wrapped
+	// continuation line (which may begin partway through a value), where
+	// that line's text starts.
+	column := func(text string, continuation bool) int {
+		t.Helper()
+		for _, line := range lines {
+			if i := strings.Index(line, text); i >= 0 {
+				if continuation {
+					return len(line) - len(strings.TrimLeft(line, " "))
+				}
+				return ansi.StringWidth(line[:i])
+			}
+		}
+		t.Fatalf("%q not found in view:\n%s", text, strings.Join(lines, "\n"))
+		return -1
+	}
+
+	want := column("Engineering", false)
+	for _, value := range []struct {
+		text         string
+		continuation bool
+	}{
+		{"Ottawa, ON", false},
+		{"https://jobs.example.com", false},
+		{"somewhere-sensible", true}, // the Job URL's wrapped continuation
+		{applicationStatusLabel(store.ApplicationStatusStarted), false},
+		{"not found", false},          // cover letter and resume rows
+		{"[FLAGGED]", true},           // wraps past the cover letter's long temp path
+		{"Notes: too generic", false}, // the review's notes
+	} {
+		if got := column(value.text, value.continuation); got != want {
+			t.Errorf("%q starts at column %d, want %d (the value column) in view:\n%s", value.text, got, want, strings.Join(lines, "\n"))
+		}
+	}
+}
+
+// TestPostingDetailModel_View_NeverSplitsAReviewBadge checks a document's
+// review badge stays on one line however the path before it wraps --
+// "[not reviewed]" contains a space, so plain word wrapping could break
+// it in two. Swept across widths because where the path wraps depends on
+// the temp directory's length.
+func TestPostingDetailModel_View_NeverSplitsAReviewBadge(t *testing.T) {
+	t.Parallel()
+
+	docs := documents.NewStore(t.TempDir())
+	app := store.Application{ID: 9, PostingID: 5}
+	for width := 40; width <= 140; width++ {
+		m := newPostingDetailModel(nil, docs, width, 60, store.Posting{ID: 5}, app, true, nil, true)
+		view := ansi.Strip(m.viewport.View())
+		if n := strings.Count(view, "[not reviewed]"); n != 2 {
+			t.Errorf("width %d: found %d intact [not reviewed] badges, want 2 in view:\n%s", width, n, view)
+		}
+	}
+}

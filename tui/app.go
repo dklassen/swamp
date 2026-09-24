@@ -18,6 +18,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/cellbuf"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
@@ -291,20 +292,20 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 		if f.value == "" {
 			continue
 		}
-		b.WriteString(fieldLabel.Render(f.label+":") + " " + f.value + "\n")
+		b.WriteString(detailField(f.label, f.value, width))
 	}
 	b.WriteString("\n" + sectionHeading("Application", width) + "\n")
 	if hasApplication {
-		b.WriteString(fieldLabel.Render("Application status:") + " " + applicationStatusLabel(application.Status) + "\n")
+		b.WriteString(detailField("Status", applicationStatusLabel(application.Status), width))
 		if application.Notes != "" {
-			b.WriteString(fieldLabel.Render("Application notes:") + " " + application.Notes + "\n")
+			b.WriteString(detailField("Notes", application.Notes, width))
 		}
 		status := docs.Status(application.ID)
-		b.WriteString("\n" + fieldLabel.Render("Documents") + "\n")
+		b.WriteString("\n")
 		clReview, hasCLReview := latestReviews[store.DocumentTypeCoverLetter]
-		b.WriteString(documentStatusLine("Cover Letter", status.CoverLetter.Exists, status.CoverLetter.Path, clReview, hasCLReview))
+		b.WriteString(detailDocumentField("Cover Letter", status.CoverLetter.Exists, status.CoverLetter.Path, clReview, hasCLReview, width))
 		resumeReview, hasResumeReview := latestReviews[store.DocumentTypeResume]
-		b.WriteString(documentStatusLine("Resume", status.Resume.Exists, status.Resume.Path, resumeReview, hasResumeReview))
+		b.WriteString(detailDocumentField("Resume", status.Resume.Exists, status.Resume.Path, resumeReview, hasResumeReview, width))
 	} else {
 		b.WriteString(helpStyle.Render("No application started -- press 'a' to start one.") + "\n")
 	}
@@ -1430,4 +1431,70 @@ func sectionHeading(name string, width int) string {
 		ruleWidth = rest
 	}
 	return sectionStyle.Render(name) + " " + dimStyle.Render(strings.Repeat("─", ruleWidth))
+}
+
+// detailLabelWidth is the width of posting detail's label column, sized
+// to its longest label ("Application URL") plus a gap, so every value in
+// the Posting and Application sections starts in the same column.
+const detailLabelWidth = len("Application URL") + 2
+
+// detailField renders one posting-detail row: label in a fixed-width
+// column, then value word-wrapped to the rest of width, with continuation
+// lines indented to the value column instead of falling back under the
+// label. width <= 0 (before the first tea.WindowSizeMsg) leaves the value
+// unwrapped.
+func detailField(label, value string, width int) string {
+	return detailRow(label, wrapDetailValue(value, width))
+}
+
+// detailValueWidth is the width left for a value after the label column,
+// or 0 (unconstrained) when width is unknown or too narrow to fit one.
+func detailValueWidth(width int) int {
+	return max(width-detailLabelWidth, 0)
+}
+
+// wrapDetailValue word-wraps value to the value column's width, as lines.
+func wrapDetailValue(value string, width int) []string {
+	if valueWidth := detailValueWidth(width); valueWidth > 0 {
+		value = cellbuf.Wrap(value, valueWidth, "")
+	}
+	return strings.Split(value, "\n")
+}
+
+// detailRow lays out a label and its already-wrapped value lines: the
+// label padded to detailLabelWidth, then the value, with continuation
+// lines indented to the value column.
+func detailRow(label string, lines []string) string {
+	indent := strings.Repeat(" ", detailLabelWidth)
+	for i := 1; i < len(lines); i++ {
+		lines[i] = indent + lines[i]
+	}
+	gap := strings.Repeat(" ", detailLabelWidth-lipgloss.Width(label))
+	return fieldLabel.Render(label) + gap + strings.Join(lines, "\n") + "\n"
+}
+
+// detailDocumentField is detailField for a drafted document: its presence
+// and path, the latest review's badge, and the review's notes on their
+// own line under the value column -- the aligned counterpart of
+// documentStatusLine, which application detail still uses.
+func detailDocumentField(label string, exists bool, path string, review store.DocumentReview, hasReview bool, width int) string {
+	status := "not found"
+	if exists {
+		status = "found"
+	}
+	// The badge is placed after wrapping rather than wrapped with the path:
+	// "[not reviewed]" contains a space, and word wrapping could split it.
+	lines := wrapDetailValue(status+" ("+path+")", width)
+	badge := reviewBadge(review, hasReview)
+	last := len(lines) - 1
+	if valueWidth := detailValueWidth(width); valueWidth > 0 && lipgloss.Width(lines[last])+1+lipgloss.Width(badge) > valueWidth {
+		lines = append(lines, badge)
+	} else {
+		lines[last] += " " + badge
+	}
+	row := detailRow(label, lines)
+	if hasReview && review.Notes != "" {
+		row += detailField("", dimStyle.Render("Notes: "+review.Notes), width)
+	}
+	return row
 }
