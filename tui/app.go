@@ -58,20 +58,23 @@ const (
 )
 
 type App struct {
-	store           *store.Store
-	syncer          *sync.Syncer
-	companies       []store.Company
-	companyList     companyListModel
-	screen          screen
-	companyForm     companyFormModel
-	companyEdit     companyEditModel
-	status          string
-	err             error
-	selectedCompany store.Company
-	postings        []store.Posting
-	postingMarkup   map[int64]store.PostingMarkup
-	postingList     postingListModel
-	postingDetail   postingDetailModel
+	store     *store.Store
+	syncer    *sync.Syncer
+	companies []store.Company
+	// companyOpenPostings is each company's open, unarchived posting count
+	// (store.CountOpenPostingsByCompany), loaded alongside companies.
+	companyOpenPostings map[int64]int
+	companyList         companyListModel
+	screen              screen
+	companyForm         companyFormModel
+	companyEdit         companyEditModel
+	status              string
+	err                 error
+	selectedCompany     store.Company
+	postings            []store.Posting
+	postingMarkup       map[int64]store.PostingMarkup
+	postingList         postingListModel
+	postingDetail       postingDetailModel
 	// applicationsByPosting holds the application for each posting_id that
 	// has one (fetched async on entering posting detail -- see
 	// loadApplication). A posting with no entry has no application yet
@@ -381,14 +384,22 @@ func indexOfCompany(companies []store.Company, id int64) int {
 }
 
 type companiesLoadedMsg struct {
-	companies []store.Company
-	err       error
+	companies    []store.Company
+	openPostings map[int64]int
+	err          error
 }
 
+// loadCompanies loads the active companies along with each one's open posting
+// count for the company list's Open column.
 func loadCompanies(s *store.Store) tea.Cmd {
 	return func() tea.Msg {
-		companies, err := s.ListActiveCompanies(context.Background())
-		return companiesLoadedMsg{companies: companies, err: err}
+		ctx := context.Background()
+		companies, err := s.ListActiveCompanies(ctx)
+		if err != nil {
+			return companiesLoadedMsg{err: err}
+		}
+		openPostings, err := s.CountOpenPostingsByCompany(ctx)
+		return companiesLoadedMsg{companies: companies, openPostings: openPostings, err: err}
 	}
 }
 
@@ -883,6 +894,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case companiesLoadedMsg:
 		a.err = msg.err
 		a.companies = msg.companies
+		a.companyOpenPostings = msg.openPostings
 	case activeApplicationsLoadedMsg:
 		a.err = msg.err
 		a.activeApplications = msg.applications
@@ -918,14 +930,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			r := msg.result
 			a.status = fmt.Sprintf("%s: fetched %d, created %d, updated %d, closed %d, reopened %d",
 				msg.companyName, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
+			// The company list's Open and Last fetched columns just changed.
+			reload := loadCompanies(a.store)
 			if r.CompanyID == a.selectedCompany.ID {
 				// The company whose postings are currently being viewed
 				// just finished a re-sync (e.g. triggered by saving a
 				// filter selection) -- reload from the DB so the view
 				// becomes authoritative instead of just the optimistic
 				// client-side narrowing applied at save time.
-				return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
+				return a, tea.Batch(reload, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived))
 			}
+			return a, reload
 		}
 	case postingsLoadedMsg:
 		a.err = msg.err
@@ -1123,6 +1138,8 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch v := intent.(type) {
 		case backToCompanyListMsg:
 			a.screen = screenCompanyList
+			// Archiving or unarchiving may have changed open counts.
+			return a, loadCompanies(a.store)
 		case enterApplicationStatusMsg:
 			a.enterFrom(screenApplicationStatusSelect)
 			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus)
@@ -1208,6 +1225,8 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		switch v := intent.(type) {
 		case backToCompanyListMsg:
 			a.screen = screenCompanyList
+			// Archiving or unarchiving may have changed open counts.
+			return a, loadCompanies(a.store)
 		case enterPostingDetailMsg:
 			p, app, hasApp := a.lookupPosting(v.postingID)
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
@@ -1338,7 +1357,7 @@ func (a *App) View() string {
 	case screenApplicationDetail:
 		b.WriteString(a.applicationDetail.View())
 	case screenCompanyList:
-		b.WriteString(a.companyList.View(a.companies, a.listRows()))
+		b.WriteString(a.companyList.View(a.companies, a.companyOpenPostings, a.width, a.listRows()))
 	case screenCompanyForm:
 		b.WriteString(a.companyForm.View())
 	case screenCompanyEdit:

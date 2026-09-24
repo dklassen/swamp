@@ -456,3 +456,39 @@ func TestPosting_MarshalJSON_KeepsEveryField(t *testing.T) {
 		}
 	}
 }
+
+// Open means what a company's posting list shows by default: listings
+// still open on the job board that the user hasn't archived.
+func TestCountOpenPostingsByCompany_CountsOpenUnarchivedPerCompany(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
+	closed := mustUpsertPosting(t, s, acme.ID, "job-3", "Closed role")
+	if err := s.MarkPostingClosed(ctx, closed.ID); err != nil {
+		t.Fatalf("MarkPostingClosed: %v", err)
+	}
+	archived := mustUpsertPosting(t, s, acme.ID, "job-4", "Archived role")
+	if _, err := s.SetPostingArchived(ctx, archived.ID); err != nil {
+		t.Fatalf("SetPostingArchived: %v", err)
+	}
+
+	globex := mustCreateCompany(t, s, "Globex", "ashby", "globex")
+	mustUpsertPosting(t, s, globex.ID, "globex-job-1", "Engineer")
+
+	initech := mustCreateCompany(t, s, "Initech", "ashby", "initech")
+
+	got, err := s.CountOpenPostingsByCompany(ctx)
+	if err != nil {
+		t.Fatalf("CountOpenPostingsByCompany: %v", err)
+	}
+	want := map[int64]int{acme.ID: 2, globex.ID: 1}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("counts mismatch (-want +got):\n%s", diff)
+	}
+	if n := got[initech.ID]; n != 0 {
+		t.Errorf("Initech (no postings) count = %d, want 0", n)
+	}
+}

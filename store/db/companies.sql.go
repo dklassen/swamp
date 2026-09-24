@@ -12,7 +12,7 @@ import (
 const createCompany = `-- name: CreateCompany :one
 INSERT INTO companies (name, source, source_ref)
 VALUES (?, ?, ?)
-RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description
+RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at
 `
 
 type CreateCompanyParams struct {
@@ -33,12 +33,13 @@ func (q *Queries) CreateCompany(ctx context.Context, arg CreateCompanyParams) (C
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Description,
+		&i.LastFetchedAt,
 	)
 	return i, err
 }
 
 const getCompany = `-- name: GetCompany :one
-SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description FROM companies
+SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at FROM companies
 WHERE id = ? AND deleted_at IS NULL
 `
 
@@ -54,12 +55,13 @@ func (q *Queries) GetCompany(ctx context.Context, id int64) (Company, error) {
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Description,
+		&i.LastFetchedAt,
 	)
 	return i, err
 }
 
 const getCompanyBySourceAndSourceRef = `-- name: GetCompanyBySourceAndSourceRef :one
-SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description FROM companies
+SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at FROM companies
 WHERE source = ? AND source_ref = ?
 `
 
@@ -84,12 +86,13 @@ func (q *Queries) GetCompanyBySourceAndSourceRef(ctx context.Context, arg GetCom
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Description,
+		&i.LastFetchedAt,
 	)
 	return i, err
 }
 
 const listActiveCompanies = `-- name: ListActiveCompanies :many
-SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description FROM companies
+SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at FROM companies
 WHERE deleted_at IS NULL
 ORDER BY name
 `
@@ -112,6 +115,7 @@ func (q *Queries) ListActiveCompanies(ctx context.Context) ([]Company, error) {
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Description,
+			&i.LastFetchedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -124,6 +128,18 @@ func (q *Queries) ListActiveCompanies(ctx context.Context) ([]Company, error) {
 		return nil, err
 	}
 	return items, nil
+}
+
+const markCompanyFetched = `-- name: MarkCompanyFetched :exec
+UPDATE companies
+SET last_fetched_at = CURRENT_TIMESTAMP
+WHERE id = ?
+`
+
+// Records a successful fetch of this company's postings (see sync.SyncCompany).
+func (q *Queries) MarkCompanyFetched(ctx context.Context, id int64) error {
+	_, err := q.db.ExecContext(ctx, markCompanyFetched, id)
+	return err
 }
 
 const restoreCompany = `-- name: RestoreCompany :exec
@@ -141,7 +157,7 @@ const restoreCompanyWithName = `-- name: RestoreCompanyWithName :one
 UPDATE companies
 SET name = ?, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description
+RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at
 `
 
 type RestoreCompanyWithNameParams struct {
@@ -161,6 +177,7 @@ func (q *Queries) RestoreCompanyWithName(ctx context.Context, arg RestoreCompany
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Description,
+		&i.LastFetchedAt,
 	)
 	return i, err
 }
@@ -180,7 +197,7 @@ const updateCompanyDescription = `-- name: UpdateCompanyDescription :one
 UPDATE companies
 SET description = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND deleted_at IS NULL
-RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description
+RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at
 `
 
 type UpdateCompanyDescriptionParams struct {
@@ -201,6 +218,7 @@ func (q *Queries) UpdateCompanyDescription(ctx context.Context, arg UpdateCompan
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Description,
+		&i.LastFetchedAt,
 	)
 	return i, err
 }
@@ -209,7 +227,7 @@ const updateCompanyName = `-- name: UpdateCompanyName :one
 UPDATE companies
 SET name = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND deleted_at IS NULL
-RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description
+RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at
 `
 
 type UpdateCompanyNameParams struct {
@@ -231,6 +249,7 @@ func (q *Queries) UpdateCompanyName(ctx context.Context, arg UpdateCompanyNamePa
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Description,
+		&i.LastFetchedAt,
 	)
 	return i, err
 }

@@ -206,6 +206,9 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (Result, erro
 		}
 	}
 
+	if err := s.store.MarkCompanyFetched(ctx, companyID); err != nil {
+		return result, fmt.Errorf("sync: mark company fetched: %w", err)
+	}
 	return result, nil
 }
 

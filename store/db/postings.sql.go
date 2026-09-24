@@ -11,6 +11,48 @@ import (
 	"strings"
 )
 
+const countOpenPostingsByCompany = `-- name: CountOpenPostingsByCompany :many
+SELECT postings.company_id, COUNT(*) AS open_postings
+FROM postings
+JOIN posting_markup ON posting_markup.posting_id = postings.id
+WHERE postings.listing_status = 'open'
+  AND posting_markup.archived_at IS NULL
+GROUP BY postings.company_id
+`
+
+type CountOpenPostingsByCompanyRow struct {
+	CompanyID    int64 `json:"company_id"`
+	OpenPostings int64 `json:"open_postings"`
+}
+
+// Per-company count of what a company's posting list shows by default:
+// listings still open on the job board that the user hasn't archived.
+// Feeds the company list's "Open" column. Doesn't apply company_filters:
+// postings are already gated by filters at ingestion, and a filter added
+// later only narrows the posting list's display, not this count.
+func (q *Queries) CountOpenPostingsByCompany(ctx context.Context) ([]CountOpenPostingsByCompanyRow, error) {
+	rows, err := q.db.QueryContext(ctx, countOpenPostingsByCompany)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []CountOpenPostingsByCompanyRow
+	for rows.Next() {
+		var i CountOpenPostingsByCompanyRow
+		if err := rows.Scan(&i.CompanyID, &i.OpenPostings); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createPosting = `-- name: CreatePosting :one
 INSERT INTO postings (
     company_id, source, source_id, title, department, team, location,

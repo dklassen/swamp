@@ -2626,8 +2626,14 @@ func TestApp_CompanyRefreshed_ForDifferentCompany_DoesNotReloadPostings(t *testi
 		companyName: "SomeOtherCompany",
 		result:      sync.Result{CompanyID: 999999},
 	})
-	if cmd != nil {
-		t.Fatal("Update on companyRefreshedMsg for a different company returned a non-nil Cmd, want nil (shouldn't reload)")
+	// The company list still reloads (its Open and Last fetched columns
+	// changed), but the postings being viewed belong to a different company
+	// and must be left alone.
+	if cmd == nil {
+		t.Fatal("Update on companyRefreshedMsg returned nil Cmd, want one that reloads companies")
+	}
+	if got := cmd(); !isCompaniesLoaded(got) {
+		t.Fatalf("refresh of a different company produced %T, want only companiesLoadedMsg (no postings reload)", got)
 	}
 }
 
@@ -3170,5 +3176,73 @@ func TestApp_PostingList_ShowsSelectedCompanysDescription(t *testing.T) {
 
 	if got := app.View(); !strings.Contains(got, description) {
 		t.Fatalf("posting list View missing company description %q:\n%s", description, got)
+	}
+}
+
+func TestApp_PressR_UpdatesCompanyListOpenCountAndLastFetched(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}, {SourceID: "job-2", Title: "Designer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, runeKey('c'))
+
+	if got := app.View(); !strings.Contains(got, "never") {
+		t.Fatalf("before refresh, company list should say never fetched:\n%s", got)
+	}
+
+	app, cmd := sendKey(app, runeKey('r'))
+	if cmd == nil {
+		t.Fatal("Update on 'r' returned nil Cmd")
+	}
+	app, cmd = sendKey(app, cmd())
+	if cmd == nil {
+		t.Fatal("Update on the refresh result returned nil Cmd, want one that reloads companies")
+	}
+	app, _ = sendKey(app, cmd())
+
+	got := app.View()
+	if strings.Contains(got, "never") {
+		t.Errorf("after refresh, company list still says never fetched:\n%s", got)
+	}
+	if !strings.Contains(got, "    2") {
+		t.Errorf("after refresh, company list missing open count 2:\n%s", got)
+	}
+}
+
+func isCompaniesLoaded(msg tea.Msg) bool {
+	_, ok := msg.(companiesLoadedMsg)
+	return ok
+}
+
+// Archiving changes a company's open count, so the company list reloads
+// when you return to it rather than showing a stale number.
+func TestApp_BackToCompanyList_AfterArchiving_ShowsUpdatedOpenCount(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}, {SourceID: "job-2", Title: "Designer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+
+	app, cmd := sendKey(app, runeKey('x'))
+	if cmd == nil {
+		t.Fatal("Update on 'x' returned nil Cmd")
+	}
+	app, _ = sendKey(app, cmd())
+
+	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	if cmd == nil {
+		t.Fatal("Update on esc back to the company list returned nil Cmd, want one that reloads companies")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if app.screen != screenCompanyList {
+		t.Fatalf("screen = %v, want screenCompanyList", app.screen)
+	}
+	if got := app.companyOpenPostings[app.companies[0].ID]; got != 1 {
+		t.Errorf("open count after archiving one of two = %d, want 1", got)
 	}
 }
