@@ -5384,3 +5384,30 @@ Decisions:
   tool's input field stays a `string`: `store.DocumentType` is an `int`
   underneath, so the SDK's schema inference would advertise it to
   clients as an integer and reject `"resume"`.
+
+## 2026-09-24 -- DocumentType as a string enum in MCP tool schemas (#132)
+
+Replaces the #131 review note that kept `DocumentType` a plain `string`
+input. That note mixed up two things: the Go type (`store.DocumentType`
+is an `int` underneath, so schema inference would advertise an integer)
+and the JSON Schema type (a `string` with an `enum` is the right
+contract). `write_document` and `read_document` now advertise
+`{"type": "string", "enum": ["cover_letter", "resume"]}`.
+
+Decisions:
+- The input field is typed `store.DocumentType`, and each tool's
+  `InputSchema` comes from `jsonschema.For` with a `TypeSchemas` override
+  for that type. Considered keeping a `string` field and patching `Enum`
+  onto the inferred schema, but then handlers still parse strings, which
+  is the thing the #131 review asked to avoid.
+- The enum values come from a new `store.DocumentTypes()`, not a list in
+  `mcpserver`, so adding a type to `store` updates the schema too.
+- Validation now happens in the SDK against the schema, before the
+  handler runs. `documentPath` keeps a `default` error case only for a
+  `DocumentType` that has no `documents.Paths` field.
+- The tool descriptions no longer list the allowed values; the schema
+  carries them (same reasoning as not restating tool contracts in the
+  skill).
+- `documentInputSchema` panics if inference fails, matching
+  `mcp.AddTool`'s own behavior for an uninferrable schema. It's a
+  programming error caught at startup, not a runtime condition.
