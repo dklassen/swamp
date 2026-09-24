@@ -5411,3 +5411,31 @@ Decisions:
 - `documentInputSchema` panics if inference fails, matching
   `mcp.AddTool`'s own behavior for an uninferrable schema. It's a
   programming error caught at startup, not a runtime condition.
+
+## 2026-09-24 -- PDF document font: Source Sans 3 instead of gofont
+
+Exported resumes and cover letters were set in Go's bundled gofont
+family, picked for its Unicode coverage (the cp1252 core fonts silently
+turned "→" into ".") and because it needed no vendored files. In
+practice it reads as recognizably "the Go font", which stands out on a
+resume more than a job-search document should.
+
+Decisions:
+- Source Sans 3 (Adobe, SIL OFL 1.1), static TTFs for Regular, Bold,
+  Italic, and Bold Italic, embedded with `//go:embed` from `pdf/fonts/`
+  with the licence alongside as `OFL.md`. It covers every non-ASCII
+  character current drafts use (→ • — – curly quotes, accented letters),
+  checked against each style's cmap before switching.
+- Considered: Carlito or Liberation Sans (metric clones of Calibri and
+  Arial, the most "default"-looking option), IBM Plex Sans, Noto Sans,
+  and going back to core Helvetica with an explicit character
+  substitution pass. Source Sans 3 is a neutral document sans with full
+  coverage; the core-font route reintroduces lossy substitution.
+- Cost: about 1.5 MB of font files in the repo and binary, reversing
+  the original "no vendored font" reasoning. fpdf subsets on output, so
+  exported PDFs stay small. Render now parses 400 KB TTFs per call
+  (pdf tests went from ~10 ms to ~350 ms), which is irrelevant for an
+  interactive export.
+- The test reads the font name out of each embedded font program rather
+  than checking `/BaseFont`, because fpdf names `/BaseFont` after the
+  family label passed to `AddUTF8FontFromBytes`, not the font itself.

@@ -2,12 +2,18 @@ package pdf
 
 import (
 	"bytes"
+	"compress/zlib"
 	"fmt"
+	"io"
 	"os"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"testing"
+
+	"github.com/google/go-cmp/cmp"
+	"golang.org/x/image/font/sfnt"
 )
 
 // containsText reports whether pdfBytes' content stream contains s. The
@@ -248,6 +254,66 @@ func TestRender_PreservesUnicodePunctuationAndSymbols(t *testing.T) {
 			t.Errorf("output does not contain %q", want)
 		}
 	}
+}
+
+// TestRender_EmbedsSourceSans3 pins the document typeface: Go's bundled
+// gofont family read as recognizably "the Go font" on a resume or cover
+// letter, so the text is set in Source Sans 3 instead (see pdf.go's
+// fontFamily doc comment).
+func TestRender_EmbedsSourceSans3(t *testing.T) {
+	t.Parallel()
+
+	got, err := Render([]byte("Plain, **bold**, *italic*, and ***both***."))
+	if err != nil {
+		t.Fatalf("Render: %v", err)
+	}
+	want := []string{
+		"Source Sans 3", // the regular weight's full name carries no style suffix
+		"Source Sans 3 Bold",
+		"Source Sans 3 Bold Italic",
+		"Source Sans 3 Italic",
+	}
+	if diff := cmp.Diff(want, embeddedFontNames(t, got)); diff != "" {
+		t.Errorf("embedded fonts mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// embeddedFontStream matches the header of an embedded TrueType font
+// program -- fpdf writes each as a Flate-compressed stream carrying a
+// /Length1 (uncompressed length) entry, which no other stream it emits
+// has. Font streams are compressed even with SetCompression(false),
+// which only covers page content.
+var embeddedFontStream = regexp.MustCompile(`<</Length \d+\n/Filter /FlateDecode\n/Length1 \d+\n>>\nstream\n`)
+
+// embeddedFontNames returns the sorted full names (e.g. "Source Sans 3
+// Bold") read from the name table of every font program embedded in
+// pdfBytes. fpdf labels each font's /BaseFont after the family name
+// passed to AddUTF8FontFromBytes, not the font file's own name, so the
+// font data itself is the only reliable record of what was embedded.
+func embeddedFontNames(t *testing.T, pdfBytes []byte) []string {
+	t.Helper()
+	var names []string
+	for _, loc := range embeddedFontStream.FindAllIndex(pdfBytes, -1) {
+		zr, err := zlib.NewReader(bytes.NewReader(pdfBytes[loc[1]:]))
+		if err != nil {
+			t.Fatalf("open embedded font stream: %v", err)
+		}
+		program, err := io.ReadAll(zr)
+		if err != nil {
+			t.Fatalf("decompress embedded font stream: %v", err)
+		}
+		f, err := sfnt.Parse(program)
+		if err != nil {
+			t.Fatalf("parse embedded font: %v", err)
+		}
+		name, err := f.Name(nil, sfnt.NameIDFull)
+		if err != nil {
+			t.Fatalf("read embedded font name: %v", err)
+		}
+		names = append(names, name)
+	}
+	sort.Strings(names)
+	return names
 }
 
 // TestRender_HeadingAfterListStartsAtLeftMargin is a regression test for
