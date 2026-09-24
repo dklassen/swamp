@@ -233,6 +233,8 @@ type ImportResult struct {
 // the TUI, ingestion happens on the next fetch, not at creation time.
 // store.CreateCompany is already idempotent on (source, source_ref), so
 // re-running the same seed file is always safe.
+// An entry's optional Description is applied only when the company has none,
+// so re-importing never overwrites a description written since.
 func (s *Syncer) ImportCompanies(ctx context.Context, entries []seed.Entry) []ImportResult {
 	results := make([]ImportResult, len(entries))
 	for i, e := range entries {
@@ -252,6 +254,15 @@ func (s *Syncer) ImportCompanies(ctx context.Context, entries []seed.Entry) []Im
 		if err != nil {
 			results[i].Err = fmt.Errorf("sync: create company: %w", err)
 			continue
+		}
+		// Fill in the description only if the company has none, so re-importing
+		// never overwrites one written since (same rule as AddCompany).
+		if company.Description == "" && e.Description != "" {
+			company, err = s.store.UpdateCompanyDescription(ctx, company.ID, e.Description)
+			if err != nil {
+				results[i].Err = fmt.Errorf("sync: set company description: %w", err)
+				continue
+			}
 		}
 		results[i].Company = company
 	}

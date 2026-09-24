@@ -81,3 +81,30 @@ func TestParse_MalformedYAML(t *testing.T) {
 		t.Fatal("Parse() = nil error, want error for malformed YAML")
 	}
 }
+
+// description is optional: entries with one carry it through, entries
+// without one are still valid.
+func TestParse_OptionalDescription(t *testing.T) {
+	input := `
+companies:
+  - name: Stripe
+    source: greenhouse
+    source_ref: stripe
+    description: Payments infrastructure for the internet.
+  - name: Cohere
+    source: ashby
+    source_ref: cohere
+`
+	got, err := Parse(strings.NewReader(input))
+	if err != nil {
+		t.Fatalf("Parse: %v", err)
+	}
+
+	want := []Entry{
+		{Name: "Stripe", Source: "greenhouse", SourceRef: "stripe", Description: "Payments infrastructure for the internet."},
+		{Name: "Cohere", Source: "ashby", SourceRef: "cohere"},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("Parse() mismatch (-want +got):\n%s", diff)
+	}
+}

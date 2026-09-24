@@ -5275,3 +5275,25 @@ doesn't make the view taller than its space. A test for the second part
 caught `titleStyle`'s `MarginBottom(1)` adding a hidden eighth line to the
 box header, the same class of bug as `helpStyle` earlier today. The
 header is now plain bold.
+
+## 2026-09-24 -- Seed file carries company descriptions
+
+`seed/data/companies.yaml` was regenerated from the db (40 active
+companies, up from 18). Its format had no description, so importing it
+into a fresh db would lose every description written for the companies
+found on HN.
+
+Decisions:
+- `seed.Entry` gains an optional `description`. It stays optional
+  because most hand-written seed entries won't have one, and `Parse`
+  still only requires name/source/source_ref.
+- `ImportCompanies` applies it only when the company has no description
+  yet, never overwriting one. That's the same rule as `AddCompany`, so
+  re-importing the seed file stays safe after descriptions have been
+  edited in the db.
+- The generated file lists `description` only for companies that have
+  one, and leaves out soft-deleted companies.
+
+Verified: `swamp import` into a brand-new db recreated all 40 companies
+with the 22 descriptions, checking each board live. A second import
+changed nothing.
