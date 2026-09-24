@@ -190,3 +190,66 @@ func TestRestoreCompany_UndoesSoftDelete(t *testing.T) {
 		t.Fatalf("ListActiveCompanies after restore = %+v, want [acme]", list)
 	}
 }
+
+func TestUpdateCompanyDescription_ChangesDescriptionOnly(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	if acme.Description != "" {
+		t.Fatalf("new company Description = %q, want empty", acme.Description)
+	}
+
+	const want = "Acme builds rockets for roadrunner enthusiasts."
+	updated, err := s.UpdateCompanyDescription(ctx, acme.ID, want)
+	if err != nil {
+		t.Fatalf("UpdateCompanyDescription: %v", err)
+	}
+	if updated.Description != want {
+		t.Fatalf("updated.Description = %q, want %q", updated.Description, want)
+	}
+	if updated.Name != "Acme" || updated.Source != "ashby" || updated.SourceRef != "acme" {
+		t.Fatalf("updated.Name/Source/SourceRef = %q/%q/%q, want unchanged Acme/ashby/acme", updated.Name, updated.Source, updated.SourceRef)
+	}
+
+	got, err := s.GetCompany(ctx, acme.ID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+	if got.Description != want {
+		t.Fatalf("GetCompany after update Description = %q, want %q", got.Description, want)
+	}
+}
+
+func TestUpdateCompanyDescription_MissingCompany_ReturnsErrNotFound(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name       string
+		softDelete bool
+	}{
+		{"nonexistent id", false},
+		{"soft-deleted company", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := newTestStore(t)
+			ctx := context.Background()
+
+			id := int64(999)
+			if tc.softDelete {
+				acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+				if err := s.SoftDeleteCompany(ctx, acme.ID); err != nil {
+					t.Fatalf("SoftDeleteCompany: %v", err)
+				}
+				id = acme.ID
+			}
+
+			_, err := s.UpdateCompanyDescription(ctx, id, "anything")
+			if !errors.Is(err, ErrNotFound) {
+				t.Fatalf("UpdateCompanyDescription error = %v, want ErrNotFound", err)
+			}
+		})
+	}
+}

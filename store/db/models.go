@@ -19,13 +19,14 @@ type Application struct {
 }
 
 type Company struct {
-	ID        int64        `json:"id"`
-	Name      string       `json:"name"`
-	Source    string       `json:"source"`
-	SourceRef string       `json:"source_ref"`
-	DeletedAt sql.NullTime `json:"deleted_at"`
-	CreatedAt time.Time    `json:"created_at"`
-	UpdatedAt time.Time    `json:"updated_at"`
+	ID          int64        `json:"id"`
+	Name        string       `json:"name"`
+	Source      string       `json:"source"`
+	SourceRef   string       `json:"source_ref"`
+	DeletedAt   sql.NullTime `json:"deleted_at"`
+	CreatedAt   time.Time    `json:"created_at"`
+	UpdatedAt   time.Time    `json:"updated_at"`
+	Description string       `json:"description"`
 }
 
 type CompanyFilter struct {

@@ -29,6 +29,13 @@ SET name = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND deleted_at IS NULL
 RETURNING *;
 
+-- name: UpdateCompanyDescription :one
+-- Same soft-delete guard as UpdateCompanyName.
+UPDATE companies
+SET description = ?, updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND deleted_at IS NULL
+RETURNING *;
+
 -- name: ListActiveCompanies :many
 SELECT * FROM companies
 WHERE deleted_at IS NULL
