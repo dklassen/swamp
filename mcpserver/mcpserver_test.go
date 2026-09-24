@@ -386,3 +386,80 @@ func TestAddCompany_BoardRejectsSlug_ReturnsToolErrorAndCreatesNothing(t *testin
 		t.Fatalf("got %d companies, want 0", len(companies))
 	}
 }
+
+func TestReadDocument_ReturnsWrittenContent(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+	mustMarkInterested(t, s, posting.ID)
+
+	cs := connectClient(t, srv)
+	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+
+	for _, tc := range []struct {
+		documentType string
+		wantPath     string
+	}{
+		{"cover_letter", prepared.CoverLetter.Path},
+		{"resume", prepared.Resume.Path},
+	} {
+		t.Run(tc.documentType, func(t *testing.T) {
+			content := "draft of " + tc.documentType
+			callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
+				"ApplicationID": prepared.ApplicationID,
+				"DocumentType":  tc.documentType,
+				"Content":       content,
+			})
+
+			got := callTool[readDocumentOutput](t, cs, "read_document", map[string]any{
+				"ApplicationID": prepared.ApplicationID,
+				"DocumentType":  tc.documentType,
+			})
+
+			want := readDocumentOutput{Path: tc.wantPath, Content: content}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("read_document result mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestReadDocument_ReturnsToolError(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		name         string
+		documentType string
+	}{
+		{"document not written yet", "cover_letter"},
+		{"invalid DocumentType", "resumeee"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv, s, _ := newTestServer(t)
+			company := mustCreateCompany(t, s, "Acme")
+			posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+			mustMarkInterested(t, s, posting.ID)
+
+			cs := connectClient(t, srv)
+			prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+
+			res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+				Name: "read_document",
+				Arguments: map[string]any{
+					"ApplicationID": prepared.ApplicationID,
+					"DocumentType":  tc.documentType,
+				},
+			})
+			if err != nil {
+				t.Fatalf("CallTool: %v", err)
+			}
+			if !res.IsError {
+				t.Fatalf("IsError = false, want true (%+v)", res.StructuredContent)
+			}
+		})
+	}
+}
