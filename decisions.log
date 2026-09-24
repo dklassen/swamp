@@ -5139,3 +5139,45 @@ doesn't recognize, and don't sync on add.
 Verified: migration 00010 up and down against a copy of the real db. All
 26 companies read back with an empty description after up, and the column
 is gone after down.
+
+## 2026-09-24 -- MCP add_company tool for agent-discovered companies
+
+An agent that finds companies (e.g. slugs from HN "Who is hiring?"
+threads) can now add them through the MCP server's new `add_company` tool
+(Name, Source, Slug, Description), instead of the user re-typing each one
+in the TUI.
+
+The logic lives in `sync.Syncer.AddCompany`; the tool is a thin wrapper
+that converts the outcome to `created` / `already_exists` /
+`skipped_deleted`, plus the company id, name, and the board's open job
+count. Decisions (agreed with the user up front):
+- **Deleted companies are skipped and reported, never restored.**
+  `CreateCompany` (used by the TUI and `import`) restores a soft-deleted
+  company when its board/slug is added again. For an agent that would
+  quietly undo the user's decision to drop a company, so AddCompany looks
+  the slug up first (new `store.GetCompanyBySourceRef`, which includes
+  deleted rows) and never calls CreateCompany for an existing row.
+- **Existing companies aren't renamed.** CreateCompany's restore path
+  also overwrites the name, which the tests caught. For an active company
+  AddCompany only fills in the description if it had none (so a retry
+  after a failed description write completes it), and never overwrites
+  one.
+- **New slugs are checked against the board first**, the same live
+  check `ImportCompanies` uses (#36). A rejected slug is a tool error and
+  nothing is created.
+- **No sync on add.** Postings are only counted, not ingested; they
+  arrive on the user's next sync, after they've had a chance to set
+  filters. Same as every other way of adding a company.
+
+`mcpserver.New` now takes the `*sync.Syncer`; `mcp-serve` passes the same
+`newSyncer` the TUI and CLI use.
+
+Known limitation: slugs are matched case-sensitively, so `Acme` and
+`acme` would be different companies. Every existing slug is lowercase
+today, and it isn't confirmed that every board treats slugs
+case-insensitively, so slugs aren't silently lowercased. Worth revisiting
+if duplicates show up.
+
+Not in scope, possible follow-ups: a `list_companies` tool (so an agent
+can skip companies already tracked before checking them) and a way to
+set descriptions on the existing companies.

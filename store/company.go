@@ -121,6 +121,22 @@ func (s *Store) UpdateCompanyName(ctx context.Context, id int64, name string) (C
 	return companyFromRow(row), nil
 }
 
+// GetCompanyBySourceRef finds the company for a job board slug, including a
+// soft-deleted one (check DeletedAt), or returns ErrNotFound.
+func (s *Store) GetCompanyBySourceRef(ctx context.Context, source, sourceRef string) (Company, error) {
+	row, err := s.queries.GetCompanyBySourceAndSourceRef(ctx, db.GetCompanyBySourceAndSourceRefParams{
+		Source:    source,
+		SourceRef: sourceRef,
+	})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Company{}, ErrNotFound
+		}
+		return Company{}, err
+	}
+	return companyFromRow(row), nil
+}
+
 // UpdateCompanyDescription sets who the company is (what it builds, stage,
 // domain). Like UpdateCompanyName it excludes soft-deleted companies.
 func (s *Store) UpdateCompanyDescription(ctx context.Context, id int64, description string) (Company, error) {
