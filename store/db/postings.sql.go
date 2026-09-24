@@ -8,6 +8,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const createPosting = `-- name: CreatePosting :one
@@ -230,6 +231,7 @@ JOIN companies ON companies.id = postings.company_id
 LEFT JOIN applications ON applications.posting_id = postings.id
 WHERE posting_markup.interested_at IS NOT NULL
   AND posting_markup.archived_at IS NULL
+  AND (applications.id IS NULL OR applications.status NOT IN (/*SLICE:terminal_statuses*/?))
 ORDER BY posting_markup.interested_at DESC
 `
 
@@ -253,8 +255,26 @@ type ListInterestedPostingsRow struct {
 // embedded struct on sqlite (sqlc-dev/sqlc#2997) -- kept as individually
 // aliased nullable columns, handled by the existing sql.NullInt64/
 // sql.NullString .Valid checks in interestedPostingFromRow.
-func (q *Queries) ListInterestedPostings(ctx context.Context) ([]ListInterestedPostingsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listInterestedPostings)
+//
+// Postings whose application is at a terminal status are excluded: a
+// dead-end application isn't drafting work (#121). Same sqlc.slice
+// approach as ListActiveApplications, so store.TerminalApplicationStatuses
+// stays the sole source of truth for "terminal" -- including its caveat
+// that sqlc.slice can't safely combine with other bound parameters on
+// sqlite; this query has none. The applications.id IS NULL branch keeps
+// postings with no application yet, which the LEFT JOIN yields as NULLs.
+func (q *Queries) ListInterestedPostings(ctx context.Context, terminalStatuses []sql.NullString) ([]ListInterestedPostingsRow, error) {
+	query := listInterestedPostings
+	var queryParams []interface{}
+	if len(terminalStatuses) > 0 {
+		for _, v := range terminalStatuses {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:terminal_statuses*/?", strings.Repeat(",?", len(terminalStatuses))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:terminal_statuses*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}

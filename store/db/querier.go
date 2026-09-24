@@ -99,7 +99,15 @@ type Querier interface {
 	// embedded struct on sqlite (sqlc-dev/sqlc#2997) -- kept as individually
 	// aliased nullable columns, handled by the existing sql.NullInt64/
 	// sql.NullString .Valid checks in interestedPostingFromRow.
-	ListInterestedPostings(ctx context.Context) ([]ListInterestedPostingsRow, error)
+	//
+	// Postings whose application is at a terminal status are excluded: a
+	// dead-end application isn't drafting work (#121). Same sqlc.slice
+	// approach as ListActiveApplications, so store.TerminalApplicationStatuses
+	// stays the sole source of truth for "terminal" -- including its caveat
+	// that sqlc.slice can't safely combine with other bound parameters on
+	// sqlite; this query has none. The applications.id IS NULL branch keeps
+	// postings with no application yet, which the LEFT JOIN yields as NULLs.
+	ListInterestedPostings(ctx context.Context, terminalStatuses []sql.NullString) ([]ListInterestedPostingsRow, error)
 	ListInterviewStagesByApplication(ctx context.Context, applicationID int64) ([]InterviewStage, error)
 	ListPostingHistoryByPosting(ctx context.Context, postingID int64) ([]PostingHistory, error)
 	// id DESC is a tiebreaker: a single sync inserts many rows within the same

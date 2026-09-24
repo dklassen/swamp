@@ -47,7 +47,8 @@ direnv exec . go run ./cmd/swamp stage list
 
 This is read-only -- safe to run as often as you like. It prints a JSON
 array of postings the user has marked interested and not archived, already
-filtered to exclude anything that already has both documents written *and*
+filtered to exclude applications at a dead-end status (rejected, withdrawn,
+posting closed, offer declined) and anything that already has both documents written *and*
 no outstanding flagged review (see `LatestReviews` below -- a flagged
 document keeps its posting in this list even once both files exist):
 

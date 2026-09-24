@@ -5039,3 +5039,41 @@ other two tools already provide it. This does mean the MCP shape of
 array); left the CLI alone since it has no such constraint and changing
 it would break its existing contract. The apply-to-posting skill notes
 the difference.
+
+## 2026-09-24 -- stage list excludes applications at a terminal status (issue #121)
+
+`ListInterestedPostings`, which feeds `stage list` and the MCP
+`list_postings` tool, filtered on interested/not-archived only. So postings
+whose application had hit a dead end (`posting_closed` from #105, plus
+`rejected`, `withdrawn`, `offer_declined`) stayed in the drafting queue
+whenever their documents were incomplete or a review was flagged. On the
+real queue that surfaced postings 285 and 392, both `posting_closed`. The
+#105 work updated `ListActiveApplications` but never considered this query.
+
+Fix: the query now excludes applications whose status is in
+`store.TerminalApplicationStatuses`, passed in via
+`sqlc.slice('terminal_statuses')` exactly as `ListActiveApplications`
+does, so "terminal" still has one source of truth (#60). An
+`applications.id IS NULL` branch keeps postings with no application yet
+(the LEFT JOIN yields NULLs there, and `NULL NOT IN (...)` is NULL, which
+would otherwise drop them). The same sqlc.slice caveat applies: it
+can't safely combine with other bound parameters on sqlite, and this
+query has none. The NullString conversion both callers need moved into
+a shared `terminalStatusParams` helper instead of being copied.
+
+Alternatives considered: filtering in `stage.List` in Go. That would work,
+but it keeps the filtering split between SQL (interested/archived) and Go
+(status), and diverges from how `ListActiveApplications` already solves
+the same problem. `stage.List` is the query's only caller, so there was no
+other consumer that needed the terminal rows.
+
+`offer_accepted` is deliberately not treated as terminal here, matching
+`TerminalApplicationStatuses`. It's a success state, not a dead end, and
+in practice its documents exist. Changing that belongs to the shared list,
+not this query.
+
+Verified: a table-driven test covers every status, with the expected
+result spelled out per status rather than derived from the production
+list. It failed for exactly the four terminal statuses before the fix.
+Against a copy of the real db, `stage list` went from 32 to 30
+candidates, dropping exactly 285 and 392 and adding nothing.

@@ -166,6 +166,51 @@ func TestList_IncludesInterestedPostingWithApplicationButNoDocuments(t *testing.
 	}
 }
 
+// A posting whose application has hit a dead end (rejected, closed,
+// withdrawn...) isn't work to draft, even though its documents are still
+// missing -- see #121.
+func TestList_ExcludesApplicationsInTerminalStatus(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range []struct {
+		status store.ApplicationStatus
+		want   bool
+	}{
+		{store.ApplicationStatusStarted, true},
+		{store.ApplicationStatusSubmitted, true},
+		{store.ApplicationStatusInterviewing, true},
+		{store.ApplicationStatusRejected, false},
+		{store.ApplicationStatusOfferReceived, true},
+		{store.ApplicationStatusOfferAccepted, true},
+		{store.ApplicationStatusOfferDeclined, false},
+		{store.ApplicationStatusPostingClosed, false},
+		{store.ApplicationStatusWithdrawn, false},
+	} {
+		t.Run(tc.status.String(), func(t *testing.T) {
+			t.Parallel()
+
+			st, s, _ := newTestStage(t)
+			company := mustCreateCompany(t, s, "Acme")
+			posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+			mustMarkInterested(t, s, posting.ID)
+			if _, err := s.CreateApplication(context.Background(), posting.ID); err != nil {
+				t.Fatalf("CreateApplication: %v", err)
+			}
+			if _, err := s.UpdateApplicationStatus(context.Background(), posting.ID, tc.status); err != nil {
+				t.Fatalf("UpdateApplicationStatus: %v", err)
+			}
+
+			got, err := st.List(context.Background())
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if listed := len(got) == 1; listed != tc.want {
+				t.Errorf("listed = %v, want %v (%d candidates)", listed, tc.want, len(got))
+			}
+		})
+	}
+}
+
 func TestList_ExcludesPostingWithBothDocumentsAlreadyGenerated(t *testing.T) {
 	t.Parallel()
 
