@@ -21,6 +21,8 @@ const (
 	departmentColWidth = 18
 	locationColWidth   = 20
 	statusColWidth     = 8
+	// descriptionColWidth is roughly the rendered table's width.
+	descriptionColWidth = 100
 )
 
 // postingTableChromeLines is the number of physical lines lipgloss/table's
@@ -86,6 +88,7 @@ func newPostingListModel(s *store.Store) postingListModel {
 // call.
 type postingListSnapshot struct {
 	companyName             string
+	companyDescription      string
 	postings                []store.Posting
 	markup                  map[int64]store.PostingMarkup
 	hideArchived            bool
@@ -153,6 +156,14 @@ func (m *postingListModel) Update(msg tea.KeyMsg, snap postingListSnapshot) (tea
 func (m *postingListModel) View(snap postingListSnapshot, listRows int) string {
 	var b strings.Builder
 	b.WriteString(titleStyle.Render(fmt.Sprintf("Postings: %s", snap.companyName)) + "\n")
+	// The description gets one line, truncated to the table's width, and costs
+	// the table a row so the list still fits in listRows.
+	descriptionRows := 0
+	if snap.companyDescription != "" {
+		description := strings.Join(strings.Fields(snap.companyDescription), " ")
+		b.WriteString(helpStyle.Render(truncateCol(description, descriptionColWidth)) + "\n")
+		descriptionRows = 1
+	}
 	if summary := filterSummaryLine(snap.activeFilterDepartments, snap.activeFilterLocations); summary != "" {
 		b.WriteString(helpStyle.Render(summary) + "\n")
 	}
@@ -162,7 +173,7 @@ func (m *postingListModel) View(snap postingListSnapshot, listRows int) string {
 	if len(snap.postings) == 0 {
 		b.WriteString("No postings yet. Press 'r' from the company list to refresh.\n")
 	} else {
-		rows := listRows - postingTableChromeLines
+		rows := listRows - postingTableChromeLines - descriptionRows
 		if rows < 0 {
 			rows = 0
 		}

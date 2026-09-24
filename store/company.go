@@ -11,23 +11,25 @@ import (
 )
 
 type Company struct {
-	ID        int64
-	Name      string
-	Source    string
-	SourceRef string
-	DeletedAt *time.Time
-	CreatedAt time.Time
-	UpdatedAt time.Time
+	ID          int64
+	Name        string
+	Source      string
+	SourceRef   string
+	Description string
+	DeletedAt   *time.Time
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
 }
 
 func companyFromRow(row db.Company) Company {
 	c := Company{
-		ID:        row.ID,
-		Name:      row.Name,
-		Source:    row.Source,
-		SourceRef: row.SourceRef,
-		CreatedAt: row.CreatedAt,
-		UpdatedAt: row.UpdatedAt,
+		ID:          row.ID,
+		Name:        row.Name,
+		Source:      row.Source,
+		SourceRef:   row.SourceRef,
+		Description: row.Description,
+		CreatedAt:   row.CreatedAt,
+		UpdatedAt:   row.UpdatedAt,
 	}
 	if row.DeletedAt.Valid {
 		c.DeletedAt = &row.DeletedAt.Time
@@ -110,6 +112,19 @@ func (s *Store) ListActiveCompanies(ctx context.Context) ([]Company, error) {
 // company").
 func (s *Store) UpdateCompanyName(ctx context.Context, id int64, name string) (Company, error) {
 	row, err := s.queries.UpdateCompanyName(ctx, db.UpdateCompanyNameParams{ID: id, Name: name})
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Company{}, ErrNotFound
+		}
+		return Company{}, err
+	}
+	return companyFromRow(row), nil
+}
+
+// UpdateCompanyDescription sets who the company is (what it builds, stage,
+// domain). Like UpdateCompanyName it excludes soft-deleted companies.
+func (s *Store) UpdateCompanyDescription(ctx context.Context, id int64, description string) (Company, error) {
+	row, err := s.queries.UpdateCompanyDescription(ctx, db.UpdateCompanyDescriptionParams{ID: id, Description: description})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Company{}, ErrNotFound

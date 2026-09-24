@@ -708,3 +708,37 @@ func TestCloseApplicationsForClosedPostings_BacksFillsEarlyStagesOnly(t *testing
 		}
 	}
 }
+
+// TestCompanyDescription_ExistingCompaniesGetEmptyDescription verifies the
+// 00010 migration adds companies.description without disturbing existing
+// rows, which read back as an empty string rather than NULL (see #74 for
+// why optional TEXT columns are NOT NULL with an empty default).
+func TestCompanyDescription_ExistingCompaniesGetEmptyDescription(t *testing.T) {
+	sqlDB := migrateTo(t, 9)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+
+	if err := goose.UpTo(sqlDB, ".", 10); err != nil {
+		t.Fatalf("migrate to version 10: %v", err)
+	}
+	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+		t.Fatalf("GetDBVersion: %v", err)
+	} else if gotVersion != 10 {
+		t.Fatalf("DB version after UpTo(10) = %d, want 10 (migration 00010 not found?)", gotVersion)
+	}
+
+	var name, description string
+	if err := sqlDB.QueryRow(`SELECT name, description FROM companies WHERE id = 1`).Scan(&name, &description); err != nil {
+		t.Fatalf("query companies: %v", err)
+	}
+	if name != "Acme" {
+		t.Fatalf("companies.name = %q, want %q", name, "Acme")
+	}
+	if description != "" {
+		t.Fatalf("companies.description = %q, want empty", description)
+	}
+}

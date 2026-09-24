@@ -3154,3 +3154,21 @@ func TestApp_NotesSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T)
 		t.Fatalf("screen after late save result = %v, want screenPostingList (where the user already was)", app.screen)
 	}
 }
+
+func TestApp_PostingList_ShowsSelectedCompanysDescription(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	const description = "Acme builds rockets for roadrunner enthusiasts."
+	if _, err := s.UpdateCompanyDescription(context.Background(), acme.ID, description); err != nil {
+		t.Fatalf("UpdateCompanyDescription: %v", err)
+	}
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+
+	if got := app.View(); !strings.Contains(got, description) {
+		t.Fatalf("posting list View missing company description %q:\n%s", description, got)
+	}
+}

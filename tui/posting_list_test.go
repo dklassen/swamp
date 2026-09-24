@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -156,5 +157,18 @@ func TestTruncateCol(t *testing.T) {
 				t.Fatalf("truncateCol(%q, %d) width = %d, want <= %d", tt.s, tt.max, w, tt.max)
 			}
 		})
+	}
+}
+
+func TestPostingListModel_View_ShowsCompanyDescription(t *testing.T) {
+	t.Parallel()
+
+	m := newPostingListModel(nil)
+	snap := testPostingListSnapshot()
+	snap.companyDescription = "Acme builds rockets for roadrunner enthusiasts."
+
+	got := m.View(snap, 40)
+	if !strings.Contains(got, snap.companyDescription) {
+		t.Errorf("View missing company description %q:\n%s", snap.companyDescription, got)
 	}
 }
