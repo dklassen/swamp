@@ -18,6 +18,7 @@ import (
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/stage"
+	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
 
@@ -43,6 +44,12 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 		Name:        "write_document",
 		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have. DocumentType must be \"cover_letter\" or \"resume\".",
 	}, writeDocumentHandler(d))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "read_document",
+		Description: "Read an application's current cover letter or resume content, e.g. the existing draft to revise when its latest review was flagged. DocumentType must be \"cover_letter\" or \"resume\". Returns a tool error if that document hasn't been written yet.",
+	}, readDocumentHandler(d))
+
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "add_company",
 		Description: "Add a company to track, by its job board (ashby, greenhouse or lever) and board slug, with a short description of who the company is. The slug is checked against the board first. Never restores a company the user deleted or renames an existing one; postings are fetched on the user's next sync, not now.",
@@ -112,14 +119,9 @@ func writeDocumentHandler(d *documents.Store) mcp.ToolHandlerFor[writeDocumentIn
 			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: ensure document dir: %w", err)
 		}
 
-		var path string
-		switch in.DocumentType {
-		case "cover_letter":
-			path = paths.CoverLetter
-		case "resume":
-			path = paths.Resume
-		default:
-			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: DocumentType must be \"cover_letter\" or \"resume\", got %q", in.DocumentType)
+		path, err := documentPath(paths, in.DocumentType)
+		if err != nil {
+			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: %w", err)
 		}
 
 		if err := os.WriteFile(path, []byte(in.Content), 0o644); err != nil {
@@ -127,6 +129,56 @@ func writeDocumentHandler(d *documents.Store) mcp.ToolHandlerFor[writeDocumentIn
 		}
 
 		return nil, writeDocumentOutput{Path: path, BytesWritten: int64(len(in.Content))}, nil
+	}
+}
+
+type readDocumentInput struct {
+	ApplicationID int64  `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
+	DocumentType  string `json:"DocumentType" jsonschema:"either cover_letter or resume"`
+}
+
+type readDocumentOutput struct {
+	Path    string `json:"Path"`
+	Content string `json:"Content"`
+}
+
+// readDocumentHandler resolves paths via Status rather than EnsureDir: a
+// read has no reason to create the application's document directory.
+func readDocumentHandler(d *documents.Store) mcp.ToolHandlerFor[readDocumentInput, readDocumentOutput] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in readDocumentInput) (*mcp.CallToolResult, readDocumentOutput, error) {
+		status := d.Status(in.ApplicationID)
+		paths := documents.Paths{CoverLetter: status.CoverLetter.Path, Resume: status.Resume.Path}
+		path, err := documentPath(paths, in.DocumentType)
+		if err != nil {
+			return nil, readDocumentOutput{}, fmt.Errorf("read_document: %w", err)
+		}
+
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return nil, readDocumentOutput{}, fmt.Errorf("read_document: read %s: %w", path, err)
+		}
+
+		return nil, readDocumentOutput{Path: path, Content: string(content)}, nil
+	}
+}
+
+// documentPath picks documentType's path out of paths. documentType is
+// the DocumentType argument write_document and read_document accept,
+// parsed into store.DocumentType. The input field stays a string because
+// store.DocumentType is an int underneath, so schema inference would
+// advertise it to clients as an integer.
+func documentPath(paths documents.Paths, documentType string) (string, error) {
+	parsed, err := store.ParseDocumentType(documentType)
+	if err != nil {
+		return "", fmt.Errorf("DocumentType must be \"cover_letter\" or \"resume\": %w", err)
+	}
+	switch parsed {
+	case store.DocumentTypeCoverLetter:
+		return paths.CoverLetter, nil
+	case store.DocumentTypeResume:
+		return paths.Resume, nil
+	default:
+		return "", fmt.Errorf("DocumentType %s has no document path", parsed)
 	}
 }
 

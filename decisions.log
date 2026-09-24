@@ -5355,3 +5355,32 @@ Decisions:
   The skill names which tool to call at each step, plus the few result
   fields its workflow depends on: `LatestReviews` and its `"flagged"`
   outcome and `Notes`, and `ApplicationNotes`.
+
+## 2026-09-24 -- read_document MCP tool
+
+Adds `read_document(ApplicationID, DocumentType)`, returning `Path` and
+`Content`. It closes the gap noted in the previous entry: revising a
+flagged draft meant asking the user to paste it, because
+`stage_prepare`'s paths are host paths an agent in a container can't
+open. The apply-to-posting skill now reads the draft through the tool.
+
+Decisions:
+- A document that hasn't been written yet is a tool error, not an empty
+  result or an `Exists: false` field. `stage_prepare` already reports
+  whether each document exists, so the skill only calls `read_document`
+  once it knows there's something to read. An empty `Content` would also
+  be indistinguishable from an empty file.
+- Paths come from `documents.Store.Status`, not `EnsureDir`, so a read
+  never creates the application's document directory.
+- The file read happens in `mcpserver`, the same way `write_document`
+  writes, rather than adding a read method to `documents`. That package
+  deliberately only locates and checks for files and never touches
+  their content.
+- The `DocumentType` switch moves into a `documentPath` helper shared
+  with `write_document`, so the two tools accept exactly the same values.
+- (PR review) `documentPath` parses `DocumentType` with
+  `store.ParseDocumentType` and switches on the `store.DocumentType`
+  constants, like the TUI does, instead of matching raw strings. The
+  tool's input field stays a `string`: `store.DocumentType` is an `int`
+  underneath, so the SDK's schema inference would advertise it to
+  clients as an integer and reject `"resume"`.
