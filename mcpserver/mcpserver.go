@@ -18,6 +18,7 @@ import (
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/stage"
+	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
 
@@ -162,15 +163,22 @@ func readDocumentHandler(d *documents.Store) mcp.ToolHandlerFor[readDocumentInpu
 }
 
 // documentPath picks documentType's path out of paths. documentType is
-// the DocumentType argument write_document and read_document accept.
+// the DocumentType argument write_document and read_document accept,
+// parsed into store.DocumentType. The input field stays a string because
+// store.DocumentType is an int underneath, so schema inference would
+// advertise it to clients as an integer.
 func documentPath(paths documents.Paths, documentType string) (string, error) {
-	switch documentType {
-	case "cover_letter":
+	parsed, err := store.ParseDocumentType(documentType)
+	if err != nil {
+		return "", fmt.Errorf("DocumentType must be \"cover_letter\" or \"resume\": %w", err)
+	}
+	switch parsed {
+	case store.DocumentTypeCoverLetter:
 		return paths.CoverLetter, nil
-	case "resume":
+	case store.DocumentTypeResume:
 		return paths.Resume, nil
 	default:
-		return "", fmt.Errorf("DocumentType must be \"cover_letter\" or \"resume\", got %q", documentType)
+		return "", fmt.Errorf("DocumentType %s has no document path", parsed)
 	}
 }
 

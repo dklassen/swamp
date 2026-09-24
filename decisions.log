@@ -5378,3 +5378,9 @@ Decisions:
   their content.
 - The `DocumentType` switch moves into a `documentPath` helper shared
   with `write_document`, so the two tools accept exactly the same values.
+- (PR review) `documentPath` parses `DocumentType` with
+  `store.ParseDocumentType` and switches on the `store.DocumentType`
+  constants, like the TUI does, instead of matching raw strings. The
+  tool's input field stays a `string`: `store.DocumentType` is an `int`
+  underneath, so the SDK's schema inference would advertise it to
+  clients as an integer and reject `"resume"`.
