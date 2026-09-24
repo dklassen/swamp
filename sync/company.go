@@ -292,3 +292,73 @@ func (s *Syncer) closeApplicationForClosedPosting(ctx context.Context, postingID
 	}
 	return true, nil
 }
+
+// AddCompanyOutcome says what AddCompany did.
+type AddCompanyOutcome int
+
+const (
+	// AddCompanyCreated: the company is new and was added.
+	AddCompanyCreated AddCompanyOutcome = iota
+	// AddCompanySkippedDeleted: the user deleted this company before, so it
+	// was left deleted.
+	AddCompanySkippedDeleted
+	// AddCompanyAlreadyExists: the company was already being tracked. Its
+	// description is filled in if it had none, never overwritten.
+	AddCompanyAlreadyExists
+)
+
+// AddCompanyResult reports what AddCompany did. OpenJobs is how many
+// postings the board listed when it was checked.
+type AddCompanyResult struct {
+	Outcome  AddCompanyOutcome
+	Company  store.Company
+	OpenJobs int
+}
+
+// AddCompany adds one company discovered by an agent (the MCP add_company
+// tool). Unlike ImportCompanies and the TUI, which both go through
+// CreateCompany, it never restores a company the user deleted and never
+// renames an existing one: an agent re-discovering a company mustn't undo
+// the user's decisions about it. A new company's slug is checked against
+// its board first, the same live check ImportCompanies uses (#36), and the
+// fetched postings are only counted, not ingested -- like any other way of
+// adding a company, ingestion waits for the next sync, after the user has
+// had a chance to set filters.
+func (s *Syncer) AddCompany(ctx context.Context, name, source, sourceRef, description string) (AddCompanyResult, error) {
+	existing, err := s.store.GetCompanyBySourceRef(ctx, source, sourceRef)
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		// New company: fall through to the board check and create.
+	case err != nil:
+		return AddCompanyResult{}, fmt.Errorf("sync: look up company: %w", err)
+	case existing.DeletedAt != nil:
+		return AddCompanyResult{Outcome: AddCompanySkippedDeleted, Company: existing}, nil
+	default:
+		if existing.Description == "" && description != "" {
+			existing, err = s.store.UpdateCompanyDescription(ctx, existing.ID, description)
+			if err != nil {
+				return AddCompanyResult{}, fmt.Errorf("sync: set company description: %w", err)
+			}
+		}
+		return AddCompanyResult{Outcome: AddCompanyAlreadyExists, Company: existing}, nil
+	}
+
+	fetcher, ok := s.fetchers[source]
+	if !ok {
+		return AddCompanyResult{}, fmt.Errorf("sync: unsupported source %q", source)
+	}
+	postings, err := fetcher.FetchPostings(ctx, sourceRef)
+	if err != nil {
+		return AddCompanyResult{}, fmt.Errorf("sync: %s/%s does not resolve to a real board: %w", source, sourceRef, err)
+	}
+
+	company, err := s.store.CreateCompany(ctx, name, source, sourceRef)
+	if err != nil {
+		return AddCompanyResult{}, fmt.Errorf("sync: create company: %w", err)
+	}
+	company, err = s.store.UpdateCompanyDescription(ctx, company.ID, description)
+	if err != nil {
+		return AddCompanyResult{}, fmt.Errorf("sync: set company description: %w", err)
+	}
+	return AddCompanyResult{Outcome: AddCompanyCreated, Company: company, OpenJobs: len(postings)}, nil
+}
