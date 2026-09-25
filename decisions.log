@@ -5525,13 +5525,16 @@ incomplete. App.View() draws an error or status banner above every screen
 status is set after every company sync and never cleared, so after any
 sync every posting detail view was still 3+ rows too tall and the title
 scrolled off the top. A failed browser open ('o') did the same through
-a.err, and a long error soft-wraps into more rows.
+a.err.
 
 Decisions:
-- App.screenRows() is the terminal height minus the banner as rendered,
-  including the rows the terminal spends wrapping it. Posting detail is
-  sized with that instead of listRows(). App owns the banner, so App
-  measures it.
+- App.screenRows() is the terminal height minus the banner's rendered
+  rows. Posting detail is sized with that instead of listRows(). App
+  owns the banner, so App measures it. The review said a long message
+  wraps into more rows, and the first version counted soft-wrapped rows.
+  It doesn't wrap: bubbletea's renderer truncates lines to the window
+  width. Counting wrapped rows wasted rows under a long banner, so only
+  the banner's newlines count.
 - The detail model takes that whole height and measures its own title
   and help line from their rendered styles (margins, wrapped help). This
   replaces the literal 3 that silently matched titleStyle/helpStyle

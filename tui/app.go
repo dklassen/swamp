@@ -1384,24 +1384,12 @@ func (a *App) banner() string {
 }
 
 // screenRows is the terminal height left for the active screen once
-// View() has drawn the banner above it -- counting the rows the terminal
-// spends soft-wrapping a banner line wider than a.width, since the banner
-// itself isn't wrapped.
+// View() has drawn the banner above it. Every newline in the banner ends
+// one of its rows, and the screen starts on the row after the last. A
+// banner line wider than the terminal doesn't take extra rows: bubbletea
+// truncates lines to the window width rather than letting them wrap.
 func (a *App) screenRows() int {
-	banner := a.banner()
-	if banner == "" {
-		return a.height
-	}
-	rows := 0
-	// The banner's trailing newline starts the screen's first row rather
-	// than taking one of its own.
-	for _, line := range strings.Split(strings.TrimSuffix(banner, "\n"), "\n") {
-		rows++
-		if w := lipgloss.Width(line); a.width > 0 && w > a.width {
-			rows += (w - 1) / a.width
-		}
-	}
-	return max(a.height-rows, 0)
+	return max(a.height-strings.Count(a.banner(), "\n"), 0)
 }
 
 func (a *App) View() string {

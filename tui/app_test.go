@@ -1576,8 +1576,8 @@ func TestApp_PostingDetail_DownScrollsLongDescription(t *testing.T) {
 // rendered App -- the status/error banner View() draws above every screen,
 // plus posting detail itself -- fits in the terminal, so the posting title
 // isn't pushed off the top. openPostingList syncs the company first, which
-// leaves a status line up; a failed browser open adds an error, long
-// enough here to wrap.
+// leaves a status line up; a failed browser open replaces it with an
+// error, after posting detail is already on screen.
 func TestApp_PostingDetail_FitsTheTerminalUnderTheBanner(t *testing.T) {
 	const width, height = 80, 24
 	tests := []struct {
@@ -1585,7 +1585,7 @@ func TestApp_PostingDetail_FitsTheTerminalUnderTheBanner(t *testing.T) {
 		msg  tea.Msg
 	}{
 		{name: "status", msg: nil},
-		{name: "wrapped error", msg: browserOpenedMsg{err: errors.New(strings.Repeat("could not open browser ", 8))}},
+		{name: "error", msg: browserOpenedMsg{err: errors.New("could not open browser")}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1602,12 +1602,11 @@ func TestApp_PostingDetail_FitsTheTerminalUnderTheBanner(t *testing.T) {
 				app, _ = sendKey(app, tt.msg)
 			}
 
-			rows := 0
-			for _, line := range strings.Split(ansi.Strip(app.View()), "\n") {
-				rows += max(1, (ansi.StringWidth(line)+width-1)/width)
-			}
-			if rows > height {
-				t.Errorf("view takes %d terminal rows, want at most %d:\n%s", rows, height, ansi.Strip(app.View()))
+			// One row per line: bubbletea truncates lines wider than the
+			// window rather than wrapping them.
+			view := ansi.Strip(app.View())
+			if rows := strings.Count(view, "\n") + 1; rows > height {
+				t.Errorf("view takes %d terminal rows, want at most %d:\n%s", rows, height, view)
 			}
 		})
 	}
