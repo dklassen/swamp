@@ -348,7 +348,7 @@ func (a *App) returnBack() screen {
 // need refreshing.
 func (a *App) rebuildPostingDetailApplication() tea.Cmd {
 	_, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-	a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), a.postingDetail.posting, app, hasApp, nil, a.canNavigateSiblings(a.postingDetail.posting.ID))
+	a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), a.postingDetail.posting, app, hasApp, nil, a.canNavigateSiblings(a.postingDetail.posting.ID))
 	return maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 }
 
@@ -905,6 +905,18 @@ func narrowPostingsToFilters(postings []store.Posting, departments, locations []
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, cmd := a.update(msg)
+	// The banner above the screen can appear, change, or clear on any
+	// message -- a sync finishing, a failed browser open -- including
+	// while posting detail is up, so refit it to the rows left under the
+	// banner every time rather than only when it's rebuilt.
+	if a.screen == screenPostingDetail {
+		a.postingDetail.setHeight(a.screenRows())
+	}
+	return model, cmd
+}
+
+func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case companiesLoadedMsg:
 		a.err = msg.err
@@ -997,7 +1009,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if a.screen == screenPostingDetail {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 				return a, maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 			}
 		}
@@ -1011,7 +1023,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var reviewsCmd tea.Cmd
 			if a.screen == screenPostingDetail {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 				reviewsCmd = maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 			}
 			// A freshly-started application should show up in the active-
@@ -1099,7 +1111,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// navigated away from is simply discarded -- msg.applicationID no
 		// longer matching what's on screen means this result is stale.
 		if msg.err == nil && a.screen == screenPostingDetail && a.postingDetail.application.ID == msg.applicationID {
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), a.postingDetail.posting, a.postingDetail.application, a.postingDetail.hasApplication, msg.reviews, a.canNavigateSiblings(a.postingDetail.posting.ID))
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), a.postingDetail.posting, a.postingDetail.application, a.postingDetail.hasApplication, msg.reviews, a.canNavigateSiblings(a.postingDetail.posting.ID))
 		}
 		if msg.err == nil && a.screen == screenApplicationDetail && a.applicationDetail.application.ID == msg.applicationID {
 			a.applicationDetail.application.LatestReviews = msg.reviews
@@ -1131,7 +1143,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// rebuilds the viewport at the new dimensions. When not on the
 			// detail screen, sizing happens fresh the next time it's
 			// entered, so nothing to do here.
-			a.postingDetail.resize(a.width, a.listRows())
+			a.postingDetail.resize(a.width, a.screenRows())
 		}
 	case tea.KeyMsg:
 		prevScreen := a.screen
@@ -1198,7 +1210,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.applicationsByPosting = make(map[int64]store.Application)
 			}
 			a.applicationsByPosting[appView.Posting.ID] = appView.Application
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), appView.Posting, appView.Application, true, appView.LatestReviews, a.canNavigateSiblings(appView.Posting.ID))
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), appView.Posting, appView.Application, true, appView.LatestReviews, a.canNavigateSiblings(appView.Posting.ID))
 			a.enterFrom(screenPostingDetail)
 		case enterDocumentReviewFormMsg:
 			a.err = v.err
@@ -1245,7 +1257,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, loadCompanies(a.store)
 		case enterPostingDetailMsg:
 			p, app, hasApp := a.lookupPosting(v.postingID)
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 			a.enterFrom(screenPostingDetail)
 			return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
 		case enterFilterSelectMsg:
@@ -1269,7 +1281,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if idx >= 0 && newIdx >= 0 && newIdx < len(a.postings) {
 				p := a.postings[newIdx]
 				app, hasApp := a.applicationsByPosting[p.ID]
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 				return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
 			}
 		case enterApplicationStatusMsg:
@@ -1358,14 +1370,44 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+// banner is the error or status message View() draws above the active
+// screen, including the blank line separating the two, or "" when there's
+// nothing to show.
+func (a *App) banner() string {
+	if a.err != nil {
+		return errStyle.Render(fmt.Sprintf("error: %v", a.err)) + "\n\n"
+	}
+	if a.status != "" {
+		return helpStyle.Render(a.status) + "\n\n"
+	}
+	return ""
+}
+
+// screenRows is the terminal height left for the active screen once
+// View() has drawn the banner above it -- counting the rows the terminal
+// spends soft-wrapping a banner line wider than a.width, since the banner
+// itself isn't wrapped.
+func (a *App) screenRows() int {
+	banner := a.banner()
+	if banner == "" {
+		return a.height
+	}
+	rows := 0
+	// The banner's trailing newline starts the screen's first row rather
+	// than taking one of its own.
+	for _, line := range strings.Split(strings.TrimSuffix(banner, "\n"), "\n") {
+		rows++
+		if w := lipgloss.Width(line); a.width > 0 && w > a.width {
+			rows += (w - 1) / a.width
+		}
+	}
+	return max(a.height-rows, 0)
+}
+
 func (a *App) View() string {
 	var b strings.Builder
 
-	if a.err != nil {
-		b.WriteString(errStyle.Render(fmt.Sprintf("error: %v", a.err)) + "\n\n")
-	} else if a.status != "" {
-		b.WriteString(helpStyle.Render(a.status) + "\n\n")
-	}
+	b.WriteString(a.banner())
 
 	switch a.screen {
 	case screenActiveApplications:

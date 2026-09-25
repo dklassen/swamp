@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/viewport"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
@@ -53,15 +54,24 @@ type postingDetailModel struct {
 func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool, latestReviews map[store.DocumentType]store.DocumentReview, canNavigateSiblings bool) postingDetailModel {
 	inner := detailInnerWidth(width)
 	help := indentLines(wrapToWidth(postingDetailHelp(canNavigateSiblings), inner), detailPadding)
-	// height is App.listRows(), which only reserves chromeRows for the
-	// screen's own chrome. This screen spends two rows on the title and
-	// its margin and one on the help line's margin plus the help itself,
-	// which wraps on narrower terminals -- so the viewport gives up the
-	// difference, or the screen overflows and pushes the title off the top.
-	helpRows := strings.Count(help, "\n") + 1
-	vp := viewport.New(width, max(height-(3+helpRows-chromeRows), 0))
+	vp := viewport.New(width, 0)
 	vp.SetContent(indentLines(wrapToWidth(postingDetailContent(p, app, hasApp, docs, latestReviews, inner), inner), detailPadding))
-	return postingDetailModel{store: s, documents: docs, viewport: vp, width: width, help: help, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews, canNavigateSiblings: canNavigateSiblings}
+	m := postingDetailModel{store: s, documents: docs, viewport: vp, width: width, help: help, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews, canNavigateSiblings: canNavigateSiblings}
+	m.setHeight(height)
+	return m
+}
+
+// setHeight fits the screen into height terminal rows -- everything App
+// leaves it below its own status/error banner (see App.screenRows) -- by
+// giving the viewport whatever the title and help line don't take. Both
+// are measured as rendered, margins and wrapped help lines included, so
+// the screen can't outgrow the terminal and push the title off the top.
+// The scroll position is kept (clamped to the new height), since the
+// banner can come and go while the user is reading.
+func (m *postingDetailModel) setHeight(height int) {
+	chrome := lipgloss.Height(m.title()) + lipgloss.Height(helpStyle.Render(m.help))
+	m.viewport.Height = max(height-chrome, 0)
+	m.viewport.SetYOffset(m.viewport.YOffset)
 }
 
 // detailPadding is the margin (columns) kept clear on each side of the
@@ -174,16 +184,21 @@ func (m *postingDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 
 func (m *postingDetailModel) View() string {
 	var b strings.Builder
-	// Truncated rather than wrapped: the title sits outside the viewport,
-	// and a second title line would push the help line off the screen.
+	b.WriteString(m.title() + "\n")
+	b.WriteString(m.viewport.View() + "\n")
+	b.WriteString(helpStyle.Render(m.help))
+	return b.String()
+}
+
+// title renders the posting title above the viewport. Truncated rather
+// than wrapped: the title sits outside the viewport, and a second title
+// line would push the help line off the screen.
+func (m *postingDetailModel) title() string {
 	title := m.posting.Title
 	if inner := detailInnerWidth(m.width); inner > 0 {
 		title = truncateCol(title, inner)
 	}
-	b.WriteString(indentLines(titleStyle.Render(title), detailPadding) + "\n")
-	b.WriteString(m.viewport.View() + "\n")
-	b.WriteString(helpStyle.Render(m.help))
-	return b.String()
+	return indentLines(titleStyle.Render(title), detailPadding)
 }
 
 // resize rebuilds the viewport at new dimensions, keeping the same

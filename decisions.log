@@ -5516,3 +5516,31 @@ Decisions:
   model now subtracts the difference from its viewport and wraps the help
   line itself. Kept local to this screen rather than changing chromeRows,
   which other screens' layouts depend on.
+
+## 2026-09-25 -- Posting detail sizes itself under App's status/error banner
+
+Code review of the layout branch found the previous entry's height fix
+incomplete. App.View() draws an error or status banner above every screen
+(the message, helpStyle's top margin for a status, and a blank line). A
+status is set after every company sync and never cleared, so after any
+sync every posting detail view was still 3+ rows too tall and the title
+scrolled off the top. A failed browser open ('o') did the same through
+a.err, and a long error soft-wraps into more rows.
+
+Decisions:
+- App.screenRows() is the terminal height minus the banner as rendered,
+  including the rows the terminal spends wrapping it. Posting detail is
+  sized with that instead of listRows(). App owns the banner, so App
+  measures it.
+- The detail model takes that whole height and measures its own title
+  and help line from their rendered styles (margins, wrapped help). This
+  replaces the literal 3 that silently matched titleStyle/helpStyle
+  margins and the chromeRows adjustment. Each side now measures only
+  what it draws.
+- The banner can appear, change, or clear while detail is on screen, so
+  App.Update refits the detail viewport after every message
+  (postingDetailModel.setHeight), keeping the scroll position. The
+  alternative was refitting at each place that sets a.err or a.status,
+  which is dozens of sites and easy to miss the next time one is added.
+- Other screens still use listRows() and have the same banner blind spot.
+  Left alone to keep this branch to posting detail.

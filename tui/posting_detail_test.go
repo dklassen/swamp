@@ -405,11 +405,10 @@ func TestPostingDetailModel_View_NeverSplitsAReviewBadge(t *testing.T) {
 
 // TestPostingDetailModel_View_FitsTheTerminal checks the whole screen --
 // title, scrollable body, and help line -- fits in the terminal, so the
-// title stays visible at the top. App sizes the model with listRows(), the
-// terminal height minus chromeRows; the detail screen spends more than
-// that on its own title and help, and the help line wraps on narrower
-// terminals, so the view used to run past the bottom and push the title
-// off the top.
+// title stays visible at the top. The model is given every row App leaves
+// it (see App.screenRows) and must fit its own title and help into that --
+// the help line wraps on narrower terminals, so a fixed allowance for them
+// used to let the view run past the bottom and push the title off the top.
 func TestPostingDetailModel_View_FitsTheTerminal(t *testing.T) {
 	t.Parallel()
 
@@ -422,7 +421,7 @@ func TestPostingDetailModel_View_FitsTheTerminal(t *testing.T) {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
 			t.Parallel()
 
-			m := newPostingDetailModel(nil, nil, width, termHeight-chromeRows, p, store.Application{}, false, nil, true)
+			m := newPostingDetailModel(nil, nil, width, termHeight, p, store.Application{}, false, nil, true)
 			lines := strings.Split(ansi.Strip(m.View()), "\n")
 			if len(lines) > termHeight {
 				t.Errorf("view is %d lines, want at most %d (the terminal height)", len(lines), termHeight)

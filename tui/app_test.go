@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
@@ -1568,6 +1569,47 @@ func TestApp_PostingDetail_DownScrollsLongDescription(t *testing.T) {
 	}
 	if app.screen != screenPostingDetail {
 		t.Fatalf("screen after down on detail = %v, want screenPostingDetail", app.screen)
+	}
+}
+
+// TestApp_PostingDetail_FitsTheTerminalUnderTheBanner checks the whole
+// rendered App -- the status/error banner View() draws above every screen,
+// plus posting detail itself -- fits in the terminal, so the posting title
+// isn't pushed off the top. openPostingList syncs the company first, which
+// leaves a status line up; a failed browser open adds an error, long
+// enough here to wrap.
+func TestApp_PostingDetail_FitsTheTerminalUnderTheBanner(t *testing.T) {
+	const width, height = 80, 24
+	tests := []struct {
+		name string
+		msg  tea.Msg
+	}{
+		{name: "status", msg: nil},
+		{name: "wrapped error", msg: browserOpenedMsg{err: errors.New(strings.Repeat("could not open browser ", 8))}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newTestStore(t)
+			mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+				"acme": {{SourceID: "job-1", Title: "Engineer", DescriptionText: strings.Repeat("line\n", 100)}},
+			})
+			app := newTestApp(t, s, syncer)
+			app, _ = sendKey(app, tea.WindowSizeMsg{Width: width, Height: height})
+			app = openPostingList(t, app)
+			app = openPostingDetail(t, app)
+			if tt.msg != nil {
+				app, _ = sendKey(app, tt.msg)
+			}
+
+			rows := 0
+			for _, line := range strings.Split(ansi.Strip(app.View()), "\n") {
+				rows += max(1, (ansi.StringWidth(line)+width-1)/width)
+			}
+			if rows > height {
+				t.Errorf("view takes %d terminal rows, want at most %d:\n%s", rows, height, ansi.Strip(app.View()))
+			}
+		})
 	}
 }
 
