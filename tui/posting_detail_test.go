@@ -388,14 +388,19 @@ func TestPostingDetailModel_View_AlignsFieldValues(t *testing.T) {
 // review badge stays on one line however the path before it wraps --
 // "[not reviewed]" contains a space, so plain word wrapping could break
 // it in two. Swept across widths because where the path wraps depends on
-// the temp directory's length.
+// the temp directory's length, down to the narrowest terminal whose inner
+// width still fits the badge at all -- below that, the value column is
+// narrower than the badge.
 func TestPostingDetailModel_View_NeverSplitsAReviewBadge(t *testing.T) {
 	t.Parallel()
 
 	docs := documents.NewStore(t.TempDir())
 	app := store.Application{ID: 9, PostingID: 5}
-	for width := 40; width <= 140; width++ {
-		m := newPostingDetailModel(nil, docs, width, 60, store.Posting{ID: 5}, app, true, nil, true)
+	minWidth := len("[not reviewed]") + 2*detailPadding
+	for width := minWidth; width <= 140; width++ {
+		// Tall enough to show the whole body: at the narrowest widths the
+		// path wraps a character or two per line.
+		m := newPostingDetailModel(nil, docs, width, 1000, store.Posting{ID: 5}, app, true, nil, true)
 		view := ansi.Strip(m.viewport.View())
 		if n := strings.Count(view, "[not reviewed]"); n != 2 {
 			t.Errorf("width %d: found %d intact [not reviewed] badges, want 2 in view:\n%s", width, n, view)

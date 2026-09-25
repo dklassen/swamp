@@ -5544,3 +5544,16 @@ Decisions:
   which is dozens of sites and easy to miss the next time one is added.
 - Other screens still use listRows() and have the same banner blind spot.
   Left alone to keep this branch to posting detail.
+
+## 2026-09-25 -- Review badge on its own line when the value column is too narrow
+
+Also from code review: the badge moved to its own line when it didn't fit
+after the path. That line was indented to the value column (17 columns).
+Below about 35 columns the value column is narrower than "[not reviewed]",
+so the line overran the width and the outer wrap split the badge anyway.
+Now, when the value column can't hold the badge (or there's no value
+column), the badge goes on its own line from the left edge. It's out of
+alignment there, but alignment can't hold at that width anyway. Keeping
+the badge in one piece matters more. The test now sweeps down to the
+narrowest width that fits the badge at all (the inner width equal to the
+badge's width).

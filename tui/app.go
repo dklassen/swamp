@@ -1529,12 +1529,20 @@ func detailDocumentField(label string, exists bool, path string, review store.Do
 	lines := wrapDetailValue(status+" ("+path+")", width)
 	badge := reviewBadge(review, hasReview)
 	last := len(lines) - 1
-	if valueWidth := detailValueWidth(width); valueWidth > 0 && lipgloss.Width(lines[last])+1+lipgloss.Width(badge) > valueWidth {
-		lines = append(lines, badge)
-	} else {
+	var row string
+	switch valueWidth := detailValueWidth(width); {
+	case width > 0 && valueWidth < lipgloss.Width(badge):
+		// The value column is narrower than the badge (or there's no room
+		// for one at all), so indenting the badge to it would overrun the
+		// width and get it wrapped anyway. Give it a line of its own from
+		// the left edge instead: out of alignment, but in one piece.
+		row = detailRow(label, lines) + badge + "\n"
+	case valueWidth > 0 && lipgloss.Width(lines[last])+1+lipgloss.Width(badge) > valueWidth:
+		row = detailRow(label, append(lines, badge))
+	default:
 		lines[last] += " " + badge
+		row = detailRow(label, lines)
 	}
-	row := detailRow(label, lines)
 	if hasReview && review.Notes != "" {
 		row += detailField("", dimStyle.Render("Notes: "+review.Notes), width)
 	}
