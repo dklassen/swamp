@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
@@ -1571,6 +1572,46 @@ func TestApp_PostingDetail_DownScrollsLongDescription(t *testing.T) {
 	}
 }
 
+// TestApp_PostingDetail_FitsTheTerminalUnderTheBanner checks the whole
+// rendered App -- the status/error banner View() draws above every screen,
+// plus posting detail itself -- fits in the terminal, so the posting title
+// isn't pushed off the top. openPostingList syncs the company first, which
+// leaves a status line up; a failed browser open replaces it with an
+// error, after posting detail is already on screen.
+func TestApp_PostingDetail_FitsTheTerminalUnderTheBanner(t *testing.T) {
+	const width, height = 80, 24
+	tests := []struct {
+		name string
+		msg  tea.Msg
+	}{
+		{name: "status", msg: nil},
+		{name: "error", msg: browserOpenedMsg{err: errors.New("could not open browser")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			s := newTestStore(t)
+			mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+				"acme": {{SourceID: "job-1", Title: "Engineer", DescriptionText: strings.Repeat("line\n", 100)}},
+			})
+			app := newTestApp(t, s, syncer)
+			app, _ = sendKey(app, tea.WindowSizeMsg{Width: width, Height: height})
+			app = openPostingList(t, app)
+			app = openPostingDetail(t, app)
+			if tt.msg != nil {
+				app, _ = sendKey(app, tt.msg)
+			}
+
+			// One row per line: bubbletea truncates lines wider than the
+			// window rather than wrapping them.
+			view := ansi.Strip(app.View())
+			if rows := strings.Count(view, "\n") + 1; rows > height {
+				t.Errorf("view takes %d terminal rows, want at most %d:\n%s", rows, height, view)
+			}
+		})
+	}
+}
+
 func TestApp_PostingDetail_VimJ_ScrollsLikeDown(t *testing.T) {
 	// bubbles/viewport's DefaultKeyMap already binds j/k/h/l alongside the
 	// arrow keys, so this should work with no changes on our side --
@@ -2981,7 +3022,7 @@ func TestPostingDetailContent_ShowsStatusLabelNotEnumValue(t *testing.T) {
 	posting := store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}}
 	application := store.Application{ID: 1, Status: store.ApplicationStatusOfferReceived}
 
-	got := postingDetailContent(posting, application, true, documents.NewStore(t.TempDir()), nil)
+	got := postingDetailContent(posting, application, true, documents.NewStore(t.TempDir()), nil, 80)
 
 	if !strings.Contains(got, "Offer received") {
 		t.Errorf("postingDetailContent() = %q, want the human-readable status label", got)

@@ -18,6 +18,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
+	"github.com/charmbracelet/x/cellbuf"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
@@ -38,6 +39,7 @@ var (
 	passStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	fieldLabel   = lipgloss.NewStyle().Bold(true)
 	focusedLabel = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
+	sectionStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
 )
 
 type screen int
@@ -273,8 +275,9 @@ func reviewGlyph(review store.DocumentReview, hasReview bool) string {
 // tea.Cmd/tea.Msg convention as the rest of this file's store-backed
 // state (see decisions.log #83). A document with no entry in the map
 // renders as "not reviewed".
-func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store, latestReviews map[store.DocumentType]store.DocumentReview) string {
+func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store, latestReviews map[store.DocumentType]store.DocumentReview, width int) string {
 	var b strings.Builder
+	b.WriteString(sectionHeading("Posting", width) + "\n")
 	fields := []struct{ label, value string }{
 		{"Department", p.Department},
 		{"Team", p.Team},
@@ -289,24 +292,25 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 		if f.value == "" {
 			continue
 		}
-		b.WriteString(fieldLabel.Render(f.label+":") + " " + f.value + "\n")
+		b.WriteString(detailField(f.label, f.value, width))
 	}
+	b.WriteString("\n" + sectionHeading("Application", width) + "\n")
 	if hasApplication {
-		b.WriteString(fieldLabel.Render("Application status:") + " " + applicationStatusLabel(application.Status) + "\n")
+		b.WriteString(detailField("Status", applicationStatusLabel(application.Status), width))
 		if application.Notes != "" {
-			b.WriteString(fieldLabel.Render("Application notes:") + " " + application.Notes + "\n")
+			b.WriteString(detailField("Notes", application.Notes, width))
 		}
 		status := docs.Status(application.ID)
-		b.WriteString("\n" + fieldLabel.Render("Documents") + "\n")
+		b.WriteString("\n")
 		clReview, hasCLReview := latestReviews[store.DocumentTypeCoverLetter]
-		b.WriteString(documentStatusLine("Cover Letter", status.CoverLetter.Exists, status.CoverLetter.Path, clReview, hasCLReview))
+		b.WriteString(detailDocumentField("Cover Letter", status.CoverLetter.Exists, status.CoverLetter.Path, clReview, hasCLReview, width))
 		resumeReview, hasResumeReview := latestReviews[store.DocumentTypeResume]
-		b.WriteString(documentStatusLine("Resume", status.Resume.Exists, status.Resume.Path, resumeReview, hasResumeReview))
+		b.WriteString(detailDocumentField("Resume", status.Resume.Exists, status.Resume.Path, resumeReview, hasResumeReview, width))
 	} else {
 		b.WriteString(helpStyle.Render("No application started -- press 'a' to start one.") + "\n")
 	}
 	if desc := p.DescriptionText; desc != "" {
-		b.WriteString("\n" + desc + "\n")
+		b.WriteString("\n" + sectionHeading("Description", width) + "\n" + desc + "\n")
 	}
 	return b.String()
 }
@@ -344,7 +348,7 @@ func (a *App) returnBack() screen {
 // need refreshing.
 func (a *App) rebuildPostingDetailApplication() tea.Cmd {
 	_, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-	a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), a.postingDetail.posting, app, hasApp, nil, a.canNavigateSiblings(a.postingDetail.posting.ID))
+	a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), a.postingDetail.posting, app, hasApp, nil, a.canNavigateSiblings(a.postingDetail.posting.ID))
 	return maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 }
 
@@ -901,6 +905,18 @@ func narrowPostingsToFilters(postings []store.Posting, departments, locations []
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	model, cmd := a.update(msg)
+	// The banner above the screen can appear, change, or clear on any
+	// message -- a sync finishing, a failed browser open -- including
+	// while posting detail is up, so refit it to the rows left under the
+	// banner every time rather than only when it's rebuilt.
+	if a.screen == screenPostingDetail {
+		a.postingDetail.setHeight(a.screenRows())
+	}
+	return model, cmd
+}
+
+func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case companiesLoadedMsg:
 		a.err = msg.err
@@ -993,7 +1009,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if a.screen == screenPostingDetail {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 				return a, maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 			}
 		}
@@ -1007,7 +1023,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			var reviewsCmd tea.Cmd
 			if a.screen == screenPostingDetail {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 				reviewsCmd = maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 			}
 			// A freshly-started application should show up in the active-
@@ -1095,7 +1111,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// navigated away from is simply discarded -- msg.applicationID no
 		// longer matching what's on screen means this result is stale.
 		if msg.err == nil && a.screen == screenPostingDetail && a.postingDetail.application.ID == msg.applicationID {
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), a.postingDetail.posting, a.postingDetail.application, a.postingDetail.hasApplication, msg.reviews, a.canNavigateSiblings(a.postingDetail.posting.ID))
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), a.postingDetail.posting, a.postingDetail.application, a.postingDetail.hasApplication, msg.reviews, a.canNavigateSiblings(a.postingDetail.posting.ID))
 		}
 		if msg.err == nil && a.screen == screenApplicationDetail && a.applicationDetail.application.ID == msg.applicationID {
 			a.applicationDetail.application.LatestReviews = msg.reviews
@@ -1127,7 +1143,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// rebuilds the viewport at the new dimensions. When not on the
 			// detail screen, sizing happens fresh the next time it's
 			// entered, so nothing to do here.
-			a.postingDetail.resize(a.width, a.listRows())
+			a.postingDetail.resize(a.width, a.screenRows())
 		}
 	case tea.KeyMsg:
 		prevScreen := a.screen
@@ -1194,7 +1210,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.applicationsByPosting = make(map[int64]store.Application)
 			}
 			a.applicationsByPosting[appView.Posting.ID] = appView.Application
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), appView.Posting, appView.Application, true, appView.LatestReviews, a.canNavigateSiblings(appView.Posting.ID))
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), appView.Posting, appView.Application, true, appView.LatestReviews, a.canNavigateSiblings(appView.Posting.ID))
 			a.enterFrom(screenPostingDetail)
 		case enterDocumentReviewFormMsg:
 			a.err = v.err
@@ -1241,7 +1257,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, loadCompanies(a.store)
 		case enterPostingDetailMsg:
 			p, app, hasApp := a.lookupPosting(v.postingID)
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 			a.enterFrom(screenPostingDetail)
 			return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
 		case enterFilterSelectMsg:
@@ -1265,7 +1281,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if idx >= 0 && newIdx >= 0 && newIdx < len(a.postings) {
 				p := a.postings[newIdx]
 				app, hasApp := a.applicationsByPosting[p.ID]
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.listRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
+				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 				return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
 			}
 		case enterApplicationStatusMsg:
@@ -1354,14 +1370,32 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
+// banner is the error or status message View() draws above the active
+// screen, including the blank line separating the two, or "" when there's
+// nothing to show.
+func (a *App) banner() string {
+	if a.err != nil {
+		return errStyle.Render(fmt.Sprintf("error: %v", a.err)) + "\n\n"
+	}
+	if a.status != "" {
+		return helpStyle.Render(a.status) + "\n\n"
+	}
+	return ""
+}
+
+// screenRows is the terminal height left for the active screen once
+// View() has drawn the banner above it. Every newline in the banner ends
+// one of its rows, and the screen starts on the row after the last. A
+// banner line wider than the terminal doesn't take extra rows: bubbletea
+// truncates lines to the window width rather than letting them wrap.
+func (a *App) screenRows() int {
+	return max(a.height-strings.Count(a.banner(), "\n"), 0)
+}
+
 func (a *App) View() string {
 	var b strings.Builder
 
-	if a.err != nil {
-		b.WriteString(errStyle.Render(fmt.Sprintf("error: %v", a.err)) + "\n\n")
-	} else if a.status != "" {
-		b.WriteString(helpStyle.Render(a.status) + "\n\n")
-	}
+	b.WriteString(a.banner())
 
 	switch a.screen {
 	case screenActiveApplications:
@@ -1415,4 +1449,90 @@ func (a *App) View() string {
 // what it held when the screen was first entered.
 func (a *App) canNavigateSiblings(postingID int64) bool {
 	return indexOfPosting(a.postings, postingID) >= 0
+}
+
+// sectionHeading renders a posting-detail section heading: name, then a
+// dim horizontal rule filling the rest of width, so each section reads as
+// its own block. width <= 0 (before the first tea.WindowSizeMsg) gets a
+// short fixed rule rather than none.
+func sectionHeading(name string, width int) string {
+	ruleWidth := 3
+	if rest := width - lipgloss.Width(name) - 1; rest > ruleWidth {
+		ruleWidth = rest
+	}
+	return sectionStyle.Render(name) + " " + dimStyle.Render(strings.Repeat("─", ruleWidth))
+}
+
+// detailLabelWidth is the width of posting detail's label column, sized
+// to its longest label ("Application URL") plus a gap, so every value in
+// the Posting and Application sections starts in the same column.
+const detailLabelWidth = len("Application URL") + 2
+
+// detailField renders one posting-detail row: label in a fixed-width
+// column, then value word-wrapped to the rest of width, with continuation
+// lines indented to the value column instead of falling back under the
+// label. width <= 0 (before the first tea.WindowSizeMsg) leaves the value
+// unwrapped.
+func detailField(label, value string, width int) string {
+	return detailRow(label, wrapDetailValue(value, width))
+}
+
+// detailValueWidth is the width left for a value after the label column,
+// or 0 (unconstrained) when width is unknown or too narrow to fit one.
+func detailValueWidth(width int) int {
+	return max(width-detailLabelWidth, 0)
+}
+
+// wrapDetailValue word-wraps value to the value column's width, as lines.
+func wrapDetailValue(value string, width int) []string {
+	if valueWidth := detailValueWidth(width); valueWidth > 0 {
+		value = cellbuf.Wrap(value, valueWidth, "")
+	}
+	return strings.Split(value, "\n")
+}
+
+// detailRow lays out a label and its already-wrapped value lines: the
+// label padded to detailLabelWidth, then the value, with continuation
+// lines indented to the value column.
+func detailRow(label string, lines []string) string {
+	indent := strings.Repeat(" ", detailLabelWidth)
+	for i := 1; i < len(lines); i++ {
+		lines[i] = indent + lines[i]
+	}
+	gap := strings.Repeat(" ", detailLabelWidth-lipgloss.Width(label))
+	return fieldLabel.Render(label) + gap + strings.Join(lines, "\n") + "\n"
+}
+
+// detailDocumentField is detailField for a drafted document: its presence
+// and path, the latest review's badge, and the review's notes on their
+// own line under the value column -- the aligned counterpart of
+// documentStatusLine, which application detail still uses.
+func detailDocumentField(label string, exists bool, path string, review store.DocumentReview, hasReview bool, width int) string {
+	status := "not found"
+	if exists {
+		status = "found"
+	}
+	// The badge is placed after wrapping rather than wrapped with the path:
+	// "[not reviewed]" contains a space, and word wrapping could split it.
+	lines := wrapDetailValue(status+" ("+path+")", width)
+	badge := reviewBadge(review, hasReview)
+	last := len(lines) - 1
+	var row string
+	switch valueWidth := detailValueWidth(width); {
+	case width > 0 && valueWidth < lipgloss.Width(badge):
+		// The value column is narrower than the badge (or there's no room
+		// for one at all), so indenting the badge to it would overrun the
+		// width and get it wrapped anyway. Give it a line of its own from
+		// the left edge instead: out of alignment, but in one piece.
+		row = detailRow(label, lines) + badge + "\n"
+	case valueWidth > 0 && lipgloss.Width(lines[last])+1+lipgloss.Width(badge) > valueWidth:
+		row = detailRow(label, append(lines, badge))
+	default:
+		lines[last] += " " + badge
+		row = detailRow(label, lines)
+	}
+	if hasReview && review.Notes != "" {
+		row += detailField("", dimStyle.Render("Notes: "+review.Notes), width)
+	}
+	return row
 }

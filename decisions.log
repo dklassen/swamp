@@ -5480,3 +5480,83 @@ a third page even after the heading size and spacing fixes. Now
 range for a dense one-to-two page document. Paragraph, list, and heading
 spacing are all multiples of `lineHeight`, so they tighten
 proportionally. Verified on that resume: three pages became two.
+
+## 2026-09-24 -- Posting detail layout: sections, margins, aligned fields
+
+The posting detail screen was one flush-left block: metadata, application
+state, and description ran together with no headings, nothing kept text
+off the terminal edges, and wrapped values fell back to column 0 under
+the labels.
+
+Decisions:
+- Three sections (Posting, Application, Description), each a highlighted
+  name followed by a dim rule across the width. Considered bordered
+  boxes like the company info box, but a box around a long, scrolling
+  description costs two columns and fights the viewport, and rules
+  separate sections just as clearly.
+- Two-column margin on both sides of the title, body, and help line. The
+  body wraps to the inner width and is indented, rather than being styled
+  with lipgloss padding, which would also pad short lines to full width
+  (the reason wrapToWidth uses cellbuf directly).
+- Fields sit in a label/value grid, with the label column sized to the
+  longest label ("Application URL") and continuation lines indented to
+  the value column. The application's "Application status"/"Application
+  notes" labels shorten to "Status"/"Notes", and the "Documents"
+  subheading goes, since the section heading now carries that context.
+  Application detail still uses documentStatusLine unchanged, to keep
+  this change to the posting view.
+- A document's review badge is appended after its path is wrapped, since
+  "[not reviewed]" contains a space and word wrapping split it.
+- Fixed while verifying in the real app (it predates this change and
+  shows on main too): the screen was always taller than the terminal.
+  App sizes every screen as the terminal height minus chromeRows (3), but
+  this screen spends 2 rows on the title and its margin plus 1 + N on the
+  help line (its margin and N wrapped lines; the help line is ~165
+  columns and wraps below that). The title scrolled off the top. The
+  model now subtracts the difference from its viewport and wraps the help
+  line itself. Kept local to this screen rather than changing chromeRows,
+  which other screens' layouts depend on.
+
+## 2026-09-25 -- Posting detail sizes itself under App's status/error banner
+
+Code review of the layout branch found the previous entry's height fix
+incomplete. App.View() draws an error or status banner above every screen
+(the message, helpStyle's top margin for a status, and a blank line). A
+status is set after every company sync and never cleared, so after any
+sync every posting detail view was still 3+ rows too tall and the title
+scrolled off the top. A failed browser open ('o') did the same through
+a.err.
+
+Decisions:
+- App.screenRows() is the terminal height minus the banner's rendered
+  rows. Posting detail is sized with that instead of listRows(). App
+  owns the banner, so App measures it. The review said a long message
+  wraps into more rows, and the first version counted soft-wrapped rows.
+  It doesn't wrap: bubbletea's renderer truncates lines to the window
+  width. Counting wrapped rows wasted rows under a long banner, so only
+  the banner's newlines count.
+- The detail model takes that whole height and measures its own title
+  and help line from their rendered styles (margins, wrapped help). This
+  replaces the literal 3 that silently matched titleStyle/helpStyle
+  margins and the chromeRows adjustment. Each side now measures only
+  what it draws.
+- The banner can appear, change, or clear while detail is on screen, so
+  App.Update refits the detail viewport after every message
+  (postingDetailModel.setHeight), keeping the scroll position. The
+  alternative was refitting at each place that sets a.err or a.status,
+  which is dozens of sites and easy to miss the next time one is added.
+- Other screens still use listRows() and have the same banner blind spot.
+  Left alone to keep this branch to posting detail.
+
+## 2026-09-25 -- Review badge on its own line when the value column is too narrow
+
+Also from code review: the badge moved to its own line when it didn't fit
+after the path. That line was indented to the value column (17 columns).
+Below about 35 columns the value column is narrower than "[not reviewed]",
+so the line overran the width and the outer wrap split the badge anyway.
+Now, when the value column can't hold the badge (or there's no value
+column), the badge goes on its own line from the left edge. It's out of
+alignment there, but alignment can't hold at that width anyway. Keeping
+the badge in one piece matters more. The test now sweeps down to the
+narrowest width that fits the badge at all (the inner width equal to the
+badge's width).
