@@ -5,6 +5,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dklassen/swamp/store"
 )
@@ -21,17 +22,30 @@ type applicationNotesModel struct {
 }
 
 // newApplicationNotesModel returns a notes-edit screen for postingID,
-// seeded with notes and sized to width/height (the terminal geometry at
-// construction time -- there's no live resize handling for this screen,
-// matching the pre-extraction behavior).
+// seeded with notes and sized to width and height, the rows App leaves
+// under its status/error banner (App.screenRows). App refits the height
+// with setHeight whenever that changes; the width is fixed at
+// construction.
 func newApplicationNotesModel(s *store.Store, postingID int64, notes string, width, height int) applicationNotesModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
-	ta.SetHeight(height)
 	ta.SetValue(notes)
 	ta.Focus()
-	return applicationNotesModel{store: s, postingID: postingID, textarea: ta}
+	m := applicationNotesModel{store: s, postingID: postingID, textarea: ta}
+	m.setHeight(height)
+	return m
 }
+
+// setHeight fits the screen into height terminal rows, giving the text
+// area whatever the title and help line, measured as rendered, leave
+// (issue #138).
+func (m *applicationNotesModel) setHeight(height int) {
+	m.textarea.SetHeight(max(height-lipgloss.Height(applicationNotesTitle())-lipgloss.Height(applicationNotesHelp()), 0))
+}
+
+func applicationNotesTitle() string { return titleStyle.Render("Edit application notes") }
+
+func applicationNotesHelp() string { return helpStyle.Render("ctrl+s: save  esc: cancel") }
 
 // cancelApplicationNotesMsg signals that App should switch back to the
 // posting-detail screen without saving.
@@ -51,8 +65,8 @@ func (m *applicationNotesModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 
 func (m *applicationNotesModel) View() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Edit application notes") + "\n")
+	b.WriteString(applicationNotesTitle() + "\n")
 	b.WriteString(m.textarea.View() + "\n")
-	b.WriteString(helpStyle.Render("ctrl+s: save  esc: cancel"))
+	b.WriteString(applicationNotesHelp())
 	return b.String()
 }

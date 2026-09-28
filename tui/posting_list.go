@@ -30,6 +30,23 @@ const (
 // header separator, bottom border.
 const postingTableChromeLines = 4
 
+// tableRows is how many data rows a table screen can show in height
+// terminal rows: what's left once the table's own chrome and everything
+// else the screen draws around it (title, help, notices, ...) have taken
+// theirs. Each of around is measured as rendered, margins and all, so a
+// screen can't outgrow the terminal by drawing a line it forgot to count
+// (issue #138). An empty string is something the screen isn't drawing
+// this time, so it takes no rows.
+func tableRows(height int, around ...string) int {
+	rows := height - postingTableChromeLines
+	for _, s := range around {
+		if s != "" {
+			rows -= lipgloss.Height(s)
+		}
+	}
+	return max(rows, 0)
+}
+
 // truncateCol shortens s to at most max columns wide, replacing the tail
 // with an ellipsis when it doesn't fit. Width-aware (not byte-aware) so
 // multi-byte runes truncate correctly.
@@ -153,31 +170,35 @@ func (m *postingListModel) Update(msg tea.KeyMsg, snap postingListSnapshot) (tea
 	return nil, nil
 }
 
-func (m *postingListModel) View(snap postingListSnapshot, listRows int) string {
+// View renders the list in height terminal rows (App.screenRows). Every
+// line drawn above or below the table -- the description, filter summary
+// and archived notice included -- costs the table a row, so the list
+// still fits.
+func (m *postingListModel) View(snap postingListSnapshot, height int) string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render(fmt.Sprintf("Postings: %s", snap.companyName)) + "\n")
-	// The description gets one line, truncated to the table's width, and costs
-	// the table a row so the list still fits in listRows.
-	descriptionRows := 0
+	title := titleStyle.Render(fmt.Sprintf("Postings: %s", snap.companyName))
+	help := helpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back")
+	// The description gets one line, truncated to the table's width.
+	var description, summary, archived string
 	if snap.companyDescription != "" {
-		description := strings.Join(strings.Fields(snap.companyDescription), " ")
-		b.WriteString(dimStyle.Render(truncateCol(description, descriptionColWidth)) + "\n")
-		descriptionRows = 1
+		description = dimStyle.Render(truncateCol(strings.Join(strings.Fields(snap.companyDescription), " "), descriptionColWidth))
 	}
-	if summary := filterSummaryLine(snap.activeFilterDepartments, snap.activeFilterLocations); summary != "" {
-		b.WriteString(helpStyle.Render(summary) + "\n")
+	if s := filterSummaryLine(snap.activeFilterDepartments, snap.activeFilterLocations); s != "" {
+		summary = helpStyle.Render(s)
 	}
 	if snap.hideArchived {
-		b.WriteString(helpStyle.Render("Archived postings hidden (press 'A' to show)") + "\n")
+		archived = helpStyle.Render("Archived postings hidden (press 'A' to show)")
+	}
+	b.WriteString(title + "\n")
+	for _, line := range []string{description, summary, archived} {
+		if line != "" {
+			b.WriteString(line + "\n")
+		}
 	}
 	if len(snap.postings) == 0 {
 		b.WriteString("No postings yet. Press 'r' from the company list to refresh.\n")
 	} else {
-		rows := listRows - postingTableChromeLines - descriptionRows
-		if rows < 0 {
-			rows = 0
-		}
-		start, end := visibleWindow(m.cursor, len(snap.postings), rows)
+		start, end := visibleWindow(m.cursor, len(snap.postings), tableRows(height, title, description, summary, archived, help))
 		cursorRow := m.cursor - start
 		t := table.New().
 			Headers("", "Title", "Department", "Location", "Status").
@@ -200,7 +221,7 @@ func (m *postingListModel) View(snap postingListSnapshot, listRows int) string {
 		}
 		b.WriteString(t.Render() + "\n")
 	}
-	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back"))
+	b.WriteString(help)
 	return b.String()
 }
 

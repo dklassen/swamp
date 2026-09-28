@@ -133,11 +133,6 @@ type App struct {
 	activeFilterLocations   []string
 }
 
-// chromeRows is the number of lines View() spends on title/help text
-// around a list, reserved when computing how many rows are free for the
-// list itself.
-const chromeRows = 3
-
 // defaultExportDir is where the export screen points before anything has
 // been exported this session. Configured here rather than via the
 // environment or a flag: it's a starting point the user edits in the
@@ -145,14 +140,6 @@ const chromeRows = 3
 // whole configuration surface it needs. A leading "~" is expanded when
 // the export actually runs (see expandPath).
 const defaultExportDir = "~/Desktop"
-
-func (a *App) listRows() int {
-	rows := a.height - chromeRows
-	if rows < 0 {
-		rows = 0
-	}
-	return rows
-}
 
 func renderFilterOption(label string, checked, isCursor bool) string {
 	box := "[ ]"
@@ -909,10 +896,17 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := a.update(msg)
 	// The banner above the screen can appear, change, or clear on any
 	// message -- a sync finishing, a failed browser open -- including
-	// while posting detail is up, so refit it to the rows left under the
-	// banner every time rather than only when it's rebuilt.
-	if a.screen == screenPostingDetail {
+	// while a screen is up, so refit the screens that keep their size in
+	// state to the rows left under the banner every time, rather than only
+	// when they're built. The list screens are sized as they render, so
+	// they need nothing here.
+	switch a.screen {
+	case screenPostingDetail:
 		a.postingDetail.setHeight(a.screenRows())
+	case screenApplicationNotesEdit:
+		a.applicationNotes.setHeight(a.screenRows())
+	case screenDocumentReviewForm:
+		a.documentReviewForm.setHeight(a.screenRows())
 	}
 	return model, cmd
 }
@@ -1217,7 +1211,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.err = v.err
 			if v.err == nil {
 				a.enterFrom(screenDocumentReviewForm)
-				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.applicationID, v.documentType, v.content, a.width, a.listRows())
+				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.applicationID, v.documentType, v.content, a.width, a.screenRows())
 			}
 		case refreshApplicationDetailMsg:
 			return a, loadDocumentReviews(a.store, a.documents, a.applicationDetail.application.ID)
@@ -1290,7 +1284,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus)
 		case enterApplicationNotesMsg:
 			a.screen = screenApplicationNotesEdit
-			a.applicationNotes = newApplicationNotesModel(a.store, v.postingID, v.currentNotes, a.width, a.listRows())
+			a.applicationNotes = newApplicationNotesModel(a.store, v.postingID, v.currentNotes, a.width, a.screenRows())
 		case enterDocumentReviewSelectMsg:
 			a.enterFrom(screenDocumentReviewSelect)
 			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, v.applicationID)
@@ -1325,7 +1319,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.err = v.err
 			if v.err == nil {
 				a.screen = screenDocumentReviewForm
-				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.applicationID, v.documentType, v.content, a.width, a.listRows())
+				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.applicationID, v.documentType, v.content, a.width, a.screenRows())
 			}
 		}
 		return a, cmd
@@ -1400,11 +1394,11 @@ func (a *App) View() string {
 
 	switch a.screen {
 	case screenActiveApplications:
-		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.listRows()))
+		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.screenRows()))
 	case screenApplicationDetail:
 		b.WriteString(a.applicationDetail.View())
 	case screenCompanyList:
-		b.WriteString(a.companyList.View(a.companies, a.companyOpenPostings, a.width, a.listRows()))
+		b.WriteString(a.companyList.View(a.companies, a.companyOpenPostings, a.width, a.screenRows()))
 	case screenCompanyForm:
 		b.WriteString(a.companyForm.View())
 	case screenCompanyEdit:
@@ -1419,7 +1413,7 @@ func (a *App) View() string {
 			activeFilterDepartments: a.activeFilterDepartments,
 			activeFilterLocations:   a.activeFilterLocations,
 		}
-		b.WriteString(a.postingList.View(snap, a.listRows()))
+		b.WriteString(a.postingList.View(snap, a.screenRows()))
 	case screenPostingDetail:
 		b.WriteString(a.postingDetail.View())
 	case screenApplicationStatusSelect:
@@ -1433,7 +1427,7 @@ func (a *App) View() string {
 	case screenDocumentReviewForm:
 		b.WriteString(a.documentReviewForm.View())
 	case screenFilterSelect:
-		b.WriteString(a.filterSelect.View(a.listRows()))
+		b.WriteString(a.filterSelect.View(a.screenRows()))
 	}
 
 	return b.String()
