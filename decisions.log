@@ -5689,3 +5689,46 @@ Decisions:
     from the user's point of view (22:30 Eastern is 02:30 UTC the next
     day). Convert to local time for display, or store a date-only
     value, when that screen is built.
+
+## 2026-09-28 -- Board fetches time out after sync.Config.FetchTimeout (#142)
+
+The ashby, greenhouse and lever clients use http.DefaultClient, which
+has no timeout, so a board that accepted the request but never answered
+stalled whatever was fetching for ever. That's a blocker for scheduled
+sync (RFC 0001, P2): nobody is watching to notice. The only existing
+bound was the TUI add-company form's own 15s context (#36).
+
+Decisions:
+- Bounded in sync, not on the HTTP client. Syncer makes every board
+  fetch in the app (sync, the TUI and MCP add-company checks, import),
+  and now all of them go through one helper that runs FetchPostings
+  under context.WithTimeout. Alternative considered: an http.Client
+  with Timeout passed to each client via WithHTTPClient. That's the
+  conventional spot, but it's only enforced where someone remembers to
+  pass it, and it would need a live server to test. The context
+  version is enforced whichever client is used, and is tested with a
+  fake fetcher that blocks until cancelled. It relies on fetchers
+  honoring ctx; all three clients build requests with it
+  (http.NewRequestWithContext).
+- Configurable, following the user's direction for settings: FetchTimeout
+  in a new sync.Config, passed to sync.New like store.Open's config,
+  ready for the config file (#139). sync.New's signature changed. The
+  ~30 callers, nearly all tests, were rewritten with gofmt -r to pass
+  sync.DefaultConfig().
+- Default 30s. Timed across all 41 real boards on 2026-09-28: normally
+  under 0.7s each, and the worst seen was 4.7s (Fullscript, cold first
+  request). 30s is about 6x that, so a slow network won't trip it, and
+  a hung board costs half a minute instead of the whole run.
+- A timeout is an ordinary per-company error: SyncAll records it and
+  moves on, like any other fetch error.
+- The TUI form keeps its tighter 15s boardCheckTimeout, because someone
+  is sitting at the form waiting; its comment no longer claims the
+  clients have no timeout.
+- Verified with the real clients, not only fakes. The real Ashby client
+  against a local server that never sends headers, and one that sends
+  headers and part of the body and then stalls, with FetchTimeout 2s:
+  both failed with "context deadline exceeded" after 2s, so cancelling
+  mid-body works. A real GitLab board in the same SyncAll still saved
+  its 198 postings. A full `swamp fetch` against all real boards with
+  the 30s default: 40/41 synced (Outschool's board is gone, 404), and
+  nothing timed out.
