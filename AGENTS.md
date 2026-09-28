@@ -28,6 +28,7 @@ When asked to work through a labeled group of issues:
 ## Go style
 
 - Prefer a plain type (`string` empty, `time.Time` zero) over a pointer to represent "this value may be absent" when nothing in the codebase actually needs to distinguish "never set" from "set to the zero value" -- verify every call site treats them the same before making the call, don't assume it. A pointer only earns its keep when that distinction is genuinely used somewhere; otherwise it's cost (nil checks, `derefOr`-style helpers at every read site) with no corresponding benefit. See `decisions.log`, #67, for a worked example.
+- Every timestamp column stores UTC. In SQL, set times with `CURRENT_TIMESTAMP` (always UTC). From Go, bind a `time.Time` as a query parameter and let the connection from `store.Open` convert it (`store.Config.Timezone`, `"UTC"` by default). Never format a time into a string yourself, and never open the database without `store.Open` in code that writes. A new column or query that writes times some other way needs a migration for existing rows too. Convert to local time only for display. See `decisions.log`, #140.
 
 ## Feature branch workflow
 

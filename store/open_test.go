@@ -94,3 +94,51 @@ func TestOpen_ConfiguresConnectionForConcurrentWriters(t *testing.T) {
 		})
 	}
 }
+
+// TestOpen_WritesTimesInTheConfiguredFormat checks Open writes a
+// time.Time in the format cfg.TimeFormat names. The default must keep the
+// numeric offset: the driver's own default, time.Time.String(), can't be
+// read back for a zone Go left unnamed -- see issue #140.
+func TestOpen_WritesTimesInTheConfiguredFormat(t *testing.T) {
+	t.Parallel()
+
+	written := time.Date(2026, 8, 24, 13, 15, 0, 0, time.FixedZone("", -4*60*60))
+	tests := []struct {
+		name string
+		cfg  Config
+		want string
+	}{
+		{name: "default, converted to UTC", cfg: DefaultConfig(), want: "2026-08-24 17:15:00+00:00"},
+		{name: "sqlite format, no timezone", cfg: Config{BusyTimeout: time.Second, TimeFormat: "sqlite"}, want: "2026-08-24 13:15:00-04:00"},
+		{name: "datetime", cfg: Config{BusyTimeout: time.Second, TimeFormat: "datetime"}, want: "2026-08-24 13:15:00"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			sqlDB, err := Open(t.TempDir()+"/test.db", tt.cfg)
+			if err != nil {
+				t.Fatalf("Open: %v", err)
+			}
+			t.Cleanup(func() {
+				if err := sqlDB.Close(); err != nil {
+					t.Errorf("close db: %v", err)
+				}
+			})
+			if _, err := sqlDB.Exec("CREATE TABLE t (v TIMESTAMP)"); err != nil {
+				t.Fatalf("create table: %v", err)
+			}
+			if _, err := sqlDB.Exec("INSERT INTO t (v) VALUES (?)", written); err != nil {
+				t.Fatalf("insert: %v", err)
+			}
+
+			var got string
+			if err := sqlDB.QueryRow("SELECT CAST(v AS TEXT) FROM t").Scan(&got); err != nil {
+				t.Fatalf("select: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("stored %q, want %q", got, tt.want)
+			}
+		})
+	}
+}

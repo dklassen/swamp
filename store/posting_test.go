@@ -41,6 +41,54 @@ func TestUpsertPosting_NewPosting_ThenGet_ReturnsSamePosting(t *testing.T) {
 	}
 }
 
+// TestUpsertPosting_PublishedAt_RoundTripsInAnyZone checks a posting saves
+// and reads back the same PublishedAt instant whatever zone it was parsed
+// into. Go only names a parsed offset's zone (EDT) when it matches the
+// machine's local timezone; otherwise the zone is unnamed, as it is for
+// Greenhouse's "-04:00" on a UTC machine. Stored as time.Time.String(),
+// that became "-0400 -0400", which the driver can't read back -- see
+// issue #140.
+func TestUpsertPosting_PublishedAt_RoundTripsInAnyZone(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		loc  *time.Location
+	}{
+		{name: "UTC", loc: time.UTC},
+		{name: "named zone", loc: time.FixedZone("EDT", -4*60*60)},
+		{name: "unnamed negative offset", loc: time.FixedZone("", -4*60*60)},
+		{name: "unnamed positive offset", loc: time.FixedZone("", 5*60*60+30*60)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := newTestStore(t)
+			ctx := context.Background()
+			acme := mustCreateCompany(t, s, "Acme", "greenhouse", "acme")
+			want := time.Date(2026, 8, 24, 13, 15, 0, 0, tt.loc)
+
+			created, err := s.UpsertPosting(ctx, CreatePostingParams{
+				CompanyID:      acme.ID,
+				Source:         "greenhouse",
+				SourceID:       "job-1",
+				IngestedFields: IngestedFields{Title: "Engineer", PublishedAt: OptionalTime{Time: want}},
+			})
+			if err != nil {
+				t.Fatalf("UpsertPosting: %v", err)
+			}
+			got, err := s.GetPosting(ctx, created.ID)
+			if err != nil {
+				t.Fatalf("GetPosting: %v", err)
+			}
+			if !got.PublishedAt.Equal(want) {
+				t.Errorf("PublishedAt = %v, want the same instant as %v", got.PublishedAt, want)
+			}
+		})
+	}
+}
+
 func TestUpsertPosting_NewPosting_AutoCreatesMarkupRow(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

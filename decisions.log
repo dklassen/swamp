@@ -5607,3 +5607,85 @@ Decisions:
   `VACUUM INTO`); copying swamp.db alone can miss committed writes that
   haven't been moved into the main file yet. The -wal/-shm files are
   gitignored.
+
+## 2026-09-28 -- Store times with a numeric offset, not time.Time.String() (#140)
+
+Saving a posting failed with "Scan error on column index 14, name
+published_at: unsupported Scan, storing driver.Value type string into
+type *time.Time". In a UTC container, every save of a Greenhouse
+posting failed: Instacart 123/123, Mattermost 14/14, GitLab 198/198.
+
+Cause: modernc.org/sqlite writes a time.Time as t.String() by default,
+kept for backward compatibility (conn.go:219-228 in v1.56.0). String()
+names the zone only when Go's parser matched the offset to the
+machine's local timezone. On the Mac, in Eastern time, a Greenhouse
+"-04:00" became "-0400 EDT", which reads back fine. Anywhere else it
+became "-0400 -0400". On read, the driver treats that repeated "-0400"
+as a zone offset of 400 hours and rejects it. Ashby's "+0000 +0000"
+only worked because it's 0 hours. Whether a posting could be saved
+depended on the machine's timezone, the board's offset and daylight
+saving.
+
+Decisions:
+- `_time_format=sqlite` in store.Open, so times are written as
+  "2006-01-02 15:04:05.999999999-07:00": a numeric offset, and the
+  driver's first read format. It's `store.Config.TimeFormat`, set to
+  "sqlite" by DefaultConfig, at the user's call: time format belongs
+  with the other connection settings in Config, ready for the config
+  file in #139. That's unlike WAL and immediate transactions, which
+  stay constants (#137). Tradeoff: a Config built without
+  DefaultConfig has an empty TimeFormat, which falls back to the
+  driver's String() default and brings the bug back. The field's doc
+  comment says so; the driver rejects any unknown value when it
+  connects.
+- Times are also stored in UTC: `store.Config.Timezone`, set to "UTC"
+  by DefaultConfig and passed as the driver's _timezone. The user
+  asked whether every time should be saved as UTC. Yes, because
+  SQLite compares stored times as text, and with mixed offsets text
+  order isn't time order: "13:15:00-04:00" (17:15 UTC) sorts before
+  "15:00:00+00:00". Measured on the real database: 176 of 2,643
+  published_at values were out of time order when sorted as text.
+  UTC also matches SQL's CURRENT_TIMESTAMP. It costs each time's
+  original offset, which nothing used, and the board's value stays in
+  raw_payload. Anything shown to the user converts to local time, as
+  the TUI already does for "Last fetched".
+- Both are set on the connection rather than by converting PublishedAt
+  in store code, so they cover every time written from Go, including
+  interview_stages.stage_date once something writes it. Only those two
+  columns are written from Go; every other timestamp is SQL
+  CURRENT_TIMESTAMP.
+- Migration 00012 rewrites existing published_at values into the same
+  UTC form, at the user's call, so SQL sorts are right from day one
+  rather than only for new rows. It's written in SQL, not as a Go
+  migration: goose v3.27.3's CLI, which `task migrate:*` uses, refuses
+  to run Go migrations ("must be registered and built into a custom
+  binary"). SQL can do it reliably because String() always puts the
+  numeric offset right after the time. The migration rebuilds it as
+  ISO (-0400 -> -04:00), lets strftime convert to UTC, and copies the
+  fraction across unchanged, keeping its precision. It only touches
+  values in the old shape. Down is a no-op: the original offsets are
+  gone, and the converted values are the same instants.
+  - Checked on a copy of the real database: all 2,643 values kept
+    their instant, and after a full sync, 0 of 2,652 were out of order
+    when sorted as text.
+  - The earlier test that kept the old format readable was removed:
+    migrations run before swamp reads anything, so no old-format rows
+    remain.
+- store's newTestStore now uses store.Open, so store tests run with the
+  same connection settings as swamp. The other packages' test helpers
+  still use a bare sql.Open; they don't write times from unnamed zones
+  today, and switching them is left to a follow-up.
+- The user set the rule that every timestamp column stores UTC. Checked
+  on a copy of the real database after 00012 and a full sync: all 24
+  timestamp columns hold UTC. 22 are set by CURRENT_TIMESTAMP (UTC, no
+  offset), and the two written from Go (published_at, stage_date) go
+  through store.Open's _timezone=UTC; stage_date has no rows yet. The
+  rule is now in AGENTS.md so new columns and queries keep to it.
+  - Two formats remain: "2026-09-28 17:15:00" from CURRENT_TIMESTAMP and
+    "...+00:00" from Go. Both are UTC, each column is written only one
+    way, and the driver reads both as UTC, so there's nothing to unify.
+  - Caveat for when interview stages get a UI: stage_date is a DATE
+    column. A time stored in UTC can fall on the next or previous day
+    from the user's point of view (22:30 Eastern is 02:30 UTC the next
+    day). Convert to local time for display, or store a date-only
+    value, when that screen is built.
