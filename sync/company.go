@@ -121,7 +121,7 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (Result, erro
 		return result, fmt.Errorf("sync: unsupported source %q", company.Source)
 	}
 
-	fetched, err := fetcher.FetchPostings(ctx, company.SourceRef)
+	fetched, err := s.fetch(ctx, fetcher, company.SourceRef)
 	if err != nil {
 		return result, fmt.Errorf("sync: fetch postings: %w", err)
 	}
@@ -224,7 +224,7 @@ func (s *Syncer) CreateCompany(ctx context.Context, name, source, sourceRef stri
 	if !ok {
 		return store.Company{}, fmt.Errorf("sync: unsupported source %q", source)
 	}
-	if _, err := fetcher.FetchPostings(ctx, sourceRef); err != nil {
+	if _, err := s.fetch(ctx, fetcher, sourceRef); err != nil {
 		return store.Company{}, fmt.Errorf("sync: %s/%s does not resolve to a real board: %w", source, sourceRef, err)
 	}
 	company, err := s.store.CreateCompany(ctx, name, source, sourceRef)
@@ -372,7 +372,7 @@ func (s *Syncer) AddCompany(ctx context.Context, name, source, sourceRef, descri
 	if !ok {
 		return AddCompanyResult{}, fmt.Errorf("sync: unsupported source %q", source)
 	}
-	postings, err := fetcher.FetchPostings(ctx, sourceRef)
+	postings, err := s.fetch(ctx, fetcher, sourceRef)
 	if err != nil {
 		return AddCompanyResult{}, fmt.Errorf("sync: %s/%s does not resolve to a real board: %w", source, sourceRef, err)
 	}

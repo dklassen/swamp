@@ -259,7 +259,7 @@ func TestCompanyFormModel_Enter_BoardRejectsSourceRef_NoCompanyCreated(t *testin
 	s := newTestStore(t)
 	syncer := sync.New(s, map[string]sync.PostingFetcher{
 		"ashby": &fakeFetcher{errBoards: map[string]error{"acmee": errors.New("404 not found")}},
-	})
+	}, sync.DefaultConfig())
 	m := newCompanyFormModel(syncer)
 	m.inputs[formFieldName].SetValue("Acme")
 	m.inputs[formFieldSourceRef].SetValue("acmee")
@@ -292,7 +292,7 @@ func newFormTestSyncer(s *store.Store) *sync.Syncer {
 	for _, src := range companySources {
 		fetchers[src] = &fakeFetcher{}
 	}
-	return sync.New(s, fetchers)
+	return sync.New(s, fetchers, sync.DefaultConfig())
 }
 
 func TestCompanyFormModel_WhileBoardCheckInFlight(t *testing.T) {

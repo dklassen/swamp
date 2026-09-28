@@ -63,7 +63,7 @@ func newTestServer(t *testing.T) (*mcp.Server, *store.Store, *documents.Store) {
 	fetcher := fakeFetcher{boards: map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}, {SourceID: "job-2", Title: "Designer"}},
 	}}
-	syncer := swampsync.New(s, map[string]swampsync.PostingFetcher{"ashby": fetcher})
+	syncer := swampsync.New(s, map[string]swampsync.PostingFetcher{"ashby": fetcher}, swampsync.DefaultConfig())
 	return New(stage.New(s, d), d, syncer), s, d
 }
 

@@ -170,7 +170,7 @@ func TestApp_SubmitForm_BoardRejectsSourceRef_StaysOnFormToRetry(t *testing.T) {
 	s := newTestStore(t)
 	syncer := sync.New(s, map[string]sync.PostingFetcher{
 		"ashby": &fakeFetcher{errBoards: map[string]error{"acmee": errors.New("404 not found")}},
-	})
+	}, sync.DefaultConfig())
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, runeKey('c'))
 	app, _ = sendKey(app, runeKey('a'))

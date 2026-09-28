@@ -24,7 +24,7 @@ func TestSyncAll_OneCompanyFailsFetch_OthersStillProcessed(t *testing.T) {
 		},
 	}
 
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 	results, err := syncer.SyncAll(ctx)
 	if err != nil {
 		t.Fatalf("SyncAll: %v", err)

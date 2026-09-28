@@ -89,5 +89,5 @@ func (f *fakeFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jo
 }
 
 func newTestSyncer(s *store.Store, postings map[string][]jobboard.Posting) *sync.Syncer {
-	return sync.New(s, map[string]sync.PostingFetcher{"ashby": &fakeFetcher{postings: postings}})
+	return sync.New(s, map[string]sync.PostingFetcher{"ashby": &fakeFetcher{postings: postings}}, sync.DefaultConfig())
 }

@@ -19,7 +19,7 @@ func TestSyncCompany_NewPostingNoFilters_Created(t *testing.T) {
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
 
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 	result, err := syncer.SyncCompany(ctx, company.ID)
 	if err != nil {
 		t.Fatalf("SyncCompany: %v", err)
@@ -53,7 +53,7 @@ func TestSyncCompany_PostingDoesNotMatchFilters_NotCreated(t *testing.T) {
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
 
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 	result, err := syncer.SyncCompany(ctx, company.ID)
 	if err != nil {
 		t.Fatalf("SyncCompany: %v", err)
@@ -83,7 +83,7 @@ func TestSyncCompany_ExistingPostingContentChanged_UpdatedWithHistory(t *testing
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
@@ -135,7 +135,7 @@ func TestSyncCompany_ExistingPostingUnchanged_NoUpdateNoHistory(t *testing.T) {
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
@@ -173,7 +173,7 @@ func TestSyncCompany_PostingDisappearsFromFetch_ClosedWithHistory(t *testing.T) 
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
@@ -216,7 +216,7 @@ func TestSyncCompany_ClosedPostingReappears_ReopenedWithHistory(t *testing.T) {
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := samplePosting("job-1", "Engineer", "Engineering", "Remote")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": {posting}}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
@@ -258,7 +258,7 @@ func TestSyncCompany_UnsupportedSource_ReturnsError(t *testing.T) {
 
 	company := mustCreateCompany(t, s, "Acme", "lever", "acme")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	_, err := syncer.SyncCompany(ctx, company.ID)
 	if err == nil {
@@ -274,7 +274,7 @@ func TestSyncCompany_FetchedPostingHasWhitespace_SavedTrimmed(t *testing.T) {
 	padded := samplePosting("job-1", " Engineer ", " Engineering", "Dublin, Ireland ")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": {padded}}}
 
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("SyncCompany: %v", err)
 	}
@@ -312,7 +312,7 @@ func TestSyncCompany_FilterValueMatchesTrimmedLocation_PostingCreated(t *testing
 	padded := samplePosting("job-1", "Engineer", "Engineering", "Canada ")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": {padded}}}
 
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 	result, err := syncer.SyncCompany(ctx, company.ID)
 	if err != nil {
 		t.Fatalf("SyncCompany: %v", err)
@@ -336,7 +336,7 @@ func TestApplyCompanyFilters_ReplacesFiltersThenSyncs(t *testing.T) {
 			samplePosting("job-2", "Salesperson", "Sales", "Remote"),
 		},
 	}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	result, err := syncer.ApplyCompanyFilters(ctx, company.ID, []string{"Engineering"}, nil)
 	if err != nil {
@@ -367,7 +367,7 @@ func TestApplyCompanyFilters_NoDepartmentsOrLocations_ClearsFilters(t *testing.T
 		t.Fatalf("CreateCompanyFilter: %v", err)
 	}
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	if _, err := syncer.ApplyCompanyFilters(ctx, company.ID, nil, nil); err != nil {
 		t.Fatalf("ApplyCompanyFilters: %v", err)
@@ -394,7 +394,7 @@ func closeOnlyPosting(t *testing.T, s *store.Store, applyBeforeClose func(postin
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
@@ -558,7 +558,7 @@ func TestSyncCompany_RecordsLastFetchedAtOnlyOnSuccess(t *testing.T) {
 				postings: map[string][]jobboard.Posting{"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")}},
 				err:      tc.fetchErr,
 			}
-			syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+			syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 			before := time.Now().Add(-2 * time.Second)
 			_, err := syncer.SyncCompany(ctx, company.ID)

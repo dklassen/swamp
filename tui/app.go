@@ -461,8 +461,9 @@ type companyCreatedMsg struct {
 
 // boardCheckTimeout bounds createCompany's live board check, so an
 // unreachable API fails the add (closed) instead of leaving the form
-// waiting indefinitely -- the source clients use http.Client's default,
-// which has no timeout of its own (see decisions.log, #36).
+// waiting (see decisions.log, #36). Syncer already gives up on any fetch
+// after sync.Config.FetchTimeout (#142); this is tighter because someone
+// is sitting at the form waiting for it.
 const boardCheckTimeout = 15 * time.Second
 
 // createCompany saves a company only once its source ref resolves to a
