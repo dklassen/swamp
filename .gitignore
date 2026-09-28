@@ -1,6 +1,10 @@
 /bin/
 /db/swamp.db
+/db/swamp.db-wal
+/db/swamp.db-shm
 /swamp.db
+/swamp.db-wal
+/swamp.db-shm
 /assets/
 .direnv/
 /PROFILE_REFERENCE.md
