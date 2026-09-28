@@ -2,12 +2,9 @@ package store
 
 import (
 	"context"
-	"database/sql"
 	"testing"
 
 	"github.com/pressly/goose/v3"
-
-	_ "modernc.org/sqlite"
 
 	"github.com/dklassen/swamp/db/migrations"
 )
@@ -15,7 +12,9 @@ import (
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
 
-	sqlDB, err := sql.Open("sqlite", "file:"+t.TempDir()+"/test.db")
+	// Open, not sql.Open, so tests run with the same connection settings
+	// as swamp itself.
+	sqlDB, err := Open(t.TempDir()+"/test.db", DefaultConfig())
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
