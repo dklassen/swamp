@@ -18,7 +18,7 @@ func TestImportCompanies_ValidEntry_CreatesCompany(t *testing.T) {
 			"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 		},
 	}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	entries := []seed.Entry{
 		{Name: "Acme", Source: "ashby", SourceRef: "acme"},
@@ -48,7 +48,7 @@ func TestImportCompanies_UnsupportedSource_NoCompanyCreated(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	syncer := New(s, map[string]PostingFetcher{"ashby": &perBoardFetcher{}})
+	syncer := New(s, map[string]PostingFetcher{"ashby": &perBoardFetcher{}}, DefaultConfig())
 
 	entries := []seed.Entry{
 		{Name: "Acme", Source: "workday", SourceRef: "acme"},
@@ -80,7 +80,7 @@ func TestImportCompanies_InvalidSourceRef_NoCompanyCreated(t *testing.T) {
 			"bogus": errors.New("404 job not found"),
 		},
 	}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	entries := []seed.Entry{
 		{Name: "Acme", Source: "ashby", SourceRef: "bogus"},
@@ -115,7 +115,7 @@ func TestImportCompanies_MixedBatch_GoodEntryStillImportedAfterBadOne(t *testing
 			"bogus": errors.New("404 job not found"),
 		},
 	}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	entries := []seed.Entry{
 		{Name: "Bogus Co", Source: "ashby", SourceRef: "bogus"},
@@ -151,7 +151,7 @@ func TestImportCompanies_ReimportExistingCompany_DoesNotDuplicate(t *testing.T) 
 			"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 		},
 	}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	entries := []seed.Entry{
 		{Name: "Acme", Source: "ashby", SourceRef: "acme"},
@@ -201,7 +201,7 @@ func TestImportCompanies_Description_FillsOnlyMissing(t *testing.T) {
 				}
 			}
 			fetcher := &perBoardFetcher{postings: map[string][]jobboard.Posting{"acme": nil}}
-			syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+			syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 			results := syncer.ImportCompanies(ctx, []seed.Entry{
 				{Name: "Acme", Source: "ashby", SourceRef: "acme", Description: "from seed"},

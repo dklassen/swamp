@@ -111,7 +111,7 @@ func newSyncer(s *store.Store) *sync.Syncer {
 		"ashby":      ashby.NewClient(),
 		"greenhouse": greenhouse.NewClient(),
 		"lever":      lever.NewClient(),
-	})
+	}, sync.DefaultConfig())
 }
 
 // runImport bulk-creates companies from a YAML seed file (see the seed

@@ -7,6 +7,7 @@ package sync
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -44,15 +45,40 @@ type Result struct {
 	Err                error
 }
 
+// Config holds Syncer's tunable settings.
+type Config struct {
+	// FetchTimeout is how long one board fetch may take before it's
+	// abandoned and reported as that company's error.
+	FetchTimeout time.Duration
+}
+
+// DefaultConfig is the Config swamp runs with unless told otherwise.
+func DefaultConfig() Config {
+	return Config{FetchTimeout: 30 * time.Second}
+}
+
 // Syncer routes each company to the PostingFetcher for its source
 // (company.Source, e.g. "ashby" or "greenhouse") -- see SyncCompany.
 type Syncer struct {
 	store    *store.Store
 	fetchers map[string]PostingFetcher
+	cfg      Config
 }
 
-func New(s *store.Store, fetchers map[string]PostingFetcher) *Syncer {
-	return &Syncer{store: s, fetchers: fetchers}
+func New(s *store.Store, fetchers map[string]PostingFetcher, cfg Config) *Syncer {
+	return &Syncer{store: s, fetchers: fetchers, cfg: cfg}
+}
+
+// fetch is the one place Syncer calls a board: it gives up after
+// cfg.FetchTimeout, so a board that accepts the request but never answers
+// fails that company instead of stalling everything after it. The job
+// board clients use http.DefaultClient, which has no timeout of its own,
+// but they build requests with ctx, so the deadline cancels the request
+// -- including a body still arriving (issue #142).
+func (s *Syncer) fetch(ctx context.Context, fetcher PostingFetcher, boardSlug string) ([]jobboard.Posting, error) {
+	ctx, cancel := context.WithTimeout(ctx, s.cfg.FetchTimeout)
+	defer cancel()
+	return fetcher.FetchPostings(ctx, boardSlug)
 }
 
 // SyncAll refreshes every active company. A single company's failure

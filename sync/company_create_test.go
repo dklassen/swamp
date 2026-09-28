@@ -32,7 +32,7 @@ func TestCreateCompany(t *testing.T) {
 			t.Parallel()
 			s := newTestStore(t)
 			ctx := context.Background()
-			syncer := New(s, map[string]PostingFetcher{"ashby": fetcher})
+			syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 			company, err := syncer.CreateCompany(ctx, "Acme", tt.source, tt.sourceRef)
 			if (err != nil) != tt.wantErr {
