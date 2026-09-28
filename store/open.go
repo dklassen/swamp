@@ -43,7 +43,7 @@ type Config struct {
 // comparing or sorting times as text in SQL agrees with time order -- with
 // mixed offsets, "13:15:00-04:00" (17:15 UTC) sorts before
 // "15:00:00+00:00". It also matches SQL's CURRENT_TIMESTAMP, which is
-// UTC.
+// UTC. Migration 00012 rewrote rows stored before this in the same form.
 func DefaultConfig() Config {
 	return Config{BusyTimeout: 5 * time.Second, TimeFormat: "sqlite", Timezone: "UTC"}
 }

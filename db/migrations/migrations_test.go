@@ -773,3 +773,70 @@ func TestCompanyLastFetchedAt_ExistingCompaniesStartNeverFetched(t *testing.T) {
 		t.Fatalf("companies.last_fetched_at = %v, want NULL", lastFetched.Time)
 	}
 }
+
+// TestPublishedAtUTC_ConvertsStoredTimesToUTC verifies the 00012 migration
+// rewrites published_at values stored in the driver's old
+// time.Time.String() format ("2006-01-02 15:04:05.999999999 -0700 MST")
+// as the same instant in UTC, in the format store.Open now writes
+// ("2006-01-02 15:04:05.999999999-07:00" in UTC). Inputs cover every
+// shape found in the real database, plus crossing midnight and a
+// positive, non-hour offset. NULL and values already in the new format
+// are left alone (see issue #140).
+func TestPublishedAtUTC_ConvertsStoredTimesToUTC(t *testing.T) {
+	sqlDB := migrateTo(t, 11)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'greenhouse', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+
+	tests := []struct {
+		name   string
+		stored sql.NullString
+		want   sql.NullString
+	}{
+		{name: "named zone", stored: validString("2026-08-17 05:18:42 -0400 EDT"), want: validString("2026-08-17 09:18:42+00:00")},
+		{name: "unnamed UTC, milliseconds", stored: validString("2026-02-14 17:27:16.004 +0000 +0000"), want: validString("2026-02-14 17:27:16.004+00:00")},
+		{name: "unnamed UTC, two fraction digits", stored: validString("2026-05-12 16:12:44.74 +0000 +0000"), want: validString("2026-05-12 16:12:44.74+00:00")},
+		{name: "named UTC", stored: validString("2026-08-19 18:57:50.92 +0000 UTC"), want: validString("2026-08-19 18:57:50.92+00:00")},
+		{name: "crosses midnight", stored: validString("2026-08-24 22:30:00 -0400 -0400"), want: validString("2026-08-25 02:30:00+00:00")},
+		{name: "positive half-hour offset", stored: validString("2026-08-24 01:00:00.5 +0530 +0530"), want: validString("2026-08-23 19:30:00.5+00:00")},
+		{name: "already in the new format", stored: validString("2026-08-24 17:15:00+00:00"), want: validString("2026-08-24 17:15:00+00:00")},
+		{name: "NULL", stored: sql.NullString{}, want: sql.NullString{}},
+	}
+	for i, tt := range tests {
+		if _, err := sqlDB.Exec(
+			`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload, published_at)
+			 VALUES (?, 1, 'greenhouse', ?, 'Engineer', '{}', ?)`,
+			i+1, fmt.Sprintf("job-%d", i+1), tt.stored,
+		); err != nil {
+			t.Fatalf("%s: insert posting: %v", tt.name, err)
+		}
+	}
+
+	if err := goose.UpTo(sqlDB, ".", 12); err != nil {
+		t.Fatalf("migrate to version 12: %v", err)
+	}
+	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+		t.Fatalf("GetDBVersion: %v", err)
+	} else if gotVersion != 12 {
+		t.Fatalf("DB version after UpTo(12) = %d, want 12 (migration 00012 not found?)", gotVersion)
+	}
+
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var got sql.NullString
+			if err := sqlDB.QueryRow(`SELECT CAST(published_at AS TEXT) FROM postings WHERE id = ?`, i+1).Scan(&got); err != nil {
+				t.Fatalf("query posting: %v", err)
+			}
+			if got != tt.want {
+				t.Errorf("published_at = %+v, want %+v", got, tt.want)
+			}
+		})
+	}
+}
+
+func validString(s string) sql.NullString {
+	return sql.NullString{String: s, Valid: true}
+}

@@ -5638,16 +5638,39 @@ Decisions:
   driver's String() default and brings the bug back. The field's doc
   comment says so; the driver rejects any unknown value when it
   connects.
-- Fixed at the connection rather than by converting PublishedAt to UTC
-  before writing. That would also work, but only for that one field.
-  The connection setting covers every time written from Go, including
-  interview_stages.stage_date once something writes it.
-- No migration of existing rows. All 2,643 stored published_at values
-  read back fine in the old format, so old and new formats sit side by
-  side. Only published_at and stage_date are written from Go (every
-  other timestamp is SQL CURRENT_TIMESTAMP), and no query sorts or
-  compares them as text, so the mix is harmless. A test keeps the old
-  format readable.
+- Times are also stored in UTC: `store.Config.Timezone`, set to "UTC"
+  by DefaultConfig and passed as the driver's _timezone. The user
+  asked whether every time should be saved as UTC. Yes, because
+  SQLite compares stored times as text, and with mixed offsets text
+  order isn't time order: "13:15:00-04:00" (17:15 UTC) sorts before
+  "15:00:00+00:00". Measured on the real database: 176 of 2,643
+  published_at values were out of time order when sorted as text.
+  UTC also matches SQL's CURRENT_TIMESTAMP. It costs each time's
+  original offset, which nothing used, and the board's value stays in
+  raw_payload. Anything shown to the user converts to local time, as
+  the TUI already does for "Last fetched".
+- Both are set on the connection rather than by converting PublishedAt
+  in store code, so they cover every time written from Go, including
+  interview_stages.stage_date once something writes it. Only those two
+  columns are written from Go; every other timestamp is SQL
+  CURRENT_TIMESTAMP.
+- Migration 00012 rewrites existing published_at values into the same
+  UTC form, at the user's call, so SQL sorts are right from day one
+  rather than only for new rows. It's written in SQL, not as a Go
+  migration: goose v3.27.3's CLI, which `task migrate:*` uses, refuses
+  to run Go migrations ("must be registered and built into a custom
+  binary"). SQL can do it reliably because String() always puts the
+  numeric offset right after the time. The migration rebuilds it as
+  ISO (-0400 -> -04:00), lets strftime convert to UTC, and copies the
+  fraction across unchanged, keeping its precision. It only touches
+  values in the old shape. Down is a no-op: the original offsets are
+  gone, and the converted values are the same instants.
+  - Checked on a copy of the real database: all 2,643 values kept
+    their instant, and after a full sync, 0 of 2,652 were out of order
+    when sorted as text.
+  - The earlier test that kept the old format readable was removed:
+    migrations run before swamp reads anything, so no old-format rows
+    remain.
 - store's newTestStore now uses store.Open, so store tests run with the
   same connection settings as swamp. The other packages' test helpers
   still use a bare sql.Open; they don't write times from unnamed zones

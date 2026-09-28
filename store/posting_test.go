@@ -89,53 +89,6 @@ func TestUpsertPosting_PublishedAt_RoundTripsInAnyZone(t *testing.T) {
 	}
 }
 
-// TestGetPosting_PublishedAt_ReadsRowsStoredInTheOldFormat checks rows
-// written before issue #140's fix, in the driver's old time.Time.String()
-// format, still read back -- the fix changed only how times are written,
-// with no migration of existing rows. Values are the formats found in the
-// real database.
-func TestGetPosting_PublishedAt_ReadsRowsStoredInTheOldFormat(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		stored string
-		want   time.Time
-	}{
-		{stored: "2026-08-17 05:18:42 -0400 EDT", want: time.Date(2026, 8, 17, 9, 18, 42, 0, time.UTC)},
-		{stored: "2026-02-14 17:27:16.004 +0000 +0000", want: time.Date(2026, 2, 14, 17, 27, 16, 4000000, time.UTC)},
-		{stored: "2026-08-19 18:57:50.92 +0000 UTC", want: time.Date(2026, 8, 19, 18, 57, 50, 920000000, time.UTC)},
-	}
-	for _, tt := range tests {
-		t.Run(tt.stored, func(t *testing.T) {
-			t.Parallel()
-
-			s := newTestStore(t)
-			ctx := context.Background()
-			acme := mustCreateCompany(t, s, "Acme", "greenhouse", "acme")
-			created, err := s.UpsertPosting(ctx, CreatePostingParams{
-				CompanyID:      acme.ID,
-				Source:         "greenhouse",
-				SourceID:       "job-1",
-				IngestedFields: IngestedFields{Title: "Engineer"},
-			})
-			if err != nil {
-				t.Fatalf("UpsertPosting: %v", err)
-			}
-			if _, err := s.sqlDB.ExecContext(ctx, "UPDATE postings SET published_at = ? WHERE id = ?", tt.stored, created.ID); err != nil {
-				t.Fatalf("store old-format published_at: %v", err)
-			}
-
-			got, err := s.GetPosting(ctx, created.ID)
-			if err != nil {
-				t.Fatalf("GetPosting: %v", err)
-			}
-			if !got.PublishedAt.Equal(tt.want) {
-				t.Errorf("PublishedAt = %v, want %v", got.PublishedAt, tt.want)
-			}
-		})
-	}
-}
-
 func TestUpsertPosting_NewPosting_AutoCreatesMarkupRow(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
