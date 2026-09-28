@@ -5732,3 +5732,55 @@ Decisions:
   its 198 postings. A full `swamp fetch` against all real boards with
   the 30s default: 40/41 synced (Outschool's board is gone, 404), and
   nothing timed out.
+
+## 2026-09-28 -- Every screen measures what it draws, under the banner (#138)
+
+App.View() draws a status/error banner above every screen, but only
+posting detail (#135) left room for it. The list screens and editors
+were sized with listRows(): the terminal height minus chromeRows = 3.
+With a banner up, the renderer dropped the top rows, banner included.
+On the company list, a sync's result, or its error, never showed.
+Found while verifying #137.
+
+The new test (every such screen, through App.View(), at 24 rows) showed
+it was worse than the issue said: every screen was 1-3 rows too tall
+even with no banner, because chromeRows didn't match what they draw.
+Title and help are 4 rows with their margins, not 3. The posting list's
+archived notice (on by default) and filter summary are 2 rows each, and
+nothing counted them. Nothing counted the filter screen's section labels
+either. The editors gave their whole budget to the text area. So the top
+row was cut on main even without a banner.
+
+Decisions:
+- Same approach as posting detail, for the same reason: App passes each
+  screen screenRows() (the height under the banner), and each screen
+  subtracts what it actually draws, measured with lipgloss.Height from
+  the rendered strings. No shared chromeRows constant to drift out of
+  sync with the screens. listRows(), chromeRows and
+  companyInfoBoxHeight were deleted.
+- Table screens share tableRows(height, parts...): the table's own
+  border lines plus every non-empty part drawn around it. Adding a new
+  line to a screen and passing it there is the whole job; forgetting to
+  pass it is what the fit test catches.
+- The filter screen tries a window allowing for one section label, and
+  only if that window spans both sections does it make room for a
+  second. The alternative, always reserving two, would waste a row
+  whenever one section fills the screen.
+- The notes and review editors keep their size from when they open, so
+  App.Update now refits them after every message, as it does posting
+  detail. The list screens are sized as they render and need no refit.
+  A side effect: a window resize now refits the editors' height too;
+  their width is still fixed when they open.
+- Testing: the fit test is table-driven over every screen App sizes
+  (10 setups, including a posting list with a description and filters,
+  and a filter window spanning both sections), each with no banner, a
+  status and an error.
+  - The editors are opened with no banner up. Otherwise an editor built
+    under the tallest banner fits any later one without a refit, and
+    the test can't tell whether refitting works. Mutation checks
+    confirmed that removing either editor's refit, or not counting the
+    description/filter lines or the second filter label, fails it.
+  - Manual check in tmux at 100x24 on a copy of the real database: `r`
+    on the company list now shows the sync result at the top, and the
+    posting list, filter screen, info box and notes editor all fit
+    under it.
