@@ -5675,3 +5675,17 @@ Decisions:
   same connection settings as swamp. The other packages' test helpers
   still use a bare sql.Open; they don't write times from unnamed zones
   today, and switching them is left to a follow-up.
+- The user set the rule that every timestamp column stores UTC. Checked
+  on a copy of the real database after 00012 and a full sync: all 24
+  timestamp columns hold UTC. 22 are set by CURRENT_TIMESTAMP (UTC, no
+  offset), and the two written from Go (published_at, stage_date) go
+  through store.Open's _timezone=UTC; stage_date has no rows yet. The
+  rule is now in AGENTS.md so new columns and queries keep to it.
+  - Two formats remain: "2026-09-28 17:15:00" from CURRENT_TIMESTAMP and
+    "...+00:00" from Go. Both are UTC, each column is written only one
+    way, and the driver reads both as UTC, so there's nothing to unify.
+  - Caveat for when interview stages get a UI: stage_date is a DATE
+    column. A time stored in UTC can fall on the next or previous day
+    from the user's point of view (22:30 Eastern is 02:30 UTC the next
+    day). Convert to local time for display, or store a date-only
+    value, when that screen is built.
