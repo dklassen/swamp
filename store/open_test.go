@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"testing"
+	"time"
 )
 
 // TestOpen_TransactionsTakeTheWriteLockWhenTheyBegin checks a transaction
@@ -17,7 +18,7 @@ func TestOpen_TransactionsTakeTheWriteLockWhenTheyBegin(t *testing.T) {
 	t.Parallel()
 
 	path := t.TempDir() + "/test.db"
-	sqlDB, err := Open(path)
+	sqlDB, err := Open(path, DefaultConfig())
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -60,17 +61,20 @@ func TestOpen_ConfiguresConnectionForConcurrentWriters(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
+		name   string
+		cfg    Config
 		pragma string
 		want   string
 	}{
-		{pragma: "busy_timeout", want: "5000"},
-		{pragma: "journal_mode", want: "wal"},
+		{name: "default busy timeout", cfg: DefaultConfig(), pragma: "busy_timeout", want: "5000"},
+		{name: "configured busy timeout", cfg: Config{BusyTimeout: 250 * time.Millisecond}, pragma: "busy_timeout", want: "250"},
+		{name: "journal mode", cfg: DefaultConfig(), pragma: "journal_mode", want: "wal"},
 	}
 	for _, tt := range tests {
-		t.Run(tt.pragma, func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			sqlDB, err := Open(t.TempDir() + "/test.db")
+			sqlDB, err := Open(t.TempDir()+"/test.db", tt.cfg)
 			if err != nil {
 				t.Fatalf("Open: %v", err)
 			}
