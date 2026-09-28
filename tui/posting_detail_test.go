@@ -193,10 +193,10 @@ func TestPostingDetailModel_Resize_RebuildsViewportAtNewDimensions(t *testing.T)
 	if m.viewport.Width != 40 {
 		t.Fatalf("viewport width = %d, want 40", m.viewport.Width)
 	}
-	// The viewport itself is shorter than 10: it gives up whatever rows the
-	// title and help need beyond chromeRows (see newPostingDetailModel).
-	if lines := strings.Count(m.View(), "\n") + 1; lines > 10+chromeRows {
-		t.Fatalf("View() after resize is %d lines, want at most %d (the new terminal height)", lines, 10+chromeRows)
+	// The height is every row the screen gets, so the whole view -- title,
+	// viewport and help -- fits in it (see setHeight).
+	if lines := strings.Count(m.View(), "\n") + 1; lines > 10 {
+		t.Fatalf("View() after resize is %d lines, want at most 10 (the new height)", lines)
 	}
 	if !strings.Contains(m.View(), "Engineer") {
 		t.Fatalf("View() after resize = %q, want it to still contain the title", m.View())

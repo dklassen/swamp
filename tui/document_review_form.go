@@ -6,6 +6,7 @@ import (
 
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dklassen/swamp/store"
 )
@@ -27,19 +28,38 @@ type documentReviewFormModel struct {
 }
 
 // newDocumentReviewFormModel returns a review-form screen for
-// applicationID's documentType, sized to width/height.
+// applicationID's documentType, sized to width and height, the rows App
+// leaves under its status/error banner (App.screenRows). App refits the
+// height with setHeight whenever that changes; the width is fixed at
+// construction.
 func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentType store.DocumentType, content string, width, height int) documentReviewFormModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
-	ta.SetHeight(height)
 	ta.Focus()
-	return documentReviewFormModel{
+	m := documentReviewFormModel{
 		store:         s,
 		applicationID: applicationID,
 		documentType:  documentType,
 		content:       content,
 		textarea:      ta,
 	}
+	m.setHeight(height)
+	return m
+}
+
+// setHeight fits the screen into height terminal rows, giving the text
+// area whatever the title and help line, measured as rendered, leave
+// (issue #138).
+func (m *documentReviewFormModel) setHeight(height int) {
+	m.textarea.SetHeight(max(height-lipgloss.Height(m.title())-lipgloss.Height(documentReviewFormHelp()), 0))
+}
+
+func (m *documentReviewFormModel) title() string {
+	return titleStyle.Render("Review " + documentTypeLabel(m.documentType))
+}
+
+func documentReviewFormHelp() string {
+	return helpStyle.Render("ctrl+s: pass  ctrl+g: flag  esc: cancel")
 }
 
 // cancelDocumentReviewFormMsg signals that App should switch back to the
@@ -92,8 +112,8 @@ func documentTypeLabel(documentType store.DocumentType) string {
 
 func (m *documentReviewFormModel) View() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Review "+documentTypeLabel(m.documentType)) + "\n")
+	b.WriteString(m.title() + "\n")
 	b.WriteString(m.textarea.View() + "\n")
-	b.WriteString(helpStyle.Render("ctrl+s: pass  ctrl+g: flag  esc: cancel"))
+	b.WriteString(documentReviewFormHelp())
 	return b.String()
 }

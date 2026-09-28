@@ -94,9 +94,12 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 	return nil, nil
 }
 
-func (m *companyListModel) View(companies []store.Company, openPostings map[int64]int, width, listRows int) string {
+// View renders the list in height terminal rows (App.screenRows).
+func (m *companyListModel) View(companies []store.Company, openPostings map[int64]int, width, height int) string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Companies") + "\n")
+	title := titleStyle.Render("Companies")
+	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  i: info  a: add  e: edit  d: delete  r: refresh  esc/b: back  q: quit")
+	b.WriteString(title + "\n")
 	if len(companies) == 0 {
 		b.WriteString("No companies yet. Press 'a' to add one.\n")
 	}
@@ -105,15 +108,7 @@ func (m *companyListModel) View(companies []store.Company, openPostings map[int6
 		infoBox = companyInfoBox(companies[m.cursor], width)
 	}
 	if len(companies) > 0 {
-		// Same table chrome as the posting list, so the same line budget.
-		rows := listRows - postingTableChromeLines
-		if infoBox != "" {
-			rows -= companyInfoBoxHeight
-		}
-		if rows < 0 {
-			rows = 0
-		}
-		start, end := visibleWindow(m.cursor, len(companies), rows)
+		start, end := visibleWindow(m.cursor, len(companies), tableRows(height, title, help, infoBox))
 		cursorRow := m.cursor - start
 		t := table.New().
 			Headers("Name", "Open", "Last fetched").
@@ -137,7 +132,7 @@ func (m *companyListModel) View(companies []store.Company, openPostings map[int6
 	if infoBox != "" {
 		b.WriteString(infoBox + "\n")
 	}
-	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: view postings  i: info  a: add  e: edit  d: delete  r: refresh  esc/b: back  q: quit"))
+	b.WriteString(help)
 	return b.String()
 }
 
@@ -183,10 +178,6 @@ const (
 	// companyInfoDescriptionLines is how many wrapped description lines the
 	// info box shows; longer descriptions end with an ellipsis.
 	companyInfoDescriptionLines = 4
-	// companyInfoBoxHeight is the info box's fixed height: top and bottom
-	// border, a header line, and the description lines. Fixed so moving the
-	// cursor with the box open never shifts the table.
-	companyInfoBoxHeight = 2 + 1 + companyInfoDescriptionLines
 	// defaultCompanyInfoWidth is the box's text width before the terminal
 	// reports its size; maxCompanyInfoWidth keeps lines readable on very
 	// wide terminals.
@@ -195,8 +186,9 @@ const (
 )
 
 // companyInfoBox renders the info box for c: a header with its name, board
-// and slug, then its description word-wrapped, always companyInfoBoxHeight
-// lines tall.
+// and slug, then its description word-wrapped. It's always the same height
+// -- top and bottom border, the header, and companyInfoDescriptionLines --
+// so moving the cursor with the box open never shifts the table.
 func companyInfoBox(c store.Company, width int) string {
 	textWidth := defaultCompanyInfoWidth
 	if width > 0 {

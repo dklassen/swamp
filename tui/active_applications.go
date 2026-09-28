@@ -77,17 +77,16 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 	return nil, nil
 }
 
-func (m *activeApplicationListModel) View(apps []store.ApplicationView, listRows int) string {
+// View renders the list in height terminal rows (App.screenRows).
+func (m *activeApplicationListModel) View(apps []store.ApplicationView, height int) string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Active Applications") + "\n")
+	title := titleStyle.Render("Active Applications")
+	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  s: status  e: export PDFs  c: companies  q: quit")
+	b.WriteString(title + "\n")
 	if len(apps) == 0 {
 		b.WriteString("No active applications. Press 'c' to browse companies.\n")
 	} else {
-		rows := listRows - postingTableChromeLines
-		if rows < 0 {
-			rows = 0
-		}
-		start, end := visibleWindow(m.cursor, len(apps), rows)
+		start, end := visibleWindow(m.cursor, len(apps), tableRows(height, title, help))
 		cursorRow := m.cursor - start
 		t := table.New().
 			Headers("Company", "Title", "Status", "Posting", "Review").
@@ -110,7 +109,7 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, listRows
 		}
 		b.WriteString(t.Render() + "\n")
 	}
-	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: application detail  s: status  e: export PDFs  c: companies  q: quit"))
+	b.WriteString(help)
 	return b.String()
 }
 

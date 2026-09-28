@@ -218,12 +218,17 @@ func TestCompanyListModel_View_SameWidthWhateverIsScrolledIntoView(t *testing.T)
 	}
 
 	m := newCompanyListModel(nil, nil)
-	// A tiny budget shows one company at a time, so each cursor position
-	// scrolls a different name into view.
-	listRows := postingTableChromeLines + 1
+	// A height with room for one company at a time, so each cursor
+	// position scrolls a different name into view: the table's own chrome
+	// plus one row, and the title and help line, each with its margin.
+	height := postingTableChromeLines + 1 + lipgloss.Height(titleStyle.Render("Companies")) + lipgloss.Height(helpStyle.Render("help"))
 	var widths []int
 	for range companies {
-		firstLine := strings.SplitN(m.View(companies, nil, 0, listRows), "╭", 2)[1]
+		view := m.View(companies, nil, 0, height)
+		if n := strings.Count(view, "│ ") / 3; n != 2 {
+			t.Fatalf("view shows %d table rows (header included), want 2 -- one company at a time:\n%s", n, view)
+		}
+		firstLine := strings.SplitN(view, "╭", 2)[1]
 		firstLine = strings.SplitN(firstLine, "\n", 2)[0]
 		widths = append(widths, lipgloss.Width(firstLine))
 		m.Update(tea.KeyMsg{Type: tea.KeyDown}, companies)

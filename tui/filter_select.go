@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/store"
@@ -156,13 +157,24 @@ func filterWindow(cursor, deptCount, locCount, rows int) (deptStart, deptEnd, lo
 	return deptStart, deptEnd, locStart, locEnd
 }
 
-func (m *filterSelectModel) View(listRows int) string {
+// View renders the options in height terminal rows (App.screenRows): what
+// the title and help line leave, less a row for each section label in view
+// (issue #138).
+func (m *filterSelectModel) View(height int) string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render(fmt.Sprintf("Filters: %s", m.companyName)) + "\n")
+	title := titleStyle.Render(fmt.Sprintf("Filters: %s", m.companyName))
+	help := helpStyle.Render("↑/↓ (j/k): select  space: toggle  enter: save  esc/b: cancel")
+	b.WriteString(title + "\n")
 	if len(m.departmentOptions) == 0 && len(m.locationOptions) == 0 {
 		b.WriteString("No department/location values discovered yet -- refresh the company first.\n")
 	}
-	deptStart, deptEnd, locStart, locEnd := filterWindow(m.cursor, len(m.departmentOptions), len(m.locationOptions), listRows)
+	rows := height - lipgloss.Height(title) - lipgloss.Height(help)
+	// Which labels show depends on the window, so allow for one, and only
+	// if that window spans both sections, make room for the second.
+	deptStart, deptEnd, locStart, locEnd := filterWindow(m.cursor, len(m.departmentOptions), len(m.locationOptions), rows-1)
+	if deptStart < deptEnd && locStart < locEnd {
+		deptStart, deptEnd, locStart, locEnd = filterWindow(m.cursor, len(m.departmentOptions), len(m.locationOptions), rows-2)
+	}
 	if deptStart < deptEnd {
 		b.WriteString(fieldLabel.Render("Department") + "\n")
 		for i := deptStart; i < deptEnd; i++ {
@@ -177,6 +189,6 @@ func (m *filterSelectModel) View(listRows int) string {
 			b.WriteString(renderFilterOption(l, m.selectedLocations[l], len(m.departmentOptions)+i == m.cursor))
 		}
 	}
-	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  space: toggle  enter: save  esc/b: cancel"))
+	b.WriteString(help)
 	return b.String()
 }
