@@ -2,8 +2,10 @@
 // one-off refresh with the `fetch` subcommand, drives the agent hand-off
 // mechanism with the `stage` subcommand, converts an application's
 // drafted documents to PDF with the `export` subcommand, or bulk-creates
-// companies from a YAML seed file with the `import` subcommand. Not unit
-// tested per this project's testing decisions -- verified manually.
+// companies from a YAML seed file with the `import` subcommand. Mostly not
+// unit tested per this project's testing decisions -- verified manually.
+// The exception is fetch's output (reportFetch), since scripts and
+// schedulers depend on its exit status and summary (issue #145).
 package main
 
 import (
@@ -11,6 +13,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -75,7 +78,14 @@ func main() {
 	if len(os.Args) > 1 {
 		switch os.Args[1] {
 		case "fetch":
-			runFetch(s)
+			if runFetch(s) > 0 {
+				// os.Exit skips the deferred Close, so close first to
+				// leave the database checkpointed.
+				if err := sqlDB.Close(); err != nil {
+					log.Printf("close db: %v", err)
+				}
+				os.Exit(1)
+			}
 			return
 		case "stage":
 			runStage(s, documentsStore, os.Args[2:])
@@ -152,7 +162,10 @@ func runImport(s *store.Store, args []string) {
 	}
 }
 
-func runFetch(s *store.Store) {
+// runFetch syncs every active company and reports how many failed, so main
+// can exit non-zero when something scheduled it and nobody is watching
+// (issue #145).
+func runFetch(s *store.Store) int {
 	ctx := context.Background()
 
 	companies, err := s.ListActiveCompanies(ctx)
@@ -170,15 +183,32 @@ func runFetch(s *store.Store) {
 		log.Fatalf("sync: %v", err)
 	}
 
+	return reportFetch(os.Stdout, os.Stderr, results, names)
+}
+
+// reportFetch prints one line per company -- successes to stdout, errors
+// to stderr -- then a one-line summary to stderr, e.g. "41 companies, 1
+// failed (Outschool)", and returns how many companies failed.
+func reportFetch(stdout, stderr io.Writer, results []sync.Result, names map[int64]string) int {
+	var failed []string
 	for _, r := range results {
 		name := names[r.CompanyID]
 		if r.Err != nil {
-			fmt.Printf("%s: error: %v\n", name, r.Err)
+			failed = append(failed, name)
+			_, _ = fmt.Fprintf(stderr, "%s: error: %v\n", name, r.Err)
 			continue
 		}
-		fmt.Printf("%s: fetched=%d created=%d updated=%d closed=%d reopened=%d\n",
+		_, _ = fmt.Fprintf(stdout, "%s: fetched=%d created=%d updated=%d closed=%d reopened=%d\n",
 			name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
 	}
+
+	summary := fmt.Sprintf("%d companies, %d failed", len(results), len(failed))
+	if len(failed) > 0 {
+		summary += " (" + strings.Join(failed, ", ") + ")"
+	}
+	_, _ = fmt.Fprintln(stderr, summary)
+
+	return len(failed)
 }
 
 // runStage drives the agent hand-off mechanism: `stage list` prints
