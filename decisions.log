@@ -5629,9 +5629,15 @@ saving.
 Decisions:
 - `_time_format=sqlite` in store.Open, so times are written as
   "2006-01-02 15:04:05.999999999-07:00": a numeric offset, and the
-  driver's first read format. A named constant like WAL and
-  immediate transactions, not a Config setting, since any other value
-  brings the bug back.
+  driver's first read format. It's `store.Config.TimeFormat`, set to
+  "sqlite" by DefaultConfig, at the user's call: time format belongs
+  with the other connection settings in Config, ready for the config
+  file in #139. That's unlike WAL and immediate transactions, which
+  stay constants (#137). Tradeoff: a Config built without
+  DefaultConfig has an empty TimeFormat, which falls back to the
+  driver's String() default and brings the bug back. The field's doc
+  comment says so; the driver rejects any unknown value when it
+  connects.
 - Fixed at the connection rather than by converting PublishedAt to UTC
   before writing. That would also work, but only for that one field.
   The connection setting covers every time written from Go, including
