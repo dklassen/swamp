@@ -41,6 +41,101 @@ func TestUpsertPosting_NewPosting_ThenGet_ReturnsSamePosting(t *testing.T) {
 	}
 }
 
+// TestUpsertPosting_PublishedAt_RoundTripsInAnyZone checks a posting saves
+// and reads back the same PublishedAt instant whatever zone it was parsed
+// into. Go only names a parsed offset's zone (EDT) when it matches the
+// machine's local timezone; otherwise the zone is unnamed, as it is for
+// Greenhouse's "-04:00" on a UTC machine. Stored as time.Time.String(),
+// that became "-0400 -0400", which the driver can't read back -- see
+// issue #140.
+func TestUpsertPosting_PublishedAt_RoundTripsInAnyZone(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		loc  *time.Location
+	}{
+		{name: "UTC", loc: time.UTC},
+		{name: "named zone", loc: time.FixedZone("EDT", -4*60*60)},
+		{name: "unnamed negative offset", loc: time.FixedZone("", -4*60*60)},
+		{name: "unnamed positive offset", loc: time.FixedZone("", 5*60*60+30*60)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := newTestStore(t)
+			ctx := context.Background()
+			acme := mustCreateCompany(t, s, "Acme", "greenhouse", "acme")
+			want := time.Date(2026, 8, 24, 13, 15, 0, 0, tt.loc)
+
+			created, err := s.UpsertPosting(ctx, CreatePostingParams{
+				CompanyID:      acme.ID,
+				Source:         "greenhouse",
+				SourceID:       "job-1",
+				IngestedFields: IngestedFields{Title: "Engineer", PublishedAt: OptionalTime{Time: want}},
+			})
+			if err != nil {
+				t.Fatalf("UpsertPosting: %v", err)
+			}
+			got, err := s.GetPosting(ctx, created.ID)
+			if err != nil {
+				t.Fatalf("GetPosting: %v", err)
+			}
+			if !got.PublishedAt.Equal(want) {
+				t.Errorf("PublishedAt = %v, want the same instant as %v", got.PublishedAt, want)
+			}
+		})
+	}
+}
+
+// TestGetPosting_PublishedAt_ReadsRowsStoredInTheOldFormat checks rows
+// written before issue #140's fix, in the driver's old time.Time.String()
+// format, still read back -- the fix changed only how times are written,
+// with no migration of existing rows. Values are the formats found in the
+// real database.
+func TestGetPosting_PublishedAt_ReadsRowsStoredInTheOldFormat(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		stored string
+		want   time.Time
+	}{
+		{stored: "2026-08-17 05:18:42 -0400 EDT", want: time.Date(2026, 8, 17, 9, 18, 42, 0, time.UTC)},
+		{stored: "2026-02-14 17:27:16.004 +0000 +0000", want: time.Date(2026, 2, 14, 17, 27, 16, 4000000, time.UTC)},
+		{stored: "2026-08-19 18:57:50.92 +0000 UTC", want: time.Date(2026, 8, 19, 18, 57, 50, 920000000, time.UTC)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.stored, func(t *testing.T) {
+			t.Parallel()
+
+			s := newTestStore(t)
+			ctx := context.Background()
+			acme := mustCreateCompany(t, s, "Acme", "greenhouse", "acme")
+			created, err := s.UpsertPosting(ctx, CreatePostingParams{
+				CompanyID:      acme.ID,
+				Source:         "greenhouse",
+				SourceID:       "job-1",
+				IngestedFields: IngestedFields{Title: "Engineer"},
+			})
+			if err != nil {
+				t.Fatalf("UpsertPosting: %v", err)
+			}
+			if _, err := s.sqlDB.ExecContext(ctx, "UPDATE postings SET published_at = ? WHERE id = ?", tt.stored, created.ID); err != nil {
+				t.Fatalf("store old-format published_at: %v", err)
+			}
+
+			got, err := s.GetPosting(ctx, created.ID)
+			if err != nil {
+				t.Fatalf("GetPosting: %v", err)
+			}
+			if !got.PublishedAt.Equal(tt.want) {
+				t.Errorf("PublishedAt = %v, want %v", got.PublishedAt, tt.want)
+			}
+		})
+	}
+}
+
 func TestUpsertPosting_NewPosting_AutoCreatesMarkupRow(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

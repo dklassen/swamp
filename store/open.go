@@ -38,12 +38,22 @@ const (
 	txLock      = "immediate"
 )
 
+// timeFormat makes the driver write a time.Time as
+// "2006-01-02 15:04:05.999999999-07:00" instead of its default,
+// time.Time.String(). String() names the zone only when the offset matches
+// the machine's local timezone, so a Greenhouse "-04:00" parsed on a UTC
+// machine was stored as "-0400 -0400", which the driver can't read back:
+// every save of such a posting failed (issue #140). A numeric offset reads
+// back the same wherever it was written. Rows already stored in String()
+// format still read back, so no migration is needed.
+const timeFormat = "sqlite"
+
 // Open opens the sqlite database at path, set up for more than one writer:
 // the TUI, `swamp fetch`, and `swamp mcp-serve` all write the same file.
 // A writer that finds the database locked waits up to cfg.BusyTimeout for
 // it rather than failing with SQLITE_BUSY (see issue #136).
 func Open(path string, cfg Config) (*sql.DB, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(%s)&_txlock=%s",
-		path, cfg.BusyTimeout.Milliseconds(), journalMode, txLock)
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(%s)&_txlock=%s&_time_format=%s",
+		path, cfg.BusyTimeout.Milliseconds(), journalMode, txLock, timeFormat)
 	return sql.Open("sqlite", dsn)
 }

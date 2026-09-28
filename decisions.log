@@ -5607,3 +5607,42 @@ Decisions:
   `VACUUM INTO`); copying swamp.db alone can miss committed writes that
   haven't been moved into the main file yet. The -wal/-shm files are
   gitignored.
+
+## 2026-09-28 -- Store times with a numeric offset, not time.Time.String() (#140)
+
+Saving a posting failed with "Scan error on column index 14, name
+published_at: unsupported Scan, storing driver.Value type string into
+type *time.Time". In a UTC container, every save of a Greenhouse
+posting failed: Instacart 123/123, Mattermost 14/14, GitLab 198/198.
+
+Cause: modernc.org/sqlite writes a time.Time as t.String() by default,
+kept for backward compatibility (conn.go:219-228 in v1.56.0). String()
+names the zone only when Go's parser matched the offset to the
+machine's local timezone. On the Mac, in Eastern time, a Greenhouse
+"-04:00" became "-0400 EDT", which reads back fine. Anywhere else it
+became "-0400 -0400". On read, the driver treats that repeated "-0400"
+as a zone offset of 400 hours and rejects it. Ashby's "+0000 +0000"
+only worked because it's 0 hours. Whether a posting could be saved
+depended on the machine's timezone, the board's offset and daylight
+saving.
+
+Decisions:
+- `_time_format=sqlite` in store.Open, so times are written as
+  "2006-01-02 15:04:05.999999999-07:00": a numeric offset, and the
+  driver's first read format. A named constant like WAL and
+  immediate transactions, not a Config setting, since any other value
+  brings the bug back.
+- Fixed at the connection rather than by converting PublishedAt to UTC
+  before writing. That would also work, but only for that one field.
+  The connection setting covers every time written from Go, including
+  interview_stages.stage_date once something writes it.
+- No migration of existing rows. All 2,643 stored published_at values
+  read back fine in the old format, so old and new formats sit side by
+  side. Only published_at and stage_date are written from Go (every
+  other timestamp is SQL CURRENT_TIMESTAMP), and no query sorts or
+  compares them as text, so the mix is harmless. A test keeps the old
+  format readable.
+- store's newTestStore now uses store.Open, so store tests run with the
+  same connection settings as swamp. The other packages' test helpers
+  still use a bare sql.Open; they don't write times from unnamed zones
+  today, and switching them is left to a follow-up.
