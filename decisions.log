@@ -5560,3 +5560,50 @@ alignment there, but alignment can't hold at that width anyway. Keeping
 the badge in one piece matters more. The test now sweeps down to the
 narrowest width that fits the badge at all (the inner width equal to the
 badge's width).
+
+## 2026-09-28 -- SQLite set up for concurrent writers (#136)
+
+The TUI, `swamp fetch` and `swamp mcp-serve` all write the same database,
+and the TUI also writes from background commands. The connection set no
+pragmas, so a second writer got SQLITE_BUSY straight away. Measured
+against a copy of the real database: two concurrent `swamp fetch` runs
+failed on 39/41 and 5/41 companies. This blocks any scheduled or
+background sync (see docs/rfcs/0001-scheduled-and-background-sync.md,
+P1).
+
+Decisions:
+- One `store.Open` owns the connection settings, so no caller can open
+  the database without them:
+  - busy_timeout: a writer waits for the lock instead of failing;
+  - WAL: readers aren't blocked by a write;
+  - `_txlock=immediate`: transactions take the write lock at BeginTx.
+    UpsertPosting and CreateCompany read and then write inside one
+    transaction. Begun deferred, a commit from another connection in
+    between fails the write immediately, and busy_timeout can't retry
+    it. No lock is held during network calls, since sync fetches
+    before it opens any transaction.
+- Only the busy timeout is configurable (`store.Config`, default 5s).
+  WAL and immediate transactions are named constants: they're what make
+  concurrent writers correct, so a different value would quietly bring
+  the bug back. The user asked for configuration to be pulled out of
+  hardcoded values, ideally into a config file. A config file is a
+  cross-cutting change (it would also cover SWAMP_DB_PATH,
+  SWAMP_DOCUMENTS_PATH, SWAMP_MCP_ADDR, HTTP timeouts and the sync
+  schedule), so it's left to its own issue. `store.Config` is shaped
+  for it to fill.
+- Kept SQLite's own locking rather than an app-level writer (goroutine
+  plus channel, or a mutex). A channel only coordinates goroutines in
+  one process, and three processes write here. Write volume is also far
+  too low for app-level queuing or batching to pay off.
+- Known limitation, measured: the first switch of an existing database
+  to WAL needs exclusive access. When two processes start at the same
+  moment on a not-yet-WAL database, one fails its startup migration
+  check (goose reads its version table, gets SQLITE_BUSY, and tries to
+  re-create it). Reproduced 3 out of 3 times. Once the file is in WAL,
+  simultaneous starts were clean 3 out of 3 times. It only happens once
+  per database, so it's documented rather than retried: start one
+  process on its own the first time after upgrading.
+- Backups must copy swamp.db together with its -wal file (or use
+  `VACUUM INTO`); copying swamp.db alone can miss committed writes that
+  haven't been moved into the main file yet. The -wal/-shm files are
+  gitignored.

@@ -8,7 +8,6 @@ package main
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -22,8 +21,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/pressly/goose/v3"
-
-	_ "modernc.org/sqlite"
 
 	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/db/migrations"
@@ -54,7 +51,7 @@ func main() {
 		documentsPath = "assets"
 	}
 
-	sqlDB, err := sql.Open("sqlite", "file:"+dbPath)
+	sqlDB, err := store.Open(dbPath, store.DefaultConfig())
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
