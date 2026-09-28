@@ -5784,3 +5784,43 @@ Decisions:
     on the company list now shows the sync result at the top, and the
     posting list, filter screen, info box and notes editor all fit
     under it.
+
+## 2026-09-28 -- swamp fetch exits non-zero when a company fails (#145)
+
+`swamp fetch` exited 0 even when companies failed, and printed their
+errors to stdout mixed in with the success lines. Run by hand that's
+fine, but a scheduled run (RFC 0001, P3) couldn't tell a failed run
+from a clean one. The only lasting sign was a stale "last fetched" time.
+
+Decisions:
+- Kept to the simplest version the user asked for: exit 1 if any
+  company failed, each company's error on stderr, and a one-line
+  summary on stderr ("41 companies, 1 failed (Outschool)"). Successful
+  company lines stay on stdout, so a log of stdout is a record of what
+  synced, and stderr alone shows whether anything went wrong.
+- The summary always prints, including "40 companies, 0 failed", so an
+  unattended run's log shows that it ran and finished, not just that it
+  didn't fail.
+- One exit code (1) for any failure, whether one company or all of
+  them. Nothing reads the count from the exit status yet; the summary
+  carries it.
+- No `sync_runs` table. The RFC listed it as an optional part of P3.
+  The user wants to think more about it: a history of runs is really
+  the first piece of a general log of background job executions, which
+  feeds into a job queue with a worker (RFC 0001, option 7). It gets its
+  own design rather than a sync-specific table here.
+- The output moved into reportFetch(stdout, stderr, results, names) so
+  it can be tested with buffers. That's the first unit test in
+  cmd/swamp, which was verified manually only. Worth it here because
+  schedulers and scripts depend on the exit status and summary format,
+  and nobody is watching those runs. The rest of cmd/swamp is unchanged.
+- main closes the database before os.Exit(1), since os.Exit skips the
+  deferred Close.
+- Write errors to stdout/stderr are discarded explicitly (`_, _ =`), as
+  the fmt.Printf calls they replace did implicitly: a failed write to
+  the terminal has nowhere better to be reported.
+- Verified on a copy of the real database: exit 1 with "41 companies, 1
+  failed (Outschool)" (its Greenhouse board returns 404); with Outschool
+  soft-deleted in the copy, exit 0 and "40 companies, 0 failed". The
+  real database still has Outschool active; deactivating it is left to
+  the user.
