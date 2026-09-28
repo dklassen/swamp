@@ -22,6 +22,11 @@ type Config struct {
 	// back for a zone Go left unnamed, and saving a posting fails (issue
 	// #140). The driver rejects any other value when it connects.
 	TimeFormat string
+
+	// Timezone is the IANA zone the driver converts a time.Time into
+	// before writing it, and reads times back in (its _timezone DSN
+	// parameter). Empty keeps each time's own offset.
+	Timezone string
 }
 
 // DefaultConfig is the Config swamp runs with unless told otherwise.
@@ -32,10 +37,15 @@ type Config struct {
 // Greenhouse "-04:00" parsed on a UTC machine was stored as "-0400 -0400",
 // which the driver can't read back: every save of such a posting failed
 // (issue #140). A numeric offset reads back the same wherever it was
-// written. Rows already stored in String() format still read back, so no
-// migration is needed.
+// written.
+//
+// Timezone "UTC" stores every time with the same +00:00 offset, so
+// comparing or sorting times as text in SQL agrees with time order -- with
+// mixed offsets, "13:15:00-04:00" (17:15 UTC) sorts before
+// "15:00:00+00:00". It also matches SQL's CURRENT_TIMESTAMP, which is
+// UTC.
 func DefaultConfig() Config {
-	return Config{BusyTimeout: 5 * time.Second, TimeFormat: "sqlite"}
+	return Config{BusyTimeout: 5 * time.Second, TimeFormat: "sqlite", Timezone: "UTC"}
 }
 
 // journalMode and txLock are what make more than one writer safe, so
@@ -61,7 +71,7 @@ const (
 // A writer that finds the database locked waits up to cfg.BusyTimeout for
 // it rather than failing with SQLITE_BUSY (see issue #136).
 func Open(path string, cfg Config) (*sql.DB, error) {
-	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(%s)&_txlock=%s&_time_format=%s",
-		path, cfg.BusyTimeout.Milliseconds(), journalMode, txLock, cfg.TimeFormat)
+	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(%s)&_txlock=%s&_time_format=%s&_timezone=%s",
+		path, cfg.BusyTimeout.Milliseconds(), journalMode, txLock, cfg.TimeFormat, cfg.Timezone)
 	return sql.Open("sqlite", dsn)
 }

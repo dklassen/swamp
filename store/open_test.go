@@ -108,7 +108,8 @@ func TestOpen_WritesTimesInTheConfiguredFormat(t *testing.T) {
 		cfg  Config
 		want string
 	}{
-		{name: "default", cfg: DefaultConfig(), want: "2026-08-24 13:15:00-04:00"},
+		{name: "default, converted to UTC", cfg: DefaultConfig(), want: "2026-08-24 17:15:00+00:00"},
+		{name: "sqlite format, no timezone", cfg: Config{BusyTimeout: time.Second, TimeFormat: "sqlite"}, want: "2026-08-24 13:15:00-04:00"},
 		{name: "datetime", cfg: Config{BusyTimeout: time.Second, TimeFormat: "datetime"}, want: "2026-08-24 13:15:00"},
 	}
 	for _, tt := range tests {
