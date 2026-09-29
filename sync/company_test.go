@@ -604,6 +604,48 @@ func TestSyncCompany_PostingCloses_ApplicationUpdateFails_NothingHalfClosed(t *t
 	}
 }
 
+// TestSyncCompany_OverlappingSyncsClosePostings_EachCloseRecordedOnce:
+// two syncs of one company that both fetched before either wrote both
+// find the same postings gone. Only the first close of each posting may
+// count or be recorded; the second finds it already closed (#147).
+func TestSyncCompany_OverlappingSyncsClosePostings_EachCloseRecordedOnce(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+
+	var onBoard []jobboard.Posting
+	for _, id := range []string{"job-1", "job-2", "job-3", "job-4", "job-5"} {
+		onBoard = append(onBoard, samplePosting(id, "Engineer", "Engineering", "Remote"))
+	}
+	seed := New(s, map[string]PostingFetcher{"ashby": &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": onBoard}}}, DefaultConfig())
+	if _, err := seed.SyncCompany(ctx, company.ID); err != nil {
+		t.Fatalf("initial SyncCompany: %v", err)
+	}
+
+	results := syncOverlapping(t, s, company.ID, 2, nil)
+
+	closedCount := 0
+	for _, r := range results {
+		closedCount += r.Closed
+	}
+	if closedCount != len(onBoard) {
+		t.Errorf("Closed summed over both runs = %d, want %d -- each posting closes once", closedCount, len(onBoard))
+	}
+	postings, err := s.ListPostingsByCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("ListPostingsByCompany: %v", err)
+	}
+	for _, p := range postings {
+		history, err := s.ListPostingHistory(ctx, p.ID)
+		if err != nil {
+			t.Fatalf("ListPostingHistory: %v", err)
+		}
+		if len(history) != 1 || history[0].ChangeType != "closed" {
+			t.Errorf("posting %s history = %d rows, want exactly one \"closed\" row", p.SourceID, len(history))
+		}
+	}
+}
+
 // A successful sync records when the company was fetched; a failed fetch
 // leaves it alone, so a stale "last fetched" is a visible sign of trouble.
 func TestSyncCompany_RecordsLastFetchedAtOnlyOnSuccess(t *testing.T) {

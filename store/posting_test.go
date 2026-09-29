@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -279,6 +280,89 @@ func TestMarkPostingClosed_SetsListingStatusClosed(t *testing.T) {
 		t.Fatalf("ListingStatus = %q, want %q", got.ListingStatus, "closed")
 	}
 }
+
+func TestClosePosting(t *testing.T) {
+	t.Parallel()
+	closeFrom := []ApplicationStatus{ApplicationStatusStarted, ApplicationStatusSubmitted}
+
+	tests := []struct {
+		name          string
+		alreadyClosed bool
+		application   *ApplicationStatus // nil: the posting has no application
+		want          ClosePostingResult
+		wantApp       ApplicationStatus
+		wantHistory   int
+	}{
+		{name: "open, no application", want: ClosePostingResult{Closed: true}, wantHistory: 1},
+		{name: "open, application at a status it ends", application: ptr(ApplicationStatusStarted),
+			want: ClosePostingResult{Closed: true, ApplicationClosed: true}, wantApp: ApplicationStatusPostingClosed, wantHistory: 1},
+		{name: "open, application at a status it leaves alone", application: ptr(ApplicationStatusInterviewing),
+			want: ClosePostingResult{Closed: true}, wantApp: ApplicationStatusInterviewing, wantHistory: 1},
+		{name: "already closed: changes nothing", alreadyClosed: true, application: ptr(ApplicationStatusStarted),
+			want: ClosePostingResult{}, wantApp: ApplicationStatusStarted, wantHistory: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := newTestStore(t)
+			ctx := context.Background()
+			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+			if tt.application != nil {
+				if _, err := s.CreateApplication(ctx, posting.ID); err != nil {
+					t.Fatalf("CreateApplication: %v", err)
+				}
+				if _, err := s.UpdateApplicationStatus(ctx, posting.ID, *tt.application); err != nil {
+					t.Fatalf("UpdateApplicationStatus: %v", err)
+				}
+			}
+			if tt.alreadyClosed {
+				if err := s.MarkPostingClosed(ctx, posting.ID); err != nil {
+					t.Fatalf("MarkPostingClosed: %v", err)
+				}
+			}
+
+			got, err := s.ClosePosting(ctx, posting.ID, closeFrom)
+			if err != nil {
+				t.Fatalf("ClosePosting: %v", err)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("ClosePosting result mismatch (-want +got):\n%s", diff)
+			}
+
+			after, err := s.GetPosting(ctx, posting.ID)
+			if err != nil {
+				t.Fatalf("GetPosting: %v", err)
+			}
+			if after.ListingStatus != "closed" {
+				t.Errorf("ListingStatus = %q, want closed", after.ListingStatus)
+			}
+			history, err := s.ListPostingHistory(ctx, posting.ID)
+			if err != nil {
+				t.Fatalf("ListPostingHistory: %v", err)
+			}
+			if len(history) != tt.wantHistory {
+				t.Fatalf("history rows = %d, want %d", len(history), tt.wantHistory)
+			}
+			if tt.wantHistory == 1 {
+				if history[0].ChangeType != "closed" || !strings.Contains(history[0].Snapshot, `"ListingStatus":"open"`) {
+					t.Errorf("history = %q with snapshot %s, want a \"closed\" row snapshotting the posting as it was, still open", history[0].ChangeType, history[0].Snapshot)
+				}
+			}
+			if tt.application != nil {
+				application, err := s.GetApplication(ctx, posting.ID)
+				if err != nil {
+					t.Fatalf("GetApplication: %v", err)
+				}
+				if application.Status != tt.wantApp {
+					t.Errorf("application status = %s, want %s", application.Status, tt.wantApp)
+				}
+			}
+		})
+	}
+}
+
+func ptr[T any](v T) *T { return &v }
 
 func TestMarkPostingReopened_SetsListingStatusOpen(t *testing.T) {
 	s := newTestStore(t)

@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"database/sql"
+	gosync "sync"
 	"testing"
 	"time"
 
@@ -27,7 +28,10 @@ func newTestStore(t *testing.T) *store.Store {
 func newTestStoreDB(t *testing.T) (*store.Store, *sql.DB) {
 	t.Helper()
 
-	sqlDB, err := sql.Open("sqlite", "file:"+t.TempDir()+"/test.db")
+	// store.Open, not sql.Open, so tests run with the same connection
+	// settings as swamp -- overlapping-sync tests depend on its busy
+	// timeout and immediate transactions.
+	sqlDB, err := store.Open(t.TempDir()+"/test.db", store.DefaultConfig())
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -69,6 +73,51 @@ func (f *fakeFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jo
 		return nil, f.err
 	}
 	return f.postings[boardSlug], nil
+}
+
+// barrierFetcher returns postings to every caller, but only once all
+// `callers` fetches have arrived, so that many overlapping SyncCompany
+// runs all finish fetching before any of them writes.
+type barrierFetcher struct {
+	postings []jobboard.Posting
+	arrived  *gosync.WaitGroup
+}
+
+func newBarrierFetcher(callers int, postings []jobboard.Posting) *barrierFetcher {
+	arrived := &gosync.WaitGroup{}
+	arrived.Add(callers)
+	return &barrierFetcher{postings: postings, arrived: arrived}
+}
+
+func (f *barrierFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error) {
+	f.arrived.Done()
+	f.arrived.Wait()
+	return f.postings, nil
+}
+
+// syncOverlapping runs `runs` SyncCompany calls for companyID at once,
+// all held at a barrierFetcher until every one has fetched postings, and
+// returns their results in no particular order.
+func syncOverlapping(t *testing.T, s *store.Store, companyID int64, runs int, postings []jobboard.Posting) []Result {
+	t.Helper()
+	syncer := New(s, map[string]PostingFetcher{"ashby": newBarrierFetcher(runs, postings)}, DefaultConfig())
+	results := make([]Result, runs)
+	errs := make([]error, runs)
+	var done gosync.WaitGroup
+	for i := range runs {
+		done.Add(1)
+		go func() {
+			defer done.Done()
+			results[i], errs[i] = syncer.SyncCompany(context.Background(), companyID)
+		}()
+	}
+	done.Wait()
+	for _, err := range errs {
+		if err != nil {
+			t.Fatalf("overlapping SyncCompany: %v", err)
+		}
+	}
+	return results
 }
 
 // perBoardFetcher is a PostingFetcher that can fail for specific board
