@@ -5824,3 +5824,65 @@ Decisions:
   soft-deleted in the copy, exit 0 and "40 companies, 0 failed". The
   real database still has Outschool active; deactivating it is left to
   the user.
+
+## 2026-09-29 -- RFCs 0001-0005 checked in; 0002 and 0004 rewritten; per-company sync lock (#150)
+
+RFCs 0001-0005 lived untracked in docs/rfcs. They're now committed so
+the issues filed from them (#147-#153) can link to text that exists.
+
+Decisions:
+- RFC 0002 was rewritten after checking it against a copy of the real
+  database. Its headline ("the bottleneck isn't drafting", 98% of
+  postings never looked at) didn't hold:
+  - Of 23 started applications, 10 have no drafts and 18 were never
+    reviewed.
+  - Every posting gets an empty posting_markup row when it's created,
+    so "never looked at" can't be measured.
+  - The `published_at` bug it listed as a blocker was already fixed
+    (#141).
+  - Its isRemote fallback would fix nothing: all 191 open Ashby
+    postings with no workplace type have isRemote null too.
+  - posting_closed also swallows submitted applications, so the real
+    submitted count is somewhere between 2 and 9.
+
+  The rewrite frames one problem (committed applications don't get
+  submitted) with a metric, and phases it: measure (status history),
+  clear the queue, match form requirements, then widen intake. Finding
+  companies, interview features, fit scoring and tags are deferred,
+  each with a reason.
+- RFC 0004 was rewritten around its concrete driver: RFC 0002's third
+  document type (answers.md).
+  - About 20 sites assume exactly two document types, not 7, and
+    every one of the copied `if … Resume` blocks silently falls back to
+    the cover letter.
+  - The earlier draft's claims that missed cases "fail at build time"
+    and that store is "a pure enum-and-struct package" were wrong, and
+    its quotes of the 2026-09-04 entry weren't in this log.
+  - Recommends moving DocumentType into documents (store imports
+    documents) rather than documents importing all of store.
+- RFC 0001's P4 was reproduced against current code with throwaway
+  tests. The numbers are in the RFC and in #147-#150. P4 is split into
+  four issues and option 2 into three, labelled `rfc-0001` plus
+  `rfc0001-step-1` to `rfc0001-step-7` for the order to work in.
+- Added P4d (#150), a per-company sync lock, at the user's call.
+  Conditional writes (P4a/P4b) make an overlap harmless when both runs
+  saw the same board, but not when they fetched at different moments:
+  run A (older fetch, posting X missing) closes X after run B (newer
+  fetch) reopened it, and moves X's application to posting_closed. The
+  next sync reopens X but never restores the application. Reproduced:
+  an application_submitted ended at posting_closed with the posting
+  open. Only stopping the overlap prevents it.
+  - Across processes: a lease on the company row (token + timestamp),
+    taken with a conditional UPDATE before the fetch, released by its
+    owner after the last write, and expiring after a configurable
+    timeout so a killed process can't hold it forever.
+  - Within the TUI: App refuses a second trigger (r, R, the sync after
+    a filter save) with a status message (#152, #153).
+  - Alternatives considered: conditional writes alone (don't cover the
+    stale-fetch race); closing only postings unchanged since the fetch
+    started (depends on every "seen" write touching updated_at, which a
+    plain "seen again" doesn't).
+- P4c (#149) was filed although no caller cancels a sync today: every
+  caller passes context.Background(). It's preventive, for the signal
+  handling or stop-cancels that background and scheduled sync are
+  likely to add.
