@@ -40,7 +40,7 @@ type Result struct {
 	Reopened  int
 	// ApplicationsClosed counts applications moved to posting_closed
 	// because the posting they were for was taken down -- see
-	// closeApplicationForClosedPosting (issue #105).
+	// store.ClosePosting and earlyApplicationStatuses (issues #105, #147).
 	ApplicationsClosed int
 	Err                error
 }

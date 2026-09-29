@@ -17,6 +17,15 @@ import (
 
 func newTestStore(t *testing.T) *store.Store {
 	t.Helper()
+	s, _ := newTestStoreDB(t)
+	return s
+}
+
+// newTestStoreDB is newTestStore that also returns the underlying
+// *sql.DB, for tests that need to reach past store -- e.g. to install a
+// trigger that makes one write fail.
+func newTestStoreDB(t *testing.T) (*store.Store, *sql.DB) {
+	t.Helper()
 
 	sqlDB, err := sql.Open("sqlite", "file:"+t.TempDir()+"/test.db")
 	if err != nil {
@@ -36,7 +45,7 @@ func newTestStore(t *testing.T) *store.Store {
 		t.Fatalf("apply migrations: %v", err)
 	}
 
-	return store.New(sqlDB)
+	return store.New(sqlDB), sqlDB
 }
 
 func mustCreateCompany(t *testing.T, s *store.Store, name, source, sourceRef string) store.Company {

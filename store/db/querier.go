@@ -11,6 +11,10 @@ import (
 
 type Querier interface {
 	AddTagToPosting(ctx context.Context, arg AddTagToPostingParams) error
+	// Conditional, unlike MarkPostingClosed: 0 rows affected means the
+	// posting was already closed (e.g. by an overlapping sync), so the
+	// caller records nothing (see store.ClosePosting, #147).
+	ClosePostingIfOpen(ctx context.Context, id int64) (int64, error)
 	CountDocumentReviews(ctx context.Context, arg CountDocumentReviewsParams) (int64, error)
 	// Per-company count of what a company's posting list shows by default:
 	// listings still open on the job board that the user hasn't archived.
