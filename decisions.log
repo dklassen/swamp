@@ -5886,3 +5886,65 @@ Decisions:
   caller passes context.Background(). It's preventive, for the signal
   handling or stop-cancels that background and scheduled sync are
   likely to add.
+
+## 2026-09-29 -- Close a posting and its application in one transaction (#147)
+
+SyncCompany closed a vanished posting as three separate commits: a
+"closed" history row, MarkPostingClosed, then moving an early-stage
+application to posting_closed. If the application update failed
+(SQLITE_BUSY after the busy timeout, the TUI quitting mid-refresh and
+closing the database), the posting stayed closed. The next sync only
+looks at open postings, so the application sat at application_started
+for good. Overlapping syncs also closed and recorded every vanished
+posting twice. RFC 0001, P4a.
+
+Decisions:
+- New store.ClosePosting(ctx, postingID, closeApplicationFrom) does all
+  three in one transaction and reports what it changed. It reads the
+  posting inside the transaction and snapshots that for the history
+  row, rather than taking the snapshot sync read before the fetch.
+- The close is conditional (new ClosePostingIfOpen, `WHERE
+  listing_status = 'open'`, :execrows). 0 rows means another sync got
+  there first: nothing else is written and nothing is counted. With
+  store.Open's immediate transactions the in-transaction read already
+  serializes this; the conditional UPDATE keeps it correct without
+  relying on that.
+- The #105 policy (earlyApplicationStatuses) stays in sync and is
+  passed in. Moving it into store would put a sync decision in the data
+  layer, and RFC 0003 is still discussing where that policy lives. The
+  application check reuses GetApplication and UpdateApplicationStatus
+  inside the transaction instead of a new `status IN (...)` query:
+  sqlc.slice mixed with another bound parameter has a documented
+  ordering bug on sqlite (see ListActiveApplications' comment).
+- MarkPostingClosed stays: TUI and store tests use it to set up closed
+  postings. closeApplicationForClosedPosting is gone; its "the one
+  place sync reaches into application state" note moved to
+  earlyApplicationStatuses.
+- sync's test store now opens through store.Open, not a bare sql.Open.
+  The overlap test needs swamp's busy timeout and immediate
+  transactions; with sql.Open, concurrent writers fail with
+  SQLITE_BUSY instead of waiting. This is the follow-up the #140 entry
+  left open, for this package.
+- Tests:
+  - an application update that fails (a test-installed trigger) leaves
+    the posting open with no history, and the next clean sync closes
+    both;
+  - two syncs held at a barrier after fetching close and record each
+    posting once (checked failing against the previous SyncCompany:
+    10 closes and 2 history rows per posting for 5 postings);
+  - a table test of ClosePosting.
+
+  The race detector isn't available in the container (no C
+  compiler); the overlap tests were run 20 times instead.
+- Out of scope: reopen and content-update history (#148), and stopping
+  overlapping syncs altogether (#150). An overlap between runs that
+  fetched at different moments can still close a reopened posting; see
+  #150.
+- Verified on a copy of the real database:
+  - a full `swamp fetch` gave 40 companies, 0 failed, and no duplicate
+    history;
+  - three really-vanished postings, set back to open in the copy (one
+    with an application_started application), then two `swamp fetch`
+    runs at once: each posting got exactly one new "closed" row, Closed
+    summed to 3 across both runs, the application moved to
+    posting_closed, and both runs reported 0 failed.
