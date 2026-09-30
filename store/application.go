@@ -113,8 +113,25 @@ func (s *Store) GetApplicationByID(ctx context.Context, id int64) (Application, 
 	return applicationFromRow(row)
 }
 
+// UpdateApplicationStatus sets a posting's application status and records
+// the change in its status history in the same transaction (#162). Saving
+// the status it already has records nothing: it isn't a change.
 func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, status ApplicationStatus) (Application, error) {
-	row, err := s.queries.UpdateApplicationStatus(ctx, db.UpdateApplicationStatusParams{
+	tx, err := s.sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		return Application{}, fmt.Errorf("store: begin update application status tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	qtx := s.queries.WithTx(tx)
+	before, err := qtx.GetApplication(ctx, postingID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Application{}, ErrNotFound
+		}
+		return Application{}, err
+	}
+	row, err := qtx.UpdateApplicationStatus(ctx, db.UpdateApplicationStatusParams{
 		PostingID: postingID,
 		Status:    sql.NullString{String: status.String(), Valid: true},
 	})
@@ -123,6 +140,15 @@ func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, st
 			return Application{}, ErrNotFound
 		}
 		return Application{}, err
+	}
+	if before.Status.String != status.String() {
+		if err := recordApplicationStatus(ctx, qtx, row.ID, status); err != nil {
+			return Application{}, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Application{}, fmt.Errorf("store: commit update application status tx: %w", err)
 	}
 	return applicationFromRow(row)
 }
