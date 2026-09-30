@@ -5948,3 +5948,62 @@ Decisions:
     runs at once: each posting got exactly one new "closed" row, Closed
     summed to 3 across both runs, the application moved to
     posting_closed, and both runs reported 0 failed.
+
+## 2026-09-30 -- Save, update and reopen postings in one transaction each (#148)
+
+SyncCompany looked a posting up, then committed a history row, then the
+change, each separately. Two overlapping syncs both saw a new posting as
+missing and both counted it as created; both saw a changed or reappeared
+posting in its old state and both recorded and counted the change. A
+failed update left a "content_updated" row for a change that never
+happened, and the retry added another. RFC 0001, P4b.
+
+Decisions:
+- New store.IngestPosting(ctx, params) (IngestResult, error), in one
+  transaction:
+  - not stored: create it plus its markup row (Created);
+  - stored with different content: write "content_updated" with a
+    snapshot of the stored row, then update it (Updated);
+  - same content: nothing.
+
+  The comparison is against the row read inside the transaction, which
+  is what makes an overlapping sync a no-op instead of a duplicate. The
+  comparison (cmp.Equal on IngestedFields) moved from sync into store
+  unchanged.
+- UpsertPosting keeps its signature (about 120 call sites, nearly all
+  test setup) and delegates to IngestPosting. Two behaviour changes for
+  its callers:
+  - it now records "content_updated" history when content changes;
+  - it no longer rewrites a row whose content is unchanged.
+
+  sync was its only production caller and already did both, so nothing
+  observable changes outside tests, and all existing tests pass
+  unchanged. Chose this over changing UpsertPosting's return type, which
+  would have touched every setup call for no behavioural gain.
+- New store.ReopenPosting(ctx, id) (bool, error): a conditional reopen
+  (ReopenPostingIfClosed, `WHERE listing_status = 'closed'`, :execrows)
+  plus the "reopened" history row, in one transaction.
+- Snapshot change: when a closed posting comes back with new content,
+  the "reopened" snapshot is now the posting just before the reopen
+  (new content, still closed). Before, it was the version sync read
+  before the fetch (old content), identical to the "content_updated"
+  snapshot. Each history row now snapshots the state immediately before
+  the change it records.
+- sync drops its own GetPostingBySourceAndSourceID lookup,
+  postingContentChanged and recordHistory. MarkPostingReopened is now
+  used only by its own store test; it's left alone, like
+  MarkPostingClosed, rather than widening this PR.
+- Tests, each checked failing against main's SyncCompany and store:
+  - overlapping create (Created 2 → 1);
+  - overlapping reopen with changed content (Updated 2 → 1, Reopened
+    2 → 1, one row each);
+  - a failing posting update (orphan history row → none, then exactly
+    one after the next sync);
+  - table tests for IngestPosting and ReopenPosting.
+- Verified on a copy of the real database, with two `swamp fetch` runs
+  at once. In the copy, 3 postings still on their boards were closed
+  and 3 titles altered, all from companies without filters (a first
+  attempt picked filtered-out postings, which sync correctly never
+  touches). Result: exactly one "reopened" row for each of the 3, one
+  "content_updated" row for each of the other 3, Reopened and Updated
+  each 3 across both runs, and both runs reported 0 failed.
