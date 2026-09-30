@@ -18,19 +18,19 @@ An earlier draft of this RFC framed triage (2,000 unreviewed postings) as the ma
 
 Measured on 2026-09-29 against a copy of the real database:
 
-| Stage | Count | Notes |
-|---|---|---|
-| Marked interested, no application yet | 15 | open postings only |
-| Started, no drafts | 10 | no `cover_letter.md` or `resume.md` on disk |
-| Started, drafted, never reviewed | 8 | 7 with both documents, 1 with only a cover letter |
-| Started, reviewed at least once | 5 | 8 reviews: 4 passed, 4 flagged. 1 has exported PDFs. |
-| Submitted | 2 | |
-| Posting closed | 7 | see below |
-| Withdrawn | 2 | |
+| Stage                                 | Count | Notes                                                |
+| ------------------------------------- | ----- | ---------------------------------------------------- |
+| Marked interested, no application yet | 15    | open postings only                                   |
+| Started, no drafts                    | 10    | no `cover_letter.md` or `resume.md` on disk          |
+| Started, drafted, never reviewed      | 8     | 7 with both documents, 1 with only a cover letter    |
+| Started, reviewed at least once       | 5     | 8 reviews: 4 passed, 4 flagged. 1 has exported PDFs. |
+| Submitted                             | 2     |                                                      |
+| Posting closed                        | 7     | see below                                            |
+| Withdrawn                             | 2     |                                                      |
 
 - 16 of the 23 started applications are three weeks old or more. 22 of their postings are still open.
 - The stall happens at every step after committing: 10 of 23 were never drafted and 18 of 23 were never reviewed. Submission is only the last of these steps.
-- **"Posting closed" hides what happened before it.** Sync moves both started *and submitted* applications to `posting_closed` (`earlyApplicationStatuses`, `sync/company.go:289`), and there's no status history. So we can't tell how many of the 7 were submitted before the posting closed. Two of them (applications 3 and 5) have exported PDFs, which suggests they were. The real submitted count is somewhere between 2 and 9, and Swamp can't say which.
+- **"Posting closed" hides what happened before it.** Sync moves both started _and submitted_ applications to `posting_closed` (`earlyApplicationStatuses`, `sync/company.go:289`), and there's no status history. So we can't tell how many of the 7 were submitted before the posting closed. Two of them (applications 3 and 5) have exported PDFs, which suggests they were. The real submitted count is somewhere between 2 and 9, and Swamp can't say which.
 
 ### Metric
 
@@ -40,7 +40,7 @@ Measured on 2026-09-29 against a copy of the real database:
 
 ### Why the stall happens: unknown
 
-The data shows *where* applications stop, but not *why*. Possible reasons include: drafting one posting per agent session is too slow, reviewing takes too long, the form asks questions that aren't drafted anywhere, exporting and submitting is fiddly, or you've simply lost interest in the posting. Each of these points to different projects. Phase 0 asks you to record the actual reason for each stalled application before we commit to phase 1's scope.
+The data shows _where_ applications stop, but not _why_. Possible reasons include: drafting one posting per agent session is too slow, reviewing takes too long, the form asks questions that aren't drafted anywhere, exporting and submitting is fiddly, or you've simply lost interest in the posting. Each of these points to different projects. Phase 0 asks you to record the actual reason for each stalled application before we commit to phase 1's scope.
 
 ## Goals
 
@@ -77,6 +77,7 @@ The data shows *where* applications stop, but not *why*. Possible reasons includ
   - optional demographic and accessibility questions.
 
   Swamp's list request (`/jobs?content=true`) doesn't include any of this.
+
 - **Ashby and Lever:** unverified. As far as we know, their public APIs don't expose application questions (see open questions).
 
 ### Intake
@@ -97,7 +98,7 @@ This isn't where the problem is today, but it's where phase 3 will work.
 
 ## Proposal
 
-Effort: **S** is a few hours to a day, **M** is a few days. Each project is its own issue and PR, following the repo's one-issue-per-PR workflow.
+Effort: **S** is a few hours to a day, **M** is a few days. Each project is its own issue and PR, following the repo's one-issue-per-PR workflow. The **ordered** task list with dependencies and per-task definitions of done is in [Work breakdown: ordered tasks](#work-breakdown-ordered-tasks) below — read that for sequencing; the phases here explain the *why* for each project. (Note: phase 1's "submit checklist" is split there into C2/`1.3a` and C3/`1.3b`; the split is the 2026-09-29 decision.)
 
 ### Phase 0: Measure (S)
 
@@ -134,6 +135,7 @@ The final scope depends on what phase 0 finds. The expected projects are:
      - the custom questions (label, required, field type, options).
 
      `stage_prepare` returns these, and the skill drafts only what's needed.
+
    - **Why at commit time:** one extra request per posting you apply to, instead of one for every posting on every sync.
 2. **"Answers" document type.**
    - **What:** `answers.md`, next to the cover letter and resume, with one section per question. It gets the same read/write tools, review loop and staleness check.
@@ -158,63 +160,126 @@ Start this only after phase 1 meets its criteria.
      - drop the Ashby `isRemote` fallback idea, since it's always null when `workplaceType` is.
    - **Why:** without this, a workplace rule silently hides or keeps 1,258 postings arbitrarily.
 
+## Work breakdown: ordered tasks
+
+Order of operations for the projects above. Each task is **one branch / issue / PR** — the repo's one-issue-per-PR rule, TDD, the four-step verification checklist, and a `decisions.log` entry wherever a choice is actually made. **S** = hours to a day, **M** = a few days.
+
+**Confirmed 2026-09-29:**
+
+- **1.3 is split.** `1.3a` (submit checklist, needs no requirements data) lands in Wave C now; `1.3b` (export *only* what this posting asks) waits on D2 (Greenhouse requirements) because it is the one piece that reads stored requirements.
+- **RFC 0004** (the `documents` type-dispatch refactor) is **strongly recommended** as a prerequisite of D3 (`answers.md`) — recommended, **not** a hard gate. It is the work that makes a third document type cheap; skipping it makes D3 the expensive path by design.
+- **Hygiene findings** (deleted companies' postings staying `open`; Mattermost/Livekit not fetched since 2026-09-24) are folded in here as task A3 rather than left as separate issues.
+- **Phase 3 is a hard gate.** It does not start until phase 1's success criteria are met: started queue under 5 **and** median started→submitted (measured over new applications) under 7 days.
+
+### Wave A — foundations (mutually independent, can all start now)
+
+**A1 — Status history (phase 0.1).** The `application_status_history` table (application id, status, `changed_at` UTC default) plus a sqlc query that inserts the row **in the same transaction** as the status update. There are **two** write paths in the main tree and both must insert in-tx: `store/application.go:100` (`Store.UpdateApplicationStatus`, the TUI path) and `store/posting.go:317` (the `qtx` path). Include sync's move to `posting_closed`. *Done:* a test proves the history row and the status change commit or roll back together, and a second test covers the `posting_closed` move from sync. The metric becomes computable from the table. Deps: none. **S**.
+
+**A2 — Ashby/Lever questions spike (phase 2 open question, pulled early).** Timeboxed reconnaissance, no production code: do the public Ashby and Lever APIs expose application/screening questions at all (open Q4)? If not, D2's fallback is manual entry. *Done:* a short note (issue comment or `decisions.log`) answering Q4, so it is already settled when D2 is designed. Deps: none; run early because its finding changes D2's design. **S**.
+
+**A3 — Hygiene fixes ("Related findings").** (a) A deleted company's postings should not keep counting as `open` (Outschool: 6 postings still `open` after deletion) — decide the intended behavior and fix; (b) confirm Mattermost and Livekit simply have not been fetched since 2026-09-24, and re-fetch now that `swamp fetch` reports failures (#145). *Done:* deleted companies' postings excluded from open totals (or documented as intended) and all active companies freshly fetched. Each is its own small issue/PR. Deps: none. **S**.
+
+### Wave B — make the queue visible (needs A1)
+
+**B1 — Diagnose the 23 stalled applications (phase 0.2, no code).** For each started application: write in its notes why it stopped, then withdraw it or keep it. *Done:* every one of the 23 has a reason note and a keep/withdraw decision; the keep-list is C1's work list. Deps: A1 (so "how long stalled" is measurable, not guessed). **S**.
+
+**B2 — Stalled-applications view (phase 1.1).** On the home screen, list started applications oldest-first with their age, what each is missing (no drafts / not reviewed / flagged / not exported), and whether the posting is still open. *Done:* the home screen shows the queue and each application's next step; the "what's missing" logic composes the existing `documents.Status` + `store.LatestDocumentReviews` (read-only, no new store work). Deps: A1, B1. **S**.
+
+### Wave C — clear the queue (work list comes from B1)
+
+**C1 — Batch drafting (phase 1.2).** Let `apply-to-posting` walk B1's keep-list of applications with no drafts, drafting each and stopping for review. *Guardrail:* it still never submits anything or changes an application's status. *Done:* the no-draft keep-list from B1 has cover-letter/resume (and, once D3 lands, answers) drafts. Deps: B1. **S**.
+
+**C2 — Submit checklist v1, `1.3a` (phase 1.3, split).** A submit flow on application detail: open the apply page, export the PDFs that already exist (cover letter / resume, whichever are present), show the drafted answers ready to copy, then mark the application submitted. *Done:* a reviewed draft reaches "submitted" in one pass on the TUI, without needing stored requirements. Deps: B2 (helps navigation, not a hard dep). **S**.
+
+**C3 — Export only what this posting asks, `1.3b`.** The half of the submit flow that reads the stored application requirement (D2's output) and exports only what this form actually asks. *Done:* for a Greenhouse posting the exported set matches the stored required/optional/absent. Deps: **D2** — this is the only submit-flow piece that needs requirements data. **S**.
+
+### Wave D — match what each form asks (phase 2)
+
+**D1 — `documents` type-dispatch refactor (RFC 0004).** `documents` gains the type→document accessor (and, per RFC 0004, the single `CurrentReviews` owner); optionally co-land its small siblings (RFC 0003's option-3 contract test, RFC 0005's presence method). *Why first:* it is the change that makes adding a third document type (D3) cheap — doing D3 without it touches six dispatch sites by hand. Deps: none. **Strongly recommended before D3.** **M**.
+
+**D2 — Greenhouse application requirements (phase 2.1, the keystone).** Add the Greenhouse job-detail call with `?questions=true` (the client today only does `/jobs?content=true`, `greenhouse/client.go:87`), parse it, and at `stage_prepare` time store whether the cover letter/resume is required, optional, or absent plus the custom questions (label, required, field type, options); `stage_prepare` returns them so the skill drafts only what's needed. *Done:* committing to a Greenhouse posting stores its requirements + questions and the skill reads them back to draft only what is asked. Deps: A2 (it decides the API-vs-manual-entry shape). **M**.
+
+**D3 — `answers.md` document type (phase 2.2).** A third document type beside the cover letter and resume, one section per question, with the same read/write tools, the same review loop (passed/flagged), and the same staleness check. *Done:* the answers document round-trips — written, reviewed, and re-checked for staleness when its content changes. Deps: D1 (strongly recommended), D2 (for the question set to draft against). **M**.
+
+**D4 — Reusable standard answers (phase 2.3).** Decide the home first (open Q3: a section in `PROFILE_REFERENCE.md`, free text the agent adapts, vs a structured file the TUI can show beside each question) — one line in `decisions.log` — then store-and-reuse the answers that repeat across forms (country, location, visa sponsorship, work authorization, notice period, post-employment restrictions, salary expectations, preferred name, LinkedIn). *Done:* a standard answer edits once and is reused across drafts; `apply-to-posting` references it. Deps: D3. **S**.
+
+### Wave E — widen the intake (phase 3, hard-gated)
+
+**Gate:** phase 3 does not start until phase 1's success criteria are met — started queue under 5 **and** median started→submitted (over new applications) under 7 days. "More interested postings help only if they get submitted."
+
+**E1 — Reliable workplace type (phase 3.3, first in the wave).** Normalize casing; for Greenhouse, detect "remote" from the location; drop the Ashby `isRemote` fallback (verified always-null when `workplaceType` is null). *Why first:* E2's workplace rules are footguns on this data — 1,258 open postings have no usable workplace type as it stands. *Done:* workplace type is consistent across sources and the Greenhouse "remote" gap is closed. Deps: none. **S**.
+
+**E2 — Global title & workplace rules (phase 3.2).** Include/exclude title patterns and an allowed-workplace-types list, applied across all companies at display time. *Done:* a single rule set filters postings company-wide and only changes what is displayed (no store mutation). Deps: E1 (the workplace half needs its data fixed first). **S**.
+
+**E3 — "Seen" state + triage inbox (phase 3.1).** A `seen_at` on posting markup, then a TUI screen listing every open, unseen posting across all companies, newest first, with one key each for interested / archive / skip. *Guardrail:* the inbox shows the started-queue size so triage never outruns what gets submitted. *Done:* an unseen open listing is promoted to "interested" with one key press and its `seen_at` set. Deps: B2 (for the guardrail display). **S**.
+
+### Dependency map
+
+```
+A1  status history ─┬─ B1 ─┬─ C1  batch drafting
+                    │      └─ B2 ─┬─ C2  submit checklist v1 (1.3a)
+                    │            └────── E3  (after the phase-3 gate)
+                    └─ the metric / stall-age / "submitted-then-closed" become measurable
+A2  Ashby/Lever spike ──────────────── D2 (API vs manual-entry fallback)
+A3  hygiene fixes (independent, can ship alone anytime)
+D1  documents type-dispatch (RFC 0004) ─(strongly recommended)─ D3 (a 3rd type is cheap with it)
+D2  Greenhouse requirements ─┬─ C3  export-only-what's-asked (1.3b)
+                             └─ D3  the question set to draft answers against
+D3  answers.md ─────────────────────── D4  reusable standard answers
+E1  reliable workplace ─────────────── E2  workplace rules
+```
+
+**Order in one line:** `A1, A2, A3` → `B1, B2` → `C1, C2` → `D1, D2` → `D3, D4` (and `C3` right after D2) → gate → `E1, E2, E3`.
+
+**Issues** (filed 2026-09-30; labels `rfc-0002` plus `rfc0002-step-N` in the order above; list with `gh issue list --label rfc-0002`):
+
+| Task | Issue | Step label |
+| --- | --- | --- |
+| A1 | #162 | 1 |
+| A2 | #167 | 2 |
+| A3a | #178 | 3 |
+| A3b | #179 (done: both companies fetch normally) | 4 |
+| B1 | #163 | 5 |
+| B2 | #164 | 6 |
+| C1 | #165 | 7 |
+| C2 | #166 | 8 |
+| D1 | #180 | 9 |
+| D2 | #168 | 10 |
+| C3 | #181 | 11 |
+| D3 | #169 | 12 |
+| D4 | #170 | 13 |
+| E1 | #171 | 14 |
+| E2 | #173 | 15 |
+| E3 | #172 | 16 |
+
+Found while filing, outside the waves (label `rfc0002-related`): #174 (open question 1, and whether reopening a posting restores its application), #175 (an application can be started on an already-closed posting), #176 (`last_seen_at` only changes with content, which blocks open question 5).
+
 ## Deferred
 
-| Project | Why deferred |
-|---|---|
+| Project                                                                                 | Why deferred                                                                                                             |
+| --------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | Finding companies (add from careers URL, guess board from name, `find-companies` skill) | 2,000 open postings already outnumber what gets submitted by orders of magnitude. More companies make the backlog worse. |
-| Interview stages in the TUI, upcoming interviews, interview prep, pipeline stats | No application has reached interviewing. Revisit when one does. Status history (phase 0) is the groundwork. |
-| Agent fit scoring | Useful for ordering the triage inbox, so it follows phase 3. |
-| Pay import (Ashby compensation, Lever salary) | A nice filter, but it doesn't affect submissions. It fits in phase 3 if cheap. |
-| Tags | No use case yet. The tables stay unused. |
-| Base resume plus tailored changes; carrying review lessons into the profile | Worth it once review volume is the bottleneck, which it isn't at 8 reviews. |
+| Interview stages in the TUI, upcoming interviews, interview prep, pipeline stats        | No application has reached interviewing. Revisit when one does. Status history (phase 0) is the groundwork.              |
+| Agent fit scoring                                                                       | Useful for ordering the triage inbox, so it follows phase 3.                                                             |
+| Pay import (Ashby compensation, Lever salary)                                           | A nice filter, but it doesn't affect submissions. It fits in phase 3 if cheap.                                           |
+| Tags                                                                                    | No use case yet. The tables stay unused.                                                                                 |
+| Base resume plus tailored changes; carrying review lessons into the profile             | Worth it once review volume is the bottleneck, which it isn't at 8 reviews.                                              |
 
-## Work breakdown
+## Related findings (now folded into the plan as task A3, except the already-fixed one)
 
-Filed 2026-09-30. Every issue carries the `rfc-0002` label, and an `rfc0002-step-N` label giving the order to work in. List them with `gh issue list --label rfc-0002`.
-
-| Step | Issue | Phase | Work | Size | Depends on |
-|---|---|---|---|---|---|
-| 1 | #162 | 0 | Application status history, written on every status-changing path, with a backfill | S–M | — |
-| 2 | #163 | 0 | Note why each started application stalled; withdraw or keep (you, no code) | S | — |
-| 3 | #164 | 1 | Home screen: age at status and next step, oldest first | S–M | #162 |
-| 4 | #165 | 1 | `apply-to-posting` drafts several started applications per session; `list_postings` includes started applications that aren't marked interested | M | #117 |
-| 5 | #166 | 1 | Submit flow on application detail: open, export, confirm, mark submitted | M | #162 |
-| 6 | #167 | 2 | Spike: Ashby/Lever application forms (half a day) | S | — |
-| 7 | #168 | 2 | Greenhouse application requirements fetched and stored at `stage_prepare` | M | — |
-| 8 | #169 | 2 | Answers document type | M | RFC 0004 steps 1–3 (not yet filed), #168 |
-| 9 | #170 | 2 | Reusable standard answers | S–M | Open question 3 decided |
-| 10 | #171 | 3 | Reliable workplace type (normalize; remote from Greenhouse locations) | S | Phase 1 criteria met |
-| 11 | #172 | 3 | Seen state and a cross-company triage inbox | M | Phase 1 criteria met |
-| 12 | #173 | 3 | Global title and workplace rules at display time | M | #171 |
-
-- **Found reviewing this RFC** (label `rfc0002-related`, not in the order above):
-  - #174: decide open question 1, closing a submitted application, and whether reopening a posting restores its application;
-  - #175: an application can be started on an already-closed posting;
-  - #176: `last_seen_at` only changes with content, which blocks open question 5.
-- **Changes from the proposal above:**
-  - Reliable workplace type moved first in phase 3, since the workplace rule depends on it.
-  - The stalled-applications view extends the existing home screen.
-  - Batch drafting also fixes `list_postings` missing started applications that aren't marked interested.
-- **Resolved since the RFC was written:** Mattermost and Livekit fetch normally again (2026-09-30). The deleted-companies finding is folded into #172, since nothing visible is affected today.
-- **The answers document (#169) needs RFC 0004's work first,** and that isn't filed yet. It should be broken into issues before step 8.
-
-## Related findings (separate issues, not part of this RFC)
-
-- **Deleted companies' postings stay open.** Outschool was deleted on 2026-09-29, but its 6 postings are still `open`, so they count toward open totals.
-- **Two companies haven't been fetched since 2026-09-24.** Mattermost and Livekit, while others were fetched on 09-28 and 09-29. It may just be how those fetches were run. Worth checking now that `swamp fetch` reports failures (#145).
+- **Deleted companies' postings stay open** (→ A3a). Outschool was deleted on 2026-09-29, but its 6 postings are still `open`, so they count toward open totals.
+- **Two companies haven't been fetched since 2026-09-24** (→ A3b). Mattermost and Livekit, while others were fetched on 09-28 and 09-29. It may just be how those fetches were run. Worth checking now that `swamp fetch` reports failures (#145).
 - **Already fixed:** the `published_at` scan error that an earlier draft listed as a blocker was fixed in #141 (migration 00012).
 
 ## Open questions
 
-1. **Should a closing posting still move a *submitted* application to `posting_closed`?** Issue #105 made that deliberate. With status history the submission isn't lost, but "submitted, then posting closed" arguably means "still waiting on a response."
+1. **Should a closing posting still move a _submitted_ application to `posting_closed`?** Issue #105 made that deliberate. With status history the submission isn't lost, but "submitted, then posting closed" arguably means "still waiting on a response."
 2. **Phase 1 scope:** which projects do the phase 0 notes actually call for?
 3. **Where standard answers live:** a section in `PROFILE_REFERENCE.md` (free text, the agent adapts it) or a structured file (exact reuse, and the TUI could show it next to each question)?
 4. **Ashby/Lever questions:** is a timeboxed spike worth it, before designing manual entry?
-5. **Time pressure:** how long do postings stay open? A rough estimate from `published_at` to `last_seen_at` is about a month. Some applications' `last_seen_at` falls *before* they were started, though, so what `last_seen_at` records needs checking before relying on it.
+5. **Time pressure:** how long do postings stay open? A rough estimate from `published_at` to `last_seen_at` is about a month. Some applications' `last_seen_at` falls _before_ they were started, though, so what `last_seen_at` records needs checking before relying on it.
 
 ## Out of scope
 
 - Submitting applications automatically. It's against the "never submit" rule in `apply-to-posting`, and fragile across boards.
 - Email or calendar integration.
-- Job boards beyond Ashby, Greenhouse and Lever.
