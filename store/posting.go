@@ -9,13 +9,15 @@ import (
 	"slices"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/dklassen/swamp/store/db"
 )
 
 // IngestedFields is a posting's content as ingested from its source --
 // exactly the fields store.Posting and CreatePostingParams share, and
 // exactly the fields a re-fetch needs to compare to detect a real
-// content change (see sync/company.go's use of this type). Pulled into
+// content change (see IngestPosting). Pulled into
 // one type so there's a single place defining "what counts as a
 // posting's content," rather than that field list being hand-copied at
 // every site that needs it (see decisions.log, #57).
@@ -126,18 +128,39 @@ func nullPublishedAt(t OptionalTime) sql.NullTime {
 }
 
 // UpsertPosting inserts a new posting or updates the existing one for the
-// same (source, source_id), keeping the row's listing_status untouched on
-// update (see UpdatePosting query comment for why).
-//
-// On insert, it also creates the posting's markup row, defaulted to
-// user status new with empty notes, in the same transaction, so every
-// posting always has exactly one markup row and callers never have to
-// remember a second call to create it. This is deliberately not exposed
-// as two separate Store calls.
+// same (source, source_id) -- IngestPosting, returning just the posting.
 func (s *Store) UpsertPosting(ctx context.Context, params CreatePostingParams) (Posting, error) {
+	result, err := s.IngestPosting(ctx, params)
+	return result.Posting, err
+}
+
+// IngestResult reports what IngestPosting did.
+type IngestResult struct {
+	Posting Posting
+	// Created: the posting didn't exist and was inserted.
+	Created bool
+	// Updated: the posting existed with different content, which was
+	// replaced and recorded as a "content_updated" history row.
+	Updated bool
+}
+
+// IngestPosting saves a fetched posting, all in one transaction (#148):
+//   - not stored yet: inserts it, along with its markup row, so every
+//     posting always has exactly one markup row and callers never have to
+//     remember a second call to create it;
+//   - stored with different content: records the stored version as a
+//     "content_updated" history row, then updates it;
+//   - stored with the same content: changes nothing.
+//
+// Comparing against the row read inside the transaction, not one the
+// caller read earlier, is what keeps an overlapping sync of the same
+// posting from counting it as created twice or recording one change
+// twice. An update keeps the row's listing_status untouched (see the
+// UpdatePosting query comment for why).
+func (s *Store) IngestPosting(ctx context.Context, params CreatePostingParams) (IngestResult, error) {
 	tx, err := s.sqlDB.BeginTx(ctx, nil)
 	if err != nil {
-		return Posting{}, fmt.Errorf("store: begin upsert posting tx: %w", err)
+		return IngestResult{}, fmt.Errorf("store: begin ingest posting tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -148,9 +171,11 @@ func (s *Store) UpsertPosting(ctx context.Context, params CreatePostingParams) (
 		SourceID: params.SourceID,
 	})
 
+	var result IngestResult
 	var row db.Posting
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
+		result.Created = true
 		row, err = qtx.CreatePosting(ctx, db.CreatePostingParams{
 			CompanyID:       params.CompanyID,
 			Source:          params.Source,
@@ -169,14 +194,30 @@ func (s *Store) UpsertPosting(ctx context.Context, params CreatePostingParams) (
 			RawPayload:      params.RawPayload,
 		})
 		if err != nil {
-			return Posting{}, fmt.Errorf("store: create posting: %w", err)
+			return IngestResult{}, fmt.Errorf("store: create posting: %w", err)
 		}
 		if _, err := qtx.CreatePostingMarkup(ctx, row.ID); err != nil {
-			return Posting{}, fmt.Errorf("store: create posting markup: %w", err)
+			return IngestResult{}, fmt.Errorf("store: create posting markup: %w", err)
 		}
 	case err != nil:
-		return Posting{}, fmt.Errorf("store: get posting by source: %w", err)
+		return IngestResult{}, fmt.Errorf("store: get posting by source: %w", err)
 	default:
+		stored := postingFromRow(existing)
+		if cmp.Equal(stored.IngestedFields, params.IngestedFields) {
+			return IngestResult{Posting: stored}, nil
+		}
+		snapshot, err := json.Marshal(stored)
+		if err != nil {
+			return IngestResult{}, fmt.Errorf("store: marshal posting snapshot: %w", err)
+		}
+		if _, err := qtx.CreatePostingHistory(ctx, db.CreatePostingHistoryParams{
+			PostingID:  existing.ID,
+			ChangeType: "content_updated",
+			Snapshot:   string(snapshot),
+		}); err != nil {
+			return IngestResult{}, fmt.Errorf("store: record posting content updated: %w", err)
+		}
+		result.Updated = true
 		row, err = qtx.UpdatePosting(ctx, db.UpdatePostingParams{
 			ID:              existing.ID,
 			Title:           params.Title,
@@ -193,14 +234,15 @@ func (s *Store) UpsertPosting(ctx context.Context, params CreatePostingParams) (
 			RawPayload:      params.RawPayload,
 		})
 		if err != nil {
-			return Posting{}, fmt.Errorf("store: update posting: %w", err)
+			return IngestResult{}, fmt.Errorf("store: update posting: %w", err)
 		}
 	}
 
 	if err := tx.Commit(); err != nil {
-		return Posting{}, fmt.Errorf("store: commit upsert posting tx: %w", err)
+		return IngestResult{}, fmt.Errorf("store: commit ingest posting tx: %w", err)
 	}
-	return postingFromRow(row), nil
+	result.Posting = postingFromRow(row)
+	return result, nil
 }
 
 func (s *Store) GetPosting(ctx context.Context, id int64) (Posting, error) {
@@ -328,6 +370,51 @@ func (s *Store) ClosePosting(ctx context.Context, postingID int64, closeApplicat
 		return ClosePostingResult{}, fmt.Errorf("store: commit close posting tx: %w", err)
 	}
 	return result, nil
+}
+
+// ReopenPosting marks a closed posting open again, e.g. because it
+// reappeared in a fetch, and records a "reopened" posting_history
+// snapshot of it as it was just before -- in one transaction (#148). It
+// reports whether it reopened the posting: false when it was already
+// open, e.g. reopened by an overlapping sync, in which case nothing is
+// recorded either.
+func (s *Store) ReopenPosting(ctx context.Context, postingID int64) (bool, error) {
+	tx, err := s.sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("store: begin reopen posting tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	qtx := s.queries.WithTx(tx)
+
+	row, err := qtx.GetPosting(ctx, postingID)
+	if err != nil {
+		return false, fmt.Errorf("store: get posting to reopen: %w", err)
+	}
+	changed, err := qtx.ReopenPostingIfClosed(ctx, postingID)
+	if err != nil {
+		return false, fmt.Errorf("store: reopen posting: %w", err)
+	}
+	if changed == 0 {
+		return false, nil
+	}
+
+	snapshot, err := json.Marshal(postingFromRow(row))
+	if err != nil {
+		return false, fmt.Errorf("store: marshal posting snapshot: %w", err)
+	}
+	if _, err := qtx.CreatePostingHistory(ctx, db.CreatePostingHistoryParams{
+		PostingID:  postingID,
+		ChangeType: "reopened",
+		Snapshot:   string(snapshot),
+	}); err != nil {
+		return false, fmt.Errorf("store: record posting reopened: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("store: commit reopen posting tx: %w", err)
+	}
+	return true, nil
 }
 
 // MarkPostingReopened marks a previously-closed posting open again, e.g.

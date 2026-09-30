@@ -2,11 +2,8 @@ package sync
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-
-	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
@@ -59,25 +56,6 @@ func toCreatePostingParams(companyID int64, source string, p jobboard.Posting) s
 		SourceID:       p.SourceID,
 		IngestedFields: toIngestedFields(p),
 	}
-}
-
-// postingContentChanged reports whether any ingested field on existing
-// differs from the freshly-fetched params.
-func postingContentChanged(existing store.Posting, params store.CreatePostingParams) bool {
-	return !cmp.Equal(existing.IngestedFields, params.IngestedFields)
-}
-
-// recordHistory snapshots posting's current ingested state and writes it
-// as a posting_history row before the caller changes posting.
-func (s *Syncer) recordHistory(ctx context.Context, posting store.Posting, changeType string) error {
-	snapshot, err := json.Marshal(posting)
-	if err != nil {
-		return fmt.Errorf("sync: marshal posting snapshot: %w", err)
-	}
-	if _, err := s.store.CreatePostingHistory(ctx, posting.ID, changeType, string(snapshot)); err != nil {
-		return fmt.Errorf("sync: record posting history: %w", err)
-	}
-	return nil
 }
 
 // ApplyCompanyFilters replaces companyID's saved filters and re-syncs it
@@ -149,33 +127,22 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (Result, erro
 			continue
 		}
 
-		params := toCreatePostingParams(company.ID, company.Source, p)
-		existing, err := s.store.GetPostingBySourceAndSourceID(ctx, company.Source, p.SourceID)
-		switch {
-		case errors.Is(err, store.ErrNotFound):
-			if _, err := s.store.UpsertPosting(ctx, params); err != nil {
-				return result, fmt.Errorf("sync: create posting: %w", err)
-			}
+		ingested, err := s.store.IngestPosting(ctx, toCreatePostingParams(company.ID, company.Source, p))
+		if err != nil {
+			return result, fmt.Errorf("sync: save posting: %w", err)
+		}
+		if ingested.Created {
 			result.Created++
-		case err != nil:
-			return result, fmt.Errorf("sync: get existing posting: %w", err)
-		default:
-			if postingContentChanged(existing, params) {
-				if err := s.recordHistory(ctx, existing, "content_updated"); err != nil {
-					return result, err
-				}
-				if _, err := s.store.UpsertPosting(ctx, params); err != nil {
-					return result, fmt.Errorf("sync: update posting: %w", err)
-				}
-				result.Updated++
+		}
+		if ingested.Updated {
+			result.Updated++
+		}
+		if ingested.Posting.ListingStatus == "closed" {
+			reopened, err := s.store.ReopenPosting(ctx, ingested.Posting.ID)
+			if err != nil {
+				return result, fmt.Errorf("sync: reopen posting: %w", err)
 			}
-			if existing.ListingStatus == "closed" {
-				if err := s.recordHistory(ctx, existing, "reopened"); err != nil {
-					return result, err
-				}
-				if err := s.store.MarkPostingReopened(ctx, existing.ID); err != nil {
-					return result, fmt.Errorf("sync: mark posting reopened: %w", err)
-				}
+			if reopened {
 				result.Reopened++
 			}
 		}

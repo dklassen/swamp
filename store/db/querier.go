@@ -136,6 +136,10 @@ type Querier interface {
 	MarkPostingClosed(ctx context.Context, id int64) error
 	MarkPostingReopened(ctx context.Context, id int64) error
 	RemoveTagFromPosting(ctx context.Context, arg RemoveTagFromPostingParams) error
+	// Conditional, unlike MarkPostingReopened: 0 rows affected means the
+	// posting was already open again (e.g. reopened by an overlapping sync),
+	// so the caller records nothing (see store.ReopenPosting, #148).
+	ReopenPostingIfClosed(ctx context.Context, id int64) (int64, error)
 	RestoreCompany(ctx context.Context, id int64) error
 	RestoreCompanyWithName(ctx context.Context, arg RestoreCompanyWithNameParams) (Company, error)
 	// See SetPostingInterested -- same mutual-exclusivity reasoning, mirrored.

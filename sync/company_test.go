@@ -646,6 +646,28 @@ func TestSyncCompany_OverlappingSyncsClosePostings_EachCloseRecordedOnce(t *test
 	}
 }
 
+// TestSyncCompany_OverlappingSyncsCreatePosting_CountedOnce: two syncs
+// that both fetched before either wrote both see a posting that isn't in
+// the database yet. Only the run that actually creates it may count it
+// (#148); the other finds it already there, unchanged.
+func TestSyncCompany_OverlappingSyncsCreatePosting_CountedOnce(t *testing.T) {
+	s := newTestStore(t)
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+
+	results := syncOverlapping(t, s, company.ID, 2, []jobboard.Posting{
+		samplePosting("job-1", "Engineer", "Engineering", "Remote"),
+	})
+
+	created, updated := 0, 0
+	for _, r := range results {
+		created += r.Created
+		updated += r.Updated
+	}
+	if created != 1 || updated != 0 {
+		t.Errorf("summed over both runs: Created = %d, Updated = %d, want 1 and 0 -- one posting, created once, never changed", created, updated)
+	}
+}
+
 // A successful sync records when the company was fetched; a failed fetch
 // leaves it alone, so a stale "last fetched" is a visible sign of trouble.
 func TestSyncCompany_RecordsLastFetchedAtOnlyOnSuccess(t *testing.T) {
