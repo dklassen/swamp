@@ -73,11 +73,13 @@ type App struct {
 	companyEdit         companyEditModel
 	status              string
 	err                 error
-	selectedCompany     store.Company
-	postings            []store.Posting
-	postingMarkup       map[int64]store.PostingMarkup
-	postingList         postingListModel
-	postingDetail       postingDetailModel
+	// syncAll is the sync-all run, if one is or was under way (#153).
+	syncAll         syncAllState
+	selectedCompany store.Company
+	postings        []store.Posting
+	postingMarkup   map[int64]store.PostingMarkup
+	postingList     postingListModel
+	postingDetail   postingDetailModel
 	// applicationsByPosting holds the application for each posting_id that
 	// has one (fetched async on entering posting detail -- see
 	// loadApplication). A posting with no entry has no application yet
@@ -945,6 +947,8 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			sortCompaniesByName(a.companies)
 			a.screen = screenCompanyList
 		}
+	case syncAllStepMsg:
+		return a, a.handleSyncAllStep(msg)
 	case companyRefreshedMsg:
 		if errors.Is(msg.err, sync.ErrSyncInProgress) {
 			// Another sync of this company (e.g. a scheduled `swamp fetch`)
@@ -1240,7 +1244,14 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.screen = screenCompanyEdit
 			a.companyEdit = newCompanyEditModel(a.store, v.company.ID, v.company.Name)
 		case refreshCompanyMsg:
+			if a.syncAll.running {
+				// The run may be syncing this company right now (#150).
+				a.status = "Sync all in progress: refresh unavailable"
+				return a, nil
+			}
 			return a, refreshCompany(a.syncer, v.company.ID)
+		case syncAllKeyMsg:
+			return a, a.toggleSyncAll()
 		case selectCompanyMsg:
 			a.selectedCompany = v.company
 			a.screen = screenPostingList
@@ -1350,6 +1361,13 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case cancelFilterSelectMsg:
 			a.screen = screenPostingList
 		case saveFilterSelectionMsg:
+			if a.syncAll.running {
+				// Saving re-syncs the company, which the run may be syncing
+				// right now (#150). Refuse rather than queue: nothing is saved
+				// or narrowed, and the selection stays on screen to save later.
+				a.status = "Sync all in progress: save filters when it finishes"
+				return a, nil
+			}
 			// Narrowed synchronously, before applyCompanyFilters' Cmd even
 			// runs -- this needs nothing the async save/resync produces (it's
 			// the same in-memory narrowing loadPostings' own authoritative
