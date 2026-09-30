@@ -86,6 +86,11 @@ func (s *Syncer) ApplyCompanyFilters(ctx context.Context, companyID int64, depar
 // SyncCompany refreshes a single company's postings: fetches its board,
 // gates new postings through the company's filters, and upserts matches
 // into store.
+//
+// Cancelling ctx stops the fetch, never the writes (#149). Before the
+// board answers, nothing has been written, so abandoning it is safe;
+// after, the sync is all local writes bounded by the database's busy
+// timeout, and stopping them partway would leave the company half-synced.
 func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (Result, error) {
 	result := Result{CompanyID: companyID}
 
@@ -102,6 +107,7 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (Result, erro
 	if err != nil {
 		return result, fmt.Errorf("sync: fetch postings: %w", err)
 	}
+	ctx = context.WithoutCancel(ctx)
 	result.Fetched = len(fetched)
 	for i := range fetched {
 		fetched[i] = sanitizePosting(fetched[i])
