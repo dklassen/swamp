@@ -132,3 +132,59 @@ func TestUpdateApplicationStatus_SameStatus_RecordsNothing(t *testing.T) {
 		t.Errorf("history mismatch (-want +got):\n%s", diff)
 	}
 }
+
+// The example from #162: an application submitted before sync closed its
+// posting keeps its submission in history, with the time of each change.
+func TestClosePosting_KeepsSubmittedThenClosedInHistory(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+	if _, err := s.UpdateApplicationStatus(ctx, posting.ID, ApplicationStatusSubmitted); err != nil {
+		t.Fatalf("UpdateApplicationStatus: %v", err)
+	}
+
+	result, err := s.ClosePosting(ctx, posting.ID, []ApplicationStatus{ApplicationStatusStarted, ApplicationStatusSubmitted})
+	if err != nil {
+		t.Fatalf("ClosePosting: %v", err)
+	}
+	if !result.ApplicationClosed {
+		t.Fatal("ClosePosting did not close the application")
+	}
+
+	want := []ApplicationStatus{ApplicationStatusStarted, ApplicationStatusSubmitted, ApplicationStatusPostingClosed}
+	if diff := cmp.Diff(want, historyStatuses(t, s, application.ID)); diff != "" {
+		t.Errorf("history mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestClosePosting_HistoryFailure_LeavesPostingAndApplicationOpen(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+	failHistoryInserts(t, s)
+
+	if _, err := s.ClosePosting(ctx, posting.ID, []ApplicationStatus{ApplicationStatusStarted}); err == nil {
+		t.Fatal("ClosePosting succeeded, want the injected history failure")
+	}
+
+	after, err := s.GetPosting(ctx, posting.ID)
+	if err != nil {
+		t.Fatalf("GetPosting: %v", err)
+	}
+	if after.ListingStatus != "open" {
+		t.Errorf("ListingStatus = %q, want open", after.ListingStatus)
+	}
+	got, err := s.GetApplication(ctx, posting.ID)
+	if err != nil {
+		t.Fatalf("GetApplication: %v", err)
+	}
+	if diff := cmp.Diff(application, got); diff != "" {
+		t.Errorf("application changed despite the failed history write (-before +after):\n%s", diff)
+	}
+}

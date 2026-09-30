@@ -300,8 +300,8 @@ type ClosePostingResult struct {
 
 // ClosePosting closes an open posting, records a "closed" posting_history
 // snapshot of it, and moves its application (if any) to posting_closed
-// when the application's status is one of closeApplicationFrom -- all in
-// one transaction (#147). Doing them as separate commits let an
+// when the application's status is one of closeApplicationFrom, recording
+// that in its status history (#162) -- all in one transaction (#147). Doing them as separate commits let an
 // interruption close the posting but not its application, and the next
 // sync, which only looks at open postings, never came back to it.
 //
@@ -361,6 +361,9 @@ func (s *Store) ClosePosting(ctx context.Context, postingID int64, closeApplicat
 				Status:    sql.NullString{String: ApplicationStatusPostingClosed.String(), Valid: true},
 			}); err != nil {
 				return ClosePostingResult{}, fmt.Errorf("store: close application for closed posting: %w", err)
+			}
+			if err := recordApplicationStatus(ctx, qtx, application.ID, ApplicationStatusPostingClosed); err != nil {
+				return ClosePostingResult{}, err
 			}
 			result.ApplicationClosed = true
 		}
