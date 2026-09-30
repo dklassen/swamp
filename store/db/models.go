@@ -18,6 +18,13 @@ type Application struct {
 	UpdatedAt time.Time      `json:"updated_at"`
 }
 
+type ApplicationStatusHistory struct {
+	ID            int64     `json:"id"`
+	ApplicationID int64     `json:"application_id"`
+	Status        string    `json:"status"`
+	ChangedAt     time.Time `json:"changed_at"`
+}
+
 type Company struct {
 	ID             int64          `json:"id"`
 	Name           string         `json:"name"`

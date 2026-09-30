@@ -34,6 +34,9 @@ type Querier interface {
 	// application's decision, not the schema's (see db/migrations/00004_...,
 	// PR #17 review). notes still relies on its own column default ('').
 	CreateApplication(ctx context.Context, arg CreateApplicationParams) (Application, error)
+	// Written only by store.recordApplicationStatus, inside the same
+	// transaction as the status change it records (#162).
+	CreateApplicationStatusHistory(ctx context.Context, arg CreateApplicationStatusHistoryParams) error
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
 	CreateCompanyFilter(ctx context.Context, arg CreateCompanyFilterParams) (CompanyFilter, error)
 	CreateDocumentReview(ctx context.Context, arg CreateDocumentReviewParams) (DocumentReview, error)
@@ -89,6 +92,9 @@ type Querier interface {
 	// has none today, but that needs re-verifying if one is ever added.
 	ListActiveApplications(ctx context.Context, terminalStatuses []sql.NullString) ([]ListActiveApplicationsRow, error)
 	ListActiveCompanies(ctx context.Context) ([]Company, error)
+	// Oldest first. id breaks ties between changes in the same second
+	// (CURRENT_TIMESTAMP has one-second resolution).
+	ListApplicationStatusHistory(ctx context.Context, applicationID int64) ([]ApplicationStatusHistory, error)
 	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)
 	// Keyspace discovery for filter selection: department is a company-
 	// specific vocabulary (not a fixed enum), so filter values are offered

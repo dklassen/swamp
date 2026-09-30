@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/go-cmp/cmp"
 	"github.com/pressly/goose/v3"
 
 	_ "modernc.org/sqlite"
@@ -834,6 +835,132 @@ func TestPublishedAtUTC_ConvertsStoredTimesToUTC(t *testing.T) {
 				t.Errorf("published_at = %+v, want %+v", got, tt.want)
 			}
 		})
+	}
+}
+
+// TestApplicationStatusHistory_BackfillsExistingApplications verifies the
+// 00014 migration's backfill (#162): every existing application gets an
+// application_started row at its created_at, plus a row for its current
+// status at its updated_at when that isn't application_started. What
+// happened in between was never recorded and can't be recovered.
+func TestApplicationStatusHistory_BackfillsExistingApplications(t *testing.T) {
+	sqlDB := migrateTo(t, 13)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	applications := []struct {
+		id        int
+		status    string
+		createdAt string
+		updatedAt string
+	}{
+		{id: 1, status: "application_started", createdAt: "2026-09-01 10:00:00", updatedAt: "2026-09-02 11:00:00"},
+		{id: 2, status: "posting_closed", createdAt: "2026-09-03 10:00:00", updatedAt: "2026-09-20 12:30:00"},
+	}
+	for _, a := range applications {
+		if _, err := sqlDB.Exec(
+			`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload)
+			 VALUES (?, 1, 'ashby', ?, 'Engineer', '{}')`,
+			a.id, fmt.Sprintf("job-%d", a.id),
+		); err != nil {
+			t.Fatalf("insert posting %d: %v", a.id, err)
+		}
+		if _, err := sqlDB.Exec(
+			`INSERT INTO applications (id, posting_id, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)`,
+			a.id, a.id, a.status, a.createdAt, a.updatedAt,
+		); err != nil {
+			t.Fatalf("insert application %d: %v", a.id, err)
+		}
+	}
+
+	if err := goose.UpTo(sqlDB, ".", 14); err != nil {
+		t.Fatalf("migrate to version 14: %v", err)
+	}
+	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+		t.Fatalf("GetDBVersion: %v", err)
+	} else if gotVersion != 14 {
+		t.Fatalf("DB version after UpTo(14) = %d, want 14 (migration 00014 not found?)", gotVersion)
+	}
+
+	type historyRow struct {
+		ApplicationID int
+		Status        string
+		ChangedAt     string
+	}
+	rows, err := sqlDB.Query(
+		`SELECT application_id, status, CAST(changed_at AS TEXT) FROM application_status_history ORDER BY application_id, changed_at`,
+	)
+	if err != nil {
+		t.Fatalf("query history: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var got []historyRow
+	for rows.Next() {
+		var r historyRow
+		if err := rows.Scan(&r.ApplicationID, &r.Status, &r.ChangedAt); err != nil {
+			t.Fatalf("scan history: %v", err)
+		}
+		got = append(got, r)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("iterate history: %v", err)
+	}
+
+	want := []historyRow{
+		{ApplicationID: 1, Status: "application_started", ChangedAt: "2026-09-01 10:00:00"},
+		{ApplicationID: 2, Status: "application_started", ChangedAt: "2026-09-03 10:00:00"},
+		{ApplicationID: 2, Status: "posting_closed", ChangedAt: "2026-09-20 12:30:00"},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("application_status_history mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestApplicationStatusHistory_DownDropsTable verifies 00014's Down leaves
+// the schema as 00013 had it: the history table is gone and the
+// applications it recorded are untouched.
+func TestApplicationStatusHistory_DownDropsTable(t *testing.T) {
+	sqlDB := migrateTo(t, 14)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+	); err != nil {
+		t.Fatalf("insert company: %v", err)
+	}
+	if _, err := sqlDB.Exec(
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload) VALUES (1, 1, 'ashby', 'job-1', 'Engineer', '{}')`,
+	); err != nil {
+		t.Fatalf("insert posting: %v", err)
+	}
+	if _, err := sqlDB.Exec(`INSERT INTO applications (id, posting_id, status) VALUES (1, 1, 'application_started')`); err != nil {
+		t.Fatalf("insert application: %v", err)
+	}
+	if _, err := sqlDB.Exec(`INSERT INTO application_status_history (application_id, status) VALUES (1, 'application_started')`); err != nil {
+		t.Fatalf("insert history: %v", err)
+	}
+
+	if err := goose.DownTo(sqlDB, ".", 13); err != nil {
+		t.Fatalf("migrate down to version 13: %v", err)
+	}
+
+	var tables int
+	if err := sqlDB.QueryRow(
+		`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'application_status_history'`,
+	).Scan(&tables); err != nil {
+		t.Fatalf("query sqlite_master: %v", err)
+	}
+	if tables != 0 {
+		t.Errorf("application_status_history still exists after Down")
+	}
+	var applications int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM applications`).Scan(&applications); err != nil {
+		t.Fatalf("count applications: %v", err)
+	}
+	if applications != 1 {
+		t.Errorf("applications = %d after Down, want 1", applications)
 	}
 }
 
