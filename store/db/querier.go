@@ -10,6 +10,10 @@ import (
 )
 
 type Querier interface {
+	// Takes the company's sync lease if it's free or has expired (see
+	// store.AcquireSyncLease, #150). Expiry is compared entirely in SQL, so
+	// both sides are CURRENT_TIMESTAMP-format UTC text.
+	AcquireCompanySyncLease(ctx context.Context, arg AcquireCompanySyncLeaseParams) (int64, error)
 	AddTagToPosting(ctx context.Context, arg AddTagToPostingParams) error
 	// Conditional, unlike MarkPostingClosed: 0 rows affected means the
 	// posting was already closed (e.g. by an overlapping sync), so the
@@ -135,6 +139,9 @@ type Querier interface {
 	MarkCompanyFetched(ctx context.Context, id int64) error
 	MarkPostingClosed(ctx context.Context, id int64) error
 	MarkPostingReopened(ctx context.Context, id int64) error
+	// Frees the lease only if token still holds it, so a sync whose lease
+	// expired and was taken over can't release the new holder's.
+	ReleaseCompanySyncLease(ctx context.Context, arg ReleaseCompanySyncLeaseParams) error
 	RemoveTagFromPosting(ctx context.Context, arg RemoveTagFromPostingParams) error
 	// Conditional, unlike MarkPostingReopened: 0 rows affected means the
 	// posting was already open again (e.g. reopened by an overlapping sync),

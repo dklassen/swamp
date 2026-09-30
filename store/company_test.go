@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -251,5 +252,67 @@ func TestUpdateCompanyDescription_MissingCompany_ReturnsErrNotFound(t *testing.T
 				t.Fatalf("UpdateCompanyDescription error = %v, want ErrNotFound", err)
 			}
 		})
+	}
+}
+
+// TestCompanySyncLease covers the per-company sync lease (#150): one
+// holder at a time, released only by its holder, and taken over once it
+// has expired so a killed process can't hold it for ever.
+func TestCompanySyncLease(t *testing.T) {
+	t.Parallel()
+	const expiry = 5 * time.Minute
+
+	tests := []struct {
+		name string
+		// setup runs against a fresh company before the "second" acquire.
+		setup     func(t *testing.T, s *Store, companyID int64)
+		wantTaken bool
+	}{
+		{name: "free lease is taken", setup: func(*testing.T, *Store, int64) {}, wantTaken: true},
+		{name: "held lease is refused", setup: func(t *testing.T, s *Store, id int64) {
+			mustAcquire(t, s, id, "first", expiry)
+		}, wantTaken: false},
+		{name: "released lease is taken", setup: func(t *testing.T, s *Store, id int64) {
+			mustAcquire(t, s, id, "first", expiry)
+			if err := s.ReleaseSyncLease(context.Background(), id, "first"); err != nil {
+				t.Fatalf("ReleaseSyncLease: %v", err)
+			}
+		}, wantTaken: true},
+		{name: "release by a non-holder leaves it held", setup: func(t *testing.T, s *Store, id int64) {
+			mustAcquire(t, s, id, "first", expiry)
+			if err := s.ReleaseSyncLease(context.Background(), id, "someone-else"); err != nil {
+				t.Fatalf("ReleaseSyncLease: %v", err)
+			}
+		}, wantTaken: false},
+		{name: "expired lease is taken over", setup: func(t *testing.T, s *Store, id int64) {
+			mustAcquire(t, s, id, "first", expiry)
+			if _, err := s.sqlDB.Exec(`UPDATE companies SET sync_lease_at = datetime('now', '-6 minutes') WHERE id = ?`, id); err != nil {
+				t.Fatalf("backdate lease: %v", err)
+			}
+		}, wantTaken: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := newTestStore(t)
+			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			tt.setup(t, s, acme.ID)
+
+			taken, err := s.AcquireSyncLease(context.Background(), acme.ID, "second", expiry)
+			if err != nil {
+				t.Fatalf("AcquireSyncLease: %v", err)
+			}
+			if taken != tt.wantTaken {
+				t.Errorf("AcquireSyncLease = %v, want %v", taken, tt.wantTaken)
+			}
+		})
+	}
+}
+
+func mustAcquire(t *testing.T, s *Store, companyID int64, token string, expiry time.Duration) {
+	t.Helper()
+	taken, err := s.AcquireSyncLease(context.Background(), companyID, token, expiry)
+	if err != nil || !taken {
+		t.Fatalf("AcquireSyncLease(%q) = %v, %v, want true, nil", token, taken, err)
 	}
 }
