@@ -121,7 +121,9 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result Resul
 	if !taken {
 		return result, ErrSyncInProgress
 	}
+	s.trackLease(token, companyID)
 	defer func() {
+		s.untrackLease(token)
 		// Released whether the sync succeeded or not, and even if ctx was
 		// cancelled. If this fails the lease stays held until it expires,
 		// which is worth reporting.

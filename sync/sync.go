@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	gosync "sync"
 	"time"
 
 	"github.com/dklassen/swamp/jobboard"
@@ -78,6 +79,12 @@ type Syncer struct {
 	store    *store.Store
 	fetchers map[string]PostingFetcher
 	cfg      Config
+
+	// held is the sync leases this Syncer currently holds, token -> company
+	// ID, so ReleaseHeldLeases can free them when the process exits with a
+	// sync still in flight.
+	mu   gosync.Mutex
+	held map[string]int64
 }
 
 // New returns a Syncer. A zero cfg.LeaseTimeout takes DefaultConfig's:
@@ -120,4 +127,43 @@ func (s *Syncer) SyncAll(ctx context.Context) ([]Result, error) {
 		results[i] = result
 	}
 	return results, nil
+}
+
+// ReleaseHeldLeases frees every sync lease this Syncer holds, for a
+// process exiting with a sync still in flight: the TUI quitting
+// mid-refresh or mid-sync-all abandons its running command and then closes
+// the database, so that sync's own release never runs, and its lease
+// would refuse every sync of the company until it expired (#153). Call it
+// after the work that could hold leases has stopped being waited on, and
+// before closing the database. The abandoned sync's own writes are each a
+// single transaction (#147, #148), so freeing its lease early can't leave
+// anything half-written.
+func (s *Syncer) ReleaseHeldLeases(ctx context.Context) error {
+	s.mu.Lock()
+	held := s.held
+	s.held = nil
+	s.mu.Unlock()
+
+	var errs []error
+	for token, companyID := range held {
+		if err := s.store.ReleaseSyncLease(ctx, companyID, token); err != nil {
+			errs = append(errs, fmt.Errorf("sync: %w", err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
+func (s *Syncer) trackLease(token string, companyID int64) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.held == nil {
+		s.held = make(map[string]int64)
+	}
+	s.held[token] = companyID
+}
+
+func (s *Syncer) untrackLease(token string) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	delete(s.held, token)
 }

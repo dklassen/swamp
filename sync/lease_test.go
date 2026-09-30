@@ -216,3 +216,34 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 		t.Errorf("after the next sync: posting %s, application %s; want open and %s", posting.ListingStatus, application.Status, store.ApplicationStatusSubmitted)
 	}
 }
+
+// TestSyncer_ReleaseHeldLeases_FreesInFlightSyncsLeases: a process that
+// exits with a sync still in flight -- the TUI quitting mid-refresh or
+// mid-sync-all abandons its running command, then closes the database --
+// releases the leases it holds on the way out, so the next sync of that
+// company isn't refused until the lease expires (#153).
+func TestSyncer_ReleaseHeldLeases_FreesInFlightSyncsLeases(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	gated := &gatedFetcher{started: make(chan struct{}, 1), release: make(chan struct{})}
+	exiting := New(s, map[string]PostingFetcher{"ashby": gated}, DefaultConfig())
+
+	inFlight := make(chan error, 1)
+	go func() {
+		_, err := exiting.SyncCompany(ctx, acme.ID)
+		inFlight <- err
+	}()
+	<-gated.started
+	if err := exiting.ReleaseHeldLeases(ctx); err != nil {
+		t.Fatalf("ReleaseHeldLeases: %v", err)
+	}
+
+	next := New(s, map[string]PostingFetcher{"ashby": &countingFetcher{}}, DefaultConfig())
+	if _, err := next.SyncCompany(ctx, acme.ID); err != nil {
+		t.Errorf("SyncCompany after the exiting process released its leases: %v, want the lease free", err)
+	}
+	close(gated.release)
+	<-inFlight
+}
