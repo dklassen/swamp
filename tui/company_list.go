@@ -10,24 +10,22 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 
 	"github.com/dklassen/swamp/store"
-	"github.com/dklassen/swamp/sync"
 )
 
 // companyListModel drives the company-list screen. It holds only the
-// dependencies it needs to dispatch its own commands (store, syncer) and
+// dependencies it needs to dispatch its own commands (store) and
 // its own private cursor -- companies themselves are domain data owned
 // by App and passed in on every call, never cached here.
 type companyListModel struct {
 	store  *store.Store
-	syncer *sync.Syncer
 	cursor int
 	// showInfo is whether the info box (i) is open. Ephemeral, like cursor:
 	// closed each time the app starts.
 	showInfo bool
 }
 
-func newCompanyListModel(s *store.Store, syncer *sync.Syncer) companyListModel {
-	return companyListModel{store: s, syncer: syncer}
+func newCompanyListModel(s *store.Store) companyListModel {
+	return companyListModel{store: s}
 }
 
 // enterCompanyFormMsg signals that App should switch to the company-form
@@ -38,6 +36,11 @@ type enterCompanyFormMsg struct{}
 // enterCompanyEditMsg signals that App should switch to the company-edit
 // screen for the given company.
 type enterCompanyEditMsg struct{ company store.Company }
+
+// refreshCompanyMsg asks App to refresh the given company. App starts the
+// sync itself, rather than this screen, because only App knows whether
+// another sync (e.g. a sync-all run) is already under way (#152).
+type refreshCompanyMsg struct{ company store.Company }
 
 // selectCompanyMsg signals that App should switch to the posting-list
 // screen for the given company.
@@ -75,8 +78,7 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 		}
 	case msg.String() == "r":
 		if m.cursor < len(companies) {
-			c := companies[m.cursor]
-			return refreshCompany(m.syncer, c.ID), nil
+			return nil, refreshCompanyMsg{company: companies[m.cursor]}
 		}
 	case msg.String() == "i":
 		m.showInfo = !m.showInfo
