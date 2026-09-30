@@ -6147,3 +6147,27 @@ Decisions:
     companies, 0 failed";
   - in the real TUI (through `script`), `c` then `r` showed "Ashby:
     fetched 67, created 0, updated 0, closed 0, reopened 0".
+
+## 2026-09-30 -- Route the 'r' refresh through App (#152)
+
+companyListModel returned refreshCompany's tea.Cmd straight from 'r', so
+App never saw the request, only the companyRefreshedMsg result, and
+couldn't refuse a refresh while a sync-all run (#153) is active -- the
+in-process half of the refresh exclusion (#150). RFC 0001, option 2.
+
+Decisions:
+- 'r' returns refreshCompanyMsg{company} as a request, handled in App's
+  screenCompanyList switch alongside enterCompanyFormMsg,
+  selectCompanyMsg and the rest; App issues refreshCompany. It carries
+  the whole store.Company, like selectCompanyMsg, rather than just the
+  ID.
+- A refactor only: no guard is added here. #153 adds it once there's a
+  sync-all run to guard against.
+- companyListModel drops its syncer field and newCompanyListModel its
+  syncer parameter, since 'r' was their only use.
+- Tests: 'r' returns the request for the selected company, and nothing
+  with no companies. The existing App-level refresh tests pass
+  unchanged.
+- Verified in the real TUI (through `script`) on a copy of the real
+  database: `c`, `j`, `r` refreshed the second company (Baseten) and
+  showed its usual status line.

@@ -168,7 +168,7 @@ func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 		store:                 s,
 		syncer:                syncer,
 		screen:                screenActiveApplications,
-		companyList:           newCompanyListModel(s, syncer),
+		companyList:           newCompanyListModel(s),
 		companyForm:           newCompanyFormModel(syncer),
 		postingList:           newPostingListModel(s),
 		activeApplicationList: newActiveApplicationListModel(),
@@ -1239,6 +1239,8 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case enterCompanyEditMsg:
 			a.screen = screenCompanyEdit
 			a.companyEdit = newCompanyEditModel(a.store, v.company.ID, v.company.Name)
+		case refreshCompanyMsg:
+			return a, refreshCompany(a.syncer, v.company.ID)
 		case selectCompanyMsg:
 			a.selectedCompany = v.company
 			a.screen = screenPostingList

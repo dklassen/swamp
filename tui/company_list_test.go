@@ -83,6 +83,39 @@ func TestCompanyListModel_E_ReturnsEnterCompanyEditMsg(t *testing.T) {
 	}
 }
 
+// TestCompanyListModel_R_ReturnsRefreshCompanyMsg: 'r' asks App to
+// refresh the selected company rather than starting the sync itself, so
+// App -- which knows about any other sync running -- decides (#152).
+func TestCompanyListModel_R_ReturnsRefreshCompanyMsg(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
+	m := &companyListModel{cursor: 1}
+
+	cmd, intent := m.Update(runeKey('r'), companies)
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil", cmd)
+	}
+	refresh, ok := intent.(refreshCompanyMsg)
+	if !ok {
+		t.Fatalf("intent = %T, want refreshCompanyMsg", intent)
+	}
+	if refresh.company.ID != 2 {
+		t.Fatalf("refreshCompanyMsg.company.ID = %d, want 2", refresh.company.ID)
+	}
+}
+
+func TestCompanyListModel_R_NoCompanies_ReturnsNothing(t *testing.T) {
+	t.Parallel()
+
+	m := &companyListModel{}
+
+	cmd, intent := m.Update(runeKey('r'), nil)
+	if cmd != nil || intent != nil {
+		t.Fatalf("cmd, intent = %v, %v, want nil, nil", cmd, intent)
+	}
+}
+
 func TestCompanyListModel_E_NoCompanies_ReturnsNothing(t *testing.T) {
 	t.Parallel()
 
@@ -142,7 +175,7 @@ func TestCompanyListModel_View_ShowsOpenPostingsAndLastFetched(t *testing.T) {
 	}
 	openPostings := map[int64]int{1: 14}
 
-	m := newCompanyListModel(nil, nil)
+	m := newCompanyListModel(nil)
 	got := m.View(companies, openPostings, 0, 40)
 
 	for _, want := range []string{
@@ -168,7 +201,7 @@ func TestCompanyListModel_View_TableHasNoDescription(t *testing.T) {
 
 	companies := []store.Company{{ID: 1, Name: "Mattermost", Description: "Open-core collaboration platform."}}
 
-	m := newCompanyListModel(nil, nil)
+	m := newCompanyListModel(nil)
 	got := m.View(companies, nil, 120, 40)
 	for _, notWant := range []string{"Description", "Open-core collaboration platform."} {
 		if strings.Contains(got, notWant) {
@@ -189,7 +222,7 @@ func TestCompanyListModel_View_SameHeightWhateverTheSelectedDescription(t *testi
 	}
 
 	for _, infoOpen := range []bool{false, true} {
-		m := newCompanyListModel(nil, nil)
+		m := newCompanyListModel(nil)
 		if infoOpen {
 			m.Update(runeKey('i'), companies)
 		}
@@ -217,7 +250,7 @@ func TestCompanyListModel_View_SameWidthWhateverIsScrolledIntoView(t *testing.T)
 		{ID: 3, Name: "Zapier"},
 	}
 
-	m := newCompanyListModel(nil, nil)
+	m := newCompanyListModel(nil)
 	// A height with room for one company at a time, so each cursor
 	// position scrolls a different name into view: the table's own chrome
 	// plus one row, and the title and help line, each with its margin.
@@ -252,7 +285,7 @@ func TestCompanyListModel_I_TogglesInfoBoxWithFullDescription(t *testing.T) {
 		return strings.Join(strings.Fields(strings.NewReplacer("│", " ", "╭", " ", "╮", " ", "─", " ").Replace(s)), " ")
 	}
 
-	m := newCompanyListModel(nil, nil)
+	m := newCompanyListModel(nil)
 	if got := m.View(companies, nil, 120, 40); strings.Contains(got, "greenhouse/mattermost") {
 		t.Fatalf("info box should start closed:\n%s", got)
 	}
@@ -284,7 +317,7 @@ func TestCompanyListModel_View_InfoBoxTakesItsSpaceFromTheTable(t *testing.T) {
 		companies = append(companies, store.Company{ID: int64(i + 1), Name: fmt.Sprintf("Company %02d", i), Description: "Makes widgets."})
 	}
 
-	m := newCompanyListModel(nil, nil)
+	m := newCompanyListModel(nil)
 	closed := strings.Count(m.View(companies, nil, 120, 20), "\n")
 	m.Update(runeKey('i'), companies)
 	open := strings.Count(m.View(companies, nil, 120, 20), "\n")
