@@ -59,6 +59,14 @@ UPDATE postings
 SET listing_status = 'closed', updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND listing_status = 'open';
 
+-- name: ReopenPostingIfClosed :execrows
+-- Conditional, unlike MarkPostingReopened: 0 rows affected means the
+-- posting was already open again (e.g. reopened by an overlapping sync),
+-- so the caller records nothing (see store.ReopenPosting, #148).
+UPDATE postings
+SET listing_status = 'open', updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND listing_status = 'closed';
+
 -- name: MarkPostingReopened :exec
 UPDATE postings
 SET listing_status = 'open', updated_at = CURRENT_TIMESTAMP

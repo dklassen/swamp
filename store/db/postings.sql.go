@@ -456,6 +456,23 @@ func (q *Queries) MarkPostingReopened(ctx context.Context, id int64) error {
 	return err
 }
 
+const reopenPostingIfClosed = `-- name: ReopenPostingIfClosed :execrows
+UPDATE postings
+SET listing_status = 'open', updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND listing_status = 'closed'
+`
+
+// Conditional, unlike MarkPostingReopened: 0 rows affected means the
+// posting was already open again (e.g. reopened by an overlapping sync),
+// so the caller records nothing (see store.ReopenPosting, #148).
+func (q *Queries) ReopenPostingIfClosed(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, reopenPostingIfClosed, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const updatePosting = `-- name: UpdatePosting :one
 UPDATE postings
 SET title = ?,
