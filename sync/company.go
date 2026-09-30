@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"crypto/rand"
 	"errors"
 	"fmt"
 
@@ -91,8 +92,16 @@ func (s *Syncer) ApplyCompanyFilters(ctx context.Context, companyID int64, depar
 // board answers, nothing has been written, so abandoning it is safe;
 // after, the sync is all local writes bounded by the database's busy
 // timeout, and stopping them partway would leave the company half-synced.
-func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (Result, error) {
-	result := Result{CompanyID: companyID}
+//
+// Only one sync of a company runs at a time, across every process sharing
+// the database (#150): SyncCompany holds the company's sync lease from
+// before the fetch until after the last write, and returns
+// ErrSyncInProgress, having fetched and written nothing, if another sync
+// holds it. Two runs that fetched the board at different moments could
+// otherwise each act on their own view -- the older one closing a posting
+// the newer one had just reopened, and ending its application with it.
+func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result Result, err error) {
+	result = Result{CompanyID: companyID}
 
 	company, err := s.store.GetCompany(ctx, companyID)
 	if err != nil {
@@ -103,6 +112,30 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (Result, erro
 		return result, fmt.Errorf("sync: unsupported source %q", company.Source)
 	}
 
+	token := rand.Text()
+	taken, err := s.store.AcquireSyncLease(ctx, companyID, token, s.cfg.LeaseTimeout)
+	if err != nil {
+		return result, fmt.Errorf("sync: %w", err)
+	}
+	if !taken {
+		return result, ErrSyncInProgress
+	}
+	defer func() {
+		// Released whether the sync succeeded or not, and even if ctx was
+		// cancelled. If this fails the lease stays held until it expires,
+		// which is worth reporting.
+		if releaseErr := s.store.ReleaseSyncLease(context.WithoutCancel(ctx), companyID, token); releaseErr != nil {
+			err = errors.Join(err, fmt.Errorf("sync: %w", releaseErr))
+		}
+	}()
+
+	return s.syncHeld(ctx, company, fetcher, result)
+}
+
+// syncHeld is SyncCompany's work once it holds the company's lease: fetch,
+// save what matches the company's filters, close what's gone.
+func (s *Syncer) syncHeld(ctx context.Context, company store.Company, fetcher PostingFetcher, result Result) (Result, error) {
+	companyID := company.ID
 	fetched, err := s.fetch(ctx, fetcher, company.SourceRef)
 	if err != nil {
 		return result, fmt.Errorf("sync: fetch postings: %w", err)
