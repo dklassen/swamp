@@ -58,7 +58,7 @@ These are small, independent changes. Each is worth doing even if no scheduling 
 | P1 | SQLite safe for more than one writer | **Done** (#136, PR #137) |
 | P2 | Timeout on job board fetches | **Done** (#142, PR #143) |
 | P3 | Failures visible when no one is watching | **Done** (#145, PR #146) |
-| P4 | A company's sync survives interruption and overlap | **Not started**, found 2026-09-29: #147, #148, #149, #150 |
+| P4 | A company's sync survives interruption and overlap | **Done** (#147 PR #155, #148 PR #156, #149 PR #157, #150) |
 
 ### P1. Make SQLite safe for more than one writer (#136, done)
 
@@ -89,7 +89,18 @@ These are small, independent changes. Each is worth doing even if no scheduling 
 - **Cleanup (done 2026-09-29):** Outschool, whose board is gone, was removed, leaving 40 active companies, so a clean run exits 0 again.
 - **Not in #145:** a `sync_runs` table (started, finished, counts, errors as JSON) that the TUI could show ("last full sync: 2h ago, 1 failed"). A history of sync runs is really the first piece of a general record of background job executions, which feeds into option 7 (a job queue with a worker). It needs its own design discussion first; see open question 2.
 
-### P4. Make a company's sync survive interruption and overlap (not started)
+### P4. Make a company's sync survive interruption and overlap (done)
+
+**Shipped (2026-09-30):**
+- `store.ClosePosting` (#147), `store.IngestPosting` and `store.ReopenPosting` (#148) each write a change and its history (and, for a close, the application) in one transaction. Each write happens only if the row is still in the expected state.
+- `SyncCompany` ignores cancellation after its fetch (#149).
+- **Per-company sync lease (#150):** `SyncCompany` holds it from before the fetch until after the last write (`companies.sync_lease_token` / `sync_lease_at`, migration 00013, `sync.Config.LeaseTimeout`, default 5 min).
+  - A sync that finds the lease held returns `sync.ErrSyncInProgress` without fetching.
+  - `swamp fetch` lists it as skipped and doesn't count it as a failure.
+  - The TUI shows "already syncing elsewhere" as status, not as an error.
+- Verified with two `swamp fetch` runs at once against real boards, and in the real TUI.
+
+The problem as found:
 
 Found while designing option 2. `SyncCompany` (`sync/company.go`) is not one transaction. After the fetch, it makes many separate writes, each committed on its own:
 - a `posting_history` row, then the upsert, close or reopen it records;
@@ -304,7 +315,7 @@ P4 can go before or alongside these.
 5. **Option 3** is a cheap follow-up if data still feels stale when the TUI opens.
 6. **Defer options 4 to 7.** Revisit option 6 if agents need to trigger syncs, and option 7 if scale or rate limits require retries and pacing.
 
-Suggested order: ~~P1~~ → ~~P2~~ → ~~P3~~ → P4 (#147–#150) → option 2 (#151–#153) → option 1. Option 2 comes before option 1 because it's useful on its own and exercises P1 inside one process first. Option 1 has no code dependency on option 2, though, so they can go in either order if the schedule matters more. Each step is its own issue and PR, following the repo's one-issue-per-PR workflow.
+Suggested order: ~~P1~~ → ~~P2~~ → ~~P3~~ → ~~P4 (#147–#150)~~ → option 2 (#151–#153) → option 1. Option 2 comes before option 1 because it's useful on its own and exercises P1 inside one process first. Option 1 has no code dependency on option 2, though, so they can go in either order if the schedule matters more. Each step is its own issue and PR, following the repo's one-issue-per-PR workflow.
 
 ## Work breakdown
 
@@ -312,10 +323,10 @@ Filed 2026-09-29. Every issue carries the `rfc-0001` label, and an `rfc0001-step
 
 | Step | Issue | Part | Work | Size | Depends on |
 |---|---|---|---|---|---|
-| 1 | #147 | P4a | Close a posting, its history and its application in one transaction; conditional close | S–M | — |
-| 2 | #148 | P4b | Reopen and content-update history in the same transaction as the change; conditional reopen; `Created` from `UpsertPosting` | M | #147 (same loop) |
-| 3 | #149 | P4c | `context.WithoutCancel` after the fetch (preventive) | S | — |
-| 4 | #150 | P4d | Per-company sync lease across processes; `ErrSyncInProgress`; skipped companies in `swamp fetch`'s summary | M | #147, #148 |
+| 1 | #147 (done) | P4a | Close a posting, its history and its application in one transaction; conditional close | S–M | — |
+| 2 | #148 (done) | P4b | Reopen and content-update history in the same transaction as the change; conditional reopen; `Created` from `UpsertPosting` | M | #147 (same loop) |
+| 3 | #149 (done) | P4c | `context.WithoutCancel` after the fetch (preventive) | S | — |
+| 4 | #150 (done) | P4d | Per-company sync lease across processes; `ErrSyncInProgress`; skipped companies in `swamp fetch`'s summary | M | #147, #148 |
 | 5 | #151 | Option 2 | `Result.Name`, `sync.Summarize` (fixes "1 companies"), `reportFetch` uses both | S | — |
 | 6 | #152 | Option 2 | `r` becomes a request message handled by `App` (refactor only) | S | — |
 | 7 | #153 | Option 2 | `R` syncs every company in the background; guard on `r`, `R` and filter saves; stop with `R` | M | #151, #152; after P4 |
