@@ -6297,3 +6297,34 @@ Corrections to the entry above:
 - Kept as related issues outside the waves: #174 (open question 1, and
   reopening not restoring an application), #175 (starting an
   application on a closed posting), #176 (last_seen_at).
+
+## 2026-09-30 -- Application status history (#162, RFC 0002 task A1)
+
+New table application_status_history (migration 00014), one row per
+status an application enters, written in the same transaction as the
+change on all three write paths: CreateApplication (TUI and
+stage_prepare), UpdateApplicationStatus (TUI) and ClosePosting (sync).
+One unexported helper, store.recordApplicationStatus, does the insert
+for all three so they can't drift.
+
+Decisions:
+- Backfill: each existing application gets application_started at
+  created_at, plus its current status at updated_at when that differs.
+  Transitions in between were never recorded and are lost. updated_at
+  also moves on a notes edit, so the second row's time is an upper
+  bound on when the application entered that status, not exact. On the
+  2026-09-30 database: 34 applications, 45 rows.
+- Saving the status an application already has records no row. The
+  status screen opens with its cursor on the current status, so that
+  save is one key press, and a duplicate row would move "entered this
+  status" later than it was. The save still bumps updated_at, as it
+  did before; that isn't this issue's to change.
+- UpdateApplicationStatus reads the current status inside the
+  transaction to decide that. Transactions begin IMMEDIATE (store.Open),
+  so the read and the write can't interleave with another writer.
+- No trigger-based history: a SQLite trigger on applications.status
+  would cover writers outside store too, but it would hide the write
+  from the Go code and from sqlc, and every writer already goes through
+  store (AGENTS.md: never write without store.Open).
+- Atomicity is tested by injecting a failure with a test-only trigger
+  that aborts history inserts.
