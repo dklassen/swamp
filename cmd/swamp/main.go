@@ -166,60 +166,37 @@ func runImport(s *store.Store, args []string) {
 // can exit non-zero when something scheduled it and nobody is watching
 // (issue #145).
 func runFetch(s *store.Store) int {
-	ctx := context.Background()
-
-	companies, err := s.ListActiveCompanies(ctx)
-	if err != nil {
-		log.Fatalf("list active companies: %v", err)
-	}
-	names := make(map[int64]string, len(companies))
-	for _, c := range companies {
-		names[c.ID] = c.Name
-	}
-
 	syncer := newSyncer(s)
-	results, err := syncer.SyncAll(ctx)
+	results, err := syncer.SyncAll(context.Background())
 	if err != nil {
 		log.Fatalf("sync: %v", err)
 	}
 
-	return reportFetch(os.Stdout, os.Stderr, results, names)
+	return reportFetch(os.Stdout, os.Stderr, results)
 }
 
 // reportFetch prints one line per company -- successes to stdout, errors
-// and skips to stderr -- then a one-line summary to stderr, e.g. "41
-// companies, 1 failed (Outschool)", and returns how many companies failed.
-// A company skipped because another sync of it was already running
-// (sync.ErrSyncInProgress, #150) isn't a failure: it's being synced, just
-// not by this run. It's named in the summary ("..., 1 skipped (Acme)")
-// only when there is one, so a clean run's summary is unchanged.
-func reportFetch(stdout, stderr io.Writer, results []sync.Result, names map[int64]string) int {
-	var failed, skipped []string
+// and skips to stderr -- then sync.Summarize's one-line summary to
+// stderr, e.g. "41 companies, 1 failed (Outschool)", and returns how many
+// companies failed. A company skipped because another sync of it was
+// already running (sync.ErrSyncInProgress, #150) isn't a failure: it's
+// being synced, just not by this run.
+func reportFetch(stdout, stderr io.Writer, results []sync.Result) int {
 	for _, r := range results {
-		name := names[r.CompanyID]
 		switch {
 		case errors.Is(r.Err, sync.ErrSyncInProgress):
-			skipped = append(skipped, name)
-			_, _ = fmt.Fprintf(stderr, "%s: skipped, another sync of it is in progress\n", name)
+			_, _ = fmt.Fprintf(stderr, "%s: skipped, another sync of it is in progress\n", r.Name)
 		case r.Err != nil:
-			failed = append(failed, name)
-			_, _ = fmt.Fprintf(stderr, "%s: error: %v\n", name, r.Err)
+			_, _ = fmt.Fprintf(stderr, "%s: error: %v\n", r.Name, r.Err)
 		default:
 			_, _ = fmt.Fprintf(stdout, "%s: fetched=%d created=%d updated=%d closed=%d reopened=%d\n",
-				name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
+				r.Name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
 		}
 	}
 
-	summary := fmt.Sprintf("%d companies, %d failed", len(results), len(failed))
-	if len(failed) > 0 {
-		summary += " (" + strings.Join(failed, ", ") + ")"
-	}
-	if len(skipped) > 0 {
-		summary += fmt.Sprintf(", %d skipped (%s)", len(skipped), strings.Join(skipped, ", "))
-	}
+	summary := sync.Summarize(results)
 	_, _ = fmt.Fprintln(stderr, summary)
-
-	return len(failed)
+	return len(summary.Failed)
 }
 
 // runStage drives the agent hand-off mechanism: `stage list` prints

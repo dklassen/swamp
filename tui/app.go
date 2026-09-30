@@ -489,15 +489,14 @@ func updateCompanyName(s *store.Store, companyID int64, name string) tea.Cmd {
 }
 
 type companyRefreshedMsg struct {
-	companyName string
-	result      sync.Result
-	err         error
+	result sync.Result
+	err    error
 }
 
-func refreshCompany(syncer *sync.Syncer, companyID int64, companyName string) tea.Cmd {
+func refreshCompany(syncer *sync.Syncer, companyID int64) tea.Cmd {
 	return func() tea.Msg {
 		result, err := syncer.SyncCompany(context.Background(), companyID)
-		return companyRefreshedMsg{companyName: companyName, result: result, err: err}
+		return companyRefreshedMsg{result: result, err: err}
 	}
 }
 
@@ -849,15 +848,14 @@ func loadFilterOptions(s *store.Store, companyID int64) tea.Cmd {
 // round trip, not the three-step save/resync/reload chain this used to
 // be (see decisions.log, #56).
 type companyFiltersAppliedMsg struct {
-	companyName string
-	result      sync.Result
-	err         error
+	result sync.Result
+	err    error
 }
 
-func applyCompanyFilters(syncer *sync.Syncer, companyID int64, companyName string, departments, locations []string) tea.Cmd {
+func applyCompanyFilters(syncer *sync.Syncer, companyID int64, departments, locations []string) tea.Cmd {
 	return func() tea.Msg {
 		result, err := syncer.ApplyCompanyFilters(context.Background(), companyID, departments, locations)
-		return companyFiltersAppliedMsg{companyName: companyName, result: result, err: err}
+		return companyFiltersAppliedMsg{result: result, err: err}
 	}
 }
 
@@ -952,14 +950,14 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Another sync of this company (e.g. a scheduled `swamp fetch`)
 			// is running; this one fetched and wrote nothing (#150).
 			a.err = nil
-			a.status = msg.companyName + " is already syncing elsewhere; try again in a moment"
+			a.status = msg.result.Name + " is already syncing elsewhere; try again in a moment"
 			break
 		}
 		a.err = msg.err
 		if msg.err == nil {
 			r := msg.result
 			a.status = fmt.Sprintf("%s: fetched %d, created %d, updated %d, closed %d, reopened %d",
-				msg.companyName, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
+				r.Name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
 			// The company list's Open and Last fetched columns just changed.
 			reload := loadCompanies(a.store)
 			if r.CompanyID == a.selectedCompany.ID {
@@ -1127,14 +1125,14 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// another sync of this company is running (#150). Reload so
 			// the view reflects the saved filters.
 			a.err = nil
-			a.status = msg.companyName + " filters saved; sync skipped, it's already syncing elsewhere"
+			a.status = msg.result.Name + " filters saved; sync skipped, it's already syncing elsewhere"
 			return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
 		}
 		a.err = msg.err
 		if msg.err == nil {
 			r := msg.result
 			a.status = fmt.Sprintf("%s: fetched %d, created %d, updated %d, closed %d, reopened %d",
-				msg.companyName, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
+				r.Name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
 			// Reload from the DB so the view becomes authoritative instead
 			// of just the optimistic narrowing applied synchronously when
 			// the filter selection was saved (see screenFilterSelect's
@@ -1361,7 +1359,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.activeFilterDepartments = v.departments
 			a.activeFilterLocations = v.locations
 			a.postingList.resetCursorIfOutOfBounds(len(a.postings))
-			return a, applyCompanyFilters(a.syncer, a.selectedCompany.ID, a.selectedCompany.Name, v.departments, v.locations)
+			return a, applyCompanyFilters(a.syncer, a.selectedCompany.ID, v.departments, v.locations)
 		}
 		return a, cmd
 	case screenCompanyForm:

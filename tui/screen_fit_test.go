@@ -172,7 +172,7 @@ func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 		text string
 	}{
 		{name: "no banner"},
-		{name: "status", msg: companyRefreshedMsg{companyName: "Acme", result: sync.Result{Fetched: 40}}, text: "Acme: fetched 40"},
+		{name: "status", msg: companyRefreshedMsg{result: sync.Result{Name: "Acme", Fetched: 40}}, text: "Acme: fetched 40"},
 		{name: "error", msg: browserOpenedMsg{err: errors.New("could not open browser")}, text: "error: could not open browser"},
 	}
 	for _, sc := range screens {

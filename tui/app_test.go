@@ -2741,8 +2741,7 @@ func TestApp_CompanyRefreshed_ForCurrentlyViewedCompany_ReloadsPostings(t *testi
 	// Simulate the background re-sync (triggered by saving a filter)
 	// completing for the company currently being viewed.
 	app, cmd := sendKey(app, companyRefreshedMsg{
-		companyName: acme.Name,
-		result:      sync.Result{CompanyID: acme.ID},
+		result: sync.Result{CompanyID: acme.ID, Name: acme.Name},
 	})
 	if cmd == nil {
 		t.Fatal("Update on companyRefreshedMsg for the viewed company returned nil Cmd, want a command that reloads postings")
@@ -2764,8 +2763,7 @@ func TestApp_CompanyRefreshed_ForDifferentCompany_DoesNotReloadPostings(t *testi
 	app = openPostingList(t, app)
 
 	_, cmd := sendKey(app, companyRefreshedMsg{
-		companyName: "SomeOtherCompany",
-		result:      sync.Result{CompanyID: 999999},
+		result: sync.Result{CompanyID: 999999, Name: "SomeOtherCompany"},
 	})
 	// The company list still reloads (its Open and Last fetched columns
 	// changed), but the postings being viewed belong to a different company

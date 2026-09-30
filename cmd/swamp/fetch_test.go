@@ -13,8 +13,6 @@ import (
 func TestReportFetch(t *testing.T) {
 	t.Parallel()
 
-	names := map[int64]string{1: "Acme", 2: "Globex", 3: "Initech"}
-
 	tests := []struct {
 		name       string
 		results    []sync.Result
@@ -25,8 +23,8 @@ func TestReportFetch(t *testing.T) {
 		{
 			name: "all succeed",
 			results: []sync.Result{
-				{CompanyID: 1, Fetched: 3, Created: 1},
-				{CompanyID: 2, Fetched: 2, Updated: 2},
+				{CompanyID: 1, Name: "Acme", Fetched: 3, Created: 1},
+				{CompanyID: 2, Name: "Globex", Fetched: 2, Updated: 2},
 			},
 			wantFailed: 0,
 			wantStdout: "Acme: fetched=3 created=1 updated=0 closed=0 reopened=0\n" +
@@ -36,9 +34,9 @@ func TestReportFetch(t *testing.T) {
 		{
 			name: "some fail",
 			results: []sync.Result{
-				{CompanyID: 1, Fetched: 3, Created: 1},
-				{CompanyID: 2, Err: errors.New("status 404")},
-				{CompanyID: 3, Err: errors.New("context deadline exceeded")},
+				{CompanyID: 1, Name: "Acme", Fetched: 3, Created: 1},
+				{CompanyID: 2, Name: "Globex", Err: errors.New("status 404")},
+				{CompanyID: 3, Name: "Initech", Err: errors.New("context deadline exceeded")},
 			},
 			wantFailed: 2,
 			wantStdout: "Acme: fetched=3 created=1 updated=0 closed=0 reopened=0\n",
@@ -51,9 +49,9 @@ func TestReportFetch(t *testing.T) {
 			// failure: it's being synced, just not by this run (#150).
 			name: "one skipped because another sync holds it",
 			results: []sync.Result{
-				{CompanyID: 1, Fetched: 3, Created: 1},
-				{CompanyID: 2, Err: sync.ErrSyncInProgress},
-				{CompanyID: 3, Err: errors.New("status 404")},
+				{CompanyID: 1, Name: "Acme", Fetched: 3, Created: 1},
+				{CompanyID: 2, Name: "Globex", Err: sync.ErrSyncInProgress},
+				{CompanyID: 3, Name: "Initech", Err: errors.New("status 404")},
 			},
 			wantFailed: 1,
 			wantStdout: "Acme: fetched=3 created=1 updated=0 closed=0 reopened=0\n",
@@ -68,7 +66,7 @@ func TestReportFetch(t *testing.T) {
 			t.Parallel()
 
 			var stdout, stderr bytes.Buffer
-			failed := reportFetch(&stdout, &stderr, tt.results, names)
+			failed := reportFetch(&stdout, &stderr, tt.results)
 
 			if failed != tt.wantFailed {
 				t.Errorf("failed = %d, want %d", failed, tt.wantFailed)
