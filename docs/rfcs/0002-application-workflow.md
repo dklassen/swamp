@@ -78,7 +78,7 @@ The data shows _where_ applications stop, but not _why_. Possible reasons includ
 
   Swamp's list request (`/jobs?content=true`) doesn't include any of this.
 
-- **Ashby and Lever:** unverified. As far as we know, their public APIs don't expose application questions (see open questions).
+- **Ashby and Lever:** not through their supported public APIs (checked 2026-09-30, #167). Both expose the form unofficially: Ashby through its hosted board's undocumented GraphQL, and Lever as JSON embedded in the hosted apply page. Swamp deliberately doesn't use either, so their requirements are entered by hand (#184).
 
 ### Intake
 
@@ -236,7 +236,7 @@ E1  reliable workplace ─────────────── E2  workpla
 | Task | Issue | Step label |
 | --- | --- | --- |
 | A1 | #162 | 1 |
-| A2 | #167 | 2 |
+| A2 | #167 (done: not in supported APIs; manual entry, #184) | 2 |
 | A3a | #178 | 3 |
 | A3b | #179 (done: both companies fetch normally) | 4 |
 | B1 | #163 | 5 |
@@ -252,7 +252,7 @@ E1  reliable workplace ─────────────── E2  workpla
 | E2 | #173 | 15 |
 | E3 | #172 | 16 |
 
-Found while filing, outside the waves (label `rfc0002-related`): #174 (open question 1, and whether reopening a posting restores its application), #175 (an application can be started on an already-closed posting), #176 (`last_seen_at` only changes with content, which blocks open question 5).
+Found while filing, outside the waves (label `rfc0002-related`): #174 (open question 1, and whether reopening a posting restores its application), #175 (an application can be started on an already-closed posting), #176 (`last_seen_at` only changes with content, which blocks open question 5). Filed from A2: #184 (enter Ashby/Lever application requirements by hand; depends on D2).
 
 ## Deferred
 
@@ -276,7 +276,7 @@ Found while filing, outside the waves (label `rfc0002-related`): #174 (open ques
 1. **Should a closing posting still move a _submitted_ application to `posting_closed`?** Issue #105 made that deliberate. With status history the submission isn't lost, but "submitted, then posting closed" arguably means "still waiting on a response."
 2. **Phase 1 scope:** which projects do the phase 0 notes actually call for?
 3. **Where standard answers live:** a section in `PROFILE_REFERENCE.md` (free text, the agent adapts it) or a structured file (exact reuse, and the TUI could show it next to each question)?
-4. **Ashby/Lever questions:** is a timeboxed spike worth it, before designing manual entry?
+4. **Ashby/Lever questions:** answered by the spike (#167, 2026-09-30). Neither supported public API exposes them. Unofficial sources exist but aren't used, so manual entry (#184) is the path for both.
 5. **Time pressure:** how long do postings stay open? A rough estimate from `published_at` to `last_seen_at` is about a month. Some applications' `last_seen_at` falls _before_ they were started, though, so what `last_seen_at` records needs checking before relying on it.
 
 ## Out of scope
