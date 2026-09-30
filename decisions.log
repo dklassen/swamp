@@ -6007,3 +6007,36 @@ Decisions:
   touches). Result: exactly one "reopened" row for each of the 3, one
   "content_updated" row for each of the other 3, Reopened and Updated
   each 3 across both runs, and both runs reported 0 failed.
+
+## 2026-09-30 -- Cancelling a sync stops its fetch, never its writes (#149)
+
+SyncCompany used the caller's context for every write after the fetch.
+A caller cancelling mid-sync stopped it wherever it was: some postings
+saved, others not, last_fetched_at stale. RFC 0001, P4c.
+
+Decisions:
+- `ctx = context.WithoutCancel(ctx)` directly after the fetch returns.
+  - Before the board answers nothing has been written, so a cancel
+    still abandons the company; FetchTimeout (#142) also still applies,
+    since it's derived inside fetch.
+  - After, the sync is local SQLite writes bounded by busy_timeout, so
+    running them to completion is cheap and leaves the company
+    consistent.
+  - The contract is documented on SyncCompany.
+- Preventive, as #149 says: no caller cancels today (the TUI and
+  `swamp fetch` pass context.Background()). With #147/#148 each write
+  is already atomic, so a mid-write cancel could only leave a company
+  half-synced (consistent per posting, stale last_fetched_at), not
+  corrupt. This closes that too, before signal handling or a
+  stop-that-cancels arrives with background and scheduled sync.
+- Not done: bounding the write phase with its own deadline. Writes are
+  local and each waits at most busy_timeout, so a separate deadline
+  would only add a new way to stop partway.
+- Tests:
+  - a fetcher that cancels the parent context and then returns
+    postings: the sync completes (was: `list company filters: context
+    canceled`);
+  - cancelling during a hanging fetch still returns context.Canceled
+    with nothing written.
+- Verified: a full `swamp fetch` on a copy of the real database is
+  unchanged (40 companies, 0 failed).

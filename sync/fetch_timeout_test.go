@@ -106,3 +106,78 @@ func TestSyncAll_HungBoardFailsOnlyItsOwnCompany(t *testing.T) {
 		t.Errorf("healthy company's result = %+v, want Created=1 and no Err", r)
 	}
 }
+
+// cancelAfterFetchFetcher stands in for a caller that cancels while a
+// sync is past its fetch: it cancels the sync's parent context, then
+// returns postings as if the board had answered just in time.
+type cancelAfterFetchFetcher struct {
+	cancel   context.CancelFunc
+	postings []jobboard.Posting
+}
+
+func (f cancelAfterFetchFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error) {
+	f.cancel()
+	return f.postings, nil
+}
+
+// TestSyncCompany_CancelledAfterFetch_WritesComplete: cancellation stops
+// the fetch, never the writes (#149). Once the board has answered, the
+// sync is all local writes; stopping them partway would leave the
+// company half-synced with a stale last_fetched_at.
+func TestSyncCompany_CancelledAfterFetch_WritesComplete(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	fetcher := cancelAfterFetchFetcher{cancel: cancel, postings: []jobboard.Posting{
+		samplePosting("job-1", "Engineer", "Engineering", "Remote"),
+		samplePosting("job-2", "Designer", "Design", "Remote"),
+	}}
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+
+	result, err := syncer.SyncCompany(ctx, acme.ID)
+	if err != nil {
+		t.Fatalf("SyncCompany cancelled after its fetch: %v, want the writes to complete", err)
+	}
+	if result.Created != 2 {
+		t.Errorf("result.Created = %d, want 2", result.Created)
+	}
+	company, err := s.GetCompany(context.Background(), acme.ID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+	if company.LastFetchedAt.IsZero() {
+		t.Error("LastFetchedAt not set, want the completed sync recorded")
+	}
+}
+
+// TestSyncCompany_CancelledDuringFetch_AbortsWithoutWriting: the other
+// half of #149's contract -- a caller cancelling before the board answers
+// still abandons that company, and nothing is written.
+func TestSyncCompany_CancelledDuringFetch_AbortsWithoutWriting(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := New(s, map[string]PostingFetcher{"ashby": hangingFetcher{}}, DefaultConfig())
+
+	ctx, cancel := context.WithCancel(context.Background())
+	time.AfterFunc(20*time.Millisecond, cancel)
+	_, err := syncer.SyncCompany(ctx, acme.ID)
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("SyncCompany cancelled during its fetch: err = %v, want context.Canceled", err)
+	}
+
+	postings, err := s.ListPostingsByCompany(context.Background(), acme.ID)
+	if err != nil {
+		t.Fatalf("ListPostingsByCompany: %v", err)
+	}
+	company, err := s.GetCompany(context.Background(), acme.ID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+	if len(postings) != 0 || !company.LastFetchedAt.IsZero() {
+		t.Errorf("after a cancelled fetch: %d postings, LastFetchedAt %v, want nothing written", len(postings), company.LastFetchedAt)
+	}
+}
