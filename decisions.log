@@ -6236,3 +6236,38 @@ Decisions:
   - quitting mid-run and then 'R' again: before the fix, GitLab's lease
     was left held; after, none, and the rerun gave "40 companies, 0
     failed".
+
+## 2026-09-30 -- RFC 0002 broken into issues (#162-#176)
+
+RFC 0002 reviewed against the code as it stands after RFC 0001's work,
+then filed as 12 ordered issues (labels `rfc-0002`, `rfc0002-step-1`..12)
+plus 3 related ones (`rfc0002-related`). The work breakdown is in the RFC.
+
+Decisions:
+- Status history (#162) must cover three write paths:
+  CreateApplication (the TUI and stage_prepare), UpdateApplicationStatus
+  (TUI), and sync's close, which since #147 runs inside
+  store.ClosePosting's transaction. The RFC listed only "the status
+  update and sync's move".
+- The stalled-applications view (#164) extends the existing home screen,
+  which already lists started applications with Status, Posting and
+  Review columns, instead of adding a screen.
+- Batch drafting (#165) also widens stage.List: it only returns postings
+  marked interested, and 3 of the 23 started applications aren't, so the
+  agent never sees them. It depends on #117 (list_postings too large).
+- The answers document (#169) is blocked on RFC 0004's document-type
+  work, which isn't filed yet. About 20 sites assume two types, and most
+  silently fall back to the cover letter.
+- Reliable workplace type (#171) moved ahead of the global rules (#173)
+  in phase 3, since the workplace rule depends on it.
+- The RFC's related findings:
+  - Mattermost/Livekit now fetch normally, so no issue.
+  - Soft-deleted companies' 6 open postings affect nothing visible
+    today (none interested or applied to). Excluding them is folded
+    into the inbox issue (#172) rather than filed separately.
+- New related issues: open question 1 plus reopening not restoring an
+  application (#174); starting an application on a closed posting
+  (#175); last_seen_at only changing with content, which undermines
+  open question 5 (#176).
+- The repo is public: the issues describe the work with aggregate
+  counts only, with no company, role or application names.

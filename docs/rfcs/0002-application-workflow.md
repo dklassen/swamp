@@ -169,6 +169,36 @@ Start this only after phase 1 meets its criteria.
 | Tags | No use case yet. The tables stay unused. |
 | Base resume plus tailored changes; carrying review lessons into the profile | Worth it once review volume is the bottleneck, which it isn't at 8 reviews. |
 
+## Work breakdown
+
+Filed 2026-09-30. Every issue carries the `rfc-0002` label, and an `rfc0002-step-N` label giving the order to work in. List them with `gh issue list --label rfc-0002`.
+
+| Step | Issue | Phase | Work | Size | Depends on |
+|---|---|---|---|---|---|
+| 1 | #162 | 0 | Application status history, written on every status-changing path, with a backfill | S–M | — |
+| 2 | #163 | 0 | Note why each started application stalled; withdraw or keep (you, no code) | S | — |
+| 3 | #164 | 1 | Home screen: age at status and next step, oldest first | S–M | #162 |
+| 4 | #165 | 1 | `apply-to-posting` drafts several started applications per session; `list_postings` includes started applications that aren't marked interested | M | #117 |
+| 5 | #166 | 1 | Submit flow on application detail: open, export, confirm, mark submitted | M | #162 |
+| 6 | #167 | 2 | Spike: Ashby/Lever application forms (half a day) | S | — |
+| 7 | #168 | 2 | Greenhouse application requirements fetched and stored at `stage_prepare` | M | — |
+| 8 | #169 | 2 | Answers document type | M | RFC 0004 steps 1–3 (not yet filed), #168 |
+| 9 | #170 | 2 | Reusable standard answers | S–M | Open question 3 decided |
+| 10 | #171 | 3 | Reliable workplace type (normalize; remote from Greenhouse locations) | S | Phase 1 criteria met |
+| 11 | #172 | 3 | Seen state and a cross-company triage inbox | M | Phase 1 criteria met |
+| 12 | #173 | 3 | Global title and workplace rules at display time | M | #171 |
+
+- **Found reviewing this RFC** (label `rfc0002-related`, not in the order above):
+  - #174: decide open question 1, closing a submitted application, and whether reopening a posting restores its application;
+  - #175: an application can be started on an already-closed posting;
+  - #176: `last_seen_at` only changes with content, which blocks open question 5.
+- **Changes from the proposal above:**
+  - Reliable workplace type moved first in phase 3, since the workplace rule depends on it.
+  - The stalled-applications view extends the existing home screen.
+  - Batch drafting also fixes `list_postings` missing started applications that aren't marked interested.
+- **Resolved since the RFC was written:** Mattermost and Livekit fetch normally again (2026-09-30). The deleted-companies finding is folded into #172, since nothing visible is affected today.
+- **The answers document (#169) needs RFC 0004's work first,** and that isn't filed yet. It should be broken into issues before step 8.
+
 ## Related findings (separate issues, not part of this RFC)
 
 - **Deleted companies' postings stay open.** Outschool was deleted on 2026-09-29, but its 6 postings are still `open`, so they count toward open totals.
