@@ -60,13 +60,29 @@ func applicationFromRow(row db.Application) (Application, error) {
 	}, nil
 }
 
+// CreateApplication starts an application for a posting and records its
+// application_started status history row in the same transaction (#162).
 func (s *Store) CreateApplication(ctx context.Context, postingID int64) (Application, error) {
-	row, err := s.queries.CreateApplication(ctx, db.CreateApplicationParams{
+	tx, err := s.sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		return Application{}, fmt.Errorf("store: begin create application tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	qtx := s.queries.WithTx(tx)
+	row, err := qtx.CreateApplication(ctx, db.CreateApplicationParams{
 		PostingID: postingID,
 		Status:    sql.NullString{String: ApplicationStatusStarted.String(), Valid: true},
 	})
 	if err != nil {
 		return Application{}, err
+	}
+	if err := recordApplicationStatus(ctx, qtx, row.ID, ApplicationStatusStarted); err != nil {
+		return Application{}, err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return Application{}, fmt.Errorf("store: commit create application tx: %w", err)
 	}
 	return applicationFromRow(row)
 }
