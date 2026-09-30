@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"slices"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -190,18 +189,14 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (Result, erro
 		if existing.ListingStatus != "open" || seenSourceIDs[existing.SourceID] {
 			continue
 		}
-		if err := s.recordHistory(ctx, existing, "closed"); err != nil {
-			return result, err
-		}
-		if err := s.store.MarkPostingClosed(ctx, existing.ID); err != nil {
-			return result, fmt.Errorf("sync: mark posting closed: %w", err)
-		}
-		result.Closed++
-		closed, err := s.closeApplicationForClosedPosting(ctx, existing.ID)
+		closed, err := s.store.ClosePosting(ctx, existing.ID, earlyApplicationStatuses)
 		if err != nil {
-			return result, err
+			return result, fmt.Errorf("sync: close posting: %w", err)
 		}
-		if closed {
+		if closed.Closed {
+			result.Closed++
+		}
+		if closed.ApplicationClosed {
 			result.ApplicationsClosed++
 		}
 	}
@@ -286,36 +281,15 @@ func (s *Syncer) ImportCompanies(ctx context.Context, entries []seed.Entry) []Im
 // the candidates already in its pipeline, so an application at
 // interviewing or beyond is a live process that the syncer must not
 // overwrite (see issue #105 and decisions.log). Those are left alone.
+//
+// Closing a posting's application is the one place sync reaches past
+// postings and posting history into application state, a deliberate
+// widening of what a sync does (see decisions.log). The policy stays
+// here; store.ClosePosting applies it in the same transaction that
+// closes the posting (#147).
 var earlyApplicationStatuses = []store.ApplicationStatus{
 	store.ApplicationStatusStarted,
 	store.ApplicationStatusSubmitted,
-}
-
-// closeApplicationForClosedPosting moves postingID's application to
-// posting_closed if it exists and is still at an early status, reporting
-// whether it did. A posting with no application at all is the common
-// case (most postings are never applied to) and is not an error.
-//
-// This is the one place sync reaches past postings and posting history
-// into application state, which is a deliberate widening of what a sync
-// does -- see decisions.log for why it lives here rather than being
-// derived at read time.
-func (s *Syncer) closeApplicationForClosedPosting(ctx context.Context, postingID int64) (bool, error) {
-	application, err := s.store.GetApplication(ctx, postingID)
-	if errors.Is(err, store.ErrNotFound) {
-		return false, nil
-	}
-	if err != nil {
-		return false, fmt.Errorf("sync: get application for closed posting: %w", err)
-	}
-
-	if !slices.Contains(earlyApplicationStatuses, application.Status) {
-		return false, nil
-	}
-	if _, err := s.store.UpdateApplicationStatus(ctx, postingID, store.ApplicationStatusPostingClosed); err != nil {
-		return false, fmt.Errorf("sync: close application for closed posting: %w", err)
-	}
-	return true, nil
 }
 
 // AddCompanyOutcome says what AddCompany did.

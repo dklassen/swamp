@@ -534,6 +534,118 @@ func TestSyncCompany_PostingCloses_WithdrawnApplicationLeftAlone(t *testing.T) {
 	}
 }
 
+// TestSyncCompany_PostingCloses_ApplicationUpdateFails_NothingHalfClosed
+// pins that closing a posting and closing its application are one change
+// (#147). Before, the posting was closed and committed first; if the
+// application update then failed (SQLITE_BUSY, a closed database), the
+// next sync skipped the no-longer-open posting and the application stayed
+// at application_started for good.
+func TestSyncCompany_PostingCloses_ApplicationUpdateFails_NothingHalfClosed(t *testing.T) {
+	ctx := context.Background()
+	s, sqlDB := newTestStoreDB(t)
+
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
+		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
+	}}
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
+		t.Fatalf("initial SyncCompany: %v", err)
+	}
+	postings, err := s.ListPostingsByCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("ListPostingsByCompany: %v", err)
+	}
+	postingID := postings[0].ID
+	if _, err := s.CreateApplication(ctx, postingID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+
+	if _, err := sqlDB.ExecContext(ctx, `CREATE TRIGGER fail_application_update BEFORE UPDATE ON applications
+		BEGIN SELECT RAISE(ABORT, 'simulated failure'); END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+	fetcher.postings["acme"] = nil
+	if _, err := syncer.SyncCompany(ctx, company.ID); err == nil {
+		t.Fatal("SyncCompany with a failing application update: want an error, got nil")
+	}
+
+	posting, err := s.GetPosting(ctx, postingID)
+	if err != nil {
+		t.Fatalf("GetPosting: %v", err)
+	}
+	if posting.ListingStatus != "open" {
+		t.Errorf("after the failed sync, posting listing_status = %q, want still open -- its application wasn't closed, so neither is it", posting.ListingStatus)
+	}
+	history, err := s.ListPostingHistory(ctx, postingID)
+	if err != nil {
+		t.Fatalf("ListPostingHistory: %v", err)
+	}
+	if len(history) != 0 {
+		t.Errorf("after the failed sync, %d history rows, want 0 -- the close it would record didn't happen", len(history))
+	}
+
+	if _, err := sqlDB.ExecContext(ctx, `DROP TRIGGER fail_application_update`); err != nil {
+		t.Fatalf("drop trigger: %v", err)
+	}
+	result, err := syncer.SyncCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("SyncCompany after the failure cleared: %v", err)
+	}
+	application, err := s.GetApplication(ctx, postingID)
+	if err != nil {
+		t.Fatalf("GetApplication: %v", err)
+	}
+	if application.Status != store.ApplicationStatusPostingClosed {
+		t.Errorf("after the next clean sync, application status = %s, want %s", application.Status, store.ApplicationStatusPostingClosed)
+	}
+	if result.Closed != 1 || result.ApplicationsClosed != 1 {
+		t.Errorf("next clean sync: Closed = %d, ApplicationsClosed = %d, want 1 and 1", result.Closed, result.ApplicationsClosed)
+	}
+}
+
+// TestSyncCompany_OverlappingSyncsClosePostings_EachCloseRecordedOnce:
+// two syncs of one company that both fetched before either wrote both
+// find the same postings gone. Only the first close of each posting may
+// count or be recorded; the second finds it already closed (#147).
+func TestSyncCompany_OverlappingSyncsClosePostings_EachCloseRecordedOnce(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+
+	var onBoard []jobboard.Posting
+	for _, id := range []string{"job-1", "job-2", "job-3", "job-4", "job-5"} {
+		onBoard = append(onBoard, samplePosting(id, "Engineer", "Engineering", "Remote"))
+	}
+	seed := New(s, map[string]PostingFetcher{"ashby": &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": onBoard}}}, DefaultConfig())
+	if _, err := seed.SyncCompany(ctx, company.ID); err != nil {
+		t.Fatalf("initial SyncCompany: %v", err)
+	}
+
+	results := syncOverlapping(t, s, company.ID, 2, nil)
+
+	closedCount := 0
+	for _, r := range results {
+		closedCount += r.Closed
+	}
+	if closedCount != len(onBoard) {
+		t.Errorf("Closed summed over both runs = %d, want %d -- each posting closes once", closedCount, len(onBoard))
+	}
+	postings, err := s.ListPostingsByCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("ListPostingsByCompany: %v", err)
+	}
+	for _, p := range postings {
+		history, err := s.ListPostingHistory(ctx, p.ID)
+		if err != nil {
+			t.Fatalf("ListPostingHistory: %v", err)
+		}
+		if len(history) != 1 || history[0].ChangeType != "closed" {
+			t.Errorf("posting %s history = %d rows, want exactly one \"closed\" row", p.SourceID, len(history))
+		}
+	}
+}
+
 // A successful sync records when the company was fetched; a failed fetch
 // leaves it alone, so a stale "last fetched" is a visible sign of trouble.
 func TestSyncCompany_RecordsLastFetchedAtOnlyOnSuccess(t *testing.T) {

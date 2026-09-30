@@ -11,6 +11,23 @@ import (
 	"strings"
 )
 
+const closePostingIfOpen = `-- name: ClosePostingIfOpen :execrows
+UPDATE postings
+SET listing_status = 'closed', updated_at = CURRENT_TIMESTAMP
+WHERE id = ? AND listing_status = 'open'
+`
+
+// Conditional, unlike MarkPostingClosed: 0 rows affected means the
+// posting was already closed (e.g. by an overlapping sync), so the
+// caller records nothing (see store.ClosePosting, #147).
+func (q *Queries) ClosePostingIfOpen(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, closePostingIfOpen, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const countOpenPostingsByCompany = `-- name: CountOpenPostingsByCompany :many
 SELECT postings.company_id, COUNT(*) AS open_postings
 FROM postings

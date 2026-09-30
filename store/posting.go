@@ -3,8 +3,10 @@ package store
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/dklassen/swamp/store/db"
@@ -242,6 +244,90 @@ func (s *Store) ListPostingsByCompany(ctx context.Context, companyID int64) ([]P
 // appeared in the most recent fetch of its company's board.
 func (s *Store) MarkPostingClosed(ctx context.Context, id int64) error {
 	return s.queries.MarkPostingClosed(ctx, id)
+}
+
+// ClosePostingResult reports what ClosePosting changed.
+type ClosePostingResult struct {
+	// Closed is false when the posting was already closed, e.g. by an
+	// overlapping sync; nothing else is changed then either.
+	Closed bool
+	// ApplicationClosed is true when the posting's application was moved
+	// to posting_closed.
+	ApplicationClosed bool
+}
+
+// ClosePosting closes an open posting, records a "closed" posting_history
+// snapshot of it, and moves its application (if any) to posting_closed
+// when the application's status is one of closeApplicationFrom -- all in
+// one transaction (#147). Doing them as separate commits let an
+// interruption close the posting but not its application, and the next
+// sync, which only looks at open postings, never came back to it.
+//
+// Closing is conditional on the posting still being open, so a second,
+// overlapping sync closing the same posting changes nothing and records
+// no second history row. Which application statuses a closing posting
+// ends is the caller's policy (sync's earlyApplicationStatuses, #105);
+// store only applies it.
+func (s *Store) ClosePosting(ctx context.Context, postingID int64, closeApplicationFrom []ApplicationStatus) (ClosePostingResult, error) {
+	tx, err := s.sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		return ClosePostingResult{}, fmt.Errorf("store: begin close posting tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	qtx := s.queries.WithTx(tx)
+
+	row, err := qtx.GetPosting(ctx, postingID)
+	if err != nil {
+		return ClosePostingResult{}, fmt.Errorf("store: get posting to close: %w", err)
+	}
+	changed, err := qtx.ClosePostingIfOpen(ctx, postingID)
+	if err != nil {
+		return ClosePostingResult{}, fmt.Errorf("store: close posting: %w", err)
+	}
+	if changed == 0 {
+		return ClosePostingResult{}, nil
+	}
+
+	snapshot, err := json.Marshal(postingFromRow(row))
+	if err != nil {
+		return ClosePostingResult{}, fmt.Errorf("store: marshal posting snapshot: %w", err)
+	}
+	if _, err := qtx.CreatePostingHistory(ctx, db.CreatePostingHistoryParams{
+		PostingID:  postingID,
+		ChangeType: "closed",
+		Snapshot:   string(snapshot),
+	}); err != nil {
+		return ClosePostingResult{}, fmt.Errorf("store: record posting closed: %w", err)
+	}
+
+	result := ClosePostingResult{Closed: true}
+	appRow, err := qtx.GetApplication(ctx, postingID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		// Most postings are never applied to; nothing more to close.
+	case err != nil:
+		return ClosePostingResult{}, fmt.Errorf("store: get application for closed posting: %w", err)
+	default:
+		application, err := applicationFromRow(appRow)
+		if err != nil {
+			return ClosePostingResult{}, err
+		}
+		if slices.Contains(closeApplicationFrom, application.Status) {
+			if _, err := qtx.UpdateApplicationStatus(ctx, db.UpdateApplicationStatusParams{
+				PostingID: postingID,
+				Status:    sql.NullString{String: ApplicationStatusPostingClosed.String(), Valid: true},
+			}); err != nil {
+				return ClosePostingResult{}, fmt.Errorf("store: close application for closed posting: %w", err)
+			}
+			result.ApplicationClosed = true
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return ClosePostingResult{}, fmt.Errorf("store: commit close posting tx: %w", err)
+	}
+	return result, nil
 }
 
 // MarkPostingReopened marks a previously-closed posting open again, e.g.
