@@ -6271,3 +6271,29 @@ Decisions:
   open question 5 (#176).
 - The repo is public: the issues describe the work with aggregate
   counts only, with no company, role or application names.
+
+## 2026-09-30 -- RFC 0002: the author's ordered task list replaces #177's breakdown
+
+The "Work breakdown" section and the entry above ("RFC 0002 broken into
+issues") were written from the committed RFC, which had no task list.
+The user's own ordered task list (waves A-E, decisions confirmed
+2026-09-29) was in uncommitted edits and was missed. It is now the
+RFC's plan, committed as the user wrote it, plus a task -> issue table.
+
+Corrections to the entry above:
+- Order follows the user's waves: A1 status history (#162), A2
+  Ashby/Lever spike (#167) moved early, A3a soft-deleted companies'
+  postings (#178), A3b Mattermost/Livekit fetch (#179, closed: both
+  fetch normally), B1 (#163), B2 (#164), C1 (#165), C2 (#166), D1
+  RFC 0004 refactor (#180), D2 (#168), C3 export only what's asked
+  (#181), D3 (#169), D4 (#170), then the hard-gated E1 (#171), E2
+  (#173) and E3 (#172).
+- The submit checklist is split (C2 = 1.3a, C3 = 1.3b), per the user's
+  2026-09-29 decision.
+- RFC 0004 (D1) is strongly recommended before D3, not a hard gate; #169
+  says so.
+- The soft-deleted companies finding is task A3a, not folded into the
+  inbox.
+- Kept as related issues outside the waves: #174 (open question 1, and
+  reopening not restoring an application), #175 (starting an
+  application on a closed posting), #176 (last_seen_at).
