@@ -107,6 +107,7 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result Resul
 	if err != nil {
 		return result, fmt.Errorf("sync: get company: %w", err)
 	}
+	result.Name = company.Name
 	fetcher, ok := s.fetchers[company.Source]
 	if !ok {
 		return result, fmt.Errorf("sync: unsupported source %q", company.Source)

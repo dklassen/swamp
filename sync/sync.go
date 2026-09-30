@@ -34,11 +34,14 @@ type PostingFetcher interface {
 // SyncAll batch.
 type Result struct {
 	CompanyID int64
-	Fetched   int
-	Created   int
-	Updated   int
-	Closed    int
-	Reopened  int
+	// Name is the company's name, so callers reporting results needn't
+	// carry it alongside (#151).
+	Name     string
+	Fetched  int
+	Created  int
+	Updated  int
+	Closed   int
+	Reopened int
 	// ApplicationsClosed counts applications moved to posting_closed
 	// because the posting they were for was taken down -- see
 	// store.ClosePosting and earlyApplicationStatuses (issues #105, #147).
@@ -112,6 +115,7 @@ func (s *Syncer) SyncAll(ctx context.Context) ([]Result, error) {
 	for i, company := range companies {
 		result, err := s.SyncCompany(ctx, company.ID)
 		result.CompanyID = company.ID
+		result.Name = company.Name
 		result.Err = err
 		results[i] = result
 	}
