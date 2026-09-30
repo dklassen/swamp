@@ -6171,3 +6171,68 @@ Decisions:
 - Verified in the real TUI (through `script`) on a copy of the real
   database: `c`, `j`, `r` refreshed the second company (Baseten) and
   showed its usual status line.
+
+## 2026-09-30 -- 'R' syncs every company in the background (#153)
+
+The TUI could only refresh one company at a time ('r'). RFC 0001,
+option 2, built as the RFC designed it.
+
+Decisions:
+- A chain of tea.Cmds, one per company, with the run's state
+  (syncAllState) owned by App in tui/sync_all.go. Bubble Tea runs each
+  Cmd in its own goroutine, so there are no goroutines, channels or
+  cancel functions of ours -- the RFC's recommended structure over the
+  prototyped worker goroutine.
+- Status:
+  - "Syncing k/N: <name>…" is set as each company starts, so it names
+    the one being fetched.
+  - The end is sync.Summarize's line (#151), which lists companies
+    another process was syncing as skipped (#150).
+  - Starting clears a.err, which otherwise outranks the status line in
+    the banner and would hide the progress.
+- End of run: one loadCompanies, plus loadPostings if the selected
+  company synced without error. "Last fetched" isn't updated live (RFC
+  open question 6: no).
+- Stop key: 'R' again (RFC open question 7), so Esc keeps meaning
+  "back". A stop lets the in-flight company finish ("Stopping after
+  <name>…", then "Stopped after k/N: <summary>"). 'R' does nothing more
+  until that company reports back, so runs never overlap. runID drops
+  late messages from an earlier run; checked failing without it.
+- Guards (the in-process half of #150): during a run, 'r' shows "Sync
+  all in progress: refresh unavailable", and saving a filter selection
+  shows "Sync all in progress: save filters when it finishes". Refuse,
+  not queue (RFC open question 8). A refused filter save doesn't narrow
+  or save anything and stays on the filter screen, so the selection
+  isn't lost.
+- The run belongs to App, so leaving the company list doesn't stop it.
+- Found while verifying in the real TUI: quitting 1.5s into a run left
+  the in-flight company's (GitLab's) lease held. Bubble Tea abandons
+  running Cmds on quit and main then closes the database, so the sync's
+  deferred release never ran, and every sync of GitLab would have been
+  refused for up to LeaseTimeout. `r` had the same exposure since #150.
+  - Fix: Syncer tracks the leases it holds, and
+    Syncer.ReleaseHeldLeases frees them. main calls it after
+    tea.Program.Run returns, before the deferred database close.
+  - The abandoned sync's writes are each one transaction (#147/#148),
+    so freeing its lease early can't leave anything half-written.
+  - Chosen over waiting for the in-flight company on quit, which the
+    RFC had rejected as the machinery prototype (b) needed.
+- Tests drive Update one command at a time (a new step helper; applyCmd
+  drains the whole chain). They cover:
+  - start and progress, advancing, and the summary;
+  - a failing company, an empty list, and a company skipped for
+    another sync;
+  - stop, stop-then-R, and a stale message;
+  - 'r' refused, filter save refused, and leaving the screen;
+  - ReleaseHeldLeases.
+- Verified in the real TUI (through `script`) on a copy of the real
+  database:
+  - a full run showed all 40 "Syncing k/40" steps and "40 companies, 0
+    failed";
+  - 'R' then 'R' two seconds later gave "Stopping after Fullscript…",
+    then "Stopped after 7/40: 7 companies, 0 failed", with no lease left
+    held;
+  - Esc two seconds in still ended with the summary on the home screen;
+  - quitting mid-run and then 'R' again: before the fix, GitLab's lease
+    was left held; after, none, and the rerun gave "40 companies, 0
+    failed".

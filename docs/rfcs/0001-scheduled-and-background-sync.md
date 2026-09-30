@@ -187,6 +187,17 @@ sql: Scan error on column index 14, name "published_at": unsupported Scan, stori
 
 ### 2. A TUI "sync all" key that runs in the background
 
+**Shipped (2026-09-30), as designed below:**
+- `sync.Result.Name` and `sync.Summarize` (#151); `r` became a request handled by `App` (#152).
+- `R` (#153) runs chained `tea.Cmd`s with the run's state in `App` (`tui/sync_all.go`).
+  - `R` again stops the run after the company in flight.
+  - During a run, `r` and filter saves are refused (not queued).
+  - "Last fetched" isn't updated live; the company list reloads once at the end.
+- **Found while verifying:** quitting mid-run abandoned the in-flight company and left its lease held until expiry. `main` now calls `Syncer.ReleaseHeldLeases` after the TUI exits, before closing the database.
+- Option 1 (launchd) is next and not yet filed.
+
+The design as proposed:
+
 - **What:** `R` on the company list (still unused there; `r` refreshes one company) syncs every active company without blocking the TUI. The status line shows `Syncing 12/40: Kong…` and ends with the same summary `swamp fetch` prints (`40 companies, 1 failed (Kong)`). Since #138 every screen sizes itself under the status line, so progress stays visible.
 - **Pros:** directly covers "queue up the entire sync", with visible progress. Almost all the code is in the TUI.
 - **Cons:** only runs while the TUI is open.
@@ -315,7 +326,7 @@ P4 can go before or alongside these.
 5. **Option 3** is a cheap follow-up if data still feels stale when the TUI opens.
 6. **Defer options 4 to 7.** Revisit option 6 if agents need to trigger syncs, and option 7 if scale or rate limits require retries and pacing.
 
-Suggested order: ~~P1~~ → ~~P2~~ → ~~P3~~ → ~~P4 (#147–#150)~~ → option 2 (#151–#153) → option 1. Option 2 comes before option 1 because it's useful on its own and exercises P1 inside one process first. Option 1 has no code dependency on option 2, though, so they can go in either order if the schedule matters more. Each step is its own issue and PR, following the repo's one-issue-per-PR workflow.
+Suggested order: ~~P1~~ → ~~P2~~ → ~~P3~~ → ~~P4 (#147–#150)~~ → ~~option 2 (#151–#153)~~ → option 1. Option 2 comes before option 1 because it's useful on its own and exercises P1 inside one process first. Option 1 has no code dependency on option 2, though, so they can go in either order if the schedule matters more. Each step is its own issue and PR, following the repo's one-issue-per-PR workflow.
 
 ## Work breakdown
 
@@ -327,9 +338,9 @@ Filed 2026-09-29. Every issue carries the `rfc-0001` label, and an `rfc0001-step
 | 2 | #148 (done) | P4b | Reopen and content-update history in the same transaction as the change; conditional reopen; `Created` from `UpsertPosting` | M | #147 (same loop) |
 | 3 | #149 (done) | P4c | `context.WithoutCancel` after the fetch (preventive) | S | — |
 | 4 | #150 (done) | P4d | Per-company sync lease across processes; `ErrSyncInProgress`; skipped companies in `swamp fetch`'s summary | M | #147, #148 |
-| 5 | #151 | Option 2 | `Result.Name`, `sync.Summarize` (fixes "1 companies"), `reportFetch` uses both | S | — |
-| 6 | #152 | Option 2 | `r` becomes a request message handled by `App` (refactor only) | S | — |
-| 7 | #153 | Option 2 | `R` syncs every company in the background; guard on `r`, `R` and filter saves; stop with `R` | M | #151, #152; after P4 |
+| 5 | #151 (done) | Option 2 | `Result.Name`, `sync.Summarize` (fixes "1 companies"), `reportFetch` uses both | S | — |
+| 6 | #152 (done) | Option 2 | `r` becomes a request message handled by `App` (refactor only) | S | — |
+| 7 | #153 (done) | Option 2 | `R` syncs every company in the background; guard on `r`, `R` and filter saves; stop with `R` | M | #151, #152; after P4 |
 
 - Steps 3, 5 and 6 have no code dependency on the steps before them and could go in parallel. The step labels give the agreed order.
 - Option 1 (launchd) isn't filed yet. It follows step 7 and needs open questions 1 and 4 answered.

@@ -106,8 +106,16 @@ func main() {
 	}
 
 	syncer := newSyncer(s)
-	if _, err := tea.NewProgram(tui.New(s, syncer, documentsStore), tea.WithAltScreen()).Run(); err != nil {
-		log.Fatalf("run tui: %v", err)
+	_, runErr := tea.NewProgram(tui.New(s, syncer, documentsStore), tea.WithAltScreen()).Run()
+	// Quitting abandons a refresh or sync-all still in flight, whose own
+	// lease release would then never run: free its lease before the
+	// database closes, or the next sync of that company is refused until
+	// the lease expires (#153).
+	if err := syncer.ReleaseHeldLeases(context.Background()); err != nil {
+		log.Printf("release sync leases: %v", err)
+	}
+	if runErr != nil {
+		log.Fatalf("run tui: %v", runErr)
 	}
 }
 

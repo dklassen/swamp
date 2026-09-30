@@ -42,6 +42,9 @@ type enterCompanyEditMsg struct{ company store.Company }
 // another sync (e.g. a sync-all run) is already under way (#152).
 type refreshCompanyMsg struct{ company store.Company }
 
+// syncAllKeyMsg is 'R': App starts a sync-all run (#153).
+type syncAllKeyMsg struct{}
+
 // selectCompanyMsg signals that App should switch to the posting-list
 // screen for the given company.
 type selectCompanyMsg struct{ company store.Company }
@@ -80,6 +83,8 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 		if m.cursor < len(companies) {
 			return nil, refreshCompanyMsg{company: companies[m.cursor]}
 		}
+	case msg.String() == "R":
+		return nil, syncAllKeyMsg{}
 	case msg.String() == "i":
 		m.showInfo = !m.showInfo
 	case msg.String() == "a":
@@ -100,7 +105,7 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 func (m *companyListModel) View(companies []store.Company, openPostings map[int64]int, width, height int) string {
 	var b strings.Builder
 	title := titleStyle.Render("Companies")
-	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  i: info  a: add  e: edit  d: delete  r: refresh  esc/b: back  q: quit")
+	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  esc/b: back  q: quit")
 	b.WriteString(title + "\n")
 	if len(companies) == 0 {
 		b.WriteString("No companies yet. Press 'a' to add one.\n")
