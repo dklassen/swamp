@@ -187,24 +187,35 @@ func runFetch(s *store.Store) int {
 }
 
 // reportFetch prints one line per company -- successes to stdout, errors
-// to stderr -- then a one-line summary to stderr, e.g. "41 companies, 1
-// failed (Outschool)", and returns how many companies failed.
+// and skips to stderr -- then a one-line summary to stderr, e.g. "41
+// companies, 1 failed (Outschool)", and returns how many companies failed.
+// A company skipped because another sync of it was already running
+// (sync.ErrSyncInProgress, #150) isn't a failure: it's being synced, just
+// not by this run. It's named in the summary ("..., 1 skipped (Acme)")
+// only when there is one, so a clean run's summary is unchanged.
 func reportFetch(stdout, stderr io.Writer, results []sync.Result, names map[int64]string) int {
-	var failed []string
+	var failed, skipped []string
 	for _, r := range results {
 		name := names[r.CompanyID]
-		if r.Err != nil {
+		switch {
+		case errors.Is(r.Err, sync.ErrSyncInProgress):
+			skipped = append(skipped, name)
+			_, _ = fmt.Fprintf(stderr, "%s: skipped, another sync of it is in progress\n", name)
+		case r.Err != nil:
 			failed = append(failed, name)
 			_, _ = fmt.Fprintf(stderr, "%s: error: %v\n", name, r.Err)
-			continue
+		default:
+			_, _ = fmt.Fprintf(stdout, "%s: fetched=%d created=%d updated=%d closed=%d reopened=%d\n",
+				name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
 		}
-		_, _ = fmt.Fprintf(stdout, "%s: fetched=%d created=%d updated=%d closed=%d reopened=%d\n",
-			name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
 	}
 
 	summary := fmt.Sprintf("%d companies, %d failed", len(results), len(failed))
 	if len(failed) > 0 {
 		summary += " (" + strings.Join(failed, ", ") + ")"
+	}
+	if len(skipped) > 0 {
+		summary += fmt.Sprintf(", %d skipped (%s)", len(skipped), strings.Join(skipped, ", "))
 	}
 	_, _ = fmt.Fprintln(stderr, summary)
 
