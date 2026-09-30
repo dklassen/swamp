@@ -6328,3 +6328,28 @@ Decisions:
   store (AGENTS.md: never write without store.Open).
 - Atomicity is tested by injecting a failure with a test-only trigger
   that aborts history inserts.
+
+## 2026-09-30 -- Ashby/Lever application forms: supported APIs only (#167, RFC 0002 task A2)
+
+Spike findings (full detail on #167): neither board's supported public
+API exposes a posting's application form.
+- Ashby: the public posting API has no form fields; the developer
+  API's applicationForm.info needs the employer's API key. The hosted
+  board's own backend (jobs.ashbyhq.com/api/non-user-graphql,
+  ApiJobPosting) returns the whole form with required flags and field
+  types, unauthenticated, but it's undocumented.
+- Lever: the postings API README says it does not expose custom
+  questions. The hosted apply page embeds each question as JSON in a
+  hidden input, readable only by scraping.
+
+Decision (the user's): use only documented, supported sources for form
+requirements. Greenhouse stays on #168's plan; Ashby and Lever
+requirements are entered by hand in the TUI (#184).
+
+Alternatives considered:
+- Ashby's GraphQL (covers 28 of 40 companies) with manual fallback.
+  Rejected for now: an undocumented endpoint can change without notice,
+  and a silent change would change what the skill drafts. It's the
+  first thing to reconsider if manual entry turns out to be the
+  bottleneck.
+- Scraping Lever's hosted page: fragile, for 3 companies.
