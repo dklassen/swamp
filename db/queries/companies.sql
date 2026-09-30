@@ -42,6 +42,23 @@ UPDATE companies
 SET last_fetched_at = CURRENT_TIMESTAMP
 WHERE id = ?;
 
+-- name: AcquireCompanySyncLease :execrows
+-- Takes the company's sync lease if it's free or has expired (see
+-- store.AcquireSyncLease, #150). Expiry is compared entirely in SQL, so
+-- both sides are CURRENT_TIMESTAMP-format UTC text.
+UPDATE companies
+SET sync_lease_token = sqlc.arg(token), sync_lease_at = CURRENT_TIMESTAMP
+WHERE id = sqlc.arg(id)
+  AND (sync_lease_token IS NULL
+       OR sync_lease_at < datetime('now', printf('-%d seconds', CAST(sqlc.arg(expiry_seconds) AS INTEGER))));
+
+-- name: ReleaseCompanySyncLease :exec
+-- Frees the lease only if token still holds it, so a sync whose lease
+-- expired and was taken over can't release the new holder's.
+UPDATE companies
+SET sync_lease_token = NULL, sync_lease_at = NULL
+WHERE id = sqlc.arg(id) AND sync_lease_token = sqlc.arg(token);
+
 -- name: ListActiveCompanies :many
 SELECT * FROM companies
 WHERE deleted_at IS NULL

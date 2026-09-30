@@ -133,6 +133,35 @@ func (s *Store) MarkCompanyFetched(ctx context.Context, id int64) error {
 	return s.queries.MarkCompanyFetched(ctx, id)
 }
 
+// AcquireSyncLease takes companyID's sync lease for token if it's free,
+// or if its holder took it more than expiry ago (e.g. a process killed
+// mid-sync), and reports whether it did. At most one holder at a time,
+// across every process sharing the database (#150).
+func (s *Store) AcquireSyncLease(ctx context.Context, companyID int64, token string, expiry time.Duration) (bool, error) {
+	taken, err := s.queries.AcquireCompanySyncLease(ctx, db.AcquireCompanySyncLeaseParams{
+		ID:            companyID,
+		Token:         sql.NullString{String: token, Valid: true},
+		ExpirySeconds: int64(expiry / time.Second),
+	})
+	if err != nil {
+		return false, fmt.Errorf("store: acquire company sync lease: %w", err)
+	}
+	return taken == 1, nil
+}
+
+// ReleaseSyncLease frees companyID's sync lease if token still holds it.
+// Releasing a lease token doesn't hold -- because it expired and was
+// taken over -- changes nothing and isn't an error.
+func (s *Store) ReleaseSyncLease(ctx context.Context, companyID int64, token string) error {
+	if err := s.queries.ReleaseCompanySyncLease(ctx, db.ReleaseCompanySyncLeaseParams{
+		ID:    companyID,
+		Token: sql.NullString{String: token, Valid: true},
+	}); err != nil {
+		return fmt.Errorf("store: release company sync lease: %w", err)
+	}
+	return nil
+}
+
 // GetCompanyBySourceRef finds the company for a job board slug, including a
 // soft-deleted one (check DeletedAt), or returns ErrNotFound.
 func (s *Store) GetCompanyBySourceRef(ctx context.Context, source, sourceRef string) (Company, error) {

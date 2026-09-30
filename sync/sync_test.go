@@ -95,12 +95,22 @@ func (f *barrierFetcher) FetchPostings(ctx context.Context, boardSlug string) ([
 	return f.postings, nil
 }
 
-// syncOverlapping runs `runs` SyncCompany calls for companyID at once,
+// syncOverlapping runs `runs` syncs of companyID's write phase at once,
 // all held at a barrierFetcher until every one has fetched postings, and
 // returns their results in no particular order.
+//
+// It calls syncHeld, underneath SyncCompany's sync lease (#150): the lease
+// stops overlapping syncs, but the writes must stay safe if they overlap
+// anyway -- e.g. a lease that expired while its sync was still running
+// and was taken over (#147, #148).
 func syncOverlapping(t *testing.T, s *store.Store, companyID int64, runs int, postings []jobboard.Posting) []Result {
 	t.Helper()
-	syncer := New(s, map[string]PostingFetcher{"ashby": newBarrierFetcher(runs, postings)}, DefaultConfig())
+	fetcher := newBarrierFetcher(runs, postings)
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	company, err := s.GetCompany(context.Background(), companyID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
 	results := make([]Result, runs)
 	errs := make([]error, runs)
 	var done gosync.WaitGroup
@@ -108,7 +118,7 @@ func syncOverlapping(t *testing.T, s *store.Store, companyID int64, runs int, po
 		done.Add(1)
 		go func() {
 			defer done.Done()
-			results[i], errs[i] = syncer.SyncCompany(context.Background(), companyID)
+			results[i], errs[i] = syncer.syncHeld(context.Background(), company, fetcher, Result{CompanyID: companyID})
 		}()
 	}
 	done.Wait()

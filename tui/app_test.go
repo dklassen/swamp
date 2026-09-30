@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -1387,6 +1388,31 @@ func TestApp_PressR_RefreshesSelectedCompanyAndShowsStatus(t *testing.T) {
 	}
 }
 
+// TestApp_PressR_WhileCompanySyncsElsewhere_ShowsStatusNotError: when
+// another sync -- e.g. a scheduled `swamp fetch` -- holds the company's
+// sync lease, 'r' says so plainly instead of showing a generic error
+// (#150).
+func TestApp_PressR_WhileCompanySyncsElsewhere_ShowsStatusNotError(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	if taken, err := s.AcquireSyncLease(context.Background(), acme.ID, "swamp-fetch", time.Minute); err != nil || !taken {
+		t.Fatalf("AcquireSyncLease = %v, %v", taken, err)
+	}
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{"acme": {{SourceID: "job-1", Title: "Engineer"}}})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, runeKey('c'))
+
+	app, cmd := sendKey(app, runeKey('r'))
+	app, _ = sendKey(app, cmd())
+
+	if app.err != nil {
+		t.Errorf("app.err = %v, want nil -- another sync running isn't a failure", app.err)
+	}
+	if want := "Acme is already syncing"; !strings.Contains(app.status, want) {
+		t.Errorf("app.status = %q, want it to contain %q", app.status, want)
+	}
+}
+
 func TestApp_PressEnter_OpensPostingListForSelectedCompany(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
@@ -2656,6 +2682,50 @@ func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) 
 	}
 	if app.postings[0].Department != wantDept {
 		t.Fatalf("posting department after reload = %q, want %q", app.postings[0].Department, wantDept)
+	}
+}
+
+// TestApp_FilterSelect_Enter_WhileCompanySyncsElsewhere_SavesAndSaysSyncSkipped:
+// the filters still save when another sync holds the company's lease;
+// only the re-sync is skipped, and the status says so rather than showing
+// an error (#150). Postings still reload, so the view reflects the saved
+// filters.
+func TestApp_FilterSelect_Enter_WhileCompanySyncsElsewhere_SavesAndSaysSyncSkipped(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {
+			{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"},
+			{SourceID: "job-2", Title: "Salesperson", Department: "Sales", Location: "Remote"},
+		},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	if taken, err := s.AcquireSyncLease(context.Background(), acme.ID, "swamp-fetch", time.Minute); err != nil || !taken {
+		t.Fatalf("AcquireSyncLease = %v, %v", taken, err)
+	}
+
+	app, cmd := sendKey(app, runeKey('f'))
+	app, _ = sendKey(app, cmd())
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
+	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, cmd = sendKey(app, cmd())
+
+	saved, err := s.ListCompanyFilters(context.Background(), acme.ID)
+	if err != nil {
+		t.Fatalf("ListCompanyFilters: %v", err)
+	}
+	if len(saved) != 1 {
+		t.Errorf("saved filters = %+v, want the selection saved even though the sync was skipped", saved)
+	}
+	if app.err != nil {
+		t.Errorf("app.err = %v, want nil", app.err)
+	}
+	if want := "Acme filters saved; sync skipped"; !strings.Contains(app.status, want) {
+		t.Errorf("app.status = %q, want it to contain %q", app.status, want)
+	}
+	if cmd == nil {
+		t.Error("Update on the skipped sync returned nil Cmd, want a command that reloads postings")
 	}
 }
 

@@ -948,6 +948,13 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.screen = screenCompanyList
 		}
 	case companyRefreshedMsg:
+		if errors.Is(msg.err, sync.ErrSyncInProgress) {
+			// Another sync of this company (e.g. a scheduled `swamp fetch`)
+			// is running; this one fetched and wrote nothing (#150).
+			a.err = nil
+			a.status = msg.companyName + " is already syncing elsewhere; try again in a moment"
+			break
+		}
 		a.err = msg.err
 		if msg.err == nil {
 			r := msg.result
@@ -1115,6 +1122,14 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		a.filterSelect = newFilterSelectModel(a.selectedCompany.ID, a.selectedCompany.Name, msg.departments, msg.locations, msg.existingFilters)
 	case companyFiltersAppliedMsg:
+		if errors.Is(msg.err, sync.ErrSyncInProgress) {
+			// The filters saved; only the re-sync was skipped, because
+			// another sync of this company is running (#150). Reload so
+			// the view reflects the saved filters.
+			a.err = nil
+			a.status = msg.companyName + " filters saved; sync skipped, it's already syncing elsewhere"
+			return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
+		}
 		a.err = msg.err
 		if msg.err == nil {
 			r := msg.result

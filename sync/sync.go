@@ -6,6 +6,7 @@ package sync
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"time"
 
@@ -45,16 +46,27 @@ type Result struct {
 	Err                error
 }
 
+// ErrSyncInProgress is SyncCompany's error when another sync of the same
+// company -- in this process or another sharing the database -- is
+// already running. Nothing was fetched or written; the company is
+// skipped rather than failed (#150).
+var ErrSyncInProgress = errors.New("sync: company sync already in progress")
+
 // Config holds Syncer's tunable settings.
 type Config struct {
 	// FetchTimeout is how long one board fetch may take before it's
 	// abandoned and reported as that company's error.
 	FetchTimeout time.Duration
+	// LeaseTimeout is how long a company's sync lease holds before another
+	// sync may take it over, for a sync that never released it (a killed
+	// process). It must comfortably exceed FetchTimeout plus the write
+	// phase, or a slow but live sync could lose its lease mid-write.
+	LeaseTimeout time.Duration
 }
 
 // DefaultConfig is the Config swamp runs with unless told otherwise.
 func DefaultConfig() Config {
-	return Config{FetchTimeout: 30 * time.Second}
+	return Config{FetchTimeout: 30 * time.Second, LeaseTimeout: 5 * time.Minute}
 }
 
 // Syncer routes each company to the PostingFetcher for its source
@@ -65,7 +77,13 @@ type Syncer struct {
 	cfg      Config
 }
 
+// New returns a Syncer. A zero cfg.LeaseTimeout takes DefaultConfig's:
+// unlike a zero FetchTimeout, which fails every fetch loudly, a zero lease
+// timeout would silently let a second sync take over a live one's lease.
 func New(s *store.Store, fetchers map[string]PostingFetcher, cfg Config) *Syncer {
+	if cfg.LeaseTimeout <= 0 {
+		cfg.LeaseTimeout = DefaultConfig().LeaseTimeout
+	}
 	return &Syncer{store: s, fetchers: fetchers, cfg: cfg}
 }
 

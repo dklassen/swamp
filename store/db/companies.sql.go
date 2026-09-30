@@ -7,12 +7,38 @@ package db
 
 import (
 	"context"
+	"database/sql"
 )
+
+const acquireCompanySyncLease = `-- name: AcquireCompanySyncLease :execrows
+UPDATE companies
+SET sync_lease_token = ?1, sync_lease_at = CURRENT_TIMESTAMP
+WHERE id = ?2
+  AND (sync_lease_token IS NULL
+       OR sync_lease_at < datetime('now', printf('-%d seconds', CAST(?3 AS INTEGER))))
+`
+
+type AcquireCompanySyncLeaseParams struct {
+	Token         sql.NullString `json:"token"`
+	ID            int64          `json:"id"`
+	ExpirySeconds int64          `json:"expiry_seconds"`
+}
+
+// Takes the company's sync lease if it's free or has expired (see
+// store.AcquireSyncLease, #150). Expiry is compared entirely in SQL, so
+// both sides are CURRENT_TIMESTAMP-format UTC text.
+func (q *Queries) AcquireCompanySyncLease(ctx context.Context, arg AcquireCompanySyncLeaseParams) (int64, error) {
+	result, err := q.db.ExecContext(ctx, acquireCompanySyncLease, arg.Token, arg.ID, arg.ExpirySeconds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
 
 const createCompany = `-- name: CreateCompany :one
 INSERT INTO companies (name, source, source_ref)
 VALUES (?, ?, ?)
-RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at
+RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at, sync_lease_token, sync_lease_at
 `
 
 type CreateCompanyParams struct {
@@ -34,12 +60,14 @@ func (q *Queries) CreateCompany(ctx context.Context, arg CreateCompanyParams) (C
 		&i.UpdatedAt,
 		&i.Description,
 		&i.LastFetchedAt,
+		&i.SyncLeaseToken,
+		&i.SyncLeaseAt,
 	)
 	return i, err
 }
 
 const getCompany = `-- name: GetCompany :one
-SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at FROM companies
+SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at, sync_lease_token, sync_lease_at FROM companies
 WHERE id = ? AND deleted_at IS NULL
 `
 
@@ -56,12 +84,14 @@ func (q *Queries) GetCompany(ctx context.Context, id int64) (Company, error) {
 		&i.UpdatedAt,
 		&i.Description,
 		&i.LastFetchedAt,
+		&i.SyncLeaseToken,
+		&i.SyncLeaseAt,
 	)
 	return i, err
 }
 
 const getCompanyBySourceAndSourceRef = `-- name: GetCompanyBySourceAndSourceRef :one
-SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at FROM companies
+SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at, sync_lease_token, sync_lease_at FROM companies
 WHERE source = ? AND source_ref = ?
 `
 
@@ -87,12 +117,14 @@ func (q *Queries) GetCompanyBySourceAndSourceRef(ctx context.Context, arg GetCom
 		&i.UpdatedAt,
 		&i.Description,
 		&i.LastFetchedAt,
+		&i.SyncLeaseToken,
+		&i.SyncLeaseAt,
 	)
 	return i, err
 }
 
 const listActiveCompanies = `-- name: ListActiveCompanies :many
-SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at FROM companies
+SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at, sync_lease_token, sync_lease_at FROM companies
 WHERE deleted_at IS NULL
 ORDER BY name
 `
@@ -116,6 +148,8 @@ func (q *Queries) ListActiveCompanies(ctx context.Context) ([]Company, error) {
 			&i.UpdatedAt,
 			&i.Description,
 			&i.LastFetchedAt,
+			&i.SyncLeaseToken,
+			&i.SyncLeaseAt,
 		); err != nil {
 			return nil, err
 		}
@@ -142,6 +176,24 @@ func (q *Queries) MarkCompanyFetched(ctx context.Context, id int64) error {
 	return err
 }
 
+const releaseCompanySyncLease = `-- name: ReleaseCompanySyncLease :exec
+UPDATE companies
+SET sync_lease_token = NULL, sync_lease_at = NULL
+WHERE id = ?1 AND sync_lease_token = ?2
+`
+
+type ReleaseCompanySyncLeaseParams struct {
+	ID    int64          `json:"id"`
+	Token sql.NullString `json:"token"`
+}
+
+// Frees the lease only if token still holds it, so a sync whose lease
+// expired and was taken over can't release the new holder's.
+func (q *Queries) ReleaseCompanySyncLease(ctx context.Context, arg ReleaseCompanySyncLeaseParams) error {
+	_, err := q.db.ExecContext(ctx, releaseCompanySyncLease, arg.ID, arg.Token)
+	return err
+}
+
 const restoreCompany = `-- name: RestoreCompany :exec
 UPDATE companies
 SET deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
@@ -157,7 +209,7 @@ const restoreCompanyWithName = `-- name: RestoreCompanyWithName :one
 UPDATE companies
 SET name = ?, deleted_at = NULL, updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at
+RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at, sync_lease_token, sync_lease_at
 `
 
 type RestoreCompanyWithNameParams struct {
@@ -178,6 +230,8 @@ func (q *Queries) RestoreCompanyWithName(ctx context.Context, arg RestoreCompany
 		&i.UpdatedAt,
 		&i.Description,
 		&i.LastFetchedAt,
+		&i.SyncLeaseToken,
+		&i.SyncLeaseAt,
 	)
 	return i, err
 }
@@ -197,7 +251,7 @@ const updateCompanyDescription = `-- name: UpdateCompanyDescription :one
 UPDATE companies
 SET description = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND deleted_at IS NULL
-RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at
+RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at, sync_lease_token, sync_lease_at
 `
 
 type UpdateCompanyDescriptionParams struct {
@@ -219,6 +273,8 @@ func (q *Queries) UpdateCompanyDescription(ctx context.Context, arg UpdateCompan
 		&i.UpdatedAt,
 		&i.Description,
 		&i.LastFetchedAt,
+		&i.SyncLeaseToken,
+		&i.SyncLeaseAt,
 	)
 	return i, err
 }
@@ -227,7 +283,7 @@ const updateCompanyName = `-- name: UpdateCompanyName :one
 UPDATE companies
 SET name = ?, updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND deleted_at IS NULL
-RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at
+RETURNING id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at, sync_lease_token, sync_lease_at
 `
 
 type UpdateCompanyNameParams struct {
@@ -250,6 +306,8 @@ func (q *Queries) UpdateCompanyName(ctx context.Context, arg UpdateCompanyNamePa
 		&i.UpdatedAt,
 		&i.Description,
 		&i.LastFetchedAt,
+		&i.SyncLeaseToken,
+		&i.SyncLeaseAt,
 	)
 	return i, err
 }

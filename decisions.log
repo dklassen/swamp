@@ -6040,3 +6040,77 @@ Decisions:
     with nothing written.
 - Verified: a full `swamp fetch` on a copy of the real database is
   unchanged (40 companies, 0 failed).
+
+## 2026-09-30 -- Per-company sync lease (#150)
+
+Nothing stopped two syncs of one company running at once: `r`, the sync
+after a filter save, `swamp fetch`, and soon `R` and a scheduled run,
+in one process or several. #147/#148 made overlapping writes idempotent,
+but not two runs that fetched the board at different moments: run A
+(fetched while posting X was missing) closed X after run B (fetched
+after X came back) had reopened it, and ended X's application for good.
+RFC 0001, P4d; the lock itself was the user's call (2026-09-29 entry).
+
+Decisions:
+- A lease on the company row, not an in-memory mutex, since the
+  processes that overlap are separate (TUI, `swamp fetch`, launchd).
+  - Migration 00013 adds companies.sync_lease_token (the holder) and
+    sync_lease_at (CURRENT_TIMESTAMP, UTC).
+  - It's taken with a conditional UPDATE (free, or older than the
+    expiry) and released with `WHERE sync_lease_token = ?`, so a sync
+    whose lease expired and was taken over can't free the new holder's.
+  - Expiry is compared entirely in SQL (`datetime('now', printf('-%d
+    seconds', ...))`), so both sides are CURRENT_TIMESTAMP text. No Go
+    time is formatted or compared as text (AGENTS.md, #140).
+- Held from before the fetch until after the last write. The fetch is
+  inside the lease on purpose: that's what stops two runs acting on
+  different views of the board.
+  - Taken after the company/fetcher lookup, so an unsupported source
+    still fails without touching the lease.
+  - Released in a defer, under context.WithoutCancel, whether the sync
+    succeeded or not. A release error is joined to the sync's error: the
+    company then stays locked until expiry, which is worth seeing.
+  - The body moved unchanged into syncHeld.
+- Tokens come from crypto/rand.Text(): random, with no process identity
+  to manage.
+- sync.Config.LeaseTimeout, default 5 minutes (about 10x FetchTimeout
+  plus a generous write phase). New treats zero as the default: a zero
+  FetchTimeout fails loudly on every fetch, but a zero lease timeout
+  would silently let syncs overlap after a second -- the same trap as
+  store.Config.TimeFormat (#140), avoided rather than documented.
+- sync.ErrSyncInProgress is a skip, not a failure:
+  - `swamp fetch` prints "<name>: skipped, another sync of it is in
+    progress" to stderr. The summary gains ", N skipped (names)" only
+    when N > 0, so a clean run's line (which logs and launchd read) is
+    unchanged. Skips don't count toward the exit status.
+  - TUI `r`: status "<name> is already syncing elsewhere; try again in
+    a moment", with a.err cleared.
+  - TUI filter save: the filters still save (ApplyCompanyFilters writes
+    them before syncing). The status says the sync was skipped, and
+    postings reload so the view reflects the saved filters.
+- The overlapping-write tests from #147/#148 now call syncHeld
+  directly, underneath the lease: the lease prevents overlap, but a
+  lease that expires mid-sync and is taken over can still overlap, so
+  the writes must stay idempotent on their own.
+- The in-process half (App refusing a second trigger while its own `R`
+  run is active) is #152/#153's, as the issue planned.
+- Tests:
+  - store: lease table test (free, held, released, non-holder release,
+    expired takeover);
+  - sync: skipped without fetching while held; a second sync mid-fetch
+    is skipped and the lease is free after; a failed sync releases it
+    (both checked failing with the release removed); the stale-fetch
+    race (checked failing with the refusal disabled: the application
+    ended at posting_closed);
+  - reportFetch with a skip;
+  - TUI `r` and filter save while held.
+- Verified on a copy of the real database:
+  - migration 00013 applied cleanly;
+  - two `swamp fetch` runs 0.3 s apart both exited 0, each skipping
+    only the companies the other held at that moment ("0 failed, 2
+    skipped (Baseten, Fullscript)" / "0 failed, 3 skipped (Ashby,
+    Benchsci, Stripe)"), with no lease left held afterwards;
+  - in the real TUI (driven through `script`), with Ashby's lease held,
+    `c` then `r` showed "Ashby is already syncing elsewhere; try again
+    in a moment" and no error.
+- RFC 0001 marks P4 done.
