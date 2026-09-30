@@ -364,6 +364,126 @@ func TestClosePosting(t *testing.T) {
 
 func ptr[T any](v T) *T { return &v }
 
+func TestIngestPosting(t *testing.T) {
+	t.Parallel()
+	params := func(title string) CreatePostingParams {
+		return CreatePostingParams{
+			Source:         "ashby",
+			SourceID:       "job-1",
+			IngestedFields: IngestedFields{Title: title, RawPayload: `{"id":"job-1"}`},
+		}
+	}
+
+	tests := []struct {
+		name        string
+		stored      string // title already stored; "" means not stored yet
+		ingest      string
+		wantCreated bool
+		wantUpdated bool
+		wantHistory []string
+	}{
+		{name: "not stored: created", ingest: "Engineer", wantCreated: true},
+		{name: "stored, same content: nothing changes", stored: "Engineer", ingest: "Engineer"},
+		{name: "stored, new content: updated with history", stored: "Engineer", ingest: "Senior Engineer",
+			wantUpdated: true, wantHistory: []string{"content_updated"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := newTestStore(t)
+			ctx := context.Background()
+			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			var before Posting
+			if tt.stored != "" {
+				before = mustUpsertPosting(t, s, acme.ID, "job-1", tt.stored)
+			}
+
+			p := params(tt.ingest)
+			p.CompanyID = acme.ID
+			got, err := s.IngestPosting(ctx, p)
+			if err != nil {
+				t.Fatalf("IngestPosting: %v", err)
+			}
+			if got.Created != tt.wantCreated || got.Updated != tt.wantUpdated {
+				t.Errorf("Created, Updated = %v, %v, want %v, %v", got.Created, got.Updated, tt.wantCreated, tt.wantUpdated)
+			}
+			if got.Posting.Title != tt.ingest {
+				t.Errorf("Posting.Title = %q, want %q", got.Posting.Title, tt.ingest)
+			}
+			if tt.stored == tt.ingest && !got.Posting.UpdatedAt.Equal(before.UpdatedAt) {
+				t.Errorf("UpdatedAt changed from %v to %v, want the row untouched", before.UpdatedAt, got.Posting.UpdatedAt)
+			}
+
+			history, err := s.ListPostingHistory(ctx, got.Posting.ID)
+			if err != nil {
+				t.Fatalf("ListPostingHistory: %v", err)
+			}
+			var changeTypes []string
+			for _, h := range history {
+				changeTypes = append(changeTypes, h.ChangeType)
+				if !strings.Contains(h.Snapshot, `"Title":"`+tt.stored+`"`) {
+					t.Errorf("history snapshot %s, want the stored version (Title %q)", h.Snapshot, tt.stored)
+				}
+			}
+			if diff := cmp.Diff(tt.wantHistory, changeTypes); diff != "" {
+				t.Errorf("history mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestReopenPosting(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name         string
+		closed       bool
+		wantReopened bool
+		wantHistory  int
+	}{
+		{name: "closed: reopened with history", closed: true, wantReopened: true, wantHistory: 1},
+		{name: "already open: changes nothing", closed: false, wantReopened: false, wantHistory: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := newTestStore(t)
+			ctx := context.Background()
+			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+			if tt.closed {
+				if err := s.MarkPostingClosed(ctx, posting.ID); err != nil {
+					t.Fatalf("MarkPostingClosed: %v", err)
+				}
+			}
+
+			reopened, err := s.ReopenPosting(ctx, posting.ID)
+			if err != nil {
+				t.Fatalf("ReopenPosting: %v", err)
+			}
+			if reopened != tt.wantReopened {
+				t.Errorf("ReopenPosting = %v, want %v", reopened, tt.wantReopened)
+			}
+			after, err := s.GetPosting(ctx, posting.ID)
+			if err != nil {
+				t.Fatalf("GetPosting: %v", err)
+			}
+			if after.ListingStatus != "open" {
+				t.Errorf("ListingStatus = %q, want open", after.ListingStatus)
+			}
+			history, err := s.ListPostingHistory(ctx, posting.ID)
+			if err != nil {
+				t.Fatalf("ListPostingHistory: %v", err)
+			}
+			if len(history) != tt.wantHistory {
+				t.Fatalf("history rows = %d, want %d", len(history), tt.wantHistory)
+			}
+			if tt.wantHistory == 1 && (history[0].ChangeType != "reopened" || !strings.Contains(history[0].Snapshot, `"ListingStatus":"closed"`)) {
+				t.Errorf("history = %q with snapshot %s, want a \"reopened\" row snapshotting the posting while closed", history[0].ChangeType, history[0].Snapshot)
+			}
+		})
+	}
+}
+
 func TestMarkPostingReopened_SetsListingStatusOpen(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

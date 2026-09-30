@@ -6,6 +6,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/go-cmp/cmp"
+
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
@@ -665,6 +667,110 @@ func TestSyncCompany_OverlappingSyncsCreatePosting_CountedOnce(t *testing.T) {
 	}
 	if created != 1 || updated != 0 {
 		t.Errorf("summed over both runs: Created = %d, Updated = %d, want 1 and 0 -- one posting, created once, never changed", created, updated)
+	}
+}
+
+// TestSyncCompany_OverlappingSyncsReopenChangedPosting_EachChangeRecordedOnce:
+// a closed posting comes back with new content, and two syncs that both
+// fetched before either wrote see it. Each change -- the new content and
+// the reopen -- is recorded and counted once (#148).
+func TestSyncCompany_OverlappingSyncsReopenChangedPosting_EachChangeRecordedOnce(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+
+	original := samplePosting("job-1", "Engineer", "Engineering", "Remote")
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": {original}}}
+	seed := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	if _, err := seed.SyncCompany(ctx, company.ID); err != nil {
+		t.Fatalf("initial SyncCompany: %v", err)
+	}
+	fetcher.postings["acme"] = nil
+	if _, err := seed.SyncCompany(ctx, company.ID); err != nil {
+		t.Fatalf("closing SyncCompany: %v", err)
+	}
+
+	changed := original
+	changed.Title = "Senior Engineer"
+	results := syncOverlapping(t, s, company.ID, 2, []jobboard.Posting{changed})
+
+	updated, reopened := 0, 0
+	for _, r := range results {
+		updated += r.Updated
+		reopened += r.Reopened
+	}
+	if updated != 1 || reopened != 1 {
+		t.Errorf("summed over both runs: Updated = %d, Reopened = %d, want 1 and 1", updated, reopened)
+	}
+	postings, err := s.ListPostingsByCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("ListPostingsByCompany: %v", err)
+	}
+	history, err := s.ListPostingHistory(ctx, postings[0].ID)
+	if err != nil {
+		t.Fatalf("ListPostingHistory: %v", err)
+	}
+	var got []string
+	for _, h := range history {
+		got = append(got, h.ChangeType)
+	}
+	want := []string{"closed", "content_updated", "reopened"}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("history change types mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestSyncCompany_ContentUpdateFails_NoHistoryUntilItHappens: a
+// "content_updated" history row is written with the update it records, so
+// an update that fails leaves no history behind, and the next sync that
+// makes the change records it exactly once (#148). Before, the history
+// row was committed first, and each failed attempt added another.
+func TestSyncCompany_ContentUpdateFails_NoHistoryUntilItHappens(t *testing.T) {
+	ctx := context.Background()
+	s, sqlDB := newTestStoreDB(t)
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
+		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
+	}}
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
+		t.Fatalf("initial SyncCompany: %v", err)
+	}
+	postings, err := s.ListPostingsByCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("ListPostingsByCompany: %v", err)
+	}
+	postingID := postings[0].ID
+
+	if _, err := sqlDB.ExecContext(ctx, `CREATE TRIGGER fail_posting_update BEFORE UPDATE ON postings
+		BEGIN SELECT RAISE(ABORT, 'simulated failure'); END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+	fetcher.postings["acme"] = []jobboard.Posting{samplePosting("job-1", "Senior Engineer", "Engineering", "Remote")}
+	if _, err := syncer.SyncCompany(ctx, company.ID); err == nil {
+		t.Fatal("SyncCompany with a failing posting update: want an error, got nil")
+	}
+	history, err := s.ListPostingHistory(ctx, postingID)
+	if err != nil {
+		t.Fatalf("ListPostingHistory: %v", err)
+	}
+	if len(history) != 0 {
+		t.Errorf("after the failed update, %d history rows, want 0 -- the change it would record didn't happen", len(history))
+	}
+
+	if _, err := sqlDB.ExecContext(ctx, `DROP TRIGGER fail_posting_update`); err != nil {
+		t.Fatalf("drop trigger: %v", err)
+	}
+	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
+		t.Fatalf("SyncCompany after the failure cleared: %v", err)
+	}
+	history, err = s.ListPostingHistory(ctx, postingID)
+	if err != nil {
+		t.Fatalf("ListPostingHistory: %v", err)
+	}
+	if len(history) != 1 || history[0].ChangeType != "content_updated" {
+		t.Errorf("after the next clean sync, history = %d rows, want exactly one content_updated", len(history))
 	}
 }
 

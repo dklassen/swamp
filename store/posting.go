@@ -17,10 +17,10 @@ import (
 // IngestedFields is a posting's content as ingested from its source --
 // exactly the fields store.Posting and CreatePostingParams share, and
 // exactly the fields a re-fetch needs to compare to detect a real
-// content change (see IngestPosting). Pulled into
-// one type so there's a single place defining "what counts as a
-// posting's content," rather than that field list being hand-copied at
-// every site that needs it (see decisions.log, #57).
+// content change (see IngestPosting). Pulled into one type so there's a
+// single place defining "what counts as a posting's content," rather
+// than that field list being hand-copied at every site that needs it
+// (see decisions.log, #57).
 //
 // json tags pin the field names exactly as they already serialize today
 // (Go's default reflect-based names) rather than changing them -- the
