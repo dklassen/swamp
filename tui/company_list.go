@@ -76,7 +76,7 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 	case msg.String() == "r":
 		if m.cursor < len(companies) {
 			c := companies[m.cursor]
-			return refreshCompany(m.syncer, c.ID, c.Name), nil
+			return refreshCompany(m.syncer, c.ID), nil
 		}
 	case msg.String() == "i":
 		m.showInfo = !m.showInfo

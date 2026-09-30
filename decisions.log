@@ -6114,3 +6114,36 @@ Decisions:
     `c` then `r` showed "Ashby is already syncing elsewhere; try again
     in a moment" and no error.
 - RFC 0001 marks P4 done.
+
+## 2026-09-30 -- sync.Result.Name and a shared Summarize (#151)
+
+Every caller reporting sync results carried the company name alongside
+them: runFetch built a names map for reportFetch, and the TUI passed
+companyName through refreshCompany and applyCompanyFilters into their
+messages. The summary line lived in package main, so the TUI's sync-all
+(#153) couldn't reuse it, and it printed "1 companies". RFC 0001,
+option 2's sync package changes.
+
+Decisions:
+- Result.Name:
+  - SyncCompany sets it right after loading the company, before any
+    step that can fail, so even an ErrSyncInProgress or fetch-failure
+    result is named.
+  - SyncAll also sets it from its own company list, covering a result
+    whose GetCompany failed.
+  - ApplyCompanyFilters returns an unnamed Result only when saving the
+    filters fails; the TUI only shows an error then.
+- Summarize([]Result) Summary with String(): Summary keeps Failed and
+  Skipped as name slices (not just counts), so the TUI can show or
+  reuse them. The skipped-count rules from #150 moved here unchanged
+  (skips aren't failures; mentioned only when present).
+- reportFetch keeps printing its per-company lines itself (they're
+  CLI-specific) and returns len(summary.Failed) for the exit status.
+  runFetch no longer lists companies itself.
+- The TUI messages drop companyName for result.Name. companyListModel
+  still holds a syncer; #152 changes that.
+- Verified on a copy of the real database:
+  - `swamp fetch` printed the same per-company lines and "40
+    companies, 0 failed";
+  - in the real TUI (through `script`), `c` then `r` showed "Ashby:
+    fetched 67, created 0, updated 0, closed 0, reopened 0".
