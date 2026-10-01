@@ -27,7 +27,7 @@ func TestDocument_WritesPDFToDestination(t *testing.T) {
 	mdPath := writeMarkdown(t, "# Cover letter\n\nHello.\n")
 	outPath := filepath.Join(t.TempDir(), "acme-engineer-cover_letter.pdf")
 
-	if err := export.Document(mdPath, outPath); err != nil {
+	if _, err := export.Document(mdPath, outPath); err != nil {
 		t.Fatalf("Document() error = %v, want nil", err)
 	}
 
@@ -101,5 +101,24 @@ func TestFileName(t *testing.T) {
 				t.Errorf("FileName(%q, %q, %s) = %q, want %q", tt.company, tt.title, tt.documentType, got, tt.want)
 			}
 		})
+	}
+}
+
+// Callers record what they exported (#188), so Document hands back
+// exactly the markdown it rendered, not a second read that could race an
+// edit.
+func TestDocument_ReturnsTheMarkdownItRendered(t *testing.T) {
+	t.Parallel()
+
+	const content = "# Cover letter\n\nHello.\n"
+	mdPath := writeMarkdown(t, content)
+	outPath := filepath.Join(t.TempDir(), "acme-engineer-cover_letter.pdf")
+
+	got, err := export.Document(mdPath, outPath)
+	if err != nil {
+		t.Fatalf("Document() error = %v, want nil", err)
+	}
+	if got != content {
+		t.Errorf("Document() returned %q, want %q", got, content)
 	}
 }

@@ -1188,7 +1188,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.applicationDetail = newApplicationDetailModel(a.documents, v.application)
 		case enterApplicationExportMsg:
 			a.screen = screenApplicationExport
-			a.applicationExport = newApplicationExportModel(a.documents, v.application, a.exportDir, a.width)
+			a.applicationExport = newApplicationExportModel(a.store, a.documents, v.application, a.exportDir, a.width)
 		}
 		return a, cmd
 	case screenApplicationDetail:

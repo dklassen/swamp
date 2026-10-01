@@ -354,7 +354,7 @@ func runExport(s *store.Store, d *documents.Store, args []string) {
 			continue
 		}
 
-		outPath, err := exportDocumentPDF(doc.Path)
+		outPath, err := exportDocumentPDF(ctx, s, applicationID, documentType, doc.Path)
 		if err != nil {
 			fmt.Printf("%s: error: %v\n", documentType, err)
 			continue
@@ -398,10 +398,16 @@ func currentDocumentReviews(status documents.Status, reviews map[store.DocumentT
 // exportDocumentPDF renders mdPath's markdown content to a sibling .pdf
 // file (same directory, extension swapped) via the export package, and
 // returns its path -- the CLI's fixed destination convention, unlike the
-// TUI's export screen, where the user picks the directory.
-func exportDocumentPDF(mdPath string) (string, error) {
+// TUI's export screen, where the user picks the directory. The export is
+// recorded against applicationID with the content it was rendered from
+// (store.RecordDocumentExport, #188), as the TUI's are.
+func exportDocumentPDF(ctx context.Context, s *store.Store, applicationID int64, documentType store.DocumentType, mdPath string) (string, error) {
 	outPath := strings.TrimSuffix(mdPath, filepath.Ext(mdPath)) + ".pdf"
-	if err := export.Document(mdPath, outPath); err != nil {
+	content, err := export.Document(mdPath, outPath)
+	if err != nil {
+		return "", err
+	}
+	if err := s.RecordDocumentExport(ctx, applicationID, documentType, content, outPath); err != nil {
 		return "", err
 	}
 	return outPath, nil

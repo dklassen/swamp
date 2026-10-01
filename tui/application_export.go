@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -26,6 +27,7 @@ import (
 // the destination is deliberately theirs to choose rather than fixed at
 // the assets directory the way the `swamp export` CLI's is.
 type applicationExportModel struct {
+	store       *store.Store
 	documents   *documents.Store
 	application store.ApplicationView
 	textinput   textinput.Model
@@ -34,7 +36,7 @@ type applicationExportModel struct {
 // newApplicationExportModel returns an export screen for application,
 // with the destination prefilled to defaultDir (see App.exportDir) so
 // the common case is enter with no typing at all.
-func newApplicationExportModel(docs *documents.Store, application store.ApplicationView, defaultDir string, width int) applicationExportModel {
+func newApplicationExportModel(s *store.Store, docs *documents.Store, application store.ApplicationView, defaultDir string, width int) applicationExportModel {
 	ti := textinput.New()
 	ti.SetValue(defaultDir)
 	ti.Width = width
@@ -42,7 +44,7 @@ func newApplicationExportModel(docs *documents.Store, application store.Applicat
 	// subdirectory extends it instead of landing in front of it.
 	ti.CursorEnd()
 	ti.Focus()
-	return applicationExportModel{documents: docs, application: application, textinput: ti}
+	return applicationExportModel{store: s, documents: docs, application: application, textinput: ti}
 }
 
 // cancelApplicationExportMsg signals that App should switch back to the
@@ -54,7 +56,7 @@ func (m *applicationExportModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	case tea.KeyEsc:
 		return nil, cancelApplicationExportMsg{}
 	case tea.KeyEnter:
-		return exportApplicationDocuments(m.documents, m.application, m.textinput.Value()), nil
+		return exportApplicationDocuments(m.store, m.documents, m.application, m.textinput.Value()), nil
 	}
 	var cmd tea.Cmd
 	m.textinput, cmd = m.textinput.Update(msg)
@@ -95,7 +97,11 @@ type applicationExportedMsg struct {
 // active-applications list already shows the review state per
 // application, so gating here would hide work without telling the user
 // why (same reasoning as the CLI's -- see cmd/swamp/main.go's runExport).
-func exportApplicationDocuments(docs *documents.Store, application store.ApplicationView, dir string) tea.Cmd {
+//
+// Each PDF written is recorded (store.RecordDocumentExport, #188) with
+// the markdown it was rendered from, so the home screen can tell an
+// exported draft from one still waiting to be exported.
+func exportApplicationDocuments(s *store.Store, docs *documents.Store, application store.ApplicationView, dir string) tea.Cmd {
 	return func() tea.Msg {
 		dir, err := expandPath(dir)
 		if err != nil {
@@ -118,7 +124,11 @@ func exportApplicationDocuments(docs *documents.Store, application store.Applica
 				continue
 			}
 			outPath := filepath.Join(dir, export.FileName(application.CompanyName, application.Posting.Title, documentType))
-			if err := export.Document(doc.Path, outPath); err != nil {
+			content, err := export.Document(doc.Path, outPath)
+			if err != nil {
+				return applicationExportedMsg{dir: dir, paths: paths, skipped: skipped, err: err}
+			}
+			if err := s.RecordDocumentExport(context.Background(), application.ID, documentType, content, outPath); err != nil {
 				return applicationExportedMsg{dir: dir, paths: paths, skipped: skipped, err: err}
 			}
 			paths = append(paths, outPath)
