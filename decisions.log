@@ -6552,3 +6552,28 @@ the import direction Option A settled on (store -> documents), so each
 name is defined once. The first version had the names as string
 literals in ByName, a second copy of store's table; the user caught it.
 ByName takes a string only until step 2 moves the type into documents.
+
+## 2026-10-01 -- RFC 0004 step 2: documents.Type (#180)
+
+store.DocumentType is now documents.Type (Option A). documents owns
+the single table of types (name and label; the path comes from the
+name), with Types, String, Label, ParseType and the JSON/text methods.
+store imports documents to persist a Type; documents still imports
+nothing from Swamp.
+
+- Status.Doc(Type) and Store.Path(applicationID, Type) replace step 1's
+  string-keyed ByName and mcpserver's documentPath switch, and error
+  on any type outside the table.
+- Step 1's name constants folded into the table; there's no separate
+  name list left.
+- The TUI's documentTypeLabel switch became Type.Label, and the labels
+  live in the table (lowercase, for use mid-sentence).
+- The test that every table entry has a name, label and path lives in
+  documents now. Step 1's cross-package stage test is redundant and
+  was removed.
+- Status still carries CoverLetter/Resume fields, filled from the
+  table, for the screens and stage.Prepared that name the two types;
+  step 4 replaces those uses, then the fields go. Paths likewise.
+- The renaming was mechanical (perl with word boundaries, imports fixed
+  by hand since goimports isn't installed). Migration SQL comments that
+  mention store.DocumentType are history and were left alone.
