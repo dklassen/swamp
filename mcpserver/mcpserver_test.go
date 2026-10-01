@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -498,6 +499,62 @@ func TestDocumentTools_AdvertiseDocumentTypeAsStringEnum(t *testing.T) {
 			}
 			if diff := cmp.Diff(want, schema.Properties["DocumentType"]); diff != "" {
 				t.Errorf("DocumentType schema mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// canonicalTools are the read-only tools serving a user-maintained file,
+// each with where that file lives.
+var canonicalTools = []struct {
+	tool string
+	path func(*documents.Store) string
+}{
+	{"read_canonical_resume", (*documents.Store).CanonicalResumePath},
+	{"read_profile", (*documents.Store).ProfilePath},
+}
+
+func TestReadCanonical_ReturnsContentWhenPresent(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range canonicalTools {
+		t.Run(tc.tool, func(t *testing.T) {
+			t.Parallel()
+
+			srv, _, d := newTestServer(t)
+			path := tc.path(d)
+			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+				t.Fatalf("mkdir: %v", err)
+			}
+			if err := os.WriteFile(path, []byte("# "+tc.tool), 0o644); err != nil {
+				t.Fatalf("write %s: %v", path, err)
+			}
+
+			cs := connectClient(t, srv)
+			got := callTool[readCanonicalOutput](t, cs, tc.tool, map[string]any{})
+
+			want := readCanonicalOutput{Path: path, Exists: true, Content: "# " + tc.tool}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("%s result mismatch (-want +got):\n%s", tc.tool, diff)
+			}
+		})
+	}
+}
+
+func TestReadCanonical_ReportsMissingFile(t *testing.T) {
+	t.Parallel()
+
+	for _, tc := range canonicalTools {
+		t.Run(tc.tool, func(t *testing.T) {
+			t.Parallel()
+
+			srv, _, d := newTestServer(t)
+			cs := connectClient(t, srv)
+			got := callTool[readCanonicalOutput](t, cs, tc.tool, map[string]any{})
+
+			want := readCanonicalOutput{Path: tc.path(d), Exists: false}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("%s result mismatch (-want +got):\n%s", tc.tool, diff)
 			}
 		})
 	}

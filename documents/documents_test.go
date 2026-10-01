@@ -105,3 +105,19 @@ func TestStore_Status_TrueWhenFilePresent(t *testing.T) {
 		}
 	}
 }
+
+func TestStore_CanonicalResumePath_IsUnderTheCanonicalDir(t *testing.T) {
+	t.Parallel()
+
+	if got, want := NewStore("/base").CanonicalResumePath(), "/base/canonical/resume.md"; got != want {
+		t.Errorf("CanonicalResumePath() = %q, want %q", got, want)
+	}
+}
+
+func TestStore_ProfilePath_IsUnderTheCanonicalDir(t *testing.T) {
+	t.Parallel()
+
+	if got, want := NewStore("/base").ProfilePath(), "/base/canonical/profile.md"; got != want {
+		t.Errorf("ProfilePath() = %q, want %q", got, want)
+	}
+}
