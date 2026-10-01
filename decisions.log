@@ -6689,3 +6689,19 @@ keeps a canonical resume that the skill tailors, and the profile
   absent.
 - Resume-only for canonical documents (no base cover letter yet); the
   handler takes a path, so another file is one AddTool call.
+
+## 2026-10-01 -- Ignore .claude/ except skills/
+
+.claude/settings.local.json, scratch/ and worktrees/ were untracked but
+not ignored (worktrees only via this clone's .git/info/exclude), so a
+`git add -A` would have committed them. settings.local.json holds
+per-user permission allowlists, which can embed paths, hosts and tokens.
+
+- .gitignore now ignores /.claude/* and re-includes /.claude/skills/,
+  the symlink Claude Code uses to find apply-to-posting. A blanket
+  /.claude/ would hide any new skill added there.
+- A shared .claude/settings.json is ignored too. Nothing uses one, and
+  ignoring by default is the safer side for a directory tools write to.
+  Re-include it explicitly if a project-wide setting is ever wanted.
+- History checked: no file under .claude/ other than the skill was ever
+  committed, so nothing needs rewriting.

@@ -10,3 +10,9 @@
 /PROFILE_REFERENCE.md
 
 *.bak
+
+# Claude Code's per-user state: local settings (permission allowlists,
+# which can embed paths, hosts and tokens), scratch files and worktrees.
+# skills/ stays tracked: it's how Claude Code finds the repo's skills.
+/.claude/*
+!/.claude/skills/
