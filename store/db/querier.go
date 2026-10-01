@@ -63,6 +63,7 @@ type Querier interface {
 	// violating the UNIQUE constraint with a duplicate insert.
 	GetCompanyBySourceAndSourceRef(ctx context.Context, arg GetCompanyBySourceAndSourceRefParams) (Company, error)
 	GetPosting(ctx context.Context, id int64) (Posting, error)
+	GetPostingApplicationForm(ctx context.Context, postingID int64) (PostingApplicationForm, error)
 	GetPostingBySourceAndSourceID(ctx context.Context, arg GetPostingBySourceAndSourceIDParams) (Posting, error)
 	GetPostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
 	// Not filtered on deleted_at: used for existence checks (e.g. before
@@ -165,6 +166,8 @@ type Querier interface {
 	ReopenPostingIfClosed(ctx context.Context, id int64) (int64, error)
 	RestoreCompany(ctx context.Context, id int64) error
 	RestoreCompanyWithName(ctx context.Context, arg RestoreCompanyWithNameParams) (Company, error)
+	// Replaces any earlier fetch of the same posting's form.
+	SavePostingApplicationForm(ctx context.Context, arg SavePostingApplicationFormParams) error
 	// See SetPostingInterested -- same mutual-exclusivity reasoning, mirrored.
 	SetPostingArchived(ctx context.Context, postingID int64) (PostingMarkup, error)
 	// Sets interested_at and also clears archived_at: the TUI treats

@@ -104,6 +104,12 @@ type Posting struct {
 	UpdatedAt       time.Time    `json:"updated_at"`
 }
 
+type PostingApplicationForm struct {
+	PostingID int64     `json:"posting_id"`
+	Form      string    `json:"form"`
+	FetchedAt time.Time `json:"fetched_at"`
+}
+
 type PostingHistory struct {
 	ID         int64     `json:"id"`
 	PostingID  int64     `json:"posting_id"`
