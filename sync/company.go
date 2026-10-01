@@ -197,6 +197,17 @@ func (s *Syncer) syncHeld(ctx context.Context, company store.Company, fetcher Po
 	if err != nil {
 		return result, fmt.Errorf("sync: list existing postings: %w", err)
 	}
+	var seen []int64
+	for _, existing := range existingPostings {
+		if seenSourceIDs[existing.SourceID] {
+			seen = append(seen, existing.ID)
+		}
+	}
+	// Every stored posting the board listed, including ones the filters
+	// now leave out: last_seen_at is when the board last listed it (#176).
+	if err := s.store.MarkPostingsSeen(ctx, seen); err != nil {
+		return result, fmt.Errorf("sync: mark postings seen: %w", err)
+	}
 	for _, existing := range existingPostings {
 		if existing.ListingStatus != "open" || seenSourceIDs[existing.SourceID] {
 			continue

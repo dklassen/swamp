@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
@@ -864,5 +865,67 @@ func TestSyncCompany_RecordsLastFetchedAtOnlyOnSuccess(t *testing.T) {
 				t.Errorf("LastFetchedAt = %v, want zero (never fetched)", got.LastFetchedAt)
 			}
 		})
+	}
+}
+
+// TestSyncCompany_RecordsLastSeenAtForEveryListedPosting: last_seen_at
+// is the last time a sync saw the posting on its board (#176). Every
+// stored posting the fetch returns advances -- unchanged ones, and ones
+// the company's filters now leave out but the board still lists -- with
+// no history row and no update counted. A posting the board dropped
+// keeps the time it was last seen.
+func TestSyncCompany_RecordsLastSeenAtForEveryListedPosting(t *testing.T) {
+	ctx := context.Background()
+	s, sqlDB := newTestStoreDB(t)
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	unchanged := samplePosting("job-1", "Engineer", "Engineering", "Remote")
+	filteredOut := samplePosting("job-2", "Designer", "Design", "Remote")
+	dropped := samplePosting("job-3", "Writer", "Marketing", "Remote")
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
+		"acme": {unchanged, filteredOut, dropped},
+	}}
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
+		t.Fatalf("initial SyncCompany: %v", err)
+	}
+	longAgo := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := sqlDB.ExecContext(ctx, `UPDATE postings SET last_seen_at = ?`, longAgo); err != nil {
+		t.Fatalf("backdate last_seen_at: %v", err)
+	}
+	if err := s.ReplaceCompanyFilters(ctx, company.ID, []store.CompanyFilter{{Field: filter.FieldDepartment, Value: "Engineering"}}); err != nil {
+		t.Fatalf("ReplaceCompanyFilters: %v", err)
+	}
+
+	fetcher.postings["acme"] = []jobboard.Posting{unchanged, filteredOut}
+	before := time.Now().Add(-2 * time.Second)
+	result, err := syncer.SyncCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("SyncCompany: %v", err)
+	}
+	if result.Updated != 0 {
+		t.Errorf("result.Updated = %d, want 0: being seen isn't a content change", result.Updated)
+	}
+
+	postings, err := s.ListPostingsByCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("ListPostingsByCompany: %v", err)
+	}
+	for _, p := range postings {
+		listed := p.SourceID != dropped.SourceID
+		switch {
+		case listed && p.LastSeenAt.Before(before):
+			t.Errorf("%s: LastSeenAt = %v, want at or after %v: the board still lists it", p.SourceID, p.LastSeenAt, before)
+		case !listed && !p.LastSeenAt.Equal(longAgo):
+			t.Errorf("%s: LastSeenAt = %v, want %v unchanged: the board dropped it", p.SourceID, p.LastSeenAt, longAgo)
+		}
+		history, err := s.ListPostingHistory(ctx, p.ID)
+		if err != nil {
+			t.Fatalf("ListPostingHistory: %v", err)
+		}
+		for _, h := range history {
+			if h.ChangeType == "content_updated" {
+				t.Errorf("%s: a content_updated history row, want none: being seen isn't a change", p.SourceID)
+			}
+		}
 	}
 }
