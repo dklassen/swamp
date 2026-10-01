@@ -6504,3 +6504,27 @@ It's a prerequisite of batch drafting (#165).
   and skipping never loses work.
 - The work list is every started application without drafts, since
   B1 (#163) kept all 23.
+
+## 2026-10-01 -- Submit flow (#166, RFC 0002 task C2, "1.3a")
+
+S on application detail opens a submit screen. Entering it opens the
+apply link (ApplicationURL, falling back to JobURL) and exports the
+documents at the same time; y then marks the application submitted, and
+n/esc goes back to application detail with nothing changed.
+
+- Opening and exporting happen on entry, not as separate key presses:
+  the user came here to submit, and both are needed before the form can
+  be filled in. Neither can submit anything; only y changes state.
+- Export goes to the last-used export directory (the export screen's
+  prefill) without asking. A wrong guess costs a stray PDF in a folder
+  the user chose before, and the screen lists the exact paths.
+- y is available whether or not the export succeeded or the browser
+  opened: the user may have uploaded other files or opened the link
+  themselves, and whether they submitted is theirs to say.
+- The browser opener moved onto App (openURL) so tests can fake it.
+  The other screens' 'o' keys still call openInBrowser directly;
+  moving them is not this issue's to do.
+- The answers step waits for the answers document (#169).
+- Found in the manual run: the screen said "opened <url>" when the
+  browser failed to launch. It now shows the result next to the link,
+  as well as in the error banner.
