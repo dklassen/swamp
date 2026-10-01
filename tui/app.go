@@ -207,22 +207,31 @@ func documentStatusLine(label string, exists bool, path string, review store.Doc
 	return line
 }
 
+// outcomeDisplay is how each review outcome looks: its style, shared by
+// reviewBadge and reviewGlyph, and its glyph. An outcome missing here
+// renders dim, as "[<outcome>]" and "?"; a test checks every
+// store.ReviewOutcomes() has an entry (RFC 0005).
+var outcomeDisplay = map[store.ReviewOutcome]struct {
+	style lipgloss.Style
+	glyph string
+}{
+	store.ReviewOutcomePassed:  {passStyle, "✓"},
+	store.ReviewOutcomeFlagged: {errStyle, "✗"},
+}
+
 // reviewBadge renders a document's latest review outcome as a short
 // styled tag: dim "[not reviewed]" when hasReview is false (no review
-// recorded yet), green "[PASSED]"/red "[FLAGGED]" otherwise -- matching
-// store.ReviewOutcomePassed/ReviewOutcomeFlagged.
+// recorded yet), otherwise the outcome's name in capitals, styled per
+// outcomeDisplay: green "[PASSED]", red "[FLAGGED]".
 func reviewBadge(review store.DocumentReview, hasReview bool) string {
 	if !hasReview {
 		return dimStyle.Render("[not reviewed]")
 	}
-	switch review.Outcome {
-	case store.ReviewOutcomePassed:
-		return passStyle.Render("[PASSED]")
-	case store.ReviewOutcomeFlagged:
-		return errStyle.Render("[FLAGGED]")
-	default:
+	display, ok := outcomeDisplay[review.Outcome]
+	if !ok {
 		return dimStyle.Render("[" + review.Outcome.String() + "]")
 	}
+	return display.style.Render("[" + strings.ToUpper(review.Outcome.String()) + "]")
 }
 
 // reviewGlyphSummary renders a compact, single-line summary of an
@@ -250,18 +259,17 @@ func documentAbbreviation(documentType documents.Type) string {
 	return string(initials)
 }
 
+// reviewGlyph is reviewBadge's one-character form, for list rows: dim "-"
+// with no review, otherwise the outcome's glyph from outcomeDisplay.
 func reviewGlyph(review store.DocumentReview, hasReview bool) string {
 	if !hasReview {
 		return dimStyle.Render("-")
 	}
-	switch review.Outcome {
-	case store.ReviewOutcomePassed:
-		return passStyle.Render("✓")
-	case store.ReviewOutcomeFlagged:
-		return errStyle.Render("✗")
-	default:
+	display, ok := outcomeDisplay[review.Outcome]
+	if !ok {
 		return dimStyle.Render("?")
 	}
+	return display.style.Render(display.glyph)
 }
 
 // postingDetailContent renders a posting's fields, application state, and

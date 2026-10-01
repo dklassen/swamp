@@ -29,6 +29,17 @@ var reviewOutcomeNames = [...]string{
 	ReviewOutcomeFlagged: "flagged",
 }
 
+// ReviewOutcomes returns every review outcome, in const order -- so a
+// caller mapping each outcome to something (e.g. the TUI's display) can
+// test it has them all.
+func ReviewOutcomes() []ReviewOutcome {
+	all := make([]ReviewOutcome, len(reviewOutcomeNames))
+	for i := range reviewOutcomeNames {
+		all[i] = ReviewOutcome(i)
+	}
+	return all
+}
+
 // String implements fmt.Stringer, and is also the value persisted to the
 // document_reviews.outcome DB column.
 func (o ReviewOutcome) String() string {

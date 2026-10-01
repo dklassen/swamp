@@ -6740,3 +6740,23 @@ returns. The two TUI outcome switches are still duplicated.
   and documents.Current. Doc comments rather than a type: see the
   RFC 0005 revision entry above for why a pointer or Optional value was
   rejected.
+
+## 2026-10-01 -- One outcome display table in the TUI (#204, RFC 0005 step 2)
+
+- outcomeDisplay (tui/app.go) maps each store.ReviewOutcome to its style
+  and glyph. reviewBadge and reviewGlyph both read it; the badge text is
+  the outcome's name in capitals, which is what the switch hard-coded.
+  An outcome with no entry keeps the old dim fallbacks ("[<name>]",
+  "?"). A table rather than a style-only helper, so one row is all a
+  new outcome needs in the TUI.
+- New store.ReviewOutcomes(), mirroring documents.Types(), so
+  TestReviewGlyph_EveryOutcomeHasItsOwn can fail on a missing row.
+  Checked failing by temporarily adding a third outcome to store.
+  That's what makes the single table worth having: the duplication
+  itself was small, but nothing caught a miss.
+- Output unchanged. TestReviewBadgeAndGlyph_Text pins every case's text
+  (it passed before and after). Tests strip colour, so the styling was
+  checked on the real TUI: the home screen on a copy of the real
+  database, captured through `script` with 256 colours, had identical
+  escape codes before and after (6 green ✓, 3 red ✗, 41 dim -).
+- RFC 0005 is implemented; it records what shipped.

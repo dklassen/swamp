@@ -1,6 +1,6 @@
 # RFC 0005: One way to say "this document has no review"
 
-- **Status:** Accepted, revised 2026-10-01. Work in #203 (step 1) and #204 (step 2); see "Work breakdown".
+- **Status:** Implemented 2026-10-01 (#203: PR #206; #204: this PR; see "What shipped")
 - **Date:** 2026-09-28 (revised 2026-10-01: re-checked against the code after RFC 0004 shipped; `HasReview()` dropped; see "Corrections to the earlier draft")
 - **Related:** RFC 0004 (`documents.Current`, shipped); `store/document_review.go`; `cmd/swamp/main.go`; `tui/app.go`
 
@@ -79,10 +79,22 @@ Every issue carries the `rfc-0005` label and an `rfc0005-step-N` label.
 
 | Step | Issue | Work | Size |
 |---|---|---|---|
-| 1 | #203 | CLI checks the map (`reviewSummary(review, ok)`), table test including "no review with a non-zero `CreatedAt`"; doc comments on `DocumentReview`, `LatestDocumentReviews`, `documents.Current` | S |
-| 2 | #204 | TUI: one outcome-to-style helper for `reviewBadge` and `reviewGlyph`; output unchanged | S |
+| 1 | #203 (done) | CLI checks the map (`reviewSummary(review, ok)`), table test including "no review with a non-zero `CreatedAt`"; doc comments on `DocumentReview`, `LatestDocumentReviews`, `documents.Current` | S |
+| 2 | #204 (done) | TUI: one outcome-to-style helper for `reviewBadge` and `reviewGlyph`; output unchanged | S |
 
 The steps are independent.
+
+## What shipped
+
+Option 1, both steps. Each has a `decisions.log` entry.
+
+1. **The CLI checks the map** (#203, PR #206). `reviewSummary(review, hasReview)` takes presence from the lookup at the call site, and `CreatedAt.IsZero()` is gone. Its table test includes the two cases the timestamp check got wrong. The convention is stated on `store.DocumentReview`, `LatestDocumentReviews` and `documents.Current`. `swamp export`'s output for all 34 real applications was identical to the previous build.
+2. **One outcome display table** (#204). `outcomeDisplay` in `tui/app.go` holds each outcome's style and glyph. `reviewBadge` and `reviewGlyph` both read it, and the badge text is the outcome's name in capitals.
+   - New `store.ReviewOutcomes()`, like `documents.Types()`, so `TestReviewGlyph_EveryOutcomeHasItsOwn` can fail when an outcome has no entry. This is the "nothing catches a miss" from Problem 3, now caught.
+   - `TestReviewBadgeAndGlyph_Text` pins every case's text, including the unknown-outcome fallback, which nothing covered before.
+   - The coloured home screen on a copy of the real database matched the previous build exactly.
+
+Adding a review outcome now takes an entry in `store`'s name table and a row in `outcomeDisplay`. A test fails if the row is missing.
 
 ## Corrections to the earlier draft
 
