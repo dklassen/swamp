@@ -67,11 +67,21 @@ func (r *Requirement) UnmarshalJSON(data []byte) error {
 	if err := json.Unmarshal(data, &name); err != nil {
 		return err
 	}
+	parsed, err := parseRequirement(name)
+	if err != nil {
+		return err
+	}
+	*r = parsed
+	return nil
+}
+
+// parseRequirement converts a requirement's name back into a Requirement,
+// failing for any name it doesn't know.
+func parseRequirement(name string) (Requirement, error) {
 	for i, n := range requirementNames {
 		if n == name {
-			*r = Requirement(i)
-			return nil
+			return Requirement(i), nil
 		}
 	}
-	return fmt.Errorf("jobboard: unknown requirement %q", name)
+	return 0, fmt.Errorf("jobboard: unknown requirement %q", name)
 }
