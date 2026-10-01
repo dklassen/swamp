@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"os"
 	"path/filepath"
 	"sort"
@@ -958,4 +959,25 @@ func mustDoc(t *testing.T, status documents.Status, documentType documents.Type)
 		t.Fatalf("Doc(%s): %v", documentType, err)
 	}
 	return doc
+}
+
+// TestPrepare_ClosedPostingWithoutApplication_Refused: committing to a
+// posting that's no longer listed is refused (#175), before anything is
+// created, so the skill can tell the user why.
+func TestPrepare_ClosedPostingWithoutApplication_Refused(t *testing.T) {
+	t.Parallel()
+
+	st, s, _ := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	if err := s.MarkPostingClosed(context.Background(), posting.ID); err != nil {
+		t.Fatalf("MarkPostingClosed: %v", err)
+	}
+
+	if _, err := st.Prepare(context.Background(), posting.ID); !errors.Is(err, store.ErrPostingClosed) {
+		t.Fatalf("Prepare on a closed posting: err = %v, want ErrPostingClosed", err)
+	}
+	if _, err := s.GetApplication(context.Background(), posting.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetApplication: err = %v, want ErrNotFound", err)
+	}
 }
