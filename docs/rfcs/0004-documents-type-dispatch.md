@@ -1,6 +1,6 @@
 # RFC 0004: Making a new document type a one-line change
 
-- **Status:** Implemented 2026-10-01 (#180: PRs #194, #195, #196 and the step 4 PR; see "What shipped")
+- **Status:** Implemented 2026-10-01 (#180: PRs #194, #195, #196, #197; see "What shipped")
 - **Date:** 2026-09-28
 - **Related:** RFC 0002 (phase 2 proposes an `answers.md` document); `documents/documents.go` package comment; `store/document_review.go`; `decisions.log` 2026-09-04 (#94 follow-up, line ~3668) and 2026-09-17 (#45 review pass, line ~4115)
 
@@ -201,7 +201,7 @@ Option A, in the four steps above, with the open questions decided by the user o
 1. **Fail loudly** (#194). The six fallbacks errored on unknown types and the hard-coded pairs used the type list. Three more pairs had appeared since this RFC was measured (#164, #166, #188).
 2. **`documents.Type`** (#195). One table in `documents` holds each type's name (file base name and stored value) and label; `store` imports `documents`. `Status.Doc(Type)` and `Store.Path(applicationID, Type)` replace the dispatch.
 3. **`documents.Current`** (#196). One generic check replaces the three copies. It's named `Current`, not `CurrentReviews`, because the home screen uses it for exports too.
-4. **Screens and MCP output driven by the list.**
+4. **Screens and MCP output driven by the list** (#197).
    - Each type carries its TUI key (`l`/`r`; uppercase reviews).
    - Application detail's keys, rows and help line, posting detail's rows, the review picker and the home screen's review column all loop over `documents.Types()`.
    - Row titles and the review column's abbreviations are derived from the label.
