@@ -282,6 +282,16 @@ func (s *Store) ListPostingsByCompany(ctx context.Context, companyID int64) ([]P
 	return postings, nil
 }
 
+// MarkPostingsSeen records that a sync just saw these postings on their
+// board, by setting last_seen_at (#176). It isn't a content change, so
+// updated_at and posting history are left alone. No IDs is a no-op.
+func (s *Store) MarkPostingsSeen(ctx context.Context, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	return s.queries.MarkPostingsSeen(ctx, ids)
+}
+
 // MarkPostingClosed marks a posting closed, e.g. because it no longer
 // appeared in the most recent fetch of its company's board.
 func (s *Store) MarkPostingClosed(ctx context.Context, id int64) error {

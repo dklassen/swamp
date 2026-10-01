@@ -912,3 +912,42 @@ func TestReopenPosting_RestoreFails_PostingStaysClosed(t *testing.T) {
 		t.Errorf("posting history = %d rows, want only the close", n)
 	}
 }
+
+func TestMarkPostingsSeen_AdvancesOnlyLastSeenAtOfTheGivenPostings(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	seen := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	other := mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
+	longAgo := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
+	if _, err := s.sqlDB.ExecContext(ctx, `UPDATE postings SET last_seen_at = ?, updated_at = ?`, longAgo, longAgo); err != nil {
+		t.Fatalf("backdate: %v", err)
+	}
+
+	if err := s.MarkPostingsSeen(ctx, nil); err != nil {
+		t.Fatalf("MarkPostingsSeen(nil): %v", err)
+	}
+	before := time.Now().Add(-2 * time.Second)
+	if err := s.MarkPostingsSeen(ctx, []int64{seen.ID}); err != nil {
+		t.Fatalf("MarkPostingsSeen: %v", err)
+	}
+
+	got, err := s.GetPosting(ctx, seen.ID)
+	if err != nil {
+		t.Fatalf("GetPosting: %v", err)
+	}
+	if got.LastSeenAt.Before(before) {
+		t.Errorf("seen posting LastSeenAt = %v, want at or after %v", got.LastSeenAt, before)
+	}
+	if !got.UpdatedAt.Equal(longAgo) {
+		t.Errorf("seen posting UpdatedAt = %v, want %v unchanged: being seen isn't a change", got.UpdatedAt, longAgo)
+	}
+	untouched, err := s.GetPosting(ctx, other.ID)
+	if err != nil {
+		t.Fatalf("GetPosting: %v", err)
+	}
+	if !untouched.LastSeenAt.Equal(longAgo) {
+		t.Errorf("other posting LastSeenAt = %v, want %v unchanged", untouched.LastSeenAt, longAgo)
+	}
+}

@@ -142,3 +142,12 @@ GROUP BY postings.company_id;
 SELECT id FROM postings
 WHERE company_id = ? AND listing_status = 'open'
 ORDER BY id;
+
+-- name: MarkPostingsSeen :exec
+-- Records that a sync saw these postings on their board (#176). Not a
+-- content change: updated_at and posting_history are left alone. The
+-- slice is the only parameter, so sqlc.slice's ordering bug with other
+-- bound parameters (see ListActiveApplications) doesn't apply.
+UPDATE postings
+SET last_seen_at = CURRENT_TIMESTAMP
+WHERE id IN (sqlc.slice('ids'));
