@@ -158,6 +158,14 @@ func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 			app, cmd = sendKey(app, runeKey('R'))
 			return applyCmd(t, app, cmd)
 		}},
+		{name: "application submit", screen: screenApplicationSubmit, open: func(t *testing.T, app *App) *App {
+			app.openURL = func(string) tea.Cmd { return nil }
+			app.exportDir = t.TempDir()
+			app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+			app = applyCmd(t, app, cmd)
+			app, cmd = sendKey(app, runeKey('S'))
+			return applyCmd(t, app, cmd)
+		}},
 		{name: "review form from review select", screen: screenDocumentReviewForm, open: func(t *testing.T, app *App) *App {
 			app = clearBanner(openPostingDetail(t, openPostingList(t, app)))
 			app, cmd := sendKey(app, runeKey('r'))
