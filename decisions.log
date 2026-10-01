@@ -6760,3 +6760,30 @@ returns. The two TUI outcome switches are still duplicated.
   database, captured through `script` with 256 colours, had identical
   escape codes before and after (6 green ✓, 3 red ✗, 41 dim -).
 - RFC 0005 is implemented; it records what shipped.
+
+## 2026-10-01 -- RFC 0003 revised: pin the failed-sync contract, then name the two loops (#209, #210)
+
+Re-checked RFC 0003 against the code after RFC 0001's P4 work (#147,
+#148, #150). Most of the draft's problem is gone: recordHistory and
+closeApplicationForClosedPosting no longer exist, every posting change
+(and its history and application change) is one store transaction, and
+store.TestClosePosting tests the close mechanism without a fetcher.
+What's left: what a failed sync leaves behind is neither documented nor
+tested beyond a failed fetch, and syncHeld's two loops are unnamed, with
+earlyApplicationStatuses filed among the company-creation code.
+
+- Step 1 (#209): doc comment on SyncCompany plus a test that fails a
+  posting insert mid-ingest. A throwaway prototype on main confirmed
+  today's behavior: earlier saves commit, the close pass and
+  MarkCompanyFetched don't run, Result is Created 1 / Closed 0.
+- Step 2 (#210): split syncHeld into ingest and closeMissing; move the
+  close pass and earlyApplicationStatuses to sync/reconcile.go. Tests
+  stay at SyncCompany's boundary (the methods are unexported).
+- Dropped the draft's reconciler type (option 1). Its reason, testing
+  the close policy without a fetcher, is met by store.TestClosePosting.
+- Not filed: where the close policy finally lives. #174 may add a second
+  rule (restore an application when its posting reopens); decide the
+  policy's home then.
+- Corrected the draft's open question 1: the close pass decides
+  "missing" from the fetch, not from what was saved, so running it after
+  a failed ingest wouldn't close the posting that failed.
