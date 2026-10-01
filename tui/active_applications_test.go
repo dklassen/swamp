@@ -400,3 +400,49 @@ func TestReviewGlyphSummary_HasEveryDocumentType(t *testing.T) {
 		}
 	}
 }
+
+func TestReviewBadgeAndGlyph_Text(t *testing.T) {
+	t.Parallel()
+
+	unknown := store.ReviewOutcome(99)
+	for _, tc := range []struct {
+		name      string
+		review    store.DocumentReview
+		hasReview bool
+		badge     string
+		glyph     string
+	}{
+		{"no review", store.DocumentReview{}, false, "[not reviewed]", "-"},
+		{"passed", store.DocumentReview{Outcome: store.ReviewOutcomePassed}, true, "[PASSED]", "✓"},
+		{"flagged", store.DocumentReview{Outcome: store.ReviewOutcomeFlagged}, true, "[FLAGGED]", "✗"},
+		{"unknown outcome", store.DocumentReview{Outcome: unknown}, true, "[" + unknown.String() + "]", "?"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := ansi.Strip(reviewBadge(tc.review, tc.hasReview)); got != tc.badge {
+				t.Errorf("reviewBadge() = %q, want %q", got, tc.badge)
+			}
+			if got := ansi.Strip(reviewGlyph(tc.review, tc.hasReview)); got != tc.glyph {
+				t.Errorf("reviewGlyph() = %q, want %q", got, tc.glyph)
+			}
+		})
+	}
+}
+
+// A new store.ReviewOutcome needs a display of its own, or it renders as
+// the unknown-outcome fallback ("?").
+func TestReviewGlyph_EveryOutcomeHasItsOwn(t *testing.T) {
+	t.Parallel()
+
+	seen := make(map[string]store.ReviewOutcome)
+	for _, outcome := range store.ReviewOutcomes() {
+		glyph := ansi.Strip(reviewGlyph(store.DocumentReview{Outcome: outcome}, true))
+		if glyph == "?" {
+			t.Errorf("%s renders as the unknown-outcome glyph %q; give it a display", outcome, glyph)
+		}
+		if other, ok := seen[glyph]; ok {
+			t.Errorf("%s and %s both render as %q", outcome, other, glyph)
+		}
+		seen[glyph] = outcome
+	}
+}
