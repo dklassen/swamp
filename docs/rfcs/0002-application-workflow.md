@@ -50,7 +50,7 @@ The data shows _where_ applications stop, but not _why_. Possible reasons includ
 
 ### Success criteria
 
-- Phase 0 is done when status history is recorded and each of the 23 stalled applications has a noted reason.
+- Phase 0 is done when status history is recorded and each of the 23 stalled applications has a noted reason. (2026-10-01: phase 0 closed without reasons; all 23 were kept, see #163.)
 - Phase 1 is done when the started queue is under 5, and the median time from started to submitted, measured over new applications, is under 7 days.
 - Phase 2 is done when a Greenhouse application can be submitted without writing an answer that isn't already drafted.
 - Only then is widening the intake (phase 3) worth it: more interested postings help only if they get submitted.
@@ -239,7 +239,7 @@ E1  reliable workplace ─────────────── E2  workpla
 | A2 | #167 (done: not in supported APIs; manual entry, #184) | 2 |
 | A3a | #178 | 3 |
 | A3b | #179 (done: both companies fetch normally) | 4 |
-| B1 | #163 | 5 |
+| B1 | #163 (done: all 23 kept, no reasons recorded) | 5 |
 | B2 | #164 | 6 |
 | C1 | #165 | 7 |
 | C2 | #166 | 8 |
