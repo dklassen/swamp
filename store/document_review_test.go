@@ -260,3 +260,12 @@ func TestDocumentTypes_ReturnsEveryDocumentTypeInOrder(t *testing.T) {
 		t.Errorf("documents.Types() mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestReviewOutcomes_EveryOutcomeInConstOrder(t *testing.T) {
+	t.Parallel()
+
+	want := []ReviewOutcome{ReviewOutcomePassed, ReviewOutcomeFlagged}
+	if diff := cmp.Diff(want, ReviewOutcomes()); diff != "" {
+		t.Errorf("ReviewOutcomes() mismatch (-want +got):\n%s", diff)
+	}
+}
