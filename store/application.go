@@ -62,6 +62,8 @@ func applicationFromRow(row db.Application) (Application, error) {
 
 // CreateApplication starts an application for a posting and records its
 // application_started status history row in the same transaction (#162).
+// It refuses a closed posting with ErrPostingClosed (#175), checked in the
+// same transaction so a sync closing the posting can't slip in between.
 func (s *Store) CreateApplication(ctx context.Context, postingID int64) (Application, error) {
 	tx, err := s.sqlDB.BeginTx(ctx, nil)
 	if err != nil {
@@ -70,6 +72,16 @@ func (s *Store) CreateApplication(ctx context.Context, postingID int64) (Applica
 	defer func() { _ = tx.Rollback() }()
 
 	qtx := s.queries.WithTx(tx)
+	posting, err := qtx.GetPosting(ctx, postingID)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Application{}, ErrNotFound
+		}
+		return Application{}, fmt.Errorf("store: get posting to apply to: %w", err)
+	}
+	if posting.ListingStatus == "closed" {
+		return Application{}, ErrPostingClosed
+	}
 	row, err := qtx.CreateApplication(ctx, db.CreateApplicationParams{
 		PostingID: postingID,
 		Status:    sql.NullString{String: ApplicationStatusStarted.String(), Valid: true},
