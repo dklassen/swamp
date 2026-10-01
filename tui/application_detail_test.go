@@ -193,8 +193,8 @@ func TestApplicationDetailModel_View_ShowsStatusLabelNotEnumValue(t *testing.T) 
 func TestApplicationDetailModel_EveryDocumentType(t *testing.T) {
 	t.Parallel()
 
-	// Keys application detail uses for itself; S is submit.
-	reserved := map[rune]bool{'p': true, 'b': true, 'u': true, 's': true}
+	// Keys application detail uses for itself; S is submit, f the form.
+	reserved := map[rune]bool{'p': true, 'b': true, 'u': true, 's': true, 'f': true}
 	docs := documents.NewStore(t.TempDir())
 	for _, documentType := range documents.Types() {
 		p, err := docs.Path(1, documentType)
