@@ -141,6 +141,15 @@ type Querier interface {
 	// again, so nothing else would ever close these (#178).
 	ListOpenPostingIDsByCompany(ctx context.Context, companyID int64) ([]int64, error)
 	ListPostingHistoryByPosting(ctx context.Context, postingID int64) ([]PostingHistory, error)
+	// Every posting of a company the user hasn't deleted, with its company
+	// name, markup flags and application if any: what the agent's
+	// search_postings filters (#215). Summary columns only -- no description
+	// or raw payload, which made list_postings too large for agent clients
+	// (#117). The application side is LEFT JOINed as individually aliased
+	// nullable columns, not sqlc.embed, for the NULL-scanning bug noted on
+	// ListInterestedPostings. No parameters, so sqlc.slice's caveat doesn't
+	// arise.
+	ListPostingListings(ctx context.Context) ([]ListPostingListingsRow, error)
 	// id DESC is a tiebreaker: a single sync inserts many rows within the same
 	// CURRENT_TIMESTAMP second (sqlite has only second resolution), so
 	// first_seen_at alone leaves ties with no guaranteed order.

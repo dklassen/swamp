@@ -411,6 +411,90 @@ func (q *Queries) ListOpenPostingIDsByCompany(ctx context.Context, companyID int
 	return items, nil
 }
 
+const listPostingListings = `-- name: ListPostingListings :many
+SELECT
+    postings.id,
+    postings.title,
+    postings.department,
+    postings.location,
+    postings.workplace_type,
+    postings.application_url,
+    postings.listing_status,
+    companies.name AS company_name,
+    posting_markup.interested_at,
+    posting_markup.archived_at,
+    applications.id AS application_id,
+    applications.status AS application_status,
+    applications.notes AS application_notes
+FROM postings
+JOIN companies ON companies.id = postings.company_id
+LEFT JOIN posting_markup ON posting_markup.posting_id = postings.id
+LEFT JOIN applications ON applications.posting_id = postings.id
+WHERE companies.deleted_at IS NULL
+ORDER BY companies.name, postings.title, postings.id
+`
+
+type ListPostingListingsRow struct {
+	ID                int64          `json:"id"`
+	Title             string         `json:"title"`
+	Department        string         `json:"department"`
+	Location          string         `json:"location"`
+	WorkplaceType     string         `json:"workplace_type"`
+	ApplicationUrl    string         `json:"application_url"`
+	ListingStatus     string         `json:"listing_status"`
+	CompanyName       string         `json:"company_name"`
+	InterestedAt      sql.NullTime   `json:"interested_at"`
+	ArchivedAt        sql.NullTime   `json:"archived_at"`
+	ApplicationID     sql.NullInt64  `json:"application_id"`
+	ApplicationStatus sql.NullString `json:"application_status"`
+	ApplicationNotes  sql.NullString `json:"application_notes"`
+}
+
+// Every posting of a company the user hasn't deleted, with its company
+// name, markup flags and application if any: what the agent's
+// search_postings filters (#215). Summary columns only -- no description
+// or raw payload, which made list_postings too large for agent clients
+// (#117). The application side is LEFT JOINed as individually aliased
+// nullable columns, not sqlc.embed, for the NULL-scanning bug noted on
+// ListInterestedPostings. No parameters, so sqlc.slice's caveat doesn't
+// arise.
+func (q *Queries) ListPostingListings(ctx context.Context) ([]ListPostingListingsRow, error) {
+	rows, err := q.db.QueryContext(ctx, listPostingListings)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ListPostingListingsRow
+	for rows.Next() {
+		var i ListPostingListingsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Department,
+			&i.Location,
+			&i.WorkplaceType,
+			&i.ApplicationUrl,
+			&i.ListingStatus,
+			&i.CompanyName,
+			&i.InterestedAt,
+			&i.ArchivedAt,
+			&i.ApplicationID,
+			&i.ApplicationStatus,
+			&i.ApplicationNotes,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPostingsByCompany = `-- name: ListPostingsByCompany :many
 SELECT id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at FROM postings
 WHERE company_id = ?

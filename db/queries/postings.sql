@@ -151,3 +151,33 @@ ORDER BY id;
 UPDATE postings
 SET last_seen_at = CURRENT_TIMESTAMP
 WHERE id IN (sqlc.slice('ids'));
+
+-- name: ListPostingListings :many
+-- Every posting of a company the user hasn't deleted, with its company
+-- name, markup flags and application if any: what the agent's
+-- search_postings filters (#215). Summary columns only -- no description
+-- or raw payload, which made list_postings too large for agent clients
+-- (#117). The application side is LEFT JOINed as individually aliased
+-- nullable columns, not sqlc.embed, for the NULL-scanning bug noted on
+-- ListInterestedPostings. No parameters, so sqlc.slice's caveat doesn't
+-- arise.
+SELECT
+    postings.id,
+    postings.title,
+    postings.department,
+    postings.location,
+    postings.workplace_type,
+    postings.application_url,
+    postings.listing_status,
+    companies.name AS company_name,
+    posting_markup.interested_at,
+    posting_markup.archived_at,
+    applications.id AS application_id,
+    applications.status AS application_status,
+    applications.notes AS application_notes
+FROM postings
+JOIN companies ON companies.id = postings.company_id
+LEFT JOIN posting_markup ON posting_markup.posting_id = postings.id
+LEFT JOIN applications ON applications.posting_id = postings.id
+WHERE companies.deleted_at IS NULL
+ORDER BY companies.name, postings.title, postings.id;
