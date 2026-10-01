@@ -6577,3 +6577,23 @@ nothing from Swamp.
 - The renaming was mechanical (perl with word boundaries, imports fixed
   by hand since goimports isn't installed). Migration SQL comments that
   mention store.DocumentType are history and were left alone.
+
+## 2026-10-01 -- RFC 0004 step 3: documents.Current (#180)
+
+The three identical "current reviews" checks (stage, tui, cmd/swamp)
+are now documents.Current(status, records, isCurrent), generic over the
+record, per the user's answer to the RFC's open question 1. Called with
+store.DocumentReview.IsCurrent for reviews and, on the home screen,
+store.DocumentExport.IsCurrent for exports (#188), which had its own
+read-and-hash loop. Named Current rather than the RFC's CurrentReviews
+because exports use it too.
+
+This revisits two earlier decisions on purpose:
+- 2026-09-04 (#94 follow-up): the check was copied because store has no
+  filesystem access and documents "never reads content". documents now
+  reads content, for this hash comparison only, and its package comment
+  says exactly that.
+- 2026-09-17 (#45 review pass): "documents deliberately has no
+  dependency on store". Still true: the callback is what keeps it so.
+The behavior is unchanged, including failing on a read error rather
+than treating it as a changed document.
