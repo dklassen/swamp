@@ -1679,24 +1679,24 @@ func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testin
 		t.Fatalf("CreateApplication: %v", err)
 	}
 	status := app.documents.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(status.CoverLetter.Path, []byte("# Cover Letter"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("# Cover Letter"), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
-	if err := os.WriteFile(status.Resume.Path, []byte("# Resume"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.Resume).Path, []byte("# Resume"), 0o644); err != nil {
 		t.Fatalf("WriteFile resume: %v", err)
 	}
 
 	app = openPostingDetail(t, app)
 
 	view := app.View()
-	if !strings.Contains(view, "found ("+status.CoverLetter.Path+")") {
-		t.Errorf("view does not show cover letter found with path %q:\n%s", status.CoverLetter.Path, view)
+	if !strings.Contains(view, "found ("+mustDoc(t, status, documents.CoverLetter).Path+")") {
+		t.Errorf("view does not show cover letter found with path %q:\n%s", mustDoc(t, status, documents.CoverLetter).Path, view)
 	}
-	if !strings.Contains(view, "found ("+status.Resume.Path+")") {
-		t.Errorf("view does not show resume found with path %q:\n%s", status.Resume.Path, view)
+	if !strings.Contains(view, "found ("+mustDoc(t, status, documents.Resume).Path+")") {
+		t.Errorf("view does not show resume found with path %q:\n%s", mustDoc(t, status, documents.Resume).Path, view)
 	}
 }
 
@@ -1719,10 +1719,10 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 	// decisions.log, store.DocumentReview.IsCurrent) treats this review
 	// as not describing the current document and omits it.
 	status := app.documents.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(status.CoverLetter.Path, []byte("Dear hiring manager..."), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("Dear hiring manager..."), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
 	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "Dear hiring manager...", store.ReviewOutcomeFlagged, "too generic, mention Go specifically"); err != nil {
@@ -1771,13 +1771,13 @@ func TestApp_LoadActiveApplications_DocumentReadFails_SetsErr(t *testing.T) {
 		t.Fatalf("CreateDocumentReview: %v", err)
 	}
 	status := app.documents.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	// A directory at the cover letter's path: os.Stat succeeds (Exists
 	// reports true, same as a real file) but os.ReadFile fails with "is
 	// a directory" -- simulates a genuine read failure portably.
-	if err := os.Mkdir(status.CoverLetter.Path, 0o755); err != nil {
+	if err := os.Mkdir(mustDoc(t, status, documents.CoverLetter).Path, 0o755); err != nil {
 		t.Fatalf("Mkdir: %v", err)
 	}
 
@@ -1804,10 +1804,10 @@ func TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag(t *testing.T) 
 		t.Fatalf("CreateApplication: %v", err)
 	}
 	status := app.documents.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(status.CoverLetter.Path, []byte("original draft"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("original draft"), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
 	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "original draft", store.ReviewOutcomeFlagged, "too generic"); err != nil {
@@ -1821,7 +1821,7 @@ func TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag(t *testing.T) 
 
 	// Revise the document (e.g. the agent/user addressing the feedback)
 	// without submitting a new review.
-	if err := os.WriteFile(status.CoverLetter.Path, []byte("revised draft addressing the feedback"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("revised draft addressing the feedback"), 0o644); err != nil {
 		t.Fatalf("rewrite cover letter: %v", err)
 	}
 	// Leave and re-enter to trigger a fresh load (mirrors how a real
@@ -1864,10 +1864,10 @@ func TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T) {
 		t.Fatalf("CreateApplication: %v", err)
 	}
 	status := app.documents.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(status.CoverLetter.Path, []byte("original draft"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("original draft"), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
 	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "original draft", store.ReviewOutcomeFlagged, "too generic"); err != nil {
@@ -1881,7 +1881,7 @@ func TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T) {
 
 	// Revise the document in place, without leaving posting detail --
 	// simulates the agent rewriting the file while the TUI stays open.
-	if err := os.WriteFile(status.CoverLetter.Path, []byte("revised draft addressing the feedback"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("revised draft addressing the feedback"), 0o644); err != nil {
 		t.Fatalf("rewrite cover letter: %v", err)
 	}
 
@@ -1916,10 +1916,10 @@ func TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail(t *testing.T) 
 		t.Fatalf("CreateApplication: %v", err)
 	}
 	status := app.documents.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(status.CoverLetter.Path, []byte("# Cover Letter"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("# Cover Letter"), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
 
@@ -2065,10 +2065,10 @@ func TestApp_ApplicationDetail_ShiftR_EntersReviewFormDirectly(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	status := app.documents.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.Resume.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(status.Resume.Path, []byte("# Resume"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.Resume).Path, []byte("# Resume"), 0o644); err != nil {
 		t.Fatalf("WriteFile resume: %v", err)
 	}
 
@@ -2087,10 +2087,10 @@ func TestApp_ApplicationDetail_CancelDocumentReview_ReturnsToApplicationDetail(t
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	status := app.documents.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.Resume.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(status.Resume.Path, []byte("# Resume"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.Resume).Path, []byte("# Resume"), 0o644); err != nil {
 		t.Fatalf("WriteFile resume: %v", err)
 	}
 
@@ -2116,10 +2116,10 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately(t
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 
 	status := app.documents.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.Resume.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(status.Resume.Path, []byte("# Resume"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.Resume).Path, []byte("# Resume"), 0o644); err != nil {
 		t.Fatalf("WriteFile resume: %v", err)
 	}
 
@@ -2162,10 +2162,10 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplications
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 
 	status := app.documents.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.Resume.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(status.Resume.Path, []byte("# Resume"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.Resume).Path, []byte("# Resume"), 0o644); err != nil {
 		t.Fatalf("WriteFile resume: %v", err)
 	}
 
@@ -2215,10 +2215,10 @@ func TestApp_SubmitDocumentReviewFromPostingDetailViaApplicationDetailFastPath_K
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 
 	status := app.documents.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(status.CoverLetter.Path, []byte("# Cover Letter"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("# Cover Letter"), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
 
@@ -2269,10 +2269,10 @@ func TestApp_ApplicationDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T
 	application := mustCreateApplication(t, s, posting.ID)
 	docs := documents.NewStore(t.TempDir())
 	status := docs.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(status.CoverLetter.Path, []byte("original draft"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("original draft"), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
 	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "original draft", store.ReviewOutcomeFlagged, "too generic"); err != nil {
@@ -2296,7 +2296,7 @@ func TestApp_ApplicationDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T
 	}
 
 	// Revise the document in place, without leaving application detail.
-	if err := os.WriteFile(status.CoverLetter.Path, []byte("revised draft addressing the feedback"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("revised draft addressing the feedback"), 0o644); err != nil {
 		t.Fatalf("rewrite cover letter: %v", err)
 	}
 
@@ -2337,11 +2337,11 @@ func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testi
 	app = openPostingDetail(t, app)
 
 	view := app.View()
-	if !strings.Contains(view, "not found ("+status.CoverLetter.Path+")") {
-		t.Errorf("view does not show cover letter not found with path %q:\n%s", status.CoverLetter.Path, view)
+	if !strings.Contains(view, "not found ("+mustDoc(t, status, documents.CoverLetter).Path+")") {
+		t.Errorf("view does not show cover letter not found with path %q:\n%s", mustDoc(t, status, documents.CoverLetter).Path, view)
 	}
-	if !strings.Contains(view, "not found ("+status.Resume.Path+")") {
-		t.Errorf("view does not show resume not found with path %q:\n%s", status.Resume.Path, view)
+	if !strings.Contains(view, "not found ("+mustDoc(t, status, documents.Resume).Path+")") {
+		t.Errorf("view does not show resume not found with path %q:\n%s", mustDoc(t, status, documents.Resume).Path, view)
 	}
 }
 
@@ -3001,10 +3001,10 @@ func exportTestApp(t *testing.T) *App {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	status := app.documents.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.Resume.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(status.Resume.Path, []byte("# Resume\n\nBody.\n"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.Resume).Path, []byte("# Resume\n\nBody.\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile resume: %v", err)
 	}
 	return app
@@ -3191,10 +3191,10 @@ func TestApp_ReviewSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	status := app.documents.Status(application.ID)
-	if err := os.MkdirAll(filepath.Dir(status.CoverLetter.Path), 0o755); err != nil {
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
-	if err := os.WriteFile(status.CoverLetter.Path, []byte("# Cover Letter"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("# Cover Letter"), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
 

@@ -226,10 +226,10 @@ func TestList_ExcludesPostingWithBothDocumentsAlreadyGenerated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
-	if err := os.WriteFile(paths.CoverLetter, []byte("letter"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, paths, documents.CoverLetter).Path, []byte("letter"), 0o644); err != nil {
 		t.Fatalf("write cover letter: %v", err)
 	}
-	if err := os.WriteFile(paths.Resume, []byte("resume"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, paths, documents.Resume).Path, []byte("resume"), 0o644); err != nil {
 		t.Fatalf("write resume: %v", err)
 	}
 
@@ -257,7 +257,7 @@ func TestList_IncludesPostingWithOnlyOneDocumentGenerated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
-	if err := os.WriteFile(paths.CoverLetter, []byte("letter"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, paths, documents.CoverLetter).Path, []byte("letter"), 0o644); err != nil {
 		t.Fatalf("write cover letter: %v", err)
 	}
 
@@ -314,7 +314,7 @@ func TestList_IncludesLatestDocumentReviews(t *testing.T) {
 	// The review's content must match what's on disk, or the new
 	// staleness check (see decisions.log) treats it as not describing
 	// the current document and omits it from LatestReviews.
-	if err := os.WriteFile(paths.CoverLetter, []byte("draft"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, paths, documents.CoverLetter).Path, []byte("draft"), 0o644); err != nil {
 		t.Fatalf("write cover letter: %v", err)
 	}
 	if _, err := s.CreateDocumentReview(context.Background(), app.ID, documents.CoverLetter, "draft", store.ReviewOutcomeFlagged, "too generic, mention Go specifically"); err != nil {
@@ -365,10 +365,10 @@ func TestList_KeepsPostingWithBothDocumentsWhenLatestReviewIsFlagged(t *testing.
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
-	if err := os.WriteFile(paths.CoverLetter, []byte("letter"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, paths, documents.CoverLetter).Path, []byte("letter"), 0o644); err != nil {
 		t.Fatalf("write cover letter: %v", err)
 	}
-	if err := os.WriteFile(paths.Resume, []byte("resume"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, paths, documents.Resume).Path, []byte("resume"), 0o644); err != nil {
 		t.Fatalf("write resume: %v", err)
 	}
 	if _, err := s.CreateDocumentReview(context.Background(), app.ID, documents.CoverLetter, "letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
@@ -403,10 +403,10 @@ func TestList_ExcludesPostingWithBothDocumentsWhenLatestReviewsAllPass(t *testin
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
-	if err := os.WriteFile(paths.CoverLetter, []byte("letter"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, paths, documents.CoverLetter).Path, []byte("letter"), 0o644); err != nil {
 		t.Fatalf("write cover letter: %v", err)
 	}
-	if err := os.WriteFile(paths.Resume, []byte("resume"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, paths, documents.Resume).Path, []byte("resume"), 0o644); err != nil {
 		t.Fatalf("write resume: %v", err)
 	}
 	if _, err := s.CreateDocumentReview(context.Background(), app.ID, documents.CoverLetter, "letter", store.ReviewOutcomePassed, ""); err != nil {
@@ -461,7 +461,7 @@ func TestList_ReturnsErrorWhenDocumentReadFails(t *testing.T) {
 	// fails with "is a directory" -- simulates a genuine read failure
 	// portably, without relying on permission bits (which a test
 	// running as root would ignore).
-	if err := os.Mkdir(paths.CoverLetter, 0o755); err != nil {
+	if err := os.Mkdir(mustDoc(t, paths, documents.CoverLetter).Path, 0o755); err != nil {
 		t.Fatalf("Mkdir: %v", err)
 	}
 
@@ -509,10 +509,10 @@ func TestList_ExcludesPostingWhenFlaggedReviewIsStaleAfterRevision(t *testing.T)
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
-	if err := os.WriteFile(paths.CoverLetter, []byte("original letter"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, paths, documents.CoverLetter).Path, []byte("original letter"), 0o644); err != nil {
 		t.Fatalf("write cover letter: %v", err)
 	}
-	if err := os.WriteFile(paths.Resume, []byte("resume"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, paths, documents.Resume).Path, []byte("resume"), 0o644); err != nil {
 		t.Fatalf("write resume: %v", err)
 	}
 	if _, err := s.CreateDocumentReview(context.Background(), app.ID, documents.CoverLetter, "original letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
@@ -521,7 +521,7 @@ func TestList_ExcludesPostingWhenFlaggedReviewIsStaleAfterRevision(t *testing.T)
 	// The document gets revised in response to the flag -- content no
 	// longer matches what was reviewed, and no new review has been
 	// recorded yet.
-	if err := os.WriteFile(paths.CoverLetter, []byte("revised letter addressing the feedback"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, paths, documents.CoverLetter).Path, []byte("revised letter addressing the feedback"), 0o644); err != nil {
 		t.Fatalf("rewrite cover letter: %v", err)
 	}
 
@@ -554,7 +554,7 @@ func TestList_LatestReviewsOmitsStaleReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
-	if err := os.WriteFile(paths.CoverLetter, []byte("original letter"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, paths, documents.CoverLetter).Path, []byte("original letter"), 0o644); err != nil {
 		t.Fatalf("write cover letter: %v", err)
 	}
 	// Resume deliberately not written -- keeps this candidate in the
@@ -563,7 +563,7 @@ func TestList_LatestReviewsOmitsStaleReview(t *testing.T) {
 	if _, err := s.CreateDocumentReview(context.Background(), app.ID, documents.CoverLetter, "original letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)
 	}
-	if err := os.WriteFile(paths.CoverLetter, []byte("revised letter"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, paths, documents.CoverLetter).Path, []byte("revised letter"), 0o644); err != nil {
 		t.Fatalf("rewrite cover letter: %v", err)
 	}
 
@@ -883,7 +883,7 @@ func TestList_IncludesStartedApplicationsNotMarkedInterested(t *testing.T) {
 		if err != nil {
 			t.Fatalf("EnsureDir: %v", err)
 		}
-		for _, path := range []string{paths.CoverLetter, paths.Resume} {
+		for _, path := range []string{mustDoc(t, paths, documents.CoverLetter).Path, mustDoc(t, paths, documents.Resume).Path} {
 			if err := os.WriteFile(path, []byte("# Draft"), 0o644); err != nil {
 				t.Fatalf("WriteFile: %v", err)
 			}
@@ -947,4 +947,14 @@ func TestList_IncludesStartedApplicationsNotMarkedInterested(t *testing.T) {
 	if diff := cmp.Diff(want, titles); diff != "" {
 		t.Errorf("listed postings mismatch (-want +got):\n%s", diff)
 	}
+}
+
+// mustDoc is status.Doc(documentType), failing the test on an error.
+func mustDoc(t *testing.T, status documents.Status, documentType documents.Type) documents.Doc {
+	t.Helper()
+	doc, err := status.Doc(documentType)
+	if err != nil {
+		t.Fatalf("Doc(%s): %v", documentType, err)
+	}
+	return doc
 }

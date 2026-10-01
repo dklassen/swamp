@@ -6,50 +6,61 @@ import (
 	"testing"
 )
 
-func TestForApplication_ComputesExpectedPaths(t *testing.T) {
+// mustDoc is status.Doc(documentType), failing the test on an error.
+func mustDoc(t *testing.T, status Status, documentType Type) Doc {
+	t.Helper()
+	doc, err := status.Doc(documentType)
+	if err != nil {
+		t.Fatalf("Doc(%s): %v", documentType, err)
+	}
+	return doc
+}
+
+func TestStore_Path_IsTheTypeNameUnderTheApplicationDir(t *testing.T) {
 	t.Parallel()
 
-	got := ForApplication("/base", 42)
-
-	wantCoverLetter := "/base/42/cover_letter.md"
-	wantResume := "/base/42/resume.md"
-	if got.CoverLetter != wantCoverLetter {
-		t.Errorf("CoverLetter = %q, want %q", got.CoverLetter, wantCoverLetter)
-	}
-	if got.Resume != wantResume {
-		t.Errorf("Resume = %q, want %q", got.Resume, wantResume)
+	s := NewStore("/base")
+	for _, documentType := range Types() {
+		got, err := s.Path(42, documentType)
+		if err != nil {
+			t.Fatalf("Path(%s): %v", documentType, err)
+		}
+		if want := "/base/42/" + documentType.String() + ".md"; got != want {
+			t.Errorf("Path(%s) = %q, want %q", documentType, got, want)
+		}
 	}
 }
 
 func TestStore_Status_FalseWhenFileAbsent(t *testing.T) {
 	t.Parallel()
 
-	s := NewStore(t.TempDir())
-	status := s.Status(1)
-
-	if status.CoverLetter.Exists {
-		t.Error("CoverLetter.Exists = true, want false (file was never written)")
-	}
-	if status.Resume.Exists {
-		t.Error("Resume.Exists = true, want false (file was never written)")
+	status := NewStore(t.TempDir()).Status(1)
+	for _, documentType := range Types() {
+		if mustDoc(t, status, documentType).Exists {
+			t.Errorf("%s: Exists = true, want false (file was never written)", documentType)
+		}
 	}
 }
 
 func TestStore_EnsureDir_CreatesDirWhenAbsent(t *testing.T) {
 	t.Parallel()
 
-	base := t.TempDir()
-	paths, err := NewStore(base).EnsureDir(3)
+	s := NewStore(t.TempDir())
+	status, err := s.EnsureDir(3)
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
 
-	want := ForApplication(base, 3)
-	if paths != want {
-		t.Errorf("paths = %+v, want %+v", paths, want)
+	for _, documentType := range Types() {
+		want, err := s.Path(3, documentType)
+		if err != nil {
+			t.Fatalf("Path: %v", err)
+		}
+		if got := mustDoc(t, status, documentType).Path; got != want {
+			t.Errorf("%s: path = %q, want %q", documentType, got, want)
+		}
 	}
-
-	info, err := os.Stat(filepath.Dir(paths.CoverLetter))
+	info, err := os.Stat(filepath.Dir(mustDoc(t, status, CoverLetter).Path))
 	if err != nil {
 		t.Fatalf("Stat dir: %v", err)
 	}
@@ -61,51 +72,36 @@ func TestStore_EnsureDir_CreatesDirWhenAbsent(t *testing.T) {
 func TestStore_EnsureDir_IdempotentWhenDirAlreadyExists(t *testing.T) {
 	t.Parallel()
 
-	base := t.TempDir()
-	s := NewStore(base)
-
+	s := NewStore(t.TempDir())
 	if _, err := s.EnsureDir(5); err != nil {
 		t.Fatalf("first EnsureDir: %v", err)
 	}
-	paths, err := s.EnsureDir(5)
-	if err != nil {
+	if _, err := s.EnsureDir(5); err != nil {
 		t.Fatalf("second EnsureDir: %v", err)
-	}
-
-	want := ForApplication(base, 5)
-	if paths != want {
-		t.Errorf("paths = %+v, want %+v", paths, want)
 	}
 }
 
 func TestStore_Status_TrueWhenFilePresent(t *testing.T) {
 	t.Parallel()
 
-	base := t.TempDir()
-	paths := ForApplication(base, 7)
+	s := NewStore(t.TempDir())
+	if _, err := s.EnsureDir(7); err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	for _, documentType := range Types() {
+		p, err := s.Path(7, documentType)
+		if err != nil {
+			t.Fatalf("Path: %v", err)
+		}
+		if err := os.WriteFile(p, []byte("# "+documentType.String()), 0o644); err != nil {
+			t.Fatalf("WriteFile %s: %v", documentType, err)
+		}
+	}
 
-	if err := os.MkdirAll(filepath.Dir(paths.CoverLetter), 0o755); err != nil {
-		t.Fatalf("MkdirAll: %v", err)
-	}
-	if err := os.WriteFile(paths.CoverLetter, []byte("# Cover Letter"), 0o644); err != nil {
-		t.Fatalf("WriteFile cover letter: %v", err)
-	}
-	if err := os.WriteFile(paths.Resume, []byte("# Resume"), 0o644); err != nil {
-		t.Fatalf("WriteFile resume: %v", err)
-	}
-
-	status := NewStore(base).Status(7)
-
-	if !status.CoverLetter.Exists {
-		t.Error("CoverLetter.Exists = false, want true (file was written)")
-	}
-	if status.CoverLetter.Path != paths.CoverLetter {
-		t.Errorf("CoverLetter.Path = %q, want %q", status.CoverLetter.Path, paths.CoverLetter)
-	}
-	if !status.Resume.Exists {
-		t.Error("Resume.Exists = false, want true (file was written)")
-	}
-	if status.Resume.Path != paths.Resume {
-		t.Errorf("Resume.Path = %q, want %q", status.Resume.Path, paths.Resume)
+	status := s.Status(7)
+	for _, documentType := range Types() {
+		if !mustDoc(t, status, documentType).Exists {
+			t.Errorf("%s: Exists = false, want true (file was written)", documentType)
+		}
 	}
 }

@@ -331,7 +331,7 @@ func TestLoadActiveApplications_NextSteps(t *testing.T) {
 		if err != nil {
 			t.Fatalf("EnsureDir: %v", err)
 		}
-		for documentType, path := range map[documents.Type]string{documents.CoverLetter: paths.CoverLetter, documents.Resume: paths.Resume} {
+		for documentType, path := range map[documents.Type]string{documents.CoverLetter: mustDoc(t, paths, documents.CoverLetter).Path, documents.Resume: mustDoc(t, paths, documents.Resume).Path} {
 			if err := os.WriteFile(path, []byte("# Draft"), 0o644); err != nil {
 				t.Fatalf("WriteFile: %v", err)
 			}
