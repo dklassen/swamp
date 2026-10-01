@@ -103,6 +103,22 @@ The token is versioned, base64url-encoded JSON, e.g. `{"v":1,"sort":"published_d
 
 Opaque isn't secret: anyone can decode it, so decoding treats it as untrusted input. An unknown version, a bad value or a mismatched sort or filters is an error. There's nothing sensitive in it, so it isn't signed. And keyset cursors don't go stale on their own: there's no server-side snapshot to expire, so a cursor stays valid until the result changes in the ways described above.
 
+### Adding sort orders later
+
+Ordering by other fields, statuses or timestamps will come up: application status in pipeline order, last status change, interested since. Most of those keys change, which is what the design has to allow for. The opaque cursor already keeps the tool's interface fixed when a key changes shape. The rest:
+
+1. **Sort orders are entries in one fixed registry.** Each gives:
+   - its columns and directions, ending with the posting ID as tie-breaker;
+   - where NULLs go;
+   - how stable it is.
+
+   Enum-like keys sort by a defined rank (e.g. statuses in pipeline order), not alphabetically. Adding an order is one entry, plus a (key, ID) index once the data is big enough to need it.
+2. **A key that changes pages "mostly stable" by default.** A row whose key changes mid-paging may be skipped or repeated, while every other row keeps its place. That's acceptable for finding a record. The order's description in the tool says it's that kind.
+3. **For exact paging on a changing key, an "as of" bound.** The cursor records when paging began, and later pages exclude rows changed after it (e.g. `updated_at <= :as_of`). A row that moves mid-paging drops out instead of repeating, and a re-run picks it up. Nothing is stored on the server.
+4. **A server-side snapshot of the matching IDs** gives fully stable pages for any order. But it needs stored state and expiry, so it's only worth it if 3 isn't enough.
+
+None of these is proposed now; the three orders above cover today's needs.
+
 ## Proposal
 
 ### `list_companies` (new)
