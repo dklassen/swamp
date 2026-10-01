@@ -339,7 +339,7 @@ func runExport(s *store.Store, d *documents.Store, args []string) {
 	}
 
 	status := d.Status(applicationID)
-	reviews, err = currentDocumentReviews(status, reviews)
+	reviews, err = documents.Current(status, reviews, store.DocumentReview.IsCurrent)
 	if err != nil {
 		log.Fatalf("export: current document reviews: %v", err)
 	}
@@ -362,38 +362,6 @@ func runExport(s *store.Store, d *documents.Store, args []string) {
 		}
 		fmt.Printf("%s: exported to %s (%s)\n", documentType, outPath, reviewSummary(reviews[documentType]))
 	}
-}
-
-// currentDocumentReviews filters reviews down to only those whose
-// content hash still matches each document's actual current content on
-// disk -- mirrors stage.currentReviews and tui.currentDocumentReviews
-// (see decisions.log, store.DocumentReview.IsCurrent): a review whose
-// content has since diverged describes a version of the document that
-// no longer exists and must not be surfaced as if it still described
-// what's on disk now. Kept as its own local copy rather than shared
-// across packages since store deliberately has no filesystem access and
-// documents deliberately never reads file content (see documents.go's
-// own doc comment), so each caller composes the two itself.
-func currentDocumentReviews(status documents.Status, reviews map[documents.Type]store.DocumentReview) (map[documents.Type]store.DocumentReview, error) {
-	out := make(map[documents.Type]store.DocumentReview, len(reviews))
-	for documentType, review := range reviews {
-		doc, err := status.Doc(documentType)
-		if err != nil {
-			return nil, err
-		}
-		if !doc.Exists {
-			continue
-		}
-		content, err := os.ReadFile(doc.Path)
-		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", doc.Path, err)
-		}
-		if !review.IsCurrent(string(content)) {
-			continue
-		}
-		out[documentType] = review
-	}
-	return out, nil
 }
 
 // exportDocumentPDF renders mdPath's markdown content to a sibling .pdf

@@ -10,7 +10,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"time"
 
 	"github.com/dklassen/swamp/documents"
@@ -143,44 +142,6 @@ func latestReviewsForJSON(reviews map[documents.Type]store.DocumentReview) map[d
 	return out
 }
 
-// currentReviews filters reviews down to only those whose content hash
-// still matches each document's actual current content on disk -- a
-// review computed against a version of the file that's since been
-// revised (whether in direct response to the review, or independently)
-// no longer describes "now" and shouldn't be surfaced as if it still
-// did (see decisions.log, store.DocumentReview.IsCurrent). A document
-// with no current-matching review is treated the same as "never
-// reviewed," whether that's literally true or it's just awaiting
-// re-review after being revised.
-func currentReviews(reviews map[documents.Type]store.DocumentReview, status documents.Status) (map[documents.Type]store.DocumentReview, error) {
-	out := make(map[documents.Type]store.DocumentReview, len(reviews))
-	for documentType, review := range reviews {
-		doc, err := status.Doc(documentType)
-		if err != nil {
-			return nil, err
-		}
-		if !doc.Exists {
-			continue
-		}
-		content, err := os.ReadFile(doc.Path)
-		if err != nil {
-			// A read failure (permissions, a transient I/O error, the
-			// file mid-write) is not the same thing as "the document
-			// changed since it was reviewed" -- silently treating it
-			// that way could drop a genuinely still-flagged review from
-			// the queue with no indication anything went wrong. Fail
-			// the whole call loudly instead, matching every other error
-			// path in this package.
-			return nil, fmt.Errorf("read %s: %w", doc.Path, err)
-		}
-		if !review.IsCurrent(string(content)) {
-			continue
-		}
-		out[documentType] = review
-	}
-	return out, nil
-}
-
 // needsRework reports whether any of reviews' latest outcomes is
 // ReviewOutcomeFlagged -- a flagged document needs another drafting
 // pass even once its file exists on disk, so List keeps surfacing it
@@ -298,7 +259,7 @@ func (st *Stage) candidate(ctx context.Context, p store.InterestedPosting) (Cand
 			return Candidate{}, false, fmt.Errorf("stage: latest document reviews: %w", err)
 		}
 		status := st.documents.Status(*p.ApplicationID)
-		reviews, err = currentReviews(latest, status)
+		reviews, err = documents.Current(status, latest, store.DocumentReview.IsCurrent)
 		if err != nil {
 			return Candidate{}, false, fmt.Errorf("stage: check review currency: %w", err)
 		}
@@ -355,7 +316,7 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 	if err != nil {
 		return nil, fmt.Errorf("stage: latest document reviews: %w", err)
 	}
-	reviews, err = currentReviews(reviews, status)
+	reviews, err = documents.Current(status, reviews, store.DocumentReview.IsCurrent)
 	if err != nil {
 		return nil, fmt.Errorf("stage: check review currency: %w", err)
 	}

@@ -433,7 +433,7 @@ func TestList_ExcludesPostingWithBothDocumentsWhenLatestReviewsAllPass(t *testin
 // current draft, or from permanently pinning a posting in the queue
 // after the feedback has already been addressed.
 // TestList_ReturnsErrorWhenDocumentReadFails is a regression test caught
-// in code review: currentReviews used to swallow an os.ReadFile error
+// in code review: the current-reviews check (now documents.Current) used to swallow an os.ReadFile error
 // and silently treat the document as "not reviewed" -- indistinguishable
 // from a genuinely stale review, and capable of dropping a real,
 // unaddressed flag from the queue with no indication anything went

@@ -1752,7 +1752,7 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 // and its now-out-of-date notes (see decisions.log,
 // store.DocumentReview.IsCurrent).
 // TestApp_LoadActiveApplications_DocumentReadFails_SetsErr is a
-// regression test caught in code review: currentDocumentReviews used to
+// regression test caught in code review: documents.Current used to
 // swallow an os.ReadFile error and silently treat the document as "not
 // reviewed" -- indistinguishable from a genuinely stale review, and
 // capable of rendering a real, unaddressed [FLAGGED] document as
