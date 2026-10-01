@@ -1,6 +1,6 @@
 # RFC 0002: Getting committed applications submitted
 
-- **Status:** Implemented in part, 2026-10-01. Waves A–C and D1–D2 shipped (#162–#168, #178–#180, and the related #188; D1 was RFC 0004). Open: C3 (#181), D3 (#169), D4 (#170), manual requirements for Ashby/Lever (#184), and the related #174–#176. Wave E (#171–#173) waits on phase 1's success criteria.
+- **Status:** Implemented in part, 2026-10-01. Waves A–C and D1–D2 shipped (#162–#168, #178–#180), with the related #174–#176, #184 and #188; D1 was RFC 0004. Open: C3 (#181), D3 (#169), D4 (#170). Wave E (#171–#173) waits on phase 1's success criteria.
 - **Date:** 2026-09-28 (revised 2026-09-29; status updated 2026-10-01)
 - **Related:** RFC 0001 (scheduled and background sync); issue #105 (a closing posting ends an early-stage application); the `apply-to-posting` skill (`.agents/skills/apply-to-posting/SKILL.md`)
 
@@ -276,7 +276,7 @@ Found while filing, outside the waves (label `rfc0002-related`): #174 (open ques
 1. **Should a closing posting still move a _submitted_ application to `posting_closed`?** Issue #105 made that deliberate. With status history the submission isn't lost, but "submitted, then posting closed" arguably means "still waiting on a response." *Answered by #174 (2026-10-01): no. Only `application_started` ends. And a posting that reappears restores an application sync closed, from status history, unless the user has changed it since.*
 2. **Phase 1 scope:** which projects do the phase 0 notes actually call for?
 3. **Where standard answers live:** a section in `PROFILE_REFERENCE.md` (free text, the agent adapts it) or a structured file (exact reuse, and the TUI could show it next to each question)?
-4. **Ashby/Lever questions:** answered by the spike (#167, 2026-09-30). Neither supported public API exposes them. Unofficial sources exist but aren't used, so manual entry (#184) is the path for both.
+4. **Ashby/Lever questions:** answered by the spike (#167, 2026-09-30). Neither supported public API exposes them. Unofficial sources exist but aren't used, so manual entry (#184) is the path for both. *Shipped by #184 (2026-10-01): `f` on application detail.*
 5. **Time pressure:** how long do postings stay open? A rough estimate from `published_at` to `last_seen_at` is about a month. Some applications' `last_seen_at` falls _before_ they were started, though, so what `last_seen_at` records needs checking before relying on it. *Checked by #176 (2026-10-01): it only changed when a posting's content did. Every sync now sets it for each stored posting the board lists, so from that date it means "last listed". Values from before are a lower bound, so measure from postings first seen after it.*
 
 ## Out of scope
