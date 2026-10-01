@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store/db"
 )
 
@@ -30,10 +31,12 @@ const (
 // documentTypeNames holds the DB string form for each DocumentType,
 // indexed by its int value -- the single place the Go<->DB string
 // mapping is defined; String and ParseDocumentType both go through it so
-// they can't drift from each other.
+// they can't drift from each other. The names themselves are
+// documents' constants, since each is also the document's file base
+// name (RFC 0004).
 var documentTypeNames = [...]string{
-	DocumentTypeCoverLetter: "cover_letter",
-	DocumentTypeResume:      "resume",
+	DocumentTypeCoverLetter: documents.CoverLetterName,
+	DocumentTypeResume:      documents.ResumeName,
 }
 
 // DocumentTypes returns every DocumentType, in const order -- derived
@@ -271,7 +274,7 @@ func (s *Store) LatestDocumentReview(ctx context.Context, applicationID int64, d
 // application (see decisions.log #83).
 func (s *Store) LatestDocumentReviews(ctx context.Context, applicationID int64) (map[DocumentType]DocumentReview, error) {
 	reviews := make(map[DocumentType]DocumentReview)
-	for _, documentType := range []DocumentType{DocumentTypeCoverLetter, DocumentTypeResume} {
+	for _, documentType := range DocumentTypes() {
 		review, ok, err := s.LatestDocumentReview(ctx, applicationID, documentType)
 		if err != nil {
 			return nil, err

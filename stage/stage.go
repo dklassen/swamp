@@ -155,9 +155,9 @@ func latestReviewsForJSON(reviews map[store.DocumentType]store.DocumentReview) m
 func currentReviews(reviews map[store.DocumentType]store.DocumentReview, status documents.Status) (map[store.DocumentType]store.DocumentReview, error) {
 	out := make(map[store.DocumentType]store.DocumentReview, len(reviews))
 	for documentType, review := range reviews {
-		doc := status.CoverLetter
-		if documentType == store.DocumentTypeResume {
-			doc = status.Resume
+		doc, err := status.ByName(documentType.String())
+		if err != nil {
+			return nil, err
 		}
 		if !doc.Exists {
 			continue

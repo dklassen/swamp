@@ -176,7 +176,7 @@ func nextStep(a store.ApplicationView, docs map[store.DocumentType]documentProgr
 	if closed {
 		return "withdraw?"
 	}
-	documentTypes := []store.DocumentType{store.DocumentTypeCoverLetter, store.DocumentTypeResume}
+	documentTypes := store.DocumentTypes()
 	for _, documentType := range documentTypes {
 		if !docs[documentType].drafted {
 			return "draft"
@@ -239,11 +239,12 @@ func documentProgressOf(s *store.Store, docs *documents.Store, applicationID int
 		return nil, err
 	}
 	status := docs.Status(applicationID)
-	progress := make(map[store.DocumentType]documentProgress, 2)
-	for documentType, doc := range map[store.DocumentType]documents.Doc{
-		store.DocumentTypeCoverLetter: status.CoverLetter,
-		store.DocumentTypeResume:      status.Resume,
-	} {
+	progress := make(map[store.DocumentType]documentProgress, len(store.DocumentTypes()))
+	for _, documentType := range store.DocumentTypes() {
+		doc, err := status.ByName(documentType.String())
+		if err != nil {
+			return nil, err
+		}
 		if !doc.Exists {
 			progress[documentType] = documentProgress{}
 			continue

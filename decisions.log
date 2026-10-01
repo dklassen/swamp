@@ -6528,3 +6528,27 @@ n/esc goes back to application detail with nothing changed.
 - Found in the manual run: the screen said "opened <url>" when the
   browser failed to launch. It now shows the result next to the link,
   as well as in the error banner.
+
+## 2026-10-01 -- RFC 0004 decisions, and step 1: fail loudly (#180)
+
+The RFC's open questions, decided by the user before step 2:
+1. The one "current reviews" check lives in documents, generic over the
+   review type with an isCurrent callback. documents reads content for
+   that hash comparison only; tui and cmd/swamp don't depend on stage.
+2. Each document type carries its own key in documents' list (l/L
+   cover letter, r/R resume); the help lines come from the list. No
+   two-step picker for every edit or review.
+3. "Drafting is done" means every type in the list exists, until RFC
+   0002 phase 2 (#168/#169) adds per-posting requirements.
+4. stage.Prepared's CoverLetter/Resume become a map keyed by type, with
+   SKILL.md updated in the same PR. No transition period.
+
+Step 1 (no design change): the six "cover letter unless resume" picks
+go through documents.Status.ByName, which errors on an unknown type,
+and the hard-coded pairs (including three added since the RFC was
+measured, by #164, #166 and #188) are store.DocumentTypes(). The names
+are constants in documents, and store's name table uses them. That's
+the import direction Option A settled on (store -> documents), so each
+name is defined once. The first version had the names as string
+literals in ByName, a second copy of store's table; the user caught it.
+ByName takes a string only until step 2 moves the type into documents.

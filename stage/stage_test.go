@@ -939,3 +939,21 @@ func TestList_IncludesStartedApplicationsNotMarkedInterested(t *testing.T) {
 		t.Errorf("listed postings mismatch (-want +got):\n%s", diff)
 	}
 }
+
+// Every document type store knows has a document in documents. Without
+// this, a type added to store but not to documents only fails at runtime,
+// the first time something looks its document up (RFC 0004).
+func TestEveryDocumentTypeHasADocument(t *testing.T) {
+	t.Parallel()
+	status := documents.NewStore(t.TempDir()).Status(1)
+	for _, documentType := range store.DocumentTypes() {
+		doc, err := status.ByName(documentType.String())
+		if err != nil {
+			t.Errorf("%s: %v", documentType, err)
+			continue
+		}
+		if doc.Path == "" {
+			t.Errorf("%s: empty path", documentType)
+		}
+	}
+}

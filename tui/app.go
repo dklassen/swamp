@@ -636,9 +636,9 @@ func currentDocumentReviews(docs *documents.Store, applicationID int64, reviews 
 	status := docs.Status(applicationID)
 	out := make(map[store.DocumentType]store.DocumentReview, len(reviews))
 	for documentType, review := range reviews {
-		doc := status.CoverLetter
-		if documentType == store.DocumentTypeResume {
-			doc = status.Resume
+		doc, err := status.ByName(documentType.String())
+		if err != nil {
+			return nil, err
 		}
 		if !doc.Exists {
 			continue
