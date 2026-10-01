@@ -175,3 +175,15 @@ func TestCreateApplication_ClosedPosting_Refused(t *testing.T) {
 		t.Errorf("GetApplication after the refusal: err = %v, want ErrNotFound", err)
 	}
 }
+
+// TestCreateApplication_NonexistentPosting_ReturnsErrNotFound: foreign
+// keys aren't enforced, so without the posting check CreateApplication
+// would start an application for a posting that doesn't exist (#175).
+func TestCreateApplication_NonexistentPosting_ReturnsErrNotFound(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+
+	if _, err := s.CreateApplication(context.Background(), 9999); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("CreateApplication(9999): err = %v, want ErrNotFound", err)
+	}
+}
