@@ -52,6 +52,11 @@ below instead of picking one.
 Once the user names a posting, call `stage_prepare` for it. This is the
 one mutating step before drafting.
 
+If it fails with "posting is closed", the posting is no longer listed on
+its board, so there's no form left to submit and Swamp won't start an
+application on it. Tell the user, don't retry, and offer to pick another
+posting.
+
 Its `Documents` field has one entry per document type, keyed by the
 type's name (`cover_letter`, `resume`), each with a `Path` and whether it
 `Exists`. Use those names as `DocumentType` with `read_document` and

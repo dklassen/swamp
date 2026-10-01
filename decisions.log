@@ -6843,3 +6843,30 @@ RFC 0002 open question 1, decided by the user: options 1b and 2b.
   longer ends submitted, which hid the race) and now checks the
   application right after the overlapping runs, before a later sync
   could restore it. Verified it fails with the lease check disabled.
+
+## 2026-10-01 -- Starting an application on a closed posting is refused (#175)
+
+store.CreateApplication returns ErrPostingClosed for a closed posting,
+checked inside its transaction so a sync can't close the posting in
+between. Sync only ends an application when its posting changes to
+closed, so one started on an already-closed posting sat at
+application_started for good (found once in the real database).
+
+- Refused rather than started and immediately closed (the issue's other
+  option): an application that's posting_closed from birth is noise in
+  history and the terminal list, and nothing could be submitted anyway.
+- The TUI shows it as status, not an error, like ErrSyncInProgress. In
+  practice it only fires if a posting closes while its detail screen is
+  open: the posting list already hides closed postings.
+- stage_prepare returns the wrapped error as a tool error, and the
+  apply-to-posting skill tells the user and offers another posting.
+  This is the path the real case came through.
+- A posting with no row now gives ErrNotFound from CreateApplication
+  (the posting is read first). Before, it created an application for a
+  posting that didn't exist: foreign keys aren't enforced (never turned
+  on, see 00006).
+- Existing started applications on closed postings are left to the
+  user, as the issue says; #164's next-step column shows "withdraw?".
+- Verified on a migrated copy of the real database: stage.Prepare on a
+  closed WealthSimple posting is refused with nothing created; an open
+  posting still starts an application.

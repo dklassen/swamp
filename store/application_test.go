@@ -153,3 +153,37 @@ func TestGetApplicationByID_NonexistentID_ReturnsErrNotFound(t *testing.T) {
 		t.Fatalf("GetApplicationByID error = %v, want ErrNotFound", err)
 	}
 }
+
+// TestCreateApplication_ClosedPosting_Refused: an application started on
+// a closed posting can't be submitted, and sync never ends it, because it
+// only ends applications when their posting changes to closed (#175). So
+// it isn't started: nothing is written, and the error says why.
+func TestCreateApplication_ClosedPosting_Refused(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	if err := s.MarkPostingClosed(ctx, posting.ID); err != nil {
+		t.Fatalf("MarkPostingClosed: %v", err)
+	}
+
+	if _, err := s.CreateApplication(ctx, posting.ID); !errors.Is(err, ErrPostingClosed) {
+		t.Fatalf("CreateApplication on a closed posting: err = %v, want ErrPostingClosed", err)
+	}
+	if _, err := s.GetApplication(ctx, posting.ID); !errors.Is(err, ErrNotFound) {
+		t.Errorf("GetApplication after the refusal: err = %v, want ErrNotFound", err)
+	}
+}
+
+// TestCreateApplication_NonexistentPosting_ReturnsErrNotFound: foreign
+// keys aren't enforced, so without the posting check CreateApplication
+// would start an application for a posting that doesn't exist (#175).
+func TestCreateApplication_NonexistentPosting_ReturnsErrNotFound(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+
+	if _, err := s.CreateApplication(context.Background(), 9999); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("CreateApplication(9999): err = %v, want ErrNotFound", err)
+	}
+}

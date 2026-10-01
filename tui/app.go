@@ -1026,6 +1026,13 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case applicationCreatedMsg:
+		if errors.Is(msg.err, store.ErrPostingClosed) {
+			// Refused, not failed (#175): the posting is no longer listed,
+			// so there's no form left to submit.
+			a.err = nil
+			a.status = "This posting is closed; an application can't be started on it"
+			break
+		}
 		a.err = msg.err
 		if msg.err == nil {
 			if a.applicationsByPosting == nil {

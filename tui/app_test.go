@@ -843,6 +843,40 @@ func TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications(t
 	}
 }
 
+// TestApp_PressA_OnPostingDetail_ClosedPosting_ExplainsInStatus: starting
+// an application on a closed posting is refused (#175). That's an
+// expected outcome, not a failure, so it reads as status, not an error.
+func TestApp_PressA_OnPostingDetail_ClosedPosting_ExplainsInStatus(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	postingID := app.postings[0].ID
+	app = openPostingDetail(t, app)
+	if err := s.MarkPostingClosed(context.Background(), postingID); err != nil {
+		t.Fatalf("MarkPostingClosed: %v", err)
+	}
+
+	app, cmd := sendKey(app, runeKey('a'))
+	if cmd == nil {
+		t.Fatal("Update on 'a' returned nil Cmd, want a command that tries to create the application")
+	}
+	app, _ = sendKey(app, cmd())
+
+	if app.err != nil {
+		t.Errorf("app.err = %v, want nil: a closed posting is status, not an error", app.err)
+	}
+	if !strings.Contains(app.status, "closed") {
+		t.Errorf("app.status = %q, want it to say the posting is closed", app.status)
+	}
+	if _, err := s.GetApplication(context.Background(), postingID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("GetApplication: err = %v, want ErrNotFound", err)
+	}
+}
+
 func TestApp_PressA_OnPostingDetail_WhenApplicationAlreadyExists_DoesNotDuplicate(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")

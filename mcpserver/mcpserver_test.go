@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -557,5 +558,32 @@ func TestReadCanonical_ReportsMissingFile(t *testing.T) {
 				t.Errorf("%s result mismatch (-want +got):\n%s", tc.tool, diff)
 			}
 		})
+	}
+}
+
+func TestStagePrepare_ClosedPosting_ReturnsToolErrorSayingSo(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+	if err := s.MarkPostingClosed(context.Background(), posting.ID); err != nil {
+		t.Fatalf("MarkPostingClosed: %v", err)
+	}
+	cs := connectClient(t, srv)
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "stage_prepare",
+		Arguments: map[string]any{"PostingID": posting.ID},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("IsError = false, want true for a closed posting")
+	}
+	text, _ := res.Content[0].(*mcp.TextContent)
+	if text == nil || !strings.Contains(text.Text, "posting is closed") {
+		t.Errorf("tool error = %+v, want it to say the posting is closed", res.Content)
 	}
 }
