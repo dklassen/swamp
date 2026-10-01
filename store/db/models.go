@@ -47,6 +47,15 @@ type CompanyFilter struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+type DocumentExport struct {
+	ID            int64     `json:"id"`
+	ApplicationID int64     `json:"application_id"`
+	DocumentType  string    `json:"document_type"`
+	ContentSha256 string    `json:"content_sha256"`
+	Path          string    `json:"path"`
+	ExportedAt    time.Time `json:"exported_at"`
+}
+
 type DocumentReview struct {
 	ID              int64     `json:"id"`
 	ApplicationID   int64     `json:"application_id"`

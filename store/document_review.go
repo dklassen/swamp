@@ -180,8 +180,14 @@ type DocumentReview struct {
 // and the TUI's review badges) should treat a non-current review the
 // same as no review at all, not as still describing what's on disk now.
 func (r DocumentReview) IsCurrent(content string) bool {
+	return contentSHA256(content) == r.ContentSHA256
+}
+
+// contentSHA256 is the hex SHA-256 of a document's content: what a review
+// or an export records, and what IsCurrent compares against.
+func contentSHA256(content string) string {
 	sum := sha256.Sum256([]byte(content))
-	return hex.EncodeToString(sum[:]) == r.ContentSHA256
+	return hex.EncodeToString(sum[:])
 }
 
 // documentReviewFromRow converts a raw sqlc row into a DocumentReview,
@@ -227,13 +233,12 @@ func (s *Store) CreateDocumentReview(ctx context.Context, applicationID int64, d
 		return DocumentReview{}, fmt.Errorf("store: count document reviews: %w", err)
 	}
 
-	sum := sha256.Sum256([]byte(content))
 	row, err := s.queries.CreateDocumentReview(ctx, db.CreateDocumentReviewParams{
 		ApplicationID:   applicationID,
 		DocumentType:    documentType.String(),
 		Cycle:           count + 1,
 		ContentSnapshot: content,
-		ContentSha256:   hex.EncodeToString(sum[:]),
+		ContentSha256:   contentSHA256(content),
 		Outcome:         outcome.String(),
 		Notes:           notes,
 	})
