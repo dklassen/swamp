@@ -1,0 +1,53 @@
+<!--
+Copy this file to `assets/canonical/resume.md` (gitignored — it's personal
+and shouldn't be committed) and replace it with your own best-version
+resume. The `apply-to-posting` skill reads it via the
+`read_canonical_resume` MCP tool and tailors it for each posting: it may
+reorder, trim and rephrase, but adds nothing that isn't here or in your
+profile. Keep it complete; per-posting cuts happen in the drafts. See the
+README.
+-->
+
+### Your Name
+
+**Email:** [you@example.com](mailto:you@example.com) **LinkedIn:** <www.linkedin.com/in/your-handle>
+
+---
+
+### Profile
+
+Two to four sentences: what you build, what you're known for, and the
+stack you're strongest in.
+
+---
+
+### Experience
+
+**Job Title, Team Company** — *Start–End*
+
+- A concrete accomplishment, with scale or impact where you can quantify it.
+- Another accomplishment: the problem, what you did, what changed.
+
+**Job Title Company** — *Start–End*
+
+- ...
+
+<!-- One "**Title Company** — *Start–End*" block per role, newest first. -->
+
+---
+
+### Education
+
+**Degree (Specialization) Institution** — *Year*
+
+---
+
+### Skills
+
+**Languages**
+
+- Language (primary), Language, Language
+
+**Infrastructure & Operations**
+
+- Tool, Tool, Tool

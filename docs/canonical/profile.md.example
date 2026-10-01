@@ -2,10 +2,11 @@
 
 Use this file when generating tailored applications. Pull from this, don't invent.
 
-Copy this file to `PROFILE_REFERENCE.md` (gitignored — it's personal and
-shouldn't be committed) and fill in your own background. This is the
-source of truth the `apply-to-posting` skill draws from when drafting
-cover letters and resumes for postings tracked in Swamp.
+Copy this file to `assets/canonical/profile.md` (gitignored — it's
+personal and shouldn't be committed) and fill in your own background.
+This is the source of truth the `apply-to-posting` skill draws from, via
+the `read_profile` MCP tool, when drafting cover letters and resumes for
+postings tracked in Swamp. See the README.
 
 ---
 

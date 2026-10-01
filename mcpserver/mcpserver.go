@@ -11,7 +11,9 @@ package mcpserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"reflect"
 
@@ -52,6 +54,16 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 		Description: "Read an application's current cover letter or resume content, e.g. the existing draft to revise when its latest review was flagged. Returns a tool error if that document hasn't been written yet.",
 		InputSchema: documentInputSchema[readDocumentInput](),
 	}, readDocumentHandler(d))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "read_canonical_resume",
+		Description: "Read the user's canonical resume: their maintained, best-version resume in markdown, the baseline to tailor for each posting instead of writing a resume from scratch. Read-only; the user maintains it.",
+	}, readCanonicalHandler("read_canonical_resume", d.CanonicalResumePath()))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "read_profile",
+		Description: "Read the user's profile reference: their real background, experience, skills and voice/style notes in markdown, the source every draft comes from. Read-only; the user maintains it.",
+	}, readCanonicalHandler("read_profile", d.ProfilePath()))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "add_company",
@@ -159,6 +171,30 @@ func readDocumentHandler(d *documents.Store) mcp.ToolHandlerFor[readDocumentInpu
 		}
 
 		return nil, readDocumentOutput{Path: path, Content: string(content)}, nil
+	}
+}
+
+type readCanonicalInput struct{}
+
+type readCanonicalOutput struct {
+	Path    string `json:"Path"`
+	Exists  bool   `json:"Exists"`
+	Content string `json:"Content"`
+}
+
+// readCanonicalHandler serves the user-maintained file at path, read-only.
+// A missing file is an expected state (the user hasn't set one up), so it's
+// Exists: false rather than a tool error; the skill decides what to do.
+func readCanonicalHandler(tool, path string) mcp.ToolHandlerFor[readCanonicalInput, readCanonicalOutput] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, _ readCanonicalInput) (*mcp.CallToolResult, readCanonicalOutput, error) {
+		content, err := os.ReadFile(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			return nil, readCanonicalOutput{Path: path}, nil
+		}
+		if err != nil {
+			return nil, readCanonicalOutput{}, fmt.Errorf("%s: read %s: %w", tool, path, err)
+		}
+		return nil, readCanonicalOutput{Path: path, Exists: true, Content: string(content)}, nil
 	}
 }
 

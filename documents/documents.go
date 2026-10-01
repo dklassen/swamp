@@ -83,6 +83,27 @@ func (s *Store) Path(applicationID int64, documentType Type) (string, error) {
 	return path(applicationDir(s.base, applicationID), documentType), nil
 }
 
+// canonicalDir holds the user-maintained files every application draws
+// on (#199). It sits under the base directory so it stays as uncommitted
+// as the drafts; "canonical" can't collide with an application directory,
+// which is always numeric.
+func canonicalDir(base string) string {
+	return filepath.Join(base, "canonical")
+}
+
+// CanonicalResumePath is where the user's canonical resume lives, whether
+// or not it exists: the maintained baseline an agent tailors per posting.
+func (s *Store) CanonicalResumePath() string {
+	return filepath.Join(canonicalDir(s.base), "resume.md")
+}
+
+// ProfilePath is where the user's profile reference lives, whether or not
+// it exists: their background, experience and voice notes, the source an
+// agent drafts from.
+func (s *Store) ProfilePath() string {
+	return filepath.Join(canonicalDir(s.base), "profile.md")
+}
+
 // Status returns applicationID's documents, one per Type, and whether
 // each exists on disk, checked via os.Stat.
 func (s *Store) Status(applicationID int64) Status {
