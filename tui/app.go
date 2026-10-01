@@ -58,6 +58,7 @@ const (
 	screenActiveApplications
 	screenApplicationDetail
 	screenApplicationExport
+	screenApplicationSubmit
 )
 
 type App struct {
@@ -115,6 +116,10 @@ type App struct {
 	// -- a remembered path is a within-session convenience, not
 	// something worth a schema change to persist.
 	exportDir string
+	// openURL opens a URL in the browser: openInBrowser, swapped for a fake
+	// in tests so they don't launch one.
+	openURL           func(url string) tea.Cmd
+	applicationSubmit applicationSubmitModel
 	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
 	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
@@ -180,6 +185,7 @@ func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 		hideArchived:          true,
 		documents:             docs,
 		exportDir:             defaultExportDir,
+		openURL:               openInBrowser,
 	}
 }
 
@@ -1060,6 +1066,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if a.screen == screenApplicationStatusSelect {
 				a.returnBack()
 			}
+			if a.screen == screenApplicationSubmit {
+				a.status = "Marked " + a.applicationSubmit.application.Posting.Title + " submitted"
+				a.screen = screenActiveApplications
+			}
 			var reviewsCmd tea.Cmd
 			if a.screen == screenPostingDetail {
 				reviewsCmd = a.rebuildPostingDetailApplication()
@@ -1090,6 +1100,15 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case applicationExportedMsg:
 		a.err = msg.err
+		if a.screen == screenApplicationSubmit {
+			// The submit screen shows the result itself, failure included,
+			// and stays put: the user still decides whether they submitted.
+			a.applicationSubmit.exported = &msg
+			if msg.err == nil {
+				a.exportDir = msg.dir
+			}
+			return a, nil
+		}
 		if msg.err != nil {
 			// Stay on the export screen: the overwhelmingly likely
 			// failure is a mistyped destination, and returning to the
@@ -1159,6 +1178,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case browserOpenedMsg:
 		a.err = msg.err
+		if a.screen == screenApplicationSubmit {
+			// Also shown next to the link, so the step doesn't claim the
+			// link opened when it didn't.
+			a.applicationSubmit.opened = &msg
+		}
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
@@ -1208,6 +1232,8 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case screenApplicationDetail:
 		cmd, intent := a.applicationDetail.Update(msg)
 		switch v := intent.(type) {
+		case enterApplicationSubmitMsg:
+			return a, a.startApplicationSubmit(v.application)
 		case backToActiveApplicationsMsg:
 			a.screen = screenActiveApplications
 		case enterPostingDetailMsg:
@@ -1344,6 +1370,15 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.screen = screenActiveApplications
 		}
 		return a, cmd
+	case screenApplicationSubmit:
+		cmd, intent := a.applicationSubmit.Update(msg)
+		switch v := intent.(type) {
+		case cancelApplicationSubmitMsg:
+			a.screen = screenApplicationDetail
+		case confirmApplicationSubmitMsg:
+			return a, updateApplicationStatus(a.store, v.postingID, store.ApplicationStatusSubmitted)
+		}
+		return a, cmd
 	case screenApplicationNotesEdit:
 		cmd, intent := a.applicationNotes.Update(msg)
 		if _, ok := intent.(cancelApplicationNotesMsg); ok {
@@ -1467,6 +1502,8 @@ func (a *App) View() string {
 		b.WriteString(a.applicationStatus.View())
 	case screenApplicationExport:
 		b.WriteString(a.applicationExport.View())
+	case screenApplicationSubmit:
+		b.WriteString(a.applicationSubmit.View())
 	case screenApplicationNotesEdit:
 		b.WriteString(a.applicationNotes.View())
 	case screenDocumentReviewSelect:

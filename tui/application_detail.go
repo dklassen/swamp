@@ -44,6 +44,8 @@ func (m *applicationDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		return nil, m.enterReview(store.DocumentTypeResume)
 	case msg.String() == "u":
 		return nil, refreshApplicationDetailMsg{}
+	case msg.String() == "S":
+		return nil, enterApplicationSubmitMsg{application: m.application}
 	}
 	return nil, nil
 }
@@ -117,6 +119,6 @@ func (m *applicationDetailModel) View() string {
 	resumeReview, hasResumeReview := m.application.LatestReviews[store.DocumentTypeResume]
 	b.WriteString(documentStatusLine("Resume", status.Resume.Exists, status.Resume.Path, resumeReview, hasResumeReview))
 
-	b.WriteString(helpStyle.Render("p: view posting  l: edit cover letter  r: edit resume  L: review cover letter  R: review resume  u: refresh  esc/b: back"))
+	b.WriteString(helpStyle.Render("p: view posting  l: edit cover letter  r: edit resume  L: review cover letter  R: review resume  S: submit  u: refresh  esc/b: back"))
 	return b.String()
 }
