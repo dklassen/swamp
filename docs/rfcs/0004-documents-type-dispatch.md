@@ -1,6 +1,6 @@
 # RFC 0004: Making a new document type a one-line change
 
-- **Status:** Draft, for discussion (revised 2026-09-29)
+- **Status:** Implemented 2026-10-01 (#180: PRs #194, #195, #196 and the step 4 PR; see "What shipped")
 - **Date:** 2026-09-28
 - **Related:** RFC 0002 (phase 2 proposes an `answers.md` document); `documents/documents.go` package comment; `store/document_review.go`; `decisions.log` 2026-09-04 (#94 follow-up, line ~3668) and 2026-09-17 (#45 review pass, line ~4115)
 
@@ -193,6 +193,25 @@ Each step is its own issue and PR.
    - Generalize `stage.go:172` to "every required document exists" (see open questions: RFC 0002 makes `answers` optional per posting).
 
 After step 4, RFC 0002's answers document is: one entry in the list, plus the skill's drafting instructions.
+
+## What shipped
+
+Option A, in the four steps above, with the open questions decided by the user on 2026-10-01 (see `decisions.log`):
+
+1. **Fail loudly** (#194). The six fallbacks errored on unknown types and the hard-coded pairs used the type list. Three more pairs had appeared since this RFC was measured (#164, #166, #188).
+2. **`documents.Type`** (#195). One table in `documents` holds each type's name (file base name and stored value) and label; `store` imports `documents`. `Status.Doc(Type)` and `Store.Path(applicationID, Type)` replace the dispatch.
+3. **`documents.Current`** (#196). One generic check replaces the three copies. It's named `Current`, not `CurrentReviews`, because the home screen uses it for exports too.
+4. **Screens and MCP output driven by the list.**
+   - Each type carries its TUI key (`l`/`r`; uppercase reviews).
+   - Application detail's keys, rows and help line, posting detail's rows, the review picker and the home screen's review column all loop over `documents.Types()`.
+   - Row titles and the review column's abbreviations are derived from the label.
+   - `stage.Prepared` has `Documents`, keyed by type name, and SKILL.md says so.
+   - "Drafting is done" means every type exists.
+   - `Status` and `EnsureDir` hold no per-type fields; `Paths` and `ForApplication` are gone.
+
+Answers to the open questions: (1) `documents`, generic over the record; (2) a key per type in the list; (3) every type in the list, until RFC 0002 phase 2 adds per-posting requirements; (4) one PR changing both the MCP output and the skill.
+
+Adding a type is now one entry in `documents`' table (name, label, key), plus the skill's drafting instructions. `TestTypes_EachHasANameLabelAndDocument` and `TestTypes_KeysAreDistinctLowercaseLetters` fail if the entry is incomplete, and `TestApplicationDetailModel_EveryDocumentType` checks the new type's keys don't clash with the screen's own.
 
 ## Corrections to the earlier draft
 

@@ -6597,3 +6597,26 @@ This revisits two earlier decisions on purpose:
   dependency on store". Still true: the callback is what keeps it so.
 The behavior is unchanged, including failing on a read error rather
 than treating it as a changed document.
+
+## 2026-10-01 -- RFC 0004 step 4: screens and MCP output driven by the list (#180, #101)
+
+- Each document type carries its TUI key in documents' table (cover
+  letter l, resume r; uppercase reviews), per the user's answer to the
+  RFC's question 2. A UI detail in the domain package, accepted so the
+  table stays the one place a type is defined. A tui test checks every
+  type's keys against the keys application detail already uses.
+- Row titles ("Cover Letter") and the review column's abbreviations
+  ("CL", "R") are derived from the label rather than stored, so a new
+  type needs only its lowercase label. The rendered screens are
+  unchanged (checked on a copy of the real database).
+- stage.Prepared's CoverLetter/Resume became Documents, a map keyed by
+  type name, and SKILL.md and the MCP tools' DocumentType description
+  changed in the same PR (question 4). "Drafting is done" is every type
+  in the list (question 3), in stage.allDrafted.
+- documents.Status keeps only its per-type map, EnsureDir returns the
+  Status, and Paths and ForApplication are gone, so no code outside
+  documents can name a type's field. Tests use a mustDoc helper.
+- #101 (the fourth copy of the dispatch block, and whether documents
+  may depend on store) is resolved by Option A: documents owns the
+  type, store depends on documents, and documents still imports nothing
+  from Swamp.
