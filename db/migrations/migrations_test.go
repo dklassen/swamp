@@ -1062,3 +1062,52 @@ func TestCloseDeletedCompaniesPostings_ClosesOnlyDeletedCompaniesOpenPostings(t 
 func validString(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: true}
 }
+
+// TestApplicationStatusChangedBy_ExistingRowsUnknown verifies the 00018
+// migration (#174): history rows written before it can't say whether the
+// user or sync made the change, so they're marked unknown. Sync only
+// undoes a posting_closed it's known to have made, so an unknown row is
+// never restored.
+func TestApplicationStatusChangedBy_ExistingRowsUnknown(t *testing.T) {
+	sqlDB := migrateTo(t, 17)
+
+	for _, stmt := range []string{
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload) VALUES (1, 1, 'ashby', 'job-1', 'Engineer', '{}')`,
+		`INSERT INTO applications (id, posting_id, status) VALUES (1, 1, 'posting_closed')`,
+		`INSERT INTO application_status_history (application_id, status) VALUES (1, 'application_started'), (1, 'posting_closed')`,
+	} {
+		if _, err := sqlDB.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+
+	if err := goose.UpTo(sqlDB, ".", 18); err != nil {
+		t.Fatalf("migrate to version 18: %v", err)
+	}
+	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+		t.Fatalf("GetDBVersion: %v", err)
+	} else if gotVersion != 18 {
+		t.Fatalf("DB version after UpTo(18) = %d, want 18 (migration 00018 not found?)", gotVersion)
+	}
+
+	rows, err := sqlDB.Query(`SELECT changed_by FROM application_status_history ORDER BY id`)
+	if err != nil {
+		t.Fatalf("query history: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var got []string
+	for rows.Next() {
+		var changedBy string
+		if err := rows.Scan(&changedBy); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		got = append(got, changedBy)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows: %v", err)
+	}
+	if diff := cmp.Diff([]string{"unknown", "unknown"}, got); diff != "" {
+		t.Errorf("changed_by mismatch (-want +got):\n%s", diff)
+	}
+}

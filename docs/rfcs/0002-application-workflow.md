@@ -273,7 +273,7 @@ Found while filing, outside the waves (label `rfc0002-related`): #174 (open ques
 
 ## Open questions
 
-1. **Should a closing posting still move a _submitted_ application to `posting_closed`?** Issue #105 made that deliberate. With status history the submission isn't lost, but "submitted, then posting closed" arguably means "still waiting on a response."
+1. **Should a closing posting still move a _submitted_ application to `posting_closed`?** Issue #105 made that deliberate. With status history the submission isn't lost, but "submitted, then posting closed" arguably means "still waiting on a response." *Answered by #174 (2026-10-01): no. Only `application_started` ends. And a posting that reappears restores an application sync closed, from status history, unless the user has changed it since.*
 2. **Phase 1 scope:** which projects do the phase 0 notes actually call for?
 3. **Where standard answers live:** a section in `PROFILE_REFERENCE.md` (free text, the agent adapts it) or a structured file (exact reuse, and the TUI could show it next to each question)?
 4. **Ashby/Lever questions:** answered by the spike (#167, 2026-09-30). Neither supported public API exposes them. Unofficial sources exist but aren't used, so manual entry (#184) is the path for both.

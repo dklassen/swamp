@@ -10,24 +10,25 @@ import (
 )
 
 const createApplicationStatusHistory = `-- name: CreateApplicationStatusHistory :exec
-INSERT INTO application_status_history (application_id, status)
-VALUES (?, ?)
+INSERT INTO application_status_history (application_id, status, changed_by)
+VALUES (?, ?, ?)
 `
 
 type CreateApplicationStatusHistoryParams struct {
 	ApplicationID int64  `json:"application_id"`
 	Status        string `json:"status"`
+	ChangedBy     string `json:"changed_by"`
 }
 
 // Written only by store.recordApplicationStatus, inside the same
 // transaction as the status change it records (#162).
 func (q *Queries) CreateApplicationStatusHistory(ctx context.Context, arg CreateApplicationStatusHistoryParams) error {
-	_, err := q.db.ExecContext(ctx, createApplicationStatusHistory, arg.ApplicationID, arg.Status)
+	_, err := q.db.ExecContext(ctx, createApplicationStatusHistory, arg.ApplicationID, arg.Status, arg.ChangedBy)
 	return err
 }
 
 const latestApplicationStatusChange = `-- name: LatestApplicationStatusChange :one
-SELECT id, application_id, status, changed_at FROM application_status_history
+SELECT id, application_id, status, changed_at, changed_by FROM application_status_history
 WHERE application_id = ?
 ORDER BY changed_at DESC, id DESC
 LIMIT 1
@@ -43,12 +44,13 @@ func (q *Queries) LatestApplicationStatusChange(ctx context.Context, application
 		&i.ApplicationID,
 		&i.Status,
 		&i.ChangedAt,
+		&i.ChangedBy,
 	)
 	return i, err
 }
 
 const listApplicationStatusHistory = `-- name: ListApplicationStatusHistory :many
-SELECT id, application_id, status, changed_at FROM application_status_history
+SELECT id, application_id, status, changed_at, changed_by FROM application_status_history
 WHERE application_id = ?
 ORDER BY changed_at, id
 `
@@ -69,6 +71,7 @@ func (q *Queries) ListApplicationStatusHistory(ctx context.Context, applicationI
 			&i.ApplicationID,
 			&i.Status,
 			&i.ChangedAt,
+			&i.ChangedBy,
 		); err != nil {
 			return nil, err
 		}

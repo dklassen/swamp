@@ -188,3 +188,63 @@ func TestClosePosting_HistoryFailure_LeavesPostingAndApplicationOpen(t *testing.
 		t.Errorf("application changed despite the failed history write (-before +after):\n%s", diff)
 	}
 }
+
+// TestApplicationStatusHistory_RecordsWhoChangedIt: starting an
+// application and setting its status are the user's changes; closing its
+// posting is sync's (#174), which is what lets a reopened posting undo
+// only what sync did.
+func TestApplicationStatusHistory_RecordsWhoChangedIt(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+	if _, err := s.UpdateApplicationStatus(ctx, posting.ID, ApplicationStatusSubmitted); err != nil {
+		t.Fatalf("UpdateApplicationStatus: %v", err)
+	}
+	if _, err := s.UpdateApplicationStatus(ctx, posting.ID, ApplicationStatusStarted); err != nil {
+		t.Fatalf("UpdateApplicationStatus: %v", err)
+	}
+	if _, err := s.ClosePosting(ctx, posting.ID, []ApplicationStatus{ApplicationStatusStarted}); err != nil {
+		t.Fatalf("ClosePosting: %v", err)
+	}
+
+	history, err := s.ListApplicationStatusHistory(ctx, application.ID)
+	if err != nil {
+		t.Fatalf("ListApplicationStatusHistory: %v", err)
+	}
+	type change struct {
+		Status    ApplicationStatus
+		ChangedBy StatusChangedBy
+	}
+	got := make([]change, len(history))
+	for i, h := range history {
+		got[i] = change{h.Status, h.ChangedBy}
+	}
+	want := []change{
+		{ApplicationStatusStarted, StatusChangedByUser},
+		{ApplicationStatusSubmitted, StatusChangedByUser},
+		{ApplicationStatusStarted, StatusChangedByUser},
+		{ApplicationStatusPostingClosed, StatusChangedBySync},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("history mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestListApplicationStatusHistory_UnknownChangedBy_ReturnsError(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+	if _, err := s.sqlDB.ExecContext(ctx, `UPDATE application_status_history SET changed_by = 'robot'`); err != nil {
+		t.Fatalf("set changed_by: %v", err)
+	}
+
+	if _, err := s.ListApplicationStatusHistory(ctx, application.ID); err == nil {
+		t.Error("ListApplicationStatusHistory with changed_by 'robot': want an error, got nil")
+	}
+}

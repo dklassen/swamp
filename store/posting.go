@@ -375,7 +375,7 @@ func closePosting(ctx context.Context, qtx *db.Queries, postingID int64, closeAp
 			}); err != nil {
 				return ClosePostingResult{}, fmt.Errorf("store: close application for closed posting: %w", err)
 			}
-			if err := recordApplicationStatus(ctx, qtx, application.ID, ApplicationStatusPostingClosed); err != nil {
+			if err := recordApplicationStatus(ctx, qtx, application.ID, ApplicationStatusPostingClosed, StatusChangedBySync); err != nil {
 				return ClosePostingResult{}, err
 			}
 			result.ApplicationClosed = true
@@ -384,16 +384,33 @@ func closePosting(ctx context.Context, qtx *db.Queries, postingID int64, closeAp
 	return result, nil
 }
 
+// ReopenPostingResult reports what ReopenPosting changed.
+type ReopenPostingResult struct {
+	// Reopened is false when the posting was already open, e.g. reopened
+	// by an overlapping sync; nothing else is changed then either.
+	Reopened bool
+	// ApplicationRestored is true when the posting's application was moved
+	// back from posting_closed to the status it had before.
+	ApplicationRestored bool
+}
+
 // ReopenPosting marks a closed posting open again, e.g. because it
 // reappeared in a fetch, and records a "reopened" posting_history
-// snapshot of it as it was just before -- in one transaction (#148). It
-// reports whether it reopened the posting: false when it was already
-// open, e.g. reopened by an overlapping sync, in which case nothing is
-// recorded either.
-func (s *Store) ReopenPosting(ctx context.Context, postingID int64) (bool, error) {
+// snapshot of it as it was just before -- in one transaction (#148).
+// Reopening changes nothing when the posting was already open, e.g.
+// reopened by an overlapping sync, and nothing is recorded either.
+//
+// In the same transaction it undoes what closing the posting did to its
+// application (#174): an application sync moved to posting_closed goes
+// back to the status it had before, recorded as sync's change. Only if
+// sync's close is still the application's latest change -- a
+// posting_closed the user set, or any status the user set since, is
+// left alone, and so is a close recorded before history said who made
+// it (00018).
+func (s *Store) ReopenPosting(ctx context.Context, postingID int64) (ReopenPostingResult, error) {
 	tx, err := s.sqlDB.BeginTx(ctx, nil)
 	if err != nil {
-		return false, fmt.Errorf("store: begin reopen posting tx: %w", err)
+		return ReopenPostingResult{}, fmt.Errorf("store: begin reopen posting tx: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
@@ -401,30 +418,84 @@ func (s *Store) ReopenPosting(ctx context.Context, postingID int64) (bool, error
 
 	row, err := qtx.GetPosting(ctx, postingID)
 	if err != nil {
-		return false, fmt.Errorf("store: get posting to reopen: %w", err)
+		return ReopenPostingResult{}, fmt.Errorf("store: get posting to reopen: %w", err)
 	}
 	changed, err := qtx.ReopenPostingIfClosed(ctx, postingID)
 	if err != nil {
-		return false, fmt.Errorf("store: reopen posting: %w", err)
+		return ReopenPostingResult{}, fmt.Errorf("store: reopen posting: %w", err)
 	}
 	if changed == 0 {
-		return false, nil
+		return ReopenPostingResult{}, nil
 	}
 
 	snapshot, err := json.Marshal(postingFromRow(row))
 	if err != nil {
-		return false, fmt.Errorf("store: marshal posting snapshot: %w", err)
+		return ReopenPostingResult{}, fmt.Errorf("store: marshal posting snapshot: %w", err)
 	}
 	if _, err := qtx.CreatePostingHistory(ctx, db.CreatePostingHistoryParams{
 		PostingID:  postingID,
 		ChangeType: "reopened",
 		Snapshot:   string(snapshot),
 	}); err != nil {
-		return false, fmt.Errorf("store: record posting reopened: %w", err)
+		return ReopenPostingResult{}, fmt.Errorf("store: record posting reopened: %w", err)
+	}
+
+	restored, err := restoreSyncClosedApplication(ctx, qtx, postingID)
+	if err != nil {
+		return ReopenPostingResult{}, err
 	}
 
 	if err := tx.Commit(); err != nil {
-		return false, fmt.Errorf("store: commit reopen posting tx: %w", err)
+		return ReopenPostingResult{}, fmt.Errorf("store: commit reopen posting tx: %w", err)
+	}
+	return ReopenPostingResult{Reopened: true, ApplicationRestored: restored}, nil
+}
+
+// restoreSyncClosedApplication is ReopenPosting's application half, in
+// its transaction: if the posting's application is at posting_closed
+// because sync put it there, and nothing has changed it since, put it
+// back to the status before that.
+func restoreSyncClosedApplication(ctx context.Context, qtx *db.Queries, postingID int64) (bool, error) {
+	appRow, err := qtx.GetApplication(ctx, postingID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return false, nil
+	case err != nil:
+		return false, fmt.Errorf("store: get application for reopened posting: %w", err)
+	}
+	history, err := qtx.ListApplicationStatusHistory(ctx, appRow.ID)
+	if err != nil {
+		return false, fmt.Errorf("store: list status history for reopened posting: %w", err)
+	}
+	if len(history) < 2 {
+		return false, nil
+	}
+	application, err := applicationFromRow(appRow)
+	if err != nil {
+		return false, err
+	}
+	last, err := parseStatusChange(history[len(history)-1])
+	if err != nil {
+		return false, err
+	}
+	if application.Status != ApplicationStatusPostingClosed ||
+		last.Status != ApplicationStatusPostingClosed ||
+		last.ChangedBy != StatusChangedBySync {
+		return false, nil
+	}
+	previous, err := parseStatusChange(history[len(history)-2])
+	if err != nil {
+		return false, err
+	}
+	restore := previous.Status
+	if _, err := qtx.UpdateApplicationStatus(ctx, db.UpdateApplicationStatusParams{
+		PostingID: postingID,
+		Status:    sql.NullString{String: restore.String(), Valid: true},
+	}); err != nil {
+		return false, fmt.Errorf("store: restore application for reopened posting: %w", err)
+	}
+	if err := recordApplicationStatus(ctx, qtx, application.ID, restore, StatusChangedBySync); err != nil {
+		return false, err
 	}
 	return true, nil
 }

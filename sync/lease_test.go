@@ -149,12 +149,14 @@ func (f *staleFirstFetcher) FetchPostings(ctx context.Context, boardSlug string)
 
 // TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication is #150's
 // motivating race. Posting X was dropped from the board once (its
-// application auto-closed, and the user set it back to submitted) and is
-// listed again. Run A fetched while X was still missing; run B fetches
+// application auto-closed, and the user set it back to started) and is
+// listed again. (Started, not submitted: since #174 sync never ends a
+// submitted application, so it would hide the race.) Run A fetched while X was still missing; run B fetches
 // after X came back. Without the lease, B reopened X and then A -- acting
 // on its older fetch -- closed it again and moved the application to
-// posting_closed, which no later sync undoes. With it, B is skipped while
-// A holds the company, and the application is never touched.
+// posting_closed. With it, B is skipped while A holds the company, and
+// the application is never touched -- checked straight after the two
+// runs, before a later sync could restore it (#174).
 func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -179,7 +181,7 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 	if _, err := seed.SyncCompany(ctx, acme.ID); err != nil { // X dropped: closed
 		t.Fatalf("closing SyncCompany: %v", err)
 	}
-	if _, err := s.UpdateApplicationStatus(ctx, xID, store.ApplicationStatusSubmitted); err != nil {
+	if _, err := s.UpdateApplicationStatus(ctx, xID, store.ApplicationStatusStarted); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 
@@ -199,6 +201,11 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 	if !errors.Is(errB, ErrSyncInProgress) {
 		t.Errorf("run B while A holds the company: err = %v, want ErrSyncInProgress", errB)
 	}
+	if application, err := s.GetApplication(ctx, xID); err != nil {
+		t.Fatalf("GetApplication: %v", err)
+	} else if application.Status != store.ApplicationStatusStarted {
+		t.Errorf("after runs A and B: application %s, want %s untouched", application.Status, store.ApplicationStatusStarted)
+	}
 
 	setup.postings["acme"] = []jobboard.Posting{x}
 	if _, err := seed.SyncCompany(ctx, acme.ID); err != nil {
@@ -212,8 +219,8 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if posting.ListingStatus != "open" || application.Status != store.ApplicationStatusSubmitted {
-		t.Errorf("after the next sync: posting %s, application %s; want open and %s", posting.ListingStatus, application.Status, store.ApplicationStatusSubmitted)
+	if posting.ListingStatus != "open" || application.Status != store.ApplicationStatusStarted {
+		t.Errorf("after the next sync: posting %s, application %s; want open and %s", posting.ListingStatus, application.Status, store.ApplicationStatusStarted)
 	}
 }
 

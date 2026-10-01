@@ -426,7 +426,6 @@ func TestSyncCompany_PostingCloses_EarlyStageApplicationClosedToo(t *testing.T) 
 
 	for _, start := range []store.ApplicationStatus{
 		store.ApplicationStatusStarted,
-		store.ApplicationStatusSubmitted,
 	} {
 		t.Run(start.String(), func(t *testing.T) {
 			s := newTestStore(t)
@@ -456,11 +455,14 @@ func TestSyncCompany_PostingCloses_EarlyStageApplicationClosedToo(t *testing.T) 
 // TestSyncCompany_PostingCloses_LiveApplicationLeftAlone is the guard on
 // the whole feature: a company pulling its listing while you're mid
 // process is normal, and the syncer must not overwrite a status the user
-// set and can't get back (see #105).
+// set and can't get back (see #105). A submitted application is
+// live too: companies often pull a listing once they have enough
+// candidates and keep reviewing the ones who applied (#174).
 func TestSyncCompany_PostingCloses_LiveApplicationLeftAlone(t *testing.T) {
 	ctx := context.Background()
 
 	for _, start := range []store.ApplicationStatus{
+		store.ApplicationStatusSubmitted,
 		store.ApplicationStatusInterviewing,
 		store.ApplicationStatusOfferReceived,
 		store.ApplicationStatusOfferAccepted,
@@ -533,6 +535,50 @@ func TestSyncCompany_PostingCloses_WithdrawnApplicationLeftAlone(t *testing.T) {
 	}
 	if result.ApplicationsClosed != 0 {
 		t.Errorf("result.ApplicationsClosed = %d, want 0", result.ApplicationsClosed)
+	}
+}
+
+// TestSyncCompany_PostingReappears_ApplicationRestored: a board that
+// briefly drops a listing no longer ends its started application for good
+// (#174). The sync that reopens the posting puts the application back.
+func TestSyncCompany_PostingReappears_ApplicationRestored(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	listed := []jobboard.Posting{samplePosting("job-1", "Engineer", "Engineering", "Remote")}
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": listed}}
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
+		t.Fatalf("initial SyncCompany: %v", err)
+	}
+	postings, err := s.ListPostingsByCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("ListPostingsByCompany: %v", err)
+	}
+	postingID := postings[0].ID
+	if _, err := s.CreateApplication(ctx, postingID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+
+	fetcher.postings["acme"] = nil
+	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
+		t.Fatalf("closing SyncCompany: %v", err)
+	}
+	fetcher.postings["acme"] = listed
+	result, err := syncer.SyncCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("reopening SyncCompany: %v", err)
+	}
+
+	application, err := s.GetApplication(ctx, postingID)
+	if err != nil {
+		t.Fatalf("GetApplication: %v", err)
+	}
+	if application.Status != store.ApplicationStatusStarted {
+		t.Errorf("application status = %s, want %s restored", application.Status, store.ApplicationStatusStarted)
+	}
+	if result.Reopened != 1 || result.ApplicationsRestored != 1 {
+		t.Errorf("Reopened = %d, ApplicationsRestored = %d, want 1 and 1", result.Reopened, result.ApplicationsRestored)
 	}
 }
 

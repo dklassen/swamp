@@ -1,8 +1,8 @@
 -- name: CreateApplicationStatusHistory :exec
 -- Written only by store.recordApplicationStatus, inside the same
 -- transaction as the status change it records (#162).
-INSERT INTO application_status_history (application_id, status)
-VALUES (?, ?);
+INSERT INTO application_status_history (application_id, status, changed_by)
+VALUES (?, ?, ?);
 
 -- name: ListApplicationStatusHistory :many
 -- Oldest first. id breaks ties between changes in the same second

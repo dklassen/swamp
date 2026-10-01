@@ -47,7 +47,11 @@ type Result struct {
 	// because the posting they were for was taken down -- see
 	// store.ClosePosting and earlyApplicationStatuses (issues #105, #147).
 	ApplicationsClosed int
-	Err                error
+	// ApplicationsRestored counts applications sync had moved to
+	// posting_closed and moved back because their posting reappeared --
+	// see store.ReopenPosting (#174).
+	ApplicationsRestored int
+	Err                  error
 }
 
 // ErrSyncInProgress is SyncCompany's error when another sync of the same

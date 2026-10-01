@@ -77,7 +77,7 @@ func (s *Store) CreateApplication(ctx context.Context, postingID int64) (Applica
 	if err != nil {
 		return Application{}, err
 	}
-	if err := recordApplicationStatus(ctx, qtx, row.ID, ApplicationStatusStarted); err != nil {
+	if err := recordApplicationStatus(ctx, qtx, row.ID, ApplicationStatusStarted, StatusChangedByUser); err != nil {
 		return Application{}, err
 	}
 
@@ -142,7 +142,7 @@ func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, st
 		return Application{}, err
 	}
 	if before.Status.String != status.String() {
-		if err := recordApplicationStatus(ctx, qtx, row.ID, status); err != nil {
+		if err := recordApplicationStatus(ctx, qtx, row.ID, status, StatusChangedByUser); err != nil {
 			return Application{}, err
 		}
 	}

@@ -23,6 +23,7 @@ type ApplicationStatusHistory struct {
 	ApplicationID int64     `json:"application_id"`
 	Status        string    `json:"status"`
 	ChangedAt     time.Time `json:"changed_at"`
+	ChangedBy     string    `json:"changed_by"`
 }
 
 type Company struct {
