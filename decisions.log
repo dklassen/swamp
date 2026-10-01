@@ -6389,3 +6389,18 @@ Alternative rejected: (b), filtering deleted companies out of every
 cross-company query. It keeps the deleted company's postings exactly as
 they were, but every new query (the E3 inbox first) would have to
 remember the filter.
+
+## 2026-10-01 -- Stalled applications: keep all 23, no reasons recorded (#163, RFC 0002 task B1)
+
+Decision (the user's): keep all 23 started applications and withdraw
+none, without noting a stall reason on each. Phase 0's "every stalled
+application has a reason" criterion is waived, not met.
+
+Consequences:
+- No evidence narrows phase 1, so #164 (stalled view), #165 (batch
+  drafting) and #166 (submit checklist) keep the scope they were filed
+  with.
+- C1's (#165) work list is every started application with no drafts,
+  not a filtered keep-list.
+- The started queue starts phase 1 at 23, against the under-5 target
+  that gates phase 3.
