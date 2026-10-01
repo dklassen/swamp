@@ -36,12 +36,10 @@ const formMaxAge = 7 * 24 * time.Hour
 // fetch failure isn't an error (formErr says what happened instead),
 // since drafting can go ahead without the form; a stale stored form is
 // returned in that case if there is one. err is only for a broken store.
+//
+// A board with no fetcher (Ashby, Lever) gets the form entered by hand in
+// the TUI (#184), however old, or nil if none was.
 func (st *Stage) applicationForm(ctx context.Context, posting store.Posting, company store.Company) (form *jobboard.ApplicationForm, formErr string, err error) {
-	fetcher, ok := st.forms[company.Source]
-	if !ok {
-		return nil, "", nil
-	}
-
 	stored, fetchedAt, haveStored, err := st.store.GetApplicationForm(ctx, posting.ID)
 	if err != nil {
 		return nil, "", fmt.Errorf("stage: %w", err)
@@ -53,9 +51,14 @@ func (st *Stage) applicationForm(ctx context.Context, posting store.Posting, com
 			return nil, "", fmt.Errorf("stage: decode stored application form: %w", err)
 		}
 		storedForm = &f
-		if st.now().Sub(fetchedAt) < formMaxAge {
-			return storedForm, "", nil
-		}
+	}
+
+	fetcher, ok := st.forms[company.Source]
+	if !ok {
+		return storedForm, "", nil
+	}
+	if storedForm != nil && st.now().Sub(fetchedAt) < formMaxAge {
+		return storedForm, "", nil
 	}
 
 	fetchCtx, cancel := context.WithTimeout(ctx, st.fetchTimeout)
