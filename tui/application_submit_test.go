@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -43,7 +44,7 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, store.App
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
-	for _, path := range []string{paths.CoverLetter, paths.Resume} {
+	for _, path := range []string{mustDoc(t, paths, documents.CoverLetter).Path, mustDoc(t, paths, documents.Resume).Path} {
 		if err := os.WriteFile(path, []byte("# Draft\n"), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}

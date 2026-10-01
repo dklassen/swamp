@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -183,5 +184,51 @@ func TestApplicationDetailModel_View_ShowsStatusLabelNotEnumValue(t *testing.T) 
 	}
 	if strings.Contains(got, "offer_received") {
 		t.Errorf("View() leaks the raw enum value \"offer_received\" into the UI")
+	}
+}
+
+// Every document type in documents' table gets its keys, its row and its
+// help entry on application detail, without listing types here (RFC
+// 0004): adding a type to the table is enough.
+func TestApplicationDetailModel_EveryDocumentType(t *testing.T) {
+	t.Parallel()
+
+	// Keys application detail uses for itself; S is submit.
+	reserved := map[rune]bool{'p': true, 'b': true, 'u': true, 's': true}
+	docs := documents.NewStore(t.TempDir())
+	for _, documentType := range documents.Types() {
+		p, err := docs.Path(1, documentType)
+		if err != nil {
+			t.Fatalf("Path: %v", err)
+		}
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			t.Fatalf("MkdirAll: %v", err)
+		}
+		if err := os.WriteFile(p, []byte("# "+documentType.String()), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+	m := newApplicationDetailModel(docs, testApplicationView())
+	view := m.View()
+
+	for _, documentType := range documents.Types() {
+		key := documentType.Key()
+		if reserved[key] {
+			t.Errorf("%s's key %q is already used by application detail", documentType, key)
+		}
+		if cmd, _ := m.Update(runeKey(key)); cmd == nil {
+			t.Errorf("%q: no command to edit the %s", key, documentType.Label())
+		}
+		_, intent := m.Update(runeKey(unicode.ToUpper(key)))
+		review, ok := intent.(enterDocumentReviewFormMsg)
+		if !ok || review.documentType != documentType || review.content != "# "+documentType.String() {
+			t.Errorf("%q: intent = %+v, want a review of the %s with its content", unicode.ToUpper(key), intent, documentType.Label())
+		}
+		if title := documentTitle(documentType); !strings.Contains(view, title+":") {
+			t.Errorf("View() has no %q row", title)
+		}
+		if !strings.Contains(view, string(key)+": edit "+documentType.Label()) || !strings.Contains(view, string(unicode.ToUpper(key))+": review "+documentType.Label()) {
+			t.Errorf("View() help doesn't list the %s keys", documentType.Label())
+		}
 	}
 }

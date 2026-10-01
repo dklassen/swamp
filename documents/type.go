@@ -28,12 +28,16 @@ const (
 // name is both the file's base name (<name>.md) and the value stored in
 // document_reviews.document_type and document_exports.document_type, so
 // renaming one means migrating those columns too.
+//
+// key is the TUI key for the document: lowercase to edit it, uppercase to
+// review it (RFC 0004, decided 2026-10-01).
 var types = [...]struct {
 	name  string
 	label string
+	key   rune
 }{
-	CoverLetter: {name: "cover_letter", label: "cover letter"},
-	Resume:      {name: "resume", label: "resume"},
+	CoverLetter: {name: "cover_letter", label: "cover letter", key: 'l'},
+	Resume:      {name: "resume", label: "resume", key: 'r'},
 }
 
 // Types returns every document type, in const order.
@@ -65,6 +69,15 @@ func (t Type) Label() string {
 		return t.String()
 	}
 	return types[t].label
+}
+
+// Key is the lowercase letter the TUI uses for this document: the key
+// to edit it, and its uppercase to review it. 0 for an unknown type.
+func (t Type) Key() rune {
+	if !t.valid() {
+		return 0
+	}
+	return types[t].key
 }
 
 // ParseType converts a stored type name back into a Type, failing for

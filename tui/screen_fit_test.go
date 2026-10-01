@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -61,7 +62,7 @@ func newFullTestApp(t *testing.T) *App {
 	app := newTestApp(t, s, newTestSyncer(s, map[string][]jobboard.Posting{"acme": board}))
 	for _, a := range applications {
 		status := app.documents.Status(a.ID)
-		for _, path := range []string{status.CoverLetter.Path, status.Resume.Path} {
+		for _, path := range []string{mustDoc(t, status, documents.CoverLetter).Path, mustDoc(t, status, documents.Resume).Path} {
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 				t.Fatalf("MkdirAll: %v", err)
 			}

@@ -74,3 +74,20 @@ func TestType_JSONMapKeysAreNames(t *testing.T) {
 		t.Errorf("json.Marshal = %s, want %s", got, want)
 	}
 }
+
+// Each type's key opens it in the TUI (lowercase to edit, uppercase to
+// review), so keys must be distinct lowercase letters.
+func TestTypes_KeysAreDistinctLowercaseLetters(t *testing.T) {
+	t.Parallel()
+	seen := map[rune]Type{}
+	for _, documentType := range Types() {
+		key := documentType.Key()
+		if key < 'a' || key > 'z' {
+			t.Errorf("%s: key %q isn't a lowercase letter", documentType, key)
+		}
+		if other, ok := seen[key]; ok {
+			t.Errorf("%s and %s share key %q", other, documentType, key)
+		}
+		seen[key] = documentType
+	}
+}

@@ -52,7 +52,10 @@ below instead of picking one.
 Once the user names a posting, call `stage_prepare` for it. This is the
 one mutating step before drafting.
 
-Treat the document paths it returns as informational -- they're locations
+Its `Documents` field has one entry per document type, keyed by the
+type's name (`cover_letter`, `resume`), each with a `Path` and whether it
+`Exists`. Use those names as `DocumentType` with `read_document` and
+`write_document`. Treat the paths as informational -- they're locations
 on the host running the server, not something to open or write yourself.
 If a document already exists, check `LatestReviews` first:
 
@@ -83,8 +86,8 @@ shortcut, it's a different (and much worse) task.
 
 ## 4. Draft the documents
 
-Write a cover letter and a resume, both in markdown, tailored to this
-specific posting:
+Write each document in `Documents` (today a cover letter and a resume),
+in markdown, tailored to this specific posting:
 
 - Pull the posting's actual content (title, company, description, any
   specifics worth responding to) from what `stage_prepare` returned. The
@@ -131,7 +134,7 @@ instead of one of each per posting.
 3. **Read `PROFILE_REFERENCE.md` once** (step 3), before the first
    posting. If it's missing, stop before drafting anything.
 4. **For each posting, in order:** call `stage_prepare` (step 2), then
-   draft and save both documents (step 4). The step-2 rules still apply
+   draft and save its documents (step 4). The step-2 rules still apply
    to every posting:
    - a flagged review means **revise** the existing draft with
      `read_document`, not start over;

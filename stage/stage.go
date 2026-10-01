@@ -122,7 +122,7 @@ type Document struct {
 // any notes on what to fix, how many review cycles it's already been
 // through, and when that verdict was recorded. ContentSnapshot/
 // ContentSHA256 are deliberately omitted -- the agent works from the
-// document's current content on disk (see Prepared.CoverLetter/Resume),
+// document's current content on disk (see Prepared.Documents),
 // not a historical snapshot.
 type LatestReview struct {
 	Outcome   store.ReviewOutcome `json:"Outcome"`
@@ -156,13 +156,15 @@ func needsRework(reviews map[documents.Type]store.DocumentReview) bool {
 }
 
 // Prepared is everything an external agent needs to draft and write one
-// posting's cover letter and resume, once Prepare has committed to it.
+// posting's documents, once Prepare has committed to it. Documents has
+// one entry per document type, keyed by its name ("cover_letter",
+// "resume"), so a new type reaches the agent without a new field (RFC
+// 0004).
 type Prepared struct {
 	Posting          PreparedPosting                 `json:"Posting"`
 	CompanyName      string                          `json:"CompanyName"`
 	ApplicationID    int64                           `json:"ApplicationID"`
-	CoverLetter      Document                        `json:"CoverLetter"`
-	Resume           Document                        `json:"Resume"`
+	Documents        map[documents.Type]Document     `json:"Documents"`
 	ApplicationNotes string                          `json:"ApplicationNotes"`
 	LatestReviews    map[documents.Type]LatestReview `json:"LatestReviews"`
 }
@@ -263,7 +265,7 @@ func (st *Stage) candidate(ctx context.Context, p store.InterestedPosting) (Cand
 		if err != nil {
 			return Candidate{}, false, fmt.Errorf("stage: check review currency: %w", err)
 		}
-		if status.CoverLetter.Exists && status.Resume.Exists && !needsRework(reviews) {
+		if allDrafted(status) && !needsRework(reviews) {
 			return Candidate{}, false, nil
 		}
 		application, err := st.store.GetApplication(ctx, p.Posting.ID)
@@ -321,13 +323,35 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 		return nil, fmt.Errorf("stage: check review currency: %w", err)
 	}
 
+	preparedDocuments := make(map[documents.Type]Document, len(documents.Types()))
+	for _, documentType := range documents.Types() {
+		doc, err := status.Doc(documentType)
+		if err != nil {
+			return nil, fmt.Errorf("stage: %w", err)
+		}
+		preparedDocuments[documentType] = Document{Path: doc.Path, Exists: doc.Exists}
+	}
+
 	return &Prepared{
 		Posting:          preparedPosting(posting),
 		CompanyName:      company.Name,
 		ApplicationID:    application.ID,
-		CoverLetter:      Document{Path: status.CoverLetter.Path, Exists: status.CoverLetter.Exists},
-		Resume:           Document{Path: status.Resume.Path, Exists: status.Resume.Exists},
+		Documents:        preparedDocuments,
 		ApplicationNotes: application.Notes,
 		LatestReviews:    latestReviewsForJSON(reviews),
 	}, nil
+}
+
+// allDrafted reports whether every document type in documents' list
+// exists for the application. Until RFC 0002 phase 2 records which
+// documents a posting's form asks for (#168, #169), every type is
+// required (RFC 0004, decided 2026-10-01).
+func allDrafted(status documents.Status) bool {
+	for _, documentType := range documents.Types() {
+		doc, err := status.Doc(documentType)
+		if err != nil || !doc.Exists {
+			return false
+		}
+	}
+	return true
 }

@@ -10,6 +10,7 @@ import (
 	_ "modernc.org/sqlite"
 
 	"github.com/dklassen/swamp/db/migrations"
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
@@ -90,4 +91,14 @@ func (f *fakeFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jo
 
 func newTestSyncer(s *store.Store, postings map[string][]jobboard.Posting) *sync.Syncer {
 	return sync.New(s, map[string]sync.PostingFetcher{"ashby": &fakeFetcher{postings: postings}}, sync.DefaultConfig())
+}
+
+// mustDoc is status.Doc(documentType), failing the test on an error.
+func mustDoc(t *testing.T, status documents.Status, documentType documents.Type) documents.Doc {
+	t.Helper()
+	doc, err := status.Doc(documentType)
+	if err != nil {
+		t.Fatalf("Doc(%s): %v", documentType, err)
+	}
+	return doc
 }

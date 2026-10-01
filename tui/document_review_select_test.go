@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
 )
@@ -109,5 +110,19 @@ func TestDocumentReviewSelectModel_Enter_OnExistingDocument_ReturnsContentReadFr
 	}
 	if got.content != want {
 		t.Fatalf("content = %q, want %q", got.content, want)
+	}
+}
+
+// The picker offers every document type in documents' table (RFC 0004).
+func TestDocumentReviewSelectModel_OffersEveryDocumentType(t *testing.T) {
+	t.Parallel()
+
+	m := newDocumentReviewSelectModel(documents.NewStore(t.TempDir()), 1)
+	var got []documents.Type
+	for _, option := range m.options {
+		got = append(got, option.documentType)
+	}
+	if diff := cmp.Diff(documents.Types(), got); diff != "" {
+		t.Errorf("options mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -331,7 +331,7 @@ func TestLoadActiveApplications_NextSteps(t *testing.T) {
 		if err != nil {
 			t.Fatalf("EnsureDir: %v", err)
 		}
-		for documentType, path := range map[documents.Type]string{documents.CoverLetter: paths.CoverLetter, documents.Resume: paths.Resume} {
+		for documentType, path := range map[documents.Type]string{documents.CoverLetter: mustDoc(t, paths, documents.CoverLetter).Path, documents.Resume: mustDoc(t, paths, documents.Resume).Path} {
 			if err := os.WriteFile(path, []byte("# Draft"), 0o644); err != nil {
 				t.Fatalf("WriteFile: %v", err)
 			}
@@ -385,6 +385,18 @@ func TestActiveApplicationListModel_View_WidestRowFits100Columns(t *testing.T) {
 			if width := ansi.StringWidth(line); width > 100 {
 				t.Errorf("row is %d columns wide, want at most 100: %q", width, line)
 			}
+		}
+	}
+}
+
+// The home screen's review column has an entry for every document type
+// in documents' table (RFC 0004), abbreviated from its label.
+func TestReviewGlyphSummary_HasEveryDocumentType(t *testing.T) {
+	t.Parallel()
+	got := reviewGlyphSummary(nil)
+	for _, documentType := range documents.Types() {
+		if want := documentAbbreviation(documentType) + ":"; !strings.Contains(got, want) {
+			t.Errorf("reviewGlyphSummary(nil) = %q, want an entry %q for the %s", got, want, documentType.Label())
 		}
 	}
 }

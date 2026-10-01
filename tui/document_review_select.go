@@ -35,13 +35,15 @@ type documentReviewSelectModel struct {
 // applicationID, with options seeded from its current document status.
 func newDocumentReviewSelectModel(docs *documents.Store, applicationID int64) documentReviewSelectModel {
 	status := docs.Status(applicationID)
-	return documentReviewSelectModel{
-		applicationID: applicationID,
-		options: []documentReviewOption{
-			{label: "Cover Letter", documentType: documents.CoverLetter, path: status.CoverLetter.Path, exists: status.CoverLetter.Exists},
-			{label: "Resume", documentType: documents.Resume, path: status.Resume.Path, exists: status.Resume.Exists},
-		},
+	var options []documentReviewOption
+	for _, documentType := range documents.Types() {
+		doc, err := status.Doc(documentType)
+		if err != nil {
+			continue
+		}
+		options = append(options, documentReviewOption{label: documentTitle(documentType), documentType: documentType, path: doc.Path, exists: doc.Exists})
 	}
+	return documentReviewSelectModel{applicationID: applicationID, options: options}
 }
 
 // cancelDocumentReviewSelectMsg signals that App should switch back to

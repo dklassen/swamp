@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -231,9 +232,22 @@ func reviewBadge(review store.DocumentReview, hasReview bool) string {
 // #83. A document with no entry in reviews (no review recorded yet)
 // renders as a dim "-".
 func reviewGlyphSummary(reviews map[documents.Type]store.DocumentReview) string {
-	clReview, hasCL := reviews[documents.CoverLetter]
-	resumeReview, hasResume := reviews[documents.Resume]
-	return "CL:" + reviewGlyph(clReview, hasCL) + " R:" + reviewGlyph(resumeReview, hasResume)
+	entries := make([]string, 0, len(documents.Types()))
+	for _, documentType := range documents.Types() {
+		review, ok := reviews[documentType]
+		entries = append(entries, documentAbbreviation(documentType)+":"+reviewGlyph(review, ok))
+	}
+	return strings.Join(entries, " ")
+}
+
+// documentAbbreviation is the initials of documentType's label, for the
+// review column: "CL" for cover letter, "R" for resume.
+func documentAbbreviation(documentType documents.Type) string {
+	var initials []rune
+	for _, word := range strings.Fields(documentType.Label()) {
+		initials = append(initials, unicode.ToUpper([]rune(word)[0]))
+	}
+	return string(initials)
 }
 
 func reviewGlyph(review store.DocumentReview, hasReview bool) string {
@@ -299,10 +313,14 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 		}
 		status := docs.Status(application.ID)
 		b.WriteString("\n")
-		clReview, hasCLReview := latestReviews[documents.CoverLetter]
-		b.WriteString(detailDocumentField("Cover Letter", status.CoverLetter.Exists, status.CoverLetter.Path, clReview, hasCLReview, width))
-		resumeReview, hasResumeReview := latestReviews[documents.Resume]
-		b.WriteString(detailDocumentField("Resume", status.Resume.Exists, status.Resume.Path, resumeReview, hasResumeReview, width))
+		for _, documentType := range documents.Types() {
+			doc, err := status.Doc(documentType)
+			if err != nil {
+				continue
+			}
+			review, hasReview := latestReviews[documentType]
+			b.WriteString(detailDocumentField(documentTitle(documentType), doc.Exists, doc.Path, review, hasReview, width))
+		}
 	} else {
 		b.WriteString(helpStyle.Render("No application started -- press 'a' to start one.") + "\n")
 	}

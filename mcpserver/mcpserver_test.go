@@ -203,10 +203,10 @@ func TestStagePrepare_CreatesApplicationAndReturnsDocumentPaths(t *testing.T) {
 	if diff := cmp.Diff("Acme", got.CompanyName); diff != "" {
 		t.Errorf("CompanyName mismatch (-want +got):\n%s", diff)
 	}
-	if got.CoverLetter.Path == "" {
+	if got.Documents[documents.CoverLetter].Path == "" {
 		t.Error("CoverLetter.Path is empty, want a resolved path")
 	}
-	if got.CoverLetter.Exists {
+	if got.Documents[documents.CoverLetter].Exists {
 		t.Error("CoverLetter.Exists = true, want false (nothing drafted yet)")
 	}
 
@@ -234,8 +234,8 @@ func TestWriteDocument_WritesContentToTheResolvedPath(t *testing.T) {
 		documentType string
 		wantPath     string
 	}{
-		{"cover_letter", prepared.CoverLetter.Path},
-		{"resume", prepared.Resume.Path},
+		{"cover_letter", prepared.Documents[documents.CoverLetter].Path},
+		{"resume", prepared.Documents[documents.Resume].Path},
 	} {
 		t.Run(tc.documentType, func(t *testing.T) {
 			content := "content for " + tc.documentType
@@ -402,8 +402,8 @@ func TestReadDocument_ReturnsWrittenContent(t *testing.T) {
 		documentType string
 		wantPath     string
 	}{
-		{"cover_letter", prepared.CoverLetter.Path},
-		{"resume", prepared.Resume.Path},
+		{"cover_letter", prepared.Documents[documents.CoverLetter].Path},
+		{"resume", prepared.Documents[documents.Resume].Path},
 	} {
 		t.Run(tc.documentType, func(t *testing.T) {
 			content := "draft of " + tc.documentType
@@ -482,7 +482,7 @@ func TestDocumentTools_AdvertiseDocumentTypeAsStringEnum(t *testing.T) {
 	want := map[string]any{
 		"type":        "string",
 		"enum":        []any{"cover_letter", "resume"},
-		"description": "either cover_letter or resume",
+		"description": "the document type: one of the keys of stage_prepare's Documents",
 	}
 	for _, name := range []string{"write_document", "read_document"} {
 		t.Run(name, func(t *testing.T) {
