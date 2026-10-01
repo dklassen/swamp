@@ -1,6 +1,6 @@
 # RFC 0005: One way to say "this document has no review"
 
-- **Status:** Implemented 2026-10-01 (#203: PR #206; #204: this PR; see "What shipped")
+- **Status:** Implemented 2026-10-01 (#203: PR #206; #204: PR #207; see "What shipped")
 - **Date:** 2026-09-28 (revised 2026-10-01: re-checked against the code after RFC 0004 shipped; `HasReview()` dropped; see "Corrections to the earlier draft")
 - **Related:** RFC 0004 (`documents.Current`, shipped); `store/document_review.go`; `cmd/swamp/main.go`; `tui/app.go`
 
@@ -89,7 +89,7 @@ The steps are independent.
 Option 1, both steps. Each has a `decisions.log` entry.
 
 1. **The CLI checks the map** (#203, PR #206). `reviewSummary(review, hasReview)` takes presence from the lookup at the call site, and `CreatedAt.IsZero()` is gone. Its table test includes the two cases the timestamp check got wrong. The convention is stated on `store.DocumentReview`, `LatestDocumentReviews` and `documents.Current`. `swamp export`'s output for all 34 real applications was identical to the previous build.
-2. **One outcome display table** (#204). `outcomeDisplay` in `tui/app.go` holds each outcome's style and glyph. `reviewBadge` and `reviewGlyph` both read it, and the badge text is the outcome's name in capitals.
+2. **One outcome display table** (#204, PR #207). `outcomeDisplay` in `tui/app.go` holds each outcome's style and glyph. `reviewBadge` and `reviewGlyph` both read it, and the badge text is the outcome's name in capitals.
    - New `store.ReviewOutcomes()`, like `documents.Types()`, so `TestReviewGlyph_EveryOutcomeHasItsOwn` can fail when an outcome has no entry. This is the "nothing catches a miss" from Problem 3, now caught.
    - `TestReviewBadgeAndGlyph_Text` pins every case's text, including the unknown-outcome fallback, which nothing covered before.
    - The coloured home screen on a copy of the real database matched the previous build exactly.
