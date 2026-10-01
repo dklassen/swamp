@@ -6353,3 +6353,39 @@ Alternatives considered:
   first thing to reconsider if manual entry turns out to be the
   bottleneck.
 - Scraping Lever's hosted page: fragile, for 3 companies.
+
+## 2026-10-01 -- Soft-deleting a company closes its open postings (#178, RFC 0002 task A3a)
+
+A deleted company is never synced again, so its open postings stayed
+open for good: 6 in the real database, counted in open totals, and
+waiting to show up in any cross-company list that forgot to filter.
+
+Decision (the user's): option (a), close on delete. SoftDeleteCompany
+closes the company's open postings in its own transaction, each with a
+"closed" posting_history row, via closePosting (ClosePosting's body,
+now shared). Migration 00015 does the same for companies already
+deleted.
+
+- Applications are left alone (closeApplicationFrom is nil): they're
+  the user's, not the board's.
+- The history row is "closed", not a new change type: the snapshot
+  records the posting as it was, and no code needs to tell a deletion
+  close from a sync close.
+- Restoring (re-adding the board) leaves the postings closed; the next
+  sync reopens whatever is still listed, through the existing
+  ReopenPosting path.
+- The migration builds its snapshots with json_object, matching
+  store.Posting's JSON keys; times are to the second, where Go would
+  keep published_at's fractional seconds. Nothing reads snapshots
+  programmatically today.
+- Its Down is a no-op: those postings can't be told apart from ones
+  sync closed before the deletion, and their staying open was the bug.
+- Not handled: a sync of the company already in flight when it's
+  deleted could reopen a posting the delete just closed. Deletion is
+  rare and manual, and the next restore-and-sync would put it right
+  anyway.
+
+Alternative rejected: (b), filtering deleted companies out of every
+cross-company query. It keeps the deleted company's postings exactly as
+they were, but every new query (the E3 inbox first) would have to
+remember the filter.
