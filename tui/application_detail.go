@@ -3,6 +3,7 @@ package tui
 import (
 	"os"
 	"strings"
+	"unicode"
 
 	tea "github.com/charmbracelet/bubbletea"
 
@@ -34,18 +35,19 @@ func (m *applicationDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		return nil, backToActiveApplicationsMsg{}
 	case msg.String() == "p":
 		return nil, enterPostingDetailMsg{postingID: m.application.Posting.ID}
-	case msg.String() == "l":
-		return m.openDocument(false), nil
-	case msg.String() == "r":
-		return m.openDocument(true), nil
-	case msg.String() == "L":
-		return nil, m.enterReview(documents.CoverLetter)
-	case msg.String() == "R":
-		return nil, m.enterReview(documents.Resume)
 	case msg.String() == "u":
 		return nil, refreshApplicationDetailMsg{}
 	case msg.String() == "S":
 		return nil, enterApplicationSubmitMsg{application: m.application}
+	}
+	// Each document type's key edits it, and the uppercase key reviews it.
+	for _, documentType := range documents.Types() {
+		switch msg.String() {
+		case string(documentType.Key()):
+			return m.openDocument(documentType), nil
+		case string(unicode.ToUpper(documentType.Key())):
+			return nil, m.enterReview(documentType)
+		}
 	}
 	return nil, nil
 }
@@ -61,19 +63,17 @@ type refreshApplicationDetailMsg struct{}
 
 // openDocument ensures the application's document directory exists (most
 // editors create the file itself on save, but not the directory) and
-// returns a command that opens the cover letter (resume=false) or resume
-// (resume=true) in $EDITOR -- moved here from activeApplicationListModel
+// returns a command that opens documentType's document in $EDITOR -- moved here from activeApplicationListModel
 // (see decisions.log): editing a specific application's documents is
 // application-specific functionality, not something the cross-company
 // list screen should own directly.
-func (m *applicationDetailModel) openDocument(resume bool) tea.Cmd {
-	paths, err := m.documents.EnsureDir(m.application.ID)
-	if err != nil {
+func (m *applicationDetailModel) openDocument(documentType documents.Type) tea.Cmd {
+	if _, err := m.documents.EnsureDir(m.application.ID); err != nil {
 		return func() tea.Msg { return editorClosedMsg{err: err} }
 	}
-	path := paths.CoverLetter
-	if resume {
-		path = paths.Resume
+	path, err := m.documents.Path(m.application.ID, documentType)
+	if err != nil {
+		return func() tea.Msg { return editorClosedMsg{err: err} }
 	}
 	return openInEditor(path)
 }
@@ -114,11 +114,35 @@ func (m *applicationDetailModel) View() string {
 
 	status := m.documents.Status(m.application.ID)
 	b.WriteString("\n" + fieldLabel.Render("Documents") + "\n")
-	clReview, hasCLReview := m.application.LatestReviews[documents.CoverLetter]
-	b.WriteString(documentStatusLine("Cover Letter", status.CoverLetter.Exists, status.CoverLetter.Path, clReview, hasCLReview))
-	resumeReview, hasResumeReview := m.application.LatestReviews[documents.Resume]
-	b.WriteString(documentStatusLine("Resume", status.Resume.Exists, status.Resume.Path, resumeReview, hasResumeReview))
+	for _, documentType := range documents.Types() {
+		doc, err := status.Doc(documentType)
+		if err != nil {
+			continue
+		}
+		review, hasReview := m.application.LatestReviews[documentType]
+		b.WriteString(documentStatusLine(documentTitle(documentType), doc.Exists, doc.Path, review, hasReview))
+	}
 
-	b.WriteString(helpStyle.Render("p: view posting  l: edit cover letter  r: edit resume  L: review cover letter  R: review resume  S: submit  u: refresh  esc/b: back"))
+	help := []string{"p: view posting"}
+	for _, documentType := range documents.Types() {
+		help = append(help, string(documentType.Key())+": edit "+documentType.Label())
+	}
+	for _, documentType := range documents.Types() {
+		help = append(help, string(unicode.ToUpper(documentType.Key()))+": review "+documentType.Label())
+	}
+	help = append(help, "S: submit", "u: refresh", "esc/b: back")
+	b.WriteString(helpStyle.Render(strings.Join(help, "  ")))
 	return b.String()
+}
+
+// documentTitle is documentType's label in title case, for row headings
+// ("Cover Letter").
+func documentTitle(documentType documents.Type) string {
+	words := strings.Fields(documentType.Label())
+	for i, word := range words {
+		r := []rune(word)
+		r[0] = unicode.ToUpper(r[0])
+		words[i] = string(r)
+	}
+	return strings.Join(words, " ")
 }

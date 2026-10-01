@@ -388,3 +388,15 @@ func TestActiveApplicationListModel_View_WidestRowFits100Columns(t *testing.T) {
 		}
 	}
 }
+
+// The home screen's review column has an entry for every document type
+// in documents' table (RFC 0004), abbreviated from its label.
+func TestReviewGlyphSummary_HasEveryDocumentType(t *testing.T) {
+	t.Parallel()
+	got := reviewGlyphSummary(nil)
+	for _, documentType := range documents.Types() {
+		if want := documentAbbreviation(documentType) + ":"; !strings.Contains(got, want) {
+			t.Errorf("reviewGlyphSummary(nil) = %q, want an entry %q for the %s", got, want, documentType.Label())
+		}
+	}
+}
