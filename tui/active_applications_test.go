@@ -1,11 +1,17 @@
 package tui
 
 import (
+	"context"
+	"os"
 	"strings"
 	"testing"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
+	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -54,7 +60,7 @@ func TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication(t *test
 	// apps[1] is left with no LatestReviews -- neither document reviewed yet.
 
 	m := newActiveApplicationListModel()
-	got := m.View(apps, 20)
+	got := m.View(apps, nil, time.Time{}, 20)
 
 	if !containsAll(got, "CL:✗ R:✓", "CL:- R:-") {
 		t.Fatalf("View() = %q, want CL:✗ R:✓ for the reviewed application and CL:- R:- for the unreviewed one", got)
@@ -159,7 +165,7 @@ func TestActiveApplicationListModel_View_AdvertisesExport(t *testing.T) {
 
 	m := newActiveApplicationListModel()
 
-	if got := m.View(testActiveApplications(), 20); !strings.Contains(got, "e: export") {
+	if got := m.View(testActiveApplications(), nil, time.Time{}, 20); !strings.Contains(got, "e: export") {
 		t.Errorf("View() = %q, want it to advertise the export binding", got)
 	}
 }
@@ -172,7 +178,7 @@ func TestActiveApplicationListModel_View_ShowsStatusLabelNotEnumValue(t *testing
 	apps[1].Status = store.ApplicationStatusStarted
 
 	m := newActiveApplicationListModel()
-	got := m.View(apps, 20)
+	got := m.View(apps, nil, time.Time{}, 20)
 
 	if !containsAll(got, "Offer received", "Started") {
 		t.Errorf("View() = %q, want human-readable status labels", got)
@@ -197,12 +203,188 @@ func TestActiveApplicationListModel_View_FlagsClosedPosting(t *testing.T) {
 	apps[1].Posting.ListingStatus = "open"
 
 	m := newActiveApplicationListModel()
-	got := m.View(apps, 20)
+	nextSteps := map[int64]string{}
+	for _, a := range apps {
+		nextSteps[a.ID] = nextStep(a, nil)
+	}
+	got := m.View(apps, nextSteps, time.Time{}, 20)
 
 	if !strings.Contains(got, "closed") {
 		t.Errorf("View() = %q, want the closed posting flagged", got)
 	}
 	if strings.Count(got, "closed") != 1 {
 		t.Errorf("View() marks %d rows closed, want exactly 1 (only the application whose posting came down)", strings.Count(got, "closed"))
+	}
+}
+
+func TestNextStep(t *testing.T) {
+	t.Parallel()
+
+	passed := store.DocumentReview{Outcome: store.ReviewOutcomePassed}
+	flagged := store.DocumentReview{Outcome: store.ReviewOutcomeFlagged}
+	both := func(cl, r documentProgress) map[store.DocumentType]documentProgress {
+		return map[store.DocumentType]documentProgress{store.DocumentTypeCoverLetter: cl, store.DocumentTypeResume: r}
+	}
+	drafted := documentProgress{drafted: true}
+	exported := documentProgress{drafted: true, exported: true}
+
+	tests := []struct {
+		name    string
+		status  store.ApplicationStatus
+		listing string
+		reviews map[store.DocumentType]store.DocumentReview
+		docs    map[store.DocumentType]documentProgress
+		want    string
+	}{
+		{name: "not started: no next step", status: store.ApplicationStatusInterviewing, docs: both(exported, exported), want: ""},
+		{name: "posting closed", status: store.ApplicationStatusStarted, listing: "closed", docs: both(drafted, drafted), want: "withdraw?"},
+		{name: "later stage, posting closed", status: store.ApplicationStatusInterviewing, listing: "closed", docs: both(exported, exported), want: "(closed)"},
+		{name: "nothing drafted", status: store.ApplicationStatusStarted, docs: both(documentProgress{}, documentProgress{}), want: "draft"},
+		{name: "one document missing", status: store.ApplicationStatusStarted, docs: both(drafted, documentProgress{}), want: "draft"},
+		{name: "drafted, not reviewed", status: store.ApplicationStatusStarted, docs: both(drafted, drafted), want: "review"},
+		{name: "one passed, one not reviewed", status: store.ApplicationStatusStarted,
+			reviews: map[store.DocumentType]store.DocumentReview{store.DocumentTypeCoverLetter: passed}, docs: both(drafted, drafted), want: "review"},
+		{name: "flagged beats unreviewed", status: store.ApplicationStatusStarted,
+			reviews: map[store.DocumentType]store.DocumentReview{store.DocumentTypeResume: flagged}, docs: both(drafted, drafted), want: "revise"},
+		{name: "passed, not exported", status: store.ApplicationStatusStarted,
+			reviews: map[store.DocumentType]store.DocumentReview{store.DocumentTypeCoverLetter: passed, store.DocumentTypeResume: passed}, docs: both(exported, drafted), want: "export"},
+		{name: "passed and exported", status: store.ApplicationStatusStarted,
+			reviews: map[store.DocumentType]store.DocumentReview{store.DocumentTypeCoverLetter: passed, store.DocumentTypeResume: passed}, docs: both(exported, exported), want: "submit"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			a := store.ApplicationView{
+				Application:   store.Application{Status: tt.status},
+				Posting:       store.Posting{ListingStatus: tt.listing},
+				LatestReviews: tt.reviews,
+			}
+			if got := nextStep(a, tt.docs); got != tt.want {
+				t.Errorf("nextStep() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestActiveApplicationListModel_View_ShowsAgeAndNextStep(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	apps := testActiveApplications()
+	apps[0].StatusSince = now.Add(-21*24*time.Hour - time.Hour)
+	apps[1].StatusSince = now.Add(-2 * time.Hour)
+	nextSteps := map[int64]string{apps[0].ID: "draft"}
+
+	m := newActiveApplicationListModel()
+	got := m.View(apps, nextSteps, now, 20)
+
+	for _, want := range []string{"Age", "Next", "21d", "0d", "draft"} {
+		if !strings.Contains(got, want) {
+			t.Errorf("View() = %q, want it to contain %q", got, want)
+		}
+	}
+}
+
+// Started applications come first, longest at their status first, so the
+// stalest work is at the top; the rest keep the store's order
+// (most-recently-changed first) below them (#164).
+func TestOrderForHome(t *testing.T) {
+	t.Parallel()
+
+	app := func(id int64, status store.ApplicationStatus, since time.Time) store.ApplicationView {
+		return store.ApplicationView{Application: store.Application{ID: id, Status: status}, StatusSince: since}
+	}
+	day := func(d int) time.Time { return time.Date(2026, 9, d, 0, 0, 0, 0, time.UTC) }
+	apps := []store.ApplicationView{
+		app(1, store.ApplicationStatusInterviewing, day(28)),
+		app(2, store.ApplicationStatusStarted, day(20)),
+		app(3, store.ApplicationStatusSubmitted, day(25)),
+		app(4, store.ApplicationStatusStarted, day(1)),
+	}
+
+	orderForHome(apps)
+
+	var got []int64
+	for _, a := range apps {
+		got = append(got, a.ID)
+	}
+	if diff := cmp.Diff([]int64{4, 2, 1, 3}, got); diff != "" {
+		t.Errorf("order mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// loadActiveApplications works out each started application's next step
+// from what's on disk and in the store: drafts, current reviews and
+// current exports (#164, #188).
+func TestLoadActiveApplications_NextSteps(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newTestStore(t)
+	docs := documents.NewStore(t.TempDir())
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+
+	undrafted := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
+	ready := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-2", "Designer").ID)
+	stale := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-3", "Manager").ID)
+	for _, application := range []store.Application{ready, stale} {
+		paths, err := docs.EnsureDir(application.ID)
+		if err != nil {
+			t.Fatalf("EnsureDir: %v", err)
+		}
+		for documentType, path := range map[store.DocumentType]string{store.DocumentTypeCoverLetter: paths.CoverLetter, store.DocumentTypeResume: paths.Resume} {
+			if err := os.WriteFile(path, []byte("# Draft"), 0o644); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+			if _, err := s.CreateDocumentReview(ctx, application.ID, documentType, "# Draft", store.ReviewOutcomePassed, ""); err != nil {
+				t.Fatalf("CreateDocumentReview: %v", err)
+			}
+			exported := "# Draft"
+			if application.ID == stale.ID && documentType == store.DocumentTypeResume {
+				exported = "# An earlier draft"
+			}
+			if err := s.RecordDocumentExport(ctx, application.ID, documentType, exported, "/out/x.pdf"); err != nil {
+				t.Fatalf("RecordDocumentExport: %v", err)
+			}
+		}
+	}
+
+	msg, ok := loadActiveApplications(s, docs)().(activeApplicationsLoadedMsg)
+	if !ok || msg.err != nil {
+		t.Fatalf("loadActiveApplications() = %+v, want a loaded message without error", msg)
+	}
+	want := map[int64]string{undrafted.ID: "draft", ready.ID: "submit", stale.ID: "export"}
+	if diff := cmp.Diff(want, msg.nextSteps); diff != "" {
+		t.Errorf("next steps mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// The widest possible row must fit the 100 columns the screen-fit tests
+// use: wider lines are cut off on the right by the terminal, losing the
+// Status, Posting and Review columns without any sign of it.
+func TestActiveApplicationListModel_View_WidestRowFits100Columns(t *testing.T) {
+	t.Parallel()
+
+	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
+	apps := []store.ApplicationView{{
+		Application: store.Application{ID: 1, Status: store.ApplicationStatusOfferReceived},
+		Posting: store.Posting{ListingStatus: "closed", IngestedFields: store.IngestedFields{
+			Title: strings.Repeat("Principal Engineer ", 5)}},
+		CompanyName: strings.Repeat("Longcompanyname ", 3),
+		StatusSince: now.Add(-400 * 24 * time.Hour),
+		LatestReviews: map[store.DocumentType]store.DocumentReview{
+			store.DocumentTypeCoverLetter: {Outcome: store.ReviewOutcomeFlagged},
+			store.DocumentTypeResume:      {Outcome: store.ReviewOutcomePassed},
+		},
+	}}
+
+	m := newActiveApplicationListModel()
+	view := ansi.Strip(m.View(apps, map[int64]string{1: "withdraw?"}, now, 20))
+
+	for _, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "│") {
+			if width := ansi.StringWidth(line); width > 100 {
+				t.Errorf("row is %d columns wide, want at most 100: %q", width, line)
+			}
+		}
 	}
 }

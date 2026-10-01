@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"testing"
+	"time"
 )
 
 func TestListActiveApplications_ExcludesRejectedAndOfferDeclined(t *testing.T) {
@@ -192,5 +193,55 @@ func TestListActiveApplications_IncludesLatestDocumentReviews(t *testing.T) {
 	}
 	if _, ok := got[0].LatestReviews[DocumentTypeResume]; ok {
 		t.Fatalf("LatestReviews[%q] present, want absent (no resume review recorded)", DocumentTypeResume)
+	}
+}
+
+// StatusSince is when each application entered its current status (#164),
+// from status history (#162), so the home screen can show how long it's
+// been stuck there. An application with no history falls back to
+// CreatedAt.
+func TestListActiveApplications_StatusSince(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+
+	withHistory := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	application := mustCreateApplication(t, s, withHistory.ID)
+	if _, err := s.UpdateApplicationStatus(ctx, withHistory.ID, ApplicationStatusSubmitted); err != nil {
+		t.Fatalf("UpdateApplicationStatus: %v", err)
+	}
+	startedAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)
+	submittedAt := time.Date(2026, 9, 10, 12, 0, 0, 0, time.UTC)
+	if _, err := s.sqlDB.ExecContext(ctx,
+		`UPDATE application_status_history SET changed_at = ? WHERE application_id = ? AND status = 'application_submitted'`,
+		submittedAt, application.ID); err != nil {
+		t.Fatalf("set changed_at: %v", err)
+	}
+	if _, err := s.sqlDB.ExecContext(ctx,
+		`UPDATE application_status_history SET changed_at = ? WHERE application_id = ? AND status = 'application_started'`,
+		startedAt, application.ID); err != nil {
+		t.Fatalf("set changed_at: %v", err)
+	}
+
+	noHistory := mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
+	bare := mustCreateApplication(t, s, noHistory.ID)
+	if _, err := s.sqlDB.ExecContext(ctx, `DELETE FROM application_status_history WHERE application_id = ?`, bare.ID); err != nil {
+		t.Fatalf("delete history: %v", err)
+	}
+
+	views, err := s.ListActiveApplications(ctx)
+	if err != nil {
+		t.Fatalf("ListActiveApplications: %v", err)
+	}
+	got := map[int64]time.Time{}
+	for _, v := range views {
+		got[v.ID] = v.StatusSince
+	}
+	if !got[application.ID].Equal(submittedAt) {
+		t.Errorf("StatusSince with history = %v, want %v (when it entered application_submitted)", got[application.ID], submittedAt)
+	}
+	if !got[bare.ID].Equal(bare.CreatedAt) {
+		t.Errorf("StatusSince without history = %v, want CreatedAt %v", got[bare.ID], bare.CreatedAt)
 	}
 }

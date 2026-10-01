@@ -69,6 +69,9 @@ type Querier interface {
 	// creating) where callers need to know about a soft-deleted tag too, not
 	// just active ones.
 	GetTagByName(ctx context.Context, name string) (Tag, error)
+	// When the application entered its current status: every status write
+	// records a row (#162), so the newest is the current status's.
+	LatestApplicationStatusChange(ctx context.Context, applicationID int64) (ApplicationStatusHistory, error)
 	// id breaks ties between exports in the same second (CURRENT_TIMESTAMP
 	// has one-second resolution).
 	LatestDocumentExport(ctx context.Context, arg LatestDocumentExportParams) (DocumentExport, error)

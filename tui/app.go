@@ -102,10 +102,13 @@ type App struct {
 	// activeApplications backs the home screen: every application not at
 	// a terminal dead-end status, across every company (see
 	// store.ListActiveApplications, decisions.log #43).
-	activeApplications    []store.ApplicationView
-	activeApplicationList activeApplicationListModel
-	applicationDetail     applicationDetailModel
-	applicationExport     applicationExportModel
+	activeApplications []store.ApplicationView
+	// activeApplicationNextSteps is each started application's next step
+	// (see nextStep), by application ID, loaded with activeApplications.
+	activeApplicationNextSteps map[int64]string
+	activeApplicationList      activeApplicationListModel
+	applicationDetail          applicationDetailModel
+	applicationExport          applicationExportModel
 	// exportDir is the destination the export screen prefills: the last
 	// directory successfully exported to this session, falling back to
 	// defaultExportDir. Ephemeral and in-memory only, like hideArchived
@@ -414,6 +417,7 @@ func (a *App) Init() tea.Cmd {
 
 type activeApplicationsLoadedMsg struct {
 	applications []store.ApplicationView
+	nextSteps    map[int64]string
 	err          error
 }
 
@@ -432,14 +436,23 @@ func loadActiveApplications(s *store.Store, docs *documents.Store) tea.Cmd {
 		if err != nil {
 			return activeApplicationsLoadedMsg{err: err}
 		}
+		nextSteps := make(map[int64]string)
 		for i, app := range apps {
 			reviews, err := currentDocumentReviews(docs, app.ID, app.LatestReviews)
 			if err != nil {
 				return activeApplicationsLoadedMsg{err: err}
 			}
 			apps[i].LatestReviews = reviews
+			progress, err := documentProgressOf(s, docs, app.ID)
+			if err != nil {
+				return activeApplicationsLoadedMsg{err: err}
+			}
+			if step := nextStep(apps[i], progress); step != "" {
+				nextSteps[app.ID] = step
+			}
 		}
-		return activeApplicationsLoadedMsg{applications: apps}
+		orderForHome(apps)
+		return activeApplicationsLoadedMsg{applications: apps, nextSteps: nextSteps}
 	}
 }
 
@@ -920,6 +933,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case activeApplicationsLoadedMsg:
 		a.err = msg.err
 		a.activeApplications = msg.applications
+		a.activeApplicationNextSteps = msg.nextSteps
 		a.activeApplicationList.resetCursorIfOutOfBounds(len(a.activeApplications))
 	case companyCreatedMsg:
 		a.err = msg.err
@@ -1427,7 +1441,7 @@ func (a *App) View() string {
 
 	switch a.screen {
 	case screenActiveApplications:
-		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.screenRows()))
+		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.activeApplicationNextSteps, time.Now(), a.screenRows()))
 	case screenApplicationDetail:
 		b.WriteString(a.applicationDetail.View())
 	case screenCompanyList:

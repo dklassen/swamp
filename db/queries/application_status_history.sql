@@ -10,3 +10,11 @@ VALUES (?, ?);
 SELECT * FROM application_status_history
 WHERE application_id = ?
 ORDER BY changed_at, id;
+
+-- name: LatestApplicationStatusChange :one
+-- When the application entered its current status: every status write
+-- records a row (#162), so the newest is the current status's.
+SELECT * FROM application_status_history
+WHERE application_id = ?
+ORDER BY changed_at DESC, id DESC
+LIMIT 1;

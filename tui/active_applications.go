@@ -1,12 +1,19 @@
 package tui
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"slices"
+	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -21,6 +28,13 @@ import (
 // enterApplicationDetailMsg below); this screen keeps only
 // status-setting as a quick shortcut for fast triage across many
 // applications (see decisions.log, the #86 follow-up).
+// Home screen column widths, narrower than the posting list's so the
+// widest row fits 100 columns with the Age and Next columns (#164).
+const (
+	homeCompanyColWidth = 16
+	homeTitleColWidth   = 30
+)
+
 type activeApplicationListModel struct {
 	cursor int
 }
@@ -78,7 +92,9 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 }
 
 // View renders the list in height terminal rows (App.screenRows).
-func (m *activeApplicationListModel) View(apps []store.ApplicationView, height int) string {
+// nextSteps holds each started application's next step by application ID
+// (see nextStep), and now is what each row's Age counts up to.
+func (m *activeApplicationListModel) View(apps []store.ApplicationView, nextSteps map[int64]string, now time.Time, height int) string {
 	var b strings.Builder
 	title := titleStyle.Render("Active Applications")
 	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  s: status  e: export PDFs  c: companies  q: quit")
@@ -89,7 +105,7 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, height i
 		start, end := visibleWindow(m.cursor, len(apps), tableRows(height, title, help))
 		cursorRow := m.cursor - start
 		t := table.New().
-			Headers("Company", "Title", "Status", "Posting", "Review").
+			Headers("Company", "Title", "Age", "Next", "Status", "Review").
 			StyleFunc(func(row, _ int) lipgloss.Style {
 				style := lipgloss.NewStyle().Padding(0, 1)
 				if row == cursorRow {
@@ -100,10 +116,11 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, height i
 		for i := start; i < end; i++ {
 			a := apps[i]
 			t.Row(
-				truncateCol(a.CompanyName, departmentColWidth),
-				truncateCol(a.Posting.Title, titleColWidth),
+				truncateCol(a.CompanyName, homeCompanyColWidth),
+				truncateCol(a.Posting.Title, homeTitleColWidth),
+				statusAge(a.StatusSince, now),
+				nextSteps[a.ID],
 				applicationStatusLabel(a.Status),
-				postingListingFlag(a.Posting.ListingStatus),
 				reviewGlyphSummary(a.LatestReviews),
 			)
 		}
@@ -123,19 +140,120 @@ func (m *activeApplicationListModel) resetCursorIfOutOfBounds(n int) {
 	}
 }
 
-// postingListingFlag renders a posting's listing status for the
-// active-applications table: "closed" when the listing has come down,
-// empty otherwise. Only the exceptional case is shown, since an open
-// posting is the norm and labelling every row "open" would be noise in
-// a column that exists to catch the eye (see issue #105).
+// documentProgress is one document's state on disk, for nextStep: whether
+// it's drafted, and whether its current content has been exported as a
+// PDF (store.DocumentExport.IsCurrent, #188).
+type documentProgress struct {
+	drafted  bool
+	exported bool
+}
+
+// nextStep is what a started application is waiting on, for the home
+// screen's Next column (#164). Only started applications have one, except
+// that a later-stage application whose posting has closed shows
+// "(closed)": sync deliberately leaves those alone (#105), and this is
+// the only place the screen says the posting is gone. For a started
+// application, the first rule that applies wins:
 //
-// This only ever appears next to an application the syncer deliberately
-// left alone -- one at interviewing or beyond. An early-stage
-// application on a closed posting is moved to posting_closed, which is
-// terminal, so it isn't in this list at all.
-func postingListingFlag(listingStatus string) string {
-	if listingStatus == "closed" {
-		return "closed"
+//   - withdraw? -- the posting has closed;
+//   - draft     -- a document isn't drafted yet;
+//   - revise    -- a current review is flagged;
+//   - review    -- a document has no current review;
+//   - export    -- every document passed, but one isn't exported as it
+//     stands now;
+//   - submit    -- everything passed and is exported.
+//
+// a.LatestReviews must already be filtered to current reviews (see
+// currentDocumentReviews), as loadActiveApplications does.
+func nextStep(a store.ApplicationView, docs map[store.DocumentType]documentProgress) string {
+	closed := a.Posting.ListingStatus == "closed"
+	if a.Status != store.ApplicationStatusStarted {
+		if closed {
+			return "(closed)"
+		}
+		return ""
 	}
-	return ""
+	if closed {
+		return "withdraw?"
+	}
+	documentTypes := []store.DocumentType{store.DocumentTypeCoverLetter, store.DocumentTypeResume}
+	for _, documentType := range documentTypes {
+		if !docs[documentType].drafted {
+			return "draft"
+		}
+	}
+	for _, documentType := range documentTypes {
+		if review, ok := a.LatestReviews[documentType]; ok && review.Outcome == store.ReviewOutcomeFlagged {
+			return "revise"
+		}
+	}
+	for _, documentType := range documentTypes {
+		if _, ok := a.LatestReviews[documentType]; !ok {
+			return "review"
+		}
+	}
+	for _, documentType := range documentTypes {
+		if !docs[documentType].exported {
+			return "export"
+		}
+	}
+	return "submit"
+}
+
+// statusAge renders how long an application has been at its current
+// status as whole days ("21d"), or "" when either time is unknown.
+func statusAge(since, now time.Time) string {
+	if since.IsZero() || now.IsZero() {
+		return ""
+	}
+	return strconv.Itoa(int(now.Sub(since).Hours()/24)) + "d"
+}
+
+// orderForHome sorts apps in place for the home screen (#164): started
+// applications first, longest at their status first, then everything
+// else in the order it came in (the store's most-recently-changed
+// first).
+func orderForHome(apps []store.ApplicationView) {
+	slices.SortStableFunc(apps, func(a, b store.ApplicationView) int {
+		aStarted, bStarted := a.Status == store.ApplicationStatusStarted, b.Status == store.ApplicationStatusStarted
+		switch {
+		case aStarted && bStarted:
+			return a.StatusSince.Compare(b.StatusSince)
+		case aStarted:
+			return -1
+		case bStarted:
+			return 1
+		}
+		return 0
+	})
+}
+
+// documentProgressOf reads applicationID's documents from disk and
+// checks each against its latest export (#188), for nextStep. Like
+// currentDocumentReviews, a read failure is an error rather than "not
+// drafted", so a transient I/O problem can't send a finished draft back
+// to "draft".
+func documentProgressOf(s *store.Store, docs *documents.Store, applicationID int64) (map[store.DocumentType]documentProgress, error) {
+	exports, err := s.LatestDocumentExports(context.Background(), applicationID)
+	if err != nil {
+		return nil, err
+	}
+	status := docs.Status(applicationID)
+	progress := make(map[store.DocumentType]documentProgress, 2)
+	for documentType, doc := range map[store.DocumentType]documents.Doc{
+		store.DocumentTypeCoverLetter: status.CoverLetter,
+		store.DocumentTypeResume:      status.Resume,
+	} {
+		if !doc.Exists {
+			progress[documentType] = documentProgress{}
+			continue
+		}
+		content, err := os.ReadFile(doc.Path)
+		if err != nil {
+			return nil, fmt.Errorf("read %s: %w", doc.Path, err)
+		}
+		export, ok := exports[documentType]
+		progress[documentType] = documentProgress{drafted: true, exported: ok && export.IsCurrent(string(content))}
+	}
+	return progress, nil
 }
