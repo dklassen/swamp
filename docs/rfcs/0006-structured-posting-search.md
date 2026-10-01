@@ -2,7 +2,7 @@
 
 - **Status:** Draft, for discussion
 - **Date:** 2026-10-01
-- **Related:** issue #215 and its PR #216 (a first `search_postings`, which this RFC replaces before it merges); RFC 0002 (the application workflow the agent drives); issue #171 (normalising workplace type)
+- **Related:** issue #215 and its closed PR #216 (a first `search_postings` with free-text matching, which this RFC replaces); RFC 0002 (the application workflow the agent drives); issue #171 (normalising workplace type)
 
 ## Summary
 
@@ -13,7 +13,7 @@ PR #216 answered that with free-text search. Reviewing it showed that the proble
 This RFC proposes:
 - a `list_companies` tool, so the agent can learn the company vocabulary;
 - `search_postings` with structured filters only;
-- **keyset pagination** on posting ID, so paging stays stable while data changes underneath.
+- **keyset pagination** with **opaque cursors**, over a small fixed set of sort orders (by posting ID either way, or newest on the board first), so paging stays stable while data changes underneath.
 
 Free-text and ranked search wait until there's a need these filters can't meet.
 
@@ -78,6 +78,31 @@ So a posting added mid-paging lands on a later page, and no row's position depen
 
 **Why posting ID and not company then title?** Titles change when a board edits a posting (#148 records it as `content_updated`), and companies can be renamed. A keyset on mutable columns can skip or repeat rows when one changes mid-paging. Creation order isn't a useful order to show the user, but the agent filters and reads titles anyway; it can present matches in whatever order suits.
 
+### Sort orders
+
+Keyset paging works for any order whose key ends with a unique column that never changes, here the posting ID. Its stability is only as good as the leading columns' immutability. So `search_postings` offers a small fixed set of orders rather than arbitrary sort columns:
+
+| `Sort` | Key | Page condition | Stability |
+|---|---|---|---|
+| `id_asc` (default) | posting ID | `id > :id` | Full. Postings added mid-paging land on later pages. |
+| `id_desc`: newest to Swamp first | posting ID | `id < :id` | Full. Postings added mid-paging sort ahead of page 1, so they aren't seen until the agent starts over. |
+| `published_desc`: newest on the board first | `published_at`, then ID | `(published_at, id) < (:published_at, :id)` | Unless a board changes a posting's publish date mid-paging. That one posting can then cross the cursor, and be missed or seen twice. |
+
+ID order isn't a stand-in for publish order. Among open postings, 732 neighbours by ID are out of publish order, because adding a company ingests all its postings at once, old and new alike.
+
+SQLite compares row values like `(published_at, id) < (?, ?)` directly. `published_at` allows NULL, though every open posting has one today. Postings without one sort last, by ID: the page condition handles NULL explicitly rather than relying on SQLite's NULL ordering.
+
+### Opaque cursors
+
+The agent never sees or builds a sort key. Each page returns `NextCursor`, a token it passes back unchanged as `Cursor`. This is the common practice (page tokens in Google's APIs, cursors in GitHub's GraphQL API). Here it buys three things:
+- **The key can change shape without breaking callers.** `id_asc` needs one value; `published_desc` needs two.
+- **A cursor can't be used with a different query.** The token records its sort order and a hash of the filters. A cursor passed with a different sort or different filters is a tool error ("this cursor belongs to a different search; start again without one"), not a silently wrong page.
+- **The agent can't construct or adjust one,** which removes guessed-cursor and off-by-one mistakes.
+
+The token is versioned, base64url-encoded JSON, e.g. `{"v":1,"sort":"published_desc","filters":"<hash>","id":812,"published_at":"2026-09-30T14:00:00Z"}`.
+
+Opaque isn't secret: anyone can decode it, so decoding treats it as untrusted input. An unknown version, a bad value or a mismatched sort or filters is an error. There's nothing sensitive in it, so it isn't signed. And keyset cursors don't go stale on their own: there's no server-side snapshot to expire, so a cursor stays valid until the result changes in the ways described above.
+
 ## Proposal
 
 ### `list_companies` (new)
@@ -100,23 +125,26 @@ It's read-only and takes no input. It returns every company the user hasn't dele
 | `Interested` | marked interested, or not | either |
 | `ListingStatus` | `open`, `closed` or `any` | `open` |
 | `IncludeArchived` | include archived postings | false |
-| `After` | the `NextAfter` of the previous page | from the start |
+| `Sort` | `id_asc`, `id_desc` or `published_desc` (see Sort orders) | `id_asc` |
+| `Cursor` | the `NextCursor` of the previous page, passed back unchanged with the same `Sort` and filters | from the start |
 | `Limit` | rows per page, at most 100 | 50 |
 
-Output, ordered by posting ID:
+Output, in the requested order:
 
 ```json
 {
   "Postings": [{"Posting": {"ID": 812, "Title": "...", "Department": "...", "Location": "...",
-                            "WorkplaceType": "...", "ApplicationURL": "..."},
+                            "WorkplaceType": "...", "ApplicationURL": "...",
+                            "PublishedAt": "2026-09-30T14:00:00Z"},
                 "CompanyName": "Acme", "ListingStatus": "open", "Interested": true, "Archived": false,
                 "ApplicationID": 34, "ApplicationStatus": "application_started", "ApplicationNotes": ""}],
-  "NextAfter": 812,
+  "NextCursor": "eyJ2IjoxLCJzb3J0IjoiaWRfYXNjIiwiaWQiOjgxMn0",
   "Total": 57
 }
 ```
 
-- `NextAfter` is `null` on the last page.
+- `NextCursor` is `null` on the last page.
+- `PublishedAt` is added to the posting summary so newest-first results show why they're in that order.
 - `Total` is the number of matches when the page was read: a hint for whether to narrow the search, not a promise about later pages.
 - There's no free-text input. The agent reads full titles (never truncated) and picks out the right one with the user.
 
@@ -140,7 +168,7 @@ The pattern is a filter on a controlled value: an optional parameter and one `AN
 When the user names a posting or application:
 1. Call `list_companies` and match the company name they gave.
 2. Call `search_postings` with that `CompanyID`, plus `HasApplication: true` if they said "my application".
-3. Page with `After` until `NextAfter` is null, or narrow with `Interested` or statuses if `Total` is large.
+3. Page by passing `NextCursor` back as `Cursor` until it's null, or narrow with `Interested` or statuses if `Total` is large. For "the newest ones", use `Sort: "published_desc"` and read the first page.
 4. Match the user's words against the full titles:
    - one match: confirm it with the user;
    - several: show them with full titles and ask;
@@ -167,10 +195,10 @@ When the user names a posting or application:
 ## Work breakdown
 
 1. **`list_companies`**: store query (or reuse `ListActiveCompanies` with `CountOpenPostingsByCompany`), MCP tool, tests. S.
-2. **`search_postings`**: replace PR #216's in-memory search with the static query, `After`/`NextAfter` and `Total`; tool schema advertises the status enum. Table tests for each filter, plus tests that pages concatenate to the full result and that a posting closed mid-paging doesn't shift later pages. S–M.
+2. **`search_postings`**: replace PR #216's in-memory search with the static query, the three sort orders, opaque cursors (encode, decode as untrusted, reject a mismatched sort or filters) and `Total`; tool schema advertises the status enum. Table tests for each filter, plus tests, for each sort order, that pages concatenate to the full result and that a posting closed mid-paging doesn't shift later pages; and cursor tests for tampering, a wrong version, and reuse with other filters. S–M.
 3. **Skill**: the flow above. S.
 
-PR #216 is reworked to steps 2 and 3, or closed and redone; #215's description is updated to point here.
+PR #216 was closed unmerged (2026-10-01, with a comment saying why). #215 is reworked to steps 2 and 3, and its description updated to point here.
 
 ## Open questions
 
@@ -178,3 +206,4 @@ PR #216 is reworked to steps 2 and 3, or closed and redone; #215's description i
 2. **Include `Total`?** It's one window function, and the agent uses it to decide whether to narrow. But it can drift during paging, which needs saying in the tool description.
 3. **Several companies at once?** One `CompanyID` covers every case so far. A list would use the same `json_each` approach as statuses.
 4. **When does free text come in?** Probably when the user asks to *discover* postings by content. Then option 3 is the starting point, with descriptions indexed.
+5. **Most recently changed application first?** It's a natural order for "what was I working on", but its key (the latest status change, or `updated_at`) changes whenever the user acts on an application. That's far more often than `published_at` changes, so rows would cross the cursor routinely while paging. Not proposed. Since applications fit on one page per company, the agent can sort those itself.

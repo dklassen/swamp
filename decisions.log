@@ -6958,3 +6958,10 @@ at one company).
   company/title/department/location, +23 MB with descriptions, ~1 ms
   per query; sqlc can only express a single-column MATCH, so it would be
   a hand-written query). Revisit when the need is discovery by content.
+- Follow-up (same day): newest-first and opaque cursors. Sort is one of
+  id_asc (default), id_desc (newest to Swamp) or published_desc (newest
+  on the board, keyed on published_at then ID; ID order isn't publish
+  order, 732 neighbours out of order). Cursors are opaque, versioned
+  tokens that carry the sort and a hash of the filters, decoded as
+  untrusted input and rejected with another sort or other filters; not
+  signed, since nothing in them is sensitive.
