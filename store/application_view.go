@@ -2,6 +2,10 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"time"
 
 	"github.com/dklassen/swamp/store/db"
 )
@@ -20,6 +24,9 @@ type ApplicationView struct {
 	Posting       Posting
 	CompanyName   string
 	LatestReviews map[DocumentType]DocumentReview
+	// StatusSince is when the application entered its current status, from
+	// its newest status history row (#162), or CreatedAt if it has none.
+	StatusSince time.Time
 }
 
 // applicationViewFromRow converts a row built by sqlc.embed(applications)/
@@ -66,7 +73,25 @@ func (s *Store) ListActiveApplications(ctx context.Context) ([]ApplicationView, 
 		if err != nil {
 			return nil, err
 		}
+		v.StatusSince, err = s.statusSince(ctx, v.Application)
+		if err != nil {
+			return nil, err
+		}
 		views[i] = v
 	}
 	return views, nil
+}
+
+// statusSince is when application entered its current status: its
+// newest status history row, or CreatedAt for an application with no
+// history (which only a write outside store could leave).
+func (s *Store) statusSince(ctx context.Context, application Application) (time.Time, error) {
+	row, err := s.queries.LatestApplicationStatusChange(ctx, application.ID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return application.CreatedAt, nil
+	}
+	if err != nil {
+		return time.Time{}, fmt.Errorf("store: latest status change for application %d: %w", application.ID, err)
+	}
+	return row.ChangedAt, nil
 }

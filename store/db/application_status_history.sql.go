@@ -26,6 +26,27 @@ func (q *Queries) CreateApplicationStatusHistory(ctx context.Context, arg Create
 	return err
 }
 
+const latestApplicationStatusChange = `-- name: LatestApplicationStatusChange :one
+SELECT id, application_id, status, changed_at FROM application_status_history
+WHERE application_id = ?
+ORDER BY changed_at DESC, id DESC
+LIMIT 1
+`
+
+// When the application entered its current status: every status write
+// records a row (#162), so the newest is the current status's.
+func (q *Queries) LatestApplicationStatusChange(ctx context.Context, applicationID int64) (ApplicationStatusHistory, error) {
+	row := q.db.QueryRowContext(ctx, latestApplicationStatusChange, applicationID)
+	var i ApplicationStatusHistory
+	err := row.Scan(
+		&i.ID,
+		&i.ApplicationID,
+		&i.Status,
+		&i.ChangedAt,
+	)
+	return i, err
+}
+
 const listApplicationStatusHistory = `-- name: ListApplicationStatusHistory :many
 SELECT id, application_id, status, changed_at FROM application_status_history
 WHERE application_id = ?
