@@ -277,7 +277,7 @@ Found while filing, outside the waves (label `rfc0002-related`): #174 (open ques
 2. **Phase 1 scope:** which projects do the phase 0 notes actually call for?
 3. **Where standard answers live:** a section in `PROFILE_REFERENCE.md` (free text, the agent adapts it) or a structured file (exact reuse, and the TUI could show it next to each question)?
 4. **Ashby/Lever questions:** answered by the spike (#167, 2026-09-30). Neither supported public API exposes them. Unofficial sources exist but aren't used, so manual entry (#184) is the path for both.
-5. **Time pressure:** how long do postings stay open? A rough estimate from `published_at` to `last_seen_at` is about a month. Some applications' `last_seen_at` falls _before_ they were started, though, so what `last_seen_at` records needs checking before relying on it.
+5. **Time pressure:** how long do postings stay open? A rough estimate from `published_at` to `last_seen_at` is about a month. Some applications' `last_seen_at` falls _before_ they were started, though, so what `last_seen_at` records needs checking before relying on it. *Checked by #176 (2026-10-01): it only changed when a posting's content did. Every sync now sets it for each stored posting the board lists, so from that date it means "last listed". Values from before are a lower bound, so measure from postings first seen after it.*
 
 ## Out of scope
 

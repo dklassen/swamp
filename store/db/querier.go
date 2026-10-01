@@ -156,6 +156,11 @@ type Querier interface {
 	MarkCompanyFetched(ctx context.Context, id int64) error
 	MarkPostingClosed(ctx context.Context, id int64) error
 	MarkPostingReopened(ctx context.Context, id int64) error
+	// Records that a sync saw these postings on their board (#176). Not a
+	// content change: updated_at and posting_history are left alone. The
+	// slice is the only parameter, so sqlc.slice's ordering bug with other
+	// bound parameters (see ListActiveApplications) doesn't apply.
+	MarkPostingsSeen(ctx context.Context, ids []int64) error
 	// Frees the lease only if token still holds it, so a sync whose lease
 	// expired and was taken over can't release the new holder's.
 	ReleaseCompanySyncLease(ctx context.Context, arg ReleaseCompanySyncLeaseParams) error

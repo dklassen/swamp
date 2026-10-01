@@ -487,6 +487,31 @@ func (q *Queries) MarkPostingReopened(ctx context.Context, id int64) error {
 	return err
 }
 
+const markPostingsSeen = `-- name: MarkPostingsSeen :exec
+UPDATE postings
+SET last_seen_at = CURRENT_TIMESTAMP
+WHERE id IN (/*SLICE:ids*/?)
+`
+
+// Records that a sync saw these postings on their board (#176). Not a
+// content change: updated_at and posting_history are left alone. The
+// slice is the only parameter, so sqlc.slice's ordering bug with other
+// bound parameters (see ListActiveApplications) doesn't apply.
+func (q *Queries) MarkPostingsSeen(ctx context.Context, ids []int64) error {
+	query := markPostingsSeen
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	_, err := q.db.ExecContext(ctx, query, queryParams...)
+	return err
+}
+
 const reopenPostingIfClosed = `-- name: ReopenPostingIfClosed :execrows
 UPDATE postings
 SET listing_status = 'open', updated_at = CURRENT_TIMESTAMP

@@ -6870,3 +6870,31 @@ application_started for good (found once in the real database).
 - Verified on a migrated copy of the real database: stage.Prepare on a
   closed WealthSimple posting is refused with nothing created; an open
   posting still starts an application.
+
+## 2026-10-01 -- last_seen_at means "the board last listed it" (#176)
+
+postings.last_seen_at was set only by UpdatePosting, so a posting whose
+content never changed kept its creation time, which made RFC 0002's
+open question 5 (how long do postings stay open?) unanswerable. Option
+(a) from the issue: make it true.
+
+- After the ingest pass, syncHeld sets last_seen_at = CURRENT_TIMESTAMP
+  for every stored posting whose source_id the fetch returned, in one
+  statement (MarkPostingsSeen, a single sqlc.slice parameter, so the
+  slice-ordering bug noted on ListActiveApplications doesn't apply).
+  Not a content change: no history row, updated_at untouched, not
+  counted in Result.Updated.
+- Includes postings the company's filters now leave out: the board still
+  lists them, and the close pass already treats them as seen.
+- One statement per company sync rather than one per posting inside
+  IngestPosting: IngestPosting only sees filter-matching postings, and
+  this is a single idempotent write, so per-posting atomicity (RFC 0003)
+  is unaffected. A failure fails the sync like any other write.
+- Existing values aren't backfilled: nothing records when a posting was
+  last listed before now.
+- Verified with a real `swamp fetch` against a copy of the real
+  database: all 1965 open postings got a fresh last_seen_at; 6 real
+  content changes were recorded as before. 48 closed postings were also
+  marked seen: all from companies with filters, i.e. listed again but
+  filtered out, so ingest doesn't reopen them. That "closed but still
+  listed" state predates this change and isn't addressed here.
