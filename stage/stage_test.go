@@ -777,13 +777,9 @@ func TestCandidate_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 		t.Fatalf("Candidate top-level JSON keys mismatch (-want +got):\n%s", diff)
 	}
 
-	wantPosting := []string{
-		"ID", "CompanyID", "Source", "SourceID", "Title", "Department", "Team",
-		"Location", "EmploymentType", "WorkplaceType", "DescriptionHTML",
-		"DescriptionText", "JobURL", "ApplicationURL", "PublishedAt",
-		"RawPayload", "ListingStatus", "FirstSeenAt", "LastSeenAt",
-		"CreatedAt", "UpdatedAt",
-	}
+	// A summary, enough to pick a posting: no description or raw payload,
+	// which made the list too large for agent clients (#117).
+	wantPosting := []string{"ID", "Title", "Department", "Location", "WorkplaceType", "ApplicationURL"}
 	sort.Strings(wantPosting)
 	if diff := cmp.Diff(wantPosting, jsonKeys(t, got[0].Posting)); diff != "" {
 		t.Fatalf("Candidate.Posting JSON keys mismatch (-want +got):\n%s", diff)
@@ -816,6 +812,20 @@ func TestPrepared_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 	sort.Strings(wantDocument)
 	if diff := cmp.Diff(wantDocument, jsonKeys(t, got.CoverLetter)); diff != "" {
 		t.Fatalf("Prepared.CoverLetter JSON keys mismatch (-want +got):\n%s", diff)
+	}
+
+	// Everything needed to draft, but not RawPayload or DescriptionHTML:
+	// drafting reads DescriptionText, and the other two were most of the
+	// response (#117).
+	wantPosting := []string{
+		"ID", "CompanyID", "Source", "SourceID", "Title", "Department", "Team",
+		"Location", "EmploymentType", "WorkplaceType", "DescriptionText",
+		"JobURL", "ApplicationURL", "PublishedAt", "ListingStatus",
+		"FirstSeenAt", "LastSeenAt", "CreatedAt", "UpdatedAt",
+	}
+	sort.Strings(wantPosting)
+	if diff := cmp.Diff(wantPosting, jsonKeys(t, got.Posting)); diff != "" {
+		t.Fatalf("Prepared.Posting JSON keys mismatch (-want +got):\n%s", diff)
 	}
 }
 

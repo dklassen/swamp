@@ -27,6 +27,10 @@ container.
 
 Call `list_postings`. It's read-only, so call it as often as you like.
 
+Each result's `Posting` is a summary (ID, title, department, location,
+workplace type, application URL), without the description: that comes
+from `stage_prepare` once a posting is picked.
+
 Each result may carry `ApplicationNotes` (the user's free-text notes) and
 `LatestReviews`, the most recent human review per document type. **A
 posting with a `"flagged"` review stays in the list even when both
@@ -78,7 +82,8 @@ Write a cover letter and a resume, both in markdown, tailored to this
 specific posting:
 
 - Pull the posting's actual content (title, company, description, any
-  specifics worth responding to) from what `stage_prepare` returned.
+  specifics worth responding to) from what `stage_prepare` returned. The
+  description is its plain-text `DescriptionText`.
 - Pull background, framing, and voice from `PROFILE_REFERENCE.md` --
   don't invent experience, skills, or achievements that aren't in there.
   If the posting wants something the profile doesn't cover, that's worth
