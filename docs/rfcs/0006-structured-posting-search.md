@@ -19,10 +19,11 @@ Free-text and ranked search wait until there's a need these filters can't meet.
 
 ## Problem
 
-Two things the agent must be able to do:
+Three things the agent must be able to do:
 
 1. **Resolve a named application.** The user says "my application to the Staff Developer role at Acme". The agent needs that application's posting ID, for `stage_prepare`, and its application ID, for the document tools.
 2. **Find a posting at a company.** The user says "the platform role at Acme", with no application yet. The agent needs to narrow that company's postings down to the one meant.
+3. **Review the interested shortlist.** The user asks "what have I marked interested but not started?", or "which of my interested postings have I applied to?". Interested is a mark on the posting, not the application: it's set before an application exists, and stays after. So this is the `Interested` filter, combined with `HasApplication`. On the real data that's 19 open interested postings with no application, plus 19 started and 2 submitted, at most 7 at any one company. One page per company, or a few pages overall.
 
 What makes these hard today:
 - `list_postings` returns postings marked interested, plus started applications, that still need a document or have a flagged review. On the real database, **23 of 34 applications aren't in it**: drafted ones, submitted ones, ones whose posting closed.
@@ -190,6 +191,8 @@ When the user names a posting or application:
    - several: show them with full titles and ask;
    - none: say so, and try `ListingStatus: "any"`.
 
+When the user asks about their shortlist, call `search_postings` with `Interested: true` (and `HasApplication: false` for "not started yet"), paging as above.
+
 `list_postings` stays the drafting queue for step 1 of the skill.
 
 ## Options considered
@@ -210,11 +213,87 @@ When the user names a posting or application:
 
 ## Work breakdown
 
-1. **`list_companies`**: store query (or reuse `ListActiveCompanies` with `CountOpenPostingsByCompany`), MCP tool, tests. S.
-2. **`search_postings`**: replace PR #216's in-memory search with the static query, the three sort orders, opaque cursors (encode, decode as untrusted, reject a mismatched sort or filters) and `Total`; tool schema advertises the status enum. Table tests for each filter, plus tests, for each sort order, that pages concatenate to the full result and that a posting closed mid-paging doesn't shift later pages; and cursor tests for tampering, a wrong version, and reuse with other filters. S–M.
-3. **Skill**: the flow above. S.
+Effort: **S** is a few hours to a day, **M** a few days. Each task is its own issue and PR (one issue per PR), labelled `rfc-0006` and `rfc0006-step-N`. Tasks are numbered in the order to do them. A wave's tasks are independent of each other unless a dependency is listed.
 
-PR #216 was closed unmerged (2026-10-01, with a comment saying why). #215 is reworked to steps 2 and 3, and its description updated to point here.
+**Ship point:** after step 5, the agent can resolve any posting or application the user names, and review the interested shortlist (problems 1–3). Steps 6–7 add newest-first ordering, and can wait until someone asks for it.
+
+### Wave A: foundations (mutually independent)
+
+**1. Bounded search query (store).** `store.SearchPostingListings(ctx, filter)`, one static sqlc query:
+- optional filters: company ID, has an application, application statuses (a JSON array read with `json_each`), interested, listing status, include archived;
+- the `id_asc` keyset (`id > :after`), `ORDER BY postings.id`, `LIMIT`, and `COUNT(*) OVER ()` for the total;
+- summary columns only;
+- postings of deleted companies never included.
+
+*Done:* table tests for each filter. Pages read in sequence concatenate to the unpaged result. Closing a posting between two pages doesn't shift the next page. A call never returns more than its limit. *Deps:* none. **M.** The stashed work from PR #216 has the `json_each` and window-function parts, already proven to generate under sqlc.
+
+**2. Opaque cursors.** Encode and decode in `stage`: versioned, base64url JSON carrying the sort name, a hash of the filters, and the key values. Decoding treats the token as untrusted.
+
+*Done:* round-trip tests, plus errors for:
+- a bad encoding;
+- an unknown version;
+- a missing or out-of-range key value;
+- a cursor reused with a different sort or different filters.
+
+*Deps:* none. **S.**
+
+**3. `list_companies`.** An MCP tool returning every company the user hasn't deleted: ID, name, board and open posting count, ordered by name. It reuses `ListActiveCompanies` and `CountOpenPostingsByCompany`.
+
+*Done:* an MCP test showing deleted companies are left out and the counts are right. *Deps:* none. **S.**
+
+### Wave B: the tool (needs wave A)
+
+**4. `search_postings`, ID order.**
+- `stage.Search` maps the tool's input to step 1's filter, encodes and decodes step 2's cursors, applies the `Limit` default (50) and cap (100), and returns `NextCursor` (null on the last page) and `Total`.
+- The MCP tool's schema advertises application statuses and listing status as enums, and `Sort` with only `id_asc` for now.
+
+*Done:* MCP tests:
+- a drafted application missing from `list_postings` is found by company plus `HasApplication`;
+- the interested shortlist (`Interested: true`, `HasApplication: false`) is returned;
+- three pages through a company concatenate to the whole result;
+- a cursor reused with other filters is a tool error.
+
+*Deps:* 1, 2. **S–M.** Closes #215.
+
+**5. Skill.** The `apply-to-posting` flow from "Skill" above:
+- resolve a named posting or application through `list_companies`, then `search_postings`;
+- confirm a single match; with several, show full titles and ask;
+- the shortlist use case.
+
+*Done:* a manual check through the real MCP server, on a copy of the real database. Find, by the names the user would say:
+- a drafted application;
+- a submitted one;
+- one whose posting closed;
+- the interested shortlist.
+
+*Deps:* 3, 4. **S.** **Ship point.**
+
+### Wave C: sort orders (after the ship point, when wanted)
+
+**6. Sort registry and `id_desc`.** Move the sort order into the registry described in "Adding sort orders later". Each entry gives its columns, direction, NULL placement and stability note. Add `id_desc` (`id < :before`).
+
+*Done:* the paging tests from step 4 pass for both orders. The tool schema lists the orders from the registry, so a new entry appears without editing the schema. *Deps:* 4. **S.**
+
+**7. `published_desc`.**
+- The composite keyset `(published_at, id)`, with postings that have no publish date sorted last, by ID.
+- `PublishedAt` added to the posting summary.
+
+*Done:* the paging tests pass for this order. Postings without a publish date come last and page correctly. The stability caveat (a changed publish date can cross the cursor) is in the order's description. *Deps:* 6. **S.**
+
+### Not scheduled
+
+Each is its own future issue, under "Extending it later" and "Adding sort orders later":
+- a board filter;
+- workplace type, after #171;
+- per-company department and location lists;
+- further sort orders;
+- an "as of" bound for changing sort keys.
+
+### Housekeeping, when the RFC is accepted
+
+- Update #215's description to point here.
+- File steps 1–7 as issues.
+- Add a "What shipped" section as steps merge, as RFC 0004 and RFC 0005 did.
 
 ## Open questions
 
