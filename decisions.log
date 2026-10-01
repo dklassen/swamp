@@ -6931,3 +6931,39 @@ Greenhouse forms. stage_prepare returns it in the same shape.
   real database: a WealthSimple (Ashby) application's form entered with
   `f`, saved, and returned by stage.Prepare as {"resume": "required"}
   with both questions.
+
+## 2026-10-01 -- search_postings: the agent can find any posting or application (#215)
+
+The user names applications from the TUI, which shows no IDs, and the
+agent's only listing, list_postings, is the drafting queue. On the real
+database 23 of 34 applications weren't in it (drafted, closed, or past
+drafting), so the agent couldn't resolve them. Names alone also collide
+(336 open postings share company and title with another), and the TUI
+truncates titles.
+
+- A new read-only tool, search_postings, over every posting of a
+  non-deleted company, with its application if any. Optional filters:
+  Query (words that must all appear, ignoring case, in company, title,
+  department or location), Company, HasApplication,
+  ApplicationStatuses, Interested, ListingStatus (open by default; closed
+  or any), IncludeArchived, Limit (25 by default, capped at 100). Total
+  counts matches before Limit, so the agent narrows instead of guessing
+  from a partial list.
+- list_postings stays the drafting queue for the skill's step 1. The
+  skill uses search_postings when the user names a posting, confirms a
+  single match, and asks with full titles when there are several.
+- One lean query (store.ListPostingListings: summary columns, no
+  description or payload, #117) filtered in Go by stage.Search. About
+  2,700 rows; dynamic SQL for each filter combination isn't worth it,
+  and sqlc.slice can't be mixed with other parameters on sqlite anyway.
+- HasApplication and Interested are *bool: "either" is the default and
+  genuinely differs from false. Application statuses come in by name
+  and are parsed in the handler, so an unknown one is a tool error.
+- No new identifier in the TUI. A copy-a-reference key in application
+  detail stays an option if picking between matches gets tedious.
+- Verified through the real MCP server (Streamable HTTP) on a copy of
+  the real database: found a submitted application by company and title
+  words; a company-plus-title query returned the four applications at
+  one company that the TUI truncates alike, with full titles, and one
+  more word narrowed it to one; a closed application was found only
+  with ListingStatus "any"; an unknown listing status was a tool error.

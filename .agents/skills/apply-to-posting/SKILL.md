@@ -47,6 +47,32 @@ If the user asks to work through several at once -- e.g. "draft the
 started applications that have no drafts" -- follow the batch flow
 below instead of picking one.
 
+### When the user names a posting themselves
+
+The user often names a posting or application in their own words, e.g.
+"the Acme Staff Software Developer one", copied from the TUI,
+which shows no IDs. `list_postings` is only the drafting queue: an
+application already drafted, submitted or further along isn't in it. Find
+it with `search_postings` instead:
+
+- Put the distinctive words in `Query` (company, title, location; every
+  word must match). Add filters when the user's words imply them, e.g.
+  `HasApplication: true` for "my application to ...", or
+  `ListingStatus: "any"` if it may have closed.
+- Exactly one match: confirm it with the user (company, full title,
+  location, status) before going on.
+- Several: show them -- company, full title, location, application
+  status -- and ask which. Titles at one company often differ only after
+  a comma, and the TUI truncates them, so show the full title. Never pick
+  for the user.
+- None: say so, and try fewer words or `ListingStatus: "any"` before
+  giving up.
+- If `Total` is more than the matches returned, narrow the search rather
+  than guessing from a partial list.
+
+The match's `Posting.ID` is what `stage_prepare` takes, and
+`ApplicationID` (when it has one) what the document tools take.
+
 ## 2. Commit to the posting
 
 Once the user names a posting, call `stage_prepare` for it. This is the
