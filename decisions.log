@@ -6868,7 +6868,7 @@ application_started for good (found once in the real database).
 - Existing started applications on closed postings are left to the
   user, as the issue says; #164's next-step column shows "withdraw?".
 - Verified on a migrated copy of the real database: stage.Prepare on a
-  closed WealthSimple posting is refused with nothing created; an open
+  closed posting at an Ashby company is refused with nothing created; an open
   posting still starts an application.
 
 ## 2026-10-01 -- last_seen_at means "the board last listed it" (#176)
@@ -6928,7 +6928,7 @@ Greenhouse forms. stage_prepare returns it in the same shape.
 - Invalid text (an unknown requirement, a bare *) isn't saved; the
   screen stays open and names the line.
 - Verified in the real TUI (driven through `script`) on a copy of the
-  real database: a WealthSimple (Ashby) application's form entered with
+  real database: an Ashby company's application form entered with
   `f`, saved, and returned by stage.Prepare as {"resume": "required"}
   with both questions.
 
