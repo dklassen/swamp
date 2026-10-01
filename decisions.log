@@ -6898,3 +6898,36 @@ open question 5 (how long do postings stay open?) unanswerable. Option
   marked seen: all from companies with filters, i.e. listed again but
   filtered out, so ingest doesn't reopen them. That "closed but still
   listed" state predates this change and isn't addressed here.
+
+## 2026-10-01 -- Application forms entered by hand for Ashby and Lever (#184)
+
+#167 found no supported API for Ashby or Lever application forms, so the
+user enters them in the TUI: `f` on application detail opens the
+posting's form as text and ctrl+s stores it where #168 stores fetched
+Greenhouse forms. stage_prepare returns it in the same shape.
+
+- A plain-text format (jobboard.ParseFormText / FormText), not a
+  field-by-field form screen: one "<type name>: required|optional|absent"
+  line per document and one line per question, a trailing * marking it
+  required. Apply pages mark required questions with *, so pasted labels
+  mostly work as they are. A line is a document line only if it names a
+  document type, so questions with colons stay questions. Lines starting
+  with # are comments; FormText seeds a line per document type.
+- Same table and JSON as #168 (posting_application_forms), no new
+  column for "entered by hand": stage tells them apart by board. A board
+  with no fetcher now gets the stored form however old (nothing to
+  refresh it from), where before it returned nil without reading the
+  store. Greenhouse is unchanged: a hand edit there lasts until the
+  weekly refetch, which is the more reliable source.
+- Hand-entered questions have an empty Type and no Options. Editing a
+  stored form keeps Type and Options for questions whose label didn't
+  change, so editing a fetched form doesn't lose them.
+- The key is available on any application, not only Ashby/Lever ones:
+  choosing by board name in the TUI would be a string list of sources,
+  and editing a fetched form is harmless.
+- Invalid text (an unknown requirement, a bare *) isn't saved; the
+  screen stays open and names the line.
+- Verified in the real TUI (driven through `script`) on a copy of the
+  real database: a WealthSimple (Ashby) application's form entered with
+  `f`, saved, and returned by stage.Prepare as {"resume": "required"}
+  with both questions.

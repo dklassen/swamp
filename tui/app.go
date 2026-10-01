@@ -59,6 +59,7 @@ const (
 	screenApplicationDetail
 	screenApplicationExport
 	screenApplicationSubmit
+	screenApplicationForm
 )
 
 type App struct {
@@ -88,6 +89,7 @@ type App struct {
 	applicationsByPosting map[int64]store.Application
 	applicationStatus     applicationStatusModel
 	applicationNotes      applicationNotesModel
+	applicationForm       applicationFormModel
 	documentReviewSelect  documentReviewSelectModel
 	documentReviewForm    documentReviewFormModel
 	// returnStack records where the user came from for each screen that
@@ -912,6 +914,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.postingDetail.setHeight(a.screenRows())
 	case screenApplicationNotesEdit:
 		a.applicationNotes.setHeight(a.screenRows())
+	case screenApplicationForm:
+		a.applicationForm.setHeight(a.screenRows())
 	case screenDocumentReviewForm:
 		a.documentReviewForm.setHeight(a.screenRows())
 	}
@@ -1076,6 +1080,23 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// regardless of which screen triggered the change.
 			return a, tea.Batch(loadActiveApplications(a.store, a.documents), reviewsCmd)
 		}
+	case applicationFormLoadedMsg:
+		a.err = msg.err
+		// Open the form only if the user is still on the application it
+		// was loaded for.
+		if msg.err == nil && a.screen == screenApplicationDetail && a.applicationDetail.application.Posting.ID == msg.postingID {
+			a.screen = screenApplicationForm
+			a.applicationForm = newApplicationFormModel(a.store, msg.postingID, msg.form, a.width, a.screenRows())
+		}
+	case applicationFormSavedMsg:
+		a.err = msg.err
+		if msg.err == nil {
+			a.status = "Application form saved"
+			// Same late-save guard as applicationNotesUpdatedMsg.
+			if a.screen == screenApplicationForm {
+				a.screen = screenApplicationDetail
+			}
+		}
 	case applicationNotesUpdatedMsg:
 		a.err = msg.err
 		if msg.err == nil {
@@ -1227,6 +1248,8 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case screenApplicationDetail:
 		cmd, intent := a.applicationDetail.Update(msg)
 		switch v := intent.(type) {
+		case enterApplicationFormMsg:
+			return a, loadApplicationForm(a.store, v.postingID)
 		case enterApplicationSubmitMsg:
 			return a, a.startApplicationSubmit(v.application)
 		case backToActiveApplicationsMsg:
@@ -1380,6 +1403,12 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.screen = screenPostingDetail
 		}
 		return a, cmd
+	case screenApplicationForm:
+		cmd, intent := a.applicationForm.Update(msg)
+		if _, ok := intent.(cancelApplicationFormMsg); ok {
+			a.screen = screenApplicationDetail
+		}
+		return a, cmd
 	case screenDocumentReviewSelect:
 		cmd, intent := a.documentReviewSelect.Update(msg)
 		switch v := intent.(type) {
@@ -1501,6 +1530,8 @@ func (a *App) View() string {
 		b.WriteString(a.applicationSubmit.View())
 	case screenApplicationNotesEdit:
 		b.WriteString(a.applicationNotes.View())
+	case screenApplicationForm:
+		b.WriteString(a.applicationForm.View())
 	case screenDocumentReviewSelect:
 		b.WriteString(a.documentReviewSelect.View())
 	case screenDocumentReviewForm:

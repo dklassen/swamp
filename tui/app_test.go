@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -3417,5 +3418,63 @@ func TestApp_BackToCompanyList_AfterArchiving_ShowsUpdatedOpenCount(t *testing.T
 	}
 	if got := app.companyOpenPostings[app.companies[0].ID]; got != 1 {
 		t.Errorf("open count after archiving one of two = %d, want 1", got)
+	}
+}
+
+// TestApp_ApplicationDetail_EnterApplicationFormByHand: 'f' on
+// application detail opens the posting's application form as text (#184),
+// seeded with a line per document type; ctrl+s stores what was typed the
+// same way a fetched Greenhouse form is stored, and returns to detail.
+func TestApp_ApplicationDetail_EnterApplicationFormByHand(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 30})
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if app.screen != screenApplicationDetail {
+		t.Fatalf("screen after enter = %v, want screenApplicationDetail", app.screen)
+	}
+
+	app, loadCmd := sendKey(app, runeKey('f'))
+	if loadCmd == nil {
+		t.Fatal("Update on 'f' returned nil Cmd, want a command that loads the stored form")
+	}
+	app = applyCmd(t, app, loadCmd)
+	if app.screen != screenApplicationForm {
+		t.Fatalf("screen after 'f' = %v, want screenApplicationForm", app.screen)
+	}
+	if view := app.View(); !strings.Contains(view, "resume: absent") {
+		t.Errorf("form screen doesn't show the seeded document lines:\n%s", view)
+	}
+
+	app, _ = sendKey(app, runeKey([]rune("Why us? *")...))
+	app, saveCmd := sendKey(app, tea.KeyMsg{Type: tea.KeyCtrlS})
+	if saveCmd == nil {
+		t.Fatal("Update on ctrl+s returned nil Cmd, want a command that saves the form")
+	}
+	app = applyCmd(t, app, saveCmd)
+
+	if app.err != nil {
+		t.Fatalf("app.err = %v", app.err)
+	}
+	if app.screen != screenApplicationDetail {
+		t.Errorf("screen after saving = %v, want screenApplicationDetail", app.screen)
+	}
+	stored, _, ok, err := s.GetApplicationForm(context.Background(), posting.ID)
+	if err != nil || !ok {
+		t.Fatalf("GetApplicationForm: ok %v, err %v", ok, err)
+	}
+	var got jobboard.ApplicationForm
+	if err := json.Unmarshal([]byte(stored), &got); err != nil {
+		t.Fatalf("decode stored form: %v", err)
+	}
+	want := jobboard.ApplicationForm{
+		Documents: map[documents.Type]jobboard.Requirement{},
+		Questions: []jobboard.Question{{Label: "Why us?", Required: true}},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("stored form mismatch (-want +got):\n%s", diff)
 	}
 }

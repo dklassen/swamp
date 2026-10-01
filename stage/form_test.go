@@ -136,6 +136,44 @@ func TestPrepare_NoFormForBoardsWithoutAFetcher(t *testing.T) {
 	}
 }
 
+// TestPrepare_HandEnteredFormForBoardsWithoutAFetcher: Ashby and Lever
+// forms can't be fetched, so one entered by hand in the TUI (#184) is
+// returned as stored, however old -- there's nothing to refresh it from.
+func TestPrepare_HandEnteredFormForBoardsWithoutAFetcher(t *testing.T) {
+	t.Parallel()
+	fetcher := &fakeFormFetcher{form: testForm}
+	_, s, d := newTestStage(t)
+	st := New(s, d, WithFormFetchers(map[string]FormFetcher{"greenhouse": fetcher}, time.Second))
+	st.now = func() time.Time { return time.Now().Add(365 * 24 * time.Hour) }
+	company := mustCreateCompany(t, s, "Ashby Co")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	entered := jobboard.ApplicationForm{
+		Documents: map[documents.Type]jobboard.Requirement{documents.Resume: jobboard.Required},
+		Questions: []jobboard.Question{{Label: "Why us?", Required: true}},
+	}
+	encoded, err := json.Marshal(entered)
+	if err != nil {
+		t.Fatalf("json.Marshal: %v", err)
+	}
+	if err := s.SaveApplicationForm(context.Background(), posting.ID, string(encoded)); err != nil {
+		t.Fatalf("SaveApplicationForm: %v", err)
+	}
+
+	got, err := st.Prepare(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if got.ApplicationForm == nil {
+		t.Fatal("ApplicationForm = nil, want the hand-entered form")
+	}
+	if diff := cmp.Diff(entered, *got.ApplicationForm); diff != "" {
+		t.Errorf("ApplicationForm mismatch (-want +got):\n%s", diff)
+	}
+	if got.ApplicationFormError != "" || fetcher.calls != 0 {
+		t.Errorf("error %q, fetches %d; want neither", got.ApplicationFormError, fetcher.calls)
+	}
+}
+
 // The form's JSON is part of the agent contract (SKILL.md reads it), so a
 // Go-side rename has to fail a test rather than silently change it.
 func TestApplicationForm_JSONShape(t *testing.T) {
