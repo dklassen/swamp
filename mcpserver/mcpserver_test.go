@@ -587,3 +587,90 @@ func TestStagePrepare_ClosedPosting_ReturnsToolErrorSayingSo(t *testing.T) {
 		t.Errorf("tool error = %+v, want it to say the posting is closed", res.Content)
 	}
 }
+
+// searchPostingsResult is search_postings' output, decoded with plain
+// strings for the enums.
+type searchPostingsResult struct {
+	Total    int
+	Postings []struct {
+		Posting           struct{ ID int64 }
+		CompanyName       string
+		ListingStatus     string
+		ApplicationID     *int64
+		ApplicationStatus *string
+		ApplicationNotes  string
+	}
+}
+
+// TestSearchPostings_FindsAnApplicationOutsideTheDraftingQueue is #215's
+// motivating case: an application with both documents drafted and none
+// flagged isn't in list_postings, so the agent couldn't find it when the
+// user named it. search_postings finds it by name, with its application.
+func TestSearchPostings_FindsAnApplicationOutsideTheDraftingQueue(t *testing.T) {
+	t.Parallel()
+
+	srv, s, d := newTestServer(t)
+	ctx := context.Background()
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Staff Software Developer, Product")
+	mustUpsertPosting(t, s, company.ID, "job-2", "Staff Software Developer, Risk")
+	mustMarkInterested(t, s, posting.ID)
+	application, err := s.CreateApplication(ctx, posting.ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	if _, err := s.UpdateApplicationNotes(ctx, posting.ID, "ask about team"); err != nil {
+		t.Fatalf("UpdateApplicationNotes: %v", err)
+	}
+	if _, err := d.EnsureDir(application.ID); err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	for _, documentType := range documents.Types() {
+		path, err := d.Path(application.ID, documentType)
+		if err != nil {
+			t.Fatalf("Path: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("drafted"), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+	cs := connectClient(t, srv)
+
+	if queue := callTool[listPostingsOutput](t, cs, "list_postings", map[string]any{}).Postings; len(queue) != 0 {
+		t.Fatalf("list_postings = %d postings, want 0: the drafted application isn't drafting work", len(queue))
+	}
+
+	got := callTool[searchPostingsResult](t, cs, "search_postings", map[string]any{
+		"Query": "acme product", "HasApplication": true,
+	})
+	if got.Total != 1 || len(got.Postings) != 1 {
+		t.Fatalf("search_postings = %+v, want exactly the drafted application", got)
+	}
+	match := got.Postings[0]
+	if match.Posting.ID != posting.ID || match.CompanyName != "Acme" || match.ListingStatus != "open" {
+		t.Errorf("match = %+v, want posting %d at Acme, open", match, posting.ID)
+	}
+	if match.ApplicationID == nil || *match.ApplicationID != application.ID ||
+		match.ApplicationStatus == nil || *match.ApplicationStatus != "application_started" ||
+		match.ApplicationNotes != "ask about team" {
+		t.Errorf("match application = %v %v %q, want %d application_started \"ask about team\"",
+			match.ApplicationID, match.ApplicationStatus, match.ApplicationNotes, application.ID)
+	}
+}
+
+func TestSearchPostings_UnknownApplicationStatus_ReturnsToolError(t *testing.T) {
+	t.Parallel()
+
+	srv, _, _ := newTestServer(t)
+	cs := connectClient(t, srv)
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "search_postings",
+		Arguments: map[string]any{"ApplicationStatuses": []string{"applied"}},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("IsError = false, want true for an unknown application status")
+	}
+}

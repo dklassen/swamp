@@ -22,6 +22,7 @@ import (
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/stage"
+	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
 
@@ -37,6 +38,11 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 		Name:        "list_postings",
 		Description: "List non-archived postings that still need a cover letter and/or resume drafted, or whose latest draft was flagged for revision: postings marked interested, plus started applications that never were.",
 	}, listPostingsHandler(st))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "search_postings",
+		Description: "Find postings across every company, with or without an application, at any status: the way to find a posting or application the user names in their own words, which list_postings (only the drafting queue) often leaves out. Every filter is optional; by default it returns open, non-archived postings. Total is the number of matches before Limit: if it's more than were returned, narrow the search rather than guess.",
+	}, searchPostingsHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "stage_prepare",
@@ -96,6 +102,47 @@ func listPostingsHandler(st *stage.Stage) mcp.ToolHandlerFor[listPostingsInput, 
 			return nil, nil, fmt.Errorf("list_postings: %w", err)
 		}
 		return nil, listPostingsOutput{Postings: candidates}, nil
+	}
+}
+
+type searchPostingsInput struct {
+	Query               string   `json:"Query,omitempty" jsonschema:"words that must all appear, ignoring case, in the posting's company, title, department or location"`
+	Company             string   `json:"Company,omitempty" jsonschema:"a company name, ignoring case"`
+	HasApplication      *bool    `json:"HasApplication,omitempty" jsonschema:"true: only postings with an application; false: only postings without one"`
+	ApplicationStatuses []string `json:"ApplicationStatuses,omitempty" jsonschema:"only applications at one of these statuses: application_started, application_submitted, interviewing, rejected, offer_received, offer_accepted, offer_declined, posting_closed, withdrawn"`
+	Interested          *bool    `json:"Interested,omitempty" jsonschema:"true: only postings marked interested; false: only postings not marked"`
+	ListingStatus       string   `json:"ListingStatus,omitempty" jsonschema:"open (the default), closed or any"`
+	IncludeArchived     bool     `json:"IncludeArchived,omitempty" jsonschema:"include postings the user archived"`
+	Limit               int      `json:"Limit,omitempty" jsonschema:"the most matches to return: 25 by default, at most 100"`
+}
+
+// Out is 'any': stage.SearchMatch carries store.ApplicationStatus, whose
+// custom MarshalJSON writes a string where schema inference would see an
+// integer (the same problem listPostingsHandler works around).
+func searchPostingsHandler(st *stage.Stage) mcp.ToolHandlerFor[searchPostingsInput, any] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in searchPostingsInput) (*mcp.CallToolResult, any, error) {
+		statuses := make([]store.ApplicationStatus, len(in.ApplicationStatuses))
+		for i, name := range in.ApplicationStatuses {
+			status, err := store.ParseApplicationStatus(name)
+			if err != nil {
+				return nil, nil, fmt.Errorf("search_postings: %w", err)
+			}
+			statuses[i] = status
+		}
+		result, err := st.Search(ctx, stage.SearchOptions{
+			Query:               in.Query,
+			Company:             in.Company,
+			HasApplication:      in.HasApplication,
+			ApplicationStatuses: statuses,
+			Interested:          in.Interested,
+			ListingStatus:       in.ListingStatus,
+			IncludeArchived:     in.IncludeArchived,
+			Limit:               in.Limit,
+		})
+		if err != nil {
+			return nil, nil, fmt.Errorf("search_postings: %w", err)
+		}
+		return nil, result, nil
 	}
 }
 
