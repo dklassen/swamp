@@ -1,8 +1,9 @@
 // Package documents owns application documents: the list of document
 // types (see Type), and where each application's markdown files live on
-// the filesystem and whether they exist. The content itself is never
-// read by this package -- it's plain markdown meant to be consumed
-// directly by an external agent/editor, not by Swamp. See decisions.log
+// the filesystem and whether they exist. Content is read only to check
+// whether a review or export still matches it (see Current) -- it's plain
+// markdown meant to be consumed directly by an external agent/editor,
+// not by Swamp. See decisions.log
 // for why this is filesystem-backed rather than DB columns. The default
 // base directory is "assets" (see cmd/swamp/main.go) -- only the storage
 // path was renamed, not this package.

@@ -2,8 +2,6 @@ package tui
 
 import (
 	"context"
-	"fmt"
-	"os"
 	"slices"
 	"strconv"
 	"strings"
@@ -164,7 +162,7 @@ type documentProgress struct {
 //   - submit    -- everything passed and is exported.
 //
 // a.LatestReviews must already be filtered to current reviews (see
-// currentDocumentReviews), as loadActiveApplications does.
+// documents.Current), as loadActiveApplications does.
 func nextStep(a store.ApplicationView, docs map[documents.Type]documentProgress) string {
 	closed := a.Posting.ListingStatus == "closed"
 	if a.Status != store.ApplicationStatusStarted {
@@ -228,33 +226,28 @@ func orderForHome(apps []store.ApplicationView) {
 	})
 }
 
-// documentProgressOf reads applicationID's documents from disk and
-// checks each against its latest export (#188), for nextStep. Like
-// currentDocumentReviews, a read failure is an error rather than "not
-// drafted", so a transient I/O problem can't send a finished draft back
-// to "draft".
+// documentProgressOf is, for nextStep, whether each of applicationID's
+// documents is drafted, and whether its current content was exported
+// (#188). A read failure is an error rather than "not exported" (see
+// documents.Current).
 func documentProgressOf(s *store.Store, docs *documents.Store, applicationID int64) (map[documents.Type]documentProgress, error) {
 	exports, err := s.LatestDocumentExports(context.Background(), applicationID)
 	if err != nil {
 		return nil, err
 	}
 	status := docs.Status(applicationID)
+	currentExports, err := documents.Current(status, exports, store.DocumentExport.IsCurrent)
+	if err != nil {
+		return nil, err
+	}
 	progress := make(map[documents.Type]documentProgress, len(documents.Types()))
 	for _, documentType := range documents.Types() {
 		doc, err := status.Doc(documentType)
 		if err != nil {
 			return nil, err
 		}
-		if !doc.Exists {
-			progress[documentType] = documentProgress{}
-			continue
-		}
-		content, err := os.ReadFile(doc.Path)
-		if err != nil {
-			return nil, fmt.Errorf("read %s: %w", doc.Path, err)
-		}
-		export, ok := exports[documentType]
-		progress[documentType] = documentProgress{drafted: true, exported: ok && export.IsCurrent(string(content))}
+		_, exported := currentExports[documentType]
+		progress[documentType] = documentProgress{drafted: doc.Exists, exported: exported}
 	}
 	return progress, nil
 }

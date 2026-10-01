@@ -11,7 +11,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"sort"
 	"strings"
 	"time"
@@ -428,7 +427,7 @@ type activeApplicationsLoadedMsg struct {
 }
 
 // loadActiveApplications fetches every active application, filtering
-// each one's LatestReviews through currentDocumentReviews -- store has
+// each one's LatestReviews through documents.Current -- store has
 // no filesystem access (see documents.go's own doc comment) so
 // ListActiveApplications itself can't do this, and every screen this
 // list feeds (the active-applications glyph column, application detail,
@@ -444,7 +443,7 @@ func loadActiveApplications(s *store.Store, docs *documents.Store) tea.Cmd {
 		}
 		nextSteps := make(map[int64]string)
 		for i, app := range apps {
-			reviews, err := currentDocumentReviews(docs, app.ID, app.LatestReviews)
+			reviews, err := documents.Current(docs.Status(app.ID), app.LatestReviews, store.DocumentReview.IsCurrent)
 			if err != nil {
 				return activeApplicationsLoadedMsg{err: err}
 			}
@@ -608,7 +607,7 @@ type documentReviewsLoadedMsg struct {
 // error. Reviews whose content no longer matches what's currently on
 // disk (the document was revised since being reviewed, whether in
 // direct response to that review or independently) are filtered out by
-// currentDocumentReviews -- a stale review shouldn't render as if it
+// documents.Current -- a stale review shouldn't render as if it
 // still described the current draft (see decisions.log,
 // store.DocumentReview.IsCurrent).
 func loadDocumentReviews(s *store.Store, docs *documents.Store, applicationID int64) tea.Cmd {
@@ -617,49 +616,12 @@ func loadDocumentReviews(s *store.Store, docs *documents.Store, applicationID in
 		if err != nil {
 			return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
 		}
-		reviews, err = currentDocumentReviews(docs, applicationID, reviews)
+		reviews, err = documents.Current(docs.Status(applicationID), reviews, store.DocumentReview.IsCurrent)
 		if err != nil {
 			return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
 		}
 		return documentReviewsLoadedMsg{applicationID: applicationID, reviews: reviews}
 	}
-}
-
-// currentDocumentReviews filters reviews down to only those whose
-// content hash still matches each document's actual current content on
-// disk -- mirrors stage.currentReviews (see decisions.log); kept
-// separate rather than shared since store deliberately has no
-// filesystem access and documents deliberately never reads file content
-// (see documents.go's own doc comment), so each of this package and
-// stage compose the two themselves.
-func currentDocumentReviews(docs *documents.Store, applicationID int64, reviews map[documents.Type]store.DocumentReview) (map[documents.Type]store.DocumentReview, error) {
-	status := docs.Status(applicationID)
-	out := make(map[documents.Type]store.DocumentReview, len(reviews))
-	for documentType, review := range reviews {
-		doc, err := status.Doc(documentType)
-		if err != nil {
-			return nil, err
-		}
-		if !doc.Exists {
-			continue
-		}
-		content, err := os.ReadFile(doc.Path)
-		if err != nil {
-			// A read failure (permissions, a transient I/O error, the
-			// file mid-write) is not the same thing as "the document
-			// changed since it was reviewed" -- silently treating it
-			// that way could drop a genuinely still-flagged review
-			// (rendering [FLAGGED] as [not reviewed]) with no
-			// indication anything went wrong. Fail loudly instead,
-			// matching stage.currentReviews.
-			return nil, fmt.Errorf("read %s: %w", doc.Path, err)
-		}
-		if !review.IsCurrent(string(content)) {
-			continue
-		}
-		out[documentType] = review
-	}
-	return out, nil
 }
 
 // maybeLoadDocumentReviews returns the Cmd to (re)load applicationID's
