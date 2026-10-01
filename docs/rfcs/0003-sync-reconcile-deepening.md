@@ -16,7 +16,7 @@ RFC 0001's P4 work moved every write into one transaction per posting (`store.In
 1. **What a failed sync leaves behind isn't written down or tested.** Any error after the fetch returns at once. Postings already saved stay saved, the close pass doesn't run, and `MarkCompanyFetched` doesn't run. Each posting's change is atomic; the sync as a whole is not. Nothing says this is intended, and only the fetch-failure case is tested.
 2. **The two loops aren't named, and the close policy isn't next to the loop that uses it.** `earlyApplicationStatuses` (`sync/company.go:299`) sits between `ImportCompanies` and `AddCompany`, not beside the close pass that passes it to `store.ClosePosting`.
 
-This RFC proposes fixing (1) with a doc comment and a test, then (2) by splitting `syncHeld` into two named methods and moving the close pass and its policy into `sync/reconcile.go`. Where the close policy should finally live is left to #174.
+This RFC proposes fixing (1) with a doc comment and a test, then (2) by splitting `syncHeld` into two named methods and moving the close pass and its policy into `sync/reconcile.go`. #174 has since settled what the policy is; where it lives doesn't change.
 
 ## How it works today
 
@@ -117,7 +117,7 @@ Each posting's change is already atomic, and the next sync repairs anything a fa
 **Step 2: name the two loops and move the close pass into `sync/reconcile.go` (#210).** S. After step 1.
 - Option 2 above. A pure refactor: no test changes beyond those step 1 added, and every test in `sync/` passes unmodified.
 
-**Not filed: where the close policy lives.** #174 decides whether a closing posting still ends a submitted application, and whether a reopened posting restores one. If it chooses to restore (its option 2b), that's a second rule about applications in the sync path. Look then at whether the rules belong in one named type, or with the application lifecycle in `store`. Until then, a slice passed to `ClosePosting` is enough.
+**Not filed: where the close policy lives.** #174 (2026-10-01) kept submitted applications open and added the restore on reopen. The restore needed no new policy: it undoes only a `posting_closed` that history says sync made, which is mechanism, so it lives in `store.ReopenPosting` with the close. The policy is still one slice passed to `ClosePosting`, now just `application_started`. No change needed here.
 
 ## Test impact
 
@@ -150,5 +150,5 @@ Each posting's change is already atomic, and the next sync repairs anything a fa
 ## Out of scope
 
 - Making a whole sync one transaction (option 4, rejected) or continue-on-error (open question 1).
-- Moving the close policy into `store` (#174 decides first).
+- Moving the close policy into `store`. #174 didn't need it (see "Work breakdown").
 - `ApplyCompanyFilters`, `CreateCompany`, `AddCompany` and `ImportCompanies`. They share `s.fetchers` with `SyncCompany` but not its loops.

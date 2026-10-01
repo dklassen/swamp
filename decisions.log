@@ -6812,3 +6812,34 @@ Decided (user, 2026-10-01): per-posting atomicity is the contract.
   the others, which SyncAll deliberately isolates today.
 - #209 writes the contract (with the two-transaction exception) into
   SyncCompany's doc comment and pins it with a test.
+
+## 2026-10-01 -- A closing posting ends only a started application; reopening restores it (#174)
+
+RFC 0002 open question 1, decided by the user: options 1b and 2b.
+
+- 1b: earlyApplicationStatuses is now just application_started. A
+  company often pulls a listing once it has enough candidates and keeps
+  reviewing the ones who applied, so a submitted application is live.
+  The TUI's Posting column already shows the posting is closed.
+- 2b: store.ReopenPosting, in its transaction, moves an application
+  back from posting_closed to the status before it, but only when that
+  posting_closed is the application's latest change and sync made it.
+  "Never undo a status the user set" needed history to say who made a
+  change, so migration 00018 adds application_status_history.changed_by,
+  typed in Go as store.StatusChangedBy (user, sync, unknown), with no
+  CHECK constraint, like application status.
+- Rows from before 00018 are 'unknown' and never restored. Considered
+  backfilling 'sync' where an application's posting_closed shares a
+  timestamp with its posting's 'closed' history row (4 of the 7 real
+  ones do), but none of those postings has reopened, and a guess that
+  undoes a user's status is worse than one that leaves it.
+- Applications sync closed from submitted before this change stay at
+  posting_closed. The backfill can't say what they were before #162, and
+  the user can reset them in the TUI.
+- The restore lives in store, not as sync policy: it undoes exactly what
+  sync's close did, so it takes no status list. RFC 0003's question of
+  where the policy lives didn't need answering for it.
+- The #150 stale-fetch test switched from submitted to started (sync no
+  longer ends submitted, which hid the race) and now checks the
+  application right after the overlapping runs, before a later sync
+  could restore it. Verified it fails with the lease check disabled.
