@@ -6705,3 +6705,23 @@ per-user permission allowlists, which can embed paths, hosts and tokens.
   Re-include it explicitly if a project-wide setting is ever wanted.
 - History checked: no file under .claude/ other than the skill was ever
   committed, so nothing needs rewriting.
+
+## 2026-10-01 -- RFC 0005 revised: the review map is the "no review" signal (#203, #204)
+
+Re-checked RFC 0005 against the code after RFC 0004 shipped. The problem
+is narrower than drafted: every reader decides "no review" by whether
+the review map has an entry, except `swamp export`'s reviewSummary,
+which uses CreatedAt.IsZero() on the zero value a missing lookup
+returns. The two TUI outcome switches are still duplicated.
+
+- Dropped the draft's DocumentReview.HasReview() (ID != 0). It would
+  move the truth from the map to the review's contents: 20 test
+  fixtures build reviews without IDs and would read as unreviewed, and
+  two sources (map and method) could disagree. The store already
+  reports presence separately (LatestDocumentReview returns ok), and
+  the map carries that through.
+- Rejected a pointer or Optional map value: it changes every reader and
+  stage's JSON for a risk no current reader has.
+- Accepted: the CLI checks the map like everything else (#203), the
+  convention goes into the doc comments, and the TUI optionally gets
+  one outcome-to-style mapping (#204).
