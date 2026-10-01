@@ -114,10 +114,10 @@ func exportApplicationDocuments(s *store.Store, docs *documents.Store, applicati
 		status := docs.Status(application.ID)
 		var paths []string
 		var skipped []store.DocumentType
-		for _, documentType := range []store.DocumentType{store.DocumentTypeCoverLetter, store.DocumentTypeResume} {
-			doc := status.CoverLetter
-			if documentType == store.DocumentTypeResume {
-				doc = status.Resume
+		for _, documentType := range store.DocumentTypes() {
+			doc, err := status.ByName(documentType.String())
+			if err != nil {
+				return applicationExportedMsg{dir: dir, paths: paths, skipped: skipped, err: err}
 			}
 			if !doc.Exists {
 				skipped = append(skipped, documentType)

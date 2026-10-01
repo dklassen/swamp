@@ -344,10 +344,11 @@ func runExport(s *store.Store, d *documents.Store, args []string) {
 		log.Fatalf("export: current document reviews: %v", err)
 	}
 
-	for _, documentType := range []store.DocumentType{store.DocumentTypeCoverLetter, store.DocumentTypeResume} {
-		doc := status.CoverLetter
-		if documentType == store.DocumentTypeResume {
-			doc = status.Resume
+	for _, documentType := range store.DocumentTypes() {
+		doc, err := status.ByName(documentType.String())
+		if err != nil {
+			fmt.Printf("%s: error: %v\n", documentType, err)
+			continue
 		}
 		if !doc.Exists {
 			fmt.Printf("%s: no document on disk, skipped\n", documentType)
@@ -376,9 +377,9 @@ func runExport(s *store.Store, d *documents.Store, args []string) {
 func currentDocumentReviews(status documents.Status, reviews map[store.DocumentType]store.DocumentReview) (map[store.DocumentType]store.DocumentReview, error) {
 	out := make(map[store.DocumentType]store.DocumentReview, len(reviews))
 	for documentType, review := range reviews {
-		doc := status.CoverLetter
-		if documentType == store.DocumentTypeResume {
-			doc = status.Resume
+		doc, err := status.ByName(documentType.String())
+		if err != nil {
+			return nil, err
 		}
 		if !doc.Exists {
 			continue

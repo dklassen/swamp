@@ -8,9 +8,18 @@
 package documents
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 	"strconv"
+)
+
+// Each document type's name: the file's base name, and also the value
+// store.DocumentType persists in document_reviews.document_type. Renaming
+// one means migrating that column too.
+const (
+	CoverLetterName = "cover_letter"
+	ResumeName      = "resume"
 )
 
 // Paths holds the resolved, convention-derived filesystem paths for a
@@ -27,8 +36,8 @@ type Paths struct {
 func ForApplication(base string, applicationID int64) Paths {
 	dir := filepath.Join(base, strconv.FormatInt(applicationID, 10))
 	return Paths{
-		CoverLetter: filepath.Join(dir, "cover_letter.md"),
-		Resume:      filepath.Join(dir, "resume.md"),
+		CoverLetter: filepath.Join(dir, CoverLetterName+".md"),
+		Resume:      filepath.Join(dir, ResumeName+".md"),
 	}
 }
 
@@ -80,6 +89,20 @@ func (s *Store) Status(applicationID int64) Status {
 		CoverLetter: Doc{Path: paths.CoverLetter, Exists: fileExists(paths.CoverLetter)},
 		Resume:      Doc{Path: paths.Resume, Exists: fileExists(paths.Resume)},
 	}
+}
+
+// ByName returns the document whose type is named name (CoverLetterName
+// or ResumeName, the store.DocumentType string). Any other name is an error, never a
+// fallback to one of the documents, which would silently read or write
+// the wrong file (RFC 0004).
+func (s Status) ByName(name string) (Doc, error) {
+	switch name {
+	case CoverLetterName:
+		return s.CoverLetter, nil
+	case ResumeName:
+		return s.Resume, nil
+	}
+	return Doc{}, fmt.Errorf("documents: no document type %q", name)
 }
 
 func fileExists(path string) bool {

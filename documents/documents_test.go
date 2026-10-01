@@ -109,3 +109,34 @@ func TestStore_Status_TrueWhenFilePresent(t *testing.T) {
 		t.Errorf("Resume.Path = %q, want %q", status.Resume.Path, paths.Resume)
 	}
 }
+
+// ByName finds a document by its type's name, which is its file's base
+// name. Anything else is an error: falling back to one of the documents
+// would silently use the wrong file (RFC 0004).
+func TestStatus_ByName(t *testing.T) {
+	t.Parallel()
+	status := NewStore(t.TempDir()).Status(7)
+
+	tests := []struct {
+		name    string
+		want    Doc
+		wantErr bool
+	}{
+		{name: "cover_letter", want: status.CoverLetter},
+		{name: "resume", want: status.Resume},
+		{name: "answers", wantErr: true},
+		{name: "", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got, err := status.ByName(tt.name)
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("ByName(%q) error = %v, want error %v", tt.name, err, tt.wantErr)
+			}
+			if got != tt.want {
+				t.Errorf("ByName(%q) = %+v, want %+v", tt.name, got, tt.want)
+			}
+		})
+	}
+}

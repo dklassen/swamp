@@ -87,9 +87,9 @@ func (m *applicationDetailModel) openDocument(resume bool) tea.Cmd {
 // document doesn't exist yet -- nothing to review.
 func (m *applicationDetailModel) enterReview(documentType store.DocumentType) tea.Msg {
 	status := m.documents.Status(m.application.ID)
-	doc := status.CoverLetter
-	if documentType == store.DocumentTypeResume {
-		doc = status.Resume
+	doc, err := status.ByName(documentType.String())
+	if err != nil {
+		return enterDocumentReviewFormMsg{err: err}
 	}
 	if !doc.Exists {
 		return nil

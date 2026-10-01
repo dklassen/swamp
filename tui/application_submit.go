@@ -97,7 +97,7 @@ func (m *applicationSubmitModel) View() string {
 			b.WriteString("  " + path + "\n")
 		}
 	}
-	for _, documentType := range []store.DocumentType{store.DocumentTypeCoverLetter, store.DocumentTypeResume} {
+	for _, documentType := range store.DocumentTypes() {
 		review, ok := m.application.LatestReviews[documentType]
 		b.WriteString("  " + documentTypeLabel(documentType) + ": " + reviewBadge(review, ok) + "\n")
 	}

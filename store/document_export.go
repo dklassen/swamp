@@ -48,7 +48,7 @@ func (s *Store) RecordDocumentExport(ctx context.Context, applicationID int64, d
 // each document type, omitting any type never exported.
 func (s *Store) LatestDocumentExports(ctx context.Context, applicationID int64) (map[DocumentType]DocumentExport, error) {
 	exports := make(map[DocumentType]DocumentExport)
-	for _, documentType := range []DocumentType{DocumentTypeCoverLetter, DocumentTypeResume} {
+	for _, documentType := range DocumentTypes() {
 		row, err := s.queries.LatestDocumentExport(ctx, db.LatestDocumentExportParams{
 			ApplicationID: applicationID,
 			DocumentType:  documentType.String(),
