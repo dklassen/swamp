@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -167,6 +168,14 @@ type Prepared struct {
 	Documents        map[documents.Type]Document     `json:"Documents"`
 	ApplicationNotes string                          `json:"ApplicationNotes"`
 	LatestReviews    map[documents.Type]LatestReview `json:"LatestReviews"`
+	// ApplicationForm is what the posting's form asks for (#168), or null
+	// when it isn't known: the board has no supported way to read it
+	// (Ashby, Lever: #167), or the fetch failed. Draft both documents then,
+	// as before forms were read.
+	ApplicationForm *jobboard.ApplicationForm `json:"ApplicationForm"`
+	// ApplicationFormError says why the form couldn't be read, when a fetch
+	// was tried and failed.
+	ApplicationFormError string `json:"ApplicationFormError,omitempty"`
 }
 
 // Stage is the single entry point for the agent hand-off mechanism,
@@ -175,10 +184,23 @@ type Prepared struct {
 type Stage struct {
 	store     *store.Store
 	documents *documents.Store
+	// forms reads application forms, by company source (#168).
+	forms        map[string]FormFetcher
+	fetchTimeout time.Duration
+	// now is the clock deciding whether a stored form is stale; tests
+	// move it forward.
+	now func() time.Time
 }
 
-func New(s *store.Store, d *documents.Store) *Stage {
-	return &Stage{store: s, documents: d}
+// Option configures a Stage.
+type Option func(*Stage)
+
+func New(s *store.Store, d *documents.Store, opts ...Option) *Stage {
+	st := &Stage{store: s, documents: d, now: time.Now}
+	for _, opt := range opts {
+		opt(st)
+	}
+	return st
 }
 
 // List returns the postings an agent can draft for: interested,
@@ -314,6 +336,11 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 	}
 	status := st.documents.Status(application.ID)
 
+	form, formErr, err := st.applicationForm(ctx, posting, company)
+	if err != nil {
+		return nil, err
+	}
+
 	reviews, err := st.store.LatestDocumentReviews(ctx, application.ID)
 	if err != nil {
 		return nil, fmt.Errorf("stage: latest document reviews: %w", err)
@@ -333,12 +360,14 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 	}
 
 	return &Prepared{
-		Posting:          preparedPosting(posting),
-		CompanyName:      company.Name,
-		ApplicationID:    application.ID,
-		Documents:        preparedDocuments,
-		ApplicationNotes: application.Notes,
-		LatestReviews:    latestReviewsForJSON(reviews),
+		Posting:              preparedPosting(posting),
+		CompanyName:          company.Name,
+		ApplicationID:        application.ID,
+		Documents:            preparedDocuments,
+		ApplicationNotes:     application.Notes,
+		LatestReviews:        latestReviewsForJSON(reviews),
+		ApplicationForm:      form,
+		ApplicationFormError: formErr,
 	}, nil
 }
 
