@@ -485,7 +485,7 @@ func TestPrepare_ReturnsErrorWhenDocumentReadFails(t *testing.T) {
 	if _, err := s.CreateDocumentReview(context.Background(), first.ApplicationID, documents.Resume, "draft", store.ReviewOutcomeFlagged, "add metrics"); err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)
 	}
-	if err := os.Mkdir(first.Resume.Path, 0o755); err != nil {
+	if err := os.Mkdir(first.Documents[documents.Resume].Path, 0o755); err != nil {
 		t.Fatalf("Mkdir: %v", err)
 	}
 
@@ -591,13 +591,13 @@ func TestPrepare_LatestReviewsOmitsStaleReview(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Prepare: %v", err)
 	}
-	if err := os.WriteFile(first.Resume.Path, []byte("original resume"), 0o644); err != nil {
+	if err := os.WriteFile(first.Documents[documents.Resume].Path, []byte("original resume"), 0o644); err != nil {
 		t.Fatalf("write resume: %v", err)
 	}
 	if _, err := s.CreateDocumentReview(context.Background(), first.ApplicationID, documents.Resume, "original resume", store.ReviewOutcomeFlagged, "add metrics"); err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)
 	}
-	if err := os.WriteFile(first.Resume.Path, []byte("revised resume with metrics"), 0o644); err != nil {
+	if err := os.WriteFile(first.Documents[documents.Resume].Path, []byte("revised resume with metrics"), 0o644); err != nil {
 		t.Fatalf("rewrite resume: %v", err)
 	}
 
@@ -628,7 +628,7 @@ func TestPrepare_IncludesApplicationNotesAndLatestReviews(t *testing.T) {
 	// The review's content must match what's on disk, or the new
 	// staleness check (see decisions.log) treats it as not describing
 	// the current document and omits it from LatestReviews.
-	if err := os.WriteFile(first.Resume.Path, []byte("draft"), 0o644); err != nil {
+	if err := os.WriteFile(first.Documents[documents.Resume].Path, []byte("draft"), 0o644); err != nil {
 		t.Fatalf("write resume: %v", err)
 	}
 	if _, err := s.CreateDocumentReview(context.Background(), first.ApplicationID, documents.Resume, "draft", store.ReviewOutcomeFlagged, "add metrics"); err != nil {
@@ -711,17 +711,17 @@ func TestPrepare_CreatesDocumentDirectory(t *testing.T) {
 		t.Fatalf("Prepare: %v", err)
 	}
 
-	info, err := os.Stat(filepath.Dir(prepared.CoverLetter.Path))
+	info, err := os.Stat(filepath.Dir(prepared.Documents[documents.CoverLetter].Path))
 	if err != nil {
 		t.Fatalf("Stat document dir: %v", err)
 	}
 	if !info.IsDir() {
 		t.Error("expected the document directory to exist")
 	}
-	if prepared.CoverLetter.Exists {
+	if prepared.Documents[documents.CoverLetter].Exists {
 		t.Error("CoverLetter.Exists = true, want false (nothing written yet)")
 	}
-	if prepared.Resume.Exists {
+	if prepared.Documents[documents.Resume].Exists {
 		t.Error("Resume.Exists = true, want false (nothing written yet)")
 	}
 }
@@ -802,7 +802,7 @@ func TestPrepared_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 		t.Fatalf("Prepare: %v", err)
 	}
 
-	wantTop := []string{"Posting", "CompanyName", "ApplicationID", "CoverLetter", "Resume", "ApplicationNotes", "LatestReviews"}
+	wantTop := []string{"Posting", "CompanyName", "ApplicationID", "Documents", "ApplicationNotes", "LatestReviews"}
 	sort.Strings(wantTop)
 	if diff := cmp.Diff(wantTop, jsonKeys(t, got)); diff != "" {
 		t.Fatalf("Prepared top-level JSON keys mismatch (-want +got):\n%s", diff)
@@ -810,8 +810,17 @@ func TestPrepared_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 
 	wantDocument := []string{"Path", "Exists"}
 	sort.Strings(wantDocument)
-	if diff := cmp.Diff(wantDocument, jsonKeys(t, got.CoverLetter)); diff != "" {
-		t.Fatalf("Prepared.CoverLetter JSON keys mismatch (-want +got):\n%s", diff)
+	// One entry per document type, keyed by its name (RFC 0004).
+	var wantTypes []string
+	for _, documentType := range documents.Types() {
+		wantTypes = append(wantTypes, documentType.String())
+	}
+	sort.Strings(wantTypes)
+	if diff := cmp.Diff(wantTypes, jsonKeys(t, got.Documents)); diff != "" {
+		t.Fatalf("Prepared.Documents JSON keys mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(wantDocument, jsonKeys(t, got.Documents[documents.CoverLetter])); diff != "" {
+		t.Fatalf("Prepared.Documents[cover_letter] JSON keys mismatch (-want +got):\n%s", diff)
 	}
 
 	// Everything needed to draft, but not RawPayload or DescriptionHTML:
@@ -841,7 +850,7 @@ func TestPrepare_ReflectsDocumentsWrittenBetweenCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Prepare: %v", err)
 	}
-	if err := os.WriteFile(first.CoverLetter.Path, []byte("letter"), 0o644); err != nil {
+	if err := os.WriteFile(first.Documents[documents.CoverLetter].Path, []byte("letter"), 0o644); err != nil {
 		t.Fatalf("write cover letter: %v", err)
 	}
 
@@ -849,10 +858,10 @@ func TestPrepare_ReflectsDocumentsWrittenBetweenCalls(t *testing.T) {
 	if err != nil {
 		t.Fatalf("second Prepare: %v", err)
 	}
-	if !second.CoverLetter.Exists {
+	if !second.Documents[documents.CoverLetter].Exists {
 		t.Error("CoverLetter.Exists = false, want true (written between calls)")
 	}
-	if second.Resume.Exists {
+	if second.Documents[documents.Resume].Exists {
 		t.Error("Resume.Exists = true, want false (never written)")
 	}
 }

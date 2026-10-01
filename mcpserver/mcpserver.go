@@ -106,7 +106,7 @@ func stagePrepareHandler(st *stage.Stage) mcp.ToolHandlerFor[stagePrepareInput, 
 
 type writeDocumentInput struct {
 	ApplicationID int64          `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
-	DocumentType  documents.Type `json:"DocumentType" jsonschema:"either cover_letter or resume"`
+	DocumentType  documents.Type `json:"DocumentType" jsonschema:"the document type: one of the keys of stage_prepare's Documents"`
 	Content       string         `json:"Content" jsonschema:"the full document content to write, replacing whatever is there"`
 }
 
@@ -136,7 +136,7 @@ func writeDocumentHandler(d *documents.Store) mcp.ToolHandlerFor[writeDocumentIn
 
 type readDocumentInput struct {
 	ApplicationID int64          `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
-	DocumentType  documents.Type `json:"DocumentType" jsonschema:"either cover_letter or resume"`
+	DocumentType  documents.Type `json:"DocumentType" jsonschema:"the document type: one of the keys of stage_prepare's Documents"`
 }
 
 type readDocumentOutput struct {
