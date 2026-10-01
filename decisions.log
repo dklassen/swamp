@@ -6787,3 +6787,25 @@ earlyApplicationStatuses filed among the company-creation code.
 - Corrected the draft's open question 1: the close pass decides
   "missing" from the fetch, not from what was saved, so running it after
   a failed ingest wouldn't close the posting that failed.
+
+## 2026-10-01 -- A sync is atomic per posting, not as a whole (RFC 0003)
+
+Asked why syncs aren't atomic. Checked syncHeld's writes against the
+code: IngestPosting, ReopenPosting and ClosePosting are each one
+transaction with their history (and, for a close, the application
+change); MarkCompanyFetched and the lease calls are single statements.
+Nothing in sync uses the non-transactional MarkPostingClosed,
+MarkPostingReopened or UpsertPosting any more. One exception: a posting
+that is closed and has changed content takes two transactions
+(IngestPosting, then ReopenPosting); stopped between them it's left
+updated but closed, a valid state the next sync reopens.
+
+Decided (user, 2026-10-01): per-posting atomicity is the contract.
+
+- Rejected a whole-sync transaction: it needs tx-taking variants of the
+  three store methods, holds SQLite's single write lock across all of a
+  company's writes instead of one posting's, and rolls back every
+  posting for one failure. It buys nothing the conditional, repeatable
+  writes and the next sync don't already give.
+- #209 writes the contract (with the two-transaction exception) into
+  SyncCompany's doc comment and pins it with a test.

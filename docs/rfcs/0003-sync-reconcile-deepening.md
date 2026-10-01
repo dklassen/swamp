@@ -89,12 +89,17 @@ The calls stay sequential, with an error check between them: running the close p
 
 A doc comment on `SyncCompany` stating what a failed sync leaves, and a test that proves it. No design risk, and it protects step 2's refactor. Do it first.
 
+### 4. Make a whole sync one transaction (rejected 2026-10-01)
+
+Each posting's change is already atomic, and the next sync repairs anything a failed one didn't reach, because every write is conditional and safe to repeat. A whole-sync transaction would need transaction-taking versions of `IngestPosting`, `ReopenPosting` and `ClosePosting`, and would hold SQLite's only write lock for all of a company's writes, not one posting's. It would also roll back every posting because one failed. Per-posting atomicity is the contract; step 1 writes it down.
+
 ## Work breakdown
 
 **Step 1: pin what a failed sync leaves behind (#209).** S. No dependencies.
 - Doc comment on `SyncCompany`. On an error after the fetch:
   - every posting change already made stays committed (each was its own transaction, #147/#148);
   - postings not yet reached are untouched;
+  - one exception: a posting that is closed and has changed content is saved in two transactions (`IngestPosting`, then `ReopenPosting`), so it can be left updated but still closed. That is a valid state, and the next sync reopens it;
   - the close pass doesn't run;
   - `MarkCompanyFetched` doesn't run, so "Last fetched" stays stale;
   - `Result`'s counts cover only what ran, and callers don't report them.
@@ -144,6 +149,6 @@ A doc comment on `SyncCompany` stating what a failed sync leaves, and a test tha
 
 ## Out of scope
 
-- Making a whole sync one transaction, or continue-on-error (open question 1).
+- Making a whole sync one transaction (option 4, rejected) or continue-on-error (open question 1).
 - Moving the close policy into `store` (#174 decides first).
 - `ApplyCompanyFilters`, `CreateCompany`, `AddCompany` and `ImportCompanies`. They share `s.fetchers` with `SyncCompany` but not its loops.
