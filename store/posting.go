@@ -375,7 +375,7 @@ func closePosting(ctx context.Context, qtx *db.Queries, postingID int64, closeAp
 			}); err != nil {
 				return ClosePostingResult{}, fmt.Errorf("store: close application for closed posting: %w", err)
 			}
-			if err := recordApplicationStatus(ctx, qtx, application.ID, ApplicationStatusPostingClosed); err != nil {
+			if err := recordApplicationStatus(ctx, qtx, application.ID, ApplicationStatusPostingClosed, StatusChangedBySync); err != nil {
 				return ClosePostingResult{}, err
 			}
 			result.ApplicationClosed = true
