@@ -6459,3 +6459,26 @@ Decisions:
 - Age is relative to the time of rendering; next steps are computed at
   load, along with the reviews, so they refresh whenever the list
   reloads.
+
+## 2026-10-01 -- Slim list_postings and stage_prepare payloads (#117)
+
+list_postings returned every posting's full content and was 1.17 MB for
+35 postings on the real queue, well over agent clients' inline limit.
+It's a prerequisite of batch drafting (#165).
+
+- stage.Candidate.Posting is now a PostingSummary: ID, Title,
+  Department, Location, WorkplaceType, ApplicationURL. The real queue
+  drops to 16.8 KB.
+- stage.Prepared.Posting is now a PreparedPosting: everything except
+  RawPayload and DescriptionHTML. Drafting reads DescriptionText. One
+  real posting went from 25.6 KB to 5.8 KB.
+- The JSON key stays "Posting" in both, with the same field names
+  inside, so an agent following the skill sees fewer fields, not
+  renamed ones.
+- The CLI (`swamp stage list` / `stage prepare`) changes too: both it
+  and MCP serialize stage's types, and neither path's consumer, the
+  apply-to-posting agent, needs the dropped fields. Keeping one shape
+  keeps SKILL.md describing one contract. The issue expected the two to
+  diverge; there was no reason to make them.
+- No pagination: per-posting size was the problem, and the queue is
+  tens of postings, not hundreds.

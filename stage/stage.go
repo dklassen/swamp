@@ -17,8 +17,9 @@ import (
 	"github.com/dklassen/swamp/store"
 )
 
-// Candidate is one posting ready for an external agent to work on: full
-// posting content plus, if an application already exists for it, its id
+// Candidate is one posting ready for an external agent to work on: a
+// summary of the posting, enough to pick one (Prepare returns its content
+// for drafting), plus, if an application already exists for it, its id
 // and status.
 //
 // json tags pin the field names this type already serializes to today,
@@ -28,12 +29,85 @@ import (
 // silently break that hand-off with no compiler or test catching it
 // (see decisions.log, #59).
 type Candidate struct {
-	Posting           store.Posting                       `json:"Posting"`
+	Posting           PostingSummary                      `json:"Posting"`
 	CompanyName       string                              `json:"CompanyName"`
 	ApplicationID     *int64                              `json:"ApplicationID"`
 	ApplicationStatus *store.ApplicationStatus            `json:"ApplicationStatus"`
 	ApplicationNotes  string                              `json:"ApplicationNotes"`
 	LatestReviews     map[store.DocumentType]LatestReview `json:"LatestReviews"`
+}
+
+// PostingSummary is the posting part of a Candidate: enough for the user
+// to pick a posting from the list. The description and raw payload are
+// left out, since they made list_postings too large for agent clients:
+// about 29 KB per posting, 950 KB for 33 (#117).
+type PostingSummary struct {
+	ID             int64  `json:"ID"`
+	Title          string `json:"Title"`
+	Department     string `json:"Department"`
+	Location       string `json:"Location"`
+	WorkplaceType  string `json:"WorkplaceType"`
+	ApplicationURL string `json:"ApplicationURL"`
+}
+
+func postingSummary(p store.Posting) PostingSummary {
+	return PostingSummary{
+		ID:             p.ID,
+		Title:          p.Title,
+		Department:     p.Department,
+		Location:       p.Location,
+		WorkplaceType:  p.WorkplaceType,
+		ApplicationURL: p.ApplicationURL,
+	}
+}
+
+// PreparedPosting is the posting part of Prepared: everything needed to
+// draft, without RawPayload and DescriptionHTML. Drafting reads
+// DescriptionText, and those two were most of the response (#117).
+type PreparedPosting struct {
+	ID              int64              `json:"ID"`
+	CompanyID       int64              `json:"CompanyID"`
+	Source          string             `json:"Source"`
+	SourceID        string             `json:"SourceID"`
+	Title           string             `json:"Title"`
+	Department      string             `json:"Department"`
+	Team            string             `json:"Team"`
+	Location        string             `json:"Location"`
+	EmploymentType  string             `json:"EmploymentType"`
+	WorkplaceType   string             `json:"WorkplaceType"`
+	DescriptionText string             `json:"DescriptionText"`
+	JobURL          string             `json:"JobURL"`
+	ApplicationURL  string             `json:"ApplicationURL"`
+	PublishedAt     store.OptionalTime `json:"PublishedAt"`
+	ListingStatus   string             `json:"ListingStatus"`
+	FirstSeenAt     time.Time          `json:"FirstSeenAt"`
+	LastSeenAt      time.Time          `json:"LastSeenAt"`
+	CreatedAt       time.Time          `json:"CreatedAt"`
+	UpdatedAt       time.Time          `json:"UpdatedAt"`
+}
+
+func preparedPosting(p store.Posting) PreparedPosting {
+	return PreparedPosting{
+		ID:              p.ID,
+		CompanyID:       p.CompanyID,
+		Source:          p.Source,
+		SourceID:        p.SourceID,
+		Title:           p.Title,
+		Department:      p.Department,
+		Team:            p.Team,
+		Location:        p.Location,
+		EmploymentType:  p.EmploymentType,
+		WorkplaceType:   p.WorkplaceType,
+		DescriptionText: p.DescriptionText,
+		JobURL:          p.JobURL,
+		ApplicationURL:  p.ApplicationURL,
+		PublishedAt:     p.PublishedAt,
+		ListingStatus:   p.ListingStatus,
+		FirstSeenAt:     p.FirstSeenAt,
+		LastSeenAt:      p.LastSeenAt,
+		CreatedAt:       p.CreatedAt,
+		UpdatedAt:       p.UpdatedAt,
+	}
 }
 
 // Document is one document's resolved path and whether it already exists
@@ -123,7 +197,7 @@ func needsRework(reviews map[store.DocumentType]store.DocumentReview) bool {
 // Prepared is everything an external agent needs to draft and write one
 // posting's cover letter and resume, once Prepare has committed to it.
 type Prepared struct {
-	Posting          store.Posting                       `json:"Posting"`
+	Posting          PreparedPosting                     `json:"Posting"`
 	CompanyName      string                              `json:"CompanyName"`
 	ApplicationID    int64                               `json:"ApplicationID"`
 	CoverLetter      Document                            `json:"CoverLetter"`
@@ -179,7 +253,7 @@ func (st *Stage) List(ctx context.Context) ([]Candidate, error) {
 			notes = application.Notes
 		}
 		candidates = append(candidates, Candidate{
-			Posting:           p.Posting,
+			Posting:           postingSummary(p.Posting),
 			CompanyName:       p.CompanyName,
 			ApplicationID:     p.ApplicationID,
 			ApplicationStatus: p.ApplicationStatus,
@@ -230,7 +304,7 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 	}
 
 	return &Prepared{
-		Posting:          posting,
+		Posting:          preparedPosting(posting),
 		CompanyName:      company.Name,
 		ApplicationID:    application.ID,
 		CoverLetter:      Document{Path: status.CoverLetter.Path, Exists: status.CoverLetter.Exists},
