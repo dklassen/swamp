@@ -1,7 +1,7 @@
 # RFC 0002: Getting committed applications submitted
 
-- **Status:** Draft, for discussion (revised 2026-09-29)
-- **Date:** 2026-09-28
+- **Status:** Implemented in part, 2026-10-01. Waves A–C and D1–D2 shipped (#162–#168, #178–#180, and the related #188; D1 was RFC 0004). Open: C3 (#181), D3 (#169), D4 (#170), manual requirements for Ashby/Lever (#184), and the related #174–#176. Wave E (#171–#173) waits on phase 1's success criteria.
+- **Date:** 2026-09-28 (revised 2026-09-29; status updated 2026-10-01)
 - **Related:** RFC 0001 (scheduled and background sync); issue #105 (a closing posting ends an early-stage application); the `apply-to-posting` skill (`.agents/skills/apply-to-posting/SKILL.md`)
 
 ## Summary
