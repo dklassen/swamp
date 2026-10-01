@@ -9,7 +9,8 @@ import (
 // describe what's on disk: those whose document exists and whose content
 // isCurrent says matches. A record of an earlier draft is dropped, the
 // same as no record at all, since the version it describes no longer
-// exists. isCurrent is store.DocumentReview.IsCurrent or
+// exists. Dropped means no entry: callers tell "no current record" by a
+// comma-ok lookup, never by a record's fields (RFC 0005). isCurrent is store.DocumentReview.IsCurrent or
 // store.DocumentExport.IsCurrent; taking it as a function keeps this
 // package free of store.
 //

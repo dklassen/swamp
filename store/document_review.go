@@ -66,6 +66,13 @@ func ParseReviewOutcome(s string) (ReviewOutcome, error) {
 // unreadable the moment the file gets redrafted. ContentSHA256 is a
 // derived shortcut for "did this change since the last review" without
 // comparing full ContentSnapshot values.
+//
+// Whether a document has a review is never a property of a
+// DocumentReview: it's whether the review map (LatestDocumentReviews,
+// then documents.Current) has an entry for the document. Check that with
+// a comma-ok lookup. A zero DocumentReview's Outcome reads as passed, so
+// inferring presence from its fields would show an unreviewed document
+// as passed (RFC 0005).
 type DocumentReview struct {
 	ID              int64
 	ApplicationID   int64
@@ -177,7 +184,8 @@ func (s *Store) LatestDocumentReview(ctx context.Context, applicationID int64, d
 // in step with its single-review semantics. Used by
 // ListActiveApplications (see application_view.go) and by the TUI
 // wherever a per-document-type review summary is needed for one
-// application (see decisions.log #83).
+// application (see decisions.log #83). A missing entry is the only "no
+// review" signal; see DocumentReview.
 func (s *Store) LatestDocumentReviews(ctx context.Context, applicationID int64) (map[documents.Type]DocumentReview, error) {
 	reviews := make(map[documents.Type]DocumentReview)
 	for _, documentType := range documents.Types() {

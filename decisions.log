@@ -6725,3 +6725,18 @@ returns. The two TUI outcome switches are still duplicated.
 - Accepted: the CLI checks the map like everything else (#203), the
   convention goes into the doc comments, and the TUI optionally gets
   one outcome-to-style mapping (#204).
+
+## 2026-10-01 -- swamp export checks the review map for "no review" (#203, RFC 0005 step 1)
+
+- reviewSummary(review, hasReview): hasReview comes from the comma-ok
+  lookup at the call site, the same shape as the TUI's reviewBadge.
+  CreatedAt.IsZero() is gone. Output is unchanged for real data, since
+  store never returns a review without a timestamp.
+- The table test includes the two cases the timestamp check got wrong
+  (no review with a timestamp set; a present review without one), so
+  it fails if the check regresses to reading fields. Checked failing
+  with the old body behind the new signature.
+- The convention is now stated on DocumentReview, LatestDocumentReviews
+  and documents.Current. Doc comments rather than a type: see the
+  RFC 0005 revision entry above for why a pointer or Optional value was
+  rejected.
