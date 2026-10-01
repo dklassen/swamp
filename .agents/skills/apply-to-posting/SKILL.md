@@ -64,12 +64,16 @@ type's name (`cover_letter`, `resume`), each with a `Path` and whether it
 on the host running the server, not something to open or write yourself.
 
 Its `ApplicationForm` is what the posting's application form asks for, when
-Swamp could read it (Greenhouse postings; it's `null` for other boards):
+Swamp has it: fetched from Greenhouse, or entered by hand in the TUI for
+Ashby and Lever postings (application detail, `f`). It's `null` when Swamp
+has neither:
 
 - `ApplicationForm.Documents` gives each document as `"required"`,
   `"optional"` or `"absent"` (a document missing from it is absent).
 - `ApplicationForm.Questions` lists the form's custom questions, each with
-  `Label`, `Required`, `Type` and, for a select, its `Options`.
+  `Label`, `Required`, `Type` and, for a select, its `Options`. A question
+  entered by hand has an empty `Type` and no `Options`: treat it as free
+  text.
 - If `ApplicationFormError` is set, the form couldn't be read: say so, and
   carry on as if it were `null`.
 
@@ -117,7 +121,9 @@ posting:
   telling the user which were optional. Don't draft an `"absent"` one: the
   form has nowhere to put it.
 - Without one: draft every document in `Documents`, as the form is
-  unknown.
+  unknown. For an Ashby or Lever posting, you can mention that
+  the user can enter its form in the TUI (application detail, `f`) so you
+  draft only what it asks for.
 
 For each document:
 
