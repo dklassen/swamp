@@ -6427,3 +6427,35 @@ suggested hooking the export itself.
 - Recording sits in the callers, not inside export.Document, because
   export deliberately has no store dependency (it composes documents
   and pdf only).
+
+## 2026-10-01 -- Home screen age and next step (#164, RFC 0002 task B2)
+
+The active-applications screen gains Age (whole days at the current
+status, from status history, #162) and Next columns. Started
+applications sort first, longest at their status first; the rest keep
+the store's most-recently-changed order.
+
+Decisions:
+- Next-step rules, first match wins: withdraw? (posting closed), draft
+  (a document missing), revise (a current review flagged), review (a
+  document with no current review), export (passed, but the current
+  content isn't exported), submit. Revise comes before review, since
+  acting on feedback beats starting another review. Only started
+  applications get a step.
+- "export" needed exports recorded, which they weren't. Done first, as
+  #188, at the user's suggestion, rather than folding export into
+  submit.
+- Width: the widest possible row was 122 columns, and on real data the
+  screen was already about 92 before this change, so it never fit 80.
+  The fit tests check height at 100 columns only, and a wider line is
+  cut silently on the right, losing Status and Review. A new test pins
+  the widest row to 100. To get there, company is 16 and title 30 on
+  this screen (the posting list keeps 18/40), and the Posting column is
+  dropped. Next shows withdraw? for a started application on a closed
+  posting and "(closed)" for a later-stage one, which is what #105's
+  column existed to flag. On the real data the screen is 90 wide.
+  Fitting 80 would mean shortening titles to about 10 characters, which
+  isn't worth it.
+- Age is relative to the time of rendering; next steps are computed at
+  load, along with the reviews, so they refresh whenever the list
+  reloads.
