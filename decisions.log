@@ -6659,3 +6659,33 @@ uses.
   every document type, so a posting whose form has no cover letter stays
   listed until one exists. Folding the form into that rule belongs with
   #169, which adds the answers document and its own done rule.
+
+## 2026-10-01 -- Canonical resume and profile served over MCP (#199)
+
+Resumes were written from scratch per posting, so structure and wording
+drifted and every draft was a whole new document to review. The user now
+keeps a canonical resume that the skill tailors, and the profile
+(formerly PROFILE_REFERENCE.md at the repo root) gets the same treatment.
+
+- Location: <SWAMP_DOCUMENTS_PATH>/canonical/{resume,profile}.md, default
+  assets/canonical/. assets/ is already gitignored, so both stay
+  uncommitted with no new ignore rule or env var, and they sit with the
+  drafts they feed. "canonical" can't collide with an application
+  directory, which is always numeric. Templates are committed as
+  docs/canonical/*.md.example; PROFILE_REFERENCE.md.example moved there.
+  The old /PROFILE_REFERENCE.md ignore line stays, so a leftover copy in
+  an older checkout can't be committed by accident.
+- Two tools, read_canonical_resume and read_profile, rather than one
+  tool taking a kind. Each has its own description telling the agent
+  what the file is for, and there's no enum to keep in sync. They share
+  one handler.
+- Read-only: the user maintains both. Letting the agent write the
+  canonical copy would let one posting's tailoring leak into the next.
+- A missing file is Exists: false, not a tool error. It's an expected
+  state with different handling per file: the skill falls back to the
+  profile alone without a resume, and stops without a profile.
+- Not folded into stage_prepare: the files aren't per-posting, a batch
+  reads them once, and the resume isn't needed when the form marks it
+  absent.
+- Resume-only for canonical documents (no base cover letter yet); the
+  handler takes a path, so another file is one AddTool call.

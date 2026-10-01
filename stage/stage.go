@@ -2,8 +2,8 @@
 // draft a tailored cover letter and resume: List discovers postings ready
 // for that hand-off, Prepare commits to one by ensuring its application
 // and document directory exist. Stage never drafts content itself, and
-// never reads PROFILE_REFERENCE.md -- generation happens entirely outside
-// this codebase (see decisions.log and README's "Further Notes").
+// never reads the profile or canonical resume -- generation happens
+// entirely outside this codebase (see decisions.log).
 package stage
 
 import (

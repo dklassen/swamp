@@ -1,6 +1,6 @@
 ---
 name: apply-to-posting
-description: Draft a tailored cover letter and resume for a job posting tracked in Swamp (the job-search tool in this repo), using the `swamp` MCP server's tools and the user's PROFILE_REFERENCE.md background file. Use this skill whenever the user asks to work on job applications, wants to draft a cover letter or resume for a posting, wants to work through their "interested" postings queue, or asks what to apply to next -- even if they don't mention "stage" or MCP by name. Always confirm which posting to work on and show drafts for review before finishing; never submit an application or advance its status.
+description: Draft a tailored cover letter and resume for a job posting tracked in Swamp (the job-search tool in this repo), using the `swamp` MCP server's tools, the user's profile and their canonical resume. Use this skill whenever the user asks to work on job applications, wants to draft a cover letter or resume for a posting, wants to work through their "interested" postings queue, or asks what to apply to next -- even if they don't mention "stage" or MCP by name. Always confirm which posting to work on and show drafts for review before finishing; never submit an application or advance its status.
 ---
 
 # Apply to a posting
@@ -77,23 +77,30 @@ If a document already exists, check `LatestReviews` first:
 - No review yet, or the only review passed: tell the user and ask before
   overwriting it -- don't silently clobber drafted work you can't see.
 
-## 3. Read the background source
+## 3. Read the background sources
 
-Read `PROFILE_REFERENCE.md` at the repo root. This is the user's own,
-untracked file -- it holds their real experience, skills, and usually a
-"Voice & Style Notes" section or similar covering tone and conventions to
-write in. Read and follow whatever guidance is actually in the file rather
-than assuming its structure in advance; it's the user's document and may
-change.
+Two files the user writes and maintains themselves. Both are read-only
+for you: never edit them, and don't look for them on disk.
 
-This file isn't Swamp data and no MCP tool serves it -- read it from the
-repo checkout as a plain file.
+**The profile: call `read_profile`.** It holds the user's real
+experience, skills, and usually a "Voice & Style Notes" section or
+similar covering tone and conventions to write in. Read and follow
+whatever guidance is actually in it rather than assuming its structure in
+advance; it's the user's document and may change.
 
-**If the file doesn't exist or you can't read it, stop and tell the user**
-rather than drafting from general knowledge or assumptions about their
-background. The entire point of this step is that the draft comes from
-real, user-provided material -- a cover letter written without it isn't a
-shortcut, it's a different (and much worse) task.
+**If `Exists` is false, stop and tell the user** (the README says how to
+set it up, from `docs/canonical/profile.md.example`) rather than drafting
+from general knowledge or assumptions about their background. The entire
+point of this step is that the draft comes from real, user-provided
+material -- a cover letter written without it isn't a shortcut, it's a
+different (and much worse) task.
+
+**The canonical resume: call `read_canonical_resume`** when you'll draft
+a resume. It's the user's maintained, best-version resume: the baseline
+you tailor, not something to rewrite. If `Exists` is false, carry on
+drafting the resume from the profile alone, and tell the user that
+setting one up (from `docs/canonical/resume.md.example`) would give
+steadier resumes.
 
 ## 4. Draft the documents
 
@@ -112,13 +119,25 @@ For each document:
 - Pull the posting's actual content (title, company, description, any
   specifics worth responding to) from what `stage_prepare` returned. The
   description is its plain-text `DescriptionText`.
-- Pull background, framing, and voice from `PROFILE_REFERENCE.md` --
-  don't invent experience, skills, or achievements that aren't in there.
-  If the posting wants something the profile doesn't cover, that's worth
+- Pull background, framing, and voice from the profile -- don't invent
+  experience, skills, or achievements that aren't in it or the canonical
+  resume. If the posting wants something neither covers, that's worth
   surfacing to the user rather than papering over.
-- Match the voice/style guidance in the profile file as closely as you
-  can; it exists precisely so drafts don't need a separate editing pass
-  to sound like the user.
+- Match the voice/style guidance in the profile as closely as you can;
+  it exists precisely so drafts don't need a separate editing pass to
+  sound like the user.
+
+For the resume, when there's a canonical one, **tailor it rather than
+writing a new one**: keep its structure, facts, dates and titles, and
+change only what fits it to the posting -- reorder roles' bullets so the
+most relevant lead, trim what doesn't serve this posting, rephrase a
+bullet toward the posting's language, and adjust the profile summary.
+Material from the profile may replace or add a bullet when it fits the
+posting better. Tell the user what you changed from the canonical
+version, briefly, so they review a diff rather than a whole new resume.
+
+A revision (a flagged review, step 2) still starts from the existing
+draft, not the canonical resume: the notes are about that draft.
 
 Save each one with `write_document`.
 
@@ -155,8 +174,10 @@ instead of one of each per posting.
 2. **Confirm it.** Show the list (title and company per posting) and ask
    the user to confirm or trim it. Don't start until they do. Work only
    on the postings they confirmed.
-3. **Read `PROFILE_REFERENCE.md` once** (step 3), before the first
-   posting. If it's missing, stop before drafting anything.
+3. **Read the background sources once** (step 3), before the first
+   posting: `read_profile`, and `read_canonical_resume` if any posting
+   needs a resume. If the profile is missing, stop before drafting
+   anything.
 4. **For each posting, in order:** call `stage_prepare` (step 2), then
    draft and save its documents (step 4). The step-2 rules still apply
    to every posting:
