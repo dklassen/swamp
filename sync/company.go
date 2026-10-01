@@ -184,8 +184,11 @@ func (s *Syncer) syncHeld(ctx context.Context, company store.Company, fetcher Po
 			if err != nil {
 				return result, fmt.Errorf("sync: reopen posting: %w", err)
 			}
-			if reopened {
+			if reopened.Reopened {
 				result.Reopened++
+			}
+			if reopened.ApplicationRestored {
+				result.ApplicationsRestored++
 			}
 		}
 	}
@@ -294,8 +297,9 @@ func (s *Syncer) ImportCompanies(ctx context.Context, entries []seed.Entry) []Im
 // company has enough candidates, and the ones who applied are still
 // being reviewed. Only an application never sent can no longer be.
 //
-// Closing a posting's application is the one place sync reaches past
-// postings and posting history into application state, a deliberate
+// Closing a posting's application, and undoing that when the posting
+// reappears (store.ReopenPosting, #174), are the only places sync reaches
+// past postings and posting history into application state, a deliberate
 // widening of what a sync does (see decisions.log). The policy stays
 // here; store.ClosePosting applies it in the same transaction that
 // closes the posting (#147).

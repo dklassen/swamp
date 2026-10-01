@@ -85,21 +85,29 @@ func (s *Store) ListApplicationStatusHistory(ctx context.Context, applicationID 
 	}
 	history := make([]ApplicationStatusChange, len(rows))
 	for i, row := range rows {
-		status, err := ParseApplicationStatus(row.Status)
-		if err != nil {
+		if history[i], err = parseStatusChange(row); err != nil {
 			return nil, err
-		}
-		changedBy, err := parseStatusChangedBy(row.ChangedBy)
-		if err != nil {
-			return nil, err
-		}
-		history[i] = ApplicationStatusChange{
-			ID:            row.ID,
-			ApplicationID: row.ApplicationID,
-			Status:        status,
-			ChangedBy:     changedBy,
-			ChangedAt:     row.ChangedAt,
 		}
 	}
 	return history, nil
+}
+
+// parseStatusChange converts a status history row, failing on a status
+// or changed_by value it doesn't know.
+func parseStatusChange(row db.ApplicationStatusHistory) (ApplicationStatusChange, error) {
+	status, err := ParseApplicationStatus(row.Status)
+	if err != nil {
+		return ApplicationStatusChange{}, err
+	}
+	changedBy, err := parseStatusChangedBy(row.ChangedBy)
+	if err != nil {
+		return ApplicationStatusChange{}, err
+	}
+	return ApplicationStatusChange{
+		ID:            row.ID,
+		ApplicationID: row.ApplicationID,
+		Status:        status,
+		ChangedBy:     changedBy,
+		ChangedAt:     row.ChangedAt,
+	}, nil
 }
