@@ -6807,5 +6807,8 @@ Decided (user, 2026-10-01): per-posting atomicity is the contract.
   company's writes instead of one posting's, and rolls back every
   posting for one failure. It buys nothing the conditional, repeatable
   writes and the next sync don't already give.
+- SyncAll isn't one transaction either: it would hold the write lock
+  through every company's board fetch, and one failing company would undo
+  the others, which SyncAll deliberately isolates today.
 - #209 writes the contract (with the two-transaction exception) into
   SyncCompany's doc comment and pins it with a test.

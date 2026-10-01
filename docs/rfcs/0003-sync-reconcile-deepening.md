@@ -91,7 +91,7 @@ A doc comment on `SyncCompany` stating what a failed sync leaves, and a test tha
 
 ### 4. Make a whole sync one transaction (rejected 2026-10-01)
 
-Each posting's change is already atomic, and the next sync repairs anything a failed one didn't reach, because every write is conditional and safe to repeat. A whole-sync transaction would need transaction-taking versions of `IngestPosting`, `ReopenPosting` and `ClosePosting`, and would hold SQLite's only write lock for all of a company's writes, not one posting's. It would also roll back every posting because one failed. Per-posting atomicity is the contract; step 1 writes it down.
+Each posting's change is already atomic, and the next sync repairs anything a failed one didn't reach, because every write is conditional and safe to repeat. A whole-sync transaction would need transaction-taking versions of `IngestPosting`, `ReopenPosting` and `ClosePosting`, and would hold SQLite's only write lock for all of a company's writes, not one posting's. It would also roll back every posting because one failed. A transaction across `SyncAll` is rejected for the same reasons and more: it would hold the lock through every company's fetch, and one failing company would undo the rest, where today `SyncAll` isolates each company. Per-posting atomicity is the contract; step 1 writes it down.
 
 ## Work breakdown
 
