@@ -290,6 +290,9 @@ func (s *Syncer) ImportCompanies(ctx context.Context, entries []seed.Entry) []Im
 // the candidates already in its pipeline, so an application at
 // interviewing or beyond is a live process that the syncer must not
 // overwrite (see issue #105 and decisions.log). Those are left alone.
+// So is a submitted one (#174): a listing often comes down once the
+// company has enough candidates, and the ones who applied are still
+// being reviewed. Only an application never sent can no longer be.
 //
 // Closing a posting's application is the one place sync reaches past
 // postings and posting history into application state, a deliberate
@@ -298,7 +301,6 @@ func (s *Syncer) ImportCompanies(ctx context.Context, entries []seed.Entry) []Im
 // closes the posting (#147).
 var earlyApplicationStatuses = []store.ApplicationStatus{
 	store.ApplicationStatusStarted,
-	store.ApplicationStatusSubmitted,
 }
 
 // AddCompanyOutcome says what AddCompany did.

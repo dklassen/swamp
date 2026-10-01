@@ -426,7 +426,6 @@ func TestSyncCompany_PostingCloses_EarlyStageApplicationClosedToo(t *testing.T) 
 
 	for _, start := range []store.ApplicationStatus{
 		store.ApplicationStatusStarted,
-		store.ApplicationStatusSubmitted,
 	} {
 		t.Run(start.String(), func(t *testing.T) {
 			s := newTestStore(t)
@@ -456,11 +455,14 @@ func TestSyncCompany_PostingCloses_EarlyStageApplicationClosedToo(t *testing.T) 
 // TestSyncCompany_PostingCloses_LiveApplicationLeftAlone is the guard on
 // the whole feature: a company pulling its listing while you're mid
 // process is normal, and the syncer must not overwrite a status the user
-// set and can't get back (see #105).
+// set and can't get back (see #105). A submitted application is
+// live too: companies often pull a listing once they have enough
+// candidates and keep reviewing the ones who applied (#174).
 func TestSyncCompany_PostingCloses_LiveApplicationLeftAlone(t *testing.T) {
 	ctx := context.Background()
 
 	for _, start := range []store.ApplicationStatus{
+		store.ApplicationStatusSubmitted,
 		store.ApplicationStatusInterviewing,
 		store.ApplicationStatusOfferReceived,
 		store.ApplicationStatusOfferAccepted,
