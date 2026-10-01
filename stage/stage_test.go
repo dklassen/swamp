@@ -802,7 +802,8 @@ func TestPrepared_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 		t.Fatalf("Prepare: %v", err)
 	}
 
-	wantTop := []string{"Posting", "CompanyName", "ApplicationID", "Documents", "ApplicationNotes", "LatestReviews"}
+	// ApplicationFormError is omitted when empty.
+	wantTop := []string{"Posting", "CompanyName", "ApplicationID", "Documents", "ApplicationNotes", "LatestReviews", "ApplicationForm"}
 	sort.Strings(wantTop)
 	if diff := cmp.Diff(wantTop, jsonKeys(t, got)); diff != "" {
 		t.Fatalf("Prepared top-level JSON keys mismatch (-want +got):\n%s", diff)

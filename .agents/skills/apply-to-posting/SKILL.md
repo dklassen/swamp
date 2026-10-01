@@ -57,6 +57,17 @@ type's name (`cover_letter`, `resume`), each with a `Path` and whether it
 `Exists`. Use those names as `DocumentType` with `read_document` and
 `write_document`. Treat the paths as informational -- they're locations
 on the host running the server, not something to open or write yourself.
+
+Its `ApplicationForm` is what the posting's application form asks for, when
+Swamp could read it (Greenhouse postings; it's `null` for other boards):
+
+- `ApplicationForm.Documents` gives each document as `"required"`,
+  `"optional"` or `"absent"` (a document missing from it is absent).
+- `ApplicationForm.Questions` lists the form's custom questions, each with
+  `Label`, `Required`, `Type` and, for a select, its `Options`.
+- If `ApplicationFormError` is set, the form couldn't be read: say so, and
+  carry on as if it were `null`.
+
 If a document already exists, check `LatestReviews` first:
 
 - A flagged review with `Notes` set: this is a **revision**, not a fresh
@@ -86,8 +97,17 @@ shortcut, it's a different (and much worse) task.
 
 ## 4. Draft the documents
 
-Write each document in `Documents` (today a cover letter and a resume),
-in markdown, tailored to this specific posting:
+Write each document the form uses, in markdown, tailored to this specific
+posting:
+
+- With an `ApplicationForm`: draft the `"required"` documents, and the
+  `"optional"` ones too (an optional cover letter is still worth sending),
+  telling the user which were optional. Don't draft an `"absent"` one: the
+  form has nowhere to put it.
+- Without one: draft every document in `Documents`, as the form is
+  unknown.
+
+For each document:
 
 - Pull the posting's actual content (title, company, description, any
   specifics worth responding to) from what `stage_prepare` returned. The
@@ -101,6 +121,10 @@ in markdown, tailored to this specific posting:
   to sound like the user.
 
 Save each one with `write_document`.
+
+The custom questions aren't drafted yet (an answers document is coming,
+#169). List the required ones for the user in the review checkpoint, so
+they aren't a surprise on the form.
 
 ## 5. Review checkpoint
 

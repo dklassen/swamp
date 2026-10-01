@@ -1,0 +1,45 @@
+{
+  "id": 4123456,
+  "title": "Security Engineer, Cloud",
+  "absolute_url": "https://job-boards.greenhouse.io/acme/jobs/4123456",
+  "content": "&lt;p&gt;Secure the cloud.&lt;/p&gt;",
+  "questions": [
+    { "label": "First Name", "required": true, "fields": [{ "name": "first_name", "type": "input_text", "values": [] }] },
+    { "label": "Email", "required": true, "fields": [{ "name": "email", "type": "input_text", "values": [] }] },
+    { "label": "Resume/CV", "required": true, "fields": [
+      { "name": "resume", "type": "input_file", "values": [] },
+      { "name": "resume_text", "type": "textarea", "values": [] }
+    ] },
+    { "label": "Cover Letter", "required": false, "fields": [
+      { "name": "cover_letter", "type": "input_file", "values": [] },
+      { "name": "cover_letter_text", "type": "textarea", "values": [] }
+    ] },
+    { "label": "LinkedIn Profile", "required": true, "fields": [{ "name": "question_1001", "type": "input_text", "values": [] }] },
+    { "label": "Will you now or in the future require sponsorship?", "required": true, "fields": [
+      { "name": "question_1002", "type": "multi_value_single_select", "values": [
+        { "label": "Yes", "value": 1 },
+        { "label": "No", "value": 0 }
+      ] }
+    ] },
+    { "label": "Why do you want to work here?", "required": false, "fields": [{ "name": "question_1003", "type": "textarea", "values": [] }] },
+    { "label": "Which of these have you used?", "required": false, "fields": [
+      { "name": "question_1004", "type": "multi_value_multi_select", "values": [
+        { "label": "Go", "value": 1 },
+        { "label": "Rust", "value": 2 }
+      ] }
+    ] },
+    { "label": "Source", "required": false, "fields": [{ "name": "question_1005", "type": "input_hidden", "values": [] }] }
+  ],
+  "location_questions": [
+    { "label": "Location (City)", "required": true, "fields": [{ "name": "location", "type": "input_text", "values": [] }] }
+  ],
+  "demographic_questions": {
+    "header": "Voluntary self-identification",
+    "questions": [
+      { "label": "Gender", "required": false, "type": "multi_value_single_select", "answer_options": [{ "label": "Decline to answer" }] }
+    ]
+  },
+  "compliance": [
+    { "type": "eeoc", "questions": [{ "required": false, "label": "Veteran status", "fields": [{ "name": "veteran_status", "type": "multi_value_single_select", "values": [] }] }] }
+  ]
+}

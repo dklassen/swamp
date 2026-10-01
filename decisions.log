@@ -6620,3 +6620,42 @@ than treating it as a changed document.
   may depend on store) is resolved by Option A: documents owns the
   type, store depends on documents, and documents still imports nothing
   from Swamp.
+
+## 2026-10-01 -- Greenhouse application forms at stage_prepare (#168, RFC 0002 task D2)
+
+stage_prepare now reads a Greenhouse posting's application form
+(GET /v1/boards/{token}/jobs/{id}?questions=true), stores it and returns
+it as Prepared.ApplicationForm, so the skill drafts only what the form
+uses.
+
+- Storage: a JSON column (posting_application_forms.form), one row per
+  posting, rather than a table per question. The form is only ever
+  read and written whole, and its shape (documents + questions) will
+  grow with #169/#170; a table would add a migration each time for no
+  query that needs it.
+- What's kept: the resume and cover letter as required, optional or
+  absent (absent = not on the form), and the custom questions
+  (Greenhouse fields named question_<id>) with label, required, a
+  source-agnostic field type and select options. Left out: contact
+  fields, location_questions, demographic_questions, compliance (EEO),
+  and hidden fields. Nothing should draft those. Leaving the separate
+  keys unread is what excludes them.
+- Types: jobboard.ApplicationForm / Requirement / Question, source-
+  agnostic so manual entry (#184) can produce the same shape. store
+  takes the form as JSON text and doesn't import jobboard, the same
+  split as postings (sync maps jobboard types into store's).
+- Freshness: reused for 7 days, then fetched again. Forms rarely change
+  once a posting is up, and the cost of a stale one is a refetch.
+- Failure: a failed fetch never fails stage_prepare. It returns a stale
+  stored form if there is one, otherwise null, with ApplicationFormError
+  saying what happened. The skill then drafts as before. A store error
+  does fail it: that's a broken database, not a flaky board.
+- Pointer for ApplicationForm: null ("unknown, draft everything") has to
+  be distinguishable from a form that asks for nothing; the skill acts
+  on the difference.
+- Stage gained functional options (WithFormFetchers) and an unexported
+  clock for tests, instead of a store test hook for backdating.
+- Not done here: list_postings' "drafting is done" rule still wants
+  every document type, so a posting whose form has no cover letter stays
+  listed until one exists. Folding the form into that rule belongs with
+  #169, which adds the answers document and its own done rule.

@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
 )
 
@@ -119,5 +120,66 @@ func TestFetchPostings_NonOKStatus_ReturnsError(t *testing.T) {
 	_, err := client.FetchPostings(context.Background(), "does-not-exist")
 	if err == nil {
 		t.Fatal("FetchPostings: expected error for 404 response, got nil")
+	}
+}
+
+// FetchApplicationForm reads what a posting's form asks for: whether
+// each document is required, optional or absent, and the custom
+// questions. Contact fields (name, email), location, demographic and
+// compliance (EEO) questions, and hidden fields are left out: none of
+// them is something to draft (#168).
+func TestFetchApplicationForm_ParsesDocumentsAndCustomQuestions(t *testing.T) {
+	t.Parallel()
+	body, err := os.ReadFile("testdata/job_questions.json")
+	if err != nil {
+		t.Fatalf("read fixture: %v", err)
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/v1/boards/acme/jobs/4123456" || r.URL.Query().Get("questions") != "true" {
+			t.Errorf("request URL = %s, want /v1/boards/acme/jobs/4123456?questions=true", r.URL)
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if _, err := w.Write(body); err != nil {
+			t.Errorf("write response: %v", err)
+		}
+	}))
+	t.Cleanup(server.Close)
+
+	got, err := NewClient(WithBaseURL(server.URL)).FetchApplicationForm(context.Background(), "acme", "4123456")
+	if err != nil {
+		t.Fatalf("FetchApplicationForm: %v", err)
+	}
+
+	want := jobboard.ApplicationForm{
+		Documents: map[documents.Type]jobboard.Requirement{
+			documents.Resume:      jobboard.Required,
+			documents.CoverLetter: jobboard.Optional,
+		},
+		Questions: []jobboard.Question{
+			{Label: "LinkedIn Profile", Required: true, Type: "text"},
+			{Label: "Will you now or in the future require sponsorship?", Required: true, Type: "single_select", Options: []string{"Yes", "No"}},
+			{Label: "Why do you want to work here?", Type: "long_text"},
+			{Label: "Which of these have you used?", Type: "multi_select", Options: []string{"Go", "Rust"}},
+		},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("FetchApplicationForm mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// A form that doesn't mention a document doesn't ask for it.
+func TestFetchApplicationForm_MissingDocumentIsAbsent(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`{"questions": [{"label": "Resume/CV", "required": true, "fields": [{"name": "resume", "type": "input_file", "values": []}]}]}`))
+	}))
+	t.Cleanup(server.Close)
+
+	got, err := NewClient(WithBaseURL(server.URL)).FetchApplicationForm(context.Background(), "acme", "1")
+	if err != nil {
+		t.Fatalf("FetchApplicationForm: %v", err)
+	}
+	if got.Documents[documents.CoverLetter] != jobboard.Absent {
+		t.Errorf("cover letter = %v, want absent", got.Documents[documents.CoverLetter])
 	}
 }

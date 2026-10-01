@@ -132,6 +132,15 @@ func newSyncer(s *store.Store) *sync.Syncer {
 	}, sync.DefaultConfig())
 }
 
+// newStage builds the agent hand-off Stage, able to read application
+// forms from every board that supports it (Greenhouse; see #167 for Ashby
+// and Lever) under the same fetch timeout as a sync.
+func newStage(s *store.Store, d *documents.Store) *stage.Stage {
+	return stage.New(s, d, stage.WithFormFetchers(map[string]stage.FormFetcher{
+		"greenhouse": greenhouse.NewClient(),
+	}, sync.DefaultConfig().FetchTimeout))
+}
+
 // runImport bulk-creates companies from a YAML seed file (see the seed
 // package for its shape). Each entry is validated against its source's
 // real API before being saved, so a bad row is reported and skipped
@@ -220,7 +229,7 @@ func runStage(s *store.Store, d *documents.Store, args []string) {
 		usage()
 	}
 
-	st := stage.New(s, d)
+	st := newStage(s, d)
 	ctx := context.Background()
 
 	switch args[0] {
@@ -285,7 +294,7 @@ func runMCPServe(s *store.Store, d *documents.Store) {
 		addr = "127.0.0.1:8787"
 	}
 
-	st := stage.New(s, d)
+	st := newStage(s, d)
 	server := mcpserver.New(st, d, newSyncer(s))
 
 	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
