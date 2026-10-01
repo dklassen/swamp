@@ -369,7 +369,8 @@ func runExport(s *store.Store, d *documents.Store, args []string) {
 			fmt.Printf("%s: error: %v\n", documentType, err)
 			continue
 		}
-		fmt.Printf("%s: exported to %s (%s)\n", documentType, outPath, reviewSummary(reviews[documentType]))
+		review, hasReview := reviews[documentType]
+		fmt.Printf("%s: exported to %s (%s)\n", documentType, outPath, reviewSummary(review, hasReview))
 	}
 }
 
@@ -391,13 +392,13 @@ func exportDocumentPDF(ctx context.Context, s *store.Store, applicationID int64,
 	return outPath, nil
 }
 
-// reviewSummary describes review's outcome for the export CLI's output --
-// review is the zero value when the document has no recorded review yet
-// (store.LatestDocumentReviews omits any document type it has no review
-// for), which is a real, distinct state from either outcome and worth
-// saying so explicitly rather than defaulting to one.
-func reviewSummary(review store.DocumentReview) string {
-	if review.CreatedAt.IsZero() {
+// reviewSummary describes review's outcome for the export CLI's output.
+// hasReview is whether the review map had an entry for the document: no
+// current review is a real, distinct state from either outcome and worth
+// saying so explicitly rather than defaulting to one. It's never inferred
+// from review's fields (RFC 0005).
+func reviewSummary(review store.DocumentReview, hasReview bool) string {
+	if !hasReview {
 		return "not yet reviewed"
 	}
 	if review.Outcome == store.ReviewOutcomeFlagged {

@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/pressly/goose/v3"
 
@@ -74,5 +75,32 @@ func TestExportDocumentPDF_FailedExportRecordsNothing(t *testing.T) {
 	}
 	if len(exports) != 0 {
 		t.Errorf("exports = %+v, want none recorded for a failed export", exports)
+	}
+}
+
+func TestReviewSummary(t *testing.T) {
+	t.Parallel()
+
+	reviewedAt := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name      string
+		review    store.DocumentReview
+		hasReview bool
+		want      string
+	}{
+		// Presence comes from the map lookup, never the review's fields:
+		// these two would flip if CreatedAt were still the check.
+		{"no review, despite a timestamp", store.DocumentReview{CreatedAt: reviewedAt}, false, "not yet reviewed"},
+		{"passed, without a timestamp", store.DocumentReview{Outcome: store.ReviewOutcomePassed}, true, "passed"},
+		{"no review", store.DocumentReview{}, false, "not yet reviewed"},
+		{"flagged", store.DocumentReview{Outcome: store.ReviewOutcomeFlagged, Notes: "too long", CreatedAt: reviewedAt}, true, "flagged: too long"},
+		{"passed", store.DocumentReview{Outcome: store.ReviewOutcomePassed, CreatedAt: reviewedAt}, true, "passed"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			if got := reviewSummary(tc.review, tc.hasReview); got != tc.want {
+				t.Errorf("reviewSummary() = %q, want %q", got, tc.want)
+			}
+		})
 	}
 }
