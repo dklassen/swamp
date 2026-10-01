@@ -5,7 +5,8 @@ description: Draft a tailored cover letter and resume for a job posting tracked 
 
 # Apply to a posting
 
-This skill turns a posting the user has marked "interested" in Swamp into a
+This skill turns a posting the user has marked "interested" in Swamp (or
+started an application for) into a
 drafted, tailored cover letter and resume. It is deliberately
 interactive-first: a human picks which posting to work on and reviews what
 gets written before anything is considered done. There is no autonomous or
@@ -41,6 +42,10 @@ Show the user the list -- title, company, location, and whether anything's
 flagged is usually enough -- and ask which one to work on. Don't pick for
 them: committing to a posting is the user's call, not an inference you
 make from the queue.
+
+If the user asks to work through several at once -- e.g. "draft the
+started applications that have no drafts" -- follow the batch flow
+below instead of picking one.
 
 ## 2. Commit to the posting
 
@@ -101,8 +106,44 @@ summary plus where each document was saved -- and stop there. Do not:
 
 - mark the application submitted or change its status (that's a manual
   action in the Swamp TUI, entirely outside this skill's scope)
-- move on to the next posting from the list without being asked
+- move on to the next posting from the list without being asked (the
+  batch flow below is the user asking, for the postings they confirmed)
 - treat a draft as finished before the user has actually seen it
 
 This is what "interactive-first" means in practice: the workflow produces
 a draft for a human to react to, not a finished output to hand off.
+
+## Batch: several postings in one session
+
+Use this only when the user asks for it. It runs the same steps for each
+posting, with one confirmation up front and one review at the end
+instead of one of each per posting.
+
+1. **Build the list.** From `list_postings`, take what the user asked
+   for -- usually the started applications (`ApplicationStatus` is
+   `"application_started"`) with no drafts yet. You can't see which
+   documents exist from the list; `stage_prepare` tells you, so a
+   posting that turns out to already have drafts is reported, not
+   redrafted (see 4).
+2. **Confirm it.** Show the list (title and company per posting) and ask
+   the user to confirm or trim it. Don't start until they do. Work only
+   on the postings they confirmed.
+3. **Read `PROFILE_REFERENCE.md` once** (step 3), before the first
+   posting. If it's missing, stop before drafting anything.
+4. **For each posting, in order:** call `stage_prepare` (step 2), then
+   draft and save both documents (step 4). The step-2 rules still apply
+   to every posting:
+   - a flagged review means **revise** the existing draft with
+     `read_document`, not start over;
+   - a document that already exists without a flagged review is **not
+     overwritten**: skip it and note it for the summary, rather than
+     stopping the batch to ask.
+   If something fails for one posting, note it and carry on with the
+   next.
+5. **Stop with one summary** (step 5): per posting, what was drafted,
+   revised or skipped and why, with where each document was saved. The
+   user reviews from there. Don't start another batch or anything else
+   unasked.
+
+The guardrails don't change in a batch: never submit anything, never
+change an application's status, never overwrite a draft without asking.

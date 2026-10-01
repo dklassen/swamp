@@ -6482,3 +6482,25 @@ It's a prerequisite of batch drafting (#165).
   diverge; there was no reason to make them.
 - No pagination: per-posting size was the problem, and the queue is
   tens of postings, not hundreds.
+
+## 2026-10-01 -- Batch drafting in apply-to-posting (#165, RFC 0002 task C1)
+
+- stage.List (list_postings / stage list) also returns postings with a
+  started application that were never marked interested, on the same
+  draft-or-revise rule as interested ones. On the real queue that's
+  the 3 the RFC counted (35 -> 38 entries). Only application_started,
+  not every non-terminal status as the issue worded it: that matches
+  the home screen's draft/revise steps (#164), and drafting for an
+  already-submitted application has no use.
+- Done in stage, by merging ListActiveApplications into the interested
+  list, not by widening ListInterestedPostings' SQL: that query relies
+  on sqlc.slice, which can't safely be combined with another bound
+  parameter on sqlite, and hard-coding the status string there would
+  bypass the Go-side status enum.
+- The batch flow (SKILL.md) confirms the list up front and summarizes
+  once at the end. Inside a batch, an existing draft without a flagged
+  review is skipped and reported, instead of the single-posting flow's
+  "ask before overwriting": stopping mid-batch to ask defeats the point,
+  and skipping never loses work.
+- The work list is every started application without drafts, since
+  B1 (#163) kept all 23.
