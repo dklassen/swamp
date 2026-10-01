@@ -301,9 +301,10 @@ type ClosePostingResult struct {
 // ClosePosting closes an open posting, records a "closed" posting_history
 // snapshot of it, and moves its application (if any) to posting_closed
 // when the application's status is one of closeApplicationFrom, recording
-// that in its status history (#162) -- all in one transaction (#147). Doing them as separate commits let an
-// interruption close the posting but not its application, and the next
-// sync, which only looks at open postings, never came back to it.
+// that in its status history (#162) -- all in one transaction (#147).
+// Doing them as separate commits let an interruption close the posting
+// but not its application, and the next sync, which only looks at open
+// postings, never came back to it.
 //
 // Closing is conditional on the posting still being open, so a second,
 // overlapping sync closing the same posting changes nothing and records
@@ -317,8 +318,20 @@ func (s *Store) ClosePosting(ctx context.Context, postingID int64, closeApplicat
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	qtx := s.queries.WithTx(tx)
+	result, err := closePosting(ctx, s.queries.WithTx(tx), postingID, closeApplicationFrom)
+	if err != nil {
+		return ClosePostingResult{}, err
+	}
 
+	if err := tx.Commit(); err != nil {
+		return ClosePostingResult{}, fmt.Errorf("store: commit close posting tx: %w", err)
+	}
+	return result, nil
+}
+
+// closePosting is ClosePosting inside the caller's transaction, shared
+// with SoftDeleteCompany.
+func closePosting(ctx context.Context, qtx *db.Queries, postingID int64, closeApplicationFrom []ApplicationStatus) (ClosePostingResult, error) {
 	row, err := qtx.GetPosting(ctx, postingID)
 	if err != nil {
 		return ClosePostingResult{}, fmt.Errorf("store: get posting to close: %w", err)
@@ -367,10 +380,6 @@ func (s *Store) ClosePosting(ctx context.Context, postingID int64, closeApplicat
 			}
 			result.ApplicationClosed = true
 		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return ClosePostingResult{}, fmt.Errorf("store: commit close posting tx: %w", err)
 	}
 	return result, nil
 }

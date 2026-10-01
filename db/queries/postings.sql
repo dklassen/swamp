@@ -135,3 +135,10 @@ JOIN posting_markup ON posting_markup.posting_id = postings.id
 WHERE postings.listing_status = 'open'
   AND posting_markup.archived_at IS NULL
 GROUP BY postings.company_id;
+
+-- name: ListOpenPostingIDsByCompany :many
+-- What store.SoftDeleteCompany closes: a deleted company is never synced
+-- again, so nothing else would ever close these (#178).
+SELECT id FROM postings
+WHERE company_id = ? AND listing_status = 'open'
+ORDER BY id;

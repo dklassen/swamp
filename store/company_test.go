@@ -78,6 +78,70 @@ func TestSoftDeleteCompany_ExcludesFromListAndGet(t *testing.T) {
 	}
 }
 
+// A deleted company is never synced again, so anything left open would
+// stay open for good and count toward open totals (#178). Its
+// applications are the user's, not the board's, so they're left alone.
+func TestSoftDeleteCompany_ClosesItsOpenPostings(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	globex := mustCreateCompany(t, s, "Globex", "ashby", "globex")
+	open := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	alreadyClosed := mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
+	if err := s.MarkPostingClosed(ctx, alreadyClosed.ID); err != nil {
+		t.Fatalf("MarkPostingClosed: %v", err)
+	}
+	otherCompany := mustUpsertPosting(t, s, globex.ID, "job-3", "Engineer")
+	mustCreateApplication(t, s, open.ID)
+
+	if err := s.SoftDeleteCompany(ctx, acme.ID); err != nil {
+		t.Fatalf("SoftDeleteCompany: %v", err)
+	}
+
+	tests := []struct {
+		name        string
+		postingID   int64
+		wantStatus  string
+		wantHistory []string
+	}{
+		{name: "open posting is closed, with history", postingID: open.ID, wantStatus: "closed", wantHistory: []string{"closed"}},
+		{name: "already-closed posting is untouched", postingID: alreadyClosed.ID, wantStatus: "closed", wantHistory: []string{}},
+		{name: "another company's posting is untouched", postingID: otherCompany.ID, wantStatus: "open", wantHistory: []string{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			posting, err := s.GetPosting(ctx, tt.postingID)
+			if err != nil {
+				t.Fatalf("GetPosting: %v", err)
+			}
+			if posting.ListingStatus != tt.wantStatus {
+				t.Errorf("ListingStatus = %q, want %q", posting.ListingStatus, tt.wantStatus)
+			}
+			history, err := s.ListPostingHistory(ctx, tt.postingID)
+			if err != nil {
+				t.Fatalf("ListPostingHistory: %v", err)
+			}
+			got := []string{}
+			for _, h := range history {
+				got = append(got, h.ChangeType)
+			}
+			if diff := cmp.Diff(tt.wantHistory, got); diff != "" {
+				t.Errorf("history change types mismatch (-want +got):\n%s", diff)
+			}
+		})
+	}
+
+	application, err := s.GetApplication(ctx, open.ID)
+	if err != nil {
+		t.Fatalf("GetApplication: %v", err)
+	}
+	if application.Status != ApplicationStatusStarted {
+		t.Errorf("application status = %s, want it left at %s", application.Status, ApplicationStatusStarted)
+	}
+}
+
 func TestCreateCompany_SameSourceRefAsSoftDeletedCompany_RestoresExistingRow(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

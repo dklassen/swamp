@@ -129,6 +129,9 @@ type Querier interface {
 	// postings with no application yet, which the LEFT JOIN yields as NULLs.
 	ListInterestedPostings(ctx context.Context, terminalStatuses []sql.NullString) ([]ListInterestedPostingsRow, error)
 	ListInterviewStagesByApplication(ctx context.Context, applicationID int64) ([]InterviewStage, error)
+	// What store.SoftDeleteCompany closes: a deleted company is never synced
+	// again, so nothing else would ever close these (#178).
+	ListOpenPostingIDsByCompany(ctx context.Context, companyID int64) ([]int64, error)
 	ListPostingHistoryByPosting(ctx context.Context, postingID int64) ([]PostingHistory, error)
 	// id DESC is a tiebreaker: a single sync inserts many rows within the same
 	// CURRENT_TIMESTAMP second (sqlite has only second resolution), so

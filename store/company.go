@@ -92,8 +92,37 @@ func (s *Store) CreateCompany(ctx context.Context, name, source, sourceRef strin
 	return companyFromRow(row), nil
 }
 
+// SoftDeleteCompany marks a company deleted and closes its open postings,
+// with a "closed" posting_history row each, in one transaction (#178). A
+// deleted company is never synced, so nothing else would ever close them
+// and they'd count as open for good. Applications are left alone: they're
+// the user's, not the board's. Re-adding the company restores it (see
+// CreateCompany), and its next sync reopens whatever is still listed.
 func (s *Store) SoftDeleteCompany(ctx context.Context, id int64) error {
-	return s.queries.SoftDeleteCompany(ctx, id)
+	tx, err := s.sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("store: begin soft delete company tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	qtx := s.queries.WithTx(tx)
+	if err := qtx.SoftDeleteCompany(ctx, id); err != nil {
+		return err
+	}
+	postingIDs, err := qtx.ListOpenPostingIDsByCompany(ctx, id)
+	if err != nil {
+		return fmt.Errorf("store: list open postings of deleted company: %w", err)
+	}
+	for _, postingID := range postingIDs {
+		if _, err := closePosting(ctx, qtx, postingID, nil); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("store: commit soft delete company tx: %w", err)
+	}
+	return nil
 }
 
 func (s *Store) RestoreCompany(ctx context.Context, id int64) error {

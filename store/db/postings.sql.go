@@ -380,6 +380,37 @@ func (q *Queries) ListInterestedPostings(ctx context.Context, terminalStatuses [
 	return items, nil
 }
 
+const listOpenPostingIDsByCompany = `-- name: ListOpenPostingIDsByCompany :many
+SELECT id FROM postings
+WHERE company_id = ? AND listing_status = 'open'
+ORDER BY id
+`
+
+// What store.SoftDeleteCompany closes: a deleted company is never synced
+// again, so nothing else would ever close these (#178).
+func (q *Queries) ListOpenPostingIDsByCompany(ctx context.Context, companyID int64) ([]int64, error) {
+	rows, err := q.db.QueryContext(ctx, listOpenPostingIDsByCompany, companyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPostingsByCompany = `-- name: ListPostingsByCompany :many
 SELECT id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at FROM postings
 WHERE company_id = ?
