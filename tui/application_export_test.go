@@ -28,7 +28,7 @@ func testExportApplication() store.ApplicationView {
 // writeApplicationDocuments creates a documents base dir containing the
 // named markdown documents for applicationID, and returns a Store over
 // it. Document types not named are left absent on disk.
-func writeApplicationDocuments(t *testing.T, applicationID int64, present ...store.DocumentType) *documents.Store {
+func writeApplicationDocuments(t *testing.T, applicationID int64, present ...documents.Type) *documents.Store {
 	t.Helper()
 	base := t.TempDir()
 	dir := filepath.Join(base, strconv.FormatInt(applicationID, 10))
@@ -47,7 +47,7 @@ func writeApplicationDocuments(t *testing.T, applicationID int64, present ...sto
 func TestApplicationExportModel_PrefillsDestinationWithDefaultDir(t *testing.T) {
 	t.Parallel()
 
-	docs := writeApplicationDocuments(t, 42, store.DocumentTypeCoverLetter)
+	docs := writeApplicationDocuments(t, 42, documents.CoverLetter)
 	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), "/home/dana/Desktop", 80)
 
 	if got := m.textinput.Value(); got != "/home/dana/Desktop" {
@@ -61,7 +61,7 @@ func TestApplicationExportModel_PrefillsDestinationWithDefaultDir(t *testing.T) 
 func TestApplicationExportModel_EscCancels(t *testing.T) {
 	t.Parallel()
 
-	docs := writeApplicationDocuments(t, 42, store.DocumentTypeCoverLetter)
+	docs := writeApplicationDocuments(t, 42, documents.CoverLetter)
 	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), "/tmp", 80)
 
 	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
@@ -74,7 +74,7 @@ func TestApplicationExportModel_EscCancels(t *testing.T) {
 func TestApplicationExportModel_EnterExportsBothDocumentsWithDescriptiveNames(t *testing.T) {
 	t.Parallel()
 
-	docs := writeApplicationDocuments(t, 42, store.DocumentTypeCoverLetter, store.DocumentTypeResume)
+	docs := writeApplicationDocuments(t, 42, documents.CoverLetter, documents.Resume)
 	dest := t.TempDir()
 	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), dest, 80)
 
@@ -116,7 +116,7 @@ func TestApplicationExportModel_SkipsUndraftedDocumentsWithoutFailing(t *testing
 	t.Parallel()
 
 	// Resume drafted, cover letter never written.
-	docs := writeApplicationDocuments(t, 42, store.DocumentTypeResume)
+	docs := writeApplicationDocuments(t, 42, documents.Resume)
 	dest := t.TempDir()
 	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), dest, 80)
 
@@ -130,7 +130,7 @@ func TestApplicationExportModel_SkipsUndraftedDocumentsWithoutFailing(t *testing
 	if diff := cmp.Diff(wantPaths, got.paths); diff != "" {
 		t.Errorf("exported paths mismatch (-want +got):\n%s", diff)
 	}
-	wantSkipped := []store.DocumentType{store.DocumentTypeCoverLetter}
+	wantSkipped := []documents.Type{documents.CoverLetter}
 	if diff := cmp.Diff(wantSkipped, got.skipped); diff != "" {
 		t.Errorf("skipped mismatch (-want +got):\n%s", diff)
 	}
@@ -141,7 +141,7 @@ func TestApplicationExportModel_ExpandsTildeInDestination(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	docs := writeApplicationDocuments(t, 42, store.DocumentTypeResume)
+	docs := writeApplicationDocuments(t, 42, documents.Resume)
 	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), "~/Desktop", 80)
 
 	cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
@@ -167,7 +167,7 @@ func TestApplicationExportModel_RecordsEachExport(t *testing.T) {
 	t.Parallel()
 
 	s := newTestStore(t)
-	docs := writeApplicationDocuments(t, 42, store.DocumentTypeCoverLetter)
+	docs := writeApplicationDocuments(t, 42, documents.CoverLetter)
 	dest := t.TempDir()
 	m := newApplicationExportModel(s, docs, testExportApplication(), dest, 80)
 
@@ -180,7 +180,7 @@ func TestApplicationExportModel_RecordsEachExport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LatestDocumentExports: %v", err)
 	}
-	coverLetter, ok := exports[store.DocumentTypeCoverLetter]
+	coverLetter, ok := exports[documents.CoverLetter]
 	if !ok {
 		t.Fatal("no cover letter export recorded")
 	}
@@ -190,7 +190,7 @@ func TestApplicationExportModel_RecordsEachExport(t *testing.T) {
 	if !coverLetter.IsCurrent("# Heading\n\nBody text.\n") {
 		t.Error("export isn't current for the content that was exported")
 	}
-	if _, ok := exports[store.DocumentTypeResume]; ok {
+	if _, ok := exports[documents.Resume]; ok {
 		t.Error("a resume export was recorded, but there was no resume to export")
 	}
 }

@@ -88,8 +88,8 @@ func (m *applicationStatusModel) View() string {
 // ApplicationStatus.String() is the value persisted to the DB (see
 // store.ApplicationStatus), so it can't be prettified at the source
 // without changing what's written to applications.status -- the
-// presentation form lives here instead, the same way documentTypeLabel
-// handles store.DocumentType.
+// presentation form lives here instead, the same way documents.Type.Label
+// handles documents.Type.
 //
 // The default case falls back to String() so an unmapped status still
 // renders something rather than an empty cell; TestApplicationStatus

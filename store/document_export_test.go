@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"testing"
+
+	"github.com/dklassen/swamp/documents"
 )
 
 func TestRecordDocumentExport_LatestPerTypeIsCurrentUntilContentChanges(t *testing.T) {
@@ -14,12 +16,12 @@ func TestRecordDocumentExport_LatestPerTypeIsCurrentUntilContentChanges(t *testi
 	application := mustCreateApplication(t, s, posting.ID)
 
 	for _, export := range []struct {
-		documentType DocumentType
+		documentType documents.Type
 		content      string
 		path         string
 	}{
-		{DocumentTypeCoverLetter, "# Cover letter v1", "/out/v1-cover_letter.pdf"},
-		{DocumentTypeCoverLetter, "# Cover letter v2", "/out/v2-cover_letter.pdf"},
+		{documents.CoverLetter, "# Cover letter v1", "/out/v1-cover_letter.pdf"},
+		{documents.CoverLetter, "# Cover letter v2", "/out/v2-cover_letter.pdf"},
 	} {
 		if err := s.RecordDocumentExport(ctx, application.ID, export.documentType, export.content, export.path); err != nil {
 			t.Fatalf("RecordDocumentExport: %v", err)
@@ -30,10 +32,10 @@ func TestRecordDocumentExport_LatestPerTypeIsCurrentUntilContentChanges(t *testi
 	if err != nil {
 		t.Fatalf("LatestDocumentExports: %v", err)
 	}
-	if _, ok := exports[DocumentTypeResume]; ok {
+	if _, ok := exports[documents.Resume]; ok {
 		t.Errorf("LatestDocumentExports has a resume export, want none: the resume was never exported")
 	}
-	coverLetter, ok := exports[DocumentTypeCoverLetter]
+	coverLetter, ok := exports[documents.CoverLetter]
 	if !ok {
 		t.Fatal("LatestDocumentExports has no cover letter export")
 	}

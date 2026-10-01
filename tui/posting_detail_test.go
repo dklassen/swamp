@@ -36,9 +36,9 @@ func TestPostingDetailModel_New_WithReviews_ShowsOutcomeAndNotes(t *testing.T) {
 	t.Parallel()
 
 	app := store.Application{ID: 9, PostingID: 5}
-	reviews := map[store.DocumentType]store.DocumentReview{
-		store.DocumentTypeCoverLetter: {Outcome: store.ReviewOutcomeFlagged, Notes: "too generic, mention Go specifically"},
-		store.DocumentTypeResume:      {Outcome: store.ReviewOutcomePassed},
+	reviews := map[documents.Type]store.DocumentReview{
+		documents.CoverLetter: {Outcome: store.ReviewOutcomeFlagged, Notes: "too generic, mention Go specifically"},
+		documents.Resume:      {Outcome: store.ReviewOutcomePassed},
 	}
 	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, app, true, reviews, true)
 	got := m.View()
@@ -342,8 +342,8 @@ func TestPostingDetailModel_View_AlignsFieldValues(t *testing.T) {
 		JobURL:     "https://jobs.example.com/a-very-long-path/that-needs-to-wrap/somewhere-sensible",
 	}}
 	app := store.Application{ID: 9, PostingID: 5, Status: store.ApplicationStatusStarted}
-	reviews := map[store.DocumentType]store.DocumentReview{
-		store.DocumentTypeCoverLetter: {Outcome: store.ReviewOutcomeFlagged, Notes: "too generic"},
+	reviews := map[documents.Type]store.DocumentReview{
+		documents.CoverLetter: {Outcome: store.ReviewOutcomeFlagged, Notes: "too generic"},
 	}
 	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 70, 60, p, app, true, reviews, true)
 	lines := strings.Split(ansi.Strip(m.viewport.View()), "\n")

@@ -344,8 +344,8 @@ func runExport(s *store.Store, d *documents.Store, args []string) {
 		log.Fatalf("export: current document reviews: %v", err)
 	}
 
-	for _, documentType := range store.DocumentTypes() {
-		doc, err := status.ByName(documentType.String())
+	for _, documentType := range documents.Types() {
+		doc, err := status.Doc(documentType)
 		if err != nil {
 			fmt.Printf("%s: error: %v\n", documentType, err)
 			continue
@@ -374,10 +374,10 @@ func runExport(s *store.Store, d *documents.Store, args []string) {
 // across packages since store deliberately has no filesystem access and
 // documents deliberately never reads file content (see documents.go's
 // own doc comment), so each caller composes the two itself.
-func currentDocumentReviews(status documents.Status, reviews map[store.DocumentType]store.DocumentReview) (map[store.DocumentType]store.DocumentReview, error) {
-	out := make(map[store.DocumentType]store.DocumentReview, len(reviews))
+func currentDocumentReviews(status documents.Status, reviews map[documents.Type]store.DocumentReview) (map[documents.Type]store.DocumentReview, error) {
+	out := make(map[documents.Type]store.DocumentReview, len(reviews))
 	for documentType, review := range reviews {
-		doc, err := status.ByName(documentType.String())
+		doc, err := status.Doc(documentType)
 		if err != nil {
 			return nil, err
 		}
@@ -402,7 +402,7 @@ func currentDocumentReviews(status documents.Status, reviews map[store.DocumentT
 // TUI's export screen, where the user picks the directory. The export is
 // recorded against applicationID with the content it was rendered from
 // (store.RecordDocumentExport, #188), as the TUI's are.
-func exportDocumentPDF(ctx context.Context, s *store.Store, applicationID int64, documentType store.DocumentType, mdPath string) (string, error) {
+func exportDocumentPDF(ctx context.Context, s *store.Store, applicationID int64, documentType documents.Type, mdPath string) (string, error) {
 	outPath := strings.TrimSuffix(mdPath, filepath.Ext(mdPath)) + ".pdf"
 	content, err := export.Document(mdPath, outPath)
 	if err != nil {

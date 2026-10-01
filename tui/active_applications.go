@@ -165,7 +165,7 @@ type documentProgress struct {
 //
 // a.LatestReviews must already be filtered to current reviews (see
 // currentDocumentReviews), as loadActiveApplications does.
-func nextStep(a store.ApplicationView, docs map[store.DocumentType]documentProgress) string {
+func nextStep(a store.ApplicationView, docs map[documents.Type]documentProgress) string {
 	closed := a.Posting.ListingStatus == "closed"
 	if a.Status != store.ApplicationStatusStarted {
 		if closed {
@@ -176,7 +176,7 @@ func nextStep(a store.ApplicationView, docs map[store.DocumentType]documentProgr
 	if closed {
 		return "withdraw?"
 	}
-	documentTypes := store.DocumentTypes()
+	documentTypes := documents.Types()
 	for _, documentType := range documentTypes {
 		if !docs[documentType].drafted {
 			return "draft"
@@ -233,15 +233,15 @@ func orderForHome(apps []store.ApplicationView) {
 // currentDocumentReviews, a read failure is an error rather than "not
 // drafted", so a transient I/O problem can't send a finished draft back
 // to "draft".
-func documentProgressOf(s *store.Store, docs *documents.Store, applicationID int64) (map[store.DocumentType]documentProgress, error) {
+func documentProgressOf(s *store.Store, docs *documents.Store, applicationID int64) (map[documents.Type]documentProgress, error) {
 	exports, err := s.LatestDocumentExports(context.Background(), applicationID)
 	if err != nil {
 		return nil, err
 	}
 	status := docs.Status(applicationID)
-	progress := make(map[store.DocumentType]documentProgress, len(store.DocumentTypes()))
-	for _, documentType := range store.DocumentTypes() {
-		doc, err := status.ByName(documentType.String())
+	progress := make(map[documents.Type]documentProgress, len(documents.Types()))
+	for _, documentType := range documents.Types() {
+		doc, err := status.Doc(documentType)
 		if err != nil {
 			return nil, err
 		}

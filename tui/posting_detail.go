@@ -38,11 +38,11 @@ type postingDetailModel struct {
 	canNavigateSiblings bool
 
 	// latestReviews holds the most recent DocumentReview per document
-	// type (keyed by store.DocumentTypeCoverLetter/DocumentTypeResume),
+	// type (keyed by documents.CoverLetter/documents.Resume),
 	// loaded async via loadDocumentReviews the same way application
 	// itself is (see decisions.log #83) -- absent when not yet loaded,
 	// or nil when this posting has no application.
-	latestReviews map[store.DocumentType]store.DocumentReview
+	latestReviews map[documents.Type]store.DocumentReview
 }
 
 // newPostingDetailModel returns a detail screen for p, sized to
@@ -51,7 +51,7 @@ type postingDetailModel struct {
 // data changes (navigating to a different posting, an application being
 // created/updated, or a window resize), matching the pre-extraction
 // showPostingDetail's "always rebuild, always reset scroll" behavior.
-func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool, latestReviews map[store.DocumentType]store.DocumentReview, canNavigateSiblings bool) postingDetailModel {
+func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool, latestReviews map[documents.Type]store.DocumentReview, canNavigateSiblings bool) postingDetailModel {
 	inner := detailInnerWidth(width)
 	help := indentLines(wrapToWidth(postingDetailHelp(canNavigateSiblings), inner), detailPadding)
 	vp := viewport.New(width, 0)

@@ -96,21 +96,21 @@ func TestApplicationDetailModel_EnterReview_OnExistingDocument_ReturnsEnterDocum
 		key          rune
 		filename     string
 		content      string
-		documentType store.DocumentType
+		documentType documents.Type
 	}{
 		{
 			name:         "shift+L reviews cover letter",
 			key:          'L',
 			filename:     "cover_letter.md",
 			content:      "Dear hiring manager, I am excited to apply.",
-			documentType: store.DocumentTypeCoverLetter,
+			documentType: documents.CoverLetter,
 		},
 		{
 			name:         "shift+R reviews resume",
 			key:          'R',
 			filename:     "resume.md",
 			content:      "# Resume",
-			documentType: store.DocumentTypeResume,
+			documentType: documents.Resume,
 		},
 	}
 	for _, tt := range tests {
@@ -155,9 +155,9 @@ func TestApplicationDetailModel_View_ShowsOutcomeAndNotes(t *testing.T) {
 	t.Parallel()
 
 	application := testApplicationView()
-	application.LatestReviews = map[store.DocumentType]store.DocumentReview{
-		store.DocumentTypeCoverLetter: {Outcome: store.ReviewOutcomeFlagged, Notes: "too generic"},
-		store.DocumentTypeResume:      {Outcome: store.ReviewOutcomePassed},
+	application.LatestReviews = map[documents.Type]store.DocumentReview{
+		documents.CoverLetter: {Outcome: store.ReviewOutcomeFlagged, Notes: "too generic"},
+		documents.Resume:      {Outcome: store.ReviewOutcomePassed},
 	}
 	m := newApplicationDetailModel(documents.NewStore(t.TempDir()), application)
 

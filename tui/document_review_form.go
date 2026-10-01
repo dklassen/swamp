@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -22,7 +23,7 @@ import (
 type documentReviewFormModel struct {
 	store         *store.Store
 	applicationID int64
-	documentType  store.DocumentType
+	documentType  documents.Type
 	content       string
 	textarea      textarea.Model
 }
@@ -32,7 +33,7 @@ type documentReviewFormModel struct {
 // leaves under its status/error banner (App.screenRows). App refits the
 // height with setHeight whenever that changes; the width is fixed at
 // construction.
-func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentType store.DocumentType, content string, width, height int) documentReviewFormModel {
+func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentType documents.Type, content string, width, height int) documentReviewFormModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	ta.Focus()
@@ -55,7 +56,7 @@ func (m *documentReviewFormModel) setHeight(height int) {
 }
 
 func (m *documentReviewFormModel) title() string {
-	return titleStyle.Render("Review " + documentTypeLabel(m.documentType))
+	return titleStyle.Render("Review " + m.documentType.Label())
 }
 
 func documentReviewFormHelp() string {
@@ -71,7 +72,7 @@ type documentReviewCreatedMsg struct {
 	err    error
 }
 
-func createDocumentReview(s *store.Store, applicationID int64, documentType store.DocumentType, content string, outcome store.ReviewOutcome, notes string) tea.Cmd {
+func createDocumentReview(s *store.Store, applicationID int64, documentType documents.Type, content string, outcome store.ReviewOutcome, notes string) tea.Cmd {
 	return func() tea.Msg {
 		review, err := s.CreateDocumentReview(context.Background(), applicationID, documentType, content, outcome, notes)
 		return documentReviewCreatedMsg{review: review, err: err}
@@ -95,19 +96,6 @@ func (m *documentReviewFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
 	return cmd, nil
-}
-
-// documentTypeLabel renders a DocumentType constant as human-readable
-// text for screen titles.
-func documentTypeLabel(documentType store.DocumentType) string {
-	switch documentType {
-	case store.DocumentTypeCoverLetter:
-		return "cover letter"
-	case store.DocumentTypeResume:
-		return "resume"
-	default:
-		return documentType.String()
-	}
 }
 
 func (m *documentReviewFormModel) View() string {

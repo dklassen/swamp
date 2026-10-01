@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -97,9 +98,9 @@ func (m *applicationSubmitModel) View() string {
 			b.WriteString("  " + path + "\n")
 		}
 	}
-	for _, documentType := range store.DocumentTypes() {
+	for _, documentType := range documents.Types() {
 		review, ok := m.application.LatestReviews[documentType]
-		b.WriteString("  " + documentTypeLabel(documentType) + ": " + reviewBadge(review, ok) + "\n")
+		b.WriteString("  " + documentType.Label() + ": " + reviewBadge(review, ok) + "\n")
 	}
 
 	b.WriteString("\n" + fieldLabel.Render("3.") + " Fill in the form in your browser and submit it there.\n\n")
