@@ -964,6 +964,101 @@ func TestApplicationStatusHistory_DownDropsTable(t *testing.T) {
 	}
 }
 
+// TestCloseDeletedCompaniesPostings_ClosesOnlyDeletedCompaniesOpenPostings
+// verifies the 00015 migration (#178): open postings of an already
+// soft-deleted company are closed, each with a "closed" posting_history
+// row snapshotting it as it was, the same as store.SoftDeleteCompany now
+// does. Everything else is left alone.
+func TestCloseDeletedCompaniesPostings_ClosesOnlyDeletedCompaniesOpenPostings(t *testing.T) {
+	sqlDB := migrateTo(t, 14)
+
+	if _, err := sqlDB.Exec(
+		`INSERT INTO companies (id, name, source, source_ref, deleted_at) VALUES
+		 (1, 'Deleted', 'ashby', 'deleted', '2026-09-29 10:00:00'),
+		 (2, 'Active', 'ashby', 'active', NULL)`,
+	); err != nil {
+		t.Fatalf("insert companies: %v", err)
+	}
+	postings := []struct {
+		id            int
+		companyID     int
+		listingStatus string
+	}{
+		{id: 1, companyID: 1, listingStatus: "open"},
+		{id: 2, companyID: 1, listingStatus: "closed"},
+		{id: 3, companyID: 2, listingStatus: "open"},
+	}
+	for _, p := range postings {
+		if _, err := sqlDB.Exec(
+			`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload, listing_status)
+			 VALUES (?, ?, 'ashby', ?, 'Engineer', '{}', ?)`,
+			p.id, p.companyID, fmt.Sprintf("job-%d", p.id), p.listingStatus,
+		); err != nil {
+			t.Fatalf("insert posting %d: %v", p.id, err)
+		}
+	}
+	if _, err := sqlDB.Exec(`INSERT INTO applications (posting_id, status) VALUES (1, 'application_started')`); err != nil {
+		t.Fatalf("insert application: %v", err)
+	}
+
+	if err := goose.UpTo(sqlDB, ".", 15); err != nil {
+		t.Fatalf("migrate to version 15: %v", err)
+	}
+	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+		t.Fatalf("GetDBVersion: %v", err)
+	} else if gotVersion != 15 {
+		t.Fatalf("DB version after UpTo(15) = %d, want 15 (migration 00015 not found?)", gotVersion)
+	}
+
+	tests := []struct {
+		name        string
+		postingID   int
+		wantStatus  string
+		wantHistory int
+	}{
+		{name: "deleted company, open: closed", postingID: 1, wantStatus: "closed", wantHistory: 1},
+		{name: "deleted company, already closed: untouched", postingID: 2, wantStatus: "closed", wantHistory: 0},
+		{name: "active company: untouched", postingID: 3, wantStatus: "open", wantHistory: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var status string
+			if err := sqlDB.QueryRow(`SELECT listing_status FROM postings WHERE id = ?`, tt.postingID).Scan(&status); err != nil {
+				t.Fatalf("query posting: %v", err)
+			}
+			if status != tt.wantStatus {
+				t.Errorf("listing_status = %q, want %q", status, tt.wantStatus)
+			}
+			var history int
+			if err := sqlDB.QueryRow(
+				`SELECT COUNT(*) FROM posting_history WHERE posting_id = ? AND change_type = 'closed'`, tt.postingID,
+			).Scan(&history); err != nil {
+				t.Fatalf("count history: %v", err)
+			}
+			if history != tt.wantHistory {
+				t.Errorf("closed history rows = %d, want %d", history, tt.wantHistory)
+			}
+		})
+	}
+
+	var snapshot string
+	if err := sqlDB.QueryRow(`SELECT snapshot FROM posting_history WHERE posting_id = 1`).Scan(&snapshot); err != nil {
+		t.Fatalf("query snapshot: %v", err)
+	}
+	for _, want := range []string{`"ListingStatus":"open"`, `"Title":"Engineer"`, `"SourceID":"job-1"`} {
+		if !strings.Contains(snapshot, want) {
+			t.Errorf("snapshot %s does not contain %s", snapshot, want)
+		}
+	}
+	var appStatus string
+	if err := sqlDB.QueryRow(`SELECT status FROM applications WHERE posting_id = 1`).Scan(&appStatus); err != nil {
+		t.Fatalf("query application: %v", err)
+	}
+	if appStatus != "application_started" {
+		t.Errorf("application status = %q, want it left at application_started", appStatus)
+	}
+}
+
 func validString(s string) sql.NullString {
 	return sql.NullString{String: s, Valid: true}
 }
