@@ -218,50 +218,107 @@ func New(s *store.Store, d *documents.Store) *Stage {
 	return &Stage{store: s, documents: d}
 }
 
-// List returns interested, non-archived postings that don't yet have both
-// documents on disk, skipping any whose application is at a terminal
-// status (rejected, withdrawn, posting closed...). Read-only: it never
-// creates an application or touches the filesystem, so it's safe to call
-// as often as needed to check on outstanding work.
+// List returns the postings an agent can draft for: interested,
+// non-archived postings, plus postings with a started application that
+// were never marked interested (#165) -- an application started from the
+// TUI's posting detail, say. Either way a posting is skipped once both
+// documents are on disk and no current review is flagged, or when its
+// application is at a terminal status (rejected, withdrawn, posting
+// closed...). Started applications that aren't interested come after the
+// interested postings. Read-only: it never creates an application or
+// touches the filesystem, so it's safe to call as often as needed to
+// check on outstanding work.
 func (st *Stage) List(ctx context.Context) ([]Candidate, error) {
 	postings, err := st.store.ListInterestedPostings(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("stage: list interested postings: %w", err)
 	}
+	started, err := st.startedNotInterested(ctx, postings)
+	if err != nil {
+		return nil, err
+	}
 
-	candidates := make([]Candidate, 0, len(postings))
-	for _, p := range postings {
-		var notes string
-		var reviews map[store.DocumentType]store.DocumentReview
-		if p.ApplicationID != nil {
-			latest, err := st.store.LatestDocumentReviews(ctx, *p.ApplicationID)
-			if err != nil {
-				return nil, fmt.Errorf("stage: latest document reviews: %w", err)
-			}
-			status := st.documents.Status(*p.ApplicationID)
-			reviews, err = currentReviews(latest, status)
-			if err != nil {
-				return nil, fmt.Errorf("stage: check review currency: %w", err)
-			}
-			if status.CoverLetter.Exists && status.Resume.Exists && !needsRework(reviews) {
-				continue
-			}
-			application, err := st.store.GetApplication(ctx, p.Posting.ID)
-			if err != nil {
-				return nil, fmt.Errorf("stage: get application: %w", err)
-			}
-			notes = application.Notes
+	candidates := make([]Candidate, 0, len(postings)+len(started))
+	for _, p := range append(postings, started...) {
+		c, ok, err := st.candidate(ctx, p)
+		if err != nil {
+			return nil, err
 		}
-		candidates = append(candidates, Candidate{
-			Posting:           postingSummary(p.Posting),
-			CompanyName:       p.CompanyName,
-			ApplicationID:     p.ApplicationID,
-			ApplicationStatus: p.ApplicationStatus,
-			ApplicationNotes:  notes,
-			LatestReviews:     latestReviewsForJSON(reviews),
-		})
+		if ok {
+			candidates = append(candidates, c)
+		}
 	}
 	return candidates, nil
+}
+
+// startedNotInterested returns the postings with a started application
+// that aren't among interested (so weren't marked interested) and aren't
+// archived, in the shape ListInterestedPostings returns.
+func (st *Stage) startedNotInterested(ctx context.Context, interested []store.InterestedPosting) ([]store.InterestedPosting, error) {
+	seen := make(map[int64]bool, len(interested))
+	for _, p := range interested {
+		seen[p.Posting.ID] = true
+	}
+	applications, err := st.store.ListActiveApplications(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("stage: list active applications: %w", err)
+	}
+	var started []store.InterestedPosting
+	for _, a := range applications {
+		if a.Status != store.ApplicationStatusStarted || seen[a.Posting.ID] {
+			continue
+		}
+		markup, err := st.store.GetPostingMarkup(ctx, a.Posting.ID)
+		if err != nil {
+			return nil, fmt.Errorf("stage: get posting markup: %w", err)
+		}
+		if markup.ArchivedAt != nil {
+			continue
+		}
+		id, status := a.ID, a.Status
+		started = append(started, store.InterestedPosting{
+			Posting:           a.Posting,
+			CompanyName:       a.CompanyName,
+			ApplicationID:     &id,
+			ApplicationStatus: &status,
+		})
+	}
+	return started, nil
+}
+
+// candidate builds p's Candidate, or reports false when there's nothing
+// left to draft: both documents are on disk and no current review is
+// flagged.
+func (st *Stage) candidate(ctx context.Context, p store.InterestedPosting) (Candidate, bool, error) {
+	var notes string
+	var reviews map[store.DocumentType]store.DocumentReview
+	if p.ApplicationID != nil {
+		latest, err := st.store.LatestDocumentReviews(ctx, *p.ApplicationID)
+		if err != nil {
+			return Candidate{}, false, fmt.Errorf("stage: latest document reviews: %w", err)
+		}
+		status := st.documents.Status(*p.ApplicationID)
+		reviews, err = currentReviews(latest, status)
+		if err != nil {
+			return Candidate{}, false, fmt.Errorf("stage: check review currency: %w", err)
+		}
+		if status.CoverLetter.Exists && status.Resume.Exists && !needsRework(reviews) {
+			return Candidate{}, false, nil
+		}
+		application, err := st.store.GetApplication(ctx, p.Posting.ID)
+		if err != nil {
+			return Candidate{}, false, fmt.Errorf("stage: get application: %w", err)
+		}
+		notes = application.Notes
+	}
+	return Candidate{
+		Posting:           postingSummary(p.Posting),
+		CompanyName:       p.CompanyName,
+		ApplicationID:     p.ApplicationID,
+		ApplicationStatus: p.ApplicationStatus,
+		ApplicationNotes:  notes,
+		LatestReviews:     latestReviewsForJSON(reviews),
+	}, true, nil
 }
 
 // Prepare commits to drafting postingID's application: creates its

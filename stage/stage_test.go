@@ -856,3 +856,86 @@ func TestPrepare_ReflectsDocumentsWrittenBetweenCalls(t *testing.T) {
 		t.Error("Resume.Exists = true, want false (never written)")
 	}
 }
+
+// A posting the user started an application for without marking it
+// interested (e.g. from the TUI's posting detail) is still drafting work,
+// so it's listed when its application is started and needs a draft or a
+// revision (#165). Archived postings and later-stage applications stay
+// out.
+func TestList_IncludesStartedApplicationsNotMarkedInterested(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+
+	st, s, docs := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	write := func(applicationID int64) {
+		t.Helper()
+		paths, err := docs.EnsureDir(applicationID)
+		if err != nil {
+			t.Fatalf("EnsureDir: %v", err)
+		}
+		for _, path := range []string{paths.CoverLetter, paths.Resume} {
+			if err := os.WriteFile(path, []byte("# Draft"), 0o644); err != nil {
+				t.Fatalf("WriteFile: %v", err)
+			}
+		}
+	}
+
+	undrafted := mustUpsertPosting(t, s, company.ID, "job-1", "Undrafted")
+	if _, err := s.CreateApplication(ctx, undrafted.ID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+
+	flagged := mustUpsertPosting(t, s, company.ID, "job-2", "Flagged")
+	flaggedApp, err := s.CreateApplication(ctx, flagged.ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	write(flaggedApp.ID)
+	if _, err := s.CreateDocumentReview(ctx, flaggedApp.ID, store.DocumentTypeResume, "# Draft", store.ReviewOutcomeFlagged, "too long"); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+
+	drafted := mustUpsertPosting(t, s, company.ID, "job-3", "Drafted")
+	draftedApp, err := s.CreateApplication(ctx, drafted.ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	write(draftedApp.ID)
+
+	archived := mustUpsertPosting(t, s, company.ID, "job-4", "Archived")
+	if _, err := s.CreateApplication(ctx, archived.ID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	if _, err := s.SetPostingArchived(ctx, archived.ID); err != nil {
+		t.Fatalf("SetPostingArchived: %v", err)
+	}
+
+	submitted := mustUpsertPosting(t, s, company.ID, "job-5", "Submitted")
+	if _, err := s.CreateApplication(ctx, submitted.ID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	if _, err := s.UpdateApplicationStatus(ctx, submitted.ID, store.ApplicationStatusSubmitted); err != nil {
+		t.Fatalf("UpdateApplicationStatus: %v", err)
+	}
+
+	interested := mustUpsertPosting(t, s, company.ID, "job-6", "Interested and started")
+	mustMarkInterested(t, s, interested.ID)
+	if _, err := s.CreateApplication(ctx, interested.ID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+
+	got, err := st.List(ctx)
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	var titles []string
+	for _, c := range got {
+		titles = append(titles, c.Posting.Title)
+	}
+	sort.Strings(titles)
+	want := []string{"Flagged", "Interested and started", "Undrafted"}
+	if diff := cmp.Diff(want, titles); diff != "" {
+		t.Errorf("listed postings mismatch (-want +got):\n%s", diff)
+	}
+}

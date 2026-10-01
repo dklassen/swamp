@@ -34,7 +34,7 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_postings",
-		Description: "List interested, non-archived postings that still need a cover letter and/or resume drafted, or whose latest draft was flagged for revision.",
+		Description: "List non-archived postings that still need a cover letter and/or resume drafted, or whose latest draft was flagged for revision: postings marked interested, plus started applications that never were.",
 	}, listPostingsHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
