@@ -39,6 +39,7 @@ type Querier interface {
 	CreateApplicationStatusHistory(ctx context.Context, arg CreateApplicationStatusHistoryParams) error
 	CreateCompany(ctx context.Context, arg CreateCompanyParams) (Company, error)
 	CreateCompanyFilter(ctx context.Context, arg CreateCompanyFilterParams) (CompanyFilter, error)
+	CreateDocumentExport(ctx context.Context, arg CreateDocumentExportParams) error
 	CreateDocumentReview(ctx context.Context, arg CreateDocumentReviewParams) (DocumentReview, error)
 	CreateInterviewStage(ctx context.Context, arg CreateInterviewStageParams) (InterviewStage, error)
 	CreatePosting(ctx context.Context, arg CreatePostingParams) (Posting, error)
@@ -68,6 +69,9 @@ type Querier interface {
 	// creating) where callers need to know about a soft-deleted tag too, not
 	// just active ones.
 	GetTagByName(ctx context.Context, name string) (Tag, error)
+	// id breaks ties between exports in the same second (CURRENT_TIMESTAMP
+	// has one-second resolution).
+	LatestDocumentExport(ctx context.Context, arg LatestDocumentExportParams) (DocumentExport, error)
 	// Applications not at a terminal dead-end status, joined with their
 	// posting and company name -- feeds the active-applications TUI screen
 	// (#43). Unlike ListInterestedPostings this is an inner join on

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -47,7 +48,7 @@ func TestApplicationExportModel_PrefillsDestinationWithDefaultDir(t *testing.T) 
 	t.Parallel()
 
 	docs := writeApplicationDocuments(t, 42, store.DocumentTypeCoverLetter)
-	m := newApplicationExportModel(docs, testExportApplication(), "/home/dana/Desktop", 80)
+	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), "/home/dana/Desktop", 80)
 
 	if got := m.textinput.Value(); got != "/home/dana/Desktop" {
 		t.Errorf("destination prefill = %q, want %q", got, "/home/dana/Desktop")
@@ -61,7 +62,7 @@ func TestApplicationExportModel_EscCancels(t *testing.T) {
 	t.Parallel()
 
 	docs := writeApplicationDocuments(t, 42, store.DocumentTypeCoverLetter)
-	m := newApplicationExportModel(docs, testExportApplication(), "/tmp", 80)
+	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), "/tmp", 80)
 
 	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 
@@ -75,7 +76,7 @@ func TestApplicationExportModel_EnterExportsBothDocumentsWithDescriptiveNames(t 
 
 	docs := writeApplicationDocuments(t, 42, store.DocumentTypeCoverLetter, store.DocumentTypeResume)
 	dest := t.TempDir()
-	m := newApplicationExportModel(docs, testExportApplication(), dest, 80)
+	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), dest, 80)
 
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if intent != nil {
@@ -117,7 +118,7 @@ func TestApplicationExportModel_SkipsUndraftedDocumentsWithoutFailing(t *testing
 	// Resume drafted, cover letter never written.
 	docs := writeApplicationDocuments(t, 42, store.DocumentTypeResume)
 	dest := t.TempDir()
-	m := newApplicationExportModel(docs, testExportApplication(), dest, 80)
+	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), dest, 80)
 
 	cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := cmd().(applicationExportedMsg)
@@ -141,7 +142,7 @@ func TestApplicationExportModel_ExpandsTildeInDestination(t *testing.T) {
 	t.Setenv("HOME", home)
 
 	docs := writeApplicationDocuments(t, 42, store.DocumentTypeResume)
-	m := newApplicationExportModel(docs, testExportApplication(), "~/Desktop", 80)
+	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), "~/Desktop", 80)
 
 	cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := cmd().(applicationExportedMsg)
@@ -156,5 +157,40 @@ func TestApplicationExportModel_ExpandsTildeInDestination(t *testing.T) {
 	wantPath := filepath.Join(wantDir, "wealthsimple-delivery-platform-resume.pdf")
 	if _, err := os.Stat(wantPath); err != nil {
 		t.Errorf("stat exported pdf: %v (want it written under the expanded home dir)", err)
+	}
+}
+
+// Each exported document is recorded with the content it was exported
+// from (#188), which is what tells "passed, not exported" apart from
+// "exported, ready to submit".
+func TestApplicationExportModel_RecordsEachExport(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	docs := writeApplicationDocuments(t, 42, store.DocumentTypeCoverLetter)
+	dest := t.TempDir()
+	m := newApplicationExportModel(s, docs, testExportApplication(), dest, 80)
+
+	cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	if got := cmd().(applicationExportedMsg); got.err != nil {
+		t.Fatalf("export err = %v, want nil", got.err)
+	}
+
+	exports, err := s.LatestDocumentExports(context.Background(), 42)
+	if err != nil {
+		t.Fatalf("LatestDocumentExports: %v", err)
+	}
+	coverLetter, ok := exports[store.DocumentTypeCoverLetter]
+	if !ok {
+		t.Fatal("no cover letter export recorded")
+	}
+	if want := filepath.Join(dest, "wealthsimple-delivery-platform-cover_letter.pdf"); coverLetter.Path != want {
+		t.Errorf("export path = %q, want %q", coverLetter.Path, want)
+	}
+	if !coverLetter.IsCurrent("# Heading\n\nBody text.\n") {
+		t.Error("export isn't current for the content that was exported")
+	}
+	if _, ok := exports[store.DocumentTypeResume]; ok {
+		t.Error("a resume export was recorded, but there was no resume to export")
 	}
 }

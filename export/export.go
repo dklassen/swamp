@@ -23,19 +23,23 @@ import (
 // original sibling-file-only behavior this replaced -- because the TUI
 // lets the user export anywhere (e.g. ~/Desktop, to drag into a browser
 // upload field).
-func Document(mdPath, outPath string) error {
+//
+// It returns the markdown it rendered, so the caller can record exactly
+// what was exported (store.RecordDocumentExport, #188) without a second
+// read that could see a later edit.
+func Document(mdPath, outPath string) (string, error) {
 	content, err := os.ReadFile(mdPath)
 	if err != nil {
-		return fmt.Errorf("read %s: %w", mdPath, err)
+		return "", fmt.Errorf("read %s: %w", mdPath, err)
 	}
 	rendered, err := pdf.Render(content)
 	if err != nil {
-		return fmt.Errorf("render pdf: %w", err)
+		return "", fmt.Errorf("render pdf: %w", err)
 	}
 	if err := os.WriteFile(outPath, rendered, 0o644); err != nil {
-		return fmt.Errorf("write %s: %w", outPath, err)
+		return "", fmt.Errorf("write %s: %w", outPath, err)
 	}
-	return nil
+	return string(content), nil
 }
 
 // FileName builds the destination filename for one exported document:

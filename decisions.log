@@ -6404,3 +6404,26 @@ Consequences:
   not a filtered keep-list.
 - The started queue starts phase 1 at 23, against the under-5 target
   that gates phase 3.
+
+## 2026-10-01 -- Record PDF exports (#188)
+
+Swamp didn't record exports, so #164's "export" next step (passed
+review, not exported yet) couldn't be told apart from "submit". The user
+suggested hooking the export itself.
+
+- New append-only table document_exports (migration 00016): application,
+  document type, content_sha256, path, exported_at.
+- export.Document now returns the markdown it rendered, and both callers
+  (the TUI export screen and `swamp export`) record that through
+  store.RecordDocumentExport right after the PDF is written. Hashing
+  what was actually rendered, not a second read, means an edit between
+  the two can't make a stale export look current.
+- DocumentExport.IsCurrent mirrors DocumentReview.IsCurrent, and both
+  now hash through one helper. Redrafting after an export makes the
+  export stale, so the next step goes back to "export".
+- path is informational. Nothing checks the PDF is still there: what
+  matters for the next step is that this version was exported, not
+  where the file went after being uploaded.
+- Recording sits in the callers, not inside export.Document, because
+  export deliberately has no store dependency (it composes documents
+  and pdf only).
