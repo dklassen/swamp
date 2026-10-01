@@ -82,7 +82,7 @@ func (m *applicationExportModel) View() string {
 type applicationExportedMsg struct {
 	dir     string
 	paths   []string
-	skipped []store.DocumentType
+	skipped []documents.Type
 	err     error
 }
 
@@ -113,9 +113,9 @@ func exportApplicationDocuments(s *store.Store, docs *documents.Store, applicati
 
 		status := docs.Status(application.ID)
 		var paths []string
-		var skipped []store.DocumentType
-		for _, documentType := range store.DocumentTypes() {
-			doc, err := status.ByName(documentType.String())
+		var skipped []documents.Type
+		for _, documentType := range documents.Types() {
+			doc, err := status.Doc(documentType)
 			if err != nil {
 				return applicationExportedMsg{dir: dir, paths: paths, skipped: skipped, err: err}
 			}
@@ -169,7 +169,7 @@ func exportStatusLine(msg applicationExportedMsg) string {
 	if len(msg.skipped) > 0 {
 		labels := make([]string, len(msg.skipped))
 		for i, documentType := range msg.skipped {
-			labels[i] = documentTypeLabel(documentType)
+			labels[i] = documentType.Label()
 		}
 		line += " (skipped " + strings.Join(labels, ", ") + " -- not drafted yet)"
 	}

@@ -53,9 +53,9 @@ func TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication(t *test
 	t.Parallel()
 
 	apps := testActiveApplications()
-	apps[0].LatestReviews = map[store.DocumentType]store.DocumentReview{
-		store.DocumentTypeCoverLetter: {Outcome: store.ReviewOutcomeFlagged},
-		store.DocumentTypeResume:      {Outcome: store.ReviewOutcomePassed},
+	apps[0].LatestReviews = map[documents.Type]store.DocumentReview{
+		documents.CoverLetter: {Outcome: store.ReviewOutcomeFlagged},
+		documents.Resume:      {Outcome: store.ReviewOutcomePassed},
 	}
 	// apps[1] is left with no LatestReviews -- neither document reviewed yet.
 
@@ -222,8 +222,8 @@ func TestNextStep(t *testing.T) {
 
 	passed := store.DocumentReview{Outcome: store.ReviewOutcomePassed}
 	flagged := store.DocumentReview{Outcome: store.ReviewOutcomeFlagged}
-	both := func(cl, r documentProgress) map[store.DocumentType]documentProgress {
-		return map[store.DocumentType]documentProgress{store.DocumentTypeCoverLetter: cl, store.DocumentTypeResume: r}
+	both := func(cl, r documentProgress) map[documents.Type]documentProgress {
+		return map[documents.Type]documentProgress{documents.CoverLetter: cl, documents.Resume: r}
 	}
 	drafted := documentProgress{drafted: true}
 	exported := documentProgress{drafted: true, exported: true}
@@ -232,8 +232,8 @@ func TestNextStep(t *testing.T) {
 		name    string
 		status  store.ApplicationStatus
 		listing string
-		reviews map[store.DocumentType]store.DocumentReview
-		docs    map[store.DocumentType]documentProgress
+		reviews map[documents.Type]store.DocumentReview
+		docs    map[documents.Type]documentProgress
 		want    string
 	}{
 		{name: "not started: no next step", status: store.ApplicationStatusInterviewing, docs: both(exported, exported), want: ""},
@@ -243,13 +243,13 @@ func TestNextStep(t *testing.T) {
 		{name: "one document missing", status: store.ApplicationStatusStarted, docs: both(drafted, documentProgress{}), want: "draft"},
 		{name: "drafted, not reviewed", status: store.ApplicationStatusStarted, docs: both(drafted, drafted), want: "review"},
 		{name: "one passed, one not reviewed", status: store.ApplicationStatusStarted,
-			reviews: map[store.DocumentType]store.DocumentReview{store.DocumentTypeCoverLetter: passed}, docs: both(drafted, drafted), want: "review"},
+			reviews: map[documents.Type]store.DocumentReview{documents.CoverLetter: passed}, docs: both(drafted, drafted), want: "review"},
 		{name: "flagged beats unreviewed", status: store.ApplicationStatusStarted,
-			reviews: map[store.DocumentType]store.DocumentReview{store.DocumentTypeResume: flagged}, docs: both(drafted, drafted), want: "revise"},
+			reviews: map[documents.Type]store.DocumentReview{documents.Resume: flagged}, docs: both(drafted, drafted), want: "revise"},
 		{name: "passed, not exported", status: store.ApplicationStatusStarted,
-			reviews: map[store.DocumentType]store.DocumentReview{store.DocumentTypeCoverLetter: passed, store.DocumentTypeResume: passed}, docs: both(exported, drafted), want: "export"},
+			reviews: map[documents.Type]store.DocumentReview{documents.CoverLetter: passed, documents.Resume: passed}, docs: both(exported, drafted), want: "export"},
 		{name: "passed and exported", status: store.ApplicationStatusStarted,
-			reviews: map[store.DocumentType]store.DocumentReview{store.DocumentTypeCoverLetter: passed, store.DocumentTypeResume: passed}, docs: both(exported, exported), want: "submit"},
+			reviews: map[documents.Type]store.DocumentReview{documents.CoverLetter: passed, documents.Resume: passed}, docs: both(exported, exported), want: "submit"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -331,7 +331,7 @@ func TestLoadActiveApplications_NextSteps(t *testing.T) {
 		if err != nil {
 			t.Fatalf("EnsureDir: %v", err)
 		}
-		for documentType, path := range map[store.DocumentType]string{store.DocumentTypeCoverLetter: paths.CoverLetter, store.DocumentTypeResume: paths.Resume} {
+		for documentType, path := range map[documents.Type]string{documents.CoverLetter: paths.CoverLetter, documents.Resume: paths.Resume} {
 			if err := os.WriteFile(path, []byte("# Draft"), 0o644); err != nil {
 				t.Fatalf("WriteFile: %v", err)
 			}
@@ -339,7 +339,7 @@ func TestLoadActiveApplications_NextSteps(t *testing.T) {
 				t.Fatalf("CreateDocumentReview: %v", err)
 			}
 			exported := "# Draft"
-			if application.ID == stale.ID && documentType == store.DocumentTypeResume {
+			if application.ID == stale.ID && documentType == documents.Resume {
 				exported = "# An earlier draft"
 			}
 			if err := s.RecordDocumentExport(ctx, application.ID, documentType, exported, "/out/x.pdf"); err != nil {
@@ -371,9 +371,9 @@ func TestActiveApplicationListModel_View_WidestRowFits100Columns(t *testing.T) {
 			Title: strings.Repeat("Principal Engineer ", 5)}},
 		CompanyName: strings.Repeat("Longcompanyname ", 3),
 		StatusSince: now.Add(-400 * 24 * time.Hour),
-		LatestReviews: map[store.DocumentType]store.DocumentReview{
-			store.DocumentTypeCoverLetter: {Outcome: store.ReviewOutcomeFlagged},
-			store.DocumentTypeResume:      {Outcome: store.ReviewOutcomePassed},
+		LatestReviews: map[documents.Type]store.DocumentReview{
+			documents.CoverLetter: {Outcome: store.ReviewOutcomeFlagged},
+			documents.Resume:      {Outcome: store.ReviewOutcomePassed},
 		},
 	}}
 

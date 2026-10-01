@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store/db"
 )
 
@@ -23,7 +24,7 @@ type ApplicationView struct {
 	Application
 	Posting       Posting
 	CompanyName   string
-	LatestReviews map[DocumentType]DocumentReview
+	LatestReviews map[documents.Type]DocumentReview
 	// StatusSince is when the application entered its current status, from
 	// its newest status history row (#162), or CreatedAt if it has none.
 	StatusSince time.Time

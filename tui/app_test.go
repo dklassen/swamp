@@ -1725,7 +1725,7 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 	if err := os.WriteFile(status.CoverLetter.Path, []byte("Dear hiring manager..."), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), application.ID, store.DocumentTypeCoverLetter, "Dear hiring manager...", store.ReviewOutcomeFlagged, "too generic, mention Go specifically"); err != nil {
+	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "Dear hiring manager...", store.ReviewOutcomeFlagged, "too generic, mention Go specifically"); err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)
 	}
 
@@ -1767,7 +1767,7 @@ func TestApp_LoadActiveApplications_DocumentReadFails_SetsErr(t *testing.T) {
 		t.Fatalf("CreateApplication: %v", err)
 	}
 	app := New(s, newTestSyncer(s, nil), documents.NewStore(t.TempDir()))
-	if _, err := s.CreateDocumentReview(context.Background(), application.ID, store.DocumentTypeCoverLetter, "letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
+	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)
 	}
 	status := app.documents.Status(application.ID)
@@ -1810,7 +1810,7 @@ func TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag(t *testing.T) 
 	if err := os.WriteFile(status.CoverLetter.Path, []byte("original draft"), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), application.ID, store.DocumentTypeCoverLetter, "original draft", store.ReviewOutcomeFlagged, "too generic"); err != nil {
+	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "original draft", store.ReviewOutcomeFlagged, "too generic"); err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)
 	}
 
@@ -1870,7 +1870,7 @@ func TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T) {
 	if err := os.WriteFile(status.CoverLetter.Path, []byte("original draft"), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), application.ID, store.DocumentTypeCoverLetter, "original draft", store.ReviewOutcomeFlagged, "too generic"); err != nil {
+	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "original draft", store.ReviewOutcomeFlagged, "too generic"); err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)
 	}
 
@@ -2275,7 +2275,7 @@ func TestApp_ApplicationDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T
 	if err := os.WriteFile(status.CoverLetter.Path, []byte("original draft"), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), application.ID, store.DocumentTypeCoverLetter, "original draft", store.ReviewOutcomeFlagged, "too generic"); err != nil {
+	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "original draft", store.ReviewOutcomeFlagged, "too generic"); err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)
 	}
 

@@ -29,12 +29,12 @@ import (
 // silently break that hand-off with no compiler or test catching it
 // (see decisions.log, #59).
 type Candidate struct {
-	Posting           PostingSummary                      `json:"Posting"`
-	CompanyName       string                              `json:"CompanyName"`
-	ApplicationID     *int64                              `json:"ApplicationID"`
-	ApplicationStatus *store.ApplicationStatus            `json:"ApplicationStatus"`
-	ApplicationNotes  string                              `json:"ApplicationNotes"`
-	LatestReviews     map[store.DocumentType]LatestReview `json:"LatestReviews"`
+	Posting           PostingSummary                  `json:"Posting"`
+	CompanyName       string                          `json:"CompanyName"`
+	ApplicationID     *int64                          `json:"ApplicationID"`
+	ApplicationStatus *store.ApplicationStatus        `json:"ApplicationStatus"`
+	ApplicationNotes  string                          `json:"ApplicationNotes"`
+	LatestReviews     map[documents.Type]LatestReview `json:"LatestReviews"`
 }
 
 // PostingSummary is the posting part of a Candidate: enough for the user
@@ -135,8 +135,8 @@ type LatestReview struct {
 // latestReviewsForJSON converts a store.DocumentReview map (as returned
 // by store.LatestDocumentReviews) into the leaner LatestReview shape
 // this package exposes over JSON.
-func latestReviewsForJSON(reviews map[store.DocumentType]store.DocumentReview) map[store.DocumentType]LatestReview {
-	out := make(map[store.DocumentType]LatestReview, len(reviews))
+func latestReviewsForJSON(reviews map[documents.Type]store.DocumentReview) map[documents.Type]LatestReview {
+	out := make(map[documents.Type]LatestReview, len(reviews))
 	for documentType, r := range reviews {
 		out[documentType] = LatestReview{Outcome: r.Outcome, Notes: r.Notes, Cycle: r.Cycle, CreatedAt: r.CreatedAt}
 	}
@@ -152,10 +152,10 @@ func latestReviewsForJSON(reviews map[store.DocumentType]store.DocumentReview) m
 // with no current-matching review is treated the same as "never
 // reviewed," whether that's literally true or it's just awaiting
 // re-review after being revised.
-func currentReviews(reviews map[store.DocumentType]store.DocumentReview, status documents.Status) (map[store.DocumentType]store.DocumentReview, error) {
-	out := make(map[store.DocumentType]store.DocumentReview, len(reviews))
+func currentReviews(reviews map[documents.Type]store.DocumentReview, status documents.Status) (map[documents.Type]store.DocumentReview, error) {
+	out := make(map[documents.Type]store.DocumentReview, len(reviews))
 	for documentType, review := range reviews {
-		doc, err := status.ByName(documentType.String())
+		doc, err := status.Doc(documentType)
 		if err != nil {
 			return nil, err
 		}
@@ -185,7 +185,7 @@ func currentReviews(reviews map[store.DocumentType]store.DocumentReview, status 
 // ReviewOutcomeFlagged -- a flagged document needs another drafting
 // pass even once its file exists on disk, so List keeps surfacing it
 // rather than treating "both files exist" as "done" (see decisions.log).
-func needsRework(reviews map[store.DocumentType]store.DocumentReview) bool {
+func needsRework(reviews map[documents.Type]store.DocumentReview) bool {
 	for _, r := range reviews {
 		if r.Outcome == store.ReviewOutcomeFlagged {
 			return true
@@ -197,13 +197,13 @@ func needsRework(reviews map[store.DocumentType]store.DocumentReview) bool {
 // Prepared is everything an external agent needs to draft and write one
 // posting's cover letter and resume, once Prepare has committed to it.
 type Prepared struct {
-	Posting          PreparedPosting                     `json:"Posting"`
-	CompanyName      string                              `json:"CompanyName"`
-	ApplicationID    int64                               `json:"ApplicationID"`
-	CoverLetter      Document                            `json:"CoverLetter"`
-	Resume           Document                            `json:"Resume"`
-	ApplicationNotes string                              `json:"ApplicationNotes"`
-	LatestReviews    map[store.DocumentType]LatestReview `json:"LatestReviews"`
+	Posting          PreparedPosting                 `json:"Posting"`
+	CompanyName      string                          `json:"CompanyName"`
+	ApplicationID    int64                           `json:"ApplicationID"`
+	CoverLetter      Document                        `json:"CoverLetter"`
+	Resume           Document                        `json:"Resume"`
+	ApplicationNotes string                          `json:"ApplicationNotes"`
+	LatestReviews    map[documents.Type]LatestReview `json:"LatestReviews"`
 }
 
 // Stage is the single entry point for the agent hand-off mechanism,
@@ -291,7 +291,7 @@ func (st *Stage) startedNotInterested(ctx context.Context, interested []store.In
 // flagged.
 func (st *Stage) candidate(ctx context.Context, p store.InterestedPosting) (Candidate, bool, error) {
 	var notes string
-	var reviews map[store.DocumentType]store.DocumentReview
+	var reviews map[documents.Type]store.DocumentReview
 	if p.ApplicationID != nil {
 		latest, err := st.store.LatestDocumentReviews(ctx, *p.ApplicationID)
 		if err != nil {

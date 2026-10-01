@@ -14,8 +14,8 @@ import (
 
 	"strings"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/pdf"
-	"github.com/dklassen/swamp/store"
 )
 
 // Document renders mdPath's markdown content to a PDF written at
@@ -54,7 +54,7 @@ func Document(mdPath, outPath string) (string, error) {
 // the moment of the drag. Nothing is truncated: posting titles are short
 // enough that a lossless name stays well inside any filesystem's limit,
 // and an elided name would defeat the point.
-func FileName(company, title string, documentType store.DocumentType) string {
+func FileName(company, title string, documentType documents.Type) string {
 	parts := make([]string, 0, 3)
 	for _, raw := range []string{company, title} {
 		// An empty component is dropped rather than joined, so a

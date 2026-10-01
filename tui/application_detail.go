@@ -39,9 +39,9 @@ func (m *applicationDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	case msg.String() == "r":
 		return m.openDocument(true), nil
 	case msg.String() == "L":
-		return nil, m.enterReview(store.DocumentTypeCoverLetter)
+		return nil, m.enterReview(documents.CoverLetter)
 	case msg.String() == "R":
-		return nil, m.enterReview(store.DocumentTypeResume)
+		return nil, m.enterReview(documents.Resume)
 	case msg.String() == "u":
 		return nil, refreshApplicationDetailMsg{}
 	case msg.String() == "S":
@@ -85,9 +85,9 @@ func (m *applicationDetailModel) openDocument(resume bool) tea.Cmd {
 // which document via which key was pressed (L for cover letter, R for
 // resume), so there's no picker step. Returns nil (no-op) if the
 // document doesn't exist yet -- nothing to review.
-func (m *applicationDetailModel) enterReview(documentType store.DocumentType) tea.Msg {
+func (m *applicationDetailModel) enterReview(documentType documents.Type) tea.Msg {
 	status := m.documents.Status(m.application.ID)
-	doc, err := status.ByName(documentType.String())
+	doc, err := status.Doc(documentType)
 	if err != nil {
 		return enterDocumentReviewFormMsg{err: err}
 	}
@@ -114,9 +114,9 @@ func (m *applicationDetailModel) View() string {
 
 	status := m.documents.Status(m.application.ID)
 	b.WriteString("\n" + fieldLabel.Render("Documents") + "\n")
-	clReview, hasCLReview := m.application.LatestReviews[store.DocumentTypeCoverLetter]
+	clReview, hasCLReview := m.application.LatestReviews[documents.CoverLetter]
 	b.WriteString(documentStatusLine("Cover Letter", status.CoverLetter.Exists, status.CoverLetter.Path, clReview, hasCLReview))
-	resumeReview, hasResumeReview := m.application.LatestReviews[store.DocumentTypeResume]
+	resumeReview, hasResumeReview := m.application.LatestReviews[documents.Resume]
 	b.WriteString(documentStatusLine("Resume", status.Resume.Exists, status.Resume.Path, resumeReview, hasResumeReview))
 
 	b.WriteString(helpStyle.Render("p: view posting  l: edit cover letter  r: edit resume  L: review cover letter  R: review resume  S: submit  u: refresh  esc/b: back"))

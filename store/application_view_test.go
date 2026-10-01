@@ -4,6 +4,8 @@ import (
 	"context"
 	"testing"
 	"time"
+
+	"github.com/dklassen/swamp/documents"
 )
 
 func TestListActiveApplications_ExcludesRejectedAndOfferDeclined(t *testing.T) {
@@ -168,10 +170,10 @@ func TestListActiveApplications_IncludesLatestDocumentReviews(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	app := mustCreateApplication(t, s, posting.ID)
 
-	if _, err := s.CreateDocumentReview(ctx, app.ID, DocumentTypeCoverLetter, "draft one", ReviewOutcomeFlagged, "too generic"); err != nil {
+	if _, err := s.CreateDocumentReview(ctx, app.ID, documents.CoverLetter, "draft one", ReviewOutcomeFlagged, "too generic"); err != nil {
 		t.Fatalf("CreateDocumentReview (first): %v", err)
 	}
-	second, err := s.CreateDocumentReview(ctx, app.ID, DocumentTypeCoverLetter, "draft two", ReviewOutcomePassed, "")
+	second, err := s.CreateDocumentReview(ctx, app.ID, documents.CoverLetter, "draft two", ReviewOutcomePassed, "")
 	if err != nil {
 		t.Fatalf("CreateDocumentReview (second): %v", err)
 	}
@@ -184,15 +186,15 @@ func TestListActiveApplications_IncludesLatestDocumentReviews(t *testing.T) {
 		t.Fatalf("len(got) = %d, want 1", len(got))
 	}
 
-	review, ok := got[0].LatestReviews[DocumentTypeCoverLetter]
+	review, ok := got[0].LatestReviews[documents.CoverLetter]
 	if !ok {
-		t.Fatalf("LatestReviews[%q] missing, want the most recent review present", DocumentTypeCoverLetter)
+		t.Fatalf("LatestReviews[%q] missing, want the most recent review present", documents.CoverLetter)
 	}
 	if review.ID != second.ID {
-		t.Fatalf("LatestReviews[%q].ID = %d, want %d (most recent cycle, not the first)", DocumentTypeCoverLetter, review.ID, second.ID)
+		t.Fatalf("LatestReviews[%q].ID = %d, want %d (most recent cycle, not the first)", documents.CoverLetter, review.ID, second.ID)
 	}
-	if _, ok := got[0].LatestReviews[DocumentTypeResume]; ok {
-		t.Fatalf("LatestReviews[%q] present, want absent (no resume review recorded)", DocumentTypeResume)
+	if _, ok := got[0].LatestReviews[documents.Resume]; ok {
+		t.Fatalf("LatestReviews[%q] present, want absent (no resume review recorded)", documents.Resume)
 	}
 }
 

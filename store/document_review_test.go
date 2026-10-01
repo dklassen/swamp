@@ -8,16 +8,18 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/dklassen/swamp/documents"
 )
 
 func TestDocumentType_MarshalJSON_UsesDBStringNotIntValue(t *testing.T) {
-	got, err := json.Marshal(DocumentTypeResume)
+	got, err := json.Marshal(documents.Resume)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
 	want := `"resume"`
 	if string(got) != want {
-		t.Fatalf("json.Marshal(DocumentTypeResume) = %s, want %s (a bare int forces JSON consumers to know Swamp's internal enum ordering)", got, want)
+		t.Fatalf("json.Marshal(documents.Resume) = %s, want %s (a bare int forces JSON consumers to know Swamp's internal enum ordering)", got, want)
 	}
 }
 
@@ -34,19 +36,19 @@ func TestReviewOutcome_MarshalJSON_UsesDBStringNotIntValue(t *testing.T) {
 
 // TestDocumentType_MarshalJSON_AsMapKey_UsesDBStringNotIntValue guards
 // against a real gotcha: encoding/json does NOT consult MarshalJSON for
-// map keys, only encoding.TextMarshaler -- so a map[DocumentType]X would
+// map keys, only encoding.TextMarshaler -- so a map[documents.Type]X would
 // silently serialize keys as "0"/"1" (the underlying int) without a
 // MarshalText method too, even with MarshalJSON already implemented and
 // working correctly for every other position (see the two tests above).
 func TestDocumentType_MarshalJSON_AsMapKey_UsesDBStringNotIntValue(t *testing.T) {
-	m := map[DocumentType]bool{DocumentTypeCoverLetter: true}
+	m := map[documents.Type]bool{documents.CoverLetter: true}
 	got, err := json.Marshal(m)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
 	want := `{"cover_letter":true}`
 	if string(got) != want {
-		t.Fatalf("json.Marshal(map[DocumentType]bool{...}) = %s, want %s", got, want)
+		t.Fatalf("json.Marshal(map[documents.Type]bool{...}) = %s, want %s", got, want)
 	}
 }
 
@@ -58,12 +60,12 @@ func TestCreateDocumentReview_ThenList_ReturnsCreatedReview(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
 
-	created, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, "Dear hiring manager...", ReviewOutcomePassed, "Looks good")
+	created, err := s.CreateDocumentReview(ctx, application.ID, documents.CoverLetter, "Dear hiring manager...", ReviewOutcomePassed, "Looks good")
 	if err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)
 	}
 
-	got, err := s.ListDocumentReviews(ctx, application.ID, DocumentTypeCoverLetter)
+	got, err := s.ListDocumentReviews(ctx, application.ID, documents.CoverLetter)
 	if err != nil {
 		t.Fatalf("ListDocumentReviews: %v", err)
 	}
@@ -83,7 +85,7 @@ func TestCreateDocumentReview_SetsCycleAndSHA256(t *testing.T) {
 	application := mustCreateApplication(t, s, posting.ID)
 
 	content := "Dear hiring manager..."
-	created, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, content, ReviewOutcomePassed, "")
+	created, err := s.CreateDocumentReview(ctx, application.ID, documents.CoverLetter, content, ReviewOutcomePassed, "")
 	if err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)
 	}
@@ -107,7 +109,7 @@ func TestDocumentReview_IsCurrent_MatchingContent_ReturnsTrue(t *testing.T) {
 	application := mustCreateApplication(t, s, posting.ID)
 
 	content := "Dear hiring manager..."
-	created, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, content, ReviewOutcomeFlagged, "too generic")
+	created, err := s.CreateDocumentReview(ctx, application.ID, documents.CoverLetter, content, ReviewOutcomeFlagged, "too generic")
 	if err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)
 	}
@@ -125,7 +127,7 @@ func TestDocumentReview_IsCurrent_RevisedContent_ReturnsFalse(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
 
-	created, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, "Dear hiring manager...", ReviewOutcomeFlagged, "too generic")
+	created, err := s.CreateDocumentReview(ctx, application.ID, documents.CoverLetter, "Dear hiring manager...", ReviewOutcomeFlagged, "too generic")
 	if err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)
 	}
@@ -143,10 +145,10 @@ func TestCreateDocumentReview_SecondReviewSameDocument_IncrementsCycle(t *testin
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
 
-	if _, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, "draft one", ReviewOutcomeFlagged, "too generic"); err != nil {
+	if _, err := s.CreateDocumentReview(ctx, application.ID, documents.CoverLetter, "draft one", ReviewOutcomeFlagged, "too generic"); err != nil {
 		t.Fatalf("CreateDocumentReview (first): %v", err)
 	}
-	second, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, "draft two", ReviewOutcomePassed, "")
+	second, err := s.CreateDocumentReview(ctx, application.ID, documents.CoverLetter, "draft two", ReviewOutcomePassed, "")
 	if err != nil {
 		t.Fatalf("CreateDocumentReview (second): %v", err)
 	}
@@ -164,10 +166,10 @@ func TestCreateDocumentReview_CycleIsPerDocumentType(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
 
-	if _, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, "cover letter draft", ReviewOutcomePassed, ""); err != nil {
+	if _, err := s.CreateDocumentReview(ctx, application.ID, documents.CoverLetter, "cover letter draft", ReviewOutcomePassed, ""); err != nil {
 		t.Fatalf("CreateDocumentReview (cover letter): %v", err)
 	}
-	resumeReview, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeResume, "resume draft", ReviewOutcomePassed, "")
+	resumeReview, err := s.CreateDocumentReview(ctx, application.ID, documents.Resume, "resume draft", ReviewOutcomePassed, "")
 	if err != nil {
 		t.Fatalf("CreateDocumentReview (resume): %v", err)
 	}
@@ -185,7 +187,7 @@ func TestLatestDocumentReview_NoReviews_ReturnsNotFound(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
 
-	_, ok, err := s.LatestDocumentReview(ctx, application.ID, DocumentTypeCoverLetter)
+	_, ok, err := s.LatestDocumentReview(ctx, application.ID, documents.CoverLetter)
 	if err != nil {
 		t.Fatalf("LatestDocumentReview: %v", err)
 	}
@@ -202,15 +204,15 @@ func TestLatestDocumentReview_ReturnsMostRecentCycle(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
 
-	if _, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, "draft one", ReviewOutcomeFlagged, "too generic"); err != nil {
+	if _, err := s.CreateDocumentReview(ctx, application.ID, documents.CoverLetter, "draft one", ReviewOutcomeFlagged, "too generic"); err != nil {
 		t.Fatalf("CreateDocumentReview (first): %v", err)
 	}
-	second, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, "draft two", ReviewOutcomePassed, "")
+	second, err := s.CreateDocumentReview(ctx, application.ID, documents.CoverLetter, "draft two", ReviewOutcomePassed, "")
 	if err != nil {
 		t.Fatalf("CreateDocumentReview (second): %v", err)
 	}
 
-	got, ok, err := s.LatestDocumentReview(ctx, application.ID, DocumentTypeCoverLetter)
+	got, ok, err := s.LatestDocumentReview(ctx, application.ID, documents.CoverLetter)
 	if err != nil {
 		t.Fatalf("LatestDocumentReview: %v", err)
 	}
@@ -230,16 +232,16 @@ func TestListDocumentReviews_ReturnsMostRecentCycleFirst(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
 
-	first, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, "draft one", ReviewOutcomeFlagged, "")
+	first, err := s.CreateDocumentReview(ctx, application.ID, documents.CoverLetter, "draft one", ReviewOutcomeFlagged, "")
 	if err != nil {
 		t.Fatalf("CreateDocumentReview (first): %v", err)
 	}
-	second, err := s.CreateDocumentReview(ctx, application.ID, DocumentTypeCoverLetter, "draft two", ReviewOutcomePassed, "")
+	second, err := s.CreateDocumentReview(ctx, application.ID, documents.CoverLetter, "draft two", ReviewOutcomePassed, "")
 	if err != nil {
 		t.Fatalf("CreateDocumentReview (second): %v", err)
 	}
 
-	got, err := s.ListDocumentReviews(ctx, application.ID, DocumentTypeCoverLetter)
+	got, err := s.ListDocumentReviews(ctx, application.ID, documents.CoverLetter)
 	if err != nil {
 		t.Fatalf("ListDocumentReviews: %v", err)
 	}
@@ -253,8 +255,8 @@ func TestListDocumentReviews_ReturnsMostRecentCycleFirst(t *testing.T) {
 func TestDocumentTypes_ReturnsEveryDocumentTypeInOrder(t *testing.T) {
 	t.Parallel()
 
-	want := []DocumentType{DocumentTypeCoverLetter, DocumentTypeResume}
-	if diff := cmp.Diff(want, DocumentTypes()); diff != "" {
-		t.Errorf("DocumentTypes() mismatch (-want +got):\n%s", diff)
+	want := []documents.Type{documents.CoverLetter, documents.Resume}
+	if diff := cmp.Diff(want, documents.Types()); diff != "" {
+		t.Errorf("documents.Types() mismatch (-want +got):\n%s", diff)
 	}
 }

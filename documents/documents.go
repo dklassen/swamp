@@ -1,10 +1,11 @@
-// Package documents locates and checks for a given application's
-// cover-letter/resume markdown files on the filesystem. The content
-// itself is never read by this package -- it's plain markdown meant to
-// be consumed directly by an external agent/editor, not by Swamp. See
-// decisions.log for why this is filesystem-backed rather than DB
-// columns. The default base directory is "assets" (see cmd/swamp/main.go)
-// -- only the storage path was renamed, not this package.
+// Package documents owns application documents: the list of document
+// types (see Type), and where each application's markdown files live on
+// the filesystem and whether they exist. The content itself is never
+// read by this package -- it's plain markdown meant to be consumed
+// directly by an external agent/editor, not by Swamp. See decisions.log
+// for why this is filesystem-backed rather than DB columns. The default
+// base directory is "assets" (see cmd/swamp/main.go) -- only the storage
+// path was renamed, not this package.
 package documents
 
 import (
@@ -14,14 +15,6 @@ import (
 	"strconv"
 )
 
-// Each document type's name: the file's base name, and also the value
-// store.DocumentType persists in document_reviews.document_type. Renaming
-// one means migrating that column too.
-const (
-	CoverLetterName = "cover_letter"
-	ResumeName      = "resume"
-)
-
 // Paths holds the resolved, convention-derived filesystem paths for a
 // single application's documents.
 type Paths struct {
@@ -29,15 +22,24 @@ type Paths struct {
 	Resume      string
 }
 
+// path is documentType's file for an application: <dir>/<name>.md.
+func path(dir string, documentType Type) string {
+	return filepath.Join(dir, documentType.String()+".md")
+}
+
+func applicationDir(base string, applicationID int64) string {
+	return filepath.Join(base, strconv.FormatInt(applicationID, 10))
+}
+
 // ForApplication computes the convention-derived paths for an
-// application's documents: <base>/<applicationID>/cover_letter.md and
-// <base>/<applicationID>/resume.md. No path is ever persisted -- it's
-// recomputed from applicationID whenever needed.
+// application's documents: <base>/<applicationID>/<type name>.md. No
+// path is ever persisted -- it's recomputed from applicationID whenever
+// needed.
 func ForApplication(base string, applicationID int64) Paths {
-	dir := filepath.Join(base, strconv.FormatInt(applicationID, 10))
+	dir := applicationDir(base, applicationID)
 	return Paths{
-		CoverLetter: filepath.Join(dir, CoverLetterName+".md"),
-		Resume:      filepath.Join(dir, ResumeName+".md"),
+		CoverLetter: path(dir, CoverLetter),
+		Resume:      path(dir, Resume),
 	}
 }
 
@@ -48,11 +50,26 @@ type Doc struct {
 	Exists bool
 }
 
-// Status is an application's cover-letter/resume presence, as of the
-// moment Store.Status checked -- see Store.Status.
+// Status is an application's documents, one per Type, as of the moment
+// Store.Status checked. Look one up with Doc.
+//
+// CoverLetter and Resume duplicate the entries for those two types for
+// the screens that still name them; RFC 0004 step 4 removes them.
 type Status struct {
 	CoverLetter Doc
 	Resume      Doc
+	docs        map[Type]Doc
+}
+
+// Doc returns documentType's document. A type with no document is an
+// error, never a fallback to another document, which would silently read
+// or write the wrong file (RFC 0004).
+func (s Status) Doc(documentType Type) (Doc, error) {
+	doc, ok := s.docs[documentType]
+	if !ok {
+		return Doc{}, fmt.Errorf("documents: no %s document", documentType)
+	}
+	return doc, nil
 }
 
 // Store resolves document paths and checks their presence under a fixed
@@ -74,35 +91,31 @@ func NewStore(base string) *Store {
 // than once for the same applicationID -- MkdirAll is a no-op when the
 // directory is already there.
 func (s *Store) EnsureDir(applicationID int64) (Paths, error) {
-	paths := ForApplication(s.base, applicationID)
-	if err := os.MkdirAll(filepath.Dir(paths.CoverLetter), 0o755); err != nil {
+	if err := os.MkdirAll(applicationDir(s.base, applicationID), 0o755); err != nil {
 		return Paths{}, err
 	}
-	return paths, nil
+	return ForApplication(s.base, applicationID), nil
 }
 
-// Status returns applicationID's document paths and whether each exists
-// on disk, checked via os.Stat.
+// Path is where applicationID's documentType document lives, whether or
+// not it exists yet. An unknown type is an error.
+func (s *Store) Path(applicationID int64, documentType Type) (string, error) {
+	if !documentType.valid() {
+		return "", fmt.Errorf("documents: no %s document", documentType)
+	}
+	return path(applicationDir(s.base, applicationID), documentType), nil
+}
+
+// Status returns applicationID's documents, one per Type, and whether
+// each exists on disk, checked via os.Stat.
 func (s *Store) Status(applicationID int64) Status {
-	paths := ForApplication(s.base, applicationID)
-	return Status{
-		CoverLetter: Doc{Path: paths.CoverLetter, Exists: fileExists(paths.CoverLetter)},
-		Resume:      Doc{Path: paths.Resume, Exists: fileExists(paths.Resume)},
+	dir := applicationDir(s.base, applicationID)
+	docs := make(map[Type]Doc, len(types))
+	for _, documentType := range Types() {
+		p := path(dir, documentType)
+		docs[documentType] = Doc{Path: p, Exists: fileExists(p)}
 	}
-}
-
-// ByName returns the document whose type is named name (CoverLetterName
-// or ResumeName, the store.DocumentType string). Any other name is an error, never a
-// fallback to one of the documents, which would silently read or write
-// the wrong file (RFC 0004).
-func (s Status) ByName(name string) (Doc, error) {
-	switch name {
-	case CoverLetterName:
-		return s.CoverLetter, nil
-	case ResumeName:
-		return s.Resume, nil
-	}
-	return Doc{}, fmt.Errorf("documents: no document type %q", name)
+	return Status{CoverLetter: docs[CoverLetter], Resume: docs[Resume], docs: docs}
 }
 
 func fileExists(path string) bool {

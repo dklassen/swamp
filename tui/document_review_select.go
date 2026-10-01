@@ -7,7 +7,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/store"
 )
 
 // documentReviewOption is one selectable document on the document-review-
@@ -15,7 +14,7 @@ import (
 // agent may not have drafted it).
 type documentReviewOption struct {
 	label        string
-	documentType store.DocumentType
+	documentType documents.Type
 	path         string
 	exists       bool
 }
@@ -39,8 +38,8 @@ func newDocumentReviewSelectModel(docs *documents.Store, applicationID int64) do
 	return documentReviewSelectModel{
 		applicationID: applicationID,
 		options: []documentReviewOption{
-			{label: "Cover Letter", documentType: store.DocumentTypeCoverLetter, path: status.CoverLetter.Path, exists: status.CoverLetter.Exists},
-			{label: "Resume", documentType: store.DocumentTypeResume, path: status.Resume.Path, exists: status.Resume.Exists},
+			{label: "Cover Letter", documentType: documents.CoverLetter, path: status.CoverLetter.Path, exists: status.CoverLetter.Exists},
+			{label: "Resume", documentType: documents.Resume, path: status.Resume.Path, exists: status.Resume.Exists},
 		},
 	}
 }
@@ -59,7 +58,7 @@ type cancelDocumentReviewSelectMsg struct{}
 // content.
 type enterDocumentReviewFormMsg struct {
 	applicationID int64
-	documentType  store.DocumentType
+	documentType  documents.Type
 	content       string
 	err           error
 }

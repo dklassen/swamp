@@ -9,6 +9,7 @@ import (
 	"github.com/pressly/goose/v3"
 
 	"github.com/dklassen/swamp/db/migrations"
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -40,7 +41,7 @@ func TestExportDocumentPDF_RecordsTheExport(t *testing.T) {
 		t.Fatalf("write markdown: %v", err)
 	}
 
-	outPath, err := exportDocumentPDF(ctx, s, 7, store.DocumentTypeResume, mdPath)
+	outPath, err := exportDocumentPDF(ctx, s, 7, documents.Resume, mdPath)
 	if err != nil {
 		t.Fatalf("exportDocumentPDF: %v", err)
 	}
@@ -49,7 +50,7 @@ func TestExportDocumentPDF_RecordsTheExport(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LatestDocumentExports: %v", err)
 	}
-	resume, ok := exports[store.DocumentTypeResume]
+	resume, ok := exports[documents.Resume]
 	if !ok {
 		t.Fatal("no resume export recorded")
 	}
@@ -63,7 +64,7 @@ func TestExportDocumentPDF_FailedExportRecordsNothing(t *testing.T) {
 	ctx := context.Background()
 	s := newExportTestStore(t)
 
-	if _, err := exportDocumentPDF(ctx, s, 7, store.DocumentTypeResume, filepath.Join(t.TempDir(), "missing.md")); err == nil {
+	if _, err := exportDocumentPDF(ctx, s, 7, documents.Resume, filepath.Join(t.TempDir(), "missing.md")); err == nil {
 		t.Fatal("exportDocumentPDF succeeded for a missing document, want an error")
 	}
 

@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/export"
-	"github.com/dklassen/swamp/store"
 )
 
 // writeMarkdown writes minimal valid markdown to a temp file and returns
@@ -47,49 +47,49 @@ func TestFileName(t *testing.T) {
 		name         string
 		company      string
 		title        string
-		documentType store.DocumentType
+		documentType documents.Type
 		want         string
 	}{
 		{
 			name:         "lowercases and hyphenates",
 			company:      "WealthSimple",
 			title:        "Delivery Platform",
-			documentType: store.DocumentTypeCoverLetter,
+			documentType: documents.CoverLetter,
 			want:         "wealthsimple-delivery-platform-cover_letter.pdf",
 		},
 		{
 			name:         "resume keeps its own document-type suffix",
 			company:      "StackAdapt",
 			title:        "Integrations",
-			documentType: store.DocumentTypeResume,
+			documentType: documents.Resume,
 			want:         "stackadapt-integrations-resume.pdf",
 		},
 		{
 			name:         "collapses punctuation runs into single hyphens",
 			company:      "WealthSimple",
 			title:        "Sr Data Scientist, Finance, Brokerage & Market Risk",
-			documentType: store.DocumentTypeResume,
+			documentType: documents.Resume,
 			want:         "wealthsimple-sr-data-scientist-finance-brokerage-market-risk-resume.pdf",
 		},
 		{
 			name:         "trims leading and trailing separators",
 			company:      "  Acme!  ",
 			title:        "(Senior) Engineer -- Infra/Platform",
-			documentType: store.DocumentTypeCoverLetter,
+			documentType: documents.CoverLetter,
 			want:         "acme-senior-engineer-infra-platform-cover_letter.pdf",
 		},
 		{
 			name:         "omits an empty component rather than leaving a stray hyphen",
 			company:      "",
 			title:        "Engineer",
-			documentType: store.DocumentTypeResume,
+			documentType: documents.Resume,
 			want:         "engineer-resume.pdf",
 		},
 		{
 			name:         "falls back to the document type when nothing else survives slugging",
 			company:      "!!!",
 			title:        "",
-			documentType: store.DocumentTypeResume,
+			documentType: documents.Resume,
 			want:         "resume.pdf",
 		},
 	}

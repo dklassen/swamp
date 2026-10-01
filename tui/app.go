@@ -231,9 +231,9 @@ func reviewBadge(review store.DocumentReview, hasReview bool) string {
 // reviewBadge's full "[FLAGGED]"/notes rendering -- see decisions.log
 // #83. A document with no entry in reviews (no review recorded yet)
 // renders as a dim "-".
-func reviewGlyphSummary(reviews map[store.DocumentType]store.DocumentReview) string {
-	clReview, hasCL := reviews[store.DocumentTypeCoverLetter]
-	resumeReview, hasResume := reviews[store.DocumentTypeResume]
+func reviewGlyphSummary(reviews map[documents.Type]store.DocumentReview) string {
+	clReview, hasCL := reviews[documents.CoverLetter]
+	resumeReview, hasResume := reviews[documents.Resume]
 	return "CL:" + reviewGlyph(clReview, hasCL) + " R:" + reviewGlyph(resumeReview, hasResume)
 }
 
@@ -273,7 +273,7 @@ func reviewGlyph(review store.DocumentReview, hasReview bool) string {
 // tea.Cmd/tea.Msg convention as the rest of this file's store-backed
 // state (see decisions.log #83). A document with no entry in the map
 // renders as "not reviewed".
-func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store, latestReviews map[store.DocumentType]store.DocumentReview, width int) string {
+func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store, latestReviews map[documents.Type]store.DocumentReview, width int) string {
 	var b strings.Builder
 	b.WriteString(sectionHeading("Posting", width) + "\n")
 	fields := []struct{ label, value string }{
@@ -300,9 +300,9 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 		}
 		status := docs.Status(application.ID)
 		b.WriteString("\n")
-		clReview, hasCLReview := latestReviews[store.DocumentTypeCoverLetter]
+		clReview, hasCLReview := latestReviews[documents.CoverLetter]
 		b.WriteString(detailDocumentField("Cover Letter", status.CoverLetter.Exists, status.CoverLetter.Path, clReview, hasCLReview, width))
-		resumeReview, hasResumeReview := latestReviews[store.DocumentTypeResume]
+		resumeReview, hasResumeReview := latestReviews[documents.Resume]
 		b.WriteString(detailDocumentField("Resume", status.Resume.Exists, status.Resume.Path, resumeReview, hasResumeReview, width))
 	} else {
 		b.WriteString(helpStyle.Render("No application started -- press 'a' to start one.") + "\n")
@@ -597,7 +597,7 @@ func loadApplication(s *store.Store, postingID int64) tea.Cmd {
 
 type documentReviewsLoadedMsg struct {
 	applicationID int64
-	reviews       map[store.DocumentType]store.DocumentReview
+	reviews       map[documents.Type]store.DocumentReview
 	err           error
 }
 
@@ -632,11 +632,11 @@ func loadDocumentReviews(s *store.Store, docs *documents.Store, applicationID in
 // filesystem access and documents deliberately never reads file content
 // (see documents.go's own doc comment), so each of this package and
 // stage compose the two themselves.
-func currentDocumentReviews(docs *documents.Store, applicationID int64, reviews map[store.DocumentType]store.DocumentReview) (map[store.DocumentType]store.DocumentReview, error) {
+func currentDocumentReviews(docs *documents.Store, applicationID int64, reviews map[documents.Type]store.DocumentReview) (map[documents.Type]store.DocumentReview, error) {
 	status := docs.Status(applicationID)
-	out := make(map[store.DocumentType]store.DocumentReview, len(reviews))
+	out := make(map[documents.Type]store.DocumentReview, len(reviews))
 	for documentType, review := range reviews {
-		doc, err := status.ByName(documentType.String())
+		doc, err := status.Doc(documentType)
 		if err != nil {
 			return nil, err
 		}

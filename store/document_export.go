@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store/db"
 )
 
@@ -16,7 +17,7 @@ import (
 type DocumentExport struct {
 	ID            int64
 	ApplicationID int64
-	DocumentType  DocumentType
+	DocumentType  documents.Type
 	ContentSHA256 string
 	Path          string
 	ExportedAt    time.Time
@@ -32,7 +33,7 @@ func (e DocumentExport) IsCurrent(content string) bool {
 // RecordDocumentExport records that content, applicationID's
 // documentType, was exported as a PDF to path. Callers record only after
 // the PDF was written.
-func (s *Store) RecordDocumentExport(ctx context.Context, applicationID int64, documentType DocumentType, content, path string) error {
+func (s *Store) RecordDocumentExport(ctx context.Context, applicationID int64, documentType documents.Type, content, path string) error {
 	if err := s.queries.CreateDocumentExport(ctx, db.CreateDocumentExportParams{
 		ApplicationID: applicationID,
 		DocumentType:  documentType.String(),
@@ -46,9 +47,9 @@ func (s *Store) RecordDocumentExport(ctx context.Context, applicationID int64, d
 
 // LatestDocumentExports returns applicationID's most recent export of
 // each document type, omitting any type never exported.
-func (s *Store) LatestDocumentExports(ctx context.Context, applicationID int64) (map[DocumentType]DocumentExport, error) {
-	exports := make(map[DocumentType]DocumentExport)
-	for _, documentType := range DocumentTypes() {
+func (s *Store) LatestDocumentExports(ctx context.Context, applicationID int64) (map[documents.Type]DocumentExport, error) {
+	exports := make(map[documents.Type]DocumentExport)
+	for _, documentType := range documents.Types() {
 		row, err := s.queries.LatestDocumentExport(ctx, db.LatestDocumentExportParams{
 			ApplicationID: applicationID,
 			DocumentType:  documentType.String(),

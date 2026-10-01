@@ -8,7 +8,6 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/store"
 )
 
 func TestDocumentReviewSelectModel_New_SeedsOptionsFromDocumentStatus(t *testing.T) {
@@ -28,10 +27,10 @@ func TestDocumentReviewSelectModel_New_SeedsOptionsFromDocumentStatus(t *testing
 	if len(m.options) != 2 {
 		t.Fatalf("len(options) = %d, want 2", len(m.options))
 	}
-	if m.options[0].documentType != store.DocumentTypeCoverLetter || !m.options[0].exists {
+	if m.options[0].documentType != documents.CoverLetter || !m.options[0].exists {
 		t.Fatalf("options[0] = %+v, want cover_letter, exists=true", m.options[0])
 	}
-	if m.options[1].documentType != store.DocumentTypeResume || m.options[1].exists {
+	if m.options[1].documentType != documents.Resume || m.options[1].exists {
 		t.Fatalf("options[1] = %+v, want resume, exists=false", m.options[1])
 	}
 }
@@ -105,8 +104,8 @@ func TestDocumentReviewSelectModel_Enter_OnExistingDocument_ReturnsContentReadFr
 	if got.applicationID != 1 {
 		t.Fatalf("applicationID = %d, want 1", got.applicationID)
 	}
-	if got.documentType != store.DocumentTypeCoverLetter {
-		t.Fatalf("documentType = %q, want %q", got.documentType, store.DocumentTypeCoverLetter)
+	if got.documentType != documents.CoverLetter {
+		t.Fatalf("documentType = %q, want %q", got.documentType, documents.CoverLetter)
 	}
 	if got.content != want {
 		t.Fatalf("content = %q, want %q", got.content, want)
