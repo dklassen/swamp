@@ -1,7 +1,7 @@
 # RFC 0001: Scheduled and background posting sync
 
-- **Status:** Draft, for discussion. Prerequisites P1, P2 and P3 have all merged. P4 (found while designing option 2) and option 2 are broken down into issues #147–#153; see "Work breakdown".
-- **Date:** 2026-09-28 (updated 2026-09-29: #146 merged; option 2 design and P4 added; P4 reproduced, per-company lock added as P4d, issues filed)
+- **Status:** Implemented in part, 2026-09-30. P1–P4 and option 2 shipped (#147–#153: PRs #155–#161; see "What shipped"). Option 1 (launchd) is not filed yet and waits on open questions 1 and 4.
+- **Date:** 2026-09-28 (updated 2026-09-29: #146 merged; option 2 design and P4 added; P4 reproduced, per-company lock added as P4d, issues filed. Updated 2026-10-01: what shipped)
 - **Related:**
   - `decisions.log` entries "Refresh is manual only in v1, no scheduler/daemon" (2026-08-10) and "SyncAll: sequential, not a goroutine fan-out/fan-in pipeline" (2026-08-11)
   - Done: #136 (P1, PR #137), #142 (P2, PR #143), #145 (P3, PR #146), #140 (`published_at`, PR #141), #138 (status line visible on every screen, PR #144)
@@ -58,7 +58,7 @@ These are small, independent changes. Each is worth doing even if no scheduling 
 | P1 | SQLite safe for more than one writer | **Done** (#136, PR #137) |
 | P2 | Timeout on job board fetches | **Done** (#142, PR #143) |
 | P3 | Failures visible when no one is watching | **Done** (#145, PR #146) |
-| P4 | A company's sync survives interruption and overlap | **Done** (#147 PR #155, #148 PR #156, #149 PR #157, #150) |
+| P4 | A company's sync survives interruption and overlap | **Done** (#147 PR #155, #148 PR #156, #149 PR #157, #150 PR #158) |
 
 ### P1. Make SQLite safe for more than one writer (#136, done)
 
@@ -346,6 +346,27 @@ Filed 2026-09-29. Every issue carries the `rfc-0001` label, and an `rfc0001-step
 - Option 1 (launchd) isn't filed yet. It follows step 7 and needs open questions 1 and 4 answered.
 - For #153, the issue takes the defaults this RFC leaned towards: `R` again to stop (question 7), refuse filter saves during a run (question 8), and no live "Last fetched" (question 6).
 
+## What shipped
+
+The prerequisites, P4 and option 2, in the order of the work breakdown. Each step has a `decisions.log` entry.
+
+**Prerequisites P1–P3** (before the breakdown): safe concurrent writes (#136, PR #137), a board fetch timeout (#142, PR #143), and a failing exit status for `swamp fetch` (#145, PR #146).
+
+**P4: a company's sync survives interruption and overlap.**
+
+1. **Atomic close** (#147, PR #155). `store.ClosePosting` closes a posting, writes its history and ends an early-stage application in one transaction. The close is conditional, so an overlapping sync that got there first changes and counts nothing. The #105 early-status policy stays in `sync` and is passed in, leaving RFC 0003's question of where it lives open.
+2. **Atomic create, update and reopen** (#148, PR #156). `store.IngestPosting` and `store.ReopenPosting` compare against the row read inside the transaction, so overlapping syncs no longer double-count `Created`, write duplicate history, or leave a history row for a failed update. Each history row now snapshots the state just before the change it records.
+3. **Cancel stops the fetch, never the writes** (#149, PR #157). `SyncCompany` switches to `context.WithoutCancel` once the fetch returns. Preventive: no caller cancels yet.
+4. **Per-company sync lease** (#150, PR #158). A lease on the company row (migration 00013), held from before the fetch to after the last write, works across processes (TUI, `swamp fetch`, a future launchd run). `sync.ErrSyncInProgress` is reported as a skip, not a failure. This closes the stale-fetch race that could end a reopened posting's application.
+
+**Option 2: `R` syncs every company in the background.**
+
+5. **`Result.Name` and `sync.Summarize`** (#151, PR #159). Callers stop carrying company names alongside results, the TUI can reuse the CLI's summary line, and "1 companies" is fixed.
+6. **`r` as a request to `App`** (#152, PR #160). A refactor so `App` can refuse a refresh during a run.
+7. **`R` sync-all** (#153, PR #161). A chain of `tea.Cmd`s with the run's state in `App` (`tui/sync_all.go`): progress per company, the shared summary at the end, one reload when it finishes. During a run, `r` and filter saves are refused. Found while verifying: quitting mid-run left the in-flight company's lease held until expiry, so `Syncer.ReleaseHeldLeases` now frees held leases on exit.
+
+Open questions 6, 7 and 8 were answered by #153 (see below). Not done: option 1 (launchd), and options 3–7, which stay deferred per the recommendation.
+
 ## Open questions
 
 1. **Schedule:** fixed times (e.g. 08:00, 12:00, 17:00, suited to reading results over coffee) or a fixed interval (every 4 h)?
@@ -353,9 +374,9 @@ Filed 2026-09-29. Every issue carries the `rfc-0001` label, and an `rfc0001-step
 3. **New postings:** should a scheduled sync highlight postings created since the user last looked (e.g. a "new" marker on the posting list)? That's a separate feature, but it's what makes scheduled sync actually useful.
 4. **Where the binary lives:** should the launchd job run `bin/swamp` (picks up new builds, can break with a bad one) or an installed copy (stable, needs a reinstall step)?
 5. **Configuration:** the schedule and option 3's stale threshold are new settings. Add them as `Config` fields now and let #139 move them into the config file later, or wait for #139?
-6. **TUI picking up background changes:** screens reload their data when entered. Is that fresh enough after a background sync, or should the company list reload itself when a sync finishes (only possible for option 2)? Option 2's design reloads once at the end of a run. Should "Last fetched" also update live, at one extra query per company?
-7. **Option 2's stop key:** overload Esc on the company list (the first Esc stops the run, a second goes back), or use a dedicated key (e.g. `R` again) so Esc always means "back"? The design above leans towards a dedicated key.
-8. **Option 2 and filter saves:** while a run is active, should saving a filter selection be refused (simplest), or queued until the run finishes?
+6. **TUI picking up background changes:** Screens reload their data when entered. Is that fresh enough after a background sync, or should the company list reload itself when a sync finishes (only possible for option 2)? Option 2's design reloads once at the end of a run. Should "Last fetched" also update live, at one extra query per company? *Answered by #153: reload once at the end of a run; no live "Last fetched".*
+7. **Option 2's stop key:** Overload Esc on the company list (the first Esc stops the run, a second goes back), or use a dedicated key (e.g. `R` again) so Esc always means "back"? The design above leans towards a dedicated key. *Answered by #153: `R` again; Esc keeps meaning "back".*
+8. **Option 2 and filter saves:** While a run is active, should saving a filter selection be refused (simplest), or queued until the run finishes? *Answered by #153: refused during a run.*
 
 ## Out of scope
 
