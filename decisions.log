@@ -6931,3 +6931,37 @@ Greenhouse forms. stage_prepare returns it in the same shape.
   real database: a WealthSimple (Ashby) application's form entered with
   `f`, saved, and returned by stage.Prepare as {"resume": "required"}
   with both questions.
+
+## 2026-10-01 -- RFC 0006: structured search with keyset paging before any text search (#215)
+
+Reviewing PR #216 (search_postings with free-text query words), the user
+asked what problem search is solving before building text search. RFC
+0006 answers it from the data: resolving an application the user names
+needs only controlled values (company, application status, open/closed,
+interested, archived) -- at most 6 applications per company, so one
+page -- and browsing a company's postings needs paging (up to 393 open
+at one company).
+
+- Proposed: a list_companies tool for the company vocabulary, and
+  search_postings with structured filters only, as one static sqlc query
+  bounded by LIMIT, paged by keyset on posting ID (After/NextAfter).
+- Keyset, not offset: a deterministic order isn't enough for offset
+  paging, since rows entering or leaving the result between calls shift
+  later rows. Posting IDs never change, only increase (rowid, no
+  AUTOINCREMENT, nothing deletes postings) and aren't reused, so pages
+  stay stable; only a row whose own membership changes mid-paging may be
+  missed.
+- Ordered by ID, not company/title: titles change on content updates and
+  companies can be renamed, which would break a keyset on them.
+- Deferred: substring query words (PR #216's approach: unbounded in Go,
+  fixed slots in SQL, no ranking) and FTS5 (measured: +300 KB for
+  company/title/department/location, +23 MB with descriptions, ~1 ms
+  per query; sqlc can only express a single-column MATCH, so it would be
+  a hand-written query). Revisit when the need is discovery by content.
+- Follow-up (same day): newest-first and opaque cursors. Sort is one of
+  id_asc (default), id_desc (newest to Swamp) or published_desc (newest
+  on the board, keyed on published_at then ID; ID order isn't publish
+  order, 732 neighbours out of order). Cursors are opaque, versioned
+  tokens that carry the sort and a hash of the filters, decoded as
+  untrusted input and rejected with another sort or other filters; not
+  signed, since nothing in them is sensitive.
