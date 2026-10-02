@@ -16,6 +16,7 @@ import (
 	"io/fs"
 	"os"
 	"reflect"
+	"strings"
 
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -135,7 +136,7 @@ type searchPostingsInput struct {
 	Interested          *bool    `json:"Interested,omitempty" jsonschema:"true: only postings marked interested; false: only postings not marked"`
 	ListingStatus       string   `json:"ListingStatus,omitempty" jsonschema:"open (the default), closed or any"`
 	IncludeArchived     bool     `json:"IncludeArchived,omitempty" jsonschema:"include postings the user archived"`
-	Sort                string   `json:"Sort,omitempty" jsonschema:"the order: id_asc (the default) is the order Swamp first saw the postings"`
+	Sort                string   `json:"Sort,omitempty"` // enum and description from stage.SortOrders(), in searchPostingsInputSchema
 	Cursor              string   `json:"Cursor,omitempty" jsonschema:"the previous page's NextCursor, unchanged; omit for the first page"`
 	Limit               int      `json:"Limit,omitempty" jsonschema:"postings per page: 50 by default, at most 100"`
 }
@@ -156,7 +157,14 @@ func searchPostingsInputSchema() *jsonschema.Schema {
 	}
 	schema.Properties["ApplicationStatuses"].Items.Enum = statuses
 	schema.Properties["ListingStatus"].Enum = []any{"open", "closed", "any"}
-	schema.Properties["Sort"].Enum = []any{stage.SortIDAsc}
+	sort := schema.Properties["Sort"]
+	sort.Enum = nil
+	description := []string{"the order to page in, one of:"}
+	for _, order := range stage.SortOrders() {
+		sort.Enum = append(sort.Enum, order.Name())
+		description = append(description, order.Name()+": "+order.Description)
+	}
+	sort.Description = strings.Join(description, "\n")
 	return schema
 }
 

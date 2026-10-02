@@ -142,14 +142,23 @@ func TestSearch_MatchCarriesItsApplication(t *testing.T) {
 func TestSearch_PagesWithOpaqueCursors(t *testing.T) {
 	t.Parallel()
 	f := newSearchStage(t)
+	for _, order := range SortOrders() {
+		t.Run(order.Name(), func(t *testing.T) {
+			testSearchPaging(t, f, order.Name())
+		})
+	}
+}
+
+func testSearchPaging(t *testing.T, f searchStage, sort string) {
+	t.Helper()
 	ctx := context.Background()
 
-	all, err := f.st.Search(ctx, SearchOptions{ListingStatus: "any", IncludeArchived: true})
+	all, err := f.st.Search(ctx, SearchOptions{Sort: sort, ListingStatus: "any", IncludeArchived: true})
 	if err != nil {
 		t.Fatalf("Search: %v", err)
 	}
 	var paged []int64
-	opts := SearchOptions{ListingStatus: "any", IncludeArchived: true, Limit: 2}
+	opts := SearchOptions{Sort: sort, ListingStatus: "any", IncludeArchived: true, Limit: 2}
 	for pages := 1; ; pages++ {
 		if pages > 10 {
 			t.Fatal("paging didn't end")
@@ -239,5 +248,48 @@ func TestSearch_LimitDefaultsAndCap(t *testing.T) {
 		if len(got.Postings) != tt.want || got.Total != 120 {
 			t.Errorf("Limit %d: %d matches, Total %d; want %d, 120", tt.limit, len(got.Postings), got.Total, tt.want)
 		}
+	}
+}
+
+// TestSortOrders_EveryStoreOrderIsRegistered: a store order can't reach
+// the agent without a name and a note on how stable it is to page (#223).
+func TestSortOrders_EveryStoreOrderIsRegistered(t *testing.T) {
+	t.Parallel()
+	registered := map[store.PostingOrder]bool{}
+	for _, order := range SortOrders() {
+		if order.Description == "" {
+			t.Errorf("%s has no description", order.Name())
+		}
+		registered[order.Order] = true
+	}
+	for _, order := range store.PostingOrders() {
+		if !registered[order] {
+			t.Errorf("store order %s isn't in SortOrders", order)
+		}
+	}
+	if SortOrders()[0].Name() != SortIDAsc {
+		t.Errorf("first (default) order = %s, want %s", SortOrders()[0].Name(), SortIDAsc)
+	}
+}
+
+// TestSearch_IDDescIsNewestToSwampFirst, and a cursor from one order
+// can't page another.
+func TestSearch_IDDescIsNewestToSwampFirst(t *testing.T) {
+	t.Parallel()
+	f := newSearchStage(t)
+	ctx := context.Background()
+
+	got, err := f.st.Search(ctx, SearchOptions{Sort: "id_desc", Limit: 2})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if diff := cmp.Diff(postingIDs(f.betaPosting, f.submitted), matchIDs(got.Postings)); diff != "" {
+		t.Errorf("first page mismatch (-want +got):\n%s", diff)
+	}
+	if got.NextCursor == nil {
+		t.Fatal("no NextCursor")
+	}
+	if _, err := f.st.Search(ctx, SearchOptions{Cursor: *got.NextCursor}); !errors.Is(err, cursor.ErrMismatch) {
+		t.Errorf("id_desc cursor used with id_asc: err = %v, want cursor.ErrMismatch", err)
 	}
 }

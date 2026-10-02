@@ -808,7 +808,10 @@ func TestSearchPostings_AdvertisesEnums(t *testing.T) {
 				Items struct{ Enum []string } `json:"items"`
 			}
 			ListingStatus struct{ Enum []string }
-			Sort          struct{ Enum []string }
+			Sort          struct {
+				Enum        []string
+				Description string `json:"description"`
+			}
 		} `json:"properties"`
 	}
 	if err := json.Unmarshal(raw, &schema); err != nil {
@@ -824,7 +827,12 @@ func TestSearchPostings_AdvertisesEnums(t *testing.T) {
 	if diff := cmp.Diff([]string{"open", "closed", "any"}, schema.Properties.ListingStatus.Enum); diff != "" {
 		t.Errorf("ListingStatus enum mismatch (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff([]string{"id_asc"}, schema.Properties.Sort.Enum); diff != "" {
+	if diff := cmp.Diff([]string{"id_asc", "id_desc"}, schema.Properties.Sort.Enum); diff != "" {
 		t.Errorf("Sort enum mismatch (-want +got):\n%s", diff)
+	}
+	for _, order := range stage.SortOrders() {
+		if !strings.Contains(schema.Properties.Sort.Description, order.Name()+": "+order.Description) {
+			t.Errorf("Sort description doesn't explain %s:\n%s", order.Name(), schema.Properties.Sort.Description)
+		}
 	}
 }
