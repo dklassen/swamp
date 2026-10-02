@@ -32,7 +32,7 @@ func Summarize(results []Result) Summary {
 	return summary
 }
 
-// String renders the summary, e.g. "40 companies, 1 failed (Kong)". The
+// String renders the summary, e.g. "40 companies, 1 failed (Umbrella)". The
 // skipped count is added only when there is one, so a clean run's line --
 // which logs and schedulers read -- stays the same.
 func (s Summary) String() string {

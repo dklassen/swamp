@@ -3,7 +3,7 @@
 
 -- Postings written before sync started trimming fetched fields (see
 -- sync.sanitizePosting, added alongside this migration) can carry
--- padded whitespace on free-text columns -- e.g. Stripe's Greenhouse
+-- padded whitespace on free-text columns -- e.g. Initech's Greenhouse
 -- listings showed up as both "Dublin" and "Dublin ". Untrimmed values
 -- also broke filter.Match's exact comparison, so a clean "Canada"
 -- company filter could silently fail to match a stored "Canada "

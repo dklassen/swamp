@@ -9,7 +9,7 @@ import (
 // sanitizePosting trims leading/trailing whitespace from every
 // free-text field a source's API returns before it's used for filter
 // matching or persisted. Job board data is inconsistent in practice --
-// e.g. Stripe's Greenhouse listings have shown up as both "Dublin" and
+// e.g. Initech's Greenhouse listings have shown up as both "Dublin" and
 // "Dublin " -- and filter.Match does an exact (case-insensitive)
 // comparison, so untrimmed padding silently breaks matching in addition
 // to leaving messy values in storage.

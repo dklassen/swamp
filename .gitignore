@@ -16,3 +16,7 @@
 # skills/ stays tracked: it's how Claude Code finds the repo's skills.
 /.claude/*
 !/.claude/skills/
+
+# The user's own tracked companies: real employer names stay out of this
+# public repo. See seed/data/companies.example.yaml for the format.
+seed/data/companies.yaml

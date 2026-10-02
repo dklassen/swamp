@@ -277,7 +277,7 @@ func TestApplicationStatusHasNoDBDefault(t *testing.T) {
 // TestTrimExistingPostingWhitespace_TrimsPaddedFields verifies the 00005
 // migration's backfill: postings written before sync started trimming
 // fetched fields (see sync.sanitizePosting) had padded whitespace on
-// free-text columns, e.g. Stripe's Greenhouse listings showing up as
+// free-text columns, e.g. Initech's Greenhouse listings showing up as
 // both "Dublin" and "Dublin ". This migration cleans up what's already
 // stored; raw_payload is deliberately left untouched (raw source JSON,
 // kept verbatim for audit).

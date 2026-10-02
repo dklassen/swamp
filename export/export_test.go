@@ -52,24 +52,24 @@ func TestFileName(t *testing.T) {
 	}{
 		{
 			name:         "lowercases and hyphenates",
-			company:      "WealthSimple",
+			company:      "Northwind",
 			title:        "Delivery Platform",
 			documentType: documents.CoverLetter,
-			want:         "wealthsimple-delivery-platform-cover_letter.pdf",
+			want:         "northwind-delivery-platform-cover_letter.pdf",
 		},
 		{
 			name:         "resume keeps its own document-type suffix",
-			company:      "StackAdapt",
+			company:      "Globex",
 			title:        "Integrations",
 			documentType: documents.Resume,
-			want:         "stackadapt-integrations-resume.pdf",
+			want:         "globex-integrations-resume.pdf",
 		},
 		{
 			name:         "collapses punctuation runs into single hyphens",
-			company:      "WealthSimple",
+			company:      "Northwind",
 			title:        "Sr Data Scientist, Finance, Brokerage & Market Risk",
 			documentType: documents.Resume,
-			want:         "wealthsimple-sr-data-scientist-finance-brokerage-market-risk-resume.pdf",
+			want:         "northwind-sr-data-scientist-finance-brokerage-market-risk-resume.pdf",
 		},
 		{
 			name:         "trims leading and trailing separators",
