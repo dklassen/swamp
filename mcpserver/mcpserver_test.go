@@ -638,3 +638,193 @@ func TestListCompanies_LiveCompaniesByNameWithOpenCounts(t *testing.T) {
 		t.Errorf("list_companies mismatch (-want +got):\n%s", diff)
 	}
 }
+
+// searchPostingsResult is search_postings' output, decoded with plain
+// strings for the enums.
+type searchPostingsResult struct {
+	Postings []struct {
+		Posting           struct{ ID int64 }
+		CompanyName       string
+		ApplicationID     *int64
+		ApplicationStatus *string
+	}
+	NextCursor *string
+	Total      int
+}
+
+func searchIDs(r searchPostingsResult) []int64 {
+	ids := make([]int64, len(r.Postings))
+	for i, p := range r.Postings {
+		ids[i] = p.Posting.ID
+	}
+	return ids
+}
+
+// TestSearchPostings_FindsADraftedApplicationByCompany is #215's case: an
+// application with both documents drafted and none flagged isn't in
+// list_postings, so the agent couldn't find it when the user named it.
+// search_postings finds it by company and "has an application" (#221).
+func TestSearchPostings_FindsADraftedApplicationByCompany(t *testing.T) {
+	t.Parallel()
+
+	srv, s, d := newTestServer(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme")
+	drafted := mustUpsertPosting(t, s, acme.ID, "job-1", "Staff Software Developer, Product")
+	mustUpsertPosting(t, s, acme.ID, "job-2", "Staff Software Developer, Risk")
+	mustMarkInterested(t, s, drafted.ID)
+	application, err := s.CreateApplication(ctx, drafted.ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	if _, err := d.EnsureDir(application.ID); err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	for _, documentType := range documents.Types() {
+		path, err := d.Path(application.ID, documentType)
+		if err != nil {
+			t.Fatalf("Path: %v", err)
+		}
+		if err := os.WriteFile(path, []byte("drafted"), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+	cs := connectClient(t, srv)
+
+	if queue := callTool[listPostingsOutput](t, cs, "list_postings", map[string]any{}).Postings; len(queue) != 0 {
+		t.Fatalf("list_postings = %d postings, want 0: the drafted application isn't drafting work", len(queue))
+	}
+	got := callTool[searchPostingsResult](t, cs, "search_postings", map[string]any{"CompanyID": acme.ID, "HasApplication": true})
+	if diff := cmp.Diff([]int64{drafted.ID}, searchIDs(got)); diff != "" {
+		t.Fatalf("search_postings IDs mismatch (-want +got):\n%s", diff)
+	}
+	match := got.Postings[0]
+	if match.CompanyName != "Acme" || match.ApplicationID == nil || *match.ApplicationID != application.ID ||
+		match.ApplicationStatus == nil || *match.ApplicationStatus != "application_started" {
+		t.Errorf("match = %+v, want Acme with application %d, application_started", match, application.ID)
+	}
+}
+
+// TestSearchPostings_InterestedShortlist: postings marked interested that
+// have no application yet -- "what have I shortlisted but not started?"
+func TestSearchPostings_InterestedShortlist(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	acme := mustCreateCompany(t, s, "Acme")
+	shortlisted := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	started := mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
+	mustUpsertPosting(t, s, acme.ID, "job-3", "Writer")
+	mustMarkInterested(t, s, shortlisted.ID)
+	mustMarkInterested(t, s, started.ID)
+	if _, err := s.CreateApplication(context.Background(), started.ID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	cs := connectClient(t, srv)
+
+	got := callTool[searchPostingsResult](t, cs, "search_postings", map[string]any{"Interested": true, "HasApplication": false})
+	if diff := cmp.Diff([]int64{shortlisted.ID}, searchIDs(got)); diff != "" {
+		t.Errorf("shortlist mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestSearchPostings_PagesThroughACompany: three pages of two concatenate
+// to the company's five postings; a cursor passed with other filters is
+// a tool error, not a page.
+func TestSearchPostings_PagesThroughACompany(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	acme := mustCreateCompany(t, s, "Acme")
+	other := mustCreateCompany(t, s, "Beta")
+	var want []int64
+	for _, id := range []string{"1", "2", "3", "4", "5"} {
+		want = append(want, mustUpsertPosting(t, s, acme.ID, "job-"+id, "Engineer "+id).ID)
+	}
+	mustUpsertPosting(t, s, other.ID, "job-6", "Engineer")
+	cs := connectClient(t, srv)
+
+	var got []int64
+	args := map[string]any{"CompanyID": acme.ID, "Limit": 2}
+	var firstCursor string
+	for pages := 1; ; pages++ {
+		page := callTool[searchPostingsResult](t, cs, "search_postings", args)
+		if page.Total != 5 {
+			t.Errorf("page %d Total = %d, want 5", pages, page.Total)
+		}
+		got = append(got, searchIDs(page)...)
+		if page.NextCursor == nil {
+			if pages != 3 {
+				t.Errorf("%d pages, want 3", pages)
+			}
+			break
+		}
+		if pages == 1 {
+			firstCursor = *page.NextCursor
+		}
+		args["Cursor"] = *page.NextCursor
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("pages don't concatenate to the company's postings (-want +got):\n%s", diff)
+	}
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
+		Name:      "search_postings",
+		Arguments: map[string]any{"CompanyID": other.ID, "Cursor": firstCursor},
+	})
+	if err != nil {
+		t.Fatalf("CallTool: %v", err)
+	}
+	if !res.IsError {
+		t.Fatal("cursor with other filters: IsError = false, want a tool error")
+	}
+	if text, _ := res.Content[0].(*mcp.TextContent); text == nil || !strings.Contains(text.Text, "start again without a cursor") {
+		t.Errorf("tool error = %+v, want it to say to start again without a cursor", res.Content)
+	}
+}
+
+// TestSearchPostings_AdvertisesEnums: the agent learns the controlled
+// values from the tool's schema instead of guessing them.
+func TestSearchPostings_AdvertisesEnums(t *testing.T) {
+	t.Parallel()
+
+	srv, _, _ := newTestServer(t)
+	cs := connectClient(t, srv)
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	var raw []byte
+	for _, tool := range res.Tools {
+		if tool.Name == "search_postings" {
+			if raw, err = json.Marshal(tool.InputSchema); err != nil {
+				t.Fatalf("marshal schema: %v", err)
+			}
+		}
+	}
+	var schema struct {
+		Properties struct {
+			ApplicationStatuses struct {
+				Items struct{ Enum []string } `json:"items"`
+			}
+			ListingStatus struct{ Enum []string }
+			Sort          struct{ Enum []string }
+		} `json:"properties"`
+	}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatalf("unmarshal schema: %v\n%s", err, raw)
+	}
+	var statuses []string
+	for _, status := range store.ApplicationStatuses() {
+		statuses = append(statuses, status.String())
+	}
+	if diff := cmp.Diff(statuses, schema.Properties.ApplicationStatuses.Items.Enum); diff != "" {
+		t.Errorf("ApplicationStatuses enum mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"open", "closed", "any"}, schema.Properties.ListingStatus.Enum); diff != "" {
+		t.Errorf("ListingStatus enum mismatch (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]string{"id_asc"}, schema.Properties.Sort.Enum); diff != "" {
+		t.Errorf("Sort enum mismatch (-want +got):\n%s", diff)
+	}
+}
