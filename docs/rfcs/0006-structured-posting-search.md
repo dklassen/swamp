@@ -1,7 +1,7 @@
 # RFC 0006: Finding a posting or application by what it is, not by text
 
-- **Status:** Draft, for discussion
-- **Date:** 2026-10-01
+- **Status:** Accepted 2026-10-02. Work breakdown filed as issues (see "Work breakdown").
+- **Date:** 2026-10-01 (accepted 2026-10-02)
 - **Related:** issue #215 and its closed PR #216 (a first `search_postings` with free-text matching, which this RFC replaces); RFC 0002 (the application workflow the agent drives); issue #171 (normalising workplace type)
 
 ## Summary
