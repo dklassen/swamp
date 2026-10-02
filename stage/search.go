@@ -17,8 +17,30 @@ const (
 )
 
 // SortIDAsc orders matches by posting ID, oldest to Swamp first: the
-// default, and so far the only order (#221).
-const SortIDAsc = "id_asc"
+// default order (#221).
+var SortIDAsc = store.PostingOrderIDAsc.String()
+
+// SortOrder is one way search_postings can order its matches: a store
+// order, and what the agent is told about it -- including how stable it
+// is to page through (RFC 0006, "Adding sort orders later").
+type SortOrder struct {
+	Order       store.PostingOrder
+	Description string
+}
+
+// Name is what the agent passes as Sort.
+func (o SortOrder) Name() string { return o.Order.String() }
+
+// sortOrders is the registry of sort orders, default first. Adding one is
+// an entry here plus its store query; TestSortOrders_EveryStoreOrderIsRegistered
+// fails if a store order is missing.
+var sortOrders = []SortOrder{
+	{store.PostingOrderIDAsc, "the order Swamp first saw the postings in (the default). Stable while paging: postings added meanwhile land on later pages."},
+	{store.PostingOrderIDDesc, "newest to Swamp first. Stable while paging; postings added meanwhile sort ahead of the first page, so they aren't seen until you start again."},
+}
+
+// SortOrders returns the registered sort orders, default first.
+func SortOrders() []SortOrder { return slices.Clone(sortOrders) }
 
 // SearchOptions narrows Search. Every filter is optional; the zero value
 // is every open, non-archived posting, in ID order, one page of
@@ -33,7 +55,7 @@ type SearchOptions struct {
 	// ListingStatus is "open" (the default when empty), "closed" or "any".
 	ListingStatus   string
 	IncludeArchived bool
-	// Sort is SortIDAsc, the default when empty.
+	// Sort is a SortOrders name; empty is SortIDAsc.
 	Sort string
 	// Cursor is the previous page's NextCursor, passed back unchanged
 	// with the same filters and Sort; empty starts from the beginning.
@@ -100,9 +122,11 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 	if sort == "" {
 		sort = SortIDAsc
 	}
-	if sort != SortIDAsc {
-		return SearchResult{}, fmt.Errorf("stage: unknown sort %q: want %s", opts.Sort, SortIDAsc)
+	index := slices.IndexFunc(sortOrders, func(o SortOrder) bool { return o.Name() == sort })
+	if index < 0 {
+		return SearchResult{}, fmt.Errorf("stage: unknown sort %q", opts.Sort)
 	}
+	order := sortOrders[index].Order
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = defaultSearchLimit
@@ -123,6 +147,7 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 	fingerprint := cursor.Fingerprint(filters)
 
 	search := store.PostingSearch{
+		Order:               order,
 		CompanyID:           opts.CompanyID,
 		IncludeArchived:     opts.IncludeArchived,
 		HasApplication:      opts.HasApplication,

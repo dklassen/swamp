@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -187,14 +188,23 @@ func TestSearchPostings_Paging(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 	newSearchFixture(t, s)
-	ctx := context.Background()
 
-	all, err := s.SearchPostings(ctx, PostingSearch{IncludeArchived: true, Limit: 100})
+	for _, order := range PostingOrders() {
+		t.Run(order.String(), func(t *testing.T) {
+			testPaging(t, s, order)
+		})
+	}
+}
+
+func testPaging(t *testing.T, s *Store, order PostingOrder) {
+	t.Helper()
+	ctx := context.Background()
+	all, err := s.SearchPostings(ctx, PostingSearch{Order: order, IncludeArchived: true, Limit: 100})
 	if err != nil {
 		t.Fatalf("SearchPostings: %v", err)
 	}
 	var paged []int64
-	search := PostingSearch{IncludeArchived: true, Limit: 4}
+	search := PostingSearch{Order: order, IncludeArchived: true, Limit: 4}
 	for pages := 0; ; pages++ {
 		if pages > 10 {
 			t.Fatal("paging didn't end")
@@ -295,5 +305,88 @@ func TestSearchPostings_HasMore(t *testing.T) {
 		if len(got.Listings) != tt.wantRows || got.HasMore != tt.wantMore {
 			t.Errorf("%s: %d rows, HasMore %v; want %d, %v", tt.name, len(got.Listings), got.HasMore, tt.wantRows, tt.wantMore)
 		}
+	}
+}
+
+// TestSearchPostings_EveryOrderMatchesTheSameRows: each sort order is its
+// own static query, repeating the filters (sqlc has no way to share
+// them). This keeps the copies from drifting: for the same search, every
+// order returns the same postings, only ordered differently (#223).
+func TestSearchPostings_EveryOrderMatchesTheSameRows(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	f := newSearchFixture(t, s)
+	yes, no := true, false
+
+	for name, search := range map[string]PostingSearch{
+		"everything":                 {IncludeArchived: true},
+		"defaults":                   {},
+		"company, closed":            {CompanyID: f.acme.ID, ListingStatus: "closed"},
+		"applications by status":     {ApplicationStatuses: []ApplicationStatus{ApplicationStatusStarted, ApplicationStatusSubmitted}},
+		"interested, no application": {Interested: &yes, HasApplication: &no},
+	} {
+		search.Limit = 100
+		var want []int64
+		for _, order := range PostingOrders() {
+			search.Order = order
+			got, err := s.SearchPostings(context.Background(), search)
+			if err != nil {
+				t.Fatalf("%s, %s: SearchPostings: %v", name, order, err)
+			}
+			sorted := slices.Sorted(slices.Values(listingIDs(got.Listings)))
+			if want == nil {
+				want = sorted
+				continue
+			}
+			if diff := cmp.Diff(want, sorted); diff != "" {
+				t.Errorf("%s: %s matches different postings than %s (-want +got):\n%s", name, order, PostingOrders()[0], diff)
+			}
+		}
+	}
+}
+
+// TestSearchPostings_DescendingClosedMidPagingDoesNotShift: the keyset
+// guarantee holds newest-first too.
+func TestSearchPostings_DescendingClosedMidPagingDoesNotShift(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	f := newSearchFixture(t, s)
+	ctx := context.Background()
+	search := PostingSearch{Order: PostingOrderIDDesc, ListingStatus: "open", Limit: 2}
+
+	first, err := s.SearchPostings(ctx, search)
+	if err != nil {
+		t.Fatalf("SearchPostings: %v", err)
+	}
+	if diff := cmp.Diff([]int64{f.other.ID, f.designer.ID}, listingIDs(first.Listings)); diff != "" {
+		t.Fatalf("first page mismatch (-want +got):\n%s", diff)
+	}
+	if err := s.MarkPostingClosed(ctx, f.other.ID); err != nil {
+		t.Fatalf("MarkPostingClosed: %v", err)
+	}
+	search.AfterID = first.Listings[len(first.Listings)-1].ID
+	second, err := s.SearchPostings(ctx, search)
+	if err != nil {
+		t.Fatalf("SearchPostings: %v", err)
+	}
+	if diff := cmp.Diff([]int64{f.data.ID, f.platform.ID}, listingIDs(second.Listings)); diff != "" {
+		t.Errorf("second page shifted (-want +got):\n%s", diff)
+	}
+}
+
+// TestSearchPostings_IDDescIsNewestToSwampFirst: id_desc is the reverse
+// of id_asc -- the postings Swamp saw most recently first (#223).
+func TestSearchPostings_IDDescIsNewestToSwampFirst(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	f := newSearchFixture(t, s)
+
+	got, err := s.SearchPostings(context.Background(), PostingSearch{Order: PostingOrderIDDesc, CompanyID: f.acme.ID, IncludeArchived: true, ListingStatus: "", Limit: 100})
+	if err != nil {
+		t.Fatalf("SearchPostings: %v", err)
+	}
+	want := []int64{f.shelf.ID, f.writer.ID, f.designer.ID, f.data.ID, f.platform.ID}
+	if diff := cmp.Diff(want, listingIDs(got.Listings)); diff != "" {
+		t.Errorf("IDs mismatch (-want +got):\n%s", diff)
 	}
 }

@@ -41,10 +41,47 @@ type PostingSearch struct {
 	HasApplication      *bool
 	Interested          *bool
 	ApplicationStatuses []ApplicationStatus
-	// AfterID is the last posting ID of the previous page; 0 starts from
-	// the beginning.
+	// Order is the sort order; the zero value is PostingOrderIDAsc.
+	Order PostingOrder
+	// AfterID is the last posting ID of the previous page: the next page
+	// is the rows after it in Order. 0 starts from the beginning.
 	AfterID int64
 	Limit   int
+}
+
+// PostingOrder is a sort order SearchPostings pages in (#223, RFC 0006).
+// Each ends with the posting ID, which never changes, so paging stays
+// stable; each is its own static query, with the same filters.
+type PostingOrder int
+
+const (
+	// PostingOrderIDAsc: the order Swamp first saw the postings in.
+	PostingOrderIDAsc PostingOrder = iota
+	// PostingOrderIDDesc: the postings Swamp saw most recently first.
+	PostingOrderIDDesc
+)
+
+// postingOrderNames is the single name table for PostingOrder, indexed by
+// its value.
+var postingOrderNames = [...]string{
+	PostingOrderIDAsc:  "id_asc",
+	PostingOrderIDDesc: "id_desc",
+}
+
+func (o PostingOrder) String() string {
+	if o < 0 || int(o) >= len(postingOrderNames) {
+		return fmt.Sprintf("PostingOrder(%d)", int(o))
+	}
+	return postingOrderNames[o]
+}
+
+// PostingOrders returns every sort order, in const order.
+func PostingOrders() []PostingOrder {
+	orders := make([]PostingOrder, len(postingOrderNames))
+	for i := range postingOrderNames {
+		orders[i] = PostingOrder(i)
+	}
+	return orders
 }
 
 // PostingSearchPage is one page of SearchPostings' results.
@@ -60,7 +97,7 @@ type PostingSearchPage struct {
 }
 
 // SearchPostings returns one page of the postings matching search, in
-// posting ID order, after search.AfterID (#218, RFC 0006). Paging by ID
+// search.Order, after search.AfterID (#218, #223, RFC 0006). Paging by ID
 // stays stable while other postings change: IDs never change, only
 // increase and aren't reused, since nothing deletes postings. The
 // filtering and the limit happen in the database, so a call never reads
@@ -106,7 +143,7 @@ func (s *Store) SearchPostings(ctx context.Context, search PostingSearch) (Posti
 		params.AfterID = search.AfterID
 	}
 
-	rows, err := s.queries.SearchPostingsByID(ctx, params)
+	rows, err := s.searchPostingsInOrder(ctx, search.Order, params)
 	if err != nil {
 		return PostingSearchPage{}, fmt.Errorf("store: search postings: %w", err)
 	}
@@ -142,4 +179,33 @@ func (s *Store) SearchPostings(ctx context.Context, search PostingSearch) (Posti
 		page.Listings[i] = listing
 	}
 	return page, nil
+}
+
+// searchPostingsInOrder runs order's query. Every order's query takes the
+// same filters and returns the same columns; the generated param and row
+// types differ only in name (and the cursor parameter's), so they convert
+// directly.
+func (s *Store) searchPostingsInOrder(ctx context.Context, order PostingOrder, params db.SearchPostingsByIDParams) ([]db.SearchPostingsByIDRow, error) {
+	switch order {
+	case PostingOrderIDAsc:
+		return s.queries.SearchPostingsByID(ctx, params)
+	case PostingOrderIDDesc:
+		rows, err := s.queries.SearchPostingsByIDDesc(ctx, db.SearchPostingsByIDDescParams{
+			CompanyID:       params.CompanyID,
+			ListingStatus:   params.ListingStatus,
+			IncludeArchived: params.IncludeArchived,
+			HasApplication:  params.HasApplication,
+			Interested:      params.Interested,
+			Statuses:        params.Statuses,
+			BeforeID:        params.AfterID,
+			MaxRows:         params.MaxRows,
+		})
+		converted := make([]db.SearchPostingsByIDRow, len(rows))
+		for i, row := range rows {
+			converted[i] = db.SearchPostingsByIDRow(row)
+		}
+		return converted, err
+	default:
+		return nil, fmt.Errorf("unknown sort order %s", order)
+	}
 }

@@ -7051,3 +7051,20 @@ of the real database, as the skill describes:
 - the interested shortlist (19) paged as 3 pages of up to 8, all
   distinct, Total 19 on each; a cursor reused with another filter got
   the "start again without a cursor" error.
+
+## 2026-10-02 -- Sort registry and id_desc (#223, RFC 0006 step 6)
+
+- store.PostingOrder (typed enum, one name table) picks the query: each
+  order is its own static sqlc query with the same filters, because
+  sqlc can't share or vary SQL. SearchPostingsByIDDesc was generated
+  from SearchPostingsByID, and TestSearchPostings_EveryOrderMatchesTheSameRows
+  checks every order matches the same postings for the same search, so
+  the repeated filters can't drift unnoticed (confirmed: dropping one
+  filter from the desc query fails it). The generated row types are
+  identical, so rows convert directly and the mapping stays shared.
+- stage.SortOrders is the registry the agent sees: each store order with
+  a description that says how stable it is to page.
+  TestSortOrders_EveryStoreOrderIsRegistered fails if a store order has
+  no entry. search_postings' Sort enum and description are built from it.
+- id_desc: newest to Swamp first, keyset "id < before". A cursor from one
+  order is ErrMismatch in another (the sort is part of the cursor).
