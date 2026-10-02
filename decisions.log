@@ -6987,3 +6987,20 @@ json_each) -- keyset paging on posting ID, and LIMIT in SQL.
 - Timed on a copy of the real database: about 2 ms for a filtered
   search, 15-18 ms per page when paging through everything (the window
   count scans every match). No index needed at this size.
+
+## 2026-10-02 -- Opaque pagination cursors, package cursor (#219, RFC 0006 step 2)
+
+A small package, cursor, rather than unexported helpers in stage: it's a
+self-contained concern, and AGENTS.md prefers testing exported behavior.
+
+- Token: unpadded base64url of {"v":1,"sort","filters","id"}. Versioned
+  so the key can change shape (step 7 adds published_at) without
+  breaking callers.
+- Decode treats the token as untrusted: base64, JSON with unknown fields
+  disallowed, the version, and a positive ID are all checked
+  (ErrInvalid). A token for another sort or other filters is
+  ErrMismatch, so the tool can say "start again" rather than return a
+  wrong page.
+- Fingerprint is the first 8 bytes of SHA-256 over the filters'
+  JSON (map keys sort, so field order doesn't matter). Not signed:
+  nothing in a cursor is sensitive, and the server validates it anyway.
