@@ -79,6 +79,29 @@ So a posting added mid-paging lands on a later page, and no row's position depen
 
 **Why posting ID and not company then title?** Titles change when a board edits a posting (#148 records it as `content_updated`), and companies can be renamed. A keyset on mutable columns can skip or repeat rows when one changes mid-paging. Creation order isn't a useful order to show the user, but the agent filters and reads titles anyway; it can present matches in whatever order suits.
 
+### When stability matters
+
+How much paging stability matters depends on what the caller does with the pages.
+
+**Enumeration: "every record matching these filters".** This is what this RFC is for, and stability matters:
+- When the agent resolves a record the user named, a skipped row is a false "it doesn't exist".
+- When it acts on each item (batch drafting walks a list, as in RFC 0002; or "withdraw every application whose posting closed"), a skip is a missed item and a repeat is work done twice.
+- When it lists the shortlist, an incomplete page reads as the whole list.
+
+**Discovery: "postings like X", ranked by relevance.** Stability matters much less:
+- Readers take the top few results, and refine the query rather than page deep.
+- Ranked order shifts as the index changes anyway.
+- A miss costs little, because the result never claimed to be complete.
+
+A future full-text search can use a capped, ranked result with plain offset paging, or no paging at all, and promise no stability. It shouldn't inherit this section's requirements.
+
+**Cost decides how far to go.** Keyset paging costs the same as offset paging (one `WHERE` clause, plus an opaque cursor), so enumeration gets it now. The expensive guarantees aren't worth building until there's enumeration over an order that changes often, and none is planned:
+- server-side snapshots;
+- "as of" bounds;
+- stability on keys that change.
+
+In practice the risk is small today anyway. Most results fit on one page: at most 6 applications, or 7 interested postings, per company. A one-page result can't shift. Paging only matters when browsing a large company's postings, and the data changes only a few times a day (syncs, the user's own edits).
+
 ### Sort orders
 
 Keyset paging works for any order whose key ends with a unique column that never changes, here the posting ID. Its stability is only as good as the leading columns' immutability. So `search_postings` offers a small fixed set of orders rather than arbitrary sort columns:
