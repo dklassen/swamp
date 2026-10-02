@@ -1,6 +1,6 @@
 # RFC 0006: Finding a posting or application by what it is, not by text
 
-- **Status:** Accepted 2026-10-02. Work breakdown filed as #218–#224 (see "Work breakdown").
+- **Status:** Implemented 2026-10-02 (#218–#224; see "What shipped").
 - **Date:** 2026-10-01 (accepted 2026-10-02)
 - **Related:** issue #215 and its closed PR #216 (a first `search_postings` with free-text matching, which this RFC replaces); RFC 0002 (the application workflow the agent drives); issue #171 (normalising workplace type)
 
@@ -318,6 +318,31 @@ Each is its own future issue, under "Extending it later" and "Adding sort orders
 - Update #215's description to point here.
 - File steps 1–7 as issues.
 - Add a "What shipped" section as steps merge, as RFC 0004 and RFC 0005 did.
+
+## What shipped
+
+All seven steps, 2026-10-02, each its own PR with a `decisions.log` entry:
+
+1. **Bounded query** (#218, PR #225). `store.SearchPostings`: one static query with the filters, keyset paging on ID, and `LIMIT` in SQL.
+   - Correction to the sketch above: the count runs over the filtered set in an inner query, with the cursor and `LIMIT` in the outer one. In the same `WHERE`, it would count only rows after the cursor.
+   - The query fetches `Limit + 1` rows to report `HasMore`, so no caller needs an empty page to find the end.
+   - Measured: about 2 ms for a filtered search, and 15–18 ms per page when paging through every posting.
+2. **Opaque cursors** (#219, PR #226). Package `cursor`: versioned base64url JSON, decoded as untrusted input. `ErrInvalid` for a malformed token; `ErrMismatch` for another sort's or other filters' cursor.
+3. **`list_companies`** (#220, PR #227).
+4. **`search_postings`** (#221, PR #228; closes #215). Defaults: open, non-archived, `id_asc`, 50 per page, at most 100.
+   - Cursors are bound to the normalised filters. Page size may change between pages.
+   - The input schema advertises statuses, listing status and sort as enums, so an unknown value is rejected before the handler, with the valid values listed.
+5. **Skill** (#222, PR #229), the ship point. Checked through the real MCP server on a copy of the real database:
+   - a drafted, a submitted and a closed application were each found by name;
+   - the 19-posting shortlist paged in 3 pages.
+6. **Sort registry and `id_desc`** (#223, PR #230).
+   - `store.PostingOrder` selects one static query per order.
+   - `TestSearchPostings_EveryOrderMatchesTheSameRows` keeps the queries' repeated filters from drifting.
+   - `stage.SortOrders` gives each order its stability note, which the schema's `Sort` description is built from.
+7. **`published_desc`** (#224). Ordered by `published_at`, then ID, both descending, with undated postings last.
+   - Tested for ties, fractional seconds of different lengths, a non-UTC zone, and every page size.
+   - Cursors carry `published_at` only for this order, so ID-order tokens are unchanged.
+   - `PublishedAt` was added to the posting summary, so `list_postings` shows it too; its contract test and the skill are updated.
 
 ## Open questions
 
