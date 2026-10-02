@@ -44,7 +44,7 @@ func Document(mdPath, outPath string) (string, error) {
 
 // FileName builds the destination filename for one exported document:
 // the company and posting title slugged and hyphen-joined, suffixed with
-// the document type (e.g. "wealthsimple-delivery-platform-resume.pdf").
+// the document type (e.g. "northwind-delivery-platform-resume.pdf").
 //
 // The name is self-describing on purpose. The TUI lets the user export
 // several applications into one folder (typically the desktop, to drag

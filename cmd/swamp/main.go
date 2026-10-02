@@ -194,7 +194,7 @@ func runFetch(s *store.Store) int {
 
 // reportFetch prints one line per company -- successes to stdout, errors
 // and skips to stderr -- then sync.Summarize's one-line summary to
-// stderr, e.g. "41 companies, 1 failed (Outschool)", and returns how many
+// stderr, e.g. "41 companies, 1 failed (Vandelay)", and returns how many
 // companies failed. A company skipped because another sync of it was
 // already running (sync.ErrSyncInProgress, #150) isn't a failure: it's
 // being synced, just not by this run.

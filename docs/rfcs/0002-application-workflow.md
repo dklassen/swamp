@@ -70,9 +70,9 @@ The data shows _where_ applications stop, but not _why_. Possible reasons includ
 
 ### Application forms (checked live on 2026-09-29)
 
-- **Greenhouse:** `GET /v1/boards/{token}/jobs/{id}?questions=true` returns the full form. For one GitLab job it returned:
+- **Greenhouse:** `GET /v1/boards/{token}/jobs/{id}?questions=true` returns the full form. For one Hanso job it returned:
   - a required resume and an optional cover letter;
-  - required screening questions: country of residence, location, visa sponsorship, post-employment restrictions, prior GitLab employment;
+  - required screening questions: country of residence, location, visa sponsorship, post-employment restrictions, prior Hanso employment;
   - role-specific yes/no questions (scripting proficiency, LLM ecosystem);
   - optional demographic and accessibility questions.
 
@@ -84,7 +84,7 @@ The data shows _where_ applications stop, but not _why_. Possible reasons includ
 
 This isn't where the problem is today, but it's where phase 3 will work.
 
-- 40 active companies: 28 Ashby, 9 Greenhouse, 3 Lever. 24 have no filters (Stripe alone has 414 open postings).
+- 40 active companies: 28 Ashby, 9 Greenhouse, 3 Lever. 24 have no filters (Initech alone has 414 open postings).
 - 2,043 open postings. 36 are interested and 1 is archived. The other 2,006 have no decision recorded.
 - **Swamp can't tell "seen" from "not seen."** Every posting gets an empty `posting_markup` row when it's created (`store/posting.go:172`). So "2,006 undecided" doesn't mean "2,006 never looked at," and a triage inbox needs its own "seen" state.
 - Workplace type is missing on 1,258 open postings:
@@ -140,7 +140,7 @@ The final scope depends on what phase 0 finds. The expected projects are:
 2. **"Answers" document type.**
    - **What:** `answers.md`, next to the cover letter and resume, with one section per question. It gets the same read/write tools, review loop and staleness check.
 3. **Reusable standard answers.**
-   - **What:** answers to questions that repeat across forms, stored once and reused: country, location, visa sponsorship, work authorization, notice period, post-employment restrictions, salary expectations, preferred name, LinkedIn. The GitLab form alone asks six of these.
+   - **What:** answers to questions that repeat across forms, stored once and reused: country, location, visa sponsorship, work authorization, notice period, post-employment restrictions, salary expectations, preferred name, LinkedIn. The Hanso form alone asks six of these.
 
 Run the Ashby/Lever spike alongside this phase. If their APIs don't expose questions, requirements can be entered by hand.
 
@@ -168,7 +168,7 @@ Order of operations for the projects above. Each task is **one branch / issue / 
 
 - **1.3 is split.** `1.3a` (submit checklist, needs no requirements data) lands in Wave C now; `1.3b` (export *only* what this posting asks) waits on D2 (Greenhouse requirements) because it is the one piece that reads stored requirements.
 - **RFC 0004** (the `documents` type-dispatch refactor) is **strongly recommended** as a prerequisite of D3 (`answers.md`) — recommended, **not** a hard gate. It is the work that makes a third document type cheap; skipping it makes D3 the expensive path by design.
-- **Hygiene findings** (deleted companies' postings staying `open`; Mattermost/Livekit not fetched since 2026-09-24) are folded in here as task A3 rather than left as separate issues.
+- **Hygiene findings** (deleted companies' postings staying `open`; Contoso/Oscorp not fetched since 2026-09-24) are folded in here as task A3 rather than left as separate issues.
 - **Phase 3 is a hard gate.** It does not start until phase 1's success criteria are met: started queue under 5 **and** median started→submitted (measured over new applications) under 7 days.
 
 ### Wave A — foundations (mutually independent, can all start now)
@@ -177,7 +177,7 @@ Order of operations for the projects above. Each task is **one branch / issue / 
 
 **A2 — Ashby/Lever questions spike (phase 2 open question, pulled early).** Timeboxed reconnaissance, no production code: do the public Ashby and Lever APIs expose application/screening questions at all (open Q4)? If not, D2's fallback is manual entry. *Done:* a short note (issue comment or `decisions.log`) answering Q4, so it is already settled when D2 is designed. Deps: none; run early because its finding changes D2's design. **S**.
 
-**A3 — Hygiene fixes ("Related findings").** (a) A deleted company's postings should not keep counting as `open` (Outschool: 6 postings still `open` after deletion) — decide the intended behavior and fix; (b) confirm Mattermost and Livekit simply have not been fetched since 2026-09-24, and re-fetch now that `swamp fetch` reports failures (#145). *Done:* deleted companies' postings excluded from open totals (or documented as intended) and all active companies freshly fetched. Each is its own small issue/PR. Deps: none. **S**.
+**A3 — Hygiene fixes ("Related findings").** (a) A deleted company's postings should not keep counting as `open` (Vandelay: 6 postings still `open` after deletion) — decide the intended behavior and fix; (b) confirm Contoso and Oscorp simply have not been fetched since 2026-09-24, and re-fetch now that `swamp fetch` reports failures (#145). *Done:* deleted companies' postings excluded from open totals (or documented as intended) and all active companies freshly fetched. Each is its own small issue/PR. Deps: none. **S**.
 
 ### Wave B — make the queue visible (needs A1)
 
@@ -267,8 +267,8 @@ Found while filing, outside the waves (label `rfc0002-related`): #174 (open ques
 
 ## Related findings (now folded into the plan as task A3, except the already-fixed one)
 
-- **Deleted companies' postings stay open** (→ A3a). Outschool was deleted on 2026-09-29, but its 6 postings are still `open`, so they count toward open totals.
-- **Two companies haven't been fetched since 2026-09-24** (→ A3b). Mattermost and Livekit, while others were fetched on 09-28 and 09-29. It may just be how those fetches were run. Worth checking now that `swamp fetch` reports failures (#145).
+- **Deleted companies' postings stay open** (→ A3a). Vandelay was deleted on 2026-09-29, but its 6 postings are still `open`, so they count toward open totals.
+- **Two companies haven't been fetched since 2026-09-24** (→ A3b). Contoso and Oscorp, while others were fetched on 09-28 and 09-29. It may just be how those fetches were run. Worth checking now that `swamp fetch` reports failures (#145).
 - **Already fixed:** the `published_at` scan error that an earlier draft listed as a blocker was fixed in #141 (migration 00012).
 
 ## Open questions

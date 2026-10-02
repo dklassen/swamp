@@ -170,8 +170,8 @@ func TestCompanyListModel_View_ShowsOpenPostingsAndLastFetched(t *testing.T) {
 
 	fetched := time.Date(2026, 9, 24, 0, 52, 0, 0, time.UTC)
 	companies := []store.Company{
-		{ID: 1, Name: "Mattermost", Source: "greenhouse", SourceRef: "mattermost", LastFetchedAt: fetched},
-		{ID: 2, Name: "Runway", Source: "ashby", SourceRef: "runway-ml"},
+		{ID: 1, Name: "Contoso", Source: "greenhouse", SourceRef: "contoso", LastFetchedAt: fetched},
+		{ID: 2, Name: "Cyberdyne", Source: "ashby", SourceRef: "cyberdyne-ai"},
 	}
 	openPostings := map[int64]int{1: 14}
 
@@ -179,8 +179,8 @@ func TestCompanyListModel_View_ShowsOpenPostingsAndLastFetched(t *testing.T) {
 	got := m.View(companies, openPostings, 0, 40)
 
 	for _, want := range []string{
-		"Mattermost", "14", fetched.Local().Format("2006-01-02 15:04"),
-		"Runway", "never",
+		"Contoso", "14", fetched.Local().Format("2006-01-02 15:04"),
+		"Cyberdyne", "never",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("View missing %q:\n%s", want, got)
@@ -188,7 +188,7 @@ func TestCompanyListModel_View_ShowsOpenPostingsAndLastFetched(t *testing.T) {
 	}
 	// Board and slug are left out of the list on purpose: they don't help
 	// decide where to look next.
-	for _, notWant := range []string{"greenhouse", "runway-ml", "Board", "Slug"} {
+	for _, notWant := range []string{"greenhouse", "cyberdyne-ai", "Board", "Slug"} {
 		if strings.Contains(got, notWant) {
 			t.Errorf("View unexpectedly contains %q:\n%s", notWant, got)
 		}
@@ -199,7 +199,7 @@ func TestCompanyListModel_View_ShowsOpenPostingsAndLastFetched(t *testing.T) {
 func TestCompanyListModel_View_TableHasNoDescription(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Mattermost", Description: "Open-core collaboration platform."}}
+	companies := []store.Company{{ID: 1, Name: "Contoso", Description: "Open-core collaboration platform."}}
 
 	m := newCompanyListModel(nil)
 	got := m.View(companies, nil, 120, 40)
@@ -245,9 +245,9 @@ func TestCompanyListModel_View_SameWidthWhateverIsScrolledIntoView(t *testing.T)
 	t.Parallel()
 
 	companies := []store.Company{
-		{ID: 1, Name: "Wikimedia Foundation", LastFetchedAt: time.Date(2026, 9, 24, 1, 9, 0, 0, time.UTC)},
-		{ID: 2, Name: "Rewind"},
-		{ID: 3, Name: "Zapier"},
+		{ID: 1, Name: "Wonka Industries Ltd", LastFetchedAt: time.Date(2026, 9, 24, 1, 9, 0, 0, time.UTC)},
+		{ID: 2, Name: "Soylent"},
+		{ID: 3, Name: "Stark"},
 	}
 
 	m := newCompanyListModel(nil)
@@ -278,7 +278,7 @@ func TestCompanyListModel_I_TogglesInfoBoxWithFullDescription(t *testing.T) {
 
 	long := strings.Repeat("Open-core collaboration and workflow automation. ", 3)
 	companies := []store.Company{
-		{ID: 1, Name: "Mattermost", Source: "greenhouse", SourceRef: "mattermost", Description: long},
+		{ID: 1, Name: "Contoso", Source: "greenhouse", SourceRef: "contoso", Description: long},
 	}
 	// The box wraps the description, so compare with whitespace squashed.
 	squash := func(s string) string {
@@ -286,7 +286,7 @@ func TestCompanyListModel_I_TogglesInfoBoxWithFullDescription(t *testing.T) {
 	}
 
 	m := newCompanyListModel(nil)
-	if got := m.View(companies, nil, 120, 40); strings.Contains(got, "greenhouse/mattermost") {
+	if got := m.View(companies, nil, 120, 40); strings.Contains(got, "greenhouse/contoso") {
 		t.Fatalf("info box should start closed:\n%s", got)
 	}
 
@@ -295,14 +295,14 @@ func TestCompanyListModel_I_TogglesInfoBoxWithFullDescription(t *testing.T) {
 		t.Fatalf("Update on 'i' = (%v, %v), want (nil, nil): the box is this screen's own state", cmd, intent)
 	}
 	got := m.View(companies, nil, 120, 40)
-	for _, want := range []string{"Mattermost · greenhouse/mattermost", strings.TrimSpace(long)} {
+	for _, want := range []string{"Contoso · greenhouse/contoso", strings.TrimSpace(long)} {
 		if !strings.Contains(squash(got), want) {
 			t.Errorf("open info box missing %q:\n%s", want, got)
 		}
 	}
 
 	m.Update(runeKey('i'), companies)
-	if got := m.View(companies, nil, 120, 40); strings.Contains(got, "greenhouse/mattermost") {
+	if got := m.View(companies, nil, 120, 40); strings.Contains(got, "greenhouse/contoso") {
 		t.Errorf("second 'i' should close the info box:\n%s", got)
 	}
 }

@@ -28,7 +28,7 @@ The 2026-08-10 decision kept v1 manual on purpose, and noted that scheduling cou
 
 - **Core call:** `sync.Syncer.SyncAll` (`sync/sync.go`) loops over the active companies one at a time and calls `SyncCompany` for each. Each company's error goes into its own `Result`, so one failure doesn't stop the batch. Every board fetch runs under `sync.Config.FetchTimeout` (P2).
 - **Database:** every process opens the database through `store.Open` (P1), so the TUI, `swamp fetch` and `mcp-serve` can write at the same time.
-- **CLI:** `swamp fetch` (`cmd/swamp/main.go`, `runFetch`) calls `SyncAll` and prints one line per company. Since P3 it exits 1 if any company failed, and writes errors and a summary line (`41 companies, 1 failed (Outschool)`) to stderr.
+- **CLI:** `swamp fetch` (`cmd/swamp/main.go`, `runFetch`) calls `SyncAll` and prints one line per company. Since P3 it exits 1 if any company failed, and writes errors and a summary line (`41 companies, 1 failed (Vandelay)`) to stderr.
 - **TUI:** `refreshCompany` (`tui/app.go`) runs `SyncCompany` for a single company as a `tea.Cmd`. When it finishes, the result shows in the status line. (Until #138 the company list was drawn too tall and the status line was cut off, so the result never actually showed. It does now.)
 - **Last-fetched time:** `companies.last_fetched_at` (migration 00011) is set after each successful fetch and shown on the company list. It's the only record of sync health in the database; beyond it there's only `swamp fetch`'s output, which lasts only if something logs it.
 - **MCP server:** `swamp mcp-serve` is a long-running process on the host. It already holds a `Syncer`, which `add_company` uses.
@@ -47,7 +47,7 @@ What this means:
 - **Speed isn't the problem.** 12 seconds sequentially is fine, so there's no need to make sync concurrent (the 2026-08-11 decision still holds). "Background" is about keeping the TUI responsive and not needing a person, not about going faster.
 - **Concurrent writes were the problem.** Before P1, a scheduled sync that ran while the TUI (or `mcp-serve`) was writing lost that race most of the time. P1 fixed this.
 
-**After P1, P2 and the `published_at` fix** (a full `swamp fetch` against all real boards, recorded in `decisions.log` under #142): 40 of 41 companies synced and nothing timed out. The only failure was Outschool's removed board (404).
+**After P1, P2 and the `published_at` fix** (a full `swamp fetch` against all real boards, recorded in `decisions.log` under #142): 40 of 41 companies synced and nothing timed out. The only failure was Vandelay's removed board (404).
 
 ## Prerequisites (needed by every option)
 
@@ -85,8 +85,8 @@ These are small, independent changes. Each is worth doing even if no scheduling 
 ### P3. Make failures visible when no one is watching (#145, done)
 
 - **Before:** `swamp fetch` exited 0 even when companies failed, and printed per-company errors to stdout. The only lasting sign of trouble was a stale "last fetched" time.
-- **Change (shipped, PR #146):** `swamp fetch` exits 1 if any company failed. Each company's error goes to stderr, followed by a one-line summary that always prints ("41 companies, 1 failed (Outschool)", or "40 companies, 0 failed"). Successful company lines stay on stdout. Verified on a database copy: exit 1 with Outschool active, exit 0 with it soft-deleted. The output is built by `reportFetch` in `cmd/swamp/main.go`, which has a unit test.
-- **Cleanup (done 2026-09-29):** Outschool, whose board is gone, was removed, leaving 40 active companies, so a clean run exits 0 again.
+- **Change (shipped, PR #146):** `swamp fetch` exits 1 if any company failed. Each company's error goes to stderr, followed by a one-line summary that always prints ("41 companies, 1 failed (Vandelay)", or "40 companies, 0 failed"). Successful company lines stay on stdout. Verified on a database copy: exit 1 with Vandelay active, exit 0 with it soft-deleted. The output is built by `reportFetch` in `cmd/swamp/main.go`, which has a unit test.
+- **Cleanup (done 2026-09-29):** Vandelay, whose board is gone, was removed, leaving 40 active companies, so a clean run exits 0 again.
 - **Not in #145:** a `sync_runs` table (started, finished, counts, errors as JSON) that the TUI could show ("last full sync: 2h ago, 1 failed"). A history of sync runs is really the first piece of a general record of background job executions, which feeds into option 7 (a job queue with a worker). It needs its own design discussion first; see open question 2.
 
 ### P4. Make a company's sync survive interruption and overlap (done)
@@ -142,7 +142,7 @@ Anything that stops it partway leaves damage the next sync doesn't repair. That 
 
 ### Found along the way: a `published_at` bug (#140, fixed)
 
-Every run in the original tests failed Mattermost (`update posting`) and Instacart (`create posting`) with:
+Every run in the original tests failed Contoso (`update posting`) and Tyrell (`create posting`) with:
 
 ```
 sql: Scan error on column index 14, name "published_at": unsupported Scan, storing driver.Value type string into type *time.Time
@@ -150,7 +150,7 @@ sql: Scan error on column index 14, name "published_at": unsupported Scan, stori
 
 - **Cause:** the driver wrote a `time.Time` with `t.String()`, which only reads back when the offset matches the machine's local timezone. This had nothing to do with scheduling, but a scheduled run would have failed those companies every time with nobody noticing.
 - **Fix (PR #141):** `store.Open` writes times with a numeric offset, in UTC, and migration 00012 rewrote existing values. Every timestamp column now stores UTC (a rule in `AGENTS.md`). That matters for anything this RFC adds that compares times in SQL, such as option 3's staleness check or a `sync_runs` table.
-- **The third failure** was Outschool: its Greenhouse board returns 404. That's a real board that was taken down, and the company has since been removed (see P3).
+- **The third failure** was Vandelay: its Greenhouse board returns 404. That's a real board that was taken down, and the company has since been removed (see P3).
 
 ## Options, ranked by simplicity
 
@@ -198,7 +198,7 @@ sql: Scan error on column index 14, name "published_at": unsupported Scan, stori
 
 The design as proposed:
 
-- **What:** `R` on the company list (still unused there; `r` refreshes one company) syncs every active company without blocking the TUI. The status line shows `Syncing 12/40: Kong…` and ends with the same summary `swamp fetch` prints (`40 companies, 1 failed (Kong)`). Since #138 every screen sizes itself under the status line, so progress stays visible.
+- **What:** `R` on the company list (still unused there; `r` refreshes one company) syncs every active company without blocking the TUI. The status line shows `Syncing 12/40: Umbrella…` and ends with the same summary `swamp fetch` prints (`40 companies, 1 failed (Umbrella)`). Since #138 every screen sizes itself under the status line, so progress stays visible.
 - **Pros:** directly covers "queue up the entire sync", with visible progress. Almost all the code is in the TUI.
 - **Cons:** only runs while the TUI is open.
 - **Needs:** P1 and P2 (done), and P4 below for robustness against interruption and overlap. The detailed design follows.
@@ -319,7 +319,7 @@ P4 can go before or alongside these.
 
 ## Recommendation
 
-1. **P1 (#136), P2 (#142), P3 (#145) and the `published_at` bug (#140) are done.** Outschool, whose board was gone, has been removed, so a scheduled run's exit status now reflects real failures.
+1. **P1 (#136), P2 (#142), P3 (#145) and the `published_at` bug (#140) are done.** Vandelay, whose board was gone, has been removed, so a scheduled run's exit status now reflects real failures.
 2. **P4 (a company's sync survives interruption and overlap)** next: #147, #148, #149 and #150 (the per-company lock). It fixes an existing bug where an interrupted sync can leave an application never closed, and the stale-fetch race that closes a reopened posting's application. Background and scheduled syncs make both more likely.
 3. **Option 2 (TUI `R` = sync all in the background)**, built as chained `tea.Cmd`s with state in `App` (see "Option 2 in detail"). It's three PRs: the `sync` package changes (#151), routing `r` through `App` (#152), then the `R` run (#153).
 4. **Option 1 (launchd running `swamp fetch`)** for the schedule. It needs almost no new code and runs whether or not the TUI is open. With P3 done, a failed run shows in its exit status and log. It should wait for P4, since a scheduled run can overlap a TUI sync.

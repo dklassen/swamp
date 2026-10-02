@@ -1693,7 +1693,7 @@ table-driven test cases (fits everything, zero rows, cursor deep in
 locations hiding the department header, cursor in departments hiding the
 location header, window straddling both groups, zero departments).
 Manually verified against the real project database via tmux (15-row
-terminal, cohere's 18 departments + 28 locations): windowed rendering
+terminal, hooli's 18 departments + 28 locations): windowed rendering
 matches the row budget on first entry, scrolling down through the full
 list keeps the cursor visible throughout, the straddle case correctly
 shows both headers with partial groups when the window spans the
@@ -1712,8 +1712,8 @@ own breakdown of the work.
 
 Decision, verify against real docs and real live data before designing:
 fetched docs.greenhouse.io directly rather than working from memory, then
-probed several real companies' live Greenhouse boards (gitlab, discord,
-airbnb) rather than trusting the docs alone. This caught a real bug the
+probed several real companies' live Greenhouse boards (hanso, dharma,
+gringotts) rather than trusting the docs alone. This caught a real bug the
 docs didn't mention: Greenhouse's `content` field is HTML-entity-*double*-
 encoded -- its JSON string value is itself entity-escaped markup (e.g.
 "&lt;p&gt;" not "<p>"). Missing this would have meant DescriptionHTML
@@ -1757,12 +1757,12 @@ Verified: go build/test/lint/fmt all clean across the whole repo,
 including greenhouse's tests (client + stripHTML, both against
 fixtures) and sync's tests (existing SyncCompany/SyncAll suite migrated
 to the new Posting type and map-based New, plus new AshbyFetcher/
-GreenhouseFetcher translation tests). Manually verified against gitlab's
+GreenhouseFetcher translation tests). Manually verified against hanso's
 real, live Greenhouse board through the actual client (not just the
 fixture): 220 real postings, description HTML/text correctly decoded and
 stripped. Also manually verified the full sync pipeline end to end
 through the built CLI binary against a scratch db: inserted a
-source="greenhouse" company pointed at gitlab's real board, ran `swamp
+source="greenhouse" company pointed at hanso's real board, ran `swamp
 fetch`, confirmed 220 postings created with sane title/department/
 location, and confirmed a second fetch was idempotent (0 created).
 
@@ -1816,9 +1816,9 @@ Manually verified against the real built binary via tmux: opened the
 form, confirmed the source picker renders with ashby boxed by default
 and the second field labeled "Ashby slug", toggled to greenhouse and
 confirmed the label switched to "Greenhouse board token", submitted a
-real Greenhouse company (GitLab, board token "gitlab") and confirmed it
+real Greenhouse company (Hanso, board token "hanso") and confirmed it
 stored with source=greenhouse, then pressed 'r' to refresh and confirmed
-it synced for real against GitLab's live Greenhouse board (220 postings
+it synced for real against Hanso's live Greenhouse board (220 postings
 created) -- proving the full chain (TUI form -> store -> sync routing ->
 GreenhouseFetcher -> real API) works end to end together. Also verified
 submitting with the default (ashby) source unchanged, no regression.
@@ -1991,7 +1991,7 @@ companies, copied to a scratch db) via tmux: confirmed columns align
 across rows of varying length, long titles truncate with an ellipsis,
 a real double-width Japanese title (`シニアコンサルティングエンジニア`)
 renders and aligns correctly, cursor row highlighting still works and
-coexists with the marker column, and a 41-row unfiltered table (Clickhouse)
+coexists with the marker column, and a 41-row unfiltered table (Monarch)
 renders within the terminal height with no overflow -- confirming the
 `postingTableChromeLines` budget subtraction is correct.
 
@@ -2062,7 +2062,7 @@ line and the failure mode is obvious from the assertion message.
 Manually verified #38/#39 together against a real production dataset via
 tmux: creating "  Zeta Corp  " saved as "Zeta Corp", inserted in the
 correct alphabetical position (`BINARY` collation: uppercase before
-lowercase) between the existing "Wealthsimple" and "clickhouse"; a
+lowercase) between the existing "Northwind" and "monarch"; a
 whitespace-only name was correctly rejected as a no-op; normal (non-
 racing) edit-cancel and edit-save both still work with real save timing.
 
@@ -2457,9 +2457,9 @@ application URL/plaintext description all render correctly with no HTML
 leakage. Full build/test/lint/fmt clean.
 
 ## 2026-09-01 — Trim fetched posting fields before filter matching and persistence
-Context: investigating a Stripe/StackAdapt data-quality question surfaced
+Context: investigating a Initech/Globex data-quality question surfaced
 that job board APIs (Greenhouse, Ashby) return free-text fields with
-inconsistent leading/trailing whitespace -- e.g. Stripe's Greenhouse
+inconsistent leading/trailing whitespace -- e.g. Initech's Greenhouse
 listings had both "Dublin" and "Dublin " for the same city, and 35 of
 its postings had padded `location` values. Tracing the ingestion path
 (ashby/greenhouse/lever fetchers -> sync.Posting -> toCreatePostingParams
@@ -2501,8 +2501,8 @@ database; this fix only prevents new writes from being unsanitized.
 
 ## 2026-09-01 — Backfill existing posting rows with padded whitespace (migration 00005)
 Context: the previous entry's `sync.sanitizePosting` fix only stops new
-writes from being unsanitized. Rows already in the database (Stripe,
-StackAdapt, etc.) still carry the padded whitespace found during
+writes from being unsanitized. Rows already in the database (Initech,
+Globex, etc.) still carry the padded whitespace found during
 investigation.
 Decision: added goose migration `00005_trim_existing_posting_whitespace`,
 a pure data UPDATE (no schema change) that runs `TRIM()` over every
@@ -4232,7 +4232,7 @@ real assets tree, driving the actual tea.Program with scripted
 keystrokes: 'e' opened the export screen naming the selected
 application with "~/Desktop" prefilled; typing a destination and
 pressing enter wrote
-stackadapt-senior-software-engineer-integrations-{cover_letter,resume}.pdf
+globex-senior-software-engineer-integrations-{cover_letter,resume}.pdf
 (both real %PDF files) and returned to the list showing "Exported 2
 PDFs to /tmp/manual-export"; a second run against an application with
 no resume on disk left the default in place, expanded it to
@@ -5474,7 +5474,7 @@ Decisions:
 
 `lineHeight` followed the common fpdf convention of half the point size
 in mm, which is ~1.42x the font size. Loose enough that a real two-page
-resume (application 29, Fullscript WMS) spilled its Education line onto
+resume (application 29, Sterling WMS) spilled its Education line onto
 a third page even after the heading size and spacing fixes. Now
 `leading` (1.25) times the size converted from points to mm, the usual
 range for a dense one-to-two page document. Paragraph, list, and heading
@@ -5613,7 +5613,7 @@ Decisions:
 Saving a posting failed with "Scan error on column index 14, name
 published_at: unsupported Scan, storing driver.Value type string into
 type *time.Time". In a UTC container, every save of a Greenhouse
-posting failed: Instacart 123/123, Mattermost 14/14, GitLab 198/198.
+posting failed: Tyrell 123/123, Contoso 14/14, Hanso 198/198.
 
 Cause: modernc.org/sqlite writes a time.Time as t.String() by default,
 kept for backward compatibility (conn.go:219-228 in v1.56.0). String()
@@ -5716,7 +5716,7 @@ Decisions:
   ~30 callers, nearly all tests, were rewritten with gofmt -r to pass
   sync.DefaultConfig().
 - Default 30s. Timed across all 41 real boards on 2026-09-28: normally
-  under 0.7s each, and the worst seen was 4.7s (Fullscript, cold first
+  under 0.7s each, and the worst seen was 4.7s (Sterling, cold first
   request). 30s is about 6x that, so a slow network won't trip it, and
   a hung board costs half a minute instead of the whole run.
 - A timeout is an ordinary per-company error: SyncAll records it and
@@ -5728,9 +5728,9 @@ Decisions:
   against a local server that never sends headers, and one that sends
   headers and part of the body and then stalls, with FetchTimeout 2s:
   both failed with "context deadline exceeded" after 2s, so cancelling
-  mid-body works. A real GitLab board in the same SyncAll still saved
+  mid-body works. A real Hanso board in the same SyncAll still saved
   its 198 postings. A full `swamp fetch` against all real boards with
-  the 30s default: 40/41 synced (Outschool's board is gone, 404), and
+  the 30s default: 40/41 synced (Vandelay's board is gone, 404), and
   nothing timed out.
 
 ## 2026-09-28 -- Every screen measures what it draws, under the banner (#138)
@@ -5795,7 +5795,7 @@ from a clean one. The only lasting sign was a stale "last fetched" time.
 Decisions:
 - Kept to the simplest version the user asked for: exit 1 if any
   company failed, each company's error on stderr, and a one-line
-  summary on stderr ("41 companies, 1 failed (Outschool)"). Successful
+  summary on stderr ("41 companies, 1 failed (Vandelay)"). Successful
   company lines stay on stdout, so a log of stdout is a record of what
   synced, and stderr alone shows whether anything went wrong.
 - The summary always prints, including "40 companies, 0 failed", so an
@@ -5820,9 +5820,9 @@ Decisions:
   the fmt.Printf calls they replace did implicitly: a failed write to
   the terminal has nowhere better to be reported.
 - Verified on a copy of the real database: exit 1 with "41 companies, 1
-  failed (Outschool)" (its Greenhouse board returns 404); with Outschool
+  failed (Vandelay)" (its Greenhouse board returns 404); with Vandelay
   soft-deleted in the copy, exit 0 and "40 companies, 0 failed". The
-  real database still has Outschool active; deactivating it is left to
+  real database still has Vandelay active; deactivating it is left to
   the user.
 
 ## 2026-09-29 -- RFCs 0001-0005 checked in; 0002 and 0004 rewritten; per-company sync lock (#150)
@@ -6108,8 +6108,8 @@ Decisions:
   - migration 00013 applied cleanly;
   - two `swamp fetch` runs 0.3 s apart both exited 0, each skipping
     only the companies the other held at that moment ("0 failed, 2
-    skipped (Baseten, Fullscript)" / "0 failed, 3 skipped (Ashby,
-    Benchsci, Stripe)"), with no lease left held afterwards;
+    skipped (Aperture, Sterling)" / "0 failed, 3 skipped (Ashby,
+    Prestige, Initech)"), with no lease left held afterwards;
   - in the real TUI (driven through `script`), with Ashby's lease held,
     `c` then `r` showed "Ashby is already syncing elsewhere; try again
     in a moment" and no error.
@@ -6169,7 +6169,7 @@ Decisions:
   with no companies. The existing App-level refresh tests pass
   unchanged.
 - Verified in the real TUI (through `script`) on a copy of the real
-  database: `c`, `j`, `r` refreshed the second company (Baseten) and
+  database: `c`, `j`, `r` refreshed the second company (Aperture) and
   showed its usual status line.
 
 ## 2026-09-30 -- 'R' syncs every company in the background (#153)
@@ -6206,9 +6206,9 @@ Decisions:
   isn't lost.
 - The run belongs to App, so leaving the company list doesn't stop it.
 - Found while verifying in the real TUI: quitting 1.5s into a run left
-  the in-flight company's (GitLab's) lease held. Bubble Tea abandons
+  the in-flight company's (Hanso's) lease held. Bubble Tea abandons
   running Cmds on quit and main then closes the database, so the sync's
-  deferred release never ran, and every sync of GitLab would have been
+  deferred release never ran, and every sync of Hanso would have been
   refused for up to LeaseTimeout. `r` had the same exposure since #150.
   - Fix: Syncer tracks the leases it holds, and
     Syncer.ReleaseHeldLeases frees them. main calls it after
@@ -6229,11 +6229,11 @@ Decisions:
   database:
   - a full run showed all 40 "Syncing k/40" steps and "40 companies, 0
     failed";
-  - 'R' then 'R' two seconds later gave "Stopping after Fullscript…",
+  - 'R' then 'R' two seconds later gave "Stopping after Sterling…",
     then "Stopped after 7/40: 7 companies, 0 failed", with no lease left
     held;
   - Esc two seconds in still ended with the summary on the home screen;
-  - quitting mid-run and then 'R' again: before the fix, GitLab's lease
+  - quitting mid-run and then 'R' again: before the fix, Hanso's lease
     was left held; after, none, and the rerun gave "40 companies, 0
     failed".
 
@@ -6261,7 +6261,7 @@ Decisions:
 - Reliable workplace type (#171) moved ahead of the global rules (#173)
   in phase 3, since the workplace rule depends on it.
 - The RFC's related findings:
-  - Mattermost/Livekit now fetch normally, so no issue.
+  - Contoso/Oscorp now fetch normally, so no issue.
   - Soft-deleted companies' 6 open postings affect nothing visible
     today (none interested or applied to). Excluding them is folded
     into the inbox issue (#172) rather than filed separately.
@@ -6283,7 +6283,7 @@ RFC's plan, committed as the user wrote it, plus a task -> issue table.
 Corrections to the entry above:
 - Order follows the user's waves: A1 status history (#162), A2
   Ashby/Lever spike (#167) moved early, A3a soft-deleted companies'
-  postings (#178), A3b Mattermost/Livekit fetch (#179, closed: both
+  postings (#178), A3b Contoso/Oscorp fetch (#179, closed: both
   fetch normally), B1 (#163), B2 (#164), C1 (#165), C2 (#166), D1
   RFC 0004 refactor (#180), D2 (#168), C3 export only what's asked
   (#181), D3 (#169), D4 (#170), then the hard-gated E1 (#171), E2
@@ -6868,7 +6868,7 @@ application_started for good (found once in the real database).
 - Existing started applications on closed postings are left to the
   user, as the issue says; #164's next-step column shows "withdraw?".
 - Verified on a migrated copy of the real database: stage.Prepare on a
-  closed WealthSimple posting is refused with nothing created; an open
+  closed posting at an Ashby company is refused with nothing created; an open
   posting still starts an application.
 
 ## 2026-10-01 -- last_seen_at means "the board last listed it" (#176)
@@ -6928,7 +6928,7 @@ Greenhouse forms. stage_prepare returns it in the same shape.
 - Invalid text (an unknown requirement, a bare *) isn't saved; the
   screen stays open and names the line.
 - Verified in the real TUI (driven through `script`) on a copy of the
-  real database: a WealthSimple (Ashby) application's form entered with
+  real database: an Ashby company's application form entered with
   `f`, saved, and returned by stage.Prepare as {"resume": "required"}
   with both questions.
 
@@ -7090,3 +7090,23 @@ of the real database, as the skill describes:
   contract, so its JSON-shape test and SKILL.md are updated. The skill
   maps "the newest ones" to Sort published_desc.
 - RFC 0006 is implemented; it records what shipped.
+
+## 2026-10-02 -- No real company names in the repo
+
+The repo is public; the companies in it were the user's own job search.
+User decision: replace them.
+
+- Code comments, tests, two RFCs, a migration's comment and older
+  decisions.log entries now use placeholder names (Northwind, Globex,
+  Initech, Hooli, Contoso, ...), one consistent mapping throughout.
+  Where a name's shape mattered it's kept: a slug that differs from its
+  name (cyberdyne-ai), a 20-character name in the width test, and the
+  uppercase/lowercase order in the #38/#39 collation note. Real names
+  from go.mod (module paths of dependencies) stay.
+- seed/data/companies.yaml (the user's company list for `swamp import`)
+  is no longer tracked and is git-ignored; the user's copy stays on
+  disk. seed/data/companies.example.yaml shows the format with
+  placeholders, and a test keeps it parseable.
+- Not done: git history and GitHub's edit history still contain the
+  names. Removing them means rewriting main's history (force push),
+  which needs its own decision.

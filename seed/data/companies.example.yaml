@@ -1,0 +1,18 @@
+# Companies to track, for `swamp import <file>`. Copy this to
+# seed/data/companies.yaml (git-ignored: real company names stay out of
+# this public repo) and list your own.
+#
+# source is the job board: ashby, greenhouse or lever. source_ref is the
+# company's slug on it, e.g. acme in jobs.ashbyhq.com/acme. description is
+# optional, and only filled in for a company that has none.
+companies:
+  - name: "Acme"
+    source: "ashby"
+    source_ref: "acme"
+    description: "Builds rockets for roadrunner enthusiasts."
+  - name: "Globex"
+    source: "greenhouse"
+    source_ref: "globex"
+  - name: "Initech"
+    source: "lever"
+    source_ref: "initech"

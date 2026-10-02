@@ -23,8 +23,8 @@ func TestSummarize(t *testing.T) {
 	}{
 		{name: "none", results: nil, wantString: "0 companies, 0 failed"},
 		{name: "one company, singular", results: []Result{{Name: "Acme"}}, wantString: "1 company, 0 failed"},
-		{name: "one failure", results: []Result{{Name: "Acme"}, {Name: "Kong", Err: fail}},
-			wantString: "2 companies, 1 failed (Kong)", wantFailed: []string{"Kong"}},
+		{name: "one failure", results: []Result{{Name: "Acme"}, {Name: "Umbrella", Err: fail}},
+			wantString: "2 companies, 1 failed (Umbrella)", wantFailed: []string{"Umbrella"}},
 		{name: "failures in result order", results: []Result{{Name: "Globex", Err: fail}, {Name: "Acme"}, {Name: "Initech", Err: fail}},
 			wantString: "3 companies, 2 failed (Globex, Initech)", wantFailed: []string{"Globex", "Initech"}},
 		{name: "skipped is not failed", results: []Result{{Name: "Acme"}, {Name: "Globex", Err: ErrSyncInProgress}, {Name: "Initech", Err: fail}},

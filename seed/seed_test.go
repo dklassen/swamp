@@ -1,6 +1,7 @@
 package seed
 
 import (
+	"os"
 	"strings"
 	"testing"
 
@@ -10,12 +11,12 @@ import (
 func TestParse_ValidFile(t *testing.T) {
 	input := `
 companies:
-  - name: Stripe
+  - name: Initech
     source: greenhouse
-    source_ref: stripe
-  - name: Cohere
+    source_ref: initech
+  - name: Hooli
     source: ashby
-    source_ref: cohere
+    source_ref: hooli
 `
 	got, err := Parse(strings.NewReader(input))
 	if err != nil {
@@ -23,8 +24,8 @@ companies:
 	}
 
 	want := []Entry{
-		{Name: "Stripe", Source: "greenhouse", SourceRef: "stripe"},
-		{Name: "Cohere", Source: "ashby", SourceRef: "cohere"},
+		{Name: "Initech", Source: "greenhouse", SourceRef: "initech"},
+		{Name: "Hooli", Source: "ashby", SourceRef: "hooli"},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Parse() mismatch (-want +got):\n%s", diff)
@@ -41,22 +42,22 @@ func TestParse_MissingField(t *testing.T) {
 			input: `
 companies:
   - source: greenhouse
-    source_ref: stripe
+    source_ref: initech
 `,
 		},
 		{
 			name: "missing source",
 			input: `
 companies:
-  - name: Stripe
-    source_ref: stripe
+  - name: Initech
+    source_ref: initech
 `,
 		},
 		{
 			name: "missing source_ref",
 			input: `
 companies:
-  - name: Stripe
+  - name: Initech
     source: greenhouse
 `,
 		},
@@ -87,13 +88,13 @@ func TestParse_MalformedYAML(t *testing.T) {
 func TestParse_OptionalDescription(t *testing.T) {
 	input := `
 companies:
-  - name: Stripe
+  - name: Initech
     source: greenhouse
-    source_ref: stripe
+    source_ref: initech
     description: Payments infrastructure for the internet.
-  - name: Cohere
+  - name: Hooli
     source: ashby
-    source_ref: cohere
+    source_ref: hooli
 `
 	got, err := Parse(strings.NewReader(input))
 	if err != nil {
@@ -101,10 +102,28 @@ companies:
 	}
 
 	want := []Entry{
-		{Name: "Stripe", Source: "greenhouse", SourceRef: "stripe", Description: "Payments infrastructure for the internet."},
-		{Name: "Cohere", Source: "ashby", SourceRef: "cohere"},
+		{Name: "Initech", Source: "greenhouse", SourceRef: "initech", Description: "Payments infrastructure for the internet."},
+		{Name: "Hooli", Source: "ashby", SourceRef: "hooli"},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Parse() mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestParse_ExampleFile: the committed example, which shows the format
+// without real company names, stays a file `swamp import` accepts.
+func TestParse_ExampleFile(t *testing.T) {
+	f, err := os.Open("data/companies.example.yaml")
+	if err != nil {
+		t.Fatalf("open example: %v", err)
+	}
+	defer func() { _ = f.Close() }()
+
+	entries, err := Parse(f)
+	if err != nil {
+		t.Fatalf("Parse(example): %v", err)
+	}
+	if len(entries) == 0 {
+		t.Fatal("example has no companies")
 	}
 }

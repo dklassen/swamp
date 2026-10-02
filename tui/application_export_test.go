@@ -21,7 +21,7 @@ func testExportApplication() store.ApplicationView {
 	return store.ApplicationView{
 		Application: store.Application{ID: 42, Status: store.ApplicationStatusStarted},
 		Posting:     store.Posting{ID: 7, IngestedFields: store.IngestedFields{Title: "Delivery Platform"}},
-		CompanyName: "WealthSimple",
+		CompanyName: "Northwind",
 	}
 }
 
@@ -53,7 +53,7 @@ func TestApplicationExportModel_PrefillsDestinationWithDefaultDir(t *testing.T) 
 	if got := m.textinput.Value(); got != "/home/dana/Desktop" {
 		t.Errorf("destination prefill = %q, want %q", got, "/home/dana/Desktop")
 	}
-	if view := m.View(); !strings.Contains(view, "WealthSimple") || !strings.Contains(view, "Delivery Platform") {
+	if view := m.View(); !strings.Contains(view, "Northwind") || !strings.Contains(view, "Delivery Platform") {
 		t.Errorf("View() = %q, want it to name the application being exported", view)
 	}
 }
@@ -95,8 +95,8 @@ func TestApplicationExportModel_EnterExportsBothDocumentsWithDescriptiveNames(t 
 	}
 
 	want := []string{
-		filepath.Join(dest, "wealthsimple-delivery-platform-cover_letter.pdf"),
-		filepath.Join(dest, "wealthsimple-delivery-platform-resume.pdf"),
+		filepath.Join(dest, "northwind-delivery-platform-cover_letter.pdf"),
+		filepath.Join(dest, "northwind-delivery-platform-resume.pdf"),
 	}
 	if diff := cmp.Diff(want, got.paths); diff != "" {
 		t.Errorf("exported paths mismatch (-want +got):\n%s", diff)
@@ -126,7 +126,7 @@ func TestApplicationExportModel_SkipsUndraftedDocumentsWithoutFailing(t *testing
 	if got.err != nil {
 		t.Fatalf("export err = %v, want nil (a missing draft is skipped, not an error)", got.err)
 	}
-	wantPaths := []string{filepath.Join(dest, "wealthsimple-delivery-platform-resume.pdf")}
+	wantPaths := []string{filepath.Join(dest, "northwind-delivery-platform-resume.pdf")}
 	if diff := cmp.Diff(wantPaths, got.paths); diff != "" {
 		t.Errorf("exported paths mismatch (-want +got):\n%s", diff)
 	}
@@ -154,7 +154,7 @@ func TestApplicationExportModel_ExpandsTildeInDestination(t *testing.T) {
 	if got.dir != wantDir {
 		t.Errorf("dir = %q, want %q (tilde expanded)", got.dir, wantDir)
 	}
-	wantPath := filepath.Join(wantDir, "wealthsimple-delivery-platform-resume.pdf")
+	wantPath := filepath.Join(wantDir, "northwind-delivery-platform-resume.pdf")
 	if _, err := os.Stat(wantPath); err != nil {
 		t.Errorf("stat exported pdf: %v (want it written under the expanded home dir)", err)
 	}
@@ -184,7 +184,7 @@ func TestApplicationExportModel_RecordsEachExport(t *testing.T) {
 	if !ok {
 		t.Fatal("no cover letter export recorded")
 	}
-	if want := filepath.Join(dest, "wealthsimple-delivery-platform-cover_letter.pdf"); coverLetter.Path != want {
+	if want := filepath.Join(dest, "northwind-delivery-platform-cover_letter.pdf"); coverLetter.Path != want {
 		t.Errorf("export path = %q, want %q", coverLetter.Path, want)
 	}
 	if !coverLetter.IsCurrent("# Heading\n\nBody text.\n") {
