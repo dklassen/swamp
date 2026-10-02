@@ -339,7 +339,7 @@ All seven steps, 2026-10-02, each its own PR with a `decisions.log` entry:
    - `store.PostingOrder` selects one static query per order.
    - `TestSearchPostings_EveryOrderMatchesTheSameRows` keeps the queries' repeated filters from drifting.
    - `stage.SortOrders` gives each order its stability note, which the schema's `Sort` description is built from.
-7. **`published_desc`** (#224). Ordered by `published_at`, then ID, both descending, with undated postings last.
+7. **`published_desc`** (#224, PR #231). Ordered by `published_at`, then ID, both descending, with undated postings last.
    - Tested for ties, fractional seconds of different lengths, a non-UTC zone, and every page size.
    - Cursors carry `published_at` only for this order, so ID-order tokens are unchanged.
    - `PublishedAt` was added to the posting summary, so `list_postings` shows it too; its contract test and the skill are updated.
