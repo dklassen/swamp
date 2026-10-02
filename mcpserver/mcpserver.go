@@ -39,6 +39,11 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 	}, listPostingsHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_companies",
+		Description: "List every company being tracked, by name: ID, display name, job board, and open posting count. Use it to match a company the user names, then pass its ID to search_postings.",
+	}, listCompaniesHandler(st))
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "stage_prepare",
 		Description: "Commit to drafting one posting's application: creates its application record if one doesn't exist yet, ensures its document directory exists, and returns the resolved cover letter/resume paths plus any existing review feedback. Idempotent -- safe to call again for the same posting.",
 	}, stagePrepareHandler(st))
@@ -96,6 +101,22 @@ func listPostingsHandler(st *stage.Stage) mcp.ToolHandlerFor[listPostingsInput, 
 			return nil, nil, fmt.Errorf("list_postings: %w", err)
 		}
 		return nil, listPostingsOutput{Postings: candidates}, nil
+	}
+}
+
+type listCompaniesInput struct{}
+
+type listCompaniesOutput struct {
+	Companies []stage.CompanySummary
+}
+
+func listCompaniesHandler(st *stage.Stage) mcp.ToolHandlerFor[listCompaniesInput, listCompaniesOutput] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, _ listCompaniesInput) (*mcp.CallToolResult, listCompaniesOutput, error) {
+		companies, err := st.Companies(ctx)
+		if err != nil {
+			return nil, listCompaniesOutput{}, fmt.Errorf("list_companies: %w", err)
+		}
+		return nil, listCompaniesOutput{Companies: companies}, nil
 	}
 }
 

@@ -7004,3 +7004,12 @@ self-contained concern, and AGENTS.md prefers testing exported behavior.
 - Fingerprint is the first 8 bytes of SHA-256 over the filters'
   JSON (map keys sort, so field order doesn't matter). Not signed:
   nothing in a cursor is sensitive, and the server validates it anyway.
+
+## 2026-10-02 -- list_companies MCP tool (#220, RFC 0006 step 3)
+
+The agent's company vocabulary for search_postings: every company the
+user hasn't deleted, ordered by name, with ID, name, board and open
+posting count. stage.Companies composes ListActiveCompanies and
+CountOpenPostingsByCompany (the TUI company list's open count: open and
+unarchived). Not paged: about 45 companies. The tool's output is a typed
+struct, so its schema is inferred, unlike the posting tools' "any".

@@ -587,3 +587,54 @@ func TestStagePrepare_ClosedPosting_ReturnsToolErrorSayingSo(t *testing.T) {
 		t.Errorf("tool error = %+v, want it to say the posting is closed", res.Content)
 	}
 }
+
+type listCompaniesResult struct {
+	Companies []struct {
+		ID           int64
+		Name         string
+		Source       string
+		OpenPostings int
+	}
+}
+
+// TestListCompanies_LiveCompaniesByNameWithOpenCounts: the agent's company
+// vocabulary for search_postings (#220, RFC 0006). Deleted companies are
+// left out; each company's count is its open, unarchived postings.
+func TestListCompanies_LiveCompaniesByNameWithOpenCounts(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	ctx := context.Background()
+	beta := mustCreateCompany(t, s, "Beta")
+	acme := mustCreateCompany(t, s, "Acme")
+	gone := mustCreateCompany(t, s, "Gone")
+	mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
+	closed := mustUpsertPosting(t, s, acme.ID, "job-3", "Writer")
+	if err := s.MarkPostingClosed(ctx, closed.ID); err != nil {
+		t.Fatalf("MarkPostingClosed: %v", err)
+	}
+	if err := s.SoftDeleteCompany(ctx, gone.ID); err != nil {
+		t.Fatalf("SoftDeleteCompany: %v", err)
+	}
+	cs := connectClient(t, srv)
+
+	got := callTool[listCompaniesResult](t, cs, "list_companies", map[string]any{}).Companies
+
+	type company struct {
+		ID           int64
+		Name, Source string
+		OpenPostings int
+	}
+	gotCompanies := make([]company, len(got))
+	for i, c := range got {
+		gotCompanies[i] = company{c.ID, c.Name, c.Source, c.OpenPostings}
+	}
+	want := []company{
+		{acme.ID, "Acme", "ashby", 2},
+		{beta.ID, "Beta", "ashby", 0},
+	}
+	if diff := cmp.Diff(want, gotCompanies); diff != "" {
+		t.Errorf("list_companies mismatch (-want +got):\n%s", diff)
+	}
+}
