@@ -192,7 +192,8 @@ Output, in the requested order:
 
 - **One static sqlc query.** Every filter is an optional parameter, and `ORDER BY postings.id` with `LIMIT` runs in SQL, so a call never reads more than `Limit` rows. That fixes PR #216's unbounded read of every posting into Go.
 - **Application statuses** are passed as one JSON array read with `json_each`, not `sqlc.slice`, which can't be mixed with other bound parameters on sqlite (see `ListActiveApplications`).
-- **`Total`** is a `COUNT(*) OVER ()` in the same query (a window function runs before `LIMIT`), so no second query is needed.
+- **`Total`** is a `COUNT(*) OVER ()` over the filtered set, in an inner query, with the keyset condition and `LIMIT` in the outer one. In the same `WHERE` as the cursor, it would count only rows after the cursor (corrected in #218). Still one query.
+- **`HasMore`:** the query fetches one row more than `Limit`, so the last page says so, and no caller needs an empty page to find the end.
 - **Summary columns only.** No description or payload (#117).
 
 ### Extending it later
