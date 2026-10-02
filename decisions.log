@@ -7031,3 +7031,23 @@ the search_postings MCP tool. Closes #215.
   that tell the agent to start again without a cursor.
 - Output stays "any": store.ApplicationStatus's MarshalJSON writes a
   string where inference would see an integer.
+
+## 2026-10-02 -- apply-to-posting finds named postings via list_companies + search_postings (#222, RFC 0006 step 5)
+
+The skill's step 1 gains "When the user names a posting or application":
+match the company with list_companies, search_postings with that
+CompanyID and the filters the user's words imply, match the user's words
+against full titles, confirm one match or ask among several, and retry
+with ListingStatus "any" before saying none. Plus the shortlist
+(Interested + HasApplication). list_postings stays the drafting queue.
+
+Ship point for RFC 0006. Verified through the real MCP server on a copy
+of the real database, as the skill describes:
+- a drafted application (not in list_postings) found by company plus
+  HasApplication, one of 2 rows;
+- a submitted one by company plus ApplicationStatuses, one of 2;
+- one whose posting closed: absent with the default open filter, found
+  on the ListingStatus "any" retry, one of 4;
+- the interested shortlist (19) paged as 3 pages of up to 8, all
+  distinct, Total 19 on each; a cursor reused with another filter got
+  the "start again without a cursor" error.

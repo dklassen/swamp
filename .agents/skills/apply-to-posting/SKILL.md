@@ -47,6 +47,41 @@ If the user asks to work through several at once -- e.g. "draft the
 started applications that have no drafts" -- follow the batch flow
 below instead of picking one.
 
+### When the user names a posting or application
+
+The user often names one in their own words, e.g. "my application to the
+Staff Developer role at Acme", copied from the TUI, which shows no IDs.
+`list_postings` is only the drafting queue: an application that's
+drafted, submitted or closed isn't in it. Find it by what it is:
+
+1. Call `list_companies` and match the company name the user gave,
+   ignoring case. If none matches, or several could, ask.
+2. Call `search_postings` with that `CompanyID`, plus filters the user's
+   words imply:
+   - "my application", "the one I applied to": `HasApplication: true`;
+   - a status ("the one I submitted"): `ApplicationStatuses`;
+   - a posting that may have closed: `ListingStatus: "any"`.
+3. Read the full titles in the results (the TUI truncates them, and
+   several roles at one company often share a prefix) and match the
+   user's words against them:
+   - one match: confirm it with the user -- company, full title,
+     location, application status -- before going on;
+   - several: show them with full titles and ask which;
+   - none: say so, and retry with `ListingStatus: "any"` or without the
+     application filters before giving up.
+4. If `NextCursor` isn't null, there are more pages: pass it back as
+   `Cursor`, with the same filters, for the next. If `Total` is large,
+   narrow the filters rather than paging through everything.
+
+The match's `Posting.ID` is what `stage_prepare` takes, and its
+`ApplicationID` (when it has one) what `read_document` and
+`write_document` take.
+
+For the user's shortlist -- "what have I marked interested but not
+started?" -- call `search_postings` with `Interested: true` and
+`HasApplication: false` (or `true` for "interested ones I've started"),
+paging the same way.
+
 ## 2. Commit to the posting
 
 Once the user names a posting, call `stage_prepare` for it. This is the
