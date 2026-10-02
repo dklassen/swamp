@@ -1,6 +1,6 @@
 # RFC 0006: Finding a posting or application by what it is, not by text
 
-- **Status:** Accepted 2026-10-02. Work breakdown filed as issues (see "Work breakdown").
+- **Status:** Accepted 2026-10-02. Work breakdown filed as #218–#224 (see "Work breakdown").
 - **Date:** 2026-10-01 (accepted 2026-10-02)
 - **Related:** issue #215 and its closed PR #216 (a first `search_postings` with free-text matching, which this RFC replaces); RFC 0002 (the application workflow the agent drives); issue #171 (normalising workplace type)
 
@@ -242,7 +242,7 @@ Effort: **S** is a few hours to a day, **M** a few days. Each task is its own is
 
 ### Wave A: foundations (mutually independent)
 
-**1. Bounded search query (store).** `store.SearchPostingListings(ctx, filter)`, one static sqlc query:
+**1. Bounded search query (store), #218.** `store.SearchPostingListings(ctx, filter)`, one static sqlc query:
 - optional filters: company ID, has an application, application statuses (a JSON array read with `json_each`), interested, listing status, include archived;
 - the `id_asc` keyset (`id > :after`), `ORDER BY postings.id`, `LIMIT`, and `COUNT(*) OVER ()` for the total;
 - summary columns only;
@@ -250,7 +250,7 @@ Effort: **S** is a few hours to a day, **M** a few days. Each task is its own is
 
 *Done:* table tests for each filter. Pages read in sequence concatenate to the unpaged result. Closing a posting between two pages doesn't shift the next page. A call never returns more than its limit. *Deps:* none. **M.** The stashed work from PR #216 has the `json_each` and window-function parts, already proven to generate under sqlc.
 
-**2. Opaque cursors.** Encode and decode in `stage`: versioned, base64url JSON carrying the sort name, a hash of the filters, and the key values. Decoding treats the token as untrusted.
+**2. Opaque cursors, #219.** Encode and decode in `stage`: versioned, base64url JSON carrying the sort name, a hash of the filters, and the key values. Decoding treats the token as untrusted.
 
 *Done:* round-trip tests, plus errors for:
 - a bad encoding;
@@ -260,13 +260,13 @@ Effort: **S** is a few hours to a day, **M** a few days. Each task is its own is
 
 *Deps:* none. **S.**
 
-**3. `list_companies`.** An MCP tool returning every company the user hasn't deleted: ID, name, board and open posting count, ordered by name. It reuses `ListActiveCompanies` and `CountOpenPostingsByCompany`.
+**3. `list_companies`, #220.** An MCP tool returning every company the user hasn't deleted: ID, name, board and open posting count, ordered by name. It reuses `ListActiveCompanies` and `CountOpenPostingsByCompany`.
 
 *Done:* an MCP test showing deleted companies are left out and the counts are right. *Deps:* none. **S.**
 
 ### Wave B: the tool (needs wave A)
 
-**4. `search_postings`, ID order.**
+**4. `search_postings`, ID order, #221.**
 - `stage.Search` maps the tool's input to step 1's filter, encodes and decodes step 2's cursors, applies the `Limit` default (50) and cap (100), and returns `NextCursor` (null on the last page) and `Total`.
 - The MCP tool's schema advertises application statuses and listing status as enums, and `Sort` with only `id_asc` for now.
 
@@ -278,7 +278,7 @@ Effort: **S** is a few hours to a day, **M** a few days. Each task is its own is
 
 *Deps:* 1, 2. **S–M.** Closes #215.
 
-**5. Skill.** The `apply-to-posting` flow from "Skill" above:
+**5. Skill, #222.** The `apply-to-posting` flow from "Skill" above:
 - resolve a named posting or application through `list_companies`, then `search_postings`;
 - confirm a single match; with several, show full titles and ask;
 - the shortlist use case.
@@ -293,11 +293,11 @@ Effort: **S** is a few hours to a day, **M** a few days. Each task is its own is
 
 ### Wave C: sort orders (after the ship point, when wanted)
 
-**6. Sort registry and `id_desc`.** Move the sort order into the registry described in "Adding sort orders later". Each entry gives its columns, direction, NULL placement and stability note. Add `id_desc` (`id < :before`).
+**6. Sort registry and `id_desc`, #223.** Move the sort order into the registry described in "Adding sort orders later". Each entry gives its columns, direction, NULL placement and stability note. Add `id_desc` (`id < :before`).
 
 *Done:* the paging tests from step 4 pass for both orders. The tool schema lists the orders from the registry, so a new entry appears without editing the schema. *Deps:* 4. **S.**
 
-**7. `published_desc`.**
+**7. `published_desc`, #224.**
 - The composite keyset `(published_at, id)`, with postings that have no publish date sorted last, by ID.
 - `PublishedAt` added to the posting summary.
 
