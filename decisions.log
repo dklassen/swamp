@@ -6965,3 +6965,25 @@ at one company).
   tokens that carry the sort and a hash of the filters, decoded as
   untrusted input and rejected with another sort or other filters; not
   signed, since nothing in them is sensitive.
+
+## 2026-10-02 -- Bounded posting search query, keyset by ID (#218, RFC 0006 step 1)
+
+store.SearchPostings: one static sqlc query (SearchPostingsByID) with
+optional filters -- company, listing status, archived, has an
+application, interested, application statuses (JSON array via
+json_each) -- keyset paging on posting ID, and LIMIT in SQL.
+
+- The count is a COUNT(*) OVER () in an inner query over the filtered
+  set; the keyset condition and LIMIT are in the outer query. With the
+  keyset condition in the same WHERE, the count would only cover rows
+  after the cursor -- a correction to the RFC's sketch.
+- The query fetches Limit + 1 rows and the store reports HasMore, so a
+  caller never needs an empty page to learn it reached the end. Total is
+  read off the rows, so it's 0 on an empty page, which now only happens
+  when nothing (left) matches.
+- Nullable filters arrive as interface{} params (sqlc can't infer their
+  types); store.PostingSearch keeps the API typed, with nil pointers and
+  zero values meaning "don't filter".
+- Timed on a copy of the real database: about 2 ms for a filtered
+  search, 15-18 ms per page when paging through everything (the window
+  count scans every match). No index needed at this size.

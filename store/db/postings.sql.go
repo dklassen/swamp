@@ -529,6 +529,131 @@ func (q *Queries) ReopenPostingIfClosed(ctx context.Context, id int64) (int64, e
 	return result.RowsAffected()
 }
 
+const searchPostingsByID = `-- name: SearchPostingsByID :many
+SELECT m.id, m.title, m.department, m.location, m.workplace_type, m.application_url, m.listing_status, m.company_name, m.interested_at, m.archived_at, m.application_id, m.application_status, m.application_notes, m.total
+FROM (
+    SELECT
+        postings.id,
+        postings.title,
+        postings.department,
+        postings.location,
+        postings.workplace_type,
+        postings.application_url,
+        postings.listing_status,
+        companies.name AS company_name,
+        posting_markup.interested_at,
+        posting_markup.archived_at,
+        applications.id AS application_id,
+        applications.status AS application_status,
+        applications.notes AS application_notes,
+        COUNT(*) OVER () AS total
+    FROM postings
+    JOIN companies ON companies.id = postings.company_id
+    LEFT JOIN posting_markup ON posting_markup.posting_id = postings.id
+    LEFT JOIN applications ON applications.posting_id = postings.id
+    WHERE companies.deleted_at IS NULL
+      AND (?1 IS NULL OR postings.company_id = ?1)
+      AND (?2 IS NULL OR postings.listing_status = ?2)
+      AND (?3 OR posting_markup.archived_at IS NULL)
+      AND (?4 IS NULL OR (applications.id IS NOT NULL) = ?4)
+      AND (?5 IS NULL OR (posting_markup.interested_at IS NOT NULL) = ?5)
+      AND (?6 IS NULL OR applications.status IN (SELECT value FROM json_each(?6)))
+) AS m
+WHERE ?7 IS NULL OR m.id > ?7
+ORDER BY m.id
+LIMIT ?8
+`
+
+type SearchPostingsByIDParams struct {
+	CompanyID       interface{} `json:"company_id"`
+	ListingStatus   interface{} `json:"listing_status"`
+	IncludeArchived interface{} `json:"include_archived"`
+	HasApplication  interface{} `json:"has_application"`
+	Interested      interface{} `json:"interested"`
+	Statuses        interface{} `json:"statuses"`
+	AfterID         interface{} `json:"after_id"`
+	MaxRows         int64       `json:"max_rows"`
+}
+
+type SearchPostingsByIDRow struct {
+	ID                int64          `json:"id"`
+	Title             string         `json:"title"`
+	Department        string         `json:"department"`
+	Location          string         `json:"location"`
+	WorkplaceType     string         `json:"workplace_type"`
+	ApplicationUrl    string         `json:"application_url"`
+	ListingStatus     string         `json:"listing_status"`
+	CompanyName       string         `json:"company_name"`
+	InterestedAt      sql.NullTime   `json:"interested_at"`
+	ArchivedAt        sql.NullTime   `json:"archived_at"`
+	ApplicationID     sql.NullInt64  `json:"application_id"`
+	ApplicationStatus sql.NullString `json:"application_status"`
+	ApplicationNotes  sql.NullString `json:"application_notes"`
+	Total             int64          `json:"total"`
+}
+
+// One page of the postings matching every given filter, in posting ID
+// order, after an optional cursor ID (#218, RFC 0006). NULL means "don't
+// filter on this". Postings of a company the user deleted are never
+// included.
+//
+// The inner query applies the filters and counts every match
+// (COUNT(*) OVER ()); the outer one applies the keyset condition and the
+// LIMIT. So total is the whole result's size on every page, while only
+// max_rows rows ever leave the database.
+//
+// Application statuses come in as one JSON array read with json_each,
+// not sqlc.slice, which can't be mixed with other bound parameters on
+// sqlite (see ListActiveApplications). Summary columns only (#117); the
+// application side is individually aliased nullable columns, not
+// sqlc.embed (see ListInterestedPostings).
+func (q *Queries) SearchPostingsByID(ctx context.Context, arg SearchPostingsByIDParams) ([]SearchPostingsByIDRow, error) {
+	rows, err := q.db.QueryContext(ctx, searchPostingsByID,
+		arg.CompanyID,
+		arg.ListingStatus,
+		arg.IncludeArchived,
+		arg.HasApplication,
+		arg.Interested,
+		arg.Statuses,
+		arg.AfterID,
+		arg.MaxRows,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []SearchPostingsByIDRow
+	for rows.Next() {
+		var i SearchPostingsByIDRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Title,
+			&i.Department,
+			&i.Location,
+			&i.WorkplaceType,
+			&i.ApplicationUrl,
+			&i.ListingStatus,
+			&i.CompanyName,
+			&i.InterestedAt,
+			&i.ArchivedAt,
+			&i.ApplicationID,
+			&i.ApplicationStatus,
+			&i.ApplicationNotes,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const updatePosting = `-- name: UpdatePosting :one
 UPDATE postings
 SET title = ?,
