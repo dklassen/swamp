@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -291,5 +292,59 @@ func TestSearch_IDDescIsNewestToSwampFirst(t *testing.T) {
 	}
 	if _, err := f.st.Search(ctx, SearchOptions{Cursor: *got.NextCursor}); !errors.Is(err, cursor.ErrMismatch) {
 		t.Errorf("id_desc cursor used with id_asc: err = %v, want cursor.ErrMismatch", err)
+	}
+}
+
+// TestSearch_PublishedDescPagesNewestOnTheBoardFirst: through opaque
+// cursors, dated postings newest first, undated last; each match shows
+// its publish date (#224).
+func TestSearch_PublishedDescPagesNewestOnTheBoardFirst(t *testing.T) {
+	t.Parallel()
+	st, s, _ := newTestStage(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme")
+	posting := func(sourceID string, published time.Time) store.Posting {
+		t.Helper()
+		p, err := s.UpsertPosting(ctx, store.CreatePostingParams{
+			CompanyID: acme.ID, Source: "ashby", SourceID: sourceID,
+			IngestedFields: store.IngestedFields{Title: "Role " + sourceID, PublishedAt: store.OptionalTime{Time: published}, RawPayload: "{}"},
+		})
+		if err != nil {
+			t.Fatalf("UpsertPosting: %v", err)
+		}
+		return p
+	}
+	day := func(d int) time.Time { return time.Date(2026, 9, d, 12, 0, 0, 0, time.UTC) }
+	older := posting("1", day(1))
+	undated := posting("2", time.Time{})
+	newest := posting("3", day(20))
+	middle := posting("4", day(10))
+
+	var got []int64
+	opts := SearchOptions{Sort: "published_desc", Limit: 1}
+	for pages := 0; ; pages++ {
+		if pages > 5 {
+			t.Fatal("paging didn't end")
+		}
+		page, err := st.Search(ctx, opts)
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		got = append(got, matchIDs(page.Postings)...)
+		if page.NextCursor == nil {
+			break
+		}
+		opts.Cursor = *page.NextCursor
+	}
+	if diff := cmp.Diff(postingIDs(newest, middle, older, undated), got); diff != "" {
+		t.Errorf("order mismatch (-want +got):\n%s", diff)
+	}
+
+	first, err := st.Search(ctx, SearchOptions{Sort: "published_desc", Limit: 4})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if !first.Postings[0].Posting.PublishedAt.Equal(day(20)) || !first.Postings[3].Posting.PublishedAt.IsZero() {
+		t.Errorf("PublishedAt = %v ... %v, want %v ... none", first.Postings[0].Posting.PublishedAt, first.Postings[3].Posting.PublishedAt, day(20))
 	}
 }

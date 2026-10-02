@@ -7068,3 +7068,25 @@ of the real database, as the skill describes:
   no entry. search_postings' Sort enum and description are built from it.
 - id_desc: newest to Swamp first, keyset "id < before". A cursor from one
   order is ErrMismatch in another (the sort is part of the cursor).
+
+## 2026-10-02 -- published_desc, newest on the board first (#224, RFC 0006 step 7)
+
+- SearchPostingsByPublishedDesc orders by published_at DESC, then ID
+  DESC, with undated postings last (by ID). The keyset condition takes
+  the previous page's last row: with a date, rows earlier, or tied and
+  lower ID, or undated; without one, undated with lower ID.
+- published_at is compared as stored text. It's UTC in one format with
+  trailing fractional zeros trimmed (00012), so text order is time
+  order, and a bound time.Time is formatted the same way. Tested with
+  ties, .5 vs .45 vs whole seconds, a -07:00 input, and every page size
+  1..7; loosening "<" to "<=" fails the test.
+- All three order queries now return published_at, so their row types
+  stay identical and convert directly.
+- The cursor gains an optional published_at (RFC 3339, nanoseconds,
+  omitted when zero), so ID-order tokens are byte-for-byte unchanged and
+  the format stays version 1.
+- PostingSummary gains PublishedAt (store.OptionalTime, null when
+  absent), shared with list_postings: an additive change to the agent
+  contract, so its JSON-shape test and SKILL.md are updated. The skill
+  maps "the newest ones" to Sort published_desc.
+- RFC 0006 is implemented; it records what shipped.

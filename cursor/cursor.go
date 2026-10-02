@@ -15,6 +15,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"time"
 )
 
 // version is the token format this package writes and reads. A token of
@@ -37,6 +38,9 @@ type Key struct {
 	// ID is the last row's posting ID: the whole key for ID orders, the
 	// tie-breaker for any other.
 	ID int64
+	// PublishedAt is the last row's publish time, for orders by it; zero
+	// when the row had none, or the order doesn't use it.
+	PublishedAt time.Time
 }
 
 // token is Key as encoded, with its format version.
@@ -45,11 +49,18 @@ type token struct {
 	Sort    string `json:"sort"`
 	Filters string `json:"filters"`
 	ID      int64  `json:"id"`
+	// PublishedAt is RFC 3339 with nanoseconds, omitted when zero, so
+	// ID-order tokens are unchanged by it.
+	PublishedAt string `json:"published_at,omitempty"`
 }
 
 // Encode makes the opaque token for key.
 func Encode(key Key) string {
-	encoded, err := json.Marshal(token{V: version, Sort: key.Sort, Filters: key.Filters, ID: key.ID})
+	tok := token{V: version, Sort: key.Sort, Filters: key.Filters, ID: key.ID}
+	if !key.PublishedAt.IsZero() {
+		tok.PublishedAt = key.PublishedAt.UTC().Format(time.RFC3339Nano)
+	}
+	encoded, err := json.Marshal(tok)
 	if err != nil {
 		// A struct of strings and ints always encodes.
 		panic(fmt.Sprintf("cursor: encode %+v: %v", key, err))
@@ -79,7 +90,13 @@ func Decode(t, sort, filters string) (Key, error) {
 	case tok.Sort != sort || tok.Filters != filters:
 		return Key{}, ErrMismatch
 	}
-	return Key{Sort: tok.Sort, Filters: tok.Filters, ID: tok.ID}, nil
+	key := Key{Sort: tok.Sort, Filters: tok.Filters, ID: tok.ID}
+	if tok.PublishedAt != "" {
+		if key.PublishedAt, err = time.Parse(time.RFC3339Nano, tok.PublishedAt); err != nil {
+			return Key{}, fmt.Errorf("%w: bad published_at", ErrInvalid)
+		}
+	}
+	return key, nil
 }
 
 // Fingerprint is a short hash of a search's filters, so a cursor can tell

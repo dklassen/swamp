@@ -48,6 +48,9 @@ type PostingSummary struct {
 	Location       string `json:"Location"`
 	WorkplaceType  string `json:"WorkplaceType"`
 	ApplicationURL string `json:"ApplicationURL"`
+	// PublishedAt is when the board says it was published; null when it
+	// didn't say. Shown so newest-first search results say why (#224).
+	PublishedAt store.OptionalTime `json:"PublishedAt"`
 }
 
 func postingSummary(p store.Posting) PostingSummary {
@@ -58,6 +61,7 @@ func postingSummary(p store.Posting) PostingSummary {
 		Location:       p.Location,
 		WorkplaceType:  p.WorkplaceType,
 		ApplicationURL: p.ApplicationURL,
+		PublishedAt:    p.PublishedAt,
 	}
 }
 

@@ -827,7 +827,7 @@ func TestSearchPostings_AdvertisesEnums(t *testing.T) {
 	if diff := cmp.Diff([]string{"open", "closed", "any"}, schema.Properties.ListingStatus.Enum); diff != "" {
 		t.Errorf("ListingStatus enum mismatch (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff([]string{"id_asc", "id_desc"}, schema.Properties.Sort.Enum); diff != "" {
+	if diff := cmp.Diff([]string{"id_asc", "id_desc", "published_desc"}, schema.Properties.Sort.Enum); diff != "" {
 		t.Errorf("Sort enum mismatch (-want +got):\n%s", diff)
 	}
 	for _, order := range stage.SortOrders() {

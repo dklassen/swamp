@@ -207,6 +207,30 @@ type Querier interface {
 	// application side is individually aliased nullable columns, not
 	// sqlc.embed (see ListInterestedPostings).
 	SearchPostingsByIDDesc(ctx context.Context, arg SearchPostingsByIDDescParams) ([]SearchPostingsByIDDescRow, error)
+	// SearchPostingsByID newest on the board first (#224): the same filters,
+	// ordered by published_at descending, then posting ID descending, with
+	// postings that have no published_at last (by ID, descending). The
+	// filters must stay identical to SearchPostingsByID's; a test checks every
+	// order matches the same postings. NULL means "don't filter on this".
+	//
+	// The cursor is the previous page's last row: cursor_published (NULL when
+	// that row had no published_at) and cursor_id. published_at is stored as
+	// UTC text in one format with trailing fractional zeros trimmed (00012),
+	// so text order is time order, and a bound time.Time is formatted the
+	// same way by the connection store.Open makes. Postings of a company
+	// the user deleted are never included.
+	//
+	// The inner query applies the filters and counts every match
+	// (COUNT(*) OVER ()); the outer one applies the keyset condition and the
+	// LIMIT. So total is the whole result's size on every page, while only
+	// max_rows rows ever leave the database.
+	//
+	// Application statuses come in as one JSON array read with json_each,
+	// not sqlc.slice, which can't be mixed with other bound parameters on
+	// sqlite (see ListActiveApplications). Summary columns only (#117); the
+	// application side is individually aliased nullable columns, not
+	// sqlc.embed (see ListInterestedPostings).
+	SearchPostingsByPublishedDesc(ctx context.Context, arg SearchPostingsByPublishedDescParams) ([]SearchPostingsByPublishedDescRow, error)
 	// See SetPostingInterested -- same mutual-exclusivity reasoning, mirrored.
 	SetPostingArchived(ctx context.Context, postingID int64) (PostingMarkup, error)
 	// Sets interested_at and also clears archived_at: the TUI treats

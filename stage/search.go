@@ -37,6 +37,7 @@ func (o SortOrder) Name() string { return o.Order.String() }
 var sortOrders = []SortOrder{
 	{store.PostingOrderIDAsc, "the order Swamp first saw the postings in (the default). Stable while paging: postings added meanwhile land on later pages."},
 	{store.PostingOrderIDDesc, "newest to Swamp first. Stable while paging; postings added meanwhile sort ahead of the first page, so they aren't seen until you start again."},
+	{store.PostingOrderPublishedDesc, "newest on the board first (by PublishedAt; postings with no publish date last). Stable while paging, unless a board changes a posting's publish date meanwhile: that one posting may then be missed or seen twice."},
 }
 
 // SortOrders returns the registered sort orders, default first.
@@ -164,6 +165,7 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 			return SearchResult{}, fmt.Errorf("stage: %w", err)
 		}
 		search.AfterID = key.ID
+		search.AfterPublishedAt = key.PublishedAt
 	}
 
 	page, err := st.store.SearchPostings(ctx, search)
@@ -175,7 +177,8 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 		result.Postings[i] = searchMatch(l)
 	}
 	if page.HasMore {
-		next := cursor.Encode(cursor.Key{Sort: sort, Filters: fingerprint, ID: page.Listings[len(page.Listings)-1].ID})
+		last := page.Listings[len(page.Listings)-1]
+		next := cursor.Encode(cursor.Key{Sort: sort, Filters: fingerprint, ID: last.ID, PublishedAt: last.PublishedAt})
 		result.NextCursor = &next
 	}
 	return result, nil
@@ -190,6 +193,7 @@ func searchMatch(l store.PostingListing) SearchMatch {
 			Location:       l.Location,
 			WorkplaceType:  l.WorkplaceType,
 			ApplicationURL: l.ApplicationURL,
+			PublishedAt:    store.OptionalTime{Time: l.PublishedAt},
 		},
 		CompanyName:   l.CompanyName,
 		ListingStatus: l.ListingStatus,
