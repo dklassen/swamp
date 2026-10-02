@@ -20,8 +20,10 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/dklassen/swamp/cursor"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/stage"
+	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
 
@@ -42,6 +44,12 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 		Name:        "list_companies",
 		Description: "List every company being tracked, by name: ID, display name, job board, and open posting count. Use it to match a company the user names, then pass its ID to search_postings.",
 	}, listCompaniesHandler(st))
+
+	mcp.AddTool(server, &mcp.Tool{
+		Name:        "search_postings",
+		Description: "Find postings by what they are -- company, application and its status, interested, open or closed -- across every company being tracked, whether or not they have an application. Use it to resolve a posting or application the user names (get the company's ID from list_companies first), or to review the interested shortlist. Every filter is optional; by default it returns open, non-archived postings. Results come a page at a time: pass NextCursor back as Cursor, with the same filters, for the next page; it's null on the last page. Total is the number of matches when the page was read: if it's large, narrow the filters rather than paging through everything.",
+		InputSchema: searchPostingsInputSchema(),
+	}, searchPostingsHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "stage_prepare",
@@ -117,6 +125,74 @@ func listCompaniesHandler(st *stage.Stage) mcp.ToolHandlerFor[listCompaniesInput
 			return nil, listCompaniesOutput{}, fmt.Errorf("list_companies: %w", err)
 		}
 		return nil, listCompaniesOutput{Companies: companies}, nil
+	}
+}
+
+type searchPostingsInput struct {
+	CompanyID           int64    `json:"CompanyID,omitempty" jsonschema:"one company's ID, from list_companies"`
+	HasApplication      *bool    `json:"HasApplication,omitempty" jsonschema:"true: only postings with an application; false: only postings without one"`
+	ApplicationStatuses []string `json:"ApplicationStatuses,omitempty" jsonschema:"only applications at one of these statuses"`
+	Interested          *bool    `json:"Interested,omitempty" jsonschema:"true: only postings marked interested; false: only postings not marked"`
+	ListingStatus       string   `json:"ListingStatus,omitempty" jsonschema:"open (the default), closed or any"`
+	IncludeArchived     bool     `json:"IncludeArchived,omitempty" jsonschema:"include postings the user archived"`
+	Sort                string   `json:"Sort,omitempty" jsonschema:"the order: id_asc (the default) is the order Swamp first saw the postings"`
+	Cursor              string   `json:"Cursor,omitempty" jsonschema:"the previous page's NextCursor, unchanged; omit for the first page"`
+	Limit               int      `json:"Limit,omitempty" jsonschema:"postings per page: 50 by default, at most 100"`
+}
+
+// searchPostingsInputSchema infers search_postings' input schema and
+// advertises its controlled values as enums, so the agent learns them
+// from the schema instead of guessing (RFC 0006). The SDK validates
+// arguments against it before the handler runs. Panics like mcp.AddTool
+// on an uninferrable schema: a programming error caught at startup.
+func searchPostingsInputSchema() *jsonschema.Schema {
+	schema, err := jsonschema.For[searchPostingsInput](nil)
+	if err != nil {
+		panic(fmt.Sprintf("mcpserver: infer search_postings input schema: %v", err))
+	}
+	var statuses []any
+	for _, status := range store.ApplicationStatuses() {
+		statuses = append(statuses, status.String())
+	}
+	schema.Properties["ApplicationStatuses"].Items.Enum = statuses
+	schema.Properties["ListingStatus"].Enum = []any{"open", "closed", "any"}
+	schema.Properties["Sort"].Enum = []any{stage.SortIDAsc}
+	return schema
+}
+
+// Out is 'any': stage.SearchMatch carries store.ApplicationStatus, whose
+// MarshalJSON writes a string where schema inference would see an
+// integer (the same problem listPostingsHandler works around).
+func searchPostingsHandler(st *stage.Stage) mcp.ToolHandlerFor[searchPostingsInput, any] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in searchPostingsInput) (*mcp.CallToolResult, any, error) {
+		statuses := make([]store.ApplicationStatus, len(in.ApplicationStatuses))
+		for i, name := range in.ApplicationStatuses {
+			status, err := store.ParseApplicationStatus(name)
+			if err != nil {
+				return nil, nil, fmt.Errorf("search_postings: %w", err)
+			}
+			statuses[i] = status
+		}
+		result, err := st.Search(ctx, stage.SearchOptions{
+			CompanyID:           in.CompanyID,
+			HasApplication:      in.HasApplication,
+			ApplicationStatuses: statuses,
+			Interested:          in.Interested,
+			ListingStatus:       in.ListingStatus,
+			IncludeArchived:     in.IncludeArchived,
+			Sort:                in.Sort,
+			Cursor:              in.Cursor,
+			Limit:               in.Limit,
+		})
+		switch {
+		case errors.Is(err, cursor.ErrMismatch):
+			return nil, nil, errors.New("search_postings: this cursor belongs to a different search (other filters or sort); start again without a cursor")
+		case errors.Is(err, cursor.ErrInvalid):
+			return nil, nil, errors.New("search_postings: that isn't a cursor from search_postings; start again without a cursor")
+		case err != nil:
+			return nil, nil, fmt.Errorf("search_postings: %w", err)
+		}
+		return nil, result, nil
 	}
 }
 

@@ -7013,3 +7013,21 @@ posting count. stage.Companies composes ListActiveCompanies and
 CountOpenPostingsByCompany (the TUI company list's open count: open and
 unarchived). Not paged: about 45 companies. The tool's output is a typed
 struct, so its schema is inferred, unlike the posting tools' "any".
+
+## 2026-10-02 -- search_postings: structured filters, keyset pages, opaque cursors (#221, RFC 0006 step 4)
+
+stage.Search over store.SearchPostings (#218) with cursor (#219), and
+the search_postings MCP tool. Closes #215.
+
+- Defaults: open, non-archived, sort id_asc, Limit 50 (cap 100).
+  NextCursor only when the store says HasMore; null on the last page.
+- A cursor is bound to the filters after defaults, with application
+  statuses sorted, so the same search fingerprints the same however it's
+  written. Limit isn't a filter: page size may change between pages.
+- The input schema advertises application statuses, listing status and
+  sort as enums (inferred schema, then enums set, as documentInputSchema
+  does), so the SDK rejects an unknown value before the handler runs,
+  with an error listing the valid ones. Cursor errors map to messages
+  that tell the agent to start again without a cursor.
+- Output stays "any": store.ApplicationStatus's MarshalJSON writes a
+  string where inference would see an integer.
