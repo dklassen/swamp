@@ -4,6 +4,7 @@ import (
 	"context"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -388,5 +389,67 @@ func TestSearchPostings_IDDescIsNewestToSwampFirst(t *testing.T) {
 	want := []int64{f.shelf.ID, f.writer.ID, f.designer.ID, f.data.ID, f.platform.ID}
 	if diff := cmp.Diff(want, listingIDs(got.Listings)); diff != "" {
 		t.Errorf("IDs mismatch (-want +got):\n%s", diff)
+	}
+}
+
+// TestSearchPostings_PublishedDesc: newest on the board first (#224).
+// Ties on published_at break by ID, descending; fractional seconds of
+// any length compare by instant, as does a time given in another zone;
+// postings with no published_at come last, newest ID first. Every page
+// size pages through to the same order.
+func TestSearchPostings_PublishedDesc(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	at := func(value string) OptionalTime {
+		t.Helper()
+		parsed, err := time.Parse(time.RFC3339Nano, value)
+		if err != nil {
+			t.Fatalf("parse %s: %v", value, err)
+		}
+		return OptionalTime{Time: parsed}
+	}
+	posting := func(sourceID string, published OptionalTime) Posting {
+		t.Helper()
+		p, err := s.UpsertPosting(ctx, CreatePostingParams{
+			CompanyID: acme.ID, Source: "ashby", SourceID: sourceID,
+			IngestedFields: IngestedFields{Title: "Role " + sourceID, PublishedAt: published, RawPayload: "{}"},
+		})
+		if err != nil {
+			t.Fatalf("UpsertPosting: %v", err)
+		}
+		return p
+	}
+	oldest := posting("1", at("2026-09-01T03:00:00-07:00")) // 10:00 UTC
+	halfSecond := posting("2", at("2026-09-03T08:00:00.5Z"))
+	fortyFive := posting("3", at("2026-09-03T08:00:00.45Z"))
+	wholeSecond := posting("4", at("2026-09-03T08:00:00Z"))
+	halfSecondTie := posting("5", at("2026-09-03T08:00:00.5Z"))
+	undatedOld := posting("6", OptionalTime{})
+	undatedNew := posting("7", OptionalTime{})
+	want := []int64{halfSecondTie.ID, halfSecond.ID, fortyFive.ID, wholeSecond.ID, oldest.ID, undatedNew.ID, undatedOld.ID}
+
+	for limit := 1; limit <= len(want); limit++ {
+		search := PostingSearch{Order: PostingOrderPublishedDesc, Limit: limit}
+		var got []int64
+		for pages := 0; ; pages++ {
+			if pages > len(want) {
+				t.Fatalf("limit %d: paging didn't end", limit)
+			}
+			page, err := s.SearchPostings(ctx, search)
+			if err != nil {
+				t.Fatalf("limit %d: SearchPostings: %v", limit, err)
+			}
+			got = append(got, listingIDs(page.Listings)...)
+			if !page.HasMore {
+				break
+			}
+			last := page.Listings[len(page.Listings)-1]
+			search.AfterID, search.AfterPublishedAt = last.ID, last.PublishedAt
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("limit %d: order mismatch (-want +got):\n%s", limit, diff)
+		}
 	}
 }

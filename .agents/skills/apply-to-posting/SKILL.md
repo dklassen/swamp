@@ -29,8 +29,9 @@ container.
 Call `list_postings`. It's read-only, so call it as often as you like.
 
 Each result's `Posting` is a summary (ID, title, department, location,
-workplace type, application URL), without the description: that comes
-from `stage_prepare` once a posting is picked.
+workplace type, application URL, and `PublishedAt`: when the board says
+it was published, or null), without the description: that comes from
+`stage_prepare` once a posting is picked.
 
 Each result may carry `ApplicationNotes` (the user's free-text notes) and
 `LatestReviews`, the most recent human review per document type. **A
@@ -61,6 +62,8 @@ drafted, submitted or closed isn't in it. Find it by what it is:
    - "my application", "the one I applied to": `HasApplication: true`;
    - a status ("the one I submitted"): `ApplicationStatuses`;
    - a posting that may have closed: `ListingStatus: "any"`.
+   - "the newest ones", "what's just been posted": `Sort: "published_desc"`
+     (newest on the board first), and read the first page.
 3. Read the full titles in the results (the TUI truncates them, and
    several roles at one company often share a prefix) and match the
    user's words against them:

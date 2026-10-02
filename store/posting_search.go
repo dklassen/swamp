@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"time"
 
 	"github.com/dklassen/swamp/store/db"
 )
@@ -18,10 +19,13 @@ type PostingListing struct {
 	Location       string
 	WorkplaceType  string
 	ApplicationURL string
-	ListingStatus  string
-	CompanyName    string
-	Interested     bool
-	Archived       bool
+	// PublishedAt is when the board says the posting was published; zero
+	// when it didn't say.
+	PublishedAt   time.Time
+	ListingStatus string
+	CompanyName   string
+	Interested    bool
+	Archived      bool
 	// ApplicationID is 0 when the posting has no application; the other
 	// Application fields are meaningless then.
 	ApplicationID     int64
@@ -46,7 +50,11 @@ type PostingSearch struct {
 	// AfterID is the last posting ID of the previous page: the next page
 	// is the rows after it in Order. 0 starts from the beginning.
 	AfterID int64
-	Limit   int
+	// AfterPublishedAt is that row's PublishedAt, for
+	// PostingOrderPublishedDesc; zero when it had none. Other orders
+	// ignore it.
+	AfterPublishedAt time.Time
+	Limit            int
 }
 
 // PostingOrder is a sort order SearchPostings pages in (#223, RFC 0006).
@@ -59,13 +67,19 @@ const (
 	PostingOrderIDAsc PostingOrder = iota
 	// PostingOrderIDDesc: the postings Swamp saw most recently first.
 	PostingOrderIDDesc
+	// PostingOrderPublishedDesc: newest on the board first, by
+	// published_at then ID, descending; postings with no published_at
+	// last. Stable while paging unless a board changes a posting's
+	// published_at mid-paging: that posting can cross the cursor.
+	PostingOrderPublishedDesc
 )
 
 // postingOrderNames is the single name table for PostingOrder, indexed by
 // its value.
 var postingOrderNames = [...]string{
-	PostingOrderIDAsc:  "id_asc",
-	PostingOrderIDDesc: "id_desc",
+	PostingOrderIDAsc:         "id_asc",
+	PostingOrderIDDesc:        "id_desc",
+	PostingOrderPublishedDesc: "published_desc",
 }
 
 func (o PostingOrder) String() string {
@@ -143,7 +157,7 @@ func (s *Store) SearchPostings(ctx context.Context, search PostingSearch) (Posti
 		params.AfterID = search.AfterID
 	}
 
-	rows, err := s.searchPostingsInOrder(ctx, search.Order, params)
+	rows, err := s.searchPostingsInOrder(ctx, search, params)
 	if err != nil {
 		return PostingSearchPage{}, fmt.Errorf("store: search postings: %w", err)
 	}
@@ -162,6 +176,7 @@ func (s *Store) SearchPostings(ctx context.Context, search PostingSearch) (Posti
 			Location:       row.Location,
 			WorkplaceType:  row.WorkplaceType,
 			ApplicationURL: row.ApplicationUrl,
+			PublishedAt:    row.PublishedAt.Time,
 			ListingStatus:  row.ListingStatus,
 			CompanyName:    row.CompanyName,
 			Interested:     row.InterestedAt.Valid,
@@ -185,8 +200,8 @@ func (s *Store) SearchPostings(ctx context.Context, search PostingSearch) (Posti
 // same filters and returns the same columns; the generated param and row
 // types differ only in name (and the cursor parameter's), so they convert
 // directly.
-func (s *Store) searchPostingsInOrder(ctx context.Context, order PostingOrder, params db.SearchPostingsByIDParams) ([]db.SearchPostingsByIDRow, error) {
-	switch order {
+func (s *Store) searchPostingsInOrder(ctx context.Context, search PostingSearch, params db.SearchPostingsByIDParams) ([]db.SearchPostingsByIDRow, error) {
+	switch search.Order {
 	case PostingOrderIDAsc:
 		return s.queries.SearchPostingsByID(ctx, params)
 	case PostingOrderIDDesc:
@@ -205,7 +220,27 @@ func (s *Store) searchPostingsInOrder(ctx context.Context, order PostingOrder, p
 			converted[i] = db.SearchPostingsByIDRow(row)
 		}
 		return converted, err
+	case PostingOrderPublishedDesc:
+		values := db.SearchPostingsByPublishedDescParams{
+			CompanyID:       params.CompanyID,
+			ListingStatus:   params.ListingStatus,
+			IncludeArchived: params.IncludeArchived,
+			HasApplication:  params.HasApplication,
+			Interested:      params.Interested,
+			Statuses:        params.Statuses,
+			CursorID:        params.AfterID,
+			MaxRows:         params.MaxRows,
+		}
+		if search.AfterID != 0 && !search.AfterPublishedAt.IsZero() {
+			values.CursorPublished = search.AfterPublishedAt
+		}
+		rows, err := s.queries.SearchPostingsByPublishedDesc(ctx, values)
+		converted := make([]db.SearchPostingsByIDRow, len(rows))
+		for i, row := range rows {
+			converted[i] = db.SearchPostingsByIDRow(row)
+		}
+		return converted, err
 	default:
-		return nil, fmt.Errorf("unknown sort order %s", order)
+		return nil, fmt.Errorf("unknown sort order %s", search.Order)
 	}
 }

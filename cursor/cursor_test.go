@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 )
@@ -80,5 +81,36 @@ func TestFingerprint(t *testing.T) {
 	}
 	if a == c {
 		t.Errorf("different filters, same fingerprint %q", a)
+	}
+}
+
+// TestPublishedAt: a published_desc cursor carries the last row's publish
+// time too, to the nanosecond, in any zone it was given; ID-order
+// cursors don't, and their tokens are unchanged by it (#224).
+func TestPublishedAt(t *testing.T) {
+	t.Parallel()
+	published := time.Date(2026, 9, 3, 1, 0, 0, 450000000, time.FixedZone("PDT", -7*60*60))
+	key := Key{Sort: "published_desc", Filters: "f", ID: 812, PublishedAt: published}
+
+	got, err := Decode(Encode(key), key.Sort, key.Filters)
+	if err != nil {
+		t.Fatalf("Decode(Encode(key)): %v", err)
+	}
+	if got.ID != key.ID || !got.PublishedAt.Equal(published) {
+		t.Errorf("round trip = %+v, want ID %d at %v", got, key.ID, published)
+	}
+
+	idOnly := Encode(Key{Sort: "id_asc", Filters: "f", ID: 812})
+	raw, err := base64.RawURLEncoding.DecodeString(idOnly)
+	if err != nil {
+		t.Fatalf("decode token: %v", err)
+	}
+	if want := `{"v":1,"sort":"id_asc","filters":"f","id":812}`; string(raw) != want {
+		t.Errorf("ID-order token = %s, want %s", raw, want)
+	}
+
+	bad := base64.RawURLEncoding.EncodeToString([]byte(`{"v":1,"sort":"published_desc","filters":"f","id":812,"published_at":"yesterday"}`))
+	if _, err := Decode(bad, "published_desc", "f"); !errors.Is(err, ErrInvalid) {
+		t.Errorf("unparseable published_at: err = %v, want ErrInvalid", err)
 	}
 }

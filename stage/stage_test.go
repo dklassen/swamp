@@ -780,7 +780,7 @@ func TestCandidate_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 
 	// A summary, enough to pick a posting: no description or raw payload,
 	// which made the list too large for agent clients (#117).
-	wantPosting := []string{"ID", "Title", "Department", "Location", "WorkplaceType", "ApplicationURL"}
+	wantPosting := []string{"ID", "Title", "Department", "Location", "WorkplaceType", "ApplicationURL", "PublishedAt"}
 	sort.Strings(wantPosting)
 	if diff := cmp.Diff(wantPosting, jsonKeys(t, got[0].Posting)); diff != "" {
 		t.Fatalf("Candidate.Posting JSON keys mismatch (-want +got):\n%s", diff)
