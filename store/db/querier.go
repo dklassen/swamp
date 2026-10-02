@@ -173,6 +173,22 @@ type Querier interface {
 	RestoreCompanyWithName(ctx context.Context, arg RestoreCompanyWithNameParams) (Company, error)
 	// Replaces any earlier fetch of the same posting's form.
 	SavePostingApplicationForm(ctx context.Context, arg SavePostingApplicationFormParams) error
+	// One page of the postings matching every given filter, in posting ID
+	// order, after an optional cursor ID (#218, RFC 0006). NULL means "don't
+	// filter on this". Postings of a company the user deleted are never
+	// included.
+	//
+	// The inner query applies the filters and counts every match
+	// (COUNT(*) OVER ()); the outer one applies the keyset condition and the
+	// LIMIT. So total is the whole result's size on every page, while only
+	// max_rows rows ever leave the database.
+	//
+	// Application statuses come in as one JSON array read with json_each,
+	// not sqlc.slice, which can't be mixed with other bound parameters on
+	// sqlite (see ListActiveApplications). Summary columns only (#117); the
+	// application side is individually aliased nullable columns, not
+	// sqlc.embed (see ListInterestedPostings).
+	SearchPostingsByID(ctx context.Context, arg SearchPostingsByIDParams) ([]SearchPostingsByIDRow, error)
 	// See SetPostingInterested -- same mutual-exclusivity reasoning, mirrored.
 	SetPostingArchived(ctx context.Context, postingID int64) (PostingMarkup, error)
 	// Sets interested_at and also clears archived_at: the TUI treats
