@@ -7301,3 +7301,29 @@ on its TickMsg.
   matches while the prompt is open.
 - The search survives opening a company and coming back (the model
   isn't rebuilt), so you can try the next match without retyping.
+
+## 2026-10-05 -- RFC 0007: keeping the TUI, MCP server and files in step (#243, #244)
+
+- Context: using the TUI and `mcp-serve` at the same time is a normal
+  way to work. #243 found the TUI never sees MCP changes. Exploring it
+  showed the larger risk is writes acting on old copies (lost or
+  misplaced drafts), not just stale screens.
+- Decision: draft RFC 0007. Safe writes come first (wave A):
+  application existence check plus AUTOINCREMENT, atomic document
+  writes, an ExpectedSHA256 check on write_document, re-reading before
+  destructive TUI actions. Then one change signal (wave B): the TUI
+  polls PRAGMA data_version on a dedicated connection and reloads the
+  current screen when it moves; document writes record a db row so the
+  same signal covers files.
+- Measured: data_version on a pinned *sql.Conn moves when another
+  process or another pooled connection commits; 1000 reads take about
+  1.3 ms. SQLite reused a deleted max application ID on the next
+  insert, so #244 is real, and it's filed separately as a bug.
+- Rejected: fsnotify (per-platform, editors save by rename, and not
+  needed for Swamp's own writes); running mcp-serve inside the TUI or a
+  daemon (MCP would be down whenever the TUI is closed, and neither
+  sees swamp fetch); a change-feed table (more than this scale needs);
+  document locks (editors and agents wouldn't honour them).
+- Found along the way: App.Update doesn't handle editorClosedMsg, so
+  editing a draft from the TUI itself leaves its review badge stale.
+  It's step 6 in the RFC.
