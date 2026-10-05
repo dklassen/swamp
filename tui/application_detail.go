@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"os"
 	"strings"
 	"unicode"
 
@@ -98,13 +97,7 @@ func (m *applicationDetailModel) enterReview(documentType documents.Type) tea.Ms
 	if !doc.Exists {
 		return nil
 	}
-	content, err := os.ReadFile(doc.Path)
-	return enterDocumentReviewFormMsg{
-		applicationID: m.application.ID,
-		documentType:  documentType,
-		content:       string(content),
-		err:           err,
-	}
+	return readDocumentForReview(m.application.ID, documentType, doc.Path)
 }
 
 func (m *applicationDetailModel) View() string {

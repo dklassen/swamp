@@ -364,6 +364,19 @@ func (a *App) enterFrom(next screen) {
 	a.screen = next
 }
 
+// openDocumentReviewForm builds the review form from msg, or records
+// msg.err and reports false so the caller stays where it is. Navigation
+// is left to the caller: application detail pushes the form, the picker
+// replaces itself with it.
+func (a *App) openDocumentReviewForm(msg enterDocumentReviewFormMsg) bool {
+	a.err = msg.err
+	if msg.err != nil {
+		return false
+	}
+	a.documentReviewForm = newDocumentReviewFormModel(a.store, msg.applicationID, msg.documentType, msg.content, a.width, a.screenRows(), a.newScreenInstance())
+	return true
+}
+
 // returnBack pops returnStack and switches to the screen on top,
 // returning it. An empty stack means a push was missed somewhere; falling
 // back to the home screen beats panicking or staying stuck.
@@ -1335,10 +1348,8 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), appView.Posting, appView.Application, true, appView.LatestReviews, a.canNavigateSiblings(appView.Posting.ID))
 			a.enterFrom(screenPostingDetail)
 		case enterDocumentReviewFormMsg:
-			a.err = v.err
-			if v.err == nil {
+			if a.openDocumentReviewForm(v) {
 				a.enterFrom(screenDocumentReviewForm)
-				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.applicationID, v.documentType, v.content, a.width, a.screenRows(), a.newScreenInstance())
 			}
 		case refreshApplicationDetailMsg:
 			return a, loadDocumentReviews(a.store, a.documents, a.applicationDetail.application.ID)
@@ -1476,10 +1487,10 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case cancelDocumentReviewSelectMsg:
 			a.returnBack()
 		case enterDocumentReviewFormMsg:
-			a.err = v.err
-			if v.err == nil {
+			// Replaces the picker rather than pushing onto it, so leaving
+			// the form goes straight back to posting detail.
+			if a.openDocumentReviewForm(v) {
 				a.screen = screenDocumentReviewForm
-				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.applicationID, v.documentType, v.content, a.width, a.screenRows(), a.newScreenInstance())
 			}
 		}
 		return a, cmd
