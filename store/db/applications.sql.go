@@ -43,6 +43,21 @@ func (q *Queries) CreateApplication(ctx context.Context, arg CreateApplicationPa
 	return i, err
 }
 
+const deleteApplication = `-- name: DeleteApplication :execrows
+DELETE FROM applications
+WHERE id = ?
+`
+
+// A hard delete (#232): store.DeleteApplication removes the rows that
+// belong to the application first, in the same transaction.
+func (q *Queries) DeleteApplication(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, deleteApplication, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const getApplication = `-- name: GetApplication :one
 SELECT id, posting_id, status, notes, created_at, updated_at FROM applications
 WHERE posting_id = ?

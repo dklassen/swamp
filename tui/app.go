@@ -60,6 +60,7 @@ const (
 	screenApplicationExport
 	screenApplicationSubmit
 	screenApplicationForm
+	screenApplicationDelete
 )
 
 type App struct {
@@ -122,6 +123,7 @@ type App struct {
 	// in tests so they don't launch one.
 	openURL           func(url string) tea.Cmd
 	applicationSubmit applicationSubmitModel
+	applicationDelete applicationDeleteModel
 	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
 	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
@@ -1053,6 +1055,22 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// applications list without needing a restart.
 			return a, tea.Batch(loadActiveApplications(a.store, a.documents), reviewsCmd)
 		}
+	case applicationDeletedMsg:
+		a.err = msg.err
+		if a.screen == screenApplicationDelete {
+			if msg.err != nil {
+				// Back to detail rather than leaving a confirmation whose
+				// y is already spent; the error shows there.
+				a.screen = screenApplicationDetail
+				return a, nil
+			}
+			a.screen = screenActiveApplications
+		}
+		if msg.err == nil {
+			delete(a.applicationsByPosting, msg.application.Posting.ID)
+			a.status = "Deleted the application for " + msg.application.Posting.Title
+			return a, loadActiveApplications(a.store, a.documents)
+		}
 	case applicationStatusUpdatedMsg:
 		a.err = msg.err
 		if msg.err == nil {
@@ -1252,6 +1270,9 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, loadApplicationForm(a.store, v.postingID)
 		case enterApplicationSubmitMsg:
 			return a, a.startApplicationSubmit(v.application)
+		case enterApplicationDeleteMsg:
+			a.applicationDelete = newApplicationDeleteModel(a.documents, v.application)
+			a.screen = screenApplicationDelete
 		case backToActiveApplicationsMsg:
 			a.screen = screenActiveApplications
 		case enterPostingDetailMsg:
@@ -1397,6 +1418,15 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, updateApplicationStatus(a.store, v.postingID, store.ApplicationStatusSubmitted)
 		}
 		return a, cmd
+	case screenApplicationDelete:
+		cmd, intent := a.applicationDelete.Update(msg)
+		switch v := intent.(type) {
+		case cancelApplicationDeleteMsg:
+			a.screen = screenApplicationDetail
+		case confirmApplicationDeleteMsg:
+			return a, deleteApplication(a.store, a.documents, v.application)
+		}
+		return a, cmd
 	case screenApplicationNotesEdit:
 		cmd, intent := a.applicationNotes.Update(msg)
 		if _, ok := intent.(cancelApplicationNotesMsg); ok {
@@ -1528,6 +1558,8 @@ func (a *App) View() string {
 		b.WriteString(a.applicationExport.View())
 	case screenApplicationSubmit:
 		b.WriteString(a.applicationSubmit.View())
+	case screenApplicationDelete:
+		b.WriteString(a.applicationDelete.View())
 	case screenApplicationNotesEdit:
 		b.WriteString(a.applicationNotes.View())
 	case screenApplicationForm:

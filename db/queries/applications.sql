@@ -61,3 +61,9 @@ JOIN postings ON postings.id = applications.posting_id
 JOIN companies ON companies.id = postings.company_id
 WHERE applications.status NOT IN (sqlc.slice('terminal_statuses'))
 ORDER BY applications.updated_at DESC;
+
+-- name: DeleteApplication :execrows
+-- A hard delete (#232): store.DeleteApplication removes the rows that
+-- belong to the application first, in the same transaction.
+DELETE FROM applications
+WHERE id = ?;
