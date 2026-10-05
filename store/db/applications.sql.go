@@ -14,7 +14,7 @@ import (
 const createApplication = `-- name: CreateApplication :one
 INSERT INTO applications (posting_id, status)
 VALUES (?, ?)
-RETURNING id, posting_id, status, notes, created_at, updated_at
+RETURNING id, posting_id, status, notes, created_at, updated_at, deleted_at
 `
 
 type CreateApplicationParams struct {
@@ -39,28 +39,14 @@ func (q *Queries) CreateApplication(ctx context.Context, arg CreateApplicationPa
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
-const deleteApplication = `-- name: DeleteApplication :execrows
-DELETE FROM applications
-WHERE id = ?
-`
-
-// A hard delete (#232): store.DeleteApplication removes the rows that
-// belong to the application first, in the same transaction.
-func (q *Queries) DeleteApplication(ctx context.Context, id int64) (int64, error) {
-	result, err := q.db.ExecContext(ctx, deleteApplication, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected()
-}
-
 const getApplication = `-- name: GetApplication :one
-SELECT id, posting_id, status, notes, created_at, updated_at FROM applications
-WHERE posting_id = ?
+SELECT id, posting_id, status, notes, created_at, updated_at, deleted_at FROM applications
+WHERE posting_id = ? AND deleted_at IS NULL
 `
 
 func (q *Queries) GetApplication(ctx context.Context, postingID int64) (Application, error) {
@@ -73,13 +59,14 @@ func (q *Queries) GetApplication(ctx context.Context, postingID int64) (Applicat
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const getApplicationByID = `-- name: GetApplicationByID :one
-SELECT id, posting_id, status, notes, created_at, updated_at FROM applications
-WHERE id = ?
+SELECT id, posting_id, status, notes, created_at, updated_at, deleted_at FROM applications
+WHERE id = ? AND deleted_at IS NULL
 `
 
 // Keyed by the application's own primary key, unlike every other query
@@ -94,16 +81,18 @@ func (q *Queries) GetApplicationByID(ctx context.Context, id int64) (Application
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
 
 const listActiveApplications = `-- name: ListActiveApplications :many
-SELECT applications.id, applications.posting_id, applications.status, applications.notes, applications.created_at, applications.updated_at, postings.id, postings.company_id, postings.source, postings.source_id, postings.title, postings.department, postings.team, postings.location, postings.employment_type, postings.workplace_type, postings.description_html, postings.description_text, postings.job_url, postings.application_url, postings.published_at, postings.raw_payload, postings.listing_status, postings.first_seen_at, postings.last_seen_at, postings.created_at, postings.updated_at, companies.name AS company_name
+SELECT applications.id, applications.posting_id, applications.status, applications.notes, applications.created_at, applications.updated_at, applications.deleted_at, postings.id, postings.company_id, postings.source, postings.source_id, postings.title, postings.department, postings.team, postings.location, postings.employment_type, postings.workplace_type, postings.description_html, postings.description_text, postings.job_url, postings.application_url, postings.published_at, postings.raw_payload, postings.listing_status, postings.first_seen_at, postings.last_seen_at, postings.created_at, postings.updated_at, companies.name AS company_name
 FROM applications
 JOIN postings ON postings.id = applications.posting_id
 JOIN companies ON companies.id = postings.company_id
-WHERE applications.status NOT IN (/*SLICE:terminal_statuses*/?)
+WHERE applications.deleted_at IS NULL
+  AND applications.status NOT IN (/*SLICE:terminal_statuses*/?)
 ORDER BY applications.updated_at DESC
 `
 
@@ -161,6 +150,7 @@ func (q *Queries) ListActiveApplications(ctx context.Context, terminalStatuses [
 			&i.Application.Notes,
 			&i.Application.CreatedAt,
 			&i.Application.UpdatedAt,
+			&i.Application.DeletedAt,
 			&i.Posting.ID,
 			&i.Posting.CompanyID,
 			&i.Posting.Source,
@@ -197,11 +187,25 @@ func (q *Queries) ListActiveApplications(ctx context.Context, terminalStatuses [
 	return items, nil
 }
 
+const softDeleteApplication = `-- name: SoftDeleteApplication :execrows
+UPDATE applications
+SET deleted_at = CURRENT_TIMESTAMP
+WHERE id = ? AND deleted_at IS NULL
+`
+
+func (q *Queries) SoftDeleteApplication(ctx context.Context, id int64) (int64, error) {
+	result, err := q.db.ExecContext(ctx, softDeleteApplication, id)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected()
+}
+
 const updateApplicationNotes = `-- name: UpdateApplicationNotes :one
 UPDATE applications
 SET notes = ?, updated_at = CURRENT_TIMESTAMP
-WHERE posting_id = ?
-RETURNING id, posting_id, status, notes, created_at, updated_at
+WHERE posting_id = ? AND deleted_at IS NULL
+RETURNING id, posting_id, status, notes, created_at, updated_at, deleted_at
 `
 
 type UpdateApplicationNotesParams struct {
@@ -219,6 +223,7 @@ func (q *Queries) UpdateApplicationNotes(ctx context.Context, arg UpdateApplicat
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }
@@ -226,8 +231,8 @@ func (q *Queries) UpdateApplicationNotes(ctx context.Context, arg UpdateApplicat
 const updateApplicationStatus = `-- name: UpdateApplicationStatus :one
 UPDATE applications
 SET status = ?, updated_at = CURRENT_TIMESTAMP
-WHERE posting_id = ?
-RETURNING id, posting_id, status, notes, created_at, updated_at
+WHERE posting_id = ? AND deleted_at IS NULL
+RETURNING id, posting_id, status, notes, created_at, updated_at, deleted_at
 `
 
 type UpdateApplicationStatusParams struct {
@@ -245,6 +250,7 @@ func (q *Queries) UpdateApplicationStatus(ctx context.Context, arg UpdateApplica
 		&i.Notes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.DeletedAt,
 	)
 	return i, err
 }

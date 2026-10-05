@@ -66,7 +66,7 @@ func resumeDir(t *testing.T, app *App, applicationID int64) string {
 	return filepath.Dir(mustDoc(t, app.documents.Status(applicationID), documents.Resume).Path)
 }
 
-func TestDeleteFlow_ConfirmingDeletesTheApplicationAndItsDocuments(t *testing.T) {
+func TestDeleteFlow_ConfirmingDeletesTheApplicationAndKeepsItsDocuments(t *testing.T) {
 	t.Parallel()
 	app, application := deleteTestApp(t)
 	app = startDelete(t, app)
@@ -77,8 +77,8 @@ func TestDeleteFlow_ConfirmingDeletesTheApplicationAndItsDocuments(t *testing.T)
 	if _, err := app.store.GetApplicationByID(context.Background(), application.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("GetApplicationByID after confirming: err = %v, want ErrNotFound", err)
 	}
-	if _, err := os.Stat(resumeDir(t, app, application.ID)); !os.IsNotExist(err) {
-		t.Errorf("document directory after confirming: Stat err = %v, want it gone", err)
+	if _, err := os.Stat(resumeDir(t, app, application.ID)); err != nil {
+		t.Errorf("document directory after confirming: Stat err = %v, want it kept", err)
 	}
 	if app.screen != screenActiveApplications {
 		t.Errorf("screen after confirming = %v, want the home screen", app.screen)

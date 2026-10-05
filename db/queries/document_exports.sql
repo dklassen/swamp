@@ -9,7 +9,3 @@ SELECT * FROM document_exports
 WHERE application_id = ? AND document_type = ?
 ORDER BY exported_at DESC, id DESC
 LIMIT 1;
-
--- name: DeleteDocumentExportsForApplication :exec
-DELETE FROM document_exports
-WHERE application_id = ?;

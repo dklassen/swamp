@@ -57,16 +57,6 @@ func (q *Queries) DeleteInterviewStage(ctx context.Context, id int64) error {
 	return err
 }
 
-const deleteInterviewStagesForApplication = `-- name: DeleteInterviewStagesForApplication :exec
-DELETE FROM interview_stages
-WHERE application_id = ?
-`
-
-func (q *Queries) DeleteInterviewStagesForApplication(ctx context.Context, applicationID int64) error {
-	_, err := q.db.ExecContext(ctx, deleteInterviewStagesForApplication, applicationID)
-	return err
-}
-
 const listInterviewStagesByApplication = `-- name: ListInterviewStagesByApplication :many
 SELECT id, application_id, sequence, name, stage_date, outcome, notes, created_at, updated_at FROM interview_stages
 WHERE application_id = ?

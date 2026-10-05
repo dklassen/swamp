@@ -74,13 +74,6 @@ func (s *Store) EnsureDir(applicationID int64) (Status, error) {
 	return s.Status(applicationID), nil
 }
 
-// RemoveDir deletes applicationID's document directory and everything in
-// it, for an application being deleted (#232). No directory is not an
-// error: an application may never have had any documents.
-func (s *Store) RemoveDir(applicationID int64) error {
-	return os.RemoveAll(applicationDir(s.base, applicationID))
-}
-
 // Path is where applicationID's documentType document lives, whether or
 // not it exists yet. An unknown type is an error.
 func (s *Store) Path(applicationID int64, documentType Type) (string, error) {

@@ -117,7 +117,7 @@ SELECT
 FROM postings
 JOIN posting_markup ON posting_markup.posting_id = postings.id
 JOIN companies ON companies.id = postings.company_id
-LEFT JOIN applications ON applications.posting_id = postings.id
+LEFT JOIN applications ON applications.posting_id = postings.id AND applications.deleted_at IS NULL
 WHERE posting_markup.interested_at IS NOT NULL
   AND posting_markup.archived_at IS NULL
   AND (applications.id IS NULL OR applications.status NOT IN (sqlc.slice('terminal_statuses')))
@@ -189,7 +189,7 @@ FROM (
     FROM postings
     JOIN companies ON companies.id = postings.company_id
     LEFT JOIN posting_markup ON posting_markup.posting_id = postings.id
-    LEFT JOIN applications ON applications.posting_id = postings.id
+    LEFT JOIN applications ON applications.posting_id = postings.id AND applications.deleted_at IS NULL
     WHERE companies.deleted_at IS NULL
       AND (sqlc.narg('company_id') IS NULL OR postings.company_id = sqlc.narg('company_id'))
       AND (sqlc.narg('listing_status') IS NULL OR postings.listing_status = sqlc.narg('listing_status'))
@@ -241,7 +241,7 @@ FROM (
     FROM postings
     JOIN companies ON companies.id = postings.company_id
     LEFT JOIN posting_markup ON posting_markup.posting_id = postings.id
-    LEFT JOIN applications ON applications.posting_id = postings.id
+    LEFT JOIN applications ON applications.posting_id = postings.id AND applications.deleted_at IS NULL
     WHERE companies.deleted_at IS NULL
       AND (sqlc.narg('company_id') IS NULL OR postings.company_id = sqlc.narg('company_id'))
       AND (sqlc.narg('listing_status') IS NULL OR postings.listing_status = sqlc.narg('listing_status'))
@@ -299,7 +299,7 @@ FROM (
     FROM postings
     JOIN companies ON companies.id = postings.company_id
     LEFT JOIN posting_markup ON posting_markup.posting_id = postings.id
-    LEFT JOIN applications ON applications.posting_id = postings.id
+    LEFT JOIN applications ON applications.posting_id = postings.id AND applications.deleted_at IS NULL
     WHERE companies.deleted_at IS NULL
       AND (sqlc.narg('company_id') IS NULL OR postings.company_id = sqlc.narg('company_id'))
       AND (sqlc.narg('listing_status') IS NULL OR postings.listing_status = sqlc.narg('listing_status'))

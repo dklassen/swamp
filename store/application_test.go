@@ -207,10 +207,137 @@ func TestDeleteApplication_ThenGet_ReturnsErrNotFound(t *testing.T) {
 	}
 }
 
-// A deleted application takes everything it owns with it (#232). Each
-// case checks the old ID has nothing left, which is also what a new
-// application would see if SQLite hands it the same rowid.
-func TestDeleteApplication_RemovesWhatTheApplicationOwns(t *testing.T) {
+// Document folders and agents' conversations refer to an application by
+// ID, so a deleted ID handed to a new application would give it the old
+// one's drafts (#244).
+func TestDeleteApplication_IDNotReusedByNextApplication(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	first := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	second := mustUpsertPosting(t, s, acme.ID, "job-2", "Staff Engineer")
+	deleted := mustCreateApplication(t, s, first.ID)
+
+	if err := s.DeleteApplication(ctx, deleted.ID); err != nil {
+		t.Fatalf("DeleteApplication: %v", err)
+	}
+	next := mustCreateApplication(t, s, second.ID)
+
+	if next.ID == deleted.ID {
+		t.Errorf("new application got deleted application's ID %d", deleted.ID)
+	}
+}
+
+// A posting whose application was deleted can start a fresh one, and
+// updates by posting go to that one alone, not the deleted one too.
+func TestUpdateApplication_AfterDeleteAndRestart_UpdatesOnlyTheLiveOne(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		name   string
+		update func(s *Store, postingID int64) (Application, error)
+	}{
+		{
+			name: "status",
+			update: func(s *Store, postingID int64) (Application, error) {
+				return s.UpdateApplicationStatus(context.Background(), postingID, ApplicationStatusSubmitted)
+			},
+		},
+		{
+			name: "notes",
+			update: func(s *Store, postingID int64) (Application, error) {
+				return s.UpdateApplicationNotes(context.Background(), postingID, "second try")
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := newTestStore(t)
+			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+			deleted := mustCreateApplication(t, s, posting.ID)
+			if err := s.DeleteApplication(context.Background(), deleted.ID); err != nil {
+				t.Fatalf("DeleteApplication: %v", err)
+			}
+			live := mustCreateApplication(t, s, posting.ID)
+
+			got, err := tt.update(s, posting.ID)
+			if err != nil {
+				t.Fatalf("update: %v", err)
+			}
+			if got.ID != live.ID {
+				t.Errorf("updated application %d, want the live one %d", got.ID, live.ID)
+			}
+		})
+	}
+}
+
+// Every listing that joins a posting to its application shows the posting
+// once, with the live application, never the deleted one.
+func TestListings_AfterDeleteAndRestart_ShowThePostingOnceWithTheLiveApplication(t *testing.T) {
+	t.Parallel()
+	search := func(order PostingOrder) func(s *Store) ([]int64, error) {
+		return func(s *Store) ([]int64, error) {
+			page, err := s.SearchPostings(context.Background(), PostingSearch{Order: order, Limit: 10})
+			var ids []int64
+			for _, l := range page.Listings {
+				ids = append(ids, l.ApplicationID)
+			}
+			return ids, err
+		}
+	}
+	tests := []struct {
+		name           string
+		applicationIDs func(s *Store) ([]int64, error)
+	}{
+		{
+			name: "interested postings",
+			applicationIDs: func(s *Store) ([]int64, error) {
+				postings, err := s.ListInterestedPostings(context.Background())
+				var ids []int64
+				for _, p := range postings {
+					if p.ApplicationID != nil {
+						ids = append(ids, *p.ApplicationID)
+					}
+				}
+				return ids, err
+			},
+		},
+		{name: "search by id", applicationIDs: search(PostingOrderIDAsc)},
+		{name: "search by id, descending", applicationIDs: search(PostingOrderIDDesc)},
+		{name: "search by published date", applicationIDs: search(PostingOrderPublishedDesc)},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := newTestStore(t)
+			ctx := context.Background()
+			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+			if _, err := s.SetPostingInterested(ctx, posting.ID); err != nil {
+				t.Fatalf("SetPostingInterested: %v", err)
+			}
+			deleted := mustCreateApplication(t, s, posting.ID)
+			if err := s.DeleteApplication(ctx, deleted.ID); err != nil {
+				t.Fatalf("DeleteApplication: %v", err)
+			}
+			live := mustCreateApplication(t, s, posting.ID)
+
+			got, err := tt.applicationIDs(s)
+			if err != nil {
+				t.Fatalf("list: %v", err)
+			}
+			if diff := cmp.Diff([]int64{live.ID}, got); diff != "" {
+				t.Errorf("application IDs listed (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// Deleting an application is a soft delete (#244): what it owns stays,
+// for a later restore, and is no longer reachable from the posting.
+func TestDeleteApplication_KeepsWhatTheApplicationOwns(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name  string
@@ -289,16 +416,17 @@ func TestDeleteApplication_RemovesWhatTheApplicationOwns(t *testing.T) {
 			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 			application := mustCreateApplication(t, s, posting.ID)
 			tt.seed(t, s, application.ID)
-			if tt.count(t, s, application.ID) == 0 {
-				t.Fatalf("seeded nothing to delete")
+			before := tt.count(t, s, application.ID)
+			if before == 0 {
+				t.Fatalf("seeded nothing to keep")
 			}
 
 			if err := s.DeleteApplication(context.Background(), application.ID); err != nil {
 				t.Fatalf("DeleteApplication: %v", err)
 			}
 
-			if got := tt.count(t, s, application.ID); got != 0 {
-				t.Errorf("%d rows left for the deleted application, want 0", got)
+			if got := tt.count(t, s, application.ID); got != before {
+				t.Errorf("%d rows left for the deleted application, want %d", got, before)
 			}
 		})
 	}

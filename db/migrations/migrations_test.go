@@ -1111,3 +1111,132 @@ func TestApplicationStatusChangedBy_ExistingRowsUnknown(t *testing.T) {
 		t.Errorf("changed_by mismatch (-want +got):\n%s", diff)
 	}
 }
+
+func TestApplicationsAutoincrement_KeepsRowsAndContinuesFromMaxID(t *testing.T) {
+	sqlDB := migrateTo(t, 18)
+
+	for _, stmt := range []string{
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload) VALUES
+			(1, 1, 'ashby', 'job-1', 'Engineer', '{}'),
+			(2, 1, 'ashby', 'job-2', 'Staff Engineer', '{}'),
+			(3, 1, 'ashby', 'job-3', 'Manager', '{}')`,
+		`INSERT INTO applications (id, posting_id, status, notes, created_at, updated_at) VALUES
+			(1, 1, 'application_started', 'first', '2026-09-01 10:00:00', '2026-09-02 11:00:00'),
+			(5, 2, 'interviewing', '', '2026-09-03 12:00:00', '2026-09-04 13:00:00')`,
+	} {
+		if _, err := sqlDB.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+
+	type row struct {
+		ID, PostingID                   int64
+		Status, Notes, Created, Updated string
+	}
+	read := func() []row {
+		t.Helper()
+		rows, err := sqlDB.Query(`SELECT id, posting_id, status, notes, created_at, updated_at FROM applications ORDER BY id`)
+		if err != nil {
+			t.Fatalf("query applications: %v", err)
+		}
+		defer func() { _ = rows.Close() }()
+		var got []row
+		for rows.Next() {
+			var r row
+			if err := rows.Scan(&r.ID, &r.PostingID, &r.Status, &r.Notes, &r.Created, &r.Updated); err != nil {
+				t.Fatalf("scan: %v", err)
+			}
+			got = append(got, r)
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("rows: %v", err)
+		}
+		return got
+	}
+	before := read()
+
+	if err := goose.UpTo(sqlDB, ".", 19); err != nil {
+		t.Fatalf("migrate to version 19: %v", err)
+	}
+	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+		t.Fatalf("GetDBVersion: %v", err)
+	} else if gotVersion != 19 {
+		t.Fatalf("DB version after UpTo(19) = %d, want 19 (migration 00019 not found?)", gotVersion)
+	}
+
+	if diff := cmp.Diff(before, read()); diff != "" {
+		t.Errorf("applications changed by migration (-before +after):\n%s", diff)
+	}
+
+	if _, err := sqlDB.Exec(`DELETE FROM applications WHERE id = 5`); err != nil {
+		t.Fatalf("delete max application: %v", err)
+	}
+	var nextID int64
+	if err := sqlDB.QueryRow(`INSERT INTO applications (posting_id, status) VALUES (3, 'application_started') RETURNING id`).Scan(&nextID); err != nil {
+		t.Fatalf("insert application: %v", err)
+	}
+	if nextID != 6 {
+		t.Errorf("next application id = %d, want 6 (deleted max id 5 must not be reused)", nextID)
+	}
+}
+
+// The pre-00019 schema allows one application per posting, so rolling
+// back keeps the live ones and drops the soft-deleted ones with their rows.
+func TestApplicationsAutoincrement_DownKeepsLiveRowsAndDropsDeleted(t *testing.T) {
+	sqlDB := migrateTo(t, 19)
+
+	for _, stmt := range []string{
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload) VALUES (1, 1, 'ashby', 'job-1', 'Engineer', '{}')`,
+		`INSERT INTO applications (id, posting_id, status, notes, deleted_at) VALUES (6, 1, 'application_started', '', CURRENT_TIMESTAMP)`,
+		`INSERT INTO application_status_history (application_id, status) VALUES (6, 'application_started')`,
+		`INSERT INTO applications (id, posting_id, status, notes) VALUES (7, 1, 'interviewing', 'kept')`,
+	} {
+		if _, err := sqlDB.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+
+	if err := goose.DownTo(sqlDB, ".", 18); err != nil {
+		t.Fatalf("migrate down to version 18: %v", err)
+	}
+
+	var id, postingID int64
+	var status, notes string
+	if err := sqlDB.QueryRow(`SELECT id, posting_id, status, notes FROM applications`).Scan(&id, &postingID, &status, &notes); err != nil {
+		t.Fatalf("read application: %v", err)
+	}
+	got := fmt.Sprintf("%d %d %s %s", id, postingID, status, notes)
+	if want := "7 1 interviewing kept"; got != want {
+		t.Errorf("application after down = %q, want %q", got, want)
+	}
+
+	var orphaned int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM application_status_history WHERE application_id = 6`).Scan(&orphaned); err != nil {
+		t.Fatalf("count history: %v", err)
+	}
+	if orphaned != 0 {
+		t.Errorf("%d status history rows left for the dropped application, want 0", orphaned)
+	}
+}
+
+func TestApplicationsSoftDelete_OneLiveApplicationPerPosting(t *testing.T) {
+	sqlDB := migrateTo(t, 19)
+
+	for _, stmt := range []string{
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload) VALUES (1, 1, 'ashby', 'job-1', 'Engineer', '{}')`,
+		`INSERT INTO applications (posting_id, status, deleted_at) VALUES (1, 'application_started', CURRENT_TIMESTAMP)`,
+		`INSERT INTO applications (posting_id, status) VALUES (1, 'application_started')`,
+	} {
+		if _, err := sqlDB.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+
+	_, err := sqlDB.Exec(`INSERT INTO applications (posting_id, status) VALUES (1, 'application_started')`)
+	if err == nil || !strings.Contains(err.Error(), "UNIQUE") {
+		t.Errorf("second live application for one posting: err = %v, want a UNIQUE violation", err)
+	}
+}
