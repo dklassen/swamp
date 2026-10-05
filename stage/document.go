@@ -63,3 +63,21 @@ func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documen
 	}
 	return path, nil
 }
+
+// ReadDocument returns applicationID's documentType document and its
+// path, with the same application check as WriteDocument. Unlike a write
+// it never creates the application's folder.
+func (st *Stage) ReadDocument(ctx context.Context, applicationID int64, documentType documents.Type) (path, content string, err error) {
+	if _, err := st.application(ctx, applicationID); err != nil {
+		return "", "", err
+	}
+	path, err = st.documents.Path(applicationID, documentType)
+	if err != nil {
+		return "", "", fmt.Errorf("stage: %w", err)
+	}
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return "", "", fmt.Errorf("stage: read %s: %w", path, err)
+	}
+	return path, string(b), nil
+}

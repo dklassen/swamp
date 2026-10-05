@@ -548,6 +548,23 @@ func TestReadDocument_ReturnsToolError(t *testing.T) {
 	}
 }
 
+func TestReadDocument_UnknownApplication_SaysSo(t *testing.T) {
+	t.Parallel()
+
+	srv, _, _ := newTestServer(t)
+	cs := connectClient(t, srv)
+
+	got := callToolError(t, cs, "read_document", map[string]any{
+		"ApplicationID": 999,
+		"DocumentType":  "cover_letter",
+	})
+
+	want := "read_document: there is no application 999; get the ApplicationID from stage_prepare for the posting you are drafting"
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("tool error mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestDocumentTools_AdvertiseDocumentTypeAsStringEnum(t *testing.T) {
 	t.Parallel()
 
