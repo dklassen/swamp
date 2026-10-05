@@ -121,3 +121,37 @@ func TestStore_ProfilePath_IsUnderTheCanonicalDir(t *testing.T) {
 		t.Errorf("ProfilePath() = %q, want %q", got, want)
 	}
 }
+
+func TestStore_RemoveDir_RemovesTheApplicationsDocumentsOnly(t *testing.T) {
+	t.Parallel()
+
+	s := NewStore(t.TempDir())
+	for _, applicationID := range []int64{7, 8} {
+		status, err := s.EnsureDir(applicationID)
+		if err != nil {
+			t.Fatalf("EnsureDir(%d): %v", applicationID, err)
+		}
+		if err := os.WriteFile(mustDoc(t, status, Resume).Path, []byte("# Resume"), 0o644); err != nil {
+			t.Fatalf("WriteFile: %v", err)
+		}
+	}
+
+	if err := s.RemoveDir(7); err != nil {
+		t.Fatalf("RemoveDir: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Dir(mustDoc(t, s.Status(7), Resume).Path)); !os.IsNotExist(err) {
+		t.Errorf("application 7's directory: Stat err = %v, want it gone", err)
+	}
+	if !mustDoc(t, s.Status(8), Resume).Exists {
+		t.Error("application 8's resume is gone, want it left alone")
+	}
+}
+
+func TestStore_RemoveDir_NoDirIsNotAnError(t *testing.T) {
+	t.Parallel()
+
+	if err := NewStore(t.TempDir()).RemoveDir(9); err != nil {
+		t.Fatalf("RemoveDir with nothing on disk: %v", err)
+	}
+}
