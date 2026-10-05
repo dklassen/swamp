@@ -90,9 +90,10 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 }
 
 // View renders the list in height terminal rows (App.screenRows).
-// nextSteps holds each started application's next step by application ID
+// progress holds each application's document progress by application ID,
+// from which, with its LatestReviews, each row's next step is derived
 // (see nextStep), and now is what each row's Age counts up to.
-func (m *activeApplicationListModel) View(apps []store.ApplicationView, nextSteps map[int64]string, now time.Time, height int) string {
+func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress map[int64]map[documents.Type]documentProgress, now time.Time, height int) string {
 	var b strings.Builder
 	title := titleStyle.Render("Active Applications")
 	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  s: status  e: export PDFs  c: companies  q: quit")
@@ -117,7 +118,7 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, nextStep
 				truncateCol(a.CompanyName, homeCompanyColWidth),
 				truncateCol(a.Posting.Title, homeTitleColWidth),
 				statusAge(a.StatusSince, now),
-				nextSteps[a.ID],
+				nextStep(a, progress[a.ID]),
 				applicationStatusLabel(a.Status),
 				reviewGlyphSummary(a.LatestReviews),
 			)

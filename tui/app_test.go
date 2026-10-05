@@ -2185,9 +2185,9 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately(t
 // above), but nothing asserted that backing out to
 // screenActiveApplications afterward shows the compact glyph column
 // (reviewGlyphSummary, e.g. "R:✓") reflecting the same change --
-// currently relying on loadActiveApplications being included in
-// documentReviewCreatedMsg's tea.Batch (see also #91), with no test to
-// catch a regression if that were ever dropped.
+// which documentReviewsLoadedMsg now patches into that application's
+// row (#91), with no test to catch a regression if that were ever
+// dropped.
 func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplicationsGlyph(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
@@ -2227,6 +2227,85 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplications
 	if !strings.Contains(view, "R:✓") {
 		t.Errorf("active-applications view after esc does not show R:✓ for the just-passed resume review:\n%s", view)
 	}
+}
+
+// TestApp_SubmitDocumentReviewFromApplicationDetail_PatchesActiveApplicationRow
+// covers #91: the reviewed application's row on the home screen is
+// patched from the reviews application detail already reloads, rather
+// than by reloading every active application (which queries this
+// application's reviews a second time). The row's Next column depends on
+// those reviews too, so it has to move on with the glyph: with the cover
+// letter already passed, passing the resume turns "review" into "export".
+func TestApp_SubmitDocumentReviewFromApplicationDetail_PatchesActiveApplicationRow(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "# Cover Letter", store.ReviewOutcomePassed, ""); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	status := app.documents.Status(application.ID)
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.Resume).Path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	for documentType, content := range map[documents.Type]string{documents.CoverLetter: "# Cover Letter", documents.Resume: "# Resume"} {
+		if err := os.WriteFile(mustDoc(t, status, documentType).Path, []byte(content), 0o644); err != nil {
+			t.Fatalf("WriteFile %s: %v", documentType, err)
+		}
+	}
+	app = applyCmd(t, app, app.Init())
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
+	if !strings.Contains(app.View(), "review") {
+		t.Fatalf("active-applications view before the resume review doesn't show next step \"review\":\n%s", app.View())
+	}
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, _ = sendKey(app, runeKey('R'))
+	app, save := sendKey(app, tea.KeyMsg{Type: tea.KeyCtrlS}) // pass
+	if save == nil {
+		t.Fatal("Update on ctrl+s returned nil Cmd, want a command that saves the review")
+	}
+	app, reload := sendKey(app, save())
+	for _, msg := range runCmd(t, reload) {
+		if _, isFullReload := msg.(activeApplicationsLoadedMsg); isFullReload {
+			t.Error("submitting a review from application detail reloaded every active application, want only this application's reviews")
+		}
+		app, _ = sendKey(app, msg)
+	}
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	if app.screen != screenActiveApplications {
+		t.Fatalf("screen after esc = %v, want screenActiveApplications", app.screen)
+	}
+	view := app.View()
+	if !strings.Contains(view, "R:✓") {
+		t.Errorf("active-applications view after esc does not show R:✓ for the just-passed resume review:\n%s", view)
+	}
+	if !strings.Contains(view, "export") {
+		t.Errorf("active-applications view after esc does not show next step \"export\":\n%s", view)
+	}
+}
+
+// runCmd runs cmd and returns the messages it produces, flattening any
+// tea.BatchMsg, without applying them -- for a test that inspects which
+// messages a Cmd sends.
+func runCmd(t *testing.T, cmd tea.Cmd) []tea.Msg {
+	t.Helper()
+	if cmd == nil {
+		return nil
+	}
+	msg := cmd()
+	batch, ok := msg.(tea.BatchMsg)
+	if !ok {
+		return []tea.Msg{msg}
+	}
+	var msgs []tea.Msg
+	for _, c := range batch {
+		msgs = append(msgs, runCmd(t, c)...)
+	}
+	return msgs
 }
 
 // TestApp_SubmitDocumentReviewFromPostingDetailViaApplicationDetailFastPath_KeepsApplication

@@ -203,11 +203,7 @@ func TestActiveApplicationListModel_View_FlagsClosedPosting(t *testing.T) {
 	apps[1].Posting.ListingStatus = "open"
 
 	m := newActiveApplicationListModel()
-	nextSteps := map[int64]string{}
-	for _, a := range apps {
-		nextSteps[a.ID] = nextStep(a, nil)
-	}
-	got := m.View(apps, nextSteps, time.Time{}, 20)
+	got := m.View(apps, nil, time.Time{}, 20)
 
 	if !strings.Contains(got, "closed") {
 		t.Errorf("View() = %q, want the closed posting flagged", got)
@@ -273,10 +269,9 @@ func TestActiveApplicationListModel_View_ShowsAgeAndNextStep(t *testing.T) {
 	apps := testActiveApplications()
 	apps[0].StatusSince = now.Add(-21*24*time.Hour - time.Hour)
 	apps[1].StatusSince = now.Add(-2 * time.Hour)
-	nextSteps := map[int64]string{apps[0].ID: "draft"}
 
 	m := newActiveApplicationListModel()
-	got := m.View(apps, nextSteps, now, 20)
+	got := m.View(apps, nil, now, 20)
 
 	for _, want := range []string{"Age", "Next", "21d", "0d", "draft"} {
 		if !strings.Contains(got, want) {
@@ -353,7 +348,11 @@ func TestLoadActiveApplications_NextSteps(t *testing.T) {
 		t.Fatalf("loadActiveApplications() = %+v, want a loaded message without error", msg)
 	}
 	want := map[int64]string{undrafted.ID: "draft", ready.ID: "submit", stale.ID: "export"}
-	if diff := cmp.Diff(want, msg.nextSteps); diff != "" {
+	got := make(map[int64]string, len(msg.applications))
+	for _, app := range msg.applications {
+		got[app.ID] = nextStep(app, msg.progress[app.ID])
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("next steps mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -365,7 +364,7 @@ func TestActiveApplicationListModel_View_WidestRowFits100Columns(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
-	apps := []store.ApplicationView{{
+	widest := store.ApplicationView{
 		Application: store.Application{ID: 1, Status: store.ApplicationStatusOfferReceived},
 		Posting: store.Posting{ListingStatus: "closed", IngestedFields: store.IngestedFields{
 			Title: strings.Repeat("Principal Engineer ", 5)}},
@@ -375,10 +374,20 @@ func TestActiveApplicationListModel_View_WidestRowFits100Columns(t *testing.T) {
 			documents.CoverLetter: {Outcome: store.ReviewOutcomeFlagged},
 			documents.Resume:      {Outcome: store.ReviewOutcomePassed},
 		},
-	}}
+	}
+	// The widest next step, "withdraw?", is only ever a started
+	// application's, so a second row brings it; columns size to their
+	// widest cell, so the table is as wide as one row holding both.
+	withdraw := widest
+	withdraw.ID = 2
+	withdraw.Status = store.ApplicationStatusStarted
+	apps := []store.ApplicationView{widest, withdraw}
 
 	m := newActiveApplicationListModel()
-	view := ansi.Strip(m.View(apps, map[int64]string{1: "withdraw?"}, now, 20))
+	view := ansi.Strip(m.View(apps, nil, now, 20))
+	if !strings.Contains(view, "withdraw?") {
+		t.Fatalf("View() = %q, want the widest next step \"withdraw?\" in it", view)
+	}
 
 	for _, line := range strings.Split(view, "\n") {
 		if strings.Contains(line, "│") {
