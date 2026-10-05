@@ -169,18 +169,33 @@ func (m *companyListModel) visible(companies []store.Company) []store.Company {
 func (m *companyListModel) View(companies []store.Company, openPostings map[int64]int, width, height int) string {
 	var b strings.Builder
 	title := titleStyle.Render("Companies")
-	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  esc/b: back  q: quit")
+	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  esc/b: back  q: quit")
+	if m.searching {
+		help = helpStyle.Render("type to filter  ↑/↓: select  enter: view postings  esc: clear")
+	}
 	b.WriteString(title + "\n")
-	if len(companies) == 0 {
+	visible := m.visible(companies)
+	// A sync landing while the prompt is open can shrink visible under
+	// the cursor.
+	cursor := min(m.cursor, max(len(visible)-1, 0))
+	var prompt string
+	if m.searching {
+		prompt = "/" + m.query + "▏  " + dimStyle.Render(fmt.Sprintf("%d of %d", len(visible), len(companies)))
+		b.WriteString(prompt + "\n")
+	}
+	switch {
+	case len(companies) == 0:
 		b.WriteString("No companies yet. Press 'a' to add one.\n")
+	case len(visible) == 0:
+		fmt.Fprintf(&b, "No companies match %q.\n", m.query)
 	}
 	var infoBox string
-	if m.showInfo && m.cursor < len(companies) {
-		infoBox = companyInfoBox(companies[m.cursor], width)
+	if m.showInfo && cursor < len(visible) {
+		infoBox = companyInfoBox(visible[cursor], width)
 	}
-	if len(companies) > 0 {
-		start, end := visibleWindow(m.cursor, len(companies), tableRows(height, title, help, infoBox))
-		cursorRow := m.cursor - start
+	if len(visible) > 0 {
+		start, end := visibleWindow(cursor, len(visible), tableRows(height, title, help, infoBox, prompt))
+		cursorRow := cursor - start
 		t := table.New().
 			Headers("Name", "Open", "Last fetched").
 			StyleFunc(func(row, _ int) lipgloss.Style {
@@ -191,7 +206,7 @@ func (m *companyListModel) View(companies []store.Company, openPostings map[int6
 				return style
 			})
 		for i := start; i < end; i++ {
-			c := companies[i]
+			c := visible[i]
 			t.Row(
 				padCol(c.Name, companyNameColWidth),
 				fmt.Sprintf("%*d", openColWidth, openPostings[c.ID]),

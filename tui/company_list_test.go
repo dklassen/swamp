@@ -445,3 +445,86 @@ func TestCompanyListModel_Search_CommandLettersAreTyped(t *testing.T) {
 		})
 	}
 }
+
+func TestCompanyListModel_View_Search(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}, {ID: 3, Name: "Globex"}}
+	tests := []struct {
+		name    string
+		keys    string
+		want    []string
+		notWant []string
+	}{
+		{name: "prompt open, no query yet", keys: "/", want: []string{"/", "3 of 3", "Acme", "Globex"}},
+		{name: "some match", keys: "/acme", want: []string{"/acme", "2 of 3", "Acme Robotics"}, notWant: []string{"Globex"}},
+		{name: "none match", keys: "/zz", want: []string{"/zz", "0 of 3", `No companies match "zz".`}, notWant: []string{"Acme", "Globex", "No companies yet"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := &companyListModel{}
+			typeKeys(t, m, companies, tt.keys)
+			got := m.View(companies, nil, 80, 40)
+			for _, want := range tt.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("View missing %q:\n%s", want, got)
+				}
+			}
+			for _, notWant := range tt.notWant {
+				if strings.Contains(got, notWant) {
+					t.Errorf("View unexpectedly contains %q:\n%s", notWant, got)
+				}
+			}
+		})
+	}
+}
+
+func TestCompanyListModel_View_HelpMatchesMode(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme"}}
+	tests := []struct {
+		name    string
+		keys    string
+		want    []string
+		notWant []string
+	}{
+		{name: "list", keys: "", want: []string{"/: search"}},
+		{name: "prompt open", keys: "/", want: []string{"type to filter", "enter: view postings", "esc: clear"}, notWant: []string{"d: delete", "q: quit"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := &companyListModel{}
+			typeKeys(t, m, companies, tt.keys)
+			got := m.View(companies, nil, 0, 40)
+			for _, want := range tt.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("View missing %q:\n%s", want, got)
+				}
+			}
+			for _, notWant := range tt.notWant {
+				if strings.Contains(got, notWant) {
+					t.Errorf("View unexpectedly contains %q:\n%s", notWant, got)
+				}
+			}
+		})
+	}
+}
+
+func TestCompanyListModel_View_Search_InfoBoxDescribesHighlightedMatch(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{
+		{ID: 1, Name: "Acme", Description: "Makes anvils."},
+		{ID: 2, Name: "Globex", Description: "Makes doomsday devices."},
+	}
+	m := &companyListModel{}
+	typeKeys(t, m, companies, "i/glo")
+
+	got := m.View(companies, nil, 80, 40)
+	if !strings.Contains(got, "Makes doomsday devices.") || strings.Contains(got, "Makes anvils.") {
+		t.Errorf("View's info box should describe Globex, the highlighted match:\n%s", got)
+	}
+}
