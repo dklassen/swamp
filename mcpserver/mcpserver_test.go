@@ -502,7 +502,7 @@ func TestReadDocument_ReturnsWrittenContent(t *testing.T) {
 				"DocumentType":  tc.documentType,
 			})
 
-			want := readDocumentOutput{Path: tc.wantPath, Content: content}
+			want := readDocumentOutput{Path: tc.wantPath, Content: content, SHA256: documents.ContentSHA256(content)}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("read_document result mismatch (-want +got):\n%s", diff)
 			}
@@ -1052,5 +1052,33 @@ func TestWriteDocument_ExpectedSHA256(t *testing.T) {
 				t.Errorf("file content = %q, want %q", onDisk, want)
 			}
 		})
+	}
+}
+
+// TestStagePrepare_DocumentsCarrySHA256: what an agent passes to
+// write_document as ExpectedSHA256 when it drafts from stage_prepare,
+// empty for a document that doesn't exist yet.
+func TestStagePrepare_DocumentsCarrySHA256(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	cs := connectClient(t, srv)
+	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
+		"ApplicationID": prepared.ApplicationID,
+		"DocumentType":  "cover_letter",
+		"Content":       "a draft",
+	})
+
+	got := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+
+	if want := documents.ContentSHA256("a draft"); got.Documents[documents.CoverLetter].SHA256 != want {
+		t.Errorf("cover letter SHA256 = %q, want %q", got.Documents[documents.CoverLetter].SHA256, want)
+	}
+	if got := got.Documents[documents.Resume].SHA256; got != "" {
+		t.Errorf("resume SHA256 = %q, want empty (never written)", got)
 	}
 }

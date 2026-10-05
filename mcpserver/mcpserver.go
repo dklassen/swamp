@@ -59,7 +59,7 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "write_document",
-		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have. Refuses, writing nothing, an application that doesn't exist or that the user deleted; the error says what to do instead.",
+		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have. Refuses, writing nothing, an application that doesn't exist or that the user deleted, or (given ExpectedSHA256) a document that changed since it was read; the error says what to do instead.",
 		InputSchema: documentInputSchema[writeDocumentInput](),
 	}, writeDocumentHandler(st))
 
@@ -277,6 +277,7 @@ type readDocumentInput struct {
 type readDocumentOutput struct {
 	Path    string `json:"Path"`
 	Content string `json:"Content"`
+	SHA256  string `json:"SHA256" jsonschema:"pass this to write_document as ExpectedSHA256 when saving a revision of this content"`
 }
 
 func readDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[readDocumentInput, readDocumentOutput] {
@@ -285,7 +286,7 @@ func readDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[readDocumentInput, 
 		if err != nil {
 			return nil, readDocumentOutput{}, documentToolError("read_document", in.ApplicationID, in.DocumentType, "", err)
 		}
-		return nil, readDocumentOutput{Path: path, Content: content}, nil
+		return nil, readDocumentOutput{Path: path, Content: content, SHA256: documents.ContentSHA256(content)}, nil
 	}
 }
 

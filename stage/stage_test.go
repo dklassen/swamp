@@ -847,7 +847,7 @@ func TestPrepared_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 		t.Fatalf("Prepared top-level JSON keys mismatch (-want +got):\n%s", diff)
 	}
 
-	wantDocument := []string{"Path", "Exists"}
+	wantDocument := []string{"Path", "Exists", "SHA256"}
 	sort.Strings(wantDocument)
 	// One entry per document type, keyed by its name (RFC 0004).
 	var wantTypes []string
