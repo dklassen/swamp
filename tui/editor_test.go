@@ -60,7 +60,7 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	if _, err := docs.Write(application.ID, documents.Resume, "# Edited in $EDITOR\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	app = sendKeyAndApply(t, app, editorClosedMsg{})
+	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: application.ID, documentType: documents.Resume, before: documents.ContentSHA256("# Draft\n")})
 
 	if view := app.View(); strings.Contains(view, "[PASSED]") {
 		t.Errorf("application detail still shows the review of the old version as [PASSED]:\n%s", view)
@@ -85,5 +85,43 @@ func TestApp_EditorClosedWithAnError_ShowsIt(t *testing.T) {
 
 	if app.err == nil || !strings.Contains(app.err.Error(), "$EDITOR is not set") {
 		t.Errorf("err = %v, want the editor's error", app.err)
+	}
+}
+
+// TestApp_EditorClosedAfterAChange_RecordsTheWrite: an edit in $EDITOR is
+// recorded with source editor, so the change probe sees it and the review
+// form can say you made it (#258). Swamp can't see inside the editor, so
+// it compares the file with the version from before the editor opened.
+func TestApp_EditorClosedAfterAChange_RecordsTheWrite(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	app, application := deleteTestApp(t) // resume drafted as "# Draft\n"
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if _, err := app.documents.Write(application.ID, documents.Resume, "# Edited\n"); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: application.ID, documentType: documents.Resume, before: documents.ContentSHA256("# Draft\n")})
+
+	write, ok, err := app.store.LatestDocumentWrite(ctx, application.ID, documents.Resume)
+	if err != nil || !ok {
+		t.Fatalf("LatestDocumentWrite = ok %v, err %v; want the edit recorded", ok, err)
+	}
+	if write.Source != store.DocumentWriteSourceEditor || write.ContentSHA256 != documents.ContentSHA256("# Edited\n") {
+		t.Errorf("recorded write = source %v, hash %q; want editor and the edited content's hash", write.Source, write.ContentSHA256)
+	}
+}
+
+func TestApp_EditorClosedWithoutAChange_RecordsNothing(t *testing.T) {
+	t.Parallel()
+
+	app, application := deleteTestApp(t) // resume drafted as "# Draft\n"
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+
+	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: application.ID, documentType: documents.Resume, before: documents.ContentSHA256("# Draft\n")})
+
+	if _, ok, err := app.store.LatestDocumentWrite(context.Background(), application.ID, documents.Resume); err != nil || ok {
+		t.Errorf("LatestDocumentWrite = ok %v, err %v; want nothing recorded for an unchanged document", ok, err)
 	}
 }

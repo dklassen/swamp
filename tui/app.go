@@ -1143,7 +1143,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// after an error: the editor didn't start or exited abnormally,
 		// and the reload's result would clear the error before it's seen.
 		if msg.err == nil && a.screen == screenApplicationDetail {
-			return a, loadDocumentReviews(a.store, a.documents, a.applicationDetail.application.ID)
+			return a, recordEditorWrite(a.store, a.documents, msg)
 		}
 	case applicationReloadedForDeleteMsg:
 		a.err = msg.err
