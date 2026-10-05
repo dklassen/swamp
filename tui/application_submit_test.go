@@ -132,9 +132,8 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 	}
 }
 
-// TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen is
-// TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen's counterpart
-// for the submit screen, whose y saves the status the same way (#115).
+// The submit screen's y saves through the same status message, so it
+// needs the same protection (#115).
 func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
 	t.Parallel()
 	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")

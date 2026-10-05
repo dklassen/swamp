@@ -102,9 +102,7 @@ type App struct {
 	// list -> posting detail -> status select), and one push/pop pair
 	// per transition keeps a new entry point from needing its own field.
 	// See decisions.log, issue #89.
-	returnStack []screen
-	// lastScreenInstance is the most recent one newScreenInstance handed
-	// out (#115).
+	returnStack        []screen
 	lastScreenInstance screenInstance
 	// activeApplications backs the home screen: every application not at
 	// a terminal dead-end status, across every company (see
@@ -348,18 +346,12 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 	return b.String()
 }
 
-// screenInstance tells apart the instances of a screen whose save
-// resolves asynchronously (#115). Bubble Tea sends every result to
-// Update without saying which screen asked for it, so after the user
-// closes a screen and opens the same kind again, a late result can't
-// otherwise tell the two apart. Each instance's model keeps its
-// screenInstance, the save's result message records it as from, and the
-// handler acts on the screen only when the open one is the instance the
-// result is from -- the same trick bubbles' spinner uses with its
-// TickMsg ID. The zero value is never handed out.
+// screenInstance tells apart two openings of the same screen (#115).
+// Bubble Tea doesn't say which screen a Cmd's result is for, so without
+// it a save from a screen the user closed and reopened would act on the
+// new one. Zero is never handed out, so it never matches a real result.
 type screenInstance int
 
-// newScreenInstance returns a screenInstance no screen has had before.
 func (a *App) newScreenInstance() screenInstance {
 	a.lastScreenInstance++
 	return a.lastScreenInstance
@@ -699,13 +691,10 @@ func maybeLoadDocumentReviews(s *store.Store, docs *documents.Store, hasApp bool
 
 type applicationStatusUpdatedMsg struct {
 	application store.Application
-	// from is the screen instance that started the save (#115).
-	from screenInstance
-	err  error
+	from        screenInstance
+	err         error
 }
 
-// updateApplicationStatus saves postingID's status for the screen
-// instance from.
 func updateApplicationStatus(s *store.Store, postingID int64, status store.ApplicationStatus, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
 		app, err := s.UpdateApplicationStatus(context.Background(), postingID, status)
@@ -715,13 +704,10 @@ func updateApplicationStatus(s *store.Store, postingID int64, status store.Appli
 
 type applicationNotesUpdatedMsg struct {
 	application store.Application
-	// from is the notes editor instance that started the save (#115).
-	from screenInstance
-	err  error
+	from        screenInstance
+	err         error
 }
 
-// updateApplicationNotes saves postingID's notes for the notes editor
-// instance from.
 func updateApplicationNotes(s *store.Store, postingID int64, notes string, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
 		app, err := s.UpdateApplicationNotes(context.Background(), postingID, notes)
@@ -1117,8 +1103,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			// Nothing blocks esc while the save is in flight, so the user
-			// may already have left -- only navigate if they're still on
-			// the screen instance the result is from, not a reopened one (#115).
+			// may already have left -- only navigate if they're still here.
 			if a.screen == screenApplicationStatusSelect && a.applicationStatus.instance == msg.from {
 				a.returnBack()
 			}
@@ -1197,8 +1182,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		if msg.err == nil {
 			// Nothing blocks esc while the save is in flight, so the user
-			// may already have left -- only navigate if they're still on
-			// the screen instance the result is from, not a reopened one (#115).
+			// may already have left -- only navigate if they're still here.
 			if a.screen == screenDocumentReviewForm && a.documentReviewForm.instance == msg.from {
 				a.returnBack()
 			}

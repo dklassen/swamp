@@ -19,16 +19,14 @@ type applicationNotesModel struct {
 	store     *store.Store
 	postingID int64
 	textarea  textarea.Model
-	// instance tells this screen apart from later openings of it; the
-	// save's result records it as from (#115).
-	instance screenInstance
+	instance  screenInstance
 }
 
 // newApplicationNotesModel returns a notes-edit screen for postingID,
 // seeded with notes and sized to width and height, the rows App leaves
 // under its status/error banner (App.screenRows). App refits the height
 // with setHeight whenever that changes; the width is fixed at
-// construction. instance tells it apart from later openings.
+// construction.
 func newApplicationNotesModel(s *store.Store, postingID int64, notes string, width, height int, instance screenInstance) applicationNotesModel {
 	ta := textarea.New()
 	ta.SetWidth(width)

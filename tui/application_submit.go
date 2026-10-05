@@ -27,9 +27,7 @@ type applicationSubmitModel struct {
 	// confirmed is set once y is pressed, so a second y while the status
 	// save is in flight doesn't save it twice.
 	confirmed bool
-	// instance tells this screen apart from later openings of it; the
-	// status save's result records it as from (#115).
-	instance screenInstance
+	instance  screenInstance
 }
 
 // applyURL is where a posting's application form is: ApplicationURL,

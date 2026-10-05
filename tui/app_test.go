@@ -3294,9 +3294,8 @@ func TestApp_StatusSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 	}
 }
 
-// TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen covers #115:
-// a save result arriving after the user left the status select and opened
-// it again is from the earlier instance, so it must not close the reopened one.
+// #115: a save from a status select the user closed and reopened must not
+// close the reopened one.
 func TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
@@ -3371,9 +3370,6 @@ func TestApp_ReviewSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 	}
 }
 
-// TestApp_ReviewSaveResolvingAfterReentry_KeepsReopenedScreenOpen is
-// TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen's counterpart
-// for the document review form.
 func TestApp_ReviewSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
@@ -3493,9 +3489,6 @@ func TestApp_NotesSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T)
 	}
 }
 
-// TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen is
-// TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen's counterpart
-// for the notes editor.
 func TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")

@@ -39,14 +39,11 @@ type applicationStatusModel struct {
 	store     *store.Store
 	postingID int64
 	cursor    int
-	// instance tells this screen apart from later openings of it; the
-	// save's result records it as from (#115).
-	instance screenInstance
+	instance  screenInstance
 }
 
 // newApplicationStatusModel returns a status-select screen for
 // postingID, with the cursor seeded at currentStatus's position.
-// instance tells it apart from later openings.
 func newApplicationStatusModel(s *store.Store, postingID int64, currentStatus store.ApplicationStatus, instance screenInstance) applicationStatusModel {
 	return applicationStatusModel{store: s, postingID: postingID, cursor: applicationStatusIndex(currentStatus), instance: instance}
 }

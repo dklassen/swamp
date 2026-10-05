@@ -26,16 +26,14 @@ type documentReviewFormModel struct {
 	documentType  documents.Type
 	content       string
 	textarea      textarea.Model
-	// instance tells this screen apart from later openings of it; the
-	// save's result records it as from (#115).
-	instance screenInstance
+	instance      screenInstance
 }
 
 // newDocumentReviewFormModel returns a review-form screen for
 // applicationID's documentType, sized to width and height, the rows App
 // leaves under its status/error banner (App.screenRows). App refits the
 // height with setHeight whenever that changes; the width is fixed at
-// construction. instance tells it apart from later openings.
+// construction.
 func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentType documents.Type, content string, width, height int, instance screenInstance) documentReviewFormModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
@@ -73,9 +71,8 @@ type cancelDocumentReviewFormMsg struct{}
 
 type documentReviewCreatedMsg struct {
 	review store.DocumentReview
-	// from is the review form instance that started the save (#115).
-	from screenInstance
-	err  error
+	from   screenInstance
+	err    error
 }
 
 func createDocumentReview(s *store.Store, applicationID int64, documentType documents.Type, content string, outcome store.ReviewOutcome, notes string, from screenInstance) tea.Cmd {
