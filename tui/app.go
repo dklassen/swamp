@@ -373,7 +373,7 @@ func (a *App) openDocumentReviewForm(msg enterDocumentReviewFormMsg) bool {
 	if msg.err != nil {
 		return false
 	}
-	a.documentReviewForm = newDocumentReviewFormModel(a.store, msg.applicationID, msg.documentType, msg.content, a.width, a.screenRows(), a.newScreenInstance())
+	a.documentReviewForm = newDocumentReviewFormModel(a.store, a.documents, msg.applicationID, msg.documentType, msg.content, a.width, a.screenRows(), a.newScreenInstance())
 	return true
 }
 
@@ -1209,6 +1209,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case documentReviewCreatedMsg:
 		a.err = msg.err
 		if msg.err == nil {
+			if msg.changed {
+				a.status = "Review saved, but the document changed while you were reviewing; this review applies to the version you saw, so it won't show as current"
+				if msg.changedErr != nil {
+					a.status = "Review saved, but couldn't check whether the document changed while you were reviewing: " + msg.changedErr.Error()
+				}
+			}
 			// Nothing blocks esc while the save is in flight, so the user
 			// may already have left -- only navigate if they're still here.
 			if a.screen == screenDocumentReviewForm && a.documentReviewForm.instance == msg.from {

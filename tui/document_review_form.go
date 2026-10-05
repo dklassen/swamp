@@ -22,6 +22,7 @@ import (
 // textarea.
 type documentReviewFormModel struct {
 	store         *store.Store
+	documents     *documents.Store
 	applicationID int64
 	documentType  documents.Type
 	content       string
@@ -34,12 +35,13 @@ type documentReviewFormModel struct {
 // leaves under its status/error banner (App.screenRows). App refits the
 // height with setHeight whenever that changes; the width is fixed at
 // construction.
-func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentType documents.Type, content string, width, height int, instance screenInstance) documentReviewFormModel {
+func newDocumentReviewFormModel(s *store.Store, docs *documents.Store, applicationID int64, documentType documents.Type, content string, width, height int, instance screenInstance) documentReviewFormModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	ta.Focus()
 	m := documentReviewFormModel{
 		store:         s,
+		documents:     docs,
 		applicationID: applicationID,
 		documentType:  documentType,
 		content:       content,
@@ -73,12 +75,24 @@ type documentReviewCreatedMsg struct {
 	review store.DocumentReview
 	from   screenInstance
 	err    error
+	// changed: the document on disk is no longer the version reviewed
+	// (or the check failed, in changedErr), so the review won't count
+	// as current.
+	changed    bool
+	changedErr error
 }
 
-func createDocumentReview(s *store.Store, applicationID int64, documentType documents.Type, content string, outcome store.ReviewOutcome, notes string, from screenInstance) tea.Cmd {
+// createDocumentReview saves a review of content, then checks the file
+// still holds it: an agent or $EDITOR may have changed it while the form
+// was open (RFC 0007, H7). The review records what you saw either way.
+func createDocumentReview(s *store.Store, docs *documents.Store, applicationID int64, documentType documents.Type, content string, outcome store.ReviewOutcome, notes string, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
 		review, err := s.CreateDocumentReview(context.Background(), applicationID, documentType, content, outcome, notes)
-		return documentReviewCreatedMsg{review: review, from: from, err: err}
+		if err != nil {
+			return documentReviewCreatedMsg{from: from, err: err}
+		}
+		onDisk, err := docs.SHA256(applicationID, documentType)
+		return documentReviewCreatedMsg{review: review, from: from, changed: err != nil || onDisk != documents.ContentSHA256(content), changedErr: err}
 	}
 }
 
@@ -92,9 +106,9 @@ func (m *documentReviewFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	case tea.KeyEsc:
 		return nil, cancelDocumentReviewFormMsg{}
 	case tea.KeyCtrlS:
-		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomePassed, m.textarea.Value(), m.instance), nil
+		return createDocumentReview(m.store, m.documents, m.applicationID, m.documentType, m.content, store.ReviewOutcomePassed, m.textarea.Value(), m.instance), nil
 	case tea.KeyCtrlG:
-		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomeFlagged, m.textarea.Value(), m.instance), nil
+		return createDocumentReview(m.store, m.documents, m.applicationID, m.documentType, m.content, store.ReviewOutcomeFlagged, m.textarea.Value(), m.instance), nil
 	}
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
