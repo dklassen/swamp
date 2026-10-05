@@ -18,3 +18,9 @@ SELECT * FROM application_status_history
 WHERE application_id = ?
 ORDER BY changed_at DESC, id DESC
 LIMIT 1;
+
+-- name: DeleteApplicationStatusHistory :exec
+-- Only for store.DeleteApplication (#232): the history is append-only
+-- otherwise.
+DELETE FROM application_status_history
+WHERE application_id = ?;
