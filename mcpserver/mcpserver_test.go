@@ -1082,3 +1082,41 @@ func TestStagePrepare_DocumentsCarrySHA256(t *testing.T) {
 		t.Errorf("resume SHA256 = %q, want empty (never written)", got)
 	}
 }
+
+// TestWriteDocument_IsRecordedSoTheTUISeesIt: a document write is a file
+// write, which data_version can't see, so write_document also records it
+// in the database (RFC 0007, step 8). That moves a ChangeProbe, and says
+// the agent wrote it.
+func TestWriteDocument_IsRecordedSoTheTUISeesIt(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	srv, s, _ := newTestServer(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	cs := connectClient(t, srv)
+	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	probe, err := s.NewChangeProbe(ctx)
+	if err != nil {
+		t.Fatalf("NewChangeProbe: %v", err)
+	}
+	t.Cleanup(func() { _ = probe.Close() })
+
+	callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
+		"ApplicationID": prepared.ApplicationID,
+		"DocumentType":  "cover_letter",
+		"Content":       "a draft",
+	})
+
+	if changed, err := probe.Changed(ctx); err != nil || !changed {
+		t.Errorf("probe after write_document = changed %v, err %v; want changed", changed, err)
+	}
+	write, ok, err := s.LatestDocumentWrite(ctx, prepared.ApplicationID, documents.CoverLetter)
+	if err != nil || !ok {
+		t.Fatalf("LatestDocumentWrite = ok %v, err %v; want the write", ok, err)
+	}
+	if write.Source != store.DocumentWriteSourceWriteDocument || write.ContentSHA256 != documents.ContentSHA256("a draft") {
+		t.Errorf("recorded write = source %v, hash %q; want write_document and the draft's hash", write.Source, write.ContentSHA256)
+	}
+}
