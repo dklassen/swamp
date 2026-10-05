@@ -56,6 +56,9 @@ type Querier interface {
 	// Keyed by the application's own primary key, unlike every other query
 	// here (see store.GetApplicationByID).
 	GetApplicationByID(ctx context.Context, id int64) (Application, error)
+	// Ignores deleted_at, so a caller holding an old ID can say the
+	// application was deleted rather than that it never existed.
+	GetApplicationByIDIncludingDeleted(ctx context.Context, id int64) (Application, error)
 	GetCompany(ctx context.Context, id int64) (Company, error)
 	// Deliberately ignores deleted_at: source+source_ref is UNIQUE across all
 	// rows regardless of soft-delete state, so re-adding a company (CreateCompany)

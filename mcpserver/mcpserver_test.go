@@ -342,6 +342,39 @@ func TestWriteDocument_UnknownApplication_WritesNothing(t *testing.T) {
 	}
 }
 
+// TestWriteDocument_DeletedApplication_WritesNothing: the user deleted the
+// application in the TUI while an agent still held its ID. The error
+// names the posting, since stage_prepare is how the agent would start
+// again -- if the user wants that.
+func TestWriteDocument_DeletedApplication_WritesNothing(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	cs := connectClient(t, srv)
+	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	if err := s.DeleteApplication(context.Background(), prepared.ApplicationID); err != nil {
+		t.Fatalf("DeleteApplication: %v", err)
+	}
+
+	got := callToolError(t, cs, "write_document", map[string]any{
+		"ApplicationID": prepared.ApplicationID,
+		"DocumentType":  "cover_letter",
+		"Content":       "a draft",
+	})
+
+	want := fmt.Sprintf("write_document: application %d was deleted by the user, so nothing was written; ask the user whether to start again before calling stage_prepare with PostingID %d, which starts a fresh application", prepared.ApplicationID, posting.ID)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("tool error mismatch (-want +got):\n%s", diff)
+	}
+	path := prepared.Documents[documents.CoverLetter].Path
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Stat(%s): err = %v, want no draft written", path, err)
+	}
+}
+
 func TestAddCompany_NewBoard_CreatesCompanyWithDescription(t *testing.T) {
 	t.Parallel()
 

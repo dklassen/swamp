@@ -14,17 +14,32 @@ import (
 // that was never handed out.
 var ErrApplicationNotFound = errors.New("stage: application not found")
 
+// ApplicationDeletedError is WriteDocument's error for an application the
+// user deleted. PostingID is the posting it was for, which stage_prepare
+// would start a fresh application on.
+type ApplicationDeletedError struct {
+	ApplicationID int64
+	PostingID     int64
+}
+
+func (e *ApplicationDeletedError) Error() string {
+	return fmt.Sprintf("stage: application %d (posting %d) was deleted", e.ApplicationID, e.PostingID)
+}
+
 // application returns applicationID's application, or an error saying why
 // its documents can't be touched. Documents folders are keyed by ID alone,
 // so writing for an ID with no application would leave a draft for
 // whichever application gets that ID next (#244).
 func (st *Stage) application(ctx context.Context, applicationID int64) (store.Application, error) {
-	application, err := st.store.GetApplicationByID(ctx, applicationID)
+	application, err := st.store.GetApplicationByIDIncludingDeleted(ctx, applicationID)
 	if errors.Is(err, store.ErrNotFound) {
 		return store.Application{}, fmt.Errorf("%w: %d", ErrApplicationNotFound, applicationID)
 	}
 	if err != nil {
 		return store.Application{}, fmt.Errorf("stage: get application %d: %w", applicationID, err)
+	}
+	if !application.DeletedAt.IsZero() {
+		return store.Application{}, &ApplicationDeletedError{ApplicationID: applicationID, PostingID: application.PostingID}
 	}
 	return application, nil
 }

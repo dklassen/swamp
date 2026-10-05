@@ -86,6 +86,28 @@ func (q *Queries) GetApplicationByID(ctx context.Context, id int64) (Application
 	return i, err
 }
 
+const getApplicationByIDIncludingDeleted = `-- name: GetApplicationByIDIncludingDeleted :one
+SELECT id, posting_id, status, notes, created_at, updated_at, deleted_at FROM applications
+WHERE id = ?
+`
+
+// Ignores deleted_at, so a caller holding an old ID can say the
+// application was deleted rather than that it never existed.
+func (q *Queries) GetApplicationByIDIncludingDeleted(ctx context.Context, id int64) (Application, error) {
+	row := q.db.QueryRowContext(ctx, getApplicationByIDIncludingDeleted, id)
+	var i Application
+	err := row.Scan(
+		&i.ID,
+		&i.PostingID,
+		&i.Status,
+		&i.Notes,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.DeletedAt,
+	)
+	return i, err
+}
+
 const listActiveApplications = `-- name: ListActiveApplications :many
 SELECT applications.id, applications.posting_id, applications.status, applications.notes, applications.created_at, applications.updated_at, applications.deleted_at, postings.id, postings.company_id, postings.source, postings.source_id, postings.title, postings.department, postings.team, postings.location, postings.employment_type, postings.workplace_type, postings.description_html, postings.description_text, postings.job_url, postings.application_url, postings.published_at, postings.raw_payload, postings.listing_status, postings.first_seen_at, postings.last_seen_at, postings.created_at, postings.updated_at, companies.name AS company_name
 FROM applications

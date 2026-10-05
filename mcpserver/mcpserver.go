@@ -235,7 +235,10 @@ type writeDocumentOutput struct {
 func writeDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[writeDocumentInput, writeDocumentOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in writeDocumentInput) (*mcp.CallToolResult, writeDocumentOutput, error) {
 		path, err := st.WriteDocument(ctx, in.ApplicationID, in.DocumentType, in.Content)
+		var deleted *stage.ApplicationDeletedError
 		switch {
+		case errors.As(err, &deleted):
+			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: application %d was deleted by the user, so nothing was written; ask the user whether to start again before calling stage_prepare with PostingID %d, which starts a fresh application", in.ApplicationID, deleted.PostingID)
 		case errors.Is(err, stage.ErrApplicationNotFound):
 			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: there is no application %d, so nothing was written; get the ApplicationID from stage_prepare for the posting you are drafting", in.ApplicationID)
 		case err != nil:
