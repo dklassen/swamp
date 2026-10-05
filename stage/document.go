@@ -51,12 +51,21 @@ func (st *Stage) application(ctx context.Context, applicationID int64) (store.Ap
 
 // WriteDocument replaces applicationID's documentType document with
 // content and returns its path. It refuses an application that doesn't
-// exist rather than creating a folder for it.
-func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documentType documents.Type, content string) (string, error) {
+// exist rather than creating a folder for it. With expectedSHA256, it
+// writes only if the document is still that version (empty: still
+// absent), and fails with documents.ErrChanged otherwise; nil writes
+// unconditionally.
+func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documentType documents.Type, content string, expectedSHA256 *string) (string, error) {
 	if _, err := st.application(ctx, applicationID); err != nil {
 		return "", err
 	}
-	path, err := st.documents.Write(applicationID, documentType, content)
+	var path string
+	var err error
+	if expectedSHA256 == nil {
+		path, err = st.documents.Write(applicationID, documentType, content)
+	} else {
+		path, err = st.documents.WriteIfUnchanged(applicationID, documentType, content, *expectedSHA256)
+	}
 	if err != nil {
 		return "", fmt.Errorf("stage: write %s: %w", documentType, err)
 	}

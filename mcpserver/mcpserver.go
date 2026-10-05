@@ -225,6 +225,9 @@ type writeDocumentInput struct {
 	ApplicationID int64          `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
 	DocumentType  documents.Type `json:"DocumentType" jsonschema:"the document type: one of the keys of stage_prepare's Documents"`
 	Content       string         `json:"Content" jsonschema:"the full document content to write, replacing whatever is there"`
+	// A pointer because omitted (write unconditionally) and empty (expect
+	// no document) mean different things.
+	ExpectedSHA256 *string `json:"ExpectedSHA256,omitempty" jsonschema:"the SHA256 from the stage_prepare or read_document you drafted from; the write is refused if the document changed since. Empty means you expect no document yet. Omit only when the user asked to overwrite regardless"`
 }
 
 type writeDocumentOutput struct {
@@ -234,7 +237,13 @@ type writeDocumentOutput struct {
 
 func writeDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[writeDocumentInput, writeDocumentOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in writeDocumentInput) (*mcp.CallToolResult, writeDocumentOutput, error) {
-		path, err := st.WriteDocument(ctx, in.ApplicationID, in.DocumentType, in.Content)
+		path, err := st.WriteDocument(ctx, in.ApplicationID, in.DocumentType, in.Content, in.ExpectedSHA256)
+		if errors.Is(err, documents.ErrChanged) {
+			if *in.ExpectedSHA256 == "" {
+				return nil, writeDocumentOutput{}, fmt.Errorf("write_document: application %d already has a %s, written since you saw it missing, so nothing was written; read it with read_document and ask the user before replacing it", in.ApplicationID, in.DocumentType)
+			}
+			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: application %d's %s changed since you read it, so nothing was written; read it again with read_document, apply your changes to what's there now, and pass its SHA256 as ExpectedSHA256", in.ApplicationID, in.DocumentType)
+		}
 		if err != nil {
 			return nil, writeDocumentOutput{}, documentToolError("write_document", in.ApplicationID, in.DocumentType, ", so nothing was written", err)
 		}
