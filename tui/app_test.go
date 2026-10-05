@@ -3664,3 +3664,36 @@ func TestApp_ApplicationDetail_EnterApplicationFormByHand(t *testing.T) {
 		t.Errorf("stored form mismatch (-want +got):\n%s", diff)
 	}
 }
+
+// Searching the company list and pressing enter opens the highlighted
+// match's postings; coming back finds the search as it was left.
+func TestApp_CompanyList_SearchThenEnter_OpensMatchAndKeepsSearchOnReturn(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustCreateCompany(t, s, "Globex", "ashby", "globex")
+	mustCreateCompany(t, s, "Initech", "ashby", "initech")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, runeKey('c'))
+	for _, r := range "/glo" {
+		app, _ = sendKey(app, runeKey(r))
+	}
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = applyCmd(t, app, cmd)
+	if app.screen != screenPostingList {
+		t.Fatalf("screen after enter = %v, want screenPostingList", app.screen)
+	}
+	if app.selectedCompany.Name != "Globex" {
+		t.Fatalf("selectedCompany = %q, want %q", app.selectedCompany.Name, "Globex")
+	}
+
+	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	app = applyCmd(t, app, cmd)
+	if app.screen != screenCompanyList {
+		t.Fatalf("screen after esc = %v, want screenCompanyList", app.screen)
+	}
+	if view := app.View(); !strings.Contains(view, "/glo") || strings.Contains(view, "Initech") {
+		t.Errorf("company list after coming back should still show the search for \"glo\":\n%s", view)
+	}
+}

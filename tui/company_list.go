@@ -122,6 +122,8 @@ func (m *companyListModel) updateSearch(msg tea.KeyMsg, companies []store.Compan
 		if r := []rune(m.query); len(r) > 0 {
 			m.query = string(r[:len(r)-1])
 			m.cursor = 0
+		} else {
+			m.searching = false
 		}
 	case tea.KeyEsc:
 		cursor := 0
@@ -131,11 +133,11 @@ func (m *companyListModel) updateSearch(msg tea.KeyMsg, companies []store.Compan
 		m.searching = false
 		m.query = ""
 		m.cursor = cursor
-	case tea.KeyDown:
+	case tea.KeyDown, tea.KeyCtrlN:
 		if m.cursor < len(m.visible(companies))-1 {
 			m.cursor++
 		}
-	case tea.KeyUp:
+	case tea.KeyUp, tea.KeyCtrlP:
 		if m.cursor > 0 {
 			m.cursor--
 		}
@@ -171,7 +173,7 @@ func (m *companyListModel) View(companies []store.Company, openPostings map[int6
 	title := titleStyle.Render("Companies")
 	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  esc/b: back  q: quit")
 	if m.searching {
-		help = helpStyle.Render("type to filter  ↑/↓: select  enter: view postings  esc: clear")
+		help = helpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: view postings  esc: clear")
 	}
 	b.WriteString(title + "\n")
 	visible := m.visible(companies)

@@ -355,21 +355,33 @@ func TestCompanyListModel_Search_EnterOpensHighlightedMatch(t *testing.T) {
 func TestCompanyListModel_Search_ArrowsMoveThroughMatches(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}, {ID: 3, Name: "Globex"}}
-	m := &companyListModel{}
-
-	typeKeys(t, m, companies, "/acme")
-	m.Update(tea.KeyMsg{Type: tea.KeyDown}, companies)
-	m.Update(tea.KeyMsg{Type: tea.KeyDown}, companies) // past the last match: stays on it
-	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
-	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
-		t.Fatalf("intent after down, down, enter = %#v, want selectCompanyMsg for Acme Robotics (ID 2)", intent)
+	tests := []struct {
+		name     string
+		down, up tea.KeyMsg
+	}{
+		{name: "arrows", down: tea.KeyMsg{Type: tea.KeyDown}, up: tea.KeyMsg{Type: tea.KeyUp}},
+		{name: "ctrl+n/ctrl+p", down: tea.KeyMsg{Type: tea.KeyCtrlN}, up: tea.KeyMsg{Type: tea.KeyCtrlP}},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}, {ID: 3, Name: "Globex"}}
+			m := &companyListModel{}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyUp}, companies)
-	_, intent = m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
-	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 1 {
-		t.Fatalf("intent after up, enter = %#v, want selectCompanyMsg for Acme (ID 1)", intent)
+			typeKeys(t, m, companies, "/acme")
+			m.Update(tt.down, companies)
+			m.Update(tt.down, companies) // past the last match: stays on it
+			_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+			if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
+				t.Fatalf("intent after down, down, enter = %#v, want selectCompanyMsg for Acme Robotics (ID 2)", intent)
+			}
+
+			m.Update(tt.up, companies)
+			_, intent = m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+			if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 1 {
+				t.Fatalf("intent after up, enter = %#v, want selectCompanyMsg for Acme (ID 1)", intent)
+			}
+		})
 	}
 }
 
@@ -526,5 +538,18 @@ func TestCompanyListModel_View_Search_InfoBoxDescribesHighlightedMatch(t *testin
 	got := m.View(companies, nil, 80, 40)
 	if !strings.Contains(got, "Makes doomsday devices.") || strings.Contains(got, "Makes anvils.") {
 		t.Errorf("View's info box should describe Globex, the highlighted match:\n%s", got)
+	}
+}
+
+func TestCompanyListModel_Search_BackspaceOnEmptyQueryCloses(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme"}}
+	m := &companyListModel{}
+
+	typeKeys(t, m, companies, "/")
+	m.Update(tea.KeyMsg{Type: tea.KeyBackspace}, companies)
+	if cmd, _ := m.Update(runeKey('q'), companies); cmd == nil {
+		t.Fatal("cmd on 'q' after backspace on an empty query = nil, want tea.Quit (the prompt should be closed)")
 	}
 }
