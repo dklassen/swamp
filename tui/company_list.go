@@ -22,6 +22,10 @@ type companyListModel struct {
 	// showInfo is whether the info box (i) is open. Ephemeral, like cursor:
 	// closed each time the app starts.
 	showInfo bool
+	// searching is whether the '/' prompt is open and taking keys; query
+	// is what's been typed into it. Ephemeral, like cursor.
+	searching bool
+	query     string
 }
 
 func newCompanyListModel(s *store.Store) companyListModel {
@@ -62,6 +66,9 @@ type backToActiveApplicationsMsg struct{}
 // bubbletea's async loop -- so screen transitions happen with the same
 // timing as before this type existed.
 func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (tea.Cmd, tea.Msg) {
+	if m.searching {
+		return m.updateSearch(msg, companies)
+	}
 	switch {
 	case msg.Type == tea.KeyDown, msg.String() == "j":
 		if m.cursor < len(companies)-1 {
@@ -89,6 +96,8 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 		m.showInfo = !m.showInfo
 	case msg.String() == "a":
 		return nil, enterCompanyFormMsg{}
+	case msg.String() == "/":
+		m.searching = true
 	case msg.String() == "e":
 		if m.cursor < len(companies) {
 			return nil, enterCompanyEditMsg{company: companies[m.cursor]}
@@ -101,22 +110,94 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 	return nil, nil
 }
 
+// updateSearch handles a key while the '/' prompt is open. Every edit
+// to the query re-filters straight away and puts the cursor back on the
+// first match.
+func (m *companyListModel) updateSearch(msg tea.KeyMsg, companies []store.Company) (tea.Cmd, tea.Msg) {
+	switch msg.Type {
+	case tea.KeyRunes, tea.KeySpace:
+		m.query += string(msg.Runes)
+		m.cursor = 0
+	case tea.KeyBackspace:
+		if r := []rune(m.query); len(r) > 0 {
+			m.query = string(r[:len(r)-1])
+			m.cursor = 0
+		} else {
+			m.searching = false
+		}
+	case tea.KeyEsc:
+		cursor := 0
+		if visible := m.visible(companies); m.cursor < len(visible) {
+			cursor = max(indexOfCompany(companies, visible[m.cursor].ID), 0)
+		}
+		m.searching = false
+		m.query = ""
+		m.cursor = cursor
+	case tea.KeyDown, tea.KeyCtrlN:
+		if m.cursor < len(m.visible(companies))-1 {
+			m.cursor++
+		}
+	case tea.KeyUp, tea.KeyCtrlP:
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case tea.KeyEnter:
+		visible := m.visible(companies)
+		if m.cursor < len(visible) {
+			return nil, selectCompanyMsg{company: visible[m.cursor]}
+		}
+	}
+	return nil, nil
+}
+
+// visible is the part of companies the query matches: a case-insensitive
+// substring of the name, in the order given. With no query, it's all of
+// them.
+func (m *companyListModel) visible(companies []store.Company) []store.Company {
+	if m.query == "" {
+		return companies
+	}
+	q := strings.ToLower(m.query)
+	var matches []store.Company
+	for _, c := range companies {
+		if strings.Contains(strings.ToLower(c.Name), q) {
+			matches = append(matches, c)
+		}
+	}
+	return matches
+}
+
 // View renders the list in height terminal rows (App.screenRows).
 func (m *companyListModel) View(companies []store.Company, openPostings map[int64]int, width, height int) string {
 	var b strings.Builder
 	title := titleStyle.Render("Companies")
-	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  esc/b: back  q: quit")
+	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  esc/b: back  q: quit")
+	if m.searching {
+		help = helpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: view postings  esc: clear")
+	}
 	b.WriteString(title + "\n")
-	if len(companies) == 0 {
+	visible := m.visible(companies)
+	// A sync landing while the prompt is open can shrink visible under
+	// the cursor.
+	cursor := min(m.cursor, max(len(visible)-1, 0))
+	var prompt string
+	if m.searching {
+		prompt = "/" + m.query + "▏  " + dimStyle.Render(fmt.Sprintf("%d of %d", len(visible), len(companies)))
+		b.WriteString(prompt + "\n")
+	}
+	switch {
+	case len(companies) == 0:
 		b.WriteString("No companies yet. Press 'a' to add one.\n")
+	case len(visible) == 0:
+		fmt.Fprintf(&b, "No companies match %q.\n", m.query)
 	}
 	var infoBox string
-	if m.showInfo && m.cursor < len(companies) {
-		infoBox = companyInfoBox(companies[m.cursor], width)
+	if m.showInfo && cursor < len(visible) {
+		infoBox = companyInfoBox(visible[cursor], width)
 	}
-	if len(companies) > 0 {
-		start, end := visibleWindow(m.cursor, len(companies), tableRows(height, title, help, infoBox))
-		cursorRow := m.cursor - start
+	if len(visible) > 0 {
+		start, end := visibleWindow(cursor, len(visible), tableRows(height, title, help, infoBox, prompt))
+		cursorRow := cursor - start
 		t := table.New().
 			Headers("Name", "Open", "Last fetched").
 			StyleFunc(func(row, _ int) lipgloss.Style {
@@ -127,7 +208,7 @@ func (m *companyListModel) View(companies []store.Company, openPostings map[int6
 				return style
 			})
 		for i := start; i < end; i++ {
-			c := companies[i]
+			c := visible[i]
 			t.Row(
 				padCol(c.Name, companyNameColWidth),
 				fmt.Sprintf("%*d", openColWidth, openPostings[c.ID]),

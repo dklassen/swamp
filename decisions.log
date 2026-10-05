@@ -7271,3 +7271,33 @@ on its TickMsg.
   documentStatusLine. All that's left in common is a five-line loop
   over documents.Types(), and sharing it would mean passing in a
   renderer function, which saves nothing.
+
+## 2026-10-05 -- #241: '/' search on the company list
+
+- Pressing '/' opens a prompt above the table. Every keystroke
+  re-filters right away, with no wait for enter (user requirement).
+  Enter opens the highlighted company (user decision, fzf/telescope
+  style), and ↑/↓ or ctrl+n/ctrl+p move through the matches while the
+  prompt is open. j/k and the screen's other command letters are typed
+  into the query while it's open.
+- Esc clears the query, closes the prompt, and keeps the highlighted
+  company selected in the full list. The issue only said "clear and
+  close". Keeping the selection costs one lookup and lets '/' double
+  as jump-to for r, e and d, which can't act on a match otherwise,
+  since enter opens it.
+- Matching is a case-insensitive substring of the name, in the
+  existing name order. Fuzzy ranking (e.g. sahilm/fuzzy) would reorder
+  the rows under the cursor. It's left for later in case substring
+  turns out too strict.
+- The query is a plain string on companyListModel, not a bubbles
+  textinput. The prompt only needs typing and backspace, and a plain
+  string keeps the zero-value model usable, which the existing tests
+  rely on (&companyListModel{}).
+- The cursor indexes the visible (filtered) slice. A query is only set
+  while the prompt is open, and none of the screen's actions run while
+  it's open, so d, r and e never see a filtered list. That means
+  clampCursor, which App calls after a delete, can keep using the full
+  length. View clamps the cursor itself, in case a sync shrinks the
+  matches while the prompt is open.
+- The search survives opening a company and coming back (the model
+  isn't rebuilt), so you can try the next match without retyping.
