@@ -36,6 +36,7 @@ var (
 	// use (a table cell, a line that isn't the very start of the view).
 	dimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
 	errStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
+	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
 	passStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
 	fieldLabel   = lipgloss.NewStyle().Bold(true)
 	focusedLabel = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
@@ -373,7 +374,7 @@ func (a *App) openDocumentReviewForm(msg enterDocumentReviewFormMsg) bool {
 	if msg.err != nil {
 		return false
 	}
-	a.documentReviewForm = newDocumentReviewFormModel(a.store, msg.applicationID, msg.documentType, msg.content, a.width, a.screenRows(), a.newScreenInstance())
+	a.documentReviewForm = newDocumentReviewFormModel(a.store, a.documents, msg.applicationID, msg.documentType, msg.content, a.width, a.screenRows(), a.newScreenInstance())
 	return true
 }
 
@@ -1206,6 +1207,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.status = exportStatusLine(msg)
 		a.screen = screenActiveApplications
 		return a, nil
+	case documentChangedDuringReviewMsg:
+		if a.screen == screenDocumentReviewForm && a.documentReviewForm.instance == msg.from {
+			a.documentReviewForm.reload(msg.current)
+		}
 	case documentReviewCreatedMsg:
 		a.err = msg.err
 		if msg.err == nil {
