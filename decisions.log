@@ -7436,3 +7436,28 @@ above the pre-migration maximum could still pick up a folder.
   screen for a loaded application, and stage.WriteDocument, which now
   refuses unknown and deleted applications. A permanent check would
   only ever have found this one folder.
+
+## 2026-10-05 -- #251: documents are written atomically (RFC 0007 step 2)
+
+- os.WriteFile truncates, then writes, so a reader in another process
+  (export, a review form, documents.Current, read_document) could see
+  an empty or partial draft, and a failed write left the old draft
+  truncated. Reproduced: a reader alongside a writer loop saw 802816 of
+  1048576 bytes.
+- documents.Store.Write writes a temporary file in the document's own
+  directory, syncs it, and renames it over the document. Same directory,
+  so the rename stays on one filesystem and is atomic. The temporary
+  name starts with a dot, and nothing lists an application's directory,
+  so a leftover one can't be mistaken for a document.
+- Mode stays 0644, what os.WriteFile gave documents (CreateTemp makes
+  0600).
+- Not done: syncing the directory after the rename. That's what makes
+  the rename itself survive a power cut; readers never see a partial
+  file either way, and a lost rename leaves the previous complete draft.
+- stage.WriteDocument, write_document's only path to disk since #248,
+  calls it. The RFC said the MCP handler would; updated to match.
+- Out of scope: export.Document's os.WriteFile writes a PDF to a folder
+  the user picks, which nothing in Swamp reads back.
+- The failed-write test makes the rename fail with a directory in the
+  document's place, not a read-only folder: permission checks don't
+  apply to root, so that version passes vacuously when run as root.

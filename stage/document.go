@@ -56,15 +56,9 @@ func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documen
 	if _, err := st.application(ctx, applicationID); err != nil {
 		return "", err
 	}
-	path, err := st.documents.Path(applicationID, documentType)
+	path, err := st.documents.Write(applicationID, documentType, content)
 	if err != nil {
-		return "", fmt.Errorf("stage: %w", err)
-	}
-	if _, err := st.documents.EnsureDir(applicationID); err != nil {
-		return "", fmt.Errorf("stage: ensure document directory: %w", err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		return "", fmt.Errorf("stage: write %s: %w", path, err)
+		return "", fmt.Errorf("stage: write %s: %w", documentType, err)
 	}
 	return path, nil
 }
