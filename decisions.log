@@ -7140,3 +7140,20 @@ deletes it.
 - MCP/skill: nothing changes. stage_prepare already creates an
   application when GetApplication finds none, and after a hard delete
   it finds none.
+
+## 2026-10-05 -- RFC 0003 step 1 (#209): what a failed sync leaves behind
+
+SyncCompany's doc comment now states the partial-failure contract, and
+TestSyncCompany_FailsPartway_LeavesWhatRanAndTheNextSyncFinishes pins
+it: a sync that fails after the fetch keeps the postings it already
+saved, skips the one that failed and the close pass, leaves "last
+fetched" stale, and counts only what ran. The next clean sync finishes.
+
+- Documentation and a test only. The test passed against main without
+  code changes, as the RFC expected. A mutation that lets ingest carry
+  on past the failure makes it fail.
+- The failure is a trigger that aborts inserting one posting, the
+  pattern the other sync failure tests use.
+- Per-posting atomicity stays the contract (RFC 0003 option 4 rejected a
+  whole-sync transaction). This pins it before step 2 (#210) refactors
+  syncHeld.

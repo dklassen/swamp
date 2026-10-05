@@ -100,6 +100,22 @@ func (s *Syncer) ApplyCompanyFilters(ctx context.Context, companyID int64, depar
 // holds it. Two runs that fetched the board at different moments could
 // otherwise each act on their own view -- the older one closing a posting
 // the newer one had just reopened, and ending its application with it.
+//
+// A sync is atomic per posting, not as a whole (RFC 0003; a whole-sync
+// transaction was rejected there). An error after the fetch returns at
+// once, and leaves:
+//   - every posting change already made committed, each in its own
+//     transaction (#147, #148), and postings not yet reached untouched.
+//     The one change made in two transactions is a closed posting whose
+//     content changed (IngestPosting, then ReopenPosting): stopped
+//     between them it's left updated but still closed, a valid state;
+//   - the close pass not run, so no posting is closed;
+//   - the company not marked fetched, so "last fetched" stays stale;
+//   - Result counting only what ran. Callers report the error, not the
+//     counts.
+//
+// Every write is conditional and safe to repeat, so the next clean sync
+// finishes the job.
 func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result Result, err error) {
 	result = Result{CompanyID: companyID}
 

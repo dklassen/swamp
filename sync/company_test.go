@@ -929,3 +929,104 @@ func TestSyncCompany_RecordsLastSeenAtForEveryListedPosting(t *testing.T) {
 		}
 	}
 }
+
+// TestSyncCompany_FailsPartway_LeavesWhatRanAndTheNextSyncFinishes pins
+// what a sync that fails after the fetch leaves behind (RFC 0003, #209):
+// the posting saved before the failure stays saved, the one that failed
+// and the close pass don't happen, "last fetched" stays stale, and the
+// counts cover only what ran. The next clean sync finishes the job.
+func TestSyncCompany_FailsPartway_LeavesWhatRanAndTheNextSyncFinishes(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s, sqlDB := newTestStoreDB(t)
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
+		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
+	}}
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
+		t.Fatalf("initial SyncCompany: %v", err)
+	}
+	dropped, err := s.GetPostingBySourceAndSourceID(ctx, "ashby", "job-1")
+	if err != nil {
+		t.Fatalf("GetPostingBySourceAndSourceID(job-1): %v", err)
+	}
+	fetchedBefore, err := s.GetCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+
+	if _, err := sqlDB.ExecContext(ctx, `CREATE TRIGGER fail_second_insert BEFORE INSERT ON postings
+		WHEN NEW.source_id = 'job-3'
+		BEGIN SELECT RAISE(ABORT, 'simulated failure'); END`); err != nil {
+		t.Fatalf("create trigger: %v", err)
+	}
+	fetcher.postings["acme"] = []jobboard.Posting{
+		samplePosting("job-2", "Designer", "Design", "Remote"),
+		samplePosting("job-3", "Manager", "Engineering", "Remote"),
+	}
+
+	result, err := syncer.SyncCompany(ctx, company.ID)
+	if err == nil {
+		t.Fatal("SyncCompany with a failing insert: want an error, got nil")
+	}
+	if result.Created != 1 || result.Closed != 0 {
+		t.Errorf("result = Created %d, Closed %d, want Created 1, Closed 0", result.Created, result.Closed)
+	}
+	if _, err := s.GetPostingBySourceAndSourceID(ctx, "ashby", "job-2"); err != nil {
+		t.Errorf("job-2, saved before the failure: %v, want it kept", err)
+	}
+	if _, err := s.GetPostingBySourceAndSourceID(ctx, "ashby", "job-3"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("job-3, whose insert failed: err = %v, want ErrNotFound", err)
+	}
+	stillOpen, err := s.GetPosting(ctx, dropped.ID)
+	if err != nil {
+		t.Fatalf("GetPosting(job-1): %v", err)
+	}
+	if stillOpen.ListingStatus != "open" {
+		t.Errorf("job-1, no longer listed: ListingStatus = %q, want open (the close pass didn't run)", stillOpen.ListingStatus)
+	}
+	history, err := s.ListPostingHistory(ctx, dropped.ID)
+	if err != nil {
+		t.Fatalf("ListPostingHistory(job-1): %v", err)
+	}
+	if len(history) != 0 {
+		t.Errorf("job-1 history = %+v, want none", history)
+	}
+	fetchedAfter, err := s.GetCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+	if !fetchedAfter.LastFetchedAt.Equal(fetchedBefore.LastFetchedAt) {
+		t.Errorf("LastFetchedAt = %v, want it left at %v", fetchedAfter.LastFetchedAt, fetchedBefore.LastFetchedAt)
+	}
+
+	if _, err := sqlDB.ExecContext(ctx, `DROP TRIGGER fail_second_insert`); err != nil {
+		t.Fatalf("drop trigger: %v", err)
+	}
+	result, err = syncer.SyncCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("SyncCompany after the failure cleared: %v", err)
+	}
+	if result.Created != 1 || result.Closed != 1 {
+		t.Errorf("next sync result = Created %d, Closed %d, want Created 1, Closed 1", result.Created, result.Closed)
+	}
+	if _, err := s.GetPostingBySourceAndSourceID(ctx, "ashby", "job-3"); err != nil {
+		t.Errorf("job-3 after the next sync: %v, want it saved", err)
+	}
+	closed, err := s.GetPosting(ctx, dropped.ID)
+	if err != nil {
+		t.Fatalf("GetPosting(job-1): %v", err)
+	}
+	if closed.ListingStatus != "closed" {
+		t.Errorf("job-1 after the next sync: ListingStatus = %q, want closed", closed.ListingStatus)
+	}
+	fetchedAfter, err = s.GetCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+	if fetchedAfter.LastFetchedAt.Before(fetchedBefore.LastFetchedAt) {
+		t.Errorf("LastFetchedAt after the next sync = %v, want at or after %v", fetchedAfter.LastFetchedAt, fetchedBefore.LastFetchedAt)
+	}
+}
