@@ -7547,3 +7547,22 @@ above the pre-migration maximum could still pick up a folder.
   reloading after an error wipes the error before it's seen. An editor
   error means it didn't start or exited abnormally; u still reloads by
   hand.
+
+## 2026-10-05 -- #257: store.ChangeProbe, a data_version probe (RFC 0007 step 7)
+
+- The TUI can't tell when mcp-serve or swamp fetch commits (#243).
+  store.ChangeProbe reports whether any other connection committed
+  since it last looked, from PRAGMA data_version.
+- data_version only moves for other connections' commits and is only
+  comparable on one connection, so the probe holds a dedicated *sql.Conn
+  for its life and never writes through it. The TUI's own pool is
+  "other connections" too, so its own writes count; reloading after
+  those is harmless, and nothing is missed.
+- Changed reports each change once (it advances its stored version), so
+  the caller doesn't track versions.
+- Depends on the pool being unbounded (store.Open sets no limit). Capped
+  at one connection, the probe would starve every other query; noted on
+  NewChangeProbe.
+- Tests: another handle's commit (seen once), the same Store's commit,
+  and a read (ignored). RFC 0007 measured 1000 reads at about 1.3 ms, so
+  a 1 s tick costs nothing.

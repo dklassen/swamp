@@ -11,10 +11,17 @@ import (
 
 func newTestStore(t *testing.T) *Store {
 	t.Helper()
+	return newTestStoreAt(t, t.TempDir()+"/test.db")
+}
+
+// newTestStoreAt is newTestStore on the database at path, so a test can
+// open a second Store on the same file (another process, in effect).
+func newTestStoreAt(t *testing.T, path string) *Store {
+	t.Helper()
 
 	// Open, not sql.Open, so tests run with the same connection settings
 	// as swamp itself.
-	sqlDB, err := Open(t.TempDir()+"/test.db", DefaultConfig())
+	sqlDB, err := Open(path, DefaultConfig())
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
