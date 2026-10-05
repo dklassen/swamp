@@ -1240,3 +1240,43 @@ func TestApplicationsSoftDelete_OneLiveApplicationPerPosting(t *testing.T) {
 		t.Errorf("second live application for one posting: err = %v, want a UNIQUE violation", err)
 	}
 }
+
+// TestDocumentWrites_NeverReusesAnIDAndDownDropsTheTable verifies 00020
+// (#258): document_writes uses AUTOINCREMENT (the rule for new tables,
+// #246), and Down removes it.
+func TestDocumentWrites_NeverReusesAnIDAndDownDropsTheTable(t *testing.T) {
+	sqlDB := migrateTo(t, 20)
+
+	for _, stmt := range []string{
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload) VALUES (1, 1, 'ashby', 'job-1', 'Engineer', '{}')`,
+		`INSERT INTO applications (id, posting_id, status) VALUES (1, 1, 'application_started')`,
+		`INSERT INTO document_writes (application_id, document_type, content_sha256, source) VALUES (1, 'cover_letter', 'a', 'write_document')`,
+		`INSERT INTO document_writes (application_id, document_type, content_sha256, source) VALUES (1, 'cover_letter', 'b', 'editor')`,
+		`DELETE FROM document_writes WHERE id = 2`,
+	} {
+		if _, err := sqlDB.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	var id int64
+	if err := sqlDB.QueryRow(
+		`INSERT INTO document_writes (application_id, document_type, content_sha256, source) VALUES (1, 'resume', 'c', 'editor') RETURNING id`,
+	).Scan(&id); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	if id != 3 {
+		t.Errorf("id after deleting the maximum = %d, want 3 (never reused)", id)
+	}
+
+	if err := goose.DownTo(sqlDB, ".", 19); err != nil {
+		t.Fatalf("migrate down to version 19: %v", err)
+	}
+	var tables int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = 'document_writes'`).Scan(&tables); err != nil {
+		t.Fatalf("query sqlite_master: %v", err)
+	}
+	if tables != 0 {
+		t.Error("document_writes still exists after Down")
+	}
+}
