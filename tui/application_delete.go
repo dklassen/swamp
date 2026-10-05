@@ -12,9 +12,9 @@ import (
 
 // applicationDeleteModel drives the delete confirmation (#232), reached
 // with D on application detail: for an application started by accident,
-// e.g. on the wrong posting. Confirming removes the application, its
-// history, reviews, export records and interview stages, and its drafted
-// documents on disk. The posting itself is left exactly as it was.
+// e.g. on the wrong posting. Confirming soft-deletes the application
+// (#244): it leaves every list and the posting can start a fresh one, while
+// its history, reviews and drafts are kept. The posting is left as it was.
 type applicationDeleteModel struct {
 	documents   *documents.Store
 	application store.ApplicationView
@@ -60,7 +60,8 @@ func (m *applicationDeleteModel) View() string {
 	b.WriteString(fieldLabel.Render("Company:") + " " + m.application.CompanyName + "\n")
 	b.WriteString(fieldLabel.Render("Status:") + " " + applicationStatusLabel(m.application.Status) + "\n\n")
 
-	b.WriteString("This removes the application's status history, reviews, export records and interview stages")
+	b.WriteString("The application leaves every list, and the posting can be started again from scratch.\n")
+	b.WriteString("Its status history and reviews are kept")
 	var drafted []string
 	status := m.documents.Status(m.application.ID)
 	for _, documentType := range documents.Types() {
@@ -71,12 +72,12 @@ func (m *applicationDeleteModel) View() string {
 	if len(drafted) == 0 {
 		b.WriteString(".\n")
 	} else {
-		b.WriteString(", and deletes its drafts:\n")
+		b.WriteString(", and so are its drafts:\n")
 		for _, path := range drafted {
 			b.WriteString("  " + path + "\n")
 		}
 	}
-	b.WriteString("The posting stays as it is. This can't be undone.\n\n")
+	b.WriteString("The posting stays as it is. There is no way to restore it from Swamp yet.\n\n")
 
 	if m.confirmed {
 		b.WriteString("Deleting...\n")
@@ -92,15 +93,11 @@ type applicationDeletedMsg struct {
 	err         error
 }
 
-// deleteApplication removes application's documents on disk, then the
-// application itself. Documents go first: if that fails nothing has been
-// deleted from the store, whereas a store delete that left the directory
-// behind would orphan its drafts with no application to show them.
-func deleteApplication(s *store.Store, docs *documents.Store, application store.ApplicationView) tea.Cmd {
+// deleteApplication soft-deletes application. Its documents stay on disk
+// for a later restore; with IDs never reused, nothing else can pick them
+// up.
+func deleteApplication(s *store.Store, application store.ApplicationView) tea.Cmd {
 	return func() tea.Msg {
-		if err := docs.RemoveDir(application.ID); err != nil {
-			return applicationDeletedMsg{application: application, err: err}
-		}
 		err := s.DeleteApplication(context.Background(), application.ID)
 		return applicationDeletedMsg{application: application, err: err}
 	}

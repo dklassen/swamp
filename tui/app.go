@@ -1466,7 +1466,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case cancelApplicationDeleteMsg:
 			a.screen = screenApplicationDetail
 		case confirmApplicationDeleteMsg:
-			return a, deleteApplication(a.store, a.documents, v.application)
+			return a, deleteApplication(a.store, v.application)
 		}
 		return a, cmd
 	case screenApplicationNotesEdit:
