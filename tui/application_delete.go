@@ -95,8 +95,7 @@ type applicationDeletedMsg struct {
 // deleteApplication removes application's documents on disk, then the
 // application itself. Documents go first: if that fails nothing has been
 // deleted from the store, whereas a store delete that left the directory
-// behind would hand its drafts to the next application SQLite gives the
-// same ID.
+// behind would orphan its drafts with no application to show them.
 func deleteApplication(s *store.Store, docs *documents.Store, application store.ApplicationView) tea.Cmd {
 	return func() tea.Msg {
 		if err := docs.RemoveDir(application.ID); err != nil {
