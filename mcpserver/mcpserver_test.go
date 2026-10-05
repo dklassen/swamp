@@ -565,6 +565,35 @@ func TestReadDocument_UnknownApplication_SaysSo(t *testing.T) {
 	}
 }
 
+func TestReadDocument_DeletedApplication_SaysSo(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	cs := connectClient(t, srv)
+	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
+		"ApplicationID": prepared.ApplicationID,
+		"DocumentType":  "cover_letter",
+		"Content":       "a draft",
+	})
+	if err := s.DeleteApplication(context.Background(), prepared.ApplicationID); err != nil {
+		t.Fatalf("DeleteApplication: %v", err)
+	}
+
+	got := callToolError(t, cs, "read_document", map[string]any{
+		"ApplicationID": prepared.ApplicationID,
+		"DocumentType":  "cover_letter",
+	})
+
+	want := fmt.Sprintf("read_document: application %d was deleted by the user; ask the user whether to start again before calling stage_prepare with PostingID %d, which starts a fresh application", prepared.ApplicationID, posting.ID)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("tool error mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestDocumentTools_AdvertiseDocumentTypeAsStringEnum(t *testing.T) {
 	t.Parallel()
 

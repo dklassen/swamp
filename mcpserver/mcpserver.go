@@ -235,16 +235,26 @@ type writeDocumentOutput struct {
 func writeDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[writeDocumentInput, writeDocumentOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in writeDocumentInput) (*mcp.CallToolResult, writeDocumentOutput, error) {
 		path, err := st.WriteDocument(ctx, in.ApplicationID, in.DocumentType, in.Content)
-		var deleted *stage.ApplicationDeletedError
-		switch {
-		case errors.As(err, &deleted):
-			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: application %d was deleted by the user, so nothing was written; ask the user whether to start again before calling stage_prepare with PostingID %d, which starts a fresh application", in.ApplicationID, deleted.PostingID)
-		case errors.Is(err, stage.ErrApplicationNotFound):
-			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: there is no application %d, so nothing was written; get the ApplicationID from stage_prepare for the posting you are drafting", in.ApplicationID)
-		case err != nil:
-			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: %w", err)
+		if err != nil {
+			return nil, writeDocumentOutput{}, documentToolError("write_document", in.ApplicationID, ", so nothing was written", err)
 		}
 		return nil, writeDocumentOutput{Path: path, BytesWritten: int64(len(in.Content))}, nil
+	}
+}
+
+// documentToolError rewords stage's errors for an application ID the
+// agent can't use into what to do next; consequence says what the call
+// didn't do, if anything. An agent may hold an ID from long ago, so
+// "deleted" and "never existed" get different advice (#244).
+func documentToolError(tool string, applicationID int64, consequence string, err error) error {
+	var deleted *stage.ApplicationDeletedError
+	switch {
+	case errors.As(err, &deleted):
+		return fmt.Errorf("%s: application %d was deleted by the user%s; ask the user whether to start again before calling stage_prepare with PostingID %d, which starts a fresh application", tool, applicationID, consequence, deleted.PostingID)
+	case errors.Is(err, stage.ErrApplicationNotFound):
+		return fmt.Errorf("%s: there is no application %d%s; get the ApplicationID from stage_prepare for the posting you are drafting", tool, applicationID, consequence)
+	default:
+		return fmt.Errorf("%s: %w", tool, err)
 	}
 }
 
@@ -261,11 +271,8 @@ type readDocumentOutput struct {
 func readDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[readDocumentInput, readDocumentOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in readDocumentInput) (*mcp.CallToolResult, readDocumentOutput, error) {
 		path, content, err := st.ReadDocument(ctx, in.ApplicationID, in.DocumentType)
-		switch {
-		case errors.Is(err, stage.ErrApplicationNotFound):
-			return nil, readDocumentOutput{}, fmt.Errorf("read_document: there is no application %d; get the ApplicationID from stage_prepare for the posting you are drafting", in.ApplicationID)
-		case err != nil:
-			return nil, readDocumentOutput{}, fmt.Errorf("read_document: %w", err)
+		if err != nil {
+			return nil, readDocumentOutput{}, documentToolError("read_document", in.ApplicationID, "", err)
 		}
 		return nil, readDocumentOutput{Path: path, Content: content}, nil
 	}
