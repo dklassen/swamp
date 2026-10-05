@@ -29,6 +29,10 @@ type Application struct {
 	Notes     string
 	CreatedAt time.Time
 	UpdatedAt time.Time
+	// DeletedAt is when the user deleted the application, or zero while
+	// it's live. Only GetApplicationByIDIncludingDeleted returns deleted
+	// ones.
+	DeletedAt time.Time
 }
 
 // applicationFromRow converts a raw sqlc row into an Application, parsing
@@ -57,6 +61,7 @@ func applicationFromRow(row db.Application) (Application, error) {
 		Notes:     row.Notes,
 		CreatedAt: row.CreatedAt,
 		UpdatedAt: row.UpdatedAt,
+		DeletedAt: row.DeletedAt.Time,
 	}, nil
 }
 
@@ -116,6 +121,20 @@ func (s *Store) GetApplication(ctx context.Context, postingID int64) (Applicatio
 // decisions.log, issue #102).
 func (s *Store) GetApplicationByID(ctx context.Context, id int64) (Application, error) {
 	row, err := s.queries.GetApplicationByID(ctx, id)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return Application{}, ErrNotFound
+		}
+		return Application{}, err
+	}
+	return applicationFromRow(row)
+}
+
+// GetApplicationByIDIncludingDeleted is GetApplicationByID, but also
+// finds an application the user deleted (check DeletedAt). Returns
+// ErrNotFound for an ID that was never handed out.
+func (s *Store) GetApplicationByIDIncludingDeleted(ctx context.Context, id int64) (Application, error) {
+	row, err := s.queries.GetApplicationByIDIncludingDeleted(ctx, id)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Application{}, ErrNotFound

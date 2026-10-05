@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -154,6 +155,51 @@ func TestGetApplicationByID_NonexistentID_ReturnsErrNotFound(t *testing.T) {
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("GetApplicationByID error = %v, want ErrNotFound", err)
 	}
+}
+
+// TestGetApplicationByIDIncludingDeleted lets a caller holding an old ID
+// tell an application the user deleted from one that never existed.
+func TestGetApplicationByIDIncludingDeleted(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	live := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer").ID)
+	deleted := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-2", "Designer").ID)
+	if err := s.DeleteApplication(ctx, deleted.ID); err != nil {
+		t.Fatalf("DeleteApplication: %v", err)
+	}
+
+	t.Run("live", func(t *testing.T) {
+		t.Parallel()
+		got, err := s.GetApplicationByIDIncludingDeleted(ctx, live.ID)
+		if err != nil {
+			t.Fatalf("GetApplicationByIDIncludingDeleted: %v", err)
+		}
+		if diff := cmp.Diff(live, got); diff != "" {
+			t.Errorf("mismatch (-want +got):\n%s", diff)
+		}
+	})
+	t.Run("deleted", func(t *testing.T) {
+		t.Parallel()
+		got, err := s.GetApplicationByIDIncludingDeleted(ctx, deleted.ID)
+		if err != nil {
+			t.Fatalf("GetApplicationByIDIncludingDeleted: %v", err)
+		}
+		if got.DeletedAt.IsZero() {
+			t.Error("DeletedAt is zero, want the time it was deleted")
+		}
+		got.DeletedAt = time.Time{}
+		if diff := cmp.Diff(deleted, got); diff != "" {
+			t.Errorf("mismatch apart from DeletedAt (-want +got):\n%s", diff)
+		}
+	})
+	t.Run("never existed", func(t *testing.T) {
+		t.Parallel()
+		if _, err := s.GetApplicationByIDIncludingDeleted(ctx, 999); !errors.Is(err, ErrNotFound) {
+			t.Errorf("err = %v, want ErrNotFound", err)
+		}
+	})
 }
 
 // TestCreateApplication_ClosedPosting_Refused: an application started on

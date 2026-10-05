@@ -7384,3 +7384,34 @@ Details:
   applications and their ids, with sqlite_sequence at 37. Deleting one
   through the TUI hid it, kept its status history and documents folder,
   and left 36 live.
+
+## 2026-10-05 -- #244 (part 2): document tools check the application first
+
+write_document created assets/<id>/ for any ID, so a draft for an ID
+with no live application sat waiting for whichever application got that
+ID. AUTOINCREMENT (part 1) stopped deleted IDs being handed out again,
+but a never-assigned ID (a typo, an ID from another database) or one
+above the pre-migration maximum could still pick up a folder.
+
+- write_document and read_document go through new stage.WriteDocument
+  and stage.ReadDocument, which look the application up before touching
+  the filesystem. mcpserver keeps only the wording, as for
+  search_postings' cursor errors.
+- Three tool errors, each saying what to do next rather than what
+  failed:
+  - no such application: get the ApplicationID from stage_prepare.
+  - deleted by the user: ask the user whether to start again, then
+    stage_prepare with the posting's ID (named in the error). Telling
+    this apart needs the deleted row, so store gained
+    GetApplicationByIDIncludingDeleted and Application.DeletedAt (a
+    plain time.Time, zero while live: nothing needs "never set"
+    distinguished from zero).
+  - read_document on a live application with no file: draft it and save
+    it with write_document. Previously a raw "no such file or
+    directory", indistinguishable from a bad ID.
+- A deleted application is refused for reads too, not only writes: an
+  agent reading it is working on something the user abandoned.
+- Not closed: the TUI can delete the application between the check and
+  the write. The draft then lands in the deleted application's own kept
+  folder, which nothing else can inherit now that IDs aren't reused, so
+  a transaction spanning the database and the filesystem isn't worth it.

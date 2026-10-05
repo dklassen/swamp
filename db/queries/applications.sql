@@ -20,6 +20,12 @@ WHERE posting_id = ? AND deleted_at IS NULL;
 SELECT * FROM applications
 WHERE id = ? AND deleted_at IS NULL;
 
+-- name: GetApplicationByIDIncludingDeleted :one
+-- Ignores deleted_at, so a caller holding an old ID can say the
+-- application was deleted rather than that it never existed.
+SELECT * FROM applications
+WHERE id = ?;
+
 -- name: UpdateApplicationStatus :one
 UPDATE applications
 SET status = ?, updated_at = CURRENT_TIMESTAMP

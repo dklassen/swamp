@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -293,6 +295,86 @@ func TestWriteDocument_RejectsInvalidDocumentType(t *testing.T) {
 	}
 }
 
+// callToolError calls name with args and returns the text of the tool
+// error it reports, failing the test if the call succeeds instead.
+func callToolError(t *testing.T, cs *mcp.ClientSession, name string, args any) string {
+	t.Helper()
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+	if err != nil {
+		t.Fatalf("CallTool(%s): %v", name, err)
+	}
+	if !res.IsError {
+		t.Fatalf("CallTool(%s): IsError = false, want a tool error (%+v)", name, res.StructuredContent)
+	}
+	text, _ := res.Content[0].(*mcp.TextContent)
+	if text == nil {
+		t.Fatalf("CallTool(%s): tool error content = %+v, want text", name, res.Content)
+	}
+	return text.Text
+}
+
+// TestWriteDocument_UnknownApplication_WritesNothing: an ID with no
+// application row must not get a documents folder, or the application
+// later given that ID inherits the draft (#244).
+func TestWriteDocument_UnknownApplication_WritesNothing(t *testing.T) {
+	t.Parallel()
+
+	srv, _, d := newTestServer(t)
+	cs := connectClient(t, srv)
+
+	got := callToolError(t, cs, "write_document", map[string]any{
+		"ApplicationID": 999,
+		"DocumentType":  "cover_letter",
+		"Content":       "a draft",
+	})
+
+	want := "write_document: there is no application 999, so nothing was written; get the ApplicationID from stage_prepare for the posting you are drafting"
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("tool error mismatch (-want +got):\n%s", diff)
+	}
+	path, err := d.Path(999, documents.CoverLetter)
+	if err != nil {
+		t.Fatalf("Path: %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(path)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Stat(%s): err = %v, want the folder not created", filepath.Dir(path), err)
+	}
+}
+
+// TestWriteDocument_DeletedApplication_WritesNothing: the user deleted the
+// application in the TUI while an agent still held its ID. The error
+// names the posting, since stage_prepare is how the agent would start
+// again -- if the user wants that.
+func TestWriteDocument_DeletedApplication_WritesNothing(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	cs := connectClient(t, srv)
+	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	if err := s.DeleteApplication(context.Background(), prepared.ApplicationID); err != nil {
+		t.Fatalf("DeleteApplication: %v", err)
+	}
+
+	got := callToolError(t, cs, "write_document", map[string]any{
+		"ApplicationID": prepared.ApplicationID,
+		"DocumentType":  "cover_letter",
+		"Content":       "a draft",
+	})
+
+	want := fmt.Sprintf("write_document: application %d was deleted by the user, so nothing was written; ask the user whether to start again before calling stage_prepare with PostingID %d, which starts a fresh application", prepared.ApplicationID, posting.ID)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("tool error mismatch (-want +got):\n%s", diff)
+	}
+	path := prepared.Documents[documents.CoverLetter].Path
+	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Stat(%s): err = %v, want no draft written", path, err)
+	}
+}
+
 func TestAddCompany_NewBoard_CreatesCompanyWithDescription(t *testing.T) {
 	t.Parallel()
 
@@ -463,6 +545,73 @@ func TestReadDocument_ReturnsToolError(t *testing.T) {
 				t.Fatalf("IsError = false, want true (%+v)", res.StructuredContent)
 			}
 		})
+	}
+}
+
+func TestReadDocument_UnknownApplication_SaysSo(t *testing.T) {
+	t.Parallel()
+
+	srv, _, _ := newTestServer(t)
+	cs := connectClient(t, srv)
+
+	got := callToolError(t, cs, "read_document", map[string]any{
+		"ApplicationID": 999,
+		"DocumentType":  "cover_letter",
+	})
+
+	want := "read_document: there is no application 999; get the ApplicationID from stage_prepare for the posting you are drafting"
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("tool error mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestReadDocument_DeletedApplication_SaysSo(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	cs := connectClient(t, srv)
+	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
+		"ApplicationID": prepared.ApplicationID,
+		"DocumentType":  "cover_letter",
+		"Content":       "a draft",
+	})
+	if err := s.DeleteApplication(context.Background(), prepared.ApplicationID); err != nil {
+		t.Fatalf("DeleteApplication: %v", err)
+	}
+
+	got := callToolError(t, cs, "read_document", map[string]any{
+		"ApplicationID": prepared.ApplicationID,
+		"DocumentType":  "cover_letter",
+	})
+
+	want := fmt.Sprintf("read_document: application %d was deleted by the user; ask the user whether to start again before calling stage_prepare with PostingID %d, which starts a fresh application", prepared.ApplicationID, posting.ID)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("tool error mismatch (-want +got):\n%s", diff)
+	}
+}
+
+func TestReadDocument_NotWrittenYet_SaysSo(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	cs := connectClient(t, srv)
+	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+
+	got := callToolError(t, cs, "read_document", map[string]any{
+		"ApplicationID": prepared.ApplicationID,
+		"DocumentType":  "cover_letter",
+	})
+
+	want := fmt.Sprintf("read_document: application %d has no cover_letter yet; draft one and save it with write_document", prepared.ApplicationID)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("tool error mismatch (-want +got):\n%s", diff)
 	}
 }
 

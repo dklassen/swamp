@@ -59,15 +59,15 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "write_document",
-		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have.",
+		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have. Refuses, writing nothing, an application that doesn't exist or that the user deleted; the error says what to do instead.",
 		InputSchema: documentInputSchema[writeDocumentInput](),
-	}, writeDocumentHandler(d))
+	}, writeDocumentHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_document",
 		Description: "Read an application's current cover letter or resume content, e.g. the existing draft to revise when its latest review was flagged. Returns a tool error if that document hasn't been written yet.",
 		InputSchema: documentInputSchema[readDocumentInput](),
-	}, readDocumentHandler(d))
+	}, readDocumentHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_canonical_resume",
@@ -232,22 +232,31 @@ type writeDocumentOutput struct {
 	BytesWritten int64  `json:"BytesWritten"`
 }
 
-func writeDocumentHandler(d *documents.Store) mcp.ToolHandlerFor[writeDocumentInput, writeDocumentOutput] {
+func writeDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[writeDocumentInput, writeDocumentOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in writeDocumentInput) (*mcp.CallToolResult, writeDocumentOutput, error) {
-		if _, err := d.EnsureDir(in.ApplicationID); err != nil {
-			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: ensure document dir: %w", err)
-		}
-
-		path, err := d.Path(in.ApplicationID, in.DocumentType)
+		path, err := st.WriteDocument(ctx, in.ApplicationID, in.DocumentType, in.Content)
 		if err != nil {
-			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: %w", err)
+			return nil, writeDocumentOutput{}, documentToolError("write_document", in.ApplicationID, in.DocumentType, ", so nothing was written", err)
 		}
-
-		if err := os.WriteFile(path, []byte(in.Content), 0o644); err != nil {
-			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: write %s: %w", path, err)
-		}
-
 		return nil, writeDocumentOutput{Path: path, BytesWritten: int64(len(in.Content))}, nil
+	}
+}
+
+// documentToolError rewords stage's errors for a document the agent can't
+// use into what to do next; consequence says what the call didn't do, if
+// anything. An agent may hold an ID from long ago, so "deleted" and
+// "never existed" get different advice (#244).
+func documentToolError(tool string, applicationID int64, documentType documents.Type, consequence string, err error) error {
+	var deleted *stage.ApplicationDeletedError
+	switch {
+	case errors.As(err, &deleted):
+		return fmt.Errorf("%s: application %d was deleted by the user%s; ask the user whether to start again before calling stage_prepare with PostingID %d, which starts a fresh application", tool, applicationID, consequence, deleted.PostingID)
+	case errors.Is(err, stage.ErrApplicationNotFound):
+		return fmt.Errorf("%s: there is no application %d%s; get the ApplicationID from stage_prepare for the posting you are drafting", tool, applicationID, consequence)
+	case errors.Is(err, stage.ErrDocumentNotWritten):
+		return fmt.Errorf("%s: application %d has no %s yet; draft one and save it with write_document", tool, applicationID, documentType)
+	default:
+		return fmt.Errorf("%s: %w", tool, err)
 	}
 }
 
@@ -261,21 +270,13 @@ type readDocumentOutput struct {
 	Content string `json:"Content"`
 }
 
-// readDocumentHandler resolves the path without EnsureDir: a read has no
-// reason to create the application's document directory.
-func readDocumentHandler(d *documents.Store) mcp.ToolHandlerFor[readDocumentInput, readDocumentOutput] {
+func readDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[readDocumentInput, readDocumentOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in readDocumentInput) (*mcp.CallToolResult, readDocumentOutput, error) {
-		path, err := d.Path(in.ApplicationID, in.DocumentType)
+		path, content, err := st.ReadDocument(ctx, in.ApplicationID, in.DocumentType)
 		if err != nil {
-			return nil, readDocumentOutput{}, fmt.Errorf("read_document: %w", err)
+			return nil, readDocumentOutput{}, documentToolError("read_document", in.ApplicationID, in.DocumentType, "", err)
 		}
-
-		content, err := os.ReadFile(path)
-		if err != nil {
-			return nil, readDocumentOutput{}, fmt.Errorf("read_document: read %s: %w", path, err)
-		}
-
-		return nil, readDocumentOutput{Path: path, Content: string(content)}, nil
+		return nil, readDocumentOutput{Path: path, Content: content}, nil
 	}
 }
 
