@@ -91,15 +91,23 @@ func (m *documentReviewSelectModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		if !opt.exists {
 			return nil, nil
 		}
-		content, err := os.ReadFile(opt.path)
-		return nil, enterDocumentReviewFormMsg{
-			applicationID: m.applicationID,
-			documentType:  opt.documentType,
-			content:       string(content),
-			err:           err,
-		}
+		return nil, readDocumentForReview(m.applicationID, opt.documentType, opt.path)
 	}
 	return nil, nil
+}
+
+// readDocumentForReview reads path and builds the message that starts
+// the review form for it. Callers resolve the path themselves: the
+// picker from the options built when it opened, application detail
+// fresh from docs.Status at key-press time.
+func readDocumentForReview(applicationID int64, documentType documents.Type, path string) enterDocumentReviewFormMsg {
+	content, err := os.ReadFile(path)
+	return enterDocumentReviewFormMsg{
+		applicationID: applicationID,
+		documentType:  documentType,
+		content:       string(content),
+		err:           err,
+	}
 }
 
 func (m *documentReviewSelectModel) View() string {

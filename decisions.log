@@ -7252,3 +7252,22 @@ on its TickMsg.
   ambiguity, where a late export from an earlier instance can fill in
   the new one's export result. It's the same export to the same
   directory, so it's left out of this change.
+
+## 2026-10-05 -- #90: dedupe review-form entry
+
+- readDocumentForReview does only the os.ReadFile and builds the message.
+  Each caller still finds the path its own way: the picker uses options
+  built when it opened, and application detail calls docs.Status at
+  key-press time.
+- App.openDocumentReviewForm sets a.err and builds the form, but leaves
+  navigation to the caller. The two callers really do differ here.
+  Application detail pushes the form onto the stack. The picker replaces
+  itself with the form, so saving or leaving goes back to posting
+  detail. A returnScreen parameter, as the issue suggested, no longer
+  fits now that returnStack exists.
+- The issue's third item (a shared Documents-section helper) is dropped.
+  Posting detail now renders through detailDocumentField, which aligns
+  columns and depends on width. Application detail still uses
+  documentStatusLine. All that's left in common is a five-line loop
+  over documents.Types(), and sharing it would mean passing in a
+  renderer function, which saves nothing.
