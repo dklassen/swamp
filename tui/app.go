@@ -1136,6 +1136,15 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// regardless of which screen triggered the change.
 			return a, tea.Batch(loadActiveApplications(a.store, a.documents), reviewsCmd)
 		}
+	case editorClosedMsg:
+		a.err = msg.err
+		// The edit may have made the latest review stale, so reload the
+		// application's reviews the way u does (RFC 0007, step 6). Not
+		// after an error: the editor didn't start or exited abnormally,
+		// and the reload's result would clear the error before it's seen.
+		if msg.err == nil && a.screen == screenApplicationDetail {
+			return a, loadDocumentReviews(a.store, a.documents, a.applicationDetail.application.ID)
+		}
 	case applicationReloadedForDeleteMsg:
 		a.err = msg.err
 		// Same guard as applicationFormLoadedMsg: only if the user is still
