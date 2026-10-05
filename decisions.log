@@ -7211,3 +7211,34 @@ that application's reviews a second time.
   a second row: "withdraw?" is only a started application's next step,
   while the widest status label belongs to a later stage. Columns size
   to their widest cell, so the table is as wide as before.
+
+## 2026-10-05 -- #115: late save results check which visit started them
+
+A save result now navigates only if the screen that started it is still
+the same opening of that screen. Before, the status select, document
+review form and notes editor checked only the screen type. So this
+sequence closed the reopened screen: save, esc, reopen, then the first
+save's result arrives. App hands out a visit number with newVisit each
+time one of these screens opens. The screen's model keeps it, the save
+Cmd copies it into its result message, and the handler compares the two.
+
+- Chosen over comparing posting/application IDs (the issue's cheaper
+  option), which can't tell two visits to the same posting apart. That's
+  the likeliest way to hit this.
+- The visit lives in each screen's model, not in an App-wide "current
+  visit": a model is rebuilt on every opening, so it already stands for
+  one visit, and there's no second piece of state to keep in step.
+  Visits come from one counter, so they never collide across screens.
+  The zero visit is never handed out, so a model built without one
+  (unit tests of the models alone) never matches a real result.
+- The submit screen is included though the issue doesn't name it. It
+  was added later, and its y saves through the same
+  applicationStatusUpdatedMsg, so it had the same race: y, esc, S again,
+  and the late result jumped from the new submit screen to home.
+- Only navigation is gated. A stale result still updates
+  applicationsByPosting and triggers the same reloads, since the save
+  itself succeeded.
+- Not covered: applicationExportedMsg on the submit screen, where a
+  late export from an earlier visit can fill in the new visit's export
+  result. It's the same export to the same directory, so the wrong
+  result looks identical. Left out of this change.

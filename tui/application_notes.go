@@ -19,19 +19,22 @@ type applicationNotesModel struct {
 	store     *store.Store
 	postingID int64
 	textarea  textarea.Model
+	// visit is this opening of the screen, carried by the save's result
+	// (#115).
+	visit visit
 }
 
 // newApplicationNotesModel returns a notes-edit screen for postingID,
 // seeded with notes and sized to width and height, the rows App leaves
 // under its status/error banner (App.screenRows). App refits the height
 // with setHeight whenever that changes; the width is fixed at
-// construction.
-func newApplicationNotesModel(s *store.Store, postingID int64, notes string, width, height int) applicationNotesModel {
+// construction. v is this opening of the screen.
+func newApplicationNotesModel(s *store.Store, postingID int64, notes string, width, height int, v visit) applicationNotesModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	ta.SetValue(notes)
 	ta.Focus()
-	m := applicationNotesModel{store: s, postingID: postingID, textarea: ta}
+	m := applicationNotesModel{store: s, postingID: postingID, textarea: ta, visit: v}
 	m.setHeight(height)
 	return m
 }
@@ -56,7 +59,7 @@ func (m *applicationNotesModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	case tea.KeyEsc:
 		return nil, cancelApplicationNotesMsg{}
 	case tea.KeyCtrlS:
-		return updateApplicationNotes(m.store, m.postingID, m.textarea.Value()), nil
+		return updateApplicationNotes(m.store, m.postingID, m.textarea.Value(), m.visit), nil
 	}
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)

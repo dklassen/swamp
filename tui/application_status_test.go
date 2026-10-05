@@ -12,7 +12,7 @@ import (
 func TestApplicationStatusModel_New_SeedsCursorFromCurrentStatus(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationStatusModel(nil, 7, store.ApplicationStatusSubmitted)
+	m := newApplicationStatusModel(nil, 7, store.ApplicationStatusSubmitted, 0)
 	want := applicationStatusIndex(store.ApplicationStatusSubmitted)
 	if m.cursor != want {
 		t.Fatalf("cursor = %d, want %d (index of %s)", m.cursor, want, store.ApplicationStatusSubmitted)
@@ -22,7 +22,7 @@ func TestApplicationStatusModel_New_SeedsCursorFromCurrentStatus(t *testing.T) {
 func TestApplicationStatusModel_CursorMovement_ClampsToStatusCount(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationStatusModel(nil, 7, store.ApplicationStatusStarted)
+	m := newApplicationStatusModel(nil, 7, store.ApplicationStatusStarted, 0)
 	for i := 0; i < len(applicationStatuses)+5; i++ {
 		m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
@@ -39,7 +39,7 @@ func TestApplicationStatusModel_CursorMovement_ClampsToStatusCount(t *testing.T)
 func TestApplicationStatusModel_Esc_ReturnsCancelMsg(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationStatusModel(nil, 7, store.ApplicationStatusStarted)
+	m := newApplicationStatusModel(nil, 7, store.ApplicationStatusStarted, 0)
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
@@ -52,7 +52,7 @@ func TestApplicationStatusModel_Esc_ReturnsCancelMsg(t *testing.T) {
 func TestApplicationStatusModel_Enter_ReturnsUpdateCmd(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationStatusModel(nil, 7, store.ApplicationStatusStarted)
+	m := newApplicationStatusModel(nil, 7, store.ApplicationStatusStarted, 0)
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that updates the application status")
@@ -111,7 +111,7 @@ func TestApplicationStatusLabel_CoversEveryStatus(t *testing.T) {
 func TestApplicationStatusModel_View_ShowsLabelsNotEnumValues(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationStatusModel(nil, 7, store.ApplicationStatusStarted)
+	m := newApplicationStatusModel(nil, 7, store.ApplicationStatusStarted, 0)
 	got := m.View()
 
 	if !strings.Contains(got, "Offer received") {
@@ -130,7 +130,7 @@ func TestApplicationStatusModel_View_ShowsLabelsNotEnumValues(t *testing.T) {
 func TestApplicationStatusModel_View_OffersWithdrawn(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationStatusModel(nil, 7, store.ApplicationStatusStarted)
+	m := newApplicationStatusModel(nil, 7, store.ApplicationStatusStarted, 0)
 
 	if got := m.View(); !strings.Contains(got, "Withdrawn") {
 		t.Errorf("View() = %q, want Withdrawn offered -- it's the only way to close an application by hand without claiming a rejection that never happened", got)

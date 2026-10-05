@@ -26,14 +26,17 @@ type documentReviewFormModel struct {
 	documentType  documents.Type
 	content       string
 	textarea      textarea.Model
+	// visit is this opening of the screen, carried by the save's result
+	// (#115).
+	visit visit
 }
 
 // newDocumentReviewFormModel returns a review-form screen for
 // applicationID's documentType, sized to width and height, the rows App
 // leaves under its status/error banner (App.screenRows). App refits the
 // height with setHeight whenever that changes; the width is fixed at
-// construction.
-func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentType documents.Type, content string, width, height int) documentReviewFormModel {
+// construction. v is this opening of the screen.
+func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentType documents.Type, content string, width, height int, v visit) documentReviewFormModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	ta.Focus()
@@ -43,6 +46,7 @@ func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentTyp
 		documentType:  documentType,
 		content:       content,
 		textarea:      ta,
+		visit:         v,
 	}
 	m.setHeight(height)
 	return m
@@ -69,13 +73,16 @@ type cancelDocumentReviewFormMsg struct{}
 
 type documentReviewCreatedMsg struct {
 	review store.DocumentReview
-	err    error
+	// visit is the opening of the review form that started the save
+	// (#115).
+	visit visit
+	err   error
 }
 
-func createDocumentReview(s *store.Store, applicationID int64, documentType documents.Type, content string, outcome store.ReviewOutcome, notes string) tea.Cmd {
+func createDocumentReview(s *store.Store, applicationID int64, documentType documents.Type, content string, outcome store.ReviewOutcome, notes string, v visit) tea.Cmd {
 	return func() tea.Msg {
 		review, err := s.CreateDocumentReview(context.Background(), applicationID, documentType, content, outcome, notes)
-		return documentReviewCreatedMsg{review: review, err: err}
+		return documentReviewCreatedMsg{review: review, visit: v, err: err}
 	}
 }
 
@@ -89,9 +96,9 @@ func (m *documentReviewFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	case tea.KeyEsc:
 		return nil, cancelDocumentReviewFormMsg{}
 	case tea.KeyCtrlS:
-		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomePassed, m.textarea.Value()), nil
+		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomePassed, m.textarea.Value(), m.visit), nil
 	case tea.KeyCtrlG:
-		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomeFlagged, m.textarea.Value()), nil
+		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomeFlagged, m.textarea.Value(), m.visit), nil
 	}
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)

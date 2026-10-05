@@ -11,7 +11,7 @@ import (
 func TestDocumentReviewFormModel_New_SeedsFocusedEmptyTextarea(t *testing.T) {
 	t.Parallel()
 
-	m := newDocumentReviewFormModel(nil, 1, documents.CoverLetter, "Dear hiring manager", 80, 10)
+	m := newDocumentReviewFormModel(nil, 1, documents.CoverLetter, "Dear hiring manager", 80, 10, 0)
 	if got := m.textarea.Value(); got != "" {
 		t.Fatalf("textarea.Value() = %q, want empty", got)
 	}
@@ -23,7 +23,7 @@ func TestDocumentReviewFormModel_New_SeedsFocusedEmptyTextarea(t *testing.T) {
 func TestDocumentReviewFormModel_Esc_ReturnsCancelMsg(t *testing.T) {
 	t.Parallel()
 
-	m := newDocumentReviewFormModel(nil, 1, documents.CoverLetter, "content", 80, 10)
+	m := newDocumentReviewFormModel(nil, 1, documents.CoverLetter, "content", 80, 10, 0)
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
@@ -36,7 +36,7 @@ func TestDocumentReviewFormModel_Esc_ReturnsCancelMsg(t *testing.T) {
 func TestDocumentReviewFormModel_CtrlS_ReturnsSaveCmd(t *testing.T) {
 	t.Parallel()
 
-	m := newDocumentReviewFormModel(nil, 1, documents.CoverLetter, "content", 80, 10)
+	m := newDocumentReviewFormModel(nil, 1, documents.CoverLetter, "content", 80, 10, 0)
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that saves the review as passed")
@@ -49,7 +49,7 @@ func TestDocumentReviewFormModel_CtrlS_ReturnsSaveCmd(t *testing.T) {
 func TestDocumentReviewFormModel_CtrlG_ReturnsSaveCmd(t *testing.T) {
 	t.Parallel()
 
-	m := newDocumentReviewFormModel(nil, 1, documents.CoverLetter, "content", 80, 10)
+	m := newDocumentReviewFormModel(nil, 1, documents.CoverLetter, "content", 80, 10, 0)
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that saves the review as flagged")
@@ -76,7 +76,7 @@ func TestDocumentReviewFormModel_CtrlG_ReturnsSaveCmd(t *testing.T) {
 func TestDocumentReviewFormModel_CtrlP_MovesTextareaCursorInsteadOfSaving(t *testing.T) {
 	t.Parallel()
 
-	m := newDocumentReviewFormModel(nil, 1, documents.CoverLetter, "content", 80, 10)
+	m := newDocumentReviewFormModel(nil, 1, documents.CoverLetter, "content", 80, 10, 0)
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("line one")})
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("line two")})
@@ -98,7 +98,7 @@ func TestDocumentReviewFormModel_CtrlP_MovesTextareaCursorInsteadOfSaving(t *tes
 func TestDocumentReviewFormModel_TypingKey_UpdatesTextareaValue(t *testing.T) {
 	t.Parallel()
 
-	m := newDocumentReviewFormModel(nil, 1, documents.CoverLetter, "content", 80, 10)
+	m := newDocumentReviewFormModel(nil, 1, documents.CoverLetter, "content", 80, 10, 0)
 	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("too generic")})
 	if got := m.textarea.Value(); got != "too generic" {
 		t.Fatalf("textarea.Value() = %q, want %q", got, "too generic")
