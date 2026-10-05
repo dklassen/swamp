@@ -502,7 +502,7 @@ func TestReadDocument_ReturnsWrittenContent(t *testing.T) {
 				"DocumentType":  tc.documentType,
 			})
 
-			want := readDocumentOutput{Path: tc.wantPath, Content: content}
+			want := readDocumentOutput{Path: tc.wantPath, Content: content, SHA256: documents.ContentSHA256(content)}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("read_document result mismatch (-want +got):\n%s", diff)
 			}
@@ -983,5 +983,102 @@ func TestSearchPostings_AdvertisesEnums(t *testing.T) {
 		if !strings.Contains(schema.Properties.Sort.Description, order.Name()+": "+order.Description) {
 			t.Errorf("Sort description doesn't explain %s:\n%s", order.Name(), schema.Properties.Sort.Description)
 		}
+	}
+}
+
+// TestWriteDocument_ExpectedSHA256: an agent passes the hash of what it
+// read, so a draft the user edited since isn't silently replaced (RFC
+// 0007, H2). Omitting it still writes unconditionally.
+func TestWriteDocument_ExpectedSHA256(t *testing.T) {
+	t.Parallel()
+
+	const edited = "edited by the user"
+	tests := []struct {
+		name      string
+		onDisk    string // empty: no document yet
+		expected  any    // nil: argument omitted
+		wantError string // empty: the write succeeds
+	}{
+		{name: "omitted", onDisk: edited, expected: nil},
+		{name: "matches", onDisk: edited, expected: documents.ContentSHA256(edited)},
+		{name: "changed since read", onDisk: edited, expected: documents.ContentSHA256("what the agent read"), wantError: "changed since you read it"},
+		{name: "expected absent, still absent", expected: ""},
+		{name: "expected absent, one appeared", onDisk: edited, expected: "", wantError: "already has a cover_letter"},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			srv, s, _ := newTestServer(t)
+			company := mustCreateCompany(t, s, "Acme")
+			posting := mustUpsertPosting(t, s, company.ID, fmt.Sprintf("job-%d", i), "Senior Data Engineer")
+			mustMarkInterested(t, s, posting.ID)
+			cs := connectClient(t, srv)
+			prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+			path := prepared.Documents[documents.CoverLetter].Path
+			if tt.onDisk != "" {
+				if err := os.WriteFile(path, []byte(tt.onDisk), 0o644); err != nil {
+					t.Fatalf("WriteFile: %v", err)
+				}
+			}
+
+			args := map[string]any{
+				"ApplicationID": prepared.ApplicationID,
+				"DocumentType":  "cover_letter",
+				"Content":       "the agent's draft",
+			}
+			if tt.expected != nil {
+				args["ExpectedSHA256"] = tt.expected
+			}
+
+			want := "the agent's draft"
+			if tt.wantError != "" {
+				msg := callToolError(t, cs, "write_document", args)
+				for _, part := range []string{tt.wantError, "nothing was written", "read_document"} {
+					if !strings.Contains(msg, part) {
+						t.Errorf("error %q doesn't contain %q", msg, part)
+					}
+				}
+				want = tt.onDisk
+			} else {
+				callTool[writeDocumentOutput](t, cs, "write_document", args)
+			}
+
+			onDisk, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("ReadFile: %v", err)
+			}
+			if string(onDisk) != want {
+				t.Errorf("file content = %q, want %q", onDisk, want)
+			}
+		})
+	}
+}
+
+// TestStagePrepare_DocumentsCarrySHA256: what an agent passes to
+// write_document as ExpectedSHA256 when it drafts from stage_prepare,
+// empty for a document that doesn't exist yet.
+func TestStagePrepare_DocumentsCarrySHA256(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	cs := connectClient(t, srv)
+	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
+		"ApplicationID": prepared.ApplicationID,
+		"DocumentType":  "cover_letter",
+		"Content":       "a draft",
+	})
+
+	got := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+
+	if want := documents.ContentSHA256("a draft"); got.Documents[documents.CoverLetter].SHA256 != want {
+		t.Errorf("cover letter SHA256 = %q, want %q", got.Documents[documents.CoverLetter].SHA256, want)
+	}
+	if got := got.Documents[documents.Resume].SHA256; got != "" {
+		t.Errorf("resume SHA256 = %q, want empty (never written)", got)
 	}
 }

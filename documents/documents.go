@@ -10,7 +10,11 @@
 package documents
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -92,6 +96,34 @@ func (s *Store) Path(applicationID int64, documentType Type) (string, error) {
 // new one, never an empty or partial file, and a failed write leaves the
 // old version as it was (RFC 0007, H3).
 func (s *Store) Write(applicationID int64, documentType Type, content string) (string, error) {
+	return s.write(applicationID, documentType, content, nil)
+}
+
+// ErrChanged is WriteIfUnchanged's error when the document on disk isn't
+// the version the caller expected.
+var ErrChanged = errors.New("documents: document changed since it was read")
+
+// WriteIfUnchanged is Write, refused with ErrChanged unless the document
+// on disk still has expectedSHA256 (see ContentSHA256). An empty
+// expectedSHA256 expects no document, so a fresh draft can't replace one
+// that appeared in the meantime (RFC 0007, H2). The check runs just before
+// the rename; a write landing between the two still wins.
+func (s *Store) WriteIfUnchanged(applicationID int64, documentType Type, content, expectedSHA256 string) (string, error) {
+	return s.write(applicationID, documentType, content, func() error {
+		got, err := s.SHA256(applicationID, documentType)
+		if err != nil {
+			return err
+		}
+		if got != expectedSHA256 {
+			return ErrChanged
+		}
+		return nil
+	})
+}
+
+// write is Write, with check (if any) run once the new content is ready
+// to rename into place, so the window between them stays small.
+func (s *Store) write(applicationID int64, documentType Type, content string, check func() error) (string, error) {
 	p, err := s.Path(applicationID, documentType)
 	if err != nil {
 		return "", err
@@ -107,6 +139,12 @@ func (s *Store) Write(applicationID int64, documentType Type, content string) (s
 	if err := writeAndClose(tmp, content); err != nil {
 		_ = os.Remove(tmp.Name())
 		return "", err
+	}
+	if check != nil {
+		if err := check(); err != nil {
+			_ = os.Remove(tmp.Name())
+			return "", err
+		}
 	}
 	if err := os.Rename(tmp.Name(), p); err != nil {
 		_ = os.Remove(tmp.Name())
@@ -131,6 +169,30 @@ func writeAndClose(f *os.File, content string) error {
 		err = closeErr
 	}
 	return err
+}
+
+// ContentSHA256 is the hex SHA-256 of a document's content: the version
+// an agent read, which write_document can require to be unchanged.
+func ContentSHA256(content string) string {
+	sum := sha256.Sum256([]byte(content))
+	return hex.EncodeToString(sum[:])
+}
+
+// SHA256 is the ContentSHA256 of applicationID's documentType document
+// as it is on disk now, or empty when it doesn't exist.
+func (s *Store) SHA256(applicationID int64, documentType Type) (string, error) {
+	p, err := s.Path(applicationID, documentType)
+	if err != nil {
+		return "", err
+	}
+	content, err := os.ReadFile(p)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", nil
+	}
+	if err != nil {
+		return "", err
+	}
+	return ContentSHA256(string(content)), nil
 }
 
 // canonicalDir holds the user-maintained files every application draws

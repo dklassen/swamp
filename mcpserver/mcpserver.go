@@ -59,7 +59,7 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "write_document",
-		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have. Refuses, writing nothing, an application that doesn't exist or that the user deleted; the error says what to do instead.",
+		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have. Refuses, writing nothing, an application that doesn't exist or that the user deleted, or (given ExpectedSHA256) a document that changed since it was read; the error says what to do instead.",
 		InputSchema: documentInputSchema[writeDocumentInput](),
 	}, writeDocumentHandler(st))
 
@@ -225,6 +225,9 @@ type writeDocumentInput struct {
 	ApplicationID int64          `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
 	DocumentType  documents.Type `json:"DocumentType" jsonschema:"the document type: one of the keys of stage_prepare's Documents"`
 	Content       string         `json:"Content" jsonschema:"the full document content to write, replacing whatever is there"`
+	// A pointer because omitted (write unconditionally) and empty (expect
+	// no document) mean different things.
+	ExpectedSHA256 *string `json:"ExpectedSHA256,omitempty" jsonschema:"the SHA256 from the stage_prepare or read_document you drafted from; the write is refused if the document changed since. Empty means you expect no document yet. Omit only when the user asked to overwrite regardless"`
 }
 
 type writeDocumentOutput struct {
@@ -234,7 +237,13 @@ type writeDocumentOutput struct {
 
 func writeDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[writeDocumentInput, writeDocumentOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in writeDocumentInput) (*mcp.CallToolResult, writeDocumentOutput, error) {
-		path, err := st.WriteDocument(ctx, in.ApplicationID, in.DocumentType, in.Content)
+		path, err := st.WriteDocument(ctx, in.ApplicationID, in.DocumentType, in.Content, in.ExpectedSHA256)
+		if errors.Is(err, documents.ErrChanged) {
+			if *in.ExpectedSHA256 == "" {
+				return nil, writeDocumentOutput{}, fmt.Errorf("write_document: application %d already has a %s, written since you saw it missing, so nothing was written; read it with read_document and ask the user before replacing it", in.ApplicationID, in.DocumentType)
+			}
+			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: application %d's %s changed since you read it, so nothing was written; read it again with read_document, apply your changes to what's there now, and pass its SHA256 as ExpectedSHA256", in.ApplicationID, in.DocumentType)
+		}
 		if err != nil {
 			return nil, writeDocumentOutput{}, documentToolError("write_document", in.ApplicationID, in.DocumentType, ", so nothing was written", err)
 		}
@@ -268,6 +277,7 @@ type readDocumentInput struct {
 type readDocumentOutput struct {
 	Path    string `json:"Path"`
 	Content string `json:"Content"`
+	SHA256  string `json:"SHA256" jsonschema:"pass this to write_document as ExpectedSHA256 when saving a revision of this content"`
 }
 
 func readDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[readDocumentInput, readDocumentOutput] {
@@ -276,7 +286,7 @@ func readDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[readDocumentInput, 
 		if err != nil {
 			return nil, readDocumentOutput{}, documentToolError("read_document", in.ApplicationID, in.DocumentType, "", err)
 		}
-		return nil, readDocumentOutput{Path: path, Content: content}, nil
+		return nil, readDocumentOutput{Path: path, Content: content, SHA256: documents.ContentSHA256(content)}, nil
 	}
 }
 

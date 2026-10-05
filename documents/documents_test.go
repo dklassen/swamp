@@ -1,6 +1,7 @@
 package documents
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -228,5 +229,81 @@ func TestStore_Write_FailedWriteLeavesNoTemporaryFile(t *testing.T) {
 		if e.Name() != filepath.Base(p) {
 			t.Errorf("left %q behind after a failed write", e.Name())
 		}
+	}
+}
+
+func TestStore_SHA256(t *testing.T) {
+	t.Parallel()
+
+	s := NewStore(t.TempDir())
+	got, err := s.SHA256(1, CoverLetter)
+	if err != nil {
+		t.Fatalf("SHA256 with no document: %v", err)
+	}
+	if got != "" {
+		t.Errorf("SHA256 with no document = %q, want empty", got)
+	}
+
+	if _, err := s.Write(1, CoverLetter, "# Draft\n"); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	got, err = s.SHA256(1, CoverLetter)
+	if err != nil {
+		t.Fatalf("SHA256: %v", err)
+	}
+	// printf '# Draft\n' | sha256sum
+	if want := "c47fffce7ab6215da4633829b59605e9bdf14fb3d49b6ac0fe8105e639b9c4f9"; got != want {
+		t.Errorf("SHA256 = %q, want %q", got, want)
+	}
+}
+
+func TestStore_WriteIfUnchanged(t *testing.T) {
+	t.Parallel()
+
+	const existing = "# Edited by the user\n"
+	tests := []struct {
+		name     string
+		onDisk   string // empty: no document
+		expected string
+		wantErr  bool
+	}{
+		{name: "expected matches", onDisk: existing, expected: ContentSHA256(existing)},
+		{name: "document changed", onDisk: existing, expected: ContentSHA256("# What the agent read\n"), wantErr: true},
+		{name: "expected absent, still absent", expected: ""},
+		{name: "expected absent, one appeared", onDisk: existing, expected: "", wantErr: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := NewStore(t.TempDir())
+			if tt.onDisk != "" {
+				if _, err := s.Write(1, CoverLetter, tt.onDisk); err != nil {
+					t.Fatalf("Write: %v", err)
+				}
+			}
+
+			p, err := s.WriteIfUnchanged(1, CoverLetter, "# New draft\n", tt.expected)
+
+			want := "# New draft\n"
+			if tt.wantErr {
+				if !errors.Is(err, ErrChanged) {
+					t.Fatalf("WriteIfUnchanged error = %v, want ErrChanged", err)
+				}
+				want = tt.onDisk
+				if p, err = s.Path(1, CoverLetter); err != nil {
+					t.Fatalf("Path: %v", err)
+				}
+			} else if err != nil {
+				t.Fatalf("WriteIfUnchanged: %v", err)
+			}
+			content, err := os.ReadFile(p)
+			if err != nil {
+				t.Fatalf("ReadFile: %v", err)
+			}
+			if string(content) != want {
+				t.Errorf("document = %q, want %q", content, want)
+			}
+		})
 	}
 }
