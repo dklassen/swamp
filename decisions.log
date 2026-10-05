@@ -7461,3 +7461,29 @@ above the pre-migration maximum could still pick up a folder.
 - The failed-write test makes the rename fail with a directory in the
   document's place, not a read-only folder: permission checks don't
   apply to root, so that version passes vacuously when run as root.
+
+## 2026-10-05 -- #253: write_document's ExpectedSHA256 (RFC 0007 step 3)
+
+- write_document replaced a draft unconditionally, so an agent could
+  silently discard edits the user made after it read the document (H2).
+- stage_prepare's Documents and read_document now return each
+  document's SHA256 (empty when absent), and write_document takes an
+  optional ExpectedSHA256. On a mismatch nothing is written and the
+  tool error says to read the document again. Empty means "expect no
+  document", so a fresh draft can't replace one that appeared meanwhile.
+- ExpectedSHA256 is a *string: omitted (write unconditionally, when the
+  user asks to) and empty (expect absent) are both used, so this is a
+  case where the pointer earns its keep (AGENTS.md, Go style).
+- The check runs in documents.WriteIfUnchanged after the temporary file
+  is written and just before the rename, to keep the window small. A
+  write landing in between still wins; closing it needs a lock that
+  editors and agents wouldn't honour (RFC 0007, H4).
+- Hashes are reread from disk, not stored (RFC 0007 open question 2):
+  simpler, and can't disagree with the file. documents.ContentSHA256
+  is a second copy of store's unexported contentSHA256 (same format);
+  not merged, since nothing compares the two and documents stays free
+  of store.
+- stage.LatestReview still omits a review's ContentSHA256 on purpose:
+  that's a past snapshot's hash, not the file's.
+- The apply-to-posting skill always passes it, and on a refusal rereads
+  and asks the user instead of retrying.
