@@ -7327,3 +7327,25 @@ on its TickMsg.
 - Found along the way: App.Update doesn't handle editorClosedMsg, so
   editing a draft from the TUI itself leaves its review badge stale.
   It's step 6 in the RFC.
+
+## 2026-10-05 -- #244 (part 1): applications.id is AUTOINCREMENT
+
+- applications.id was a plain INTEGER PRIMARY KEY, so SQLite gave a
+  deleted maximum id to the next application. Anything still holding
+  the old id (its documents folder recreated by write_document, or an
+  agent's earlier stage_prepare result) then attached itself to an
+  unrelated application. Migration 00019 rebuilds the table with
+  AUTOINCREMENT, the same rebuild pattern as 00004.
+- applications only, for now (user decision): it is the table where
+  reuse already misplaces drafts. The other nine generated-id tables
+  follow in #246 once this has shipped, rather than one large rebuild.
+- Copying the rows with their ids seeds sqlite_sequence with the current
+  maximum. A larger id deleted before the migration can still be handed
+  out once. #244's existence check on write_document (part 2, a
+  separate PR) covers that for documents.
+- Down rebuilds without AUTOINCREMENT. Dropping the table already
+  removes its sqlite_sequence row, so Down doesn't touch it.
+- This undercuts one of #232's reasons for hard delete (a soft-deleted
+  row's leftovers would attach to a reused id). Whether to soft-delete
+  applications instead is open in #244 part 4. A partial unique index
+  on posting_id for that would mean rebuilding the table again.

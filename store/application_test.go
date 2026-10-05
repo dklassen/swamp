@@ -207,9 +207,30 @@ func TestDeleteApplication_ThenGet_ReturnsErrNotFound(t *testing.T) {
 	}
 }
 
+// Document folders and agents' conversations refer to an application by
+// ID, so a deleted ID handed to a new application would give it the old
+// one's drafts (#244).
+func TestDeleteApplication_IDNotReusedByNextApplication(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	first := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+	second := mustUpsertPosting(t, s, acme.ID, "job-2", "Staff Engineer")
+	deleted := mustCreateApplication(t, s, first.ID)
+
+	if err := s.DeleteApplication(ctx, deleted.ID); err != nil {
+		t.Fatalf("DeleteApplication: %v", err)
+	}
+	next := mustCreateApplication(t, s, second.ID)
+
+	if next.ID == deleted.ID {
+		t.Errorf("new application got deleted application's ID %d", deleted.ID)
+	}
+}
+
 // A deleted application takes everything it owns with it (#232). Each
-// case checks the old ID has nothing left, which is also what a new
-// application would see if SQLite hands it the same rowid.
+// case checks the old ID has nothing left.
 func TestDeleteApplication_RemovesWhatTheApplicationOwns(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
