@@ -7533,3 +7533,17 @@ above the pre-migration maximum could still pick up a folder.
   packages in the graph (sergi/go-diff, go-difflib) weren't compared.
 - Who changed the document isn't known yet; #258 now records each
   write's source, and the form should name it then.
+
+## 2026-10-05 -- #256: reload after $EDITOR closes (RFC 0007 step 6)
+
+- editorClosedMsg was sent but never handled: after editing a draft
+  from application detail, its review badge and home-list row described
+  the version before the edit until something else reloaded them, and
+  an editor error ($EDITOR unset, a failed exit) was silently dropped.
+- On close, App shows the error if there is one; otherwise, still on
+  application detail, it reruns loadDocumentReviews, the same reload as
+  u, which also patches the home-list row (#91).
+- Not both: documentReviewsLoadedMsg sets a.err from its own result, so
+  reloading after an error wipes the error before it's seen. An editor
+  error means it didn't start or exited abnormally; u still reloads by
+  hand.
