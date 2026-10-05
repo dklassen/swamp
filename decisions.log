@@ -7110,3 +7110,33 @@ User decision: replace them.
 - Not done: git history and GitHub's edit history still contain the
   names. Removing them means rewriting main's history (force push),
   which needs its own decision.
+
+## 2026-10-05 -- #232: delete an application from the TUI
+
+An application started by accident (wrong posting, a stray
+stage_prepare) could only be left in the list or closed along with its
+posting. Now D on application detail opens a confirmation, and y
+deletes it.
+
+- Hard delete, not soft. Companies and tags are soft-deleted because
+  synced postings and posting tags still point at them; nothing points
+  at an application except rows it owns, so a deleted_at would only add
+  a filter every application query has to remember. And applications.id
+  is a plain INTEGER PRIMARY KEY, which SQLite reuses after the highest
+  row is deleted: anything left behind (a soft-deleted row's history,
+  its drafts directory) would attach itself to the next application.
+  store.DeleteApplication removes the status history, document reviews,
+  export records and interview stages with the application, in one
+  transaction. The posting and its markup are untouched (tested).
+- Its drafts directory goes too (documents.Store.RemoveDir), before the
+  store delete: if removing the files fails, nothing has changed in the
+  database. The other order could leave a directory for a reused ID.
+  Exported PDFs are the user's files elsewhere and are left alone.
+- Allowed at any status, no gating: the accidental case is almost always
+  application_started, and the confirmation names the status and lists
+  the drafts that will be deleted. Application detail is reached from
+  the active list, so a terminal application can't be reached to delete
+  today; not needed for this issue.
+- MCP/skill: nothing changes. stage_prepare already creates an
+  application when GetApplication finds none, and after a hard delete
+  it finds none.

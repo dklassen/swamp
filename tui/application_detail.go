@@ -41,6 +41,8 @@ func (m *applicationDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		return nil, enterApplicationSubmitMsg{application: m.application}
 	case msg.String() == "f":
 		return nil, enterApplicationFormMsg{postingID: m.application.Posting.ID}
+	case msg.String() == "D":
+		return nil, enterApplicationDeleteMsg{application: m.application}
 	}
 	// Each document type's key edits it, and the uppercase key reviews it.
 	for _, documentType := range documents.Types() {
@@ -132,7 +134,7 @@ func (m *applicationDetailModel) View() string {
 	for _, documentType := range documents.Types() {
 		help = append(help, string(unicode.ToUpper(documentType.Key()))+": review "+documentType.Label())
 	}
-	help = append(help, "f: application form", "S: submit", "u: refresh", "esc/b: back")
+	help = append(help, "f: application form", "S: submit", "D: delete", "u: refresh", "esc/b: back")
 	b.WriteString(helpStyle.Render(strings.Join(help, "  ")))
 	return b.String()
 }
