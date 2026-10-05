@@ -7415,3 +7415,24 @@ above the pre-migration maximum could still pick up a folder.
   the write. The draft then lands in the deleted application's own kept
   folder, which nothing else can inherit now that IDs aren't reused, so
   a transaction spanning the database and the filesystem isn't worth it.
+
+## 2026-10-05 -- #244 (part 3): leftover document folders, a one-off cleanup
+
+- Checked the real database and assets/ read-only after migration 00019
+  had run: 38 applications, highest id 38, sqlite_sequence 38. Exactly
+  one folder had no application row, live or soft-deleted: assets/56/,
+  a resume written 2026-10-01, before part 2's existence check. No
+  application 56 ever existed (ids stop at 38), so the likeliest source
+  is an agent passing a posting ID as an ApplicationID.
+- 56 is above sqlite_sequence, so the 56th application would have
+  inherited that resume: the #244 bug, still live after parts 1, 2
+  and 4.
+- Deleted the folder (user decision; it was git-ignored data, not
+  code). Moving it aside or attaching it to a new application were the
+  alternatives.
+- No scanner or startup check (alternative considered): nothing can
+  create such a folder any more. EnsureDir's three callers are
+  stage_prepare right after creating the application, the TUI's detail
+  screen for a loaded application, and stage.WriteDocument, which now
+  refuses unknown and deleted applications. A permanent check would
+  only ever have found this one folder.
