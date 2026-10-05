@@ -4,7 +4,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -290,6 +292,53 @@ func TestWriteDocument_RejectsInvalidDocumentType(t *testing.T) {
 	}
 	if !res.IsError {
 		t.Fatal("IsError = false, want true for an invalid DocumentType")
+	}
+}
+
+// callToolError calls name with args and returns the text of the tool
+// error it reports, failing the test if the call succeeds instead.
+func callToolError(t *testing.T, cs *mcp.ClientSession, name string, args any) string {
+	t.Helper()
+
+	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: name, Arguments: args})
+	if err != nil {
+		t.Fatalf("CallTool(%s): %v", name, err)
+	}
+	if !res.IsError {
+		t.Fatalf("CallTool(%s): IsError = false, want a tool error (%+v)", name, res.StructuredContent)
+	}
+	text, _ := res.Content[0].(*mcp.TextContent)
+	if text == nil {
+		t.Fatalf("CallTool(%s): tool error content = %+v, want text", name, res.Content)
+	}
+	return text.Text
+}
+
+// TestWriteDocument_UnknownApplication_WritesNothing: an ID with no
+// application row must not get a documents folder, or the application
+// later given that ID inherits the draft (#244).
+func TestWriteDocument_UnknownApplication_WritesNothing(t *testing.T) {
+	t.Parallel()
+
+	srv, _, d := newTestServer(t)
+	cs := connectClient(t, srv)
+
+	got := callToolError(t, cs, "write_document", map[string]any{
+		"ApplicationID": 999,
+		"DocumentType":  "cover_letter",
+		"Content":       "a draft",
+	})
+
+	want := "write_document: there is no application 999, so nothing was written; get the ApplicationID from stage_prepare for the posting you are drafting"
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("tool error mismatch (-want +got):\n%s", diff)
+	}
+	path, err := d.Path(999, documents.CoverLetter)
+	if err != nil {
+		t.Fatalf("Path: %v", err)
+	}
+	if _, err := os.Stat(filepath.Dir(path)); !errors.Is(err, fs.ErrNotExist) {
+		t.Errorf("Stat(%s): err = %v, want the folder not created", filepath.Dir(path), err)
 	}
 }
 

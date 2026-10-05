@@ -61,7 +61,7 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 		Name:        "write_document",
 		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have.",
 		InputSchema: documentInputSchema[writeDocumentInput](),
-	}, writeDocumentHandler(d))
+	}, writeDocumentHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_document",
@@ -232,21 +232,15 @@ type writeDocumentOutput struct {
 	BytesWritten int64  `json:"BytesWritten"`
 }
 
-func writeDocumentHandler(d *documents.Store) mcp.ToolHandlerFor[writeDocumentInput, writeDocumentOutput] {
+func writeDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[writeDocumentInput, writeDocumentOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in writeDocumentInput) (*mcp.CallToolResult, writeDocumentOutput, error) {
-		if _, err := d.EnsureDir(in.ApplicationID); err != nil {
-			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: ensure document dir: %w", err)
-		}
-
-		path, err := d.Path(in.ApplicationID, in.DocumentType)
-		if err != nil {
+		path, err := st.WriteDocument(ctx, in.ApplicationID, in.DocumentType, in.Content)
+		switch {
+		case errors.Is(err, stage.ErrApplicationNotFound):
+			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: there is no application %d, so nothing was written; get the ApplicationID from stage_prepare for the posting you are drafting", in.ApplicationID)
+		case err != nil:
 			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: %w", err)
 		}
-
-		if err := os.WriteFile(path, []byte(in.Content), 0o644); err != nil {
-			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: write %s: %w", path, err)
-		}
-
 		return nil, writeDocumentOutput{Path: path, BytesWritten: int64(len(in.Content))}, nil
 	}
 }
