@@ -1,6 +1,6 @@
 # RFC 0003: Split `SyncCompany`'s two loops and state what a failed sync leaves behind
 
-- **Status:** Revised 2026-10-01 against the code after RFC 0001's P4 work; ready for work. Step 1: #209. Step 2: #210. See "Work breakdown".
+- **Status:** Implemented 2026-10-05. Step 1: #209 (PR #235). Step 2: #210. Revised 2026-10-01 against the code after RFC 0001's P4 work; see "Work breakdown".
 - **Date:** 2026-09-28 (revised 2026-10-01: re-checked against the code; much of the earlier problem was fixed by #147/#148, see "Corrections to the earlier draft")
 - **Related:** RFC 0001 P4 (#147 atomic close, #148 atomic ingest/reopen, #150 sync lease); issue #105 (a closing posting ends an early-stage application); #174 (should a closing posting end a submitted application, and should reopening restore it); `decisions.log` 2026-09-29, "Close a posting and its application in one transaction (#147)"
 

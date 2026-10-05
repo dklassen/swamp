@@ -7157,3 +7157,22 @@ fetched" stale, and counts only what ran. The next clean sync finishes.
 - Per-posting atomicity stays the contract (RFC 0003 option 4 rejected a
   whole-sync transaction). This pins it before step 2 (#210) refactors
   syncHeld.
+
+## 2026-10-05 -- RFC 0003 step 2 (#210): name syncHeld's two loops
+
+syncHeld now fetches, then calls ingest, then closeMissing, with an
+error check between them, then marks the company fetched. closeMissing
+and earlyApplicationStatuses moved to sync/reconcile.go, so the close
+pass sits next to the only policy it uses.
+
+- A pure refactor: no signature or behavior change, and every test in
+  sync/ passes unmodified, including step 1's partial-failure test.
+- MarkPostingsSeen went into closeMissing, not between the two calls in
+  syncHeld: it needs the same list of stored postings the close pass
+  walks, and splitting it out would mean listing them twice or passing
+  the list across. Its doc comment says it does both.
+- MarkCompanyFetched stays in syncHeld: it's the whole sync's success,
+  not part of either loop.
+- RFC 0003 is implemented. The open questions (continue past a failed
+  posting; a separate ApplicationsClosed) stay open, each for its own
+  issue if wanted.
