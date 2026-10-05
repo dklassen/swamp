@@ -7211,3 +7211,44 @@ that application's reviews a second time.
   a second row: "withdraw?" is only a started application's next step,
   while the widest status label belongs to a later stage. Columns size
   to their widest cell, so the table is as wide as before.
+
+## 2026-10-05 -- #115: tell apart late save results from similar screens
+
+Bubble Tea sends every message to the one App.Update, and a Cmd's
+result doesn't say which part of the UI asked for it. So once a screen
+has been closed and the same kind opened again, a late save result
+can't tell the two apart. The status select, document review form and
+notes editor checked only the screen type, so save, esc, reopen, then
+the first save's result closed the screen the user had just reopened.
+
+Each instance of these screens now gets a screenInstance from a counter
+on App (newScreenInstance). The screen's model keeps it as instance, the
+save Cmd records it in its result message as from, and the handler
+acts on the screen only when the open one's instance equals msg.from.
+It's a correlation ID, the same trick bubbles' spinner uses with the ID
+on its TickMsg.
+
+- Chosen over comparing posting/application IDs (the issue's cheaper
+  option), which can't tell two instances showing the same posting
+  apart. That's the likeliest way to hit this.
+- The ID lives in each screen's model, not in an App-wide "current
+  instance": a model is rebuilt on every opening, so it already is one
+  instance, and there's no second piece of state to keep in step. One
+  counter serves every screen, so IDs never collide across screen
+  types. The zero value is never handed out, so a model built without
+  one (unit tests of the models alone) never matches a real result.
+- Naming: the first draft called it a "visit", after when it's handed
+  out. Renamed in review to say what it's for: telling instances apart
+  (screenInstance, instance) and which one a result came from (from),
+  so the check reads a.applicationStatus.instance == msg.from.
+- The submit screen is included though the issue doesn't name it. It
+  was added later, and its y saves through the same
+  applicationStatusUpdatedMsg, so it had the same ambiguity: y, esc, S
+  again, and the late result jumped from the new submit screen to home.
+- Only navigation is gated. A result from an earlier instance still
+  updates applicationsByPosting and triggers the same reloads, since
+  the save itself succeeded.
+- Not covered: applicationExportedMsg on the submit screen has the same
+  ambiguity, where a late export from an earlier instance can fill in
+  the new one's export result. It's the same export to the same
+  directory, so it's left out of this change.

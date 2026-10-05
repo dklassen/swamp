@@ -132,6 +132,31 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 	}
 }
 
+// The submit screen's y saves through the same status message, so it
+// needs the same protection (#115).
+func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
+	t.Parallel()
+	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	app = startSubmit(t, app)
+
+	app, saveCmd := sendKey(app, runeKey('y'))
+	if saveCmd == nil {
+		t.Fatal("Update on y returned nil Cmd, want a command that marks the application submitted")
+	}
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc}) // back to application detail, save still in flight
+	app, cmd := sendKey(app, runeKey('S'))
+	app = applyCmd(t, app, cmd)
+	if app.screen != screenApplicationSubmit {
+		t.Fatalf("screen after S again = %v, want the submit screen", app.screen)
+	}
+
+	app = applyCmd(t, app, saveCmd)
+
+	if app.screen != screenApplicationSubmit {
+		t.Errorf("screen after the earlier instance's save result = %v, want the submit screen (the reopened one stays open)", app.screen)
+	}
+}
+
 func TestSubmitFlow_FallsBackToJobURL(t *testing.T) {
 	t.Parallel()
 	app, _, opened := submitTestApp(t, "", "https://boards.example/job-1")

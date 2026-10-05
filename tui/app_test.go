@@ -3294,6 +3294,40 @@ func TestApp_StatusSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 	}
 }
 
+// #115: a save from a status select the user closed and reopened must not
+// close the reopened one.
+func TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // active-applications -> application detail
+	app, _ = sendKey(app, runeKey('p'))                   // application detail -> posting detail
+	app, _ = sendKey(app, runeKey('s'))                   // posting detail -> status select
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
+	app, saveCmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if saveCmd == nil {
+		t.Fatal("Update on enter (status select) returned nil Cmd, want a command that updates the status")
+	}
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc}) // status select -> posting detail, save still in flight
+	app, _ = sendKey(app, runeKey('s'))                 // posting detail -> status select again
+	if app.screen != screenApplicationStatusSelect {
+		t.Fatalf("screen after re-entering = %v, want screenApplicationStatusSelect", app.screen)
+	}
+
+	app = applyCmd(t, app, saveCmd)
+
+	if app.screen != screenApplicationStatusSelect {
+		t.Fatalf("screen after the earlier instance's save result = %v, want screenApplicationStatusSelect (the reopened one stays open)", app.screen)
+	}
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after esc from the reopened screen = %v, want screenPostingDetail", app.screen)
+	}
+}
+
 // TestApp_ReviewSaveResolvingAfterUserLeft_DoesNotYankScreenBack is
 // TestApp_StatusSaveResolvingAfterUserLeft_DoesNotYankScreenBack's
 // counterpart for the document review form.
@@ -3333,6 +3367,47 @@ func TestApp_ReviewSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 
 	if app.screen != screenApplicationDetail {
 		t.Fatalf("screen after late save result = %v, want screenApplicationDetail (where the user already was)", app.screen)
+	}
+}
+
+func TestApp_ReviewSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	application := mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	status := app.documents.Status(application.ID)
+	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("# Cover Letter"), 0o644); err != nil {
+		t.Fatalf("WriteFile cover letter: %v", err)
+	}
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})        // active-applications -> application detail
+	app, _ = sendKey(app, runeKey('p'))                          // application detail -> posting detail
+	app, _ = sendKey(app, runeKey('r'))                          // posting detail -> document review select
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})        // select "Cover Letter" (cursor 0)
+	app, saveCmd := sendKey(app, tea.KeyMsg{Type: tea.KeyCtrlS}) // pass
+	if saveCmd == nil {
+		t.Fatal("Update on ctrl+s returned nil Cmd, want a command that saves the review")
+	}
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc}) // review form -> posting detail, save still in flight
+	app, _ = sendKey(app, runeKey('r'))                 // posting detail -> document review select again
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if app.screen != screenDocumentReviewForm {
+		t.Fatalf("screen after re-entering = %v, want screenDocumentReviewForm", app.screen)
+	}
+
+	app = applyCmd(t, app, saveCmd)
+
+	if app.screen != screenDocumentReviewForm {
+		t.Fatalf("screen after the earlier instance's save result = %v, want screenDocumentReviewForm (the reopened one stays open)", app.screen)
+	}
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after esc from the reopened screen = %v, want screenPostingDetail", app.screen)
 	}
 }
 
@@ -3411,6 +3486,38 @@ func TestApp_NotesSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T)
 
 	if app.screen != screenPostingList {
 		t.Fatalf("screen after late save result = %v, want screenPostingList (where the user already was)", app.screen)
+	}
+}
+
+func TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	if _, err := s.CreateApplication(context.Background(), app.postings[0].ID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	app = openPostingDetail(t, app)
+	app, _ = sendKey(app, runeKey('n'))
+	app, _ = sendKey(app, runeKey('H', 'i'))
+	app, saveCmd := sendKey(app, tea.KeyMsg{Type: tea.KeyCtrlS})
+	if saveCmd == nil {
+		t.Fatal("Update on ctrl+s (notes edit) returned nil Cmd, want a command that saves notes")
+	}
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc}) // notes edit -> posting detail, save still in flight
+	app, _ = sendKey(app, runeKey('n'))                 // posting detail -> notes edit again
+	if app.screen != screenApplicationNotesEdit {
+		t.Fatalf("screen after re-entering = %v, want screenApplicationNotesEdit", app.screen)
+	}
+
+	app = applyCmd(t, app, saveCmd)
+
+	if app.screen != screenApplicationNotesEdit {
+		t.Fatalf("screen after the earlier instance's save result = %v, want screenApplicationNotesEdit (the reopened one stays open)", app.screen)
 	}
 }
 

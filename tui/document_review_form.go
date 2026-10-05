@@ -26,6 +26,7 @@ type documentReviewFormModel struct {
 	documentType  documents.Type
 	content       string
 	textarea      textarea.Model
+	instance      screenInstance
 }
 
 // newDocumentReviewFormModel returns a review-form screen for
@@ -33,7 +34,7 @@ type documentReviewFormModel struct {
 // leaves under its status/error banner (App.screenRows). App refits the
 // height with setHeight whenever that changes; the width is fixed at
 // construction.
-func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentType documents.Type, content string, width, height int) documentReviewFormModel {
+func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentType documents.Type, content string, width, height int, instance screenInstance) documentReviewFormModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	ta.Focus()
@@ -43,6 +44,7 @@ func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentTyp
 		documentType:  documentType,
 		content:       content,
 		textarea:      ta,
+		instance:      instance,
 	}
 	m.setHeight(height)
 	return m
@@ -69,13 +71,14 @@ type cancelDocumentReviewFormMsg struct{}
 
 type documentReviewCreatedMsg struct {
 	review store.DocumentReview
+	from   screenInstance
 	err    error
 }
 
-func createDocumentReview(s *store.Store, applicationID int64, documentType documents.Type, content string, outcome store.ReviewOutcome, notes string) tea.Cmd {
+func createDocumentReview(s *store.Store, applicationID int64, documentType documents.Type, content string, outcome store.ReviewOutcome, notes string, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
 		review, err := s.CreateDocumentReview(context.Background(), applicationID, documentType, content, outcome, notes)
-		return documentReviewCreatedMsg{review: review, err: err}
+		return documentReviewCreatedMsg{review: review, from: from, err: err}
 	}
 }
 
@@ -89,9 +92,9 @@ func (m *documentReviewFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	case tea.KeyEsc:
 		return nil, cancelDocumentReviewFormMsg{}
 	case tea.KeyCtrlS:
-		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomePassed, m.textarea.Value()), nil
+		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomePassed, m.textarea.Value(), m.instance), nil
 	case tea.KeyCtrlG:
-		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomeFlagged, m.textarea.Value()), nil
+		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomeFlagged, m.textarea.Value(), m.instance), nil
 	}
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
