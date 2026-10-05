@@ -75,7 +75,7 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 	case msg.String() == "s":
 		if m.cursor < len(apps) {
 			a := apps[m.cursor]
-			return nil, enterApplicationStatusMsg{postingID: a.Posting.ID, currentStatus: a.Status}
+			return nil, enterApplicationStatusMsg{postingID: a.Posting.ID}
 		}
 	case msg.String() == "e":
 		if m.cursor < len(apps) {

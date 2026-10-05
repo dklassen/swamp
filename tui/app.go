@@ -1135,6 +1135,21 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// regardless of which screen triggered the change.
 			return a, tea.Batch(loadActiveApplications(a.store, a.documents), reviewsCmd)
 		}
+	case applicationReloadedForDeleteMsg:
+		a.err = msg.err
+		// Same guard as applicationFormLoadedMsg: only if the user is still
+		// on that application.
+		if msg.err == nil && a.screen == screenApplicationDetail && a.applicationDetail.application.ID == msg.application.ID {
+			a.applicationDelete = newApplicationDeleteModel(a.documents, msg.application)
+			a.screen = screenApplicationDelete
+		}
+	case applicationStatusLoadedMsg:
+		a.err = msg.err
+		// Open the form only if the user is still where they asked for it.
+		if msg.err == nil && a.screen == msg.from {
+			a.enterFrom(screenApplicationStatusSelect)
+			a.applicationStatus = newApplicationStatusModel(a.store, msg.postingID, msg.status, a.newScreenInstance())
+		}
 	case applicationFormLoadedMsg:
 		a.err = msg.err
 		// Open the form only if the user is still on the application it
@@ -1297,8 +1312,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Archiving or unarchiving may have changed open counts.
 			return a, loadCompanies(a.store)
 		case enterApplicationStatusMsg:
-			a.enterFrom(screenApplicationStatusSelect)
-			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus, a.newScreenInstance())
+			return a, loadApplicationStatus(a.store, v.postingID, a.screen)
 		case enterApplicationDetailMsg:
 			a.screen = screenApplicationDetail
 			a.applicationDetail = newApplicationDetailModel(a.documents, v.application)
@@ -1315,8 +1329,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case enterApplicationSubmitMsg:
 			return a, a.startApplicationSubmit(v.application)
 		case enterApplicationDeleteMsg:
-			a.applicationDelete = newApplicationDeleteModel(a.documents, v.application)
-			a.screen = screenApplicationDelete
+			return a, reloadApplicationForDelete(a.store, v.application)
 		case backToActiveApplicationsMsg:
 			a.screen = screenActiveApplications
 		case enterPostingDetailMsg:
@@ -1427,8 +1440,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
 			}
 		case enterApplicationStatusMsg:
-			a.enterFrom(screenApplicationStatusSelect)
-			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus, a.newScreenInstance())
+			return a, loadApplicationStatus(a.store, v.postingID, a.screen)
 		case enterApplicationNotesMsg:
 			a.screen = screenApplicationNotesEdit
 			a.applicationNotes = newApplicationNotesModel(a.store, v.postingID, v.currentNotes, a.width, a.screenRows(), a.newScreenInstance())

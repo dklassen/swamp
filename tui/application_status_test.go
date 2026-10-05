@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 	"testing"
 
@@ -134,5 +135,46 @@ func TestApplicationStatusModel_View_OffersWithdrawn(t *testing.T) {
 
 	if got := m.View(); !strings.Contains(got, "Withdrawn") {
 		t.Errorf("View() = %q, want Withdrawn offered -- it's the only way to close an application by hand without claiming a rejection that never happened", got)
+	}
+}
+
+// TestStatusForm_ShowsTheStatusAsItIsNow: another process (sync closing
+// the posting, an agent) can change the status after the home list
+// loaded. The form must start from the stored status, or saving it would
+// silently undo that change (RFC 0007, H5).
+func TestStatusForm_ShowsTheStatusAsItIsNow(t *testing.T) {
+	t.Parallel()
+
+	app, application := deleteTestApp(t)
+	if _, err := app.store.UpdateApplicationStatus(context.Background(), application.PostingID, store.ApplicationStatusInterviewing); err != nil {
+		t.Fatalf("UpdateApplicationStatus: %v", err)
+	}
+
+	app, cmd := sendKey(app, runeKey('s'))
+	app = applyCmd(t, app, cmd)
+
+	if app.screen != screenApplicationStatusSelect {
+		t.Fatalf("screen after s = %v, want the status form", app.screen)
+	}
+	if want := applicationStatusIndex(store.ApplicationStatusInterviewing); app.applicationStatus.cursor != want {
+		t.Errorf("cursor = %d (%s), want %d (%s, the stored status)", app.applicationStatus.cursor, applicationStatuses[app.applicationStatus.cursor], want, store.ApplicationStatusInterviewing)
+	}
+}
+
+func TestStatusForm_ApplicationDeletedMeanwhile_StaysAndSaysSo(t *testing.T) {
+	t.Parallel()
+
+	app, application := deleteTestApp(t)
+	if err := app.store.DeleteApplication(context.Background(), application.ID); err != nil {
+		t.Fatalf("DeleteApplication: %v", err)
+	}
+
+	app = sendKeyAndApply(t, app, runeKey('s'))
+
+	if app.screen != screenActiveApplications {
+		t.Errorf("screen = %v, want the home list (no status left to change)", app.screen)
+	}
+	if app.err == nil || !strings.Contains(app.err.Error(), "deleted in the meantime") {
+		t.Errorf("err = %v, want one saying it was deleted", app.err)
 	}
 }
