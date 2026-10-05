@@ -7509,16 +7509,27 @@ above the pre-migration maximum could still pick up a folder.
   form saves. Re-reading on entry leaves only the seconds the form is
   open.
 
-## 2026-10-05 -- #255: warn on a review of changed content (RFC 0007 step 5)
+## 2026-10-05 -- #255: a review of a changed document reloads with the diff (RFC 0007 step 5)
 
 - The review form records the content it opened with, on purpose (the
   review describes what you saw). If the file changed while the form was
-  open, documents.Current drops the review as stale, and nothing said
-  so: the review just didn't show.
-- After saving, the save command hashes the file (documents.SHA256,
-  #253) and compares it with what the form showed. A mismatch keeps the
-  review and shows a status-line warning. A failed check is reported as
-  a failed check, not as "changed" or "unchanged".
-- Checked after the save, not before: refusing or re-prompting would
-  lose the notes you typed, and a review of what you saw is still a
-  true record.
+  open, the saved review matched a version that no longer existed:
+  documents.Current dropped it, the TUI showed "not reviewed", and an
+  agent never saw its notes.
+- First built as a status-line warning after saving (RFC 0007 step 5 as
+  written). Tried by hand, it was a dead end: it says the review is lost
+  without helping you recover it. User decision: don't save.
+- Now saving reads the file first. If it changed, nothing is saved; the
+  form keeps the notes, switches to the current content, and shows an
+  orange notice and a unified diff from what you read to what's there,
+  capped at half the screen. The next save reviews the current version.
+  A document deleted meanwhile is an error, and nothing is saved.
+- The check and the save aren't atomic; a write between them still
+  records the version you were shown, the same window as before.
+- Diff: github.com/aymanbagabas/go-udiff (a port of Go's internal diff
+  package, already in the module graph via bubbles' tests), now a direct
+  dependency. Picked for its one-call Unified API and because it comes
+  from the same ecosystem as the TUI's other libraries; the other diff
+  packages in the graph (sergi/go-diff, go-difflib) weren't compared.
+- Who changed the document isn't known yet; #258 now records each
+  write's source, and the form should name it then.

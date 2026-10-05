@@ -2,8 +2,13 @@ package tui
 
 import (
 	"context"
+	"errors"
+	"fmt"
+	"io/fs"
+	"os"
 	"strings"
 
+	"github.com/aymanbagabas/go-udiff"
 	"github.com/charmbracelet/bubbles/textarea"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
@@ -28,6 +33,11 @@ type documentReviewFormModel struct {
 	content       string
 	textarea      textarea.Model
 	instance      screenInstance
+	// changes is set when a save found the document rewritten since the
+	// form read it: the diff from that version to content, which is now
+	// the current one.
+	changes string
+	height  int
 }
 
 // newDocumentReviewFormModel returns a review-form screen for
@@ -56,7 +66,32 @@ func newDocumentReviewFormModel(s *store.Store, docs *documents.Store, applicati
 // area whatever the title and help line, measured as rendered, leave
 // (issue #138).
 func (m *documentReviewFormModel) setHeight(height int) {
-	m.textarea.SetHeight(max(height-lipgloss.Height(m.title())-lipgloss.Height(documentReviewFormHelp()), 0))
+	m.height = height
+	used := lipgloss.Height(m.title()) + lipgloss.Height(documentReviewFormHelp())
+	if m.changes != "" {
+		used += lipgloss.Height(m.changesView())
+	}
+	m.textarea.SetHeight(max(height-used, 0))
+}
+
+// reload switches the form to current, the document as it is now, after a
+// save found it changed. The notes typed so far are kept, and the
+// changes are shown so you can check they still apply.
+func (m *documentReviewFormModel) reload(current string) {
+	m.changes = udiff.Unified("what you read", "on disk now", m.content, current)
+	m.content = current
+	m.setHeight(m.height)
+}
+
+// changesView is the notice and diff reload shows, cut to half the
+// screen so the notes stay usable.
+func (m *documentReviewFormModel) changesView() string {
+	lines := strings.Split(strings.TrimRight(m.changes, "\n"), "\n")
+	if limit := max(m.height/2, 3); len(lines) > limit {
+		lines = append(lines[:limit], fmt.Sprintf("... %d more lines", len(lines)-limit))
+	}
+	notice := "The document changed while you were reviewing, so nothing was saved. This is what changed; it's what you're reviewing now. Check your notes still apply, then save again."
+	return warnStyle.Render(notice) + "\n" + strings.Join(lines, "\n") + "\n"
 }
 
 func (m *documentReviewFormModel) title() string {
@@ -75,24 +110,38 @@ type documentReviewCreatedMsg struct {
 	review store.DocumentReview
 	from   screenInstance
 	err    error
-	// changed: the document on disk is no longer the version reviewed
-	// (or the check failed, in changedErr), so the review won't count
-	// as current.
-	changed    bool
-	changedErr error
 }
 
-// createDocumentReview saves a review of content, then checks the file
-// still holds it: an agent or $EDITOR may have changed it while the form
-// was open (RFC 0007, H7). The review records what you saw either way.
+// documentChangedDuringReviewMsg reports that the document on disk is no
+// longer what the form showed, so nothing was saved.
+type documentChangedDuringReviewMsg struct {
+	current string
+	from    screenInstance
+}
+
+// createDocumentReview saves a review of content, unless the file no
+// longer holds it: an agent or $EDITOR may have rewritten it while the
+// form was open (RFC 0007, H7). A review of a version that's gone would
+// never count as current, and an agent would never see its notes, so
+// instead it reports the current content for the form to show.
 func createDocumentReview(s *store.Store, docs *documents.Store, applicationID int64, documentType documents.Type, content string, outcome store.ReviewOutcome, notes string, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
-		review, err := s.CreateDocumentReview(context.Background(), applicationID, documentType, content, outcome, notes)
+		path, err := docs.Path(applicationID, documentType)
 		if err != nil {
 			return documentReviewCreatedMsg{from: from, err: err}
 		}
-		onDisk, err := docs.SHA256(applicationID, documentType)
-		return documentReviewCreatedMsg{review: review, from: from, changed: err != nil || onDisk != documents.ContentSHA256(content), changedErr: err}
+		current, err := os.ReadFile(path)
+		if errors.Is(err, fs.ErrNotExist) {
+			return documentReviewCreatedMsg{from: from, err: errors.New("the document was deleted while you were reviewing it, so the review wasn't saved")}
+		}
+		if err != nil {
+			return documentReviewCreatedMsg{from: from, err: fmt.Errorf("check the document before saving the review: %w", err)}
+		}
+		if string(current) != content {
+			return documentChangedDuringReviewMsg{current: string(current), from: from}
+		}
+		review, err := s.CreateDocumentReview(context.Background(), applicationID, documentType, content, outcome, notes)
+		return documentReviewCreatedMsg{review: review, from: from, err: err}
 	}
 }
 
@@ -118,6 +167,9 @@ func (m *documentReviewFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 func (m *documentReviewFormModel) View() string {
 	var b strings.Builder
 	b.WriteString(m.title() + "\n")
+	if m.changes != "" {
+		b.WriteString(m.changesView())
+	}
 	b.WriteString(m.textarea.View() + "\n")
 	b.WriteString(documentReviewFormHelp())
 	return b.String()
