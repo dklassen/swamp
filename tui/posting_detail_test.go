@@ -124,8 +124,8 @@ func TestPostingDetailModel_S_HasApplication_ReturnsEnterStatusMsg(t *testing.T)
 	if !ok {
 		t.Fatalf("intent = %T, want enterApplicationStatusMsg", intent)
 	}
-	if got.postingID != 5 || got.currentStatus != store.ApplicationStatusSubmitted {
-		t.Fatalf("enterApplicationStatusMsg = %+v, want postingID=5 currentStatus=%s", got, store.ApplicationStatusSubmitted)
+	if got.postingID != 5 {
+		t.Fatalf("enterApplicationStatusMsg = %+v, want postingID=5", got)
 	}
 }
 

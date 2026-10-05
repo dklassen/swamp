@@ -7487,3 +7487,24 @@ above the pre-migration maximum could still pick up a folder.
   that's a past snapshot's hash, not the file's.
 - The apply-to-posting skill always passes it, and on a refusal rereads
   and asks the user instead of retrying.
+
+## 2026-10-05 -- #254: re-read before destructive TUI actions (RFC 0007 step 4)
+
+- The status form seeded its cursor from the status the opening screen
+  had loaded, so saving it could silently reverse a change sync or an
+  agent made since (an automatic posting_closed). The delete
+  confirmation's status line was stale the same way.
+- Narrower than the RFC: since #247 the confirmation's list of drafts
+  is read from disk each time it renders, and delete is a soft delete.
+- Both now load the stored application when the key is pressed and
+  open once it arrives, only if the user is still on the screen that
+  asked (the guard loadApplicationForm already uses). The TUI never
+  reads the store inside Update; loads are tea.Cmds, so this follows
+  suit rather than a synchronous read.
+- A deleted application is reported ("deleted in the meantime" /
+  "already deleted") instead of opening a form for it.
+- enterApplicationStatusMsg dropped its currentStatus field: keeping
+  it would invite seeding from the stale value again.
+- Not done (RFC open question 5): an expected-status check when the
+  form saves. Re-reading on entry leaves only the seconds the form is
+  open.

@@ -119,8 +119,7 @@ type navigatePostingMsg struct {
 // application-status-select screen, seeded from this application's
 // current status.
 type enterApplicationStatusMsg struct {
-	postingID     int64
-	currentStatus store.ApplicationStatus
+	postingID int64
 }
 
 // enterApplicationNotesMsg signals that App should switch to the
@@ -162,7 +161,7 @@ func (m *postingDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		}
 	case msg.String() == "s":
 		if m.hasApplication {
-			return nil, enterApplicationStatusMsg{postingID: m.posting.ID, currentStatus: m.application.Status}
+			return nil, enterApplicationStatusMsg{postingID: m.posting.ID}
 		}
 	case msg.String() == "n":
 		if m.hasApplication {

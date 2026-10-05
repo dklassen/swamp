@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -100,5 +101,27 @@ func deleteApplication(s *store.Store, application store.ApplicationView) tea.Cm
 	return func() tea.Msg {
 		err := s.DeleteApplication(context.Background(), application.ID)
 		return applicationDeletedMsg{application: application, err: err}
+	}
+}
+
+// applicationReloadedForDeleteMsg carries the application the delete
+// confirmation describes, as stored when D was pressed.
+type applicationReloadedForDeleteMsg struct {
+	application store.ApplicationView
+	err         error
+}
+
+// reloadApplicationForDelete refreshes view's application row before the
+// confirmation shows it: sync or an agent may have changed its status, or
+// deleted it, since the list loaded (RFC 0007, H5). The posting and
+// company parts don't affect what's deleted, so they're kept as loaded.
+func reloadApplicationForDelete(s *store.Store, view store.ApplicationView) tea.Cmd {
+	return func() tea.Msg {
+		application, err := s.GetApplicationByID(context.Background(), view.ID)
+		if errors.Is(err, store.ErrNotFound) {
+			return applicationReloadedForDeleteMsg{err: errors.New("this application was already deleted")}
+		}
+		view.Application = application
+		return applicationReloadedForDeleteMsg{application: view, err: err}
 	}
 }

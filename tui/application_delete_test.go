@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -134,5 +135,44 @@ func TestDeleteFlow_FailureReturnsToDetailWithTheError(t *testing.T) {
 	}
 	if _, ok := app.applicationsByPosting[application.PostingID]; !ok {
 		t.Error("applicationsByPosting dropped an application that wasn't deleted")
+	}
+}
+
+// TestDeleteFlow_ConfirmationShowsTheStatusAsItIsNow: the confirmation
+// describes the application as stored, not as the list loaded it, so you
+// don't delete something whose state changed underneath you (RFC 0007,
+// H5).
+func TestDeleteFlow_ConfirmationShowsTheStatusAsItIsNow(t *testing.T) {
+	t.Parallel()
+
+	app, application := deleteTestApp(t)
+	if _, err := app.store.UpdateApplicationStatus(context.Background(), application.PostingID, store.ApplicationStatusInterviewing); err != nil {
+		t.Fatalf("UpdateApplicationStatus: %v", err)
+	}
+
+	app = startDelete(t, app)
+
+	view := app.applicationDelete.View()
+	if want := applicationStatusLabel(store.ApplicationStatusInterviewing); !strings.Contains(view, want) {
+		t.Errorf("confirmation doesn't show the stored status %q:\n%s", want, view)
+	}
+}
+
+func TestDeleteFlow_AlreadyDeletedElsewhere_StaysOnDetailAndSaysSo(t *testing.T) {
+	t.Parallel()
+
+	app, application := deleteTestApp(t)
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if err := app.store.DeleteApplication(context.Background(), application.ID); err != nil {
+		t.Fatalf("DeleteApplication: %v", err)
+	}
+
+	app = sendKeyAndApply(t, app, runeKey('D'))
+
+	if app.screen != screenApplicationDetail {
+		t.Errorf("screen = %v, want application detail (nothing left to confirm)", app.screen)
+	}
+	if app.err == nil || !strings.Contains(app.err.Error(), "already deleted") {
+		t.Errorf("err = %v, want one saying it was already deleted", app.err)
 	}
 }

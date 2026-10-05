@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"errors"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -117,5 +119,28 @@ func applicationStatusLabel(status store.ApplicationStatus) string {
 		return "Withdrawn"
 	default:
 		return status.String()
+	}
+}
+
+// applicationStatusLoadedMsg carries the stored status the status form
+// opens on, and the screen that asked for it.
+type applicationStatusLoadedMsg struct {
+	postingID int64
+	status    store.ApplicationStatus
+	from      screen
+	err       error
+}
+
+// loadApplicationStatus reads postingID's application status as it is
+// now, not as the screen that opens the form loaded it: sync or an agent
+// may have changed it since, and the form would undo that on save (RFC
+// 0007, H5).
+func loadApplicationStatus(s *store.Store, postingID int64, from screen) tea.Cmd {
+	return func() tea.Msg {
+		application, err := s.GetApplication(context.Background(), postingID)
+		if errors.Is(err, store.ErrNotFound) {
+			err = errors.New("this application was deleted in the meantime")
+		}
+		return applicationStatusLoadedMsg{postingID: postingID, status: application.Status, from: from, err: err}
 	}
 }

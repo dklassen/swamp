@@ -107,9 +107,6 @@ func TestActiveApplicationListModel_S_ReturnsEnterApplicationStatusMsg(t *testin
 	if got.postingID != 1 {
 		t.Fatalf("postingID = %d, want 1 (posting at cursor 0)", got.postingID)
 	}
-	if got.currentStatus != store.ApplicationStatusStarted {
-		t.Fatalf("currentStatus = %s, want %s", got.currentStatus, store.ApplicationStatusStarted)
-	}
 }
 
 func TestActiveApplicationListModel_Enter_ReturnsEnterApplicationDetailMsg(t *testing.T) {

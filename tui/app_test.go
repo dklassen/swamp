@@ -68,6 +68,14 @@ func sendKey(app *App, msg tea.Msg) (*App, tea.Cmd) {
 	return model.(*App), cmd
 }
 
+// sendKeyAndApply is sendKey followed by applyCmd, for a key whose screen
+// opens only once a load it starts has finished (the status form, #254).
+func sendKeyAndApply(t *testing.T, app *App, msg tea.Msg) *App {
+	t.Helper()
+	app, cmd := sendKey(app, msg)
+	return applyCmd(t, app, cmd)
+}
+
 func runeKey(r ...rune) tea.KeyMsg {
 	return tea.KeyMsg{Type: tea.KeyRunes, Runes: r}
 }
@@ -967,7 +975,7 @@ func TestApp_PressS_OnPostingDetail_WithApplication_OpensStatusSelect(t *testing
 	}
 	app = openPostingDetail(t, app)
 
-	app, _ = sendKey(app, runeKey('s'))
+	app = sendKeyAndApply(t, app, runeKey('s'))
 
 	if app.screen != screenApplicationStatusSelect {
 		t.Fatalf("screen after 's' = %v, want screenApplicationStatusSelect", app.screen)
@@ -985,7 +993,7 @@ func TestApp_PressS_OnPostingDetail_WithNoApplication_NoOp(t *testing.T) {
 	app = openPostingList(t, app)
 	app = openPostingDetail(t, app)
 
-	app, _ = sendKey(app, runeKey('s'))
+	app = sendKeyAndApply(t, app, runeKey('s'))
 
 	if app.screen != screenPostingDetail {
 		t.Fatalf("screen after 's' with no application = %v, want screenPostingDetail (no-op)", app.screen)
@@ -1006,7 +1014,7 @@ func TestApp_StatusSelect_Enter_UpdatesStatusAndReturnsToDetail(t *testing.T) {
 		t.Fatalf("CreateApplication: %v", err)
 	}
 	app = openPostingDetail(t, app)
-	app, _ = sendKey(app, runeKey('s'))
+	app = sendKeyAndApply(t, app, runeKey('s'))
 
 	// Cursor starts at 0 ("application_started"); move down once to land on
 	// "application_submitted" (the second entry in applicationStatuses).
@@ -1047,7 +1055,7 @@ func TestApp_StatusSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 		t.Fatalf("CreateApplication: %v", err)
 	}
 	app = openPostingDetail(t, app)
-	app, _ = sendKey(app, runeKey('s'))
+	app = sendKeyAndApply(t, app, runeKey('s'))
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
 
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
@@ -1110,7 +1118,7 @@ func TestApp_ActiveApplications_StatusChange_ReturnsToActiveApplications(t *test
 	mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	app, _ = sendKey(app, runeKey('s'))
+	app = sendKeyAndApply(t, app, runeKey('s'))
 	if app.screen != screenApplicationStatusSelect {
 		t.Fatalf("screen after 's' = %v, want screenApplicationStatusSelect", app.screen)
 	}
@@ -1140,7 +1148,7 @@ func TestApp_ActiveApplications_StatusChangeToRejected_RemovesFromList(t *testin
 	mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	app, _ = sendKey(app, runeKey('s'))
+	app = sendKeyAndApply(t, app, runeKey('s'))
 	// Move from "application_started" (index 0) to "rejected" (index 3 --
 	// started, submitted, interviewing, rejected).
 	for range 3 {
@@ -2076,7 +2084,7 @@ func TestApp_StatusChangeFromApplicationDetailFastPath_PreservesPostingFields(t 
 		t.Fatalf("postingDetail.posting.Title before status change = %q, want %q", app.postingDetail.posting.Title, "Engineer")
 	}
 
-	app, _ = sendKey(app, runeKey('s'))
+	app = sendKeyAndApply(t, app, runeKey('s'))
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
 	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
@@ -3275,7 +3283,7 @@ func TestApp_StatusSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // active-applications -> application detail
 	app, _ = sendKey(app, runeKey('p'))                   // application detail -> posting detail
-	app, _ = sendKey(app, runeKey('s'))                   // posting detail -> status select
+	app = sendKeyAndApply(t, app, runeKey('s'))           // posting detail -> status select
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
 	app, saveCmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 	if saveCmd == nil {
@@ -3305,14 +3313,14 @@ func TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.
 
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // active-applications -> application detail
 	app, _ = sendKey(app, runeKey('p'))                   // application detail -> posting detail
-	app, _ = sendKey(app, runeKey('s'))                   // posting detail -> status select
+	app = sendKeyAndApply(t, app, runeKey('s'))           // posting detail -> status select
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
 	app, saveCmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 	if saveCmd == nil {
 		t.Fatal("Update on enter (status select) returned nil Cmd, want a command that updates the status")
 	}
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc}) // status select -> posting detail, save still in flight
-	app, _ = sendKey(app, runeKey('s'))                 // posting detail -> status select again
+	app = sendKeyAndApply(t, app, runeKey('s'))         // posting detail -> status select again
 	if app.screen != screenApplicationStatusSelect {
 		t.Fatalf("screen after re-entering = %v, want screenApplicationStatusSelect", app.screen)
 	}
@@ -3436,7 +3444,7 @@ func TestApp_NestedBackOut_RetracesPath(t *testing.T) {
 
 			app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // active-applications -> application detail
 			app, _ = sendKey(app, runeKey('p'))                   // application detail -> posting detail
-			app, _ = sendKey(app, runeKey(tt.key))
+			app = sendKeyAndApply(t, app, runeKey(tt.key))
 			if app.screen != tt.transient {
 				t.Fatalf("screen after %q = %v, want %v", tt.key, app.screen, tt.transient)
 			}
