@@ -14,7 +14,3 @@ WHERE application_id = ? AND document_type = ?;
 SELECT * FROM document_reviews
 WHERE application_id = ? AND document_type = ?
 ORDER BY cycle DESC;
-
--- name: DeleteDocumentReviewsForApplication :exec
-DELETE FROM document_reviews
-WHERE application_id = ?;

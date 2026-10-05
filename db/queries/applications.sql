@@ -12,24 +12,24 @@ RETURNING *;
 
 -- name: GetApplication :one
 SELECT * FROM applications
-WHERE posting_id = ?;
+WHERE posting_id = ? AND deleted_at IS NULL;
 
 -- name: GetApplicationByID :one
 -- Keyed by the application's own primary key, unlike every other query
 -- here (see store.GetApplicationByID).
 SELECT * FROM applications
-WHERE id = ?;
+WHERE id = ? AND deleted_at IS NULL;
 
 -- name: UpdateApplicationStatus :one
 UPDATE applications
 SET status = ?, updated_at = CURRENT_TIMESTAMP
-WHERE posting_id = ?
+WHERE posting_id = ? AND deleted_at IS NULL
 RETURNING *;
 
 -- name: UpdateApplicationNotes :one
 UPDATE applications
 SET notes = ?, updated_at = CURRENT_TIMESTAMP
-WHERE posting_id = ?
+WHERE posting_id = ? AND deleted_at IS NULL
 RETURNING *;
 
 -- name: ListActiveApplications :many
@@ -59,11 +59,11 @@ SELECT sqlc.embed(applications), sqlc.embed(postings), companies.name AS company
 FROM applications
 JOIN postings ON postings.id = applications.posting_id
 JOIN companies ON companies.id = postings.company_id
-WHERE applications.status NOT IN (sqlc.slice('terminal_statuses'))
+WHERE applications.deleted_at IS NULL
+  AND applications.status NOT IN (sqlc.slice('terminal_statuses'))
 ORDER BY applications.updated_at DESC;
 
--- name: DeleteApplication :execrows
--- A hard delete (#232): store.DeleteApplication removes the rows that
--- belong to the application first, in the same transaction.
-DELETE FROM applications
-WHERE id = ?;
+-- name: SoftDeleteApplication :execrows
+UPDATE applications
+SET deleted_at = CURRENT_TIMESTAMP
+WHERE id = ? AND deleted_at IS NULL;

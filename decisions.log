@@ -7345,7 +7345,42 @@ on its TickMsg.
   separate PR) covers that for documents.
 - Down rebuilds without AUTOINCREMENT. Dropping the table already
   removes its sqlite_sequence row, so Down doesn't touch it.
-- This undercuts one of #232's reasons for hard delete (a soft-deleted
-  row's leftovers would attach to a reused id). Whether to soft-delete
-  applications instead is open in #244 part 4. A partial unique index
-  on posting_id for that would mean rebuilding the table again.
+
+## 2026-10-05 -- #244 (part 4): applications are soft-deleted
+
+Reverses #232's hard delete. #232 gave two reasons for hard delete:
+every application query would need a deleted_at filter, and SQLite
+reused the highest id, so a soft-deleted row's leftovers would attach
+to the next application. AUTOINCREMENT (part 1, same migration) removes
+the second. The filter cost is accepted for what soft delete gives: an
+accidental delete loses nothing, and a stale id held by an agent no
+longer lands on another application.
+
+User decisions:
+- Starting again on a deleted application's posting creates a fresh
+  application with a new id, rather than restoring the old one.
+  posting_id's column UNIQUE becomes a partial unique index (WHERE
+  deleted_at IS NULL): one live application per posting.
+- The drafts folder is kept. With ids never reused, nothing can inherit
+  it, and a future restore gets the drafts back. documents.Store.RemoveDir
+  had no other caller and is removed.
+- No restore action yet. Data is kept, so adding one later loses nothing.
+- Folded into the AUTOINCREMENT branch, editing the unshipped 00019, so
+  applications is rebuilt once.
+
+Details:
+- Every query reading applications filters deleted_at IS NULL:
+  GetApplication, GetApplicationByID, ListActiveApplications, the status
+  and notes updates (keyed by posting_id, so without the filter they
+  would also update the deleted row), and the four LEFT JOINs in
+  postings.sql (the condition goes in ON, not WHERE, so a posting
+  whose only application was deleted still lists with no application).
+- Owned rows (status history, reviews, exports, interview stages) stay.
+  The four delete-for-application queries had no other caller and are
+  removed.
+- Down drops soft-deleted applications and their owned rows. The old
+  schema allows only one application per posting.
+- Verified on a copy of the real database: the migration kept all 37
+  applications and their ids, with sqlite_sequence at 37. Deleting one
+  through the TUI hid it, kept its status history and documents folder,
+  and left 36 live.

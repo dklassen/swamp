@@ -1181,12 +1181,16 @@ func TestApplicationsAutoincrement_KeepsRowsAndContinuesFromMaxID(t *testing.T) 
 	}
 }
 
-func TestApplicationsAutoincrement_DownKeepsRows(t *testing.T) {
+// The pre-00019 schema allows one application per posting, so rolling
+// back keeps the live ones and drops the soft-deleted ones with their rows.
+func TestApplicationsAutoincrement_DownKeepsLiveRowsAndDropsDeleted(t *testing.T) {
 	sqlDB := migrateTo(t, 19)
 
 	for _, stmt := range []string{
 		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
 		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload) VALUES (1, 1, 'ashby', 'job-1', 'Engineer', '{}')`,
+		`INSERT INTO applications (id, posting_id, status, notes, deleted_at) VALUES (6, 1, 'application_started', '', CURRENT_TIMESTAMP)`,
+		`INSERT INTO application_status_history (application_id, status) VALUES (6, 'application_started')`,
 		`INSERT INTO applications (id, posting_id, status, notes) VALUES (7, 1, 'interviewing', 'kept')`,
 	} {
 		if _, err := sqlDB.Exec(stmt); err != nil {
@@ -1206,5 +1210,33 @@ func TestApplicationsAutoincrement_DownKeepsRows(t *testing.T) {
 	got := fmt.Sprintf("%d %d %s %s", id, postingID, status, notes)
 	if want := "7 1 interviewing kept"; got != want {
 		t.Errorf("application after down = %q, want %q", got, want)
+	}
+
+	var orphaned int
+	if err := sqlDB.QueryRow(`SELECT COUNT(*) FROM application_status_history WHERE application_id = 6`).Scan(&orphaned); err != nil {
+		t.Fatalf("count history: %v", err)
+	}
+	if orphaned != 0 {
+		t.Errorf("%d status history rows left for the dropped application, want 0", orphaned)
+	}
+}
+
+func TestApplicationsSoftDelete_OneLiveApplicationPerPosting(t *testing.T) {
+	sqlDB := migrateTo(t, 19)
+
+	for _, stmt := range []string{
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload) VALUES (1, 1, 'ashby', 'job-1', 'Engineer', '{}')`,
+		`INSERT INTO applications (posting_id, status, deleted_at) VALUES (1, 'application_started', CURRENT_TIMESTAMP)`,
+		`INSERT INTO applications (posting_id, status) VALUES (1, 'application_started')`,
+	} {
+		if _, err := sqlDB.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+
+	_, err := sqlDB.Exec(`INSERT INTO applications (posting_id, status) VALUES (1, 'application_started')`)
+	if err == nil || !strings.Contains(err.Error(), "UNIQUE") {
+		t.Errorf("second live application for one posting: err = %v, want a UNIQUE violation", err)
 	}
 }

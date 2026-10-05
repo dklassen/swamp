@@ -50,17 +50,8 @@ type Querier interface {
 	// (interested_at=NULL, archived_at=NULL, notes='').
 	CreatePostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
 	CreateTag(ctx context.Context, name string) (Tag, error)
-	// A hard delete (#232): store.DeleteApplication removes the rows that
-	// belong to the application first, in the same transaction.
-	DeleteApplication(ctx context.Context, id int64) (int64, error)
-	// Only for store.DeleteApplication (#232): the history is append-only
-	// otherwise.
-	DeleteApplicationStatusHistory(ctx context.Context, applicationID int64) error
 	DeleteCompanyFilters(ctx context.Context, companyID int64) error
-	DeleteDocumentExportsForApplication(ctx context.Context, applicationID int64) error
-	DeleteDocumentReviewsForApplication(ctx context.Context, applicationID int64) error
 	DeleteInterviewStage(ctx context.Context, id int64) error
-	DeleteInterviewStagesForApplication(ctx context.Context, applicationID int64) error
 	GetApplication(ctx context.Context, postingID int64) (Application, error)
 	// Keyed by the application's own primary key, unlike every other query
 	// here (see store.GetApplicationByID).
@@ -247,6 +238,7 @@ type Querier interface {
 	// (pressing "interested" while archived switches state rather than
 	// stacking), even though the schema itself allows both to be set.
 	SetPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error)
+	SoftDeleteApplication(ctx context.Context, id int64) (int64, error)
 	SoftDeleteCompany(ctx context.Context, id int64) error
 	SoftDeleteTag(ctx context.Context, id int64) error
 	UnarchivePosting(ctx context.Context, postingID int64) (PostingMarkup, error)

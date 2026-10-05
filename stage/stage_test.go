@@ -699,6 +699,43 @@ func TestPrepare_IsIdempotentForExistingApplication(t *testing.T) {
 	}
 }
 
+// After a delete, preparing the posting again starts a fresh application
+// with none of the deleted one's drafts (#244).
+func TestPrepare_AfterDelete_StartsFreshApplicationWithoutOldDrafts(t *testing.T) {
+	t.Parallel()
+
+	st, s, docs := newTestStage(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	mustMarkInterested(t, s, posting.ID)
+
+	first, err := st.Prepare(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("first Prepare: %v", err)
+	}
+	draft := mustDoc(t, docs.Status(first.ApplicationID), documents.CoverLetter)
+	if err := os.WriteFile(draft.Path, []byte("Dear Acme,\n"), 0o644); err != nil {
+		t.Fatalf("write draft: %v", err)
+	}
+	if err := s.DeleteApplication(context.Background(), first.ApplicationID); err != nil {
+		t.Fatalf("DeleteApplication: %v", err)
+	}
+
+	second, err := st.Prepare(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("second Prepare: %v", err)
+	}
+
+	if second.ApplicationID == first.ApplicationID {
+		t.Errorf("second.ApplicationID = %d, want a fresh application", second.ApplicationID)
+	}
+	for documentType, doc := range second.Documents {
+		if doc.Exists {
+			t.Errorf("%s exists on the fresh application, want no drafts", documentType)
+		}
+	}
+}
+
 func TestPrepare_CreatesDocumentDirectory(t *testing.T) {
 	t.Parallel()
 

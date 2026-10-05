@@ -179,42 +179,18 @@ func (s *Store) UpdateApplicationNotes(ctx context.Context, postingID int64, not
 	return applicationFromRow(row)
 }
 
-// DeleteApplication removes an application outright (#232), for one
-// started by accident, along with every row it owns, in one transaction.
-// The posting and its markup are untouched. It's a hard delete, not a
-// soft one like companies and tags: nothing else refers to an
-// application, and SQLite reuses the highest rowid, so a leftover row
-// would attach itself to the next application created. It returns
-// ErrNotFound for an ID with no row. The application's documents on
-// disk are the caller's to remove (see documents.Store.RemoveDir).
+// DeleteApplication soft-deletes an application (#244): it disappears
+// from every lookup and list, and the posting can start a fresh one, but
+// its status history, reviews, exports and interview stages stay, as do
+// its documents on disk. It returns ErrNotFound for an ID with no live
+// application.
 func (s *Store) DeleteApplication(ctx context.Context, id int64) error {
-	tx, err := s.sqlDB.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("store: begin delete application tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	qtx := s.queries.WithTx(tx)
-	for name, deleteOwned := range map[string]func(context.Context, int64) error{
-		"status history":   qtx.DeleteApplicationStatusHistory,
-		"document reviews": qtx.DeleteDocumentReviewsForApplication,
-		"document exports": qtx.DeleteDocumentExportsForApplication,
-		"interview stages": qtx.DeleteInterviewStagesForApplication,
-	} {
-		if err := deleteOwned(ctx, id); err != nil {
-			return fmt.Errorf("store: delete application %s: %w", name, err)
-		}
-	}
-	n, err := qtx.DeleteApplication(ctx, id)
+	n, err := s.queries.SoftDeleteApplication(ctx, id)
 	if err != nil {
 		return fmt.Errorf("store: delete application: %w", err)
 	}
 	if n == 0 {
 		return ErrNotFound
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("store: commit delete application tx: %w", err)
 	}
 	return nil
 }

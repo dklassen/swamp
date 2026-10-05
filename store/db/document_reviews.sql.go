@@ -68,16 +68,6 @@ func (q *Queries) CreateDocumentReview(ctx context.Context, arg CreateDocumentRe
 	return i, err
 }
 
-const deleteDocumentReviewsForApplication = `-- name: DeleteDocumentReviewsForApplication :exec
-DELETE FROM document_reviews
-WHERE application_id = ?
-`
-
-func (q *Queries) DeleteDocumentReviewsForApplication(ctx context.Context, applicationID int64) error {
-	_, err := q.db.ExecContext(ctx, deleteDocumentReviewsForApplication, applicationID)
-	return err
-}
-
 const listDocumentReviews = `-- name: ListDocumentReviews :many
 SELECT id, application_id, document_type, cycle, content_snapshot, content_sha256, outcome, notes, created_at FROM document_reviews
 WHERE application_id = ? AND document_type = ?

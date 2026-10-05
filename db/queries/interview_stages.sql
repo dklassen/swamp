@@ -28,7 +28,3 @@ RETURNING *;
 -- name: DeleteInterviewStage :exec
 DELETE FROM interview_stages
 WHERE id = ?;
-
--- name: DeleteInterviewStagesForApplication :exec
-DELETE FROM interview_stages
-WHERE application_id = ?;

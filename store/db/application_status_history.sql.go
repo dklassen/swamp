@@ -27,18 +27,6 @@ func (q *Queries) CreateApplicationStatusHistory(ctx context.Context, arg Create
 	return err
 }
 
-const deleteApplicationStatusHistory = `-- name: DeleteApplicationStatusHistory :exec
-DELETE FROM application_status_history
-WHERE application_id = ?
-`
-
-// Only for store.DeleteApplication (#232): the history is append-only
-// otherwise.
-func (q *Queries) DeleteApplicationStatusHistory(ctx context.Context, applicationID int64) error {
-	_, err := q.db.ExecContext(ctx, deleteApplicationStatusHistory, applicationID)
-	return err
-}
-
 const latestApplicationStatusChange = `-- name: LatestApplicationStatusChange :one
 SELECT id, application_id, status, changed_at, changed_by FROM application_status_history
 WHERE application_id = ?

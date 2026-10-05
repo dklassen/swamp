@@ -31,16 +31,6 @@ func (q *Queries) CreateDocumentExport(ctx context.Context, arg CreateDocumentEx
 	return err
 }
 
-const deleteDocumentExportsForApplication = `-- name: DeleteDocumentExportsForApplication :exec
-DELETE FROM document_exports
-WHERE application_id = ?
-`
-
-func (q *Queries) DeleteDocumentExportsForApplication(ctx context.Context, applicationID int64) error {
-	_, err := q.db.ExecContext(ctx, deleteDocumentExportsForApplication, applicationID)
-	return err
-}
-
 const latestDocumentExport = `-- name: LatestDocumentExport :one
 SELECT id, application_id, document_type, content_sha256, path, exported_at FROM document_exports
 WHERE application_id = ? AND document_type = ?
