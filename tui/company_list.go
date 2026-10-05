@@ -22,6 +22,10 @@ type companyListModel struct {
 	// showInfo is whether the info box (i) is open. Ephemeral, like cursor:
 	// closed each time the app starts.
 	showInfo bool
+	// searching is whether the '/' prompt is open and taking keys; query
+	// is what's been typed into it. Ephemeral, like cursor.
+	searching bool
+	query     string
 }
 
 func newCompanyListModel(s *store.Store) companyListModel {
@@ -62,6 +66,9 @@ type backToActiveApplicationsMsg struct{}
 // bubbletea's async loop -- so screen transitions happen with the same
 // timing as before this type existed.
 func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (tea.Cmd, tea.Msg) {
+	if m.searching {
+		return m.updateSearch(msg, companies)
+	}
 	switch {
 	case msg.Type == tea.KeyDown, msg.String() == "j":
 		if m.cursor < len(companies)-1 {
@@ -89,6 +96,8 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 		m.showInfo = !m.showInfo
 	case msg.String() == "a":
 		return nil, enterCompanyFormMsg{}
+	case msg.String() == "/":
+		m.searching = true
 	case msg.String() == "e":
 		if m.cursor < len(companies) {
 			return nil, enterCompanyEditMsg{company: companies[m.cursor]}
@@ -99,6 +108,61 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 		}
 	}
 	return nil, nil
+}
+
+// updateSearch handles a key while the '/' prompt is open. Every edit
+// to the query re-filters straight away and puts the cursor back on the
+// first match.
+func (m *companyListModel) updateSearch(msg tea.KeyMsg, companies []store.Company) (tea.Cmd, tea.Msg) {
+	switch msg.Type {
+	case tea.KeyRunes, tea.KeySpace:
+		m.query += string(msg.Runes)
+		m.cursor = 0
+	case tea.KeyBackspace:
+		if r := []rune(m.query); len(r) > 0 {
+			m.query = string(r[:len(r)-1])
+			m.cursor = 0
+		}
+	case tea.KeyEsc:
+		cursor := 0
+		if visible := m.visible(companies); m.cursor < len(visible) {
+			cursor = max(indexOfCompany(companies, visible[m.cursor].ID), 0)
+		}
+		m.searching = false
+		m.query = ""
+		m.cursor = cursor
+	case tea.KeyDown:
+		if m.cursor < len(m.visible(companies))-1 {
+			m.cursor++
+		}
+	case tea.KeyUp:
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case tea.KeyEnter:
+		visible := m.visible(companies)
+		if m.cursor < len(visible) {
+			return nil, selectCompanyMsg{company: visible[m.cursor]}
+		}
+	}
+	return nil, nil
+}
+
+// visible is the part of companies the query matches: a case-insensitive
+// substring of the name, in the order given. With no query, it's all of
+// them.
+func (m *companyListModel) visible(companies []store.Company) []store.Company {
+	if m.query == "" {
+		return companies
+	}
+	q := strings.ToLower(m.query)
+	var matches []store.Company
+	for _, c := range companies {
+		if strings.Contains(strings.ToLower(c.Name), q) {
+			matches = append(matches, c)
+		}
+	}
+	return matches
 }
 
 // View renders the list in height terminal rows (App.screenRows).

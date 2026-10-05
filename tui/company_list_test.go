@@ -326,3 +326,122 @@ func TestCompanyListModel_View_InfoBoxTakesItsSpaceFromTheTable(t *testing.T) {
 		t.Errorf("View with info box open = %d lines, want %d (same as closed)", open, closed)
 	}
 }
+
+// typeKeys sends each rune of s to m as a key press.
+func typeKeys(t *testing.T, m *companyListModel, companies []store.Company, s string) {
+	t.Helper()
+	for _, r := range s {
+		m.Update(runeKey(r), companies)
+	}
+}
+
+func TestCompanyListModel_Search_EnterOpensHighlightedMatch(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
+	m := &companyListModel{}
+
+	typeKeys(t, m, companies, "/glo")
+	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	sel, ok := intent.(selectCompanyMsg)
+	if !ok {
+		t.Fatalf("intent = %T, want selectCompanyMsg", intent)
+	}
+	if sel.company.ID != 2 {
+		t.Fatalf("selectCompanyMsg.company.ID = %d, want 2 (Globex)", sel.company.ID)
+	}
+}
+
+func TestCompanyListModel_Search_ArrowsMoveThroughMatches(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}, {ID: 3, Name: "Globex"}}
+	m := &companyListModel{}
+
+	typeKeys(t, m, companies, "/acme")
+	m.Update(tea.KeyMsg{Type: tea.KeyDown}, companies)
+	m.Update(tea.KeyMsg{Type: tea.KeyDown}, companies) // past the last match: stays on it
+	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
+		t.Fatalf("intent after down, down, enter = %#v, want selectCompanyMsg for Acme Robotics (ID 2)", intent)
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyUp}, companies)
+	_, intent = m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 1 {
+		t.Fatalf("intent after up, enter = %#v, want selectCompanyMsg for Acme (ID 1)", intent)
+	}
+}
+
+func TestCompanyListModel_Search_BackspaceWidensMatches(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
+	m := &companyListModel{}
+
+	typeKeys(t, m, companies, "/gx") // matches nothing
+	m.Update(tea.KeyMsg{Type: tea.KeyBackspace}, companies)
+	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
+		t.Fatalf("intent after backspace, enter = %#v, want selectCompanyMsg for Globex (ID 2)", intent)
+	}
+}
+
+func TestCompanyListModel_Search_SpaceIsPartOfTheQuery(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}}
+	m := &companyListModel{}
+
+	typeKeys(t, m, companies, "/acme")
+	m.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}, companies)
+	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
+		t.Fatalf("intent after \"acme \", enter = %#v, want selectCompanyMsg for Acme Robotics (ID 2)", intent)
+	}
+}
+
+// Esc keeps the highlighted company selected in the full list, so '/'
+// also serves to jump to a company and then refresh, edit or delete it.
+func TestCompanyListModel_Search_EscClearsAndKeepsHighlight(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
+	m := &companyListModel{}
+
+	typeKeys(t, m, companies, "/glo")
+	if _, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc}, companies); intent != nil {
+		t.Fatalf("intent on esc in the prompt = %#v, want nil (esc closes the prompt, it doesn't leave the screen)", intent)
+	}
+	_, intent := m.Update(runeKey('e'), companies)
+	if edit, ok := intent.(enterCompanyEditMsg); !ok || edit.company.ID != 2 {
+		t.Fatalf("intent on 'e' after esc = %#v, want enterCompanyEditMsg for Globex (ID 2)", intent)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyDown}, companies)
+	_, intent = m.Update(runeKey('e'), companies)
+	if edit, ok := intent.(enterCompanyEditMsg); !ok || edit.company.ID != 3 {
+		t.Fatalf("intent on down, 'e' after esc = %#v, want enterCompanyEditMsg for Initech (ID 3): the full list is back", intent)
+	}
+}
+
+// While the prompt is open, the screen's command letters are just text.
+func TestCompanyListModel_Search_CommandLettersAreTyped(t *testing.T) {
+	t.Parallel()
+
+	for _, r := range "qdreaiRbjk/" {
+		t.Run(string(r), func(t *testing.T) {
+			t.Parallel()
+			companies := []store.Company{{ID: 1, Name: "Zzz"}, {ID: 2, Name: "x" + string(r) + "y"}}
+			m := &companyListModel{}
+
+			typeKeys(t, m, companies, "/")
+			if cmd, intent := m.Update(runeKey(r), companies); cmd != nil || intent != nil {
+				t.Fatalf("cmd, intent on %q in the prompt = %v, %#v, want nil, nil", r, cmd, intent)
+			}
+			_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+			if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
+				t.Fatalf("intent on enter after typing %q = %#v, want selectCompanyMsg for ID 2", r, intent)
+			}
+		})
+	}
+}
