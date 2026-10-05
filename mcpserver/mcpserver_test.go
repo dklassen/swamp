@@ -594,6 +594,27 @@ func TestReadDocument_DeletedApplication_SaysSo(t *testing.T) {
 	}
 }
 
+func TestReadDocument_NotWrittenYet_SaysSo(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	cs := connectClient(t, srv)
+	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+
+	got := callToolError(t, cs, "read_document", map[string]any{
+		"ApplicationID": prepared.ApplicationID,
+		"DocumentType":  "cover_letter",
+	})
+
+	want := fmt.Sprintf("read_document: application %d has no cover_letter yet; draft one and save it with write_document", prepared.ApplicationID)
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("tool error mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestDocumentTools_AdvertiseDocumentTypeAsStringEnum(t *testing.T) {
 	t.Parallel()
 

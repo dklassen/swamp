@@ -59,7 +59,7 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "write_document",
-		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have.",
+		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have. Refuses, writing nothing, an application that doesn't exist or that the user deleted; the error says what to do instead.",
 		InputSchema: documentInputSchema[writeDocumentInput](),
 	}, writeDocumentHandler(st))
 
@@ -236,23 +236,25 @@ func writeDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[writeDocumentInput
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in writeDocumentInput) (*mcp.CallToolResult, writeDocumentOutput, error) {
 		path, err := st.WriteDocument(ctx, in.ApplicationID, in.DocumentType, in.Content)
 		if err != nil {
-			return nil, writeDocumentOutput{}, documentToolError("write_document", in.ApplicationID, ", so nothing was written", err)
+			return nil, writeDocumentOutput{}, documentToolError("write_document", in.ApplicationID, in.DocumentType, ", so nothing was written", err)
 		}
 		return nil, writeDocumentOutput{Path: path, BytesWritten: int64(len(in.Content))}, nil
 	}
 }
 
-// documentToolError rewords stage's errors for an application ID the
-// agent can't use into what to do next; consequence says what the call
-// didn't do, if anything. An agent may hold an ID from long ago, so
-// "deleted" and "never existed" get different advice (#244).
-func documentToolError(tool string, applicationID int64, consequence string, err error) error {
+// documentToolError rewords stage's errors for a document the agent can't
+// use into what to do next; consequence says what the call didn't do, if
+// anything. An agent may hold an ID from long ago, so "deleted" and
+// "never existed" get different advice (#244).
+func documentToolError(tool string, applicationID int64, documentType documents.Type, consequence string, err error) error {
 	var deleted *stage.ApplicationDeletedError
 	switch {
 	case errors.As(err, &deleted):
 		return fmt.Errorf("%s: application %d was deleted by the user%s; ask the user whether to start again before calling stage_prepare with PostingID %d, which starts a fresh application", tool, applicationID, consequence, deleted.PostingID)
 	case errors.Is(err, stage.ErrApplicationNotFound):
 		return fmt.Errorf("%s: there is no application %d%s; get the ApplicationID from stage_prepare for the posting you are drafting", tool, applicationID, consequence)
+	case errors.Is(err, stage.ErrDocumentNotWritten):
+		return fmt.Errorf("%s: application %d has no %s yet; draft one and save it with write_document", tool, applicationID, documentType)
 	default:
 		return fmt.Errorf("%s: %w", tool, err)
 	}
@@ -272,7 +274,7 @@ func readDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[readDocumentInput, 
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in readDocumentInput) (*mcp.CallToolResult, readDocumentOutput, error) {
 		path, content, err := st.ReadDocument(ctx, in.ApplicationID, in.DocumentType)
 		if err != nil {
-			return nil, readDocumentOutput{}, documentToolError("read_document", in.ApplicationID, "", err)
+			return nil, readDocumentOutput{}, documentToolError("read_document", in.ApplicationID, in.DocumentType, "", err)
 		}
 		return nil, readDocumentOutput{Path: path, Content: content}, nil
 	}

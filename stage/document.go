@@ -4,19 +4,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
 
-// ErrApplicationNotFound is WriteDocument's error for an application ID
-// that was never handed out.
+// ErrApplicationNotFound is WriteDocument and ReadDocument's error for an
+// application ID that was never handed out.
 var ErrApplicationNotFound = errors.New("stage: application not found")
 
-// ApplicationDeletedError is WriteDocument's error for an application the
-// user deleted. PostingID is the posting it was for, which stage_prepare
-// would start a fresh application on.
+// ErrDocumentNotWritten is ReadDocument's error for a live application
+// whose document hasn't been written yet.
+var ErrDocumentNotWritten = errors.New("stage: document not written yet")
+
+// ApplicationDeletedError is WriteDocument and ReadDocument's error for an
+// application the user deleted. PostingID is the posting it was for,
+// which stage_prepare would start a fresh application on.
 type ApplicationDeletedError struct {
 	ApplicationID int64
 	PostingID     int64
@@ -76,6 +81,9 @@ func (st *Stage) ReadDocument(ctx context.Context, applicationID int64, document
 		return "", "", fmt.Errorf("stage: %w", err)
 	}
 	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", "", fmt.Errorf("%w: application %d %s", ErrDocumentNotWritten, applicationID, documentType)
+	}
 	if err != nil {
 		return "", "", fmt.Errorf("stage: read %s: %w", path, err)
 	}
