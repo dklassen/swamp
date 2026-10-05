@@ -107,12 +107,15 @@ type App struct {
 	// a terminal dead-end status, across every company (see
 	// store.ListActiveApplications, decisions.log #43).
 	activeApplications []store.ApplicationView
-	// activeApplicationNextSteps is each started application's next step
-	// (see nextStep), by application ID, loaded with activeApplications.
-	activeApplicationNextSteps map[int64]string
-	activeApplicationList      activeApplicationListModel
-	applicationDetail          applicationDetailModel
-	applicationExport          applicationExportModel
+	// activeApplicationProgress is each active application's document
+	// progress, by application ID, loaded with activeApplications. The
+	// home screen derives each row's next step from it and the row's
+	// LatestReviews when it renders, so patching one row's reviews (#91)
+	// moves its next step on too.
+	activeApplicationProgress map[int64]map[documents.Type]documentProgress
+	activeApplicationList     activeApplicationListModel
+	applicationDetail         applicationDetailModel
+	applicationExport         applicationExportModel
 	// exportDir is the destination the export screen prefills: the last
 	// directory successfully exported to this session, falling back to
 	// defaultExportDir. Ephemeral and in-memory only, like hideArchived
@@ -405,6 +408,16 @@ func indexOfPosting(postings []store.Posting, id int64) int {
 	return -1
 }
 
+// indexOfApplication returns id's index in apps, or -1 if not present.
+func indexOfApplication(apps []store.ApplicationView, id int64) int {
+	for i, app := range apps {
+		if app.ID == id {
+			return i
+		}
+	}
+	return -1
+}
+
 // indexOfCompany returns id's index in companies, or -1 if not present.
 func indexOfCompany(companies []store.Company, id int64) int {
 	for i, c := range companies {
@@ -452,7 +465,7 @@ func (a *App) Init() tea.Cmd {
 
 type activeApplicationsLoadedMsg struct {
 	applications []store.ApplicationView
-	nextSteps    map[int64]string
+	progress     map[int64]map[documents.Type]documentProgress
 	err          error
 }
 
@@ -471,23 +484,20 @@ func loadActiveApplications(s *store.Store, docs *documents.Store) tea.Cmd {
 		if err != nil {
 			return activeApplicationsLoadedMsg{err: err}
 		}
-		nextSteps := make(map[int64]string)
+		progress := make(map[int64]map[documents.Type]documentProgress, len(apps))
 		for i, app := range apps {
 			reviews, err := documents.Current(docs.Status(app.ID), app.LatestReviews, store.DocumentReview.IsCurrent)
 			if err != nil {
 				return activeApplicationsLoadedMsg{err: err}
 			}
 			apps[i].LatestReviews = reviews
-			progress, err := documentProgressOf(s, docs, app.ID)
+			progress[app.ID], err = documentProgressOf(s, docs, app.ID)
 			if err != nil {
 				return activeApplicationsLoadedMsg{err: err}
 			}
-			if step := nextStep(apps[i], progress); step != "" {
-				nextSteps[app.ID] = step
-			}
 		}
 		orderForHome(apps)
-		return activeApplicationsLoadedMsg{applications: apps, nextSteps: nextSteps}
+		return activeApplicationsLoadedMsg{applications: apps, progress: progress}
 	}
 }
 
@@ -933,7 +943,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case activeApplicationsLoadedMsg:
 		a.err = msg.err
 		a.activeApplications = msg.applications
-		a.activeApplicationNextSteps = msg.nextSteps
+		a.activeApplicationProgress = msg.progress
 		a.activeApplicationList.resetCursorIfOutOfBounds(len(a.activeApplications))
 	case companyCreatedMsg:
 		a.err = msg.err
@@ -1168,10 +1178,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// reload depends on which screen the user is now on.
 			switch a.screen {
 			case screenApplicationDetail:
-				// Also refreshes the active-applications list in the
-				// background, so its review-glyph column isn't stale by
-				// the time the user backs out of application detail.
-				return a, tea.Batch(loadDocumentReviews(a.store, a.documents, a.applicationDetail.application.ID), loadActiveApplications(a.store, a.documents))
+				// documentReviewsLoadedMsg also patches this application's
+				// home-screen row, so its glyph and next step aren't stale
+				// once the user backs out -- no full reload needed (#91).
+				return a, loadDocumentReviews(a.store, a.documents, a.applicationDetail.application.ID)
 			case screenPostingDetail:
 				return a, a.rebuildPostingDetailApplication()
 			}
@@ -1186,6 +1196,13 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err == nil && a.screen == screenApplicationDetail && a.applicationDetail.application.ID == msg.applicationID {
 			a.applicationDetail.application.LatestReviews = msg.reviews
+		}
+		// The reviews are fresh whichever screen asked for them, so the
+		// application's home-screen row takes them too (#91).
+		if msg.err == nil {
+			if i := indexOfApplication(a.activeApplications, msg.applicationID); i != -1 {
+				a.activeApplications[i].LatestReviews = msg.reviews
+			}
 		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
@@ -1530,7 +1547,7 @@ func (a *App) View() string {
 
 	switch a.screen {
 	case screenActiveApplications:
-		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.activeApplicationNextSteps, time.Now(), a.screenRows()))
+		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.activeApplicationProgress, time.Now(), a.screenRows()))
 	case screenApplicationDetail:
 		b.WriteString(a.applicationDetail.View())
 	case screenCompanyList:

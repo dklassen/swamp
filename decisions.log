@@ -7176,3 +7176,38 @@ pass sits next to the only policy it uses.
 - RFC 0003 is implemented. The open questions (continue past a failed
   posting; a separate ApplicationsClosed) stay open, each for its own
   issue if wanted.
+
+## 2026-10-05 -- #91: patch one home-screen row after a review
+
+Submitting a review from application detail no longer reloads every
+active application. documentReviewsLoadedMsg, which application detail
+already waits for, now also writes the fresh reviews into that
+application's row on the home screen (found with indexOfApplication,
+like indexOfPosting/indexOfCompany). Before, the full reload queried
+that application's reviews a second time.
+
+- Patching only LatestReviews, as the issue proposed, wasn't enough on
+  its own. The Next column (#164, added after the issue) also reads the
+  reviews ("review", "revise"). It was a map of precomputed strings, so
+  it would have gone stale. The App now keeps each application's
+  document progress (drafted/exported) instead, and the list works out
+  nextStep when it renders. One source of truth means a patched review
+  moves both the glyph and the next step, with no second copy to keep
+  in sync. nextStep is a few map lookups per visible row.
+- Rejected: keeping the nextSteps map and recomputing one entry from
+  cached progress as well. That's two pieces of state where one can be
+  derived from the other.
+- Rejected: a new command that reloads one application's row (reviews
+  plus progress). That's more code to save one export query, and a
+  review doesn't change drafted/exported anyway.
+- The cached progress comes from the last full load. A document edited
+  outside the TUI after that is picked up by the next full reload (a
+  status change, starting or deleting an application, a restart), the
+  same as it was for the old nextSteps map between reloads.
+- The patch runs whichever screen loaded the reviews, so a review
+  submitted from posting detail now refreshes the home-screen row too.
+  Before, it didn't reload the list at all.
+- TestActiveApplicationListModel_View_WidestRowFits100Columns now needs
+  a second row: "withdraw?" is only a started application's next step,
+  while the widest status label belongs to a later stage. Columns size
+  to their widest cell, so the table is as wide as before.
