@@ -83,6 +83,56 @@ func (s *Store) Path(applicationID int64, documentType Type) (string, error) {
 	return path(applicationDir(s.base, applicationID), documentType), nil
 }
 
+// Write replaces applicationID's documentType document with content,
+// creating the application's directory if needed, and returns its path.
+//
+// The content goes to a temporary file in the same directory, which is
+// then renamed over the document. Another process reading the document
+// (an export, a review, documents.Current) sees the old version or the
+// new one, never an empty or partial file, and a failed write leaves the
+// old version as it was (RFC 0007, H3).
+func (s *Store) Write(applicationID int64, documentType Type, content string) (string, error) {
+	p, err := s.Path(applicationID, documentType)
+	if err != nil {
+		return "", err
+	}
+	dir := filepath.Dir(p)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	tmp, err := os.CreateTemp(dir, "."+filepath.Base(p)+".tmp-*")
+	if err != nil {
+		return "", err
+	}
+	if err := writeAndClose(tmp, content); err != nil {
+		_ = os.Remove(tmp.Name())
+		return "", err
+	}
+	if err := os.Rename(tmp.Name(), p); err != nil {
+		_ = os.Remove(tmp.Name())
+		return "", err
+	}
+	return p, nil
+}
+
+// writeAndClose fills Write's temporary file. The mode is what
+// os.WriteFile gave documents before (CreateTemp makes them 0600), and
+// the sync makes sure the content is on disk before the rename can
+// expose it.
+func writeAndClose(f *os.File, content string) error {
+	_, err := f.WriteString(content)
+	if err == nil {
+		err = f.Chmod(0o644)
+	}
+	if err == nil {
+		err = f.Sync()
+	}
+	if closeErr := f.Close(); err == nil {
+		err = closeErr
+	}
+	return err
+}
+
 // canonicalDir holds the user-maintained files every application draws
 // on (#199). It sits under the base directory so it stays as uncommitted
 // as the drafts; "canonical" can't collide with an application directory,
