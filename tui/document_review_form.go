@@ -26,17 +26,17 @@ type documentReviewFormModel struct {
 	documentType  documents.Type
 	content       string
 	textarea      textarea.Model
-	// visit is this opening of the screen, carried by the save's result
-	// (#115).
-	visit visit
+	// instance tells this screen apart from later openings of it; the
+	// save's result records it as from (#115).
+	instance screenInstance
 }
 
 // newDocumentReviewFormModel returns a review-form screen for
 // applicationID's documentType, sized to width and height, the rows App
 // leaves under its status/error banner (App.screenRows). App refits the
 // height with setHeight whenever that changes; the width is fixed at
-// construction. v is this opening of the screen.
-func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentType documents.Type, content string, width, height int, v visit) documentReviewFormModel {
+// construction. instance tells it apart from later openings.
+func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentType documents.Type, content string, width, height int, instance screenInstance) documentReviewFormModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	ta.Focus()
@@ -46,7 +46,7 @@ func newDocumentReviewFormModel(s *store.Store, applicationID int64, documentTyp
 		documentType:  documentType,
 		content:       content,
 		textarea:      ta,
-		visit:         v,
+		instance:      instance,
 	}
 	m.setHeight(height)
 	return m
@@ -73,16 +73,15 @@ type cancelDocumentReviewFormMsg struct{}
 
 type documentReviewCreatedMsg struct {
 	review store.DocumentReview
-	// visit is the opening of the review form that started the save
-	// (#115).
-	visit visit
-	err   error
+	// from is the review form instance that started the save (#115).
+	from screenInstance
+	err  error
 }
 
-func createDocumentReview(s *store.Store, applicationID int64, documentType documents.Type, content string, outcome store.ReviewOutcome, notes string, v visit) tea.Cmd {
+func createDocumentReview(s *store.Store, applicationID int64, documentType documents.Type, content string, outcome store.ReviewOutcome, notes string, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
 		review, err := s.CreateDocumentReview(context.Background(), applicationID, documentType, content, outcome, notes)
-		return documentReviewCreatedMsg{review: review, visit: v, err: err}
+		return documentReviewCreatedMsg{review: review, from: from, err: err}
 	}
 }
 
@@ -96,9 +95,9 @@ func (m *documentReviewFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	case tea.KeyEsc:
 		return nil, cancelDocumentReviewFormMsg{}
 	case tea.KeyCtrlS:
-		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomePassed, m.textarea.Value(), m.visit), nil
+		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomePassed, m.textarea.Value(), m.instance), nil
 	case tea.KeyCtrlG:
-		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomeFlagged, m.textarea.Value(), m.visit), nil
+		return createDocumentReview(m.store, m.applicationID, m.documentType, m.content, store.ReviewOutcomeFlagged, m.textarea.Value(), m.instance), nil
 	}
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)

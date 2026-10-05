@@ -132,10 +132,10 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 	}
 }
 
-// TestSubmitFlow_SaveResolvingAfterReentry_KeepsNewVisitOpen is
-// TestApp_StatusSaveResolvingAfterReentry_KeepsNewVisitOpen's counterpart
+// TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen is
+// TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen's counterpart
 // for the submit screen, whose y saves the status the same way (#115).
-func TestSubmitFlow_SaveResolvingAfterReentry_KeepsNewVisitOpen(t *testing.T) {
+func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
 	t.Parallel()
 	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 	app = startSubmit(t, app)
@@ -154,7 +154,7 @@ func TestSubmitFlow_SaveResolvingAfterReentry_KeepsNewVisitOpen(t *testing.T) {
 	app = applyCmd(t, app, saveCmd)
 
 	if app.screen != screenApplicationSubmit {
-		t.Errorf("screen after the first visit's save result = %v, want the submit screen (the new visit stays open)", app.screen)
+		t.Errorf("screen after the earlier instance's save result = %v, want the submit screen (the reopened one stays open)", app.screen)
 	}
 }
 

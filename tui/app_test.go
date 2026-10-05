@@ -3294,10 +3294,10 @@ func TestApp_StatusSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 	}
 }
 
-// TestApp_StatusSaveResolvingAfterReentry_KeepsNewVisitOpen covers #115:
+// TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen covers #115:
 // a save result arriving after the user left the status select and opened
-// it again belongs to the earlier visit, so it must not close the new one.
-func TestApp_StatusSaveResolvingAfterReentry_KeepsNewVisitOpen(t *testing.T) {
+// it again is from the earlier instance, so it must not close the reopened one.
+func TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -3321,11 +3321,11 @@ func TestApp_StatusSaveResolvingAfterReentry_KeepsNewVisitOpen(t *testing.T) {
 	app = applyCmd(t, app, saveCmd)
 
 	if app.screen != screenApplicationStatusSelect {
-		t.Fatalf("screen after the first visit's save result = %v, want screenApplicationStatusSelect (the new visit stays open)", app.screen)
+		t.Fatalf("screen after the earlier instance's save result = %v, want screenApplicationStatusSelect (the reopened one stays open)", app.screen)
 	}
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
 	if app.screen != screenPostingDetail {
-		t.Fatalf("screen after esc from the new visit = %v, want screenPostingDetail", app.screen)
+		t.Fatalf("screen after esc from the reopened screen = %v, want screenPostingDetail", app.screen)
 	}
 }
 
@@ -3371,10 +3371,10 @@ func TestApp_ReviewSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 	}
 }
 
-// TestApp_ReviewSaveResolvingAfterReentry_KeepsNewVisitOpen is
-// TestApp_StatusSaveResolvingAfterReentry_KeepsNewVisitOpen's counterpart
+// TestApp_ReviewSaveResolvingAfterReentry_KeepsReopenedScreenOpen is
+// TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen's counterpart
 // for the document review form.
-func TestApp_ReviewSaveResolvingAfterReentry_KeepsNewVisitOpen(t *testing.T) {
+func TestApp_ReviewSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -3407,11 +3407,11 @@ func TestApp_ReviewSaveResolvingAfterReentry_KeepsNewVisitOpen(t *testing.T) {
 	app = applyCmd(t, app, saveCmd)
 
 	if app.screen != screenDocumentReviewForm {
-		t.Fatalf("screen after the first visit's save result = %v, want screenDocumentReviewForm (the new visit stays open)", app.screen)
+		t.Fatalf("screen after the earlier instance's save result = %v, want screenDocumentReviewForm (the reopened one stays open)", app.screen)
 	}
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
 	if app.screen != screenPostingDetail {
-		t.Fatalf("screen after esc from the new visit = %v, want screenPostingDetail", app.screen)
+		t.Fatalf("screen after esc from the reopened screen = %v, want screenPostingDetail", app.screen)
 	}
 }
 
@@ -3493,10 +3493,10 @@ func TestApp_NotesSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T)
 	}
 }
 
-// TestApp_NotesSaveResolvingAfterReentry_KeepsNewVisitOpen is
-// TestApp_StatusSaveResolvingAfterReentry_KeepsNewVisitOpen's counterpart
+// TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen is
+// TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen's counterpart
 // for the notes editor.
-func TestApp_NotesSaveResolvingAfterReentry_KeepsNewVisitOpen(t *testing.T) {
+func TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3524,7 +3524,7 @@ func TestApp_NotesSaveResolvingAfterReentry_KeepsNewVisitOpen(t *testing.T) {
 	app = applyCmd(t, app, saveCmd)
 
 	if app.screen != screenApplicationNotesEdit {
-		t.Fatalf("screen after the first visit's save result = %v, want screenApplicationNotesEdit (the new visit stays open)", app.screen)
+		t.Fatalf("screen after the earlier instance's save result = %v, want screenApplicationNotesEdit (the reopened one stays open)", app.screen)
 	}
 }
 

@@ -39,16 +39,16 @@ type applicationStatusModel struct {
 	store     *store.Store
 	postingID int64
 	cursor    int
-	// visit is this opening of the screen, carried by the save's result
-	// (#115).
-	visit visit
+	// instance tells this screen apart from later openings of it; the
+	// save's result records it as from (#115).
+	instance screenInstance
 }
 
 // newApplicationStatusModel returns a status-select screen for
-// postingID, with the cursor seeded at currentStatus's position, for
-// visit v.
-func newApplicationStatusModel(s *store.Store, postingID int64, currentStatus store.ApplicationStatus, v visit) applicationStatusModel {
-	return applicationStatusModel{store: s, postingID: postingID, cursor: applicationStatusIndex(currentStatus), visit: v}
+// postingID, with the cursor seeded at currentStatus's position.
+// instance tells it apart from later openings.
+func newApplicationStatusModel(s *store.Store, postingID int64, currentStatus store.ApplicationStatus, instance screenInstance) applicationStatusModel {
+	return applicationStatusModel{store: s, postingID: postingID, cursor: applicationStatusIndex(currentStatus), instance: instance}
 }
 
 // cancelApplicationStatusMsg signals that App should switch back to the
@@ -69,7 +69,7 @@ func (m *applicationStatusModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		return nil, cancelApplicationStatusMsg{}
 	case msg.Type == tea.KeyEnter:
 		status := applicationStatuses[m.cursor]
-		return updateApplicationStatus(m.store, m.postingID, status, m.visit), nil
+		return updateApplicationStatus(m.store, m.postingID, status, m.instance), nil
 	}
 	return nil, nil
 }

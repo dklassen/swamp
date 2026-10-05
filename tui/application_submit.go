@@ -27,9 +27,9 @@ type applicationSubmitModel struct {
 	// confirmed is set once y is pressed, so a second y while the status
 	// save is in flight doesn't save it twice.
 	confirmed bool
-	// visit is this opening of the screen, carried by the status save's
-	// result (#115).
-	visit visit
+	// instance tells this screen apart from later openings of it; the
+	// status save's result records it as from (#115).
+	instance screenInstance
 }
 
 // applyURL is where a posting's application form is: ApplicationURL,
@@ -41,8 +41,8 @@ func applyURL(posting store.Posting) string {
 	return posting.JobURL
 }
 
-func newApplicationSubmitModel(application store.ApplicationView, v visit) applicationSubmitModel {
-	return applicationSubmitModel{application: application, url: applyURL(application.Posting), visit: v}
+func newApplicationSubmitModel(application store.ApplicationView, instance screenInstance) applicationSubmitModel {
+	return applicationSubmitModel{application: application, url: applyURL(application.Posting), instance: instance}
 }
 
 // enterApplicationSubmitMsg signals that App should open the submit
@@ -120,7 +120,7 @@ func (m *applicationSubmitModel) View() string {
 // exporting the documents to the last-used export directory, recorded
 // like any other export (#188).
 func (a *App) startApplicationSubmit(application store.ApplicationView) tea.Cmd {
-	a.applicationSubmit = newApplicationSubmitModel(application, a.newVisit())
+	a.applicationSubmit = newApplicationSubmitModel(application, a.newScreenInstance())
 	a.screen = screenApplicationSubmit
 	export := exportApplicationDocuments(a.store, a.documents, application, a.exportDir)
 	if a.applicationSubmit.url == "" {

@@ -103,8 +103,9 @@ type App struct {
 	// per transition keeps a new entry point from needing its own field.
 	// See decisions.log, issue #89.
 	returnStack []screen
-	// lastVisit is the most recent visit handed out by newVisit (#115).
-	lastVisit visit
+	// lastScreenInstance is the most recent one newScreenInstance handed
+	// out (#115).
+	lastScreenInstance screenInstance
 	// activeApplications backs the home screen: every application not at
 	// a terminal dead-end status, across every company (see
 	// store.ListActiveApplications, decisions.log #43).
@@ -347,18 +348,21 @@ func postingDetailContent(p store.Posting, application store.Application, hasApp
 	return b.String()
 }
 
-// visit identifies one opening of a screen whose save resolves
-// asynchronously (#115). The screen's model keeps its visit and the
-// save's result message carries it back, so a result that arrives after
-// the user left and reopened the same screen can tell it belongs to the
-// earlier visit and leave the new one open. The zero visit is never
-// handed out.
-type visit int
+// screenInstance tells apart the instances of a screen whose save
+// resolves asynchronously (#115). Bubble Tea sends every result to
+// Update without saying which screen asked for it, so after the user
+// closes a screen and opens the same kind again, a late result can't
+// otherwise tell the two apart. Each instance's model keeps its
+// screenInstance, the save's result message records it as from, and the
+// handler acts on the screen only when the open one is the instance the
+// result is from -- the same trick bubbles' spinner uses with its
+// TickMsg ID. The zero value is never handed out.
+type screenInstance int
 
-// newVisit returns a visit no screen has had before.
-func (a *App) newVisit() visit {
-	a.lastVisit++
-	return a.lastVisit
+// newScreenInstance returns a screenInstance no screen has had before.
+func (a *App) newScreenInstance() screenInstance {
+	a.lastScreenInstance++
+	return a.lastScreenInstance
 }
 
 // enterFrom switches to next, pushing the current screen onto
@@ -695,34 +699,33 @@ func maybeLoadDocumentReviews(s *store.Store, docs *documents.Store, hasApp bool
 
 type applicationStatusUpdatedMsg struct {
 	application store.Application
-	// visit is the opening of the screen that started the save (#115).
-	visit visit
-	err   error
+	// from is the screen instance that started the save (#115).
+	from screenInstance
+	err  error
 }
 
-// updateApplicationStatus saves postingID's status, started from visit v
-// of the screen asking.
-func updateApplicationStatus(s *store.Store, postingID int64, status store.ApplicationStatus, v visit) tea.Cmd {
+// updateApplicationStatus saves postingID's status for the screen
+// instance from.
+func updateApplicationStatus(s *store.Store, postingID int64, status store.ApplicationStatus, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
 		app, err := s.UpdateApplicationStatus(context.Background(), postingID, status)
-		return applicationStatusUpdatedMsg{application: app, visit: v, err: err}
+		return applicationStatusUpdatedMsg{application: app, from: from, err: err}
 	}
 }
 
 type applicationNotesUpdatedMsg struct {
 	application store.Application
-	// visit is the opening of the notes editor that started the save
-	// (#115).
-	visit visit
-	err   error
+	// from is the notes editor instance that started the save (#115).
+	from screenInstance
+	err  error
 }
 
-// updateApplicationNotes saves postingID's notes, started from visit v
-// of the notes editor.
-func updateApplicationNotes(s *store.Store, postingID int64, notes string, v visit) tea.Cmd {
+// updateApplicationNotes saves postingID's notes for the notes editor
+// instance from.
+func updateApplicationNotes(s *store.Store, postingID int64, notes string, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
 		app, err := s.UpdateApplicationNotes(context.Background(), postingID, notes)
-		return applicationNotesUpdatedMsg{application: app, visit: v, err: err}
+		return applicationNotesUpdatedMsg{application: app, from: from, err: err}
 	}
 }
 
@@ -1115,11 +1118,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			// Nothing blocks esc while the save is in flight, so the user
 			// may already have left -- only navigate if they're still on
-			// the visit that started it, not a later reopening (#115).
-			if a.screen == screenApplicationStatusSelect && a.applicationStatus.visit == msg.visit {
+			// the screen instance the result is from, not a reopened one (#115).
+			if a.screen == screenApplicationStatusSelect && a.applicationStatus.instance == msg.from {
 				a.returnBack()
 			}
-			if a.screen == screenApplicationSubmit && a.applicationSubmit.visit == msg.visit {
+			if a.screen == screenApplicationSubmit && a.applicationSubmit.instance == msg.from {
 				a.status = "Marked " + a.applicationSubmit.application.Posting.Title + " submitted"
 				a.screen = screenActiveApplications
 			}
@@ -1161,7 +1164,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Same late-save guard as applicationStatusUpdatedMsg: yanking
 			// the user back to posting detail after their own esc already
 			// popped its returnStack entry would strand the next esc.
-			if a.screen == screenApplicationNotesEdit && a.applicationNotes.visit == msg.visit {
+			if a.screen == screenApplicationNotesEdit && a.applicationNotes.instance == msg.from {
 				a.screen = screenPostingDetail
 			}
 			if a.screen == screenPostingDetail {
@@ -1195,8 +1198,8 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			// Nothing blocks esc while the save is in flight, so the user
 			// may already have left -- only navigate if they're still on
-			// the visit that started it, not a later reopening (#115).
-			if a.screen == screenDocumentReviewForm && a.documentReviewForm.visit == msg.visit {
+			// the screen instance the result is from, not a reopened one (#115).
+			if a.screen == screenDocumentReviewForm && a.documentReviewForm.instance == msg.from {
 				a.returnBack()
 			}
 			// Reload so the freshly-submitted review's outcome/notes show up
@@ -1298,7 +1301,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, loadCompanies(a.store)
 		case enterApplicationStatusMsg:
 			a.enterFrom(screenApplicationStatusSelect)
-			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus, a.newVisit())
+			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus, a.newScreenInstance())
 		case enterApplicationDetailMsg:
 			a.screen = screenApplicationDetail
 			a.applicationDetail = newApplicationDetailModel(a.documents, v.application)
@@ -1351,7 +1354,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.err = v.err
 			if v.err == nil {
 				a.enterFrom(screenDocumentReviewForm)
-				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.applicationID, v.documentType, v.content, a.width, a.screenRows(), a.newVisit())
+				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.applicationID, v.documentType, v.content, a.width, a.screenRows(), a.newScreenInstance())
 			}
 		case refreshApplicationDetailMsg:
 			return a, loadDocumentReviews(a.store, a.documents, a.applicationDetail.application.ID)
@@ -1430,10 +1433,10 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 		case enterApplicationStatusMsg:
 			a.enterFrom(screenApplicationStatusSelect)
-			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus, a.newVisit())
+			a.applicationStatus = newApplicationStatusModel(a.store, v.postingID, v.currentStatus, a.newScreenInstance())
 		case enterApplicationNotesMsg:
 			a.screen = screenApplicationNotesEdit
-			a.applicationNotes = newApplicationNotesModel(a.store, v.postingID, v.currentNotes, a.width, a.screenRows(), a.newVisit())
+			a.applicationNotes = newApplicationNotesModel(a.store, v.postingID, v.currentNotes, a.width, a.screenRows(), a.newScreenInstance())
 		case enterDocumentReviewSelectMsg:
 			a.enterFrom(screenDocumentReviewSelect)
 			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, v.applicationID)
@@ -1459,7 +1462,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case cancelApplicationSubmitMsg:
 			a.screen = screenApplicationDetail
 		case confirmApplicationSubmitMsg:
-			return a, updateApplicationStatus(a.store, v.postingID, store.ApplicationStatusSubmitted, a.applicationSubmit.visit)
+			return a, updateApplicationStatus(a.store, v.postingID, store.ApplicationStatusSubmitted, a.applicationSubmit.instance)
 		}
 		return a, cmd
 	case screenApplicationDelete:
@@ -1492,7 +1495,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.err = v.err
 			if v.err == nil {
 				a.screen = screenDocumentReviewForm
-				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.applicationID, v.documentType, v.content, a.width, a.screenRows(), a.newVisit())
+				a.documentReviewForm = newDocumentReviewFormModel(a.store, v.applicationID, v.documentType, v.content, a.width, a.screenRows(), a.newScreenInstance())
 			}
 		}
 		return a, cmd
