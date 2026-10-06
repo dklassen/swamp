@@ -244,3 +244,40 @@ func TestApp_ApplicationDeletedElsewhere_GoesBackAndSaysSo(t *testing.T) {
 		t.Errorf("the home list doesn't say the application was deleted:\n%s", app.View())
 	}
 }
+
+// TestApp_PostingDetailReload_ShowsTheChangeAndKeepsTheScroll: a sync
+// renames the posting you're reading, halfway down its description.
+func TestApp_PostingDetailReload_ShowsTheChangeAndKeepsTheScroll(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	long := strings.Repeat("A line of the job description.\n\n", 80)
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", DescriptionText: long}},
+	})
+	app := newTestApp(t, s, syncer).WithChangeFeed(nil, "tui:1")
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = openPostingList(t, app)
+	app = openPostingDetail(t, app)
+	for range 20 {
+		app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
+	}
+	scrolled := app.postingDetail.viewport.YOffset
+	if scrolled == 0 {
+		t.Fatal("posting detail didn't scroll; the test can't tell the scroll was kept")
+	}
+
+	p := app.postings[0]
+	if _, err := s.UpsertPosting(context.Background(), store.CreatePostingParams{CompanyID: p.CompanyID, Source: p.Source, SourceID: p.SourceID, IngestedFields: store.IngestedFields{Title: "Senior Engineer", DescriptionText: long, RawPayload: p.RawPayload}}); err != nil {
+		t.Fatalf("UpsertPosting: %v", err)
+	}
+	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "postings", RowID: p.ID, Op: "update", Origin: "fetch:9"}}})
+
+	if got := app.postingDetail.posting.Title; got != "Senior Engineer" {
+		t.Errorf("posting detail title = %q, want the renamed %q", got, "Senior Engineer")
+	}
+	if got := app.postingDetail.viewport.YOffset; got != scrolled {
+		t.Errorf("scroll offset = %d after the reload, want %d", got, scrolled)
+	}
+}

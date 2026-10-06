@@ -77,6 +77,13 @@ func (a *App) reloadFor(events []store.ChangeEvent) tea.Cmd {
 		}) {
 			return tea.Batch(reloadApplicationDetail(a.store, view.ID), loadDocumentReviews(a.store, a.documents, view.ID))
 		}
+	case screenPostingDetail:
+		d := a.postingDetail
+		if slices.ContainsFunc(events, func(e store.ChangeEvent) bool {
+			return (e.Table == "postings" && e.RowID == d.posting.ID) || (d.hasApplication && eventApplicationID(e) == d.application.ID)
+		}) {
+			return reloadPosting(a.store, d.posting.ID)
+		}
 	case screenPostingList:
 		if touches(events, "postings") {
 			return reloadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
@@ -185,4 +192,40 @@ func (a *App) handleApplicationDetailReloaded(msg applicationDetailReloadedMsg) 
 		a.applicationDetail.application.Application = msg.application
 	}
 	return nil
+}
+
+// replacePostingDetail swaps in m, keeping the scroll position when it's
+// the same posting: a reload mustn't jump you back to the top.
+func (a *App) replacePostingDetail(m postingDetailModel) {
+	if m.posting.ID == a.postingDetail.posting.ID {
+		m.viewport.SetYOffset(a.postingDetail.viewport.YOffset)
+	}
+	a.postingDetail = m
+}
+
+type postingReloadedMsg struct {
+	posting store.Posting
+	err     error
+}
+
+func reloadPosting(s *store.Store, id int64) tea.Cmd {
+	return func() tea.Msg {
+		p, err := s.GetPosting(context.Background(), id)
+		return postingReloadedMsg{posting: p, err: err}
+	}
+}
+
+// handlePostingReloaded shows the posting's new content, then reloads its
+// application, which rebuilds the screen again with the same scroll.
+func (a *App) handlePostingReloaded(msg postingReloadedMsg) tea.Cmd {
+	a.err = msg.err
+	if msg.err != nil || a.screen != screenPostingDetail || a.postingDetail.posting.ID != msg.posting.ID {
+		return nil
+	}
+	if i := indexOfPosting(a.postings, msg.posting.ID); i >= 0 {
+		a.postings[i] = msg.posting
+	}
+	d := a.postingDetail
+	a.replacePostingDetail(newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), msg.posting, d.application, d.hasApplication, d.latestReviews, a.canNavigateSiblings(msg.posting.ID)))
+	return loadApplication(a.store, msg.posting.ID)
 }
