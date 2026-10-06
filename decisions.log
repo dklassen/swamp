@@ -7627,3 +7627,17 @@ above the pre-migration maximum could still pick up a folder.
   From now on, real data comes from host-side queries or copies.
 - For RFC 0008/#259: the host's fsnotify backend is kqueue, not
   verified yet; VM throughput figures are indicative only.
+
+## 2026-10-06 -- RFC 0008: poll the change log every 500 ms; no file watching
+
+- User decision, reversing the fsnotify choice made for #259 earlier
+  the same day. With a durable change log, a late look loses nothing:
+  the next read past the cursor returns every event since. So the
+  wake-up only affects latency, and a poll is enough.
+- Measured: SELECT max(id) FROM change_events takes about 3 us with
+  100,000 events; a 500 ms poll is negligible. Any pooled connection can
+  run it (unlike data_version, which needed a dedicated one).
+- Dropped with it: the fsnotify dependency, the debounce, and the
+  unverified kqueue backend on the macOS host. #259's ChangeWatcher
+  commit won't be used; #270 no longer depends on #259's branch.
+- Cost: changes show within 500 ms instead of ~100-150 ms.

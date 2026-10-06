@@ -25,7 +25,7 @@ This RFC **builds on RFC 0007 and replaces one piece of its wave B**. It doesn't
 | Step 6: reload after `$EDITOR` (#256) | Merged | Unaffected. |
 | Step 7: `data_version` probe (#257) | Merged | **Superseded as the change test**: "are there events past my cursor?" is cheaper to reason about and exact. The probe can stay as a pre-check, or be removed once nothing uses it. |
 | Step 8: `document_writes` (#258) | Merged | **Kept, and becomes an event source.** Files can't fire SQL triggers; a document write only reaches the database as a `document_writes` row, and a trigger on that table turns it into an event like any other. |
-| #259: `store.ChangeWatcher` (fsnotify on the database's directory) | On the paused branch | **Kept** as the wake-up ("look now"). Its confirmation step changes from the probe to reading the log past the cursor. |
+| #259: `store.ChangeWatcher` (fsnotify on the database's directory) | On the paused branch | **Not needed** (decided 2026-10-06). A durable log makes a 500 ms poll of `max(id)` enough, so nothing watches files; see "Watching". |
 | #259: TUI `dataChangedMsg`, status line, per-screen reload | On the paused branch | **Kept**, and refined: the message can carry the events, so a screen reloads only for changes it shows, and the status line can name who made them. |
 | #259: commit-hook counter for the TUI's own writes (RFC 0007's recommendation) | Not built | **Not needed.** Each event carries its origin; the TUI skips its own. |
 | #260: reload on screen entry | Not started | Unaffected. Still covers edits made outside Swamp to document files. |
@@ -89,7 +89,7 @@ From the real database (read-only):
 
 A fetch is about 2000 one-posting commits; a trigger skips `last_seen_at`-only updates, so a fetch costs what it does today, and ~100 meaningful changes a day add tens of milliseconds a day. Sync commits each posting separately (`IngestPosting`, `ClosePosting`, `ReopenPosting`), so another writer waits at most one posting's transaction, never a whole fetch, far inside `busy_timeout` (5 s).
 
-**File events:** in the VM, one commit produced two `WRITE` events on `-wal`, on both ext4 and `virtiofs`. On the macOS host, fsnotify uses **kqueue**, which reports writes per file, not per directory: fsnotify opens each file in a watched directory to cover that, including files created later (SQLite recreates `-wal`). Not yet verified on the host: run `go test ./store/ -run 'TestChangeWatcher|TestChangeProbe' -count=5 -v` there (on #259's branch) before relying on it.
+**File events:** not used. In the VM, one commit produced two `WRITE` events on `-wal` (ext4 and `virtiofs`), but on the macOS host fsnotify would use kqueue, which was never verified there. Polling the log (below) removes the question.
 
 ## Design
 
@@ -134,8 +134,8 @@ Which columns each table logs (first cut, to settle during the work):
 ### Watching
 
 - **Cursor:** each process starts at `max(id)` when it starts (it doesn't need history from before it was running).
-- **Wake-up:** `store.ChangeWatcher` (#259) keeps watching the database's directory. When the files settle, it reads `SELECT ... FROM change_events WHERE id > ? ORDER BY id`, advances the cursor, and hands the events to the subscriber. No events: nothing happens, so checkpoints and WAL resets stop causing reloads (they did with `data_version`).
-- **Missed wake-ups lose nothing.** Unlike `data_version`, the log is durable: if fsnotify drops events (queue overflow) or the watcher restarts, the next read past the cursor returns everything since. A slow fallback poll of `max(id)` (every few seconds) makes even a dead watcher self-heal.
+- **Polling, not file watching** (decided 2026-10-06): every **500 ms**, `SELECT max(id) FROM change_events`, about 3 µs with 100,000 events (measured). Only when it moved, read `SELECT ... FROM change_events WHERE id > ? ORDER BY id`, advance the cursor, and hand the events to the subscriber. Any pooled connection can run it: unlike `data_version`, it reads data, not per-connection state. Checkpoints and WAL resets never add events, so they stop causing reloads.
+- **Nothing is missed while not looking.** Unlike `data_version`, the log is durable: a late check returns everything since the cursor. That's what makes polling enough. A file watch (RFC 0007, #259's first build) would only shave about 100 ms off the latency, at the cost of a dependency and an unverified backend on the macOS host (kqueue).
 - **Filtering:** each subscriber says what it cares about, e.g. the TUI: `origin IS NOT <mine>`, and per screen, `table_name IN (...)` and `row_id = ?`. Column-level interest can use `json_extract(old, '$.status') IS NOT json_extract(new, '$.status')`.
 
 ### What each process would do with it
@@ -156,7 +156,6 @@ Which columns each table logs (first cut, to settle during the work):
 | **Large values** | Copying `raw_payload` (13.7 KB) or snapshots would bloat the log | Never logged; events carry the small columns or a hash |
 | **Write overhead** | ~25–55 µs per write (experiment 9) | Negligible at this scale; recheck if a bulk import ever matters |
 | **Driver coupling** | The origin stamping relies on `RegisterConnectionHook` and TEMP triggers | Both are plain SQLite plus one driver hook; a driver change would need the hook re-done, nothing else |
-| **kqueue on macOS** (the host) | If fsnotify missed writes to a recreated `-wal`, wake-ups would stop | Verify on the host first (see "Deployment and throughput"). The fallback poll of `max(id)` heals any missed wake-up, since the log loses nothing |
 | **Document files edited outside Swamp** | No row, so no event | Unchanged from RFC 0007: reload on entry (#260) and the review form's diff (#255) cover it |
 
 ## Options compared
@@ -178,13 +177,14 @@ Build it as #259's signal, in this order (each its own issue and PR):
 1. **Feasibility spike in code** (#267, S): the `change_events` table and the two-layer triggers on `applications` only, the connection hook stamping origin, and tests for experiments 3, 4 (outsider writes still succeed) and 7. Proves the mechanism in the real store.
 2. **Trigger generation and the drift test** (#268, S/M): one place listing logged tables and columns; the test that fails on a missing or stale trigger; AGENTS.md rule.
 3. **The remaining tables** (#269, S), per the column table above, with the sync-noise test (a fetch that only refreshes `last_seen_at` logs nothing). Events name rows by ID, so a table whose IDs can be reused needs `AUTOINCREMENT` first (#246); that matters for tables with hard deletes (`company_filters`, rebuilt on every sync; `interview_stages`).
-4. **Watcher reads the log** (#270, S): `ChangeWatcher` confirms by reading past its cursor instead of the `data_version` probe, which is then removed (#257); a fallback poll of `max(id)`; pruning events older than 30 days.
+4. **Poll the log** (#270, S): a 500 ms poll of `max(id)` and a read past the cursor, replacing the `data_version` probe, which is removed (#257); pruning events older than 30 days. No file watching.
 5. **#259 on top** (M): the TUI consumes events, skips its own, reloads per screen, names the source.
 
 ## Decided (2026-10-06, user)
 
 - **Retention:** 30 days.
 - **Origin:** `kind:pid`, e.g. `tui:4120`, `mcp:3981`, `fetch:5512`. No per-window names.
+- **No file watching:** poll `max(id)` every 500 ms; #259's `ChangeWatcher` (fsnotify) isn't used.
 - **The `data_version` probe (#257) is removed** in step 4, once the watcher reads the log instead.
 - **Work items filed** for steps 1–4; step 5 is #259 itself.
 
