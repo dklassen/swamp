@@ -12,17 +12,15 @@ import (
 	"github.com/dklassen/swamp/store"
 )
 
-// Column max widths for the posting table -- values longer than these get
-// truncated with an ellipsis rather than wrapped, so every row stays
-// exactly one physical line (visibleWindow's cursor/scroll math assumes
-// one line per posting; see decisions.log and issue #46).
+// Column widths for the posting table; Title takes what's left. Values
+// longer than these get truncated with an ellipsis rather than wrapped, so
+// every row stays exactly one physical line (visibleWindow's cursor/scroll
+// math assumes one line per posting).
 const (
-	titleColWidth      = 40
+	markerColWidth     = 1
 	departmentColWidth = 18
 	locationColWidth   = 20
 	statusColWidth     = 8
-	// descriptionColWidth is roughly the rendered table's width.
-	descriptionColWidth = 100
 )
 
 // postingTableChromeLines is the number of physical lines lipgloss/table's
@@ -174,14 +172,14 @@ func (m *postingListModel) Update(msg tea.KeyMsg, snap postingListSnapshot) (tea
 // line drawn above or below the table -- the description, filter summary
 // and archived notice included -- costs the table a row, so the list
 // still fits.
-func (m *postingListModel) View(snap postingListSnapshot, height int) string {
+func (m *postingListModel) View(snap postingListSnapshot, width, height int) string {
 	var b strings.Builder
 	title := titleStyle.Render(fmt.Sprintf("Postings: %s", snap.companyName))
 	help := helpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back")
 	// The description gets one line, truncated to the table's width.
 	var description, summary, archived string
 	if snap.companyDescription != "" {
-		description = dimStyle.Render(truncateCol(strings.Join(strings.Fields(snap.companyDescription), " "), descriptionColWidth))
+		description = dimStyle.Render(truncateCol(strings.Join(strings.Fields(snap.companyDescription), " "), tableWidth(width)))
 	}
 	if s := filterSummaryLine(snap.activeFilterDepartments, snap.activeFilterLocations); s != "" {
 		summary = helpStyle.Render(s)
@@ -209,14 +207,15 @@ func (m *postingListModel) View(snap postingListSnapshot, height int) string {
 				}
 				return style
 			})
+		titleWidth := flexColWidth(width, markerColWidth, departmentColWidth, locationColWidth, statusColWidth)
 		for i := start; i < end; i++ {
 			p := snap.postings[i]
 			t.Row(
-				postingMarker(snap.markup[p.ID]),
-				truncateCol(p.Title, titleColWidth),
-				truncateCol(p.Department, departmentColWidth),
-				truncateCol(p.Location, locationColWidth),
-				truncateCol(p.ListingStatus, statusColWidth),
+				padCol(postingMarker(snap.markup[p.ID]), markerColWidth),
+				padCol(p.Title, titleWidth),
+				padCol(p.Department, departmentColWidth),
+				padCol(p.Location, locationColWidth),
+				padCol(p.ListingStatus, statusColWidth),
 			)
 		}
 		b.WriteString(t.Render() + "\n")

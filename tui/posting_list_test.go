@@ -167,7 +167,7 @@ func TestPostingListModel_View_ShowsCompanyDescription(t *testing.T) {
 	snap := testPostingListSnapshot()
 	snap.companyDescription = "Acme builds rockets for roadrunner enthusiasts."
 
-	got := m.View(snap, 40)
+	got := m.View(snap, 0, 40)
 	if !strings.Contains(got, snap.companyDescription) {
 		t.Errorf("View missing company description %q:\n%s", snap.companyDescription, got)
 	}
@@ -180,12 +180,84 @@ func TestPostingListModel_View_DescriptionAddsExactlyOneLine(t *testing.T) {
 
 	m := newPostingListModel(nil)
 	snap := testPostingListSnapshot()
-	without := strings.Count(m.View(snap, 40), "\n")
+	without := strings.Count(m.View(snap, 0, 40), "\n")
 
 	snap.companyDescription = "Acme builds rockets for roadrunner enthusiasts."
-	with := strings.Count(m.View(snap, 40), "\n")
+	with := strings.Count(m.View(snap, 0, 40), "\n")
 
 	if with != without+1 {
 		t.Errorf("View with description = %d lines, want %d (one more than without)", with, without+1)
+	}
+}
+
+// The table spans the terminal, so every list is as wide as the others
+// and long titles get the room there is.
+func TestPostingListModel_View_TableSpansTerminalWidth(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		width int
+		want  int
+	}{
+		{"narrow terminal", 80, 80},
+		{"wide terminal", 160, 160},
+		{"before the terminal reports its size", 0, fallbackTableWidth},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := newPostingListModel(nil)
+			snap := testPostingListSnapshot()
+			if got := tableWidthOf(t, m.View(snap, tt.width, 40)); got != tt.want {
+				t.Errorf("table width = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestPostingListModel_View_LongTitleFitsWhenThereIsRoom(t *testing.T) {
+	t.Parallel()
+
+	title := "Senior Software Engineer, Payments Infrastructure and Reliability (Remote)"
+	tests := []struct {
+		name     string
+		width    int
+		wantFull bool
+	}{
+		{"wide terminal shows it in full", 160, true},
+		{"narrow terminal cuts it off", 80, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := newPostingListModel(nil)
+			snap := testPostingListSnapshot()
+			snap.postings[0].Title = title
+			view := m.View(snap, tt.width, 40)
+			if got := strings.Contains(view, title); got != tt.wantFull {
+				t.Errorf("full title in view = %v, want %v:\n%s", got, tt.wantFull, view)
+			}
+			if !tt.wantFull && !strings.Contains(view, "…") {
+				t.Errorf("cut-off title has no ellipsis:\n%s", view)
+			}
+		})
+	}
+}
+
+// The description line is cut off at the table's width, not short of it.
+func TestPostingListModel_View_DescriptionUsesTableWidth(t *testing.T) {
+	t.Parallel()
+
+	m := newPostingListModel(nil)
+	snap := testPostingListSnapshot()
+	snap.companyDescription = strings.Repeat("Acme builds rockets. ", 7)
+	snap.companyDescription = strings.TrimSpace(snap.companyDescription)
+
+	view := m.View(snap, 160, 40)
+	if !strings.Contains(view, snap.companyDescription) {
+		t.Errorf("View at width 160 missing the %d-column description in full:\n%s", len(snap.companyDescription), view)
 	}
 }

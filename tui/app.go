@@ -1640,7 +1640,7 @@ func (a *App) View() string {
 			activeFilterDepartments: a.activeFilterDepartments,
 			activeFilterLocations:   a.activeFilterLocations,
 		}
-		b.WriteString(a.postingList.View(snap, a.screenRows()))
+		b.WriteString(a.postingList.View(snap, a.width, a.screenRows()))
 	case screenPostingDetail:
 		b.WriteString(a.postingDetail.View())
 	case screenApplicationStatusSelect:
