@@ -140,8 +140,7 @@ func TestDeleteFlow_FailureReturnsToDetailWithTheError(t *testing.T) {
 
 // TestDeleteFlow_ConfirmationShowsTheStatusAsItIsNow: the confirmation
 // describes the application as stored, not as the list loaded it, so you
-// don't delete something whose state changed underneath you (RFC 0007,
-// H5).
+// don't delete something whose state changed underneath you.
 func TestDeleteFlow_ConfirmationShowsTheStatusAsItIsNow(t *testing.T) {
 	t.Parallel()
 

@@ -1241,9 +1241,7 @@ func TestApplicationsSoftDelete_OneLiveApplicationPerPosting(t *testing.T) {
 	}
 }
 
-// TestDocumentWrites_NeverReusesAnIDAndDownDropsTheTable verifies 00020
-// (#258): document_writes uses AUTOINCREMENT (the rule for new tables,
-// #246), and Down removes it.
+// TestDocumentWrites_NeverReusesAnIDAndDownDropsTheTable verifies 00020.
 func TestDocumentWrites_NeverReusesAnIDAndDownDropsTheTable(t *testing.T) {
 	sqlDB := migrateTo(t, 20)
 

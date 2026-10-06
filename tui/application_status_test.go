@@ -141,7 +141,7 @@ func TestApplicationStatusModel_View_OffersWithdrawn(t *testing.T) {
 // TestStatusForm_ShowsTheStatusAsItIsNow: another process (sync closing
 // the posting, an agent) can change the status after the home list
 // loaded. The form must start from the stored status, or saving it would
-// silently undo that change (RFC 0007, H5).
+// silently undo that change.
 func TestStatusForm_ShowsTheStatusAsItIsNow(t *testing.T) {
 	t.Parallel()
 

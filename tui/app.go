@@ -1139,7 +1139,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case editorClosedMsg:
 		a.err = msg.err
 		// The edit may have made the latest review stale, so reload the
-		// application's reviews the way u does (RFC 0007, step 6). Not
+		// application's reviews the way u does. Not
 		// after an error: the editor didn't start or exited abnormally,
 		// and the reload's result would clear the error before it's seen.
 		if msg.err == nil && a.screen == screenApplicationDetail {

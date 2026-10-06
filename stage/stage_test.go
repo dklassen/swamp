@@ -700,7 +700,7 @@ func TestPrepare_IsIdempotentForExistingApplication(t *testing.T) {
 }
 
 // After a delete, preparing the posting again starts a fresh application
-// with none of the deleted one's drafts (#244).
+// with none of the deleted one's drafts.
 func TestPrepare_AfterDelete_StartsFreshApplicationWithoutOldDrafts(t *testing.T) {
 	t.Parallel()
 

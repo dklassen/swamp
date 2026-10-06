@@ -24,7 +24,7 @@ func openEmpty(t *testing.T) *sql.DB {
 }
 
 // TestCheck_DatabaseBehind_SaysToRunMigrate: the TUI, mcp-serve and fetch
-// no longer migrate when they start (#273), so one started against an
+// no longer migrate when they start, so one started against an
 // older database must refuse and say what to do.
 func TestCheck_DatabaseBehind_SaysToRunMigrate(t *testing.T) {
 	t.Parallel()

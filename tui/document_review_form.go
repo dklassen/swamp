@@ -123,15 +123,15 @@ type documentReviewCreatedMsg struct {
 // longer what the form showed, so nothing was saved.
 type documentChangedDuringReviewMsg struct {
 	current string
-	// who says who wrote current and when, if Swamp recorded that write
-	// (#258); empty when it wasn't (an edit made outside Swamp).
+	// who is empty when Swamp didn't record the write (an edit made
+	// outside Swamp).
 	who  string
 	from screenInstance
 }
 
 // createDocumentReview saves a review of content, unless the file no
 // longer holds it: an agent or $EDITOR may have rewritten it while the
-// form was open (RFC 0007, H7). A review of a version that's gone would
+// form was open. A review of a version that's gone would
 // never count as current, and an agent would never see its notes, so
 // instead it reports the current content for the form to show.
 func createDocumentReview(s *store.Store, docs *documents.Store, applicationID int64, documentType documents.Type, content string, outcome store.ReviewOutcome, notes string, from screenInstance) tea.Cmd {

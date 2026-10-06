@@ -198,7 +198,7 @@ func (s *Store) UpdateApplicationNotes(ctx context.Context, postingID int64, not
 	return applicationFromRow(row)
 }
 
-// DeleteApplication soft-deletes an application (#244): it disappears
+// DeleteApplication soft-deletes an application: it disappears
 // from every lookup and list, and the posting can start a fresh one, but
 // its status history, reviews, exports and interview stages stay, as do
 // its documents on disk. It returns ErrNotFound for an ID with no live

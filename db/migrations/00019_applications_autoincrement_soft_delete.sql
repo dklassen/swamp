@@ -4,7 +4,7 @@
 -- Without AUTOINCREMENT, SQLite gives a deleted maximum id to the next
 -- insert, and that new application inherits whatever still refers to the
 -- old id: its documents folder, or an agent holding the id from an earlier
--- stage_prepare (#244). SQLite can't add AUTOINCREMENT with ALTER TABLE,
+-- stage_prepare. SQLite can't add AUTOINCREMENT with ALTER TABLE,
 -- so rebuild, same pattern as 00004. Copying the ids seeds sqlite_sequence
 -- with the current maximum.
 --

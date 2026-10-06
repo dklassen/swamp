@@ -255,7 +255,7 @@ func TestDeleteApplication_ThenGet_ReturnsErrNotFound(t *testing.T) {
 
 // Document folders and agents' conversations refer to an application by
 // ID, so a deleted ID handed to a new application would give it the old
-// one's drafts (#244).
+// one's drafts.
 func TestDeleteApplication_IDNotReusedByNextApplication(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -381,7 +381,7 @@ func TestListings_AfterDeleteAndRestart_ShowThePostingOnceWithTheLiveApplication
 	}
 }
 
-// Deleting an application is a soft delete (#244): what it owns stays,
+// Deleting an application is a soft delete: what it owns stays,
 // for a later restore, and is no longer reachable from the posting.
 func TestDeleteApplication_KeepsWhatTheApplicationOwns(t *testing.T) {
 	t.Parallel()

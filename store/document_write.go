@@ -48,7 +48,7 @@ func parseDocumentWriteSource(s string) (DocumentWriteSource, error) {
 	return 0, fmt.Errorf("store: unknown document write source %q", s)
 }
 
-// DocumentWrite is one write of a document that Swamp saw (#258).
+// DocumentWrite is one write of a document that Swamp saw.
 type DocumentWrite struct {
 	ID            int64
 	ApplicationID int64
@@ -59,9 +59,8 @@ type DocumentWrite struct {
 }
 
 // RecordDocumentWrite records that source wrote content as
-// applicationID's documentType. Recording commits, which is what lets a
-// ChangeProbe see a document write (RFC 0007, step 8). Callers record
-// only after the file was written.
+// applicationID's documentType. Callers record only after the file was
+// written.
 func (s *Store) RecordDocumentWrite(ctx context.Context, applicationID int64, documentType documents.Type, content string, source DocumentWriteSource) error {
 	if err := s.queries.CreateDocumentWrite(ctx, db.CreateDocumentWriteParams{
 		ApplicationID: applicationID,

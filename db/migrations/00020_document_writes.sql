@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- Document writes (#258): one row per time Swamp saw a document written,
+-- Document writes: one row per time Swamp saw a document written,
 -- append-only. Inserting one commits, which moves PRAGMA data_version, so
 -- a TUI polling store.ChangeProbe notices a draft an agent wrote (RFC
 -- 0007, step 8). source is who wrote it: write_document (an agent through
@@ -10,7 +10,7 @@
 -- is the version written, hashed like document_reviews.content_sha256.
 -- document_type and source have no CHECK constraint, matching
 -- document_reviews since 00008 (validated in Go). AUTOINCREMENT, so an
--- id is never reused (#246).
+-- id is never reused.
 CREATE TABLE document_writes (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     application_id  INTEGER NOT NULL REFERENCES applications(id),

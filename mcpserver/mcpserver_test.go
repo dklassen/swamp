@@ -316,7 +316,7 @@ func callToolError(t *testing.T, cs *mcp.ClientSession, name string, args any) s
 
 // TestWriteDocument_UnknownApplication_WritesNothing: an ID with no
 // application row must not get a documents folder, or the application
-// later given that ID inherits the draft (#244).
+// later given that ID inherits the draft.
 func TestWriteDocument_UnknownApplication_WritesNothing(t *testing.T) {
 	t.Parallel()
 
@@ -1085,7 +1085,7 @@ func TestStagePrepare_DocumentsCarrySHA256(t *testing.T) {
 
 // TestWriteDocument_IsRecordedSoTheTUISeesIt: a document write is a file
 // write, which data_version can't see, so write_document also records it
-// in the database (RFC 0007, step 8). That moves a ChangeProbe, and says
+// in the database. That moves a ChangeProbe, and says
 // the agent wrote it.
 func TestWriteDocument_IsRecordedSoTheTUISeesIt(t *testing.T) {
 	t.Parallel()

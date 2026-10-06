@@ -10,7 +10,7 @@ import (
 )
 
 // Applying migrations is an explicit step, `swamp migrate`, not something
-// every process does as it starts (#273). The TUI, mcp-serve and fetch
+// every process does as it starts. The TUI, mcp-serve and fetch
 // only Check, so an upgrade happens once, deliberately, and never under a
 // process still running the previous binary.
 

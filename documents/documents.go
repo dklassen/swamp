@@ -94,7 +94,7 @@ func (s *Store) Path(applicationID int64, documentType Type) (string, error) {
 // then renamed over the document. Another process reading the document
 // (an export, a review, documents.Current) sees the old version or the
 // new one, never an empty or partial file, and a failed write leaves the
-// old version as it was (RFC 0007, H3).
+// old version as it was.
 func (s *Store) Write(applicationID int64, documentType Type, content string) (string, error) {
 	return s.write(applicationID, documentType, content, nil)
 }
@@ -106,7 +106,7 @@ var ErrChanged = errors.New("documents: document changed since it was read")
 // WriteIfUnchanged is Write, refused with ErrChanged unless the document
 // on disk still has expectedSHA256 (see ContentSHA256). An empty
 // expectedSHA256 expects no document, so a fresh draft can't replace one
-// that appeared in the meantime (RFC 0007, H2). The check runs just before
+// that appeared in the meantime. The check runs just before
 // the rename; a write landing between the two still wins.
 func (s *Store) WriteIfUnchanged(applicationID int64, documentType Type, content, expectedSHA256 string) (string, error) {
 	return s.write(applicationID, documentType, content, func() error {

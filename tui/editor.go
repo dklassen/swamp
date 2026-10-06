@@ -32,7 +32,7 @@ func editorCommand(editorEnv, path string) (string, []string, error) {
 // editorClosedMsg reports that a tea.ExecProcess-launched $EDITOR has
 // returned control to the Program, successfully or not. before is the
 // document's hash when the editor opened (empty: it didn't exist), so a
-// change can be recorded as the user's (#258).
+// change can be recorded as the user's.
 type editorClosedMsg struct {
 	applicationID int64
 	documentType  documents.Type
@@ -59,7 +59,7 @@ func openInEditor(path string, closed editorClosedMsg) tea.Cmd {
 
 // recordEditorWrite records the user's edit if the document changed while
 // the editor was open, then reloads the application's reviews, which the
-// edit may have made stale (RFC 0007, step 6).
+// edit may have made stale.
 func recordEditorWrite(s *store.Store, docs *documents.Store, closed editorClosedMsg) tea.Cmd {
 	return func() tea.Msg {
 		path, err := docs.Path(closed.applicationID, closed.documentType)
