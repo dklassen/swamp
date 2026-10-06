@@ -177,17 +177,22 @@ Build it as #259's signal, in this order (each its own issue and PR):
 
 1. **Feasibility spike in code** (S): the `change_events` table and the two-layer triggers on `applications` only, the connection hook stamping origin, and tests for experiments 3, 4 (outsider writes still succeed) and 7. Proves the mechanism in the real store.
 2. **Trigger generation and the drift test** (S/M): one place listing logged tables and columns; the test that fails on a missing or stale trigger; AGENTS.md rule.
-3. **The remaining tables** (S), per the column table above, with the sync-noise test (a fetch that only refreshes `last_seen_at` logs nothing).
-4. **Watcher reads the log** (S): `ChangeWatcher` confirms by reading past its cursor; fallback poll; pruning.
+3. **The remaining tables** (S), per the column table above, with the sync-noise test (a fetch that only refreshes `last_seen_at` logs nothing). Events name rows by ID, so a table whose IDs can be reused needs `AUTOINCREMENT` first (#246); that matters for tables with hard deletes (`company_filters`, rebuilt on every sync; `interview_stages`).
+4. **Watcher reads the log** (S): `ChangeWatcher` confirms by reading past its cursor instead of the `data_version` probe, which is then removed (#257); a fallback poll of `max(id)`; pruning events older than 30 days.
 5. **#259 on top** (M): the TUI consumes events, skips its own, reloads per screen, names the source.
+
+## Decided (2026-10-06, user)
+
+- **Retention:** 30 days.
+- **Origin:** `kind:pid`, e.g. `tui:4120`, `mcp:3981`, `fetch:5512`. No per-window names.
+- **The `data_version` probe (#257) is removed** in step 4, once the watcher reads the log instead.
+- **Work items filed** for steps 1–4; step 5 is #259 itself.
 
 ## Open questions
 
-1. **Retention:** 30 days? Prune where: `swamp fetch`, TUI start, or both?
-2. **Origin format:** `kind:pid` is enough to tell processes apart; is a stable name per TUI window wanted (to say "your other window")?
-3. **Columns per table:** the first cut above, especially for `postings`.
-4. **Agent notifications:** worth an MCP follow-up once the log exists?
-5. **Should `data_version` (#257) be removed** once nothing uses it, or kept as a cheap pre-check?
+1. **Where to prune:** `swamp fetch`, TUI start, or both? Proposed: both; it's one `DELETE` on an indexed column.
+2. **Columns per table:** the first cut above, especially for `postings`; settled in step 3.
+3. **Agent notifications:** worth an MCP follow-up once the log exists?
 
 ## Out of scope
 
