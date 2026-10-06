@@ -606,3 +606,26 @@ func TestCompanyListModel_View_SearchLineDoesNotMoveTheTable(t *testing.T) {
 		t.Errorf("table starts on line %d with the search open, want %d (as when idle)", got, want)
 	}
 }
+
+// The info box lines up with the table above it.
+func TestCompanyListModel_View_InfoBoxIsAsWideAsTheTable(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme", Description: strings.Repeat("Makes anvils for roadrunner enthusiasts. ", 3)}}
+	for _, width := range []int{80, 160, 0} {
+		m := &companyListModel{}
+		typeKeys(t, m, companies, "i")
+		var tops []int
+		for _, line := range strings.Split(m.View(companies, nil, width, 40), "\n") {
+			if strings.Contains(line, "╭") {
+				tops = append(tops, lipgloss.Width(line))
+			}
+		}
+		if len(tops) != 2 {
+			t.Fatalf("width %d: found %d boxes, want the table and the info box", width, len(tops))
+		}
+		if tops[1] != tops[0] {
+			t.Errorf("width %d: info box is %d wide, want %d (the table's width)", width, tops[1], tops[0])
+		}
+	}
+}

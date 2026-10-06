@@ -7941,3 +7941,11 @@ above the pre-migration maximum could still pick up a folder.
 - The status renders with dimStyle rather than helpStyle, whose top
   margin would add a second blank line. screenRows still counts the
   banner's rows, so every screen still fits with one up.
+
+## 2026-10-06 -- The company info box is as wide as the table
+
+- Supersedes the #287 entry's note that the info box keeps its own
+  reading-width cap. The user wants it lined up with the table above it,
+  so its width now comes from tableWidth like the tables', and the
+  76-column fallback and 96-column cap are gone. A cap, when one comes,
+  goes in tableWidth and applies to both.

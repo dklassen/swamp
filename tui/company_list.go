@@ -261,11 +261,6 @@ const (
 	// companyInfoDescriptionLines is how many wrapped description lines the
 	// info box shows; longer descriptions end with an ellipsis.
 	companyInfoDescriptionLines = 4
-	// defaultCompanyInfoWidth is the box's text width before the terminal
-	// reports its size; maxCompanyInfoWidth keeps lines readable on very
-	// wide terminals.
-	defaultCompanyInfoWidth = 76
-	maxCompanyInfoWidth     = 96
 )
 
 // companyInfoBox renders the info box for c: a header with its name, board
@@ -273,11 +268,9 @@ const (
 // -- top and bottom border, the header, and companyInfoDescriptionLines --
 // so moving the cursor with the box open never shifts the table.
 func companyInfoBox(c store.Company, width int) string {
-	textWidth := defaultCompanyInfoWidth
-	if width > 0 {
-		// Two border columns and one column of padding on each side.
-		textWidth = min(max(width-4, 20), maxCompanyInfoWidth)
-	}
+	// As wide as the table above it, less two border columns and one
+	// column of padding on each side.
+	textWidth := max(tableWidth(width)-4, 20)
 
 	var lines []string
 	if d := strings.Join(strings.Fields(c.Description), " "); d != "" {
