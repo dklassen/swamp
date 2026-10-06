@@ -1601,24 +1601,25 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-// banner is the error or status message View() draws above the active
+// banner is the error or status message View() draws below the active
 // screen, including the blank line separating the two, or "" when there's
-// nothing to show.
+// nothing to show. It's at the bottom until notifications get a place of
+// their own, so one coming and going doesn't move the screen.
 func (a *App) banner() string {
 	if a.err != nil {
-		return errStyle.Render(fmt.Sprintf("error: %v", a.err)) + "\n\n"
+		return "\n\n" + errStyle.Render(fmt.Sprintf("error: %v", a.err))
 	}
 	if a.status != "" {
-		return helpStyle.Render(a.status) + "\n\n"
+		return "\n\n" + dimStyle.Render(a.status)
 	}
 	return ""
 }
 
 // screenRows is the terminal height left for the active screen once
-// View() has drawn the header and banner above it. Every newline in them
-// ends one of their rows, and the screen starts on the row after the
-// last. A line wider than the terminal doesn't take extra rows: bubbletea
-// truncates lines to the window width rather than letting them wrap.
+// View() has drawn the header above it and the banner below. Every
+// newline in them takes one row. A line wider than the terminal doesn't
+// take extra rows: bubbletea truncates lines to the window width rather
+// than letting them wrap.
 func (a *App) screenRows() int {
 	return max(a.height-strings.Count(a.header()+a.banner(), "\n"), 0)
 }
@@ -1626,9 +1627,7 @@ func (a *App) screenRows() int {
 func (a *App) View() string {
 	var b strings.Builder
 
-	// The header first, so a banner coming and going doesn't move it.
 	b.WriteString(a.header())
-	b.WriteString(a.banner())
 
 	switch a.screen {
 	case screenActiveApplications:
@@ -1673,6 +1672,7 @@ func (a *App) View() string {
 		b.WriteString(a.filterSelect.View(a.screenRows()))
 	}
 
+	b.WriteString(a.banner())
 	return b.String()
 }
 

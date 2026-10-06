@@ -1627,9 +1627,9 @@ func TestApp_PostingDetail_DownScrollsLongDescription(t *testing.T) {
 }
 
 // TestApp_PostingDetail_FitsTheTerminalUnderTheBanner checks the whole
-// rendered App -- the status/error banner View() draws above every screen,
+// rendered App -- the status/error banner View() draws below every screen,
 // plus posting detail itself -- fits in the terminal, so the posting title
-// isn't pushed off the top. openPostingList syncs the company first, which
+// isn't pushed off the screen. openPostingList syncs the company first, which
 // leaves a status line up; a failed browser open replaces it with an
 // error, after posting detail is already on screen.
 func TestApp_PostingDetail_FitsTheTerminalUnderTheBanner(t *testing.T) {
