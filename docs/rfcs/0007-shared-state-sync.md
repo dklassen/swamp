@@ -233,7 +233,7 @@ Effort: **S** is a few hours to a day, **M** a few days. Each task is its own is
 
 ## Open questions
 
-1. **Tick interval.** 1 s or 2 s? A tick costs about a microsecond and the reload only runs on change, so this is about how fast a change should appear, not cost. Proposed: 1 s. *Superseded by RFC 0008: a 500 ms poll of the change log (user decision).
+1. **Tick interval.** 1 s or 2 s? A tick costs about a microsecond and the reload only runs on change, so this is about how fast a change should appear, not cost. Proposed: 1 s. *Superseded by RFC 0008: a 500 ms poll of the change log (user decision).*
 2. **Hash storage.** Should H2's hashes come from rereading files, or from a `document_writes` table? Rereading is simpler and can't disagree with disk; a table adds history. Proposed: reread, and add the table only if step 8 wants it anyway.
 3. **Edits made outside Swamp.** Is reloading on screen entry enough, or is fsnotify (option 5) worth it later?
 4. **Should the TUI show that a reload happened?** For example "updated" in the status line, so a row moving under the cursor isn't a surprise.
