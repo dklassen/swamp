@@ -279,3 +279,23 @@ func TestApp_SyncAll_CompanySyncingElsewhere_SummarizedAsSkipped(t *testing.T) {
 		t.Errorf("final status = %q, want %q", app.status, want)
 	}
 }
+
+// Refreshing a company's postings waits for a sync-all run, which may be
+// syncing that company, as refreshing it from the company list does.
+func TestApp_SyncAll_PostingListRefreshUnavailable(t *testing.T) {
+	app, _ := newSyncAllTestApp(t)
+
+	app, _ = sendKey(app, runeKey('R')) // the run's first step isn't run
+	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = applyCmd(t, app, cmd)
+	if app.screen != screenPostingList {
+		t.Fatalf("screen = %v, want the posting list", app.screen)
+	}
+	app, cmd = sendKey(app, runeKey('r'))
+	if cmd != nil {
+		t.Errorf("r during sync all returned a command, want none")
+	}
+	if want := "Sync all in progress: refresh unavailable"; app.status != want {
+		t.Errorf("status = %q, want %q", app.status, want)
+	}
+}

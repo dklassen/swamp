@@ -7949,3 +7949,18 @@ above the pre-migration maximum could still pick up a folder.
   so its width now comes from tableWidth like the tables', and the
   76-column fallback and 96-column cap are gone. A cap, when one comes,
   goes in tableWidth and applies to both.
+
+## 2026-10-06 -- r refreshes a company from its posting list
+
+- r on a company's posting list re-syncs that company, as r on the
+  company list does for the highlighted one: same key, same sync, same
+  refusal while sync-all is running (it may be syncing this company).
+  The posting list doesn't know its company, so it asks App with
+  refreshSelectedCompanyMsg and App uses selectedCompany.
+- When a sync of the company on screen finishes, its posting list now
+  reloads keeping the cursor on its posting (reloadPostings) instead of
+  going back to the top: a refresh can add postings ahead of it. This
+  also covers the re-sync after saving filters, where the save has
+  already put the cursor at the top, so nothing changes there.
+- The empty list's hint now says to press r here, not on the company
+  list.
