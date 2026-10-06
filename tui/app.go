@@ -65,9 +65,13 @@ const (
 )
 
 type App struct {
-	store     *store.Store
-	syncer    *sync.Syncer
-	companies []store.Company
+	store      *store.Store
+	changeFeed *store.ChangeFeed
+	origin     string
+	// heldChanges are events that arrived while a form was open.
+	heldChanges []store.ChangeEvent
+	syncer      *sync.Syncer
+	companies   []store.Company
 	// companyOpenPostings is each company's open, unarchived posting count
 	// (store.CountOpenPostingsByCompany), loaded alongside companies.
 	companyOpenPostings map[int64]int
@@ -404,7 +408,7 @@ func (a *App) returnBack() screen {
 // need refreshing.
 func (a *App) rebuildPostingDetailApplication() tea.Cmd {
 	_, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-	a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), a.postingDetail.posting, app, hasApp, nil, a.canNavigateSiblings(a.postingDetail.posting.ID))
+	a.replacePostingDetail(newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), a.postingDetail.posting, app, hasApp, nil, a.canNavigateSiblings(a.postingDetail.posting.ID)))
 	return maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 }
 
@@ -486,7 +490,7 @@ func sortCompaniesByName(companies []store.Company) {
 }
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(loadCompanies(a.store), loadActiveApplications(a.store, a.documents))
+	return tea.Batch(loadCompanies(a.store), loadActiveApplications(a.store, a.documents), a.pollChanges())
 }
 
 type activeApplicationsLoadedMsg struct {
@@ -735,6 +739,9 @@ type postingsLoadedMsg struct {
 	departments []string
 	locations   []string
 	err         error
+	// keepCursor: a reload in place, not a fresh list, so the cursor stays
+	// on the posting it was on.
+	keepCursor bool
 }
 
 // loadPostings re-applies the company's currently-saved filters after
@@ -966,13 +973,16 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case companiesLoadedMsg:
 		a.err = msg.err
+		previousCompany := a.companyList.selected(a.companies)
 		a.companies = msg.companies
+		a.companyList.keepCursorOn(previousCompany, a.companies)
 		a.companyOpenPostings = msg.openPostings
 	case activeApplicationsLoadedMsg:
 		a.err = msg.err
+		previous := a.activeApplicationList.selected(a.activeApplications)
 		a.activeApplications = msg.applications
 		a.activeApplicationProgress = msg.progress
-		a.activeApplicationList.resetCursorIfOutOfBounds(len(a.activeApplications))
+		a.activeApplicationList.keepCursorOn(previous, a.activeApplications)
 	case companyCreatedMsg:
 		a.err = msg.err
 		a.companyForm.checkResolved()
@@ -1028,9 +1038,14 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case postingsLoadedMsg:
 		a.err = msg.err
+		previousPosting := a.postingList.selected(a.postings)
 		a.postings = msg.postings
 		a.postingMarkup = msg.markup
-		a.postingList.resetCursor()
+		if msg.keepCursor {
+			a.postingList.keepCursorOn(previousPosting, a.postings)
+		} else {
+			a.postingList.resetCursor()
+		}
 		a.activeFilterDepartments = msg.departments
 		a.activeFilterLocations = msg.locations
 	case postingMarkupUpdatedMsg:
@@ -1065,7 +1080,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			if a.screen == screenPostingDetail {
 				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
+				a.replacePostingDetail(newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID)))
 				return a, maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 			}
 		}
@@ -1136,6 +1151,14 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// regardless of which screen triggered the change.
 			return a, tea.Batch(loadActiveApplications(a.store, a.documents), reviewsCmd)
 		}
+	case changeTickMsg:
+		return a, readChanges(a.changeFeed)
+	case changesMsg:
+		return a, a.handleChanges(msg)
+	case postingReloadedMsg:
+		return a, a.handlePostingReloaded(msg)
+	case applicationDetailReloadedMsg:
+		return a, a.handleApplicationDetailReloaded(msg)
 	case editorClosedMsg:
 		a.err = msg.err
 		// The edit may have made the latest review stale, so reload the
@@ -1248,7 +1271,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// navigated away from is simply discarded -- msg.applicationID no
 		// longer matching what's on screen means this result is stale.
 		if msg.err == nil && a.screen == screenPostingDetail && a.postingDetail.application.ID == msg.applicationID {
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), a.postingDetail.posting, a.postingDetail.application, a.postingDetail.hasApplication, msg.reviews, a.canNavigateSiblings(a.postingDetail.posting.ID))
+			a.replacePostingDetail(newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), a.postingDetail.posting, a.postingDetail.application, a.postingDetail.hasApplication, msg.reviews, a.canNavigateSiblings(a.postingDetail.posting.ID)))
 		}
 		if msg.err == nil && a.screen == screenApplicationDetail && a.applicationDetail.application.ID == msg.applicationID {
 			a.applicationDetail.application.LatestReviews = msg.reviews
