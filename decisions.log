@@ -7726,3 +7726,23 @@ above the pre-migration maximum could still pick up a folder.
   without one.
 - Checked end to end on a scratch database: `swamp stage prepare`
   logged its application insert with origin stage:<pid>.
+
+## 2026-10-06 -- #268: one list of what the change log covers, checked against the schema
+
+- db/migrations/changelog.go names every table: Logged (row key, logged
+  columns, deliberately ignored columns) or NotLogged with a reason.
+  Four tests compare it with the schema after all migrations: every
+  table is listed, every listed table exists, every column of a logged
+  table is the key, logged or ignored exactly once, and each logged
+  table's insert/update/delete triggers refer to exactly the key and
+  logged columns, with the update trigger's WHEN checking every logged
+  column.
+- Checked, not generated: migrations stay hand-written SQL, so
+  generating trigger text in Go would still need pasting into a
+  migration. The tests catch every drift the RFC lists (missing,
+  stale or rebuilt-away triggers; unclassified tables and columns),
+  each confirmed by a mutation that makes its test fail.
+- company_filters and interview_stages are NotLogged because their IDs
+  are reused after hard deletes (user decision: unlogged until #246);
+  the rest are "not logged yet" until #269.
+- AGENTS.md rule next to the UTC one.
