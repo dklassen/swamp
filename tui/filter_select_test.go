@@ -10,7 +10,7 @@ import (
 )
 
 func newTestFilterSelectModel() *filterSelectModel {
-	m := newFilterSelectModel(1, "Acme",
+	m := newFilterSelectModel(1,
 		[]string{"Engineering", "Sales"},
 		[]string{"Remote", "Onsite"},
 		[]store.CompanyFilter{{Field: filter.FieldDepartment, Value: "Sales"}},

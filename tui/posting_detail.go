@@ -62,14 +62,14 @@ func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height 
 }
 
 // setHeight fits the screen into height terminal rows -- everything App
-// leaves it below its own status/error banner (see App.screenRows) -- by
-// giving the viewport whatever the title and help line don't take. Both
-// are measured as rendered, margins and wrapped help lines included, so
-// the screen can't outgrow the terminal and push the title off the top.
-// The scroll position is kept (clamped to the new height), since the
-// banner can come and go while the user is reading.
+// leaves it below its header and status/error banner (see App.screenRows)
+// -- by giving the viewport whatever the help line doesn't take. It's
+// measured as rendered, margin and wrapped lines included, so the screen
+// can't outgrow the terminal and push the header off the top. The scroll
+// position is kept (clamped to the new height), since the banner can come
+// and go while the user is reading.
 func (m *postingDetailModel) setHeight(height int) {
-	chrome := lipgloss.Height(m.title()) + lipgloss.Height(helpStyle.Render(m.help))
+	chrome := lipgloss.Height(helpStyle.Render(m.help))
 	m.viewport.Height = max(height-chrome, 0)
 	m.viewport.SetYOffset(m.viewport.YOffset)
 }
@@ -183,21 +183,9 @@ func (m *postingDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 
 func (m *postingDetailModel) View() string {
 	var b strings.Builder
-	b.WriteString(m.title() + "\n")
 	b.WriteString(m.viewport.View() + "\n")
 	b.WriteString(helpStyle.Render(m.help))
 	return b.String()
-}
-
-// title renders the posting title above the viewport. Truncated rather
-// than wrapped: the title sits outside the viewport, and a second title
-// line would push the help line off the screen.
-func (m *postingDetailModel) title() string {
-	title := m.posting.Title
-	if inner := detailInnerWidth(m.width); inner > 0 {
-		title = truncateCol(title, inner)
-	}
-	return indentLines(titleStyle.Render(title), detailPadding)
 }
 
 // resize rebuilds the viewport at new dimensions, keeping the same

@@ -75,7 +75,6 @@ func (m *applicationStatusModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 
 func (m *applicationStatusModel) View() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Set application status") + "\n")
 	for i, st := range applicationStatuses {
 		if i == m.cursor {
 			b.WriteString(cursorStyle.Render("> "+applicationStatusLabel(st)) + "\n")

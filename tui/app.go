@@ -27,7 +27,6 @@ import (
 )
 
 var (
-	titleStyle  = lipgloss.NewStyle().Bold(true).MarginBottom(1)
 	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).MarginTop(1)
 	// dimStyle is helpStyle's same muted color without its MarginTop(1) --
@@ -1285,7 +1284,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
-		a.filterSelect = newFilterSelectModel(a.selectedCompany.ID, a.selectedCompany.Name, msg.departments, msg.locations, msg.existingFilters)
+		a.filterSelect = newFilterSelectModel(a.selectedCompany.ID, msg.departments, msg.locations, msg.existingFilters)
 	case companyFiltersAppliedMsg:
 		if errors.Is(msg.err, sync.ErrSyncInProgress) {
 			// The filters saved; only the re-sync was skipped, because
@@ -1444,7 +1443,6 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	case screenPostingList:
 		snap := postingListSnapshot{
-			companyName:             a.selectedCompany.Name,
 			companyDescription:      a.selectedCompany.Description,
 			postings:                a.postings,
 			markup:                  a.postingMarkup,
@@ -1645,7 +1643,6 @@ func (a *App) View() string {
 		b.WriteString(a.companyEdit.View())
 	case screenPostingList:
 		snap := postingListSnapshot{
-			companyName:             a.selectedCompany.Name,
 			companyDescription:      a.selectedCompany.Description,
 			postings:                a.postings,
 			markup:                  a.postingMarkup,

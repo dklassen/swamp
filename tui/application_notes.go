@@ -38,13 +38,11 @@ func newApplicationNotesModel(s *store.Store, postingID int64, notes string, wid
 }
 
 // setHeight fits the screen into height terminal rows, giving the text
-// area whatever the title and help line, measured as rendered, leave
+// area whatever the help line, measured as rendered, leaves
 // (issue #138).
 func (m *applicationNotesModel) setHeight(height int) {
-	m.textarea.SetHeight(max(height-lipgloss.Height(applicationNotesTitle())-lipgloss.Height(applicationNotesHelp()), 0))
+	m.textarea.SetHeight(max(height-lipgloss.Height(applicationNotesHelp()), 0))
 }
-
-func applicationNotesTitle() string { return titleStyle.Render("Edit application notes") }
 
 func applicationNotesHelp() string { return helpStyle.Render("ctrl+s: save  esc: cancel") }
 
@@ -66,7 +64,6 @@ func (m *applicationNotesModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 
 func (m *applicationNotesModel) View() string {
 	var b strings.Builder
-	b.WriteString(applicationNotesTitle() + "\n")
 	b.WriteString(m.textarea.View() + "\n")
 	b.WriteString(applicationNotesHelp())
 	return b.String()

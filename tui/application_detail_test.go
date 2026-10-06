@@ -163,8 +163,8 @@ func TestApplicationDetailModel_View_ShowsOutcomeAndNotes(t *testing.T) {
 	m := newApplicationDetailModel(documents.NewStore(t.TempDir()), application)
 
 	got := m.View()
-	if !containsAll(got, "Engineer", "Acme", "[FLAGGED]", "too generic", "[PASSED]") {
-		t.Fatalf("View() = %q, want title, company, and both review outcomes with notes", got)
+	if !containsAll(got, "Acme", "[FLAGGED]", "too generic", "[PASSED]") {
+		t.Fatalf("View() = %q, want company and both review outcomes with notes", got)
 	}
 }
 

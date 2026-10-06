@@ -47,13 +47,13 @@ func newApplicationFormModel(s *store.Store, postingID int64, previous *jobboard
 }
 
 // setHeight fits the screen into height rows, giving the text area what
-// the title, error and help lines leave (issue #138).
+// the intro, error and help lines leave (issue #138).
 func (m *applicationFormModel) setHeight(height int) {
-	m.textarea.SetHeight(max(height-lipgloss.Height(applicationFormTitle())-lipgloss.Height(applicationFormHelp())-1, 0))
+	m.textarea.SetHeight(max(height-lipgloss.Height(applicationFormIntro())-lipgloss.Height(applicationFormHelp())-1, 0))
 }
 
-func applicationFormTitle() string {
-	return titleStyle.Render("Application form") + "\n" + dimStyle.Render("What the apply page asks for. Paste its questions below.")
+func applicationFormIntro() string {
+	return dimStyle.Render("What the apply page asks for. Paste its questions below.")
 }
 
 func applicationFormHelp() string { return helpStyle.Render("ctrl+s: save  esc: cancel") }
@@ -81,7 +81,7 @@ func (m *applicationFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 
 func (m *applicationFormModel) View() string {
 	var b strings.Builder
-	b.WriteString(applicationFormTitle() + "\n")
+	b.WriteString(applicationFormIntro() + "\n")
 	if m.parseErr != nil {
 		b.WriteString(errStyle.Render(m.parseErr.Error()))
 	}

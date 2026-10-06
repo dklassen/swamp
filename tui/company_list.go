@@ -299,8 +299,6 @@ func companyInfoBox(c store.Company, width int) string {
 		lines = append(lines, "")
 	}
 
-	// Bold without titleStyle's MarginBottom, which would add a line and break
-	// the box's fixed height.
 	header := lipgloss.NewStyle().Bold(true).Render(truncateCol(fmt.Sprintf("%s · %s/%s", c.Name, c.Source, c.SourceRef), textWidth))
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).

@@ -12,7 +12,6 @@ import (
 
 func testPostingListSnapshot() postingListSnapshot {
 	return postingListSnapshot{
-		companyName: "Acme",
 		postings: []store.Posting{
 			{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}},
 			{ID: 2, IngestedFields: store.IngestedFields{Title: "Designer"}},

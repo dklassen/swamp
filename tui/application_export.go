@@ -65,7 +65,6 @@ func (m *applicationExportModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 
 func (m *applicationExportModel) View() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Export PDFs") + "\n")
 	b.WriteString(fieldLabel.Render("Application:") + " " + m.application.CompanyName + " -- " + m.application.Posting.Title + "\n\n")
 	b.WriteString(fieldLabel.Render("Destination folder:") + "\n")
 	b.WriteString(m.textinput.View() + "\n")

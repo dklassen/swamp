@@ -12,13 +12,13 @@ import (
 	"github.com/dklassen/swamp/store"
 )
 
-func TestPostingDetailModel_New_RendersTitleAndContent(t *testing.T) {
+func TestPostingDetailModel_New_RendersContent(t *testing.T) {
 	t.Parallel()
 
 	p := store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}}
 	m := newPostingDetailModel(nil, nil, 80, 20, p, store.Application{}, false, nil, true)
-	if !containsAll(m.View(), "Engineer", "No application started") {
-		t.Fatalf("View() = %q, want it to contain title and no-application message", m.View())
+	if !strings.Contains(m.View(), "No application started") {
+		t.Fatalf("View() = %q, want it to contain the no-application message", m.View())
 	}
 }
 
@@ -193,13 +193,13 @@ func TestPostingDetailModel_Resize_RebuildsViewportAtNewDimensions(t *testing.T)
 	if m.viewport.Width != 40 {
 		t.Fatalf("viewport width = %d, want 40", m.viewport.Width)
 	}
-	// The height is every row the screen gets, so the whole view -- title,
-	// viewport and help -- fits in it (see setHeight).
+	// The height is every row the screen gets, so the whole view -- viewport
+	// and help -- fits in it (see setHeight).
 	if lines := strings.Count(m.View(), "\n") + 1; lines > 10 {
 		t.Fatalf("View() after resize is %d lines, want at most 10 (the new height)", lines)
 	}
-	if !strings.Contains(m.View(), "Engineer") {
-		t.Fatalf("View() after resize = %q, want it to still contain the title", m.View())
+	if !strings.Contains(m.View(), "Application") {
+		t.Fatalf("View() after resize = %q, want it to still contain the body", m.View())
 	}
 }
 
@@ -409,11 +409,10 @@ func TestPostingDetailModel_View_NeverSplitsAReviewBadge(t *testing.T) {
 }
 
 // TestPostingDetailModel_View_FitsTheTerminal checks the whole screen --
-// title, scrollable body, and help line -- fits in the terminal, so the
-// title stays visible at the top. The model is given every row App leaves
-// it (see App.screenRows) and must fit its own title and help into that --
-// the help line wraps on narrower terminals, so a fixed allowance for them
-// used to let the view run past the bottom and push the title off the top.
+// scrollable body and help line -- fits in the rows App leaves it (see
+// App.screenRows), so App's header stays visible at the top. The help line
+// wraps on narrower terminals, so a fixed allowance for it used to let the
+// view run past the bottom and push the title off the top.
 func TestPostingDetailModel_View_FitsTheTerminal(t *testing.T) {
 	t.Parallel()
 
@@ -430,9 +429,6 @@ func TestPostingDetailModel_View_FitsTheTerminal(t *testing.T) {
 			lines := strings.Split(ansi.Strip(m.View()), "\n")
 			if len(lines) > termHeight {
 				t.Errorf("view is %d lines, want at most %d (the terminal height)", len(lines), termHeight)
-			}
-			if !strings.Contains(lines[0], "Senior Developer, Fullstack") {
-				t.Errorf("first line = %q, want the posting title", lines[0])
 			}
 			for i, line := range lines {
 				if w := ansi.StringWidth(line); w > width {

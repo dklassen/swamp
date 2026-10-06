@@ -106,7 +106,6 @@ func (m *applicationDetailModel) enterReview(documentType documents.Type) tea.Ms
 
 func (m *applicationDetailModel) View() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render(m.application.Posting.Title) + "\n")
 	b.WriteString(fieldLabel.Render("Company:") + " " + m.application.CompanyName + "\n")
 	b.WriteString(fieldLabel.Render("Status:") + " " + applicationStatusLabel(m.application.Status) + "\n")
 	if m.application.Notes != "" {

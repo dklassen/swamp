@@ -72,7 +72,6 @@ type confirmApplicationSubmitMsg struct {
 
 func (m *applicationSubmitModel) View() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Submit: "+m.application.Posting.Title) + "\n")
 	b.WriteString(fieldLabel.Render("Company:") + " " + m.application.CompanyName + "\n\n")
 
 	b.WriteString(fieldLabel.Render("1. Apply link:") + " ")
