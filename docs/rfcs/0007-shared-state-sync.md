@@ -1,6 +1,6 @@
 # RFC 0007: Keeping the TUI, the MCP server and the files in step
 
-- **Status:** Safe writes (wave A) and steps 6–8 implemented. Seeing other processes' changes is specified by RFC 0008.
+- **Status:** Implemented. Seeing other processes' changes is RFC 0008's change log; reloading a screen on entry (#260) is still to do.
 - **Date:** 2026-10-05
 - **Related:** #243, #244; RFC 0001 (several processes writing one database), RFC 0004 and 0005 (a review counts only while it matches the file), RFC 0008 (the change log)
 
@@ -94,7 +94,7 @@ Effort: **S** is a few hours to a day, **M** a few days. Labels `rfc-0007` and `
 | 6. Reload after `$EDITOR` | #256 | Done |
 | 7. `PRAGMA data_version` probe | #257 | Done; replaced by RFC 0008 and removed in #270 |
 | 8. Document writes recorded in the database | #258 | Done |
-| 9. Reload the screens a change touches | #259 | RFC 0008, step 5 |
+| 9. Reload the screens a change touches | #259 | Done (RFC 0008, step 5) |
 | 10. Reload a screen on entry | #260 | To do (**S**) |
 
 ## Open questions

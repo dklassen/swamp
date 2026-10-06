@@ -56,11 +56,27 @@ func (a *App) handleChanges(msg changesMsg) tea.Cmd {
 		return a.pollChanges()
 	}
 	others := slices.DeleteFunc(slices.Clone(msg.events), func(e store.ChangeEvent) bool { return e.Origin == a.origin })
-	if len(others) == 0 {
+	if len(others) > 0 {
+		a.status = "Updated by " + changedBy(others)
+	}
+	// A form in progress is never rebuilt: hold the events until the
+	// screen is one that reloads, on a later tick.
+	a.heldChanges = append(a.heldChanges, others...)
+	if len(a.heldChanges) == 0 || !reloads(a.screen) {
 		return a.pollChanges()
 	}
-	a.status = "Updated by " + changedBy(others)
-	return tea.Batch(a.reloadFor(others), a.pollChanges())
+	events := a.heldChanges
+	a.heldChanges = nil
+	return tea.Batch(a.reloadFor(events), a.pollChanges())
+}
+
+// reloads is whether reloadFor handles screen; on any other, events wait.
+func reloads(s screen) bool {
+	switch s {
+	case screenActiveApplications, screenCompanyList, screenPostingList, screenPostingDetail, screenApplicationDetail:
+		return true
+	}
+	return false
 }
 
 // reloadFor reruns what the current screen shows, if events touch it.

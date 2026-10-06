@@ -281,3 +281,47 @@ func TestApp_PostingDetailReload_ShowsTheChangeAndKeepsTheScroll(t *testing.T) {
 		t.Errorf("scroll offset = %d after the reload, want %d", got, scrolled)
 	}
 }
+
+// TestApp_ChangesWhileAFormIsOpen_WaitUntilItCloses: a form you're filling
+// in is never rebuilt; the screen beneath catches up once you're back.
+func TestApp_ChangesWhileAFormIsOpen_WaitUntilItCloses(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	app, application := deleteTestApp(t)
+	app.WithChangeFeed(nil, "tui:1")
+	app = sendKeyAndApply(t, app, runeKey('s'))
+	if app.screen != screenApplicationStatusSelect {
+		t.Fatalf("screen after s = %v, want the status form", app.screen)
+	}
+	app, _ = sendKey(app, runeKey('j'))
+	form := app.applicationStatus
+	acme, err := app.store.GetCompany(ctx, mustPosting(t, app.store, application.PostingID).CompanyID)
+	if err != nil {
+		t.Fatalf("GetCompany: %v", err)
+	}
+	other := mustUpsertPosting(t, app.store, acme.ID, "job-2", "Started By The Agent")
+	if _, err := app.store.CreateApplication(ctx, other.ID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+
+	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "applications", RowID: 99, Op: "insert", Origin: "mcp:7"}}})
+	if app.screen != screenApplicationStatusSelect || app.applicationStatus.cursor != form.cursor {
+		t.Fatalf("the status form changed under you: screen %v, cursor %d (was %d)", app.screen, app.applicationStatus.cursor, form.cursor)
+	}
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, changesMsg{}) // the next tick, with nothing new
+	if !strings.Contains(app.View(), "Started By The Agent") {
+		t.Errorf("the home list didn't catch up after the form closed:\n%s", app.View())
+	}
+}
+
+func mustPosting(t *testing.T, s *store.Store, id int64) store.Posting {
+	t.Helper()
+	p, err := s.GetPosting(context.Background(), id)
+	if err != nil {
+		t.Fatalf("GetPosting: %v", err)
+	}
+	return p
+}

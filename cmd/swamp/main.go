@@ -111,7 +111,12 @@ func main() {
 	}
 
 	syncer := newSyncer(s)
-	_, runErr := tea.NewProgram(tui.New(s, syncer, documentsStore), tea.WithAltScreen()).Run()
+	feed, err := s.NewChangeFeed(context.Background())
+	if err != nil {
+		log.Fatalf("read the change log: %v", err)
+	}
+	app := tui.New(s, syncer, documentsStore).WithChangeFeed(feed, cfg.Origin)
+	_, runErr := tea.NewProgram(app, tea.WithAltScreen()).Run()
 	// Quitting abandons a refresh or sync-all still in flight, whose own
 	// lease release would then never run: free its lease before the
 	// database closes, or the next sync of that company is refused until

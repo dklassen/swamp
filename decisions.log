@@ -7784,3 +7784,27 @@ above the pre-migration maximum could still pick up a folder.
 - changelog.go's LoggedTable gains Ops: the document tables are
   insert-only, and the drift test now also fails on a trigger the list
   doesn't expect.
+
+## 2026-10-06 -- #259: the TUI reloads what other processes' changes touch
+
+- The TUI reads the change feed every 500 ms (a tea.Tick re-armed after
+  each read), skips events with its own origin, and says who made the
+  rest: "the agent" (mcp), "swamp fetch", "another window", "a change
+  outside Swamp" (no origin).
+- Each screen reloads only for events that touch it: the home list for
+  applications, postings, companies and document events; the company
+  list for companies and postings (it shows open counts); the posting
+  list for postings; posting detail for its posting and its
+  application's events; application detail for its own row, its
+  document events and its posting.
+- The cursor stays on the same item (by ID) in the home, company and
+  posting lists, and posting detail keeps its scroll. A fresh posting
+  list (opening a company) still starts at the top: postingsLoadedMsg
+  has a keepCursor flag for reloads in place.
+- Application detail goes back to the home list and says so if its
+  application was deleted elsewhere.
+- On a form or picker, events are held, not acted on, and apply on the
+  first tick back on a screen that reloads; the tick runs even when
+  nothing is new, so they don't wait for another change.
+- Tests drive changesMsg directly; a real tick inside applyCmd would
+  re-arm itself forever. One test runs the tick and read by hand.

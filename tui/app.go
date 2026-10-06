@@ -68,8 +68,10 @@ type App struct {
 	store      *store.Store
 	changeFeed *store.ChangeFeed
 	origin     string
-	syncer     *sync.Syncer
-	companies  []store.Company
+	// heldChanges are events that arrived while a form was open.
+	heldChanges []store.ChangeEvent
+	syncer      *sync.Syncer
+	companies   []store.Company
 	// companyOpenPostings is each company's open, unarchived posting count
 	// (store.CountOpenPostingsByCompany), loaded alongside companies.
 	companyOpenPostings map[int64]int

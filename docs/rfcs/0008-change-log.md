@@ -1,6 +1,6 @@
 # RFC 0008: A change log in the database, read by each process
 
-- **Status:** Draft. Work items #273, #267–#270, #259; pruning deferred (#272).
+- **Status:** Implemented (#273, #267–#270, #259). Pruning deferred (#272).
 - **Date:** 2026-10-06
 - **Related:** RFC 0007 (keeping the TUI, the MCP server and the files in step), #243, #246, #258
 
