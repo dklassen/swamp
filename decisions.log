@@ -7692,3 +7692,12 @@ above the pre-migration maximum could still pick up a folder.
   database file is a complete backup before migrating.
 - Taskfile (user decision): `migrate` stays its own task, and `run`
   depends on it, so local runs migrate first. `mcp-serve` doesn't.
+
+## 2026-10-06 -- Taskfile: mcp-serve migrates first too
+
+- User decision: the database should be at the latest version before
+  any Swamp process runs. `mcp-serve` now depends on the `migrate` task,
+  like `run` (this reverses "`mcp-serve` doesn't" in the #273 entry).
+  `migrate` stays its own task, and `./bin/swamp migrate` works alone.
+- The binaries themselves still refuse a mismatched database rather
+  than migrating (#273); only the Taskfile's local paths compose them.
