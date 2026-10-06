@@ -146,3 +146,42 @@ func unsizedScreens() []sizedScreen {
 		{name: "application form", screen: screenApplicationForm, open: keys(openApplication, runeKey('f'))},
 	}
 }
+
+// A path too long for the line loses its middle first, oldest crumb
+// first, so the tab and the screen you're on stay readable.
+func TestApp_Header_LongBreadcrumbLosesItsMiddleFirst(t *testing.T) {
+	t.Parallel()
+
+	application := store.ApplicationView{
+		Posting:     store.Posting{IngestedFields: store.IngestedFields{Title: "Engineering Manager, Payments Reliability"}},
+		CompanyName: "Initech Global Holdings",
+	}
+	tests := []struct {
+		name  string
+		width int
+		want  string
+	}{
+		{"fits", 120, "Applications › Initech Global Holdings › Engineering Manager, Payments Reliability › Posting"},
+		{"drops the oldest middle crumb", 80, "Applications › … › Engineering Manager, Payments Reliability › Posting"},
+		{"drops every middle crumb", 40, "Applications › … › Posting"},
+		{"then cuts off the last crumb", 24, "Applications › … › Pos…"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			app := New(nil, nil, documents.NewStore(t.TempDir()))
+			app.width = tt.width
+			app.applicationDetail.application = application
+			app.screen, app.returnStack = screenPostingDetail, []screen{screenApplicationDetail}
+
+			line := strings.Split(ansi.Strip(app.header()), "\n")[0]
+			if got := strings.TrimSpace(line); got != tt.want {
+				t.Errorf("breadcrumb = %q, want %q", got, tt.want)
+			}
+			if w := ansi.StringWidth(line); w > tt.width {
+				t.Errorf("breadcrumb is %d wide, want at most %d", w, tt.width)
+			}
+		})
+	}
+}

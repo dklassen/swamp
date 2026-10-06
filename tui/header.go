@@ -16,7 +16,8 @@ func (a *App) header() string {
 	if isTab(a.screen) {
 		return a.tabBar()
 	}
-	crumbs := a.crumbs(a.path())
+	// Less the leading space.
+	crumbs := fitCrumbs(a.crumbs(a.path()), tableWidth(a.width)-1)
 	for i, crumb := range crumbs {
 		style := dimStyle
 		if i == len(crumbs)-1 {
@@ -24,8 +25,36 @@ func (a *App) header() string {
 		}
 		crumbs[i] = style.Render(crumb)
 	}
-	line := " " + strings.Join(crumbs, dimStyle.Render(" › "))
+	line := " " + strings.Join(crumbs, dimStyle.Render(crumbSeparator))
 	return line + "\n" + dimStyle.Render(strings.Repeat("─", tableWidth(a.width))) + "\n"
+}
+
+const crumbSeparator = " › "
+
+// fitCrumbs shortens crumbs to fit width once joined. The middle ones go
+// first, oldest first, behind a single "…", so the tab and the screen
+// you're on stay; if that's still too long, the last is cut off.
+func fitCrumbs(crumbs []string, width int) []string {
+	if len(crumbs) < 2 {
+		return crumbs
+	}
+	first, last := crumbs[0], crumbs[len(crumbs)-1]
+	for dropped := 0; dropped <= len(crumbs)-2; dropped++ {
+		fitted := crumbs
+		if dropped > 0 {
+			fitted = append([]string{first, "…"}, crumbs[1+dropped:]...)
+		}
+		if lipgloss.Width(strings.Join(fitted, crumbSeparator)) <= width {
+			return fitted
+		}
+	}
+	fitted := []string{first, last}
+	if len(crumbs) > 2 {
+		fitted = []string{first, "…", last}
+	}
+	before := lipgloss.Width(strings.Join(fitted[:len(fitted)-1], crumbSeparator) + crumbSeparator)
+	fitted[len(fitted)-1] = truncateCol(last, max(width-before, 0))
+	return fitted
 }
 
 func isTab(s screen) bool {
