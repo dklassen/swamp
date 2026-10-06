@@ -476,3 +476,250 @@ func TestActiveApplicationListModel_View_ShortRowsKeepTheTableWidth(t *testing.T
 		t.Errorf("table width with short rows = %d, want 100", got)
 	}
 }
+
+// typeHomeKeys sends each rune of s to m as a key press.
+func typeHomeKeys(t *testing.T, m *activeApplicationListModel, apps []store.ApplicationView, s string) {
+	t.Helper()
+	for _, r := range s {
+		m.Update(runeKey(r), apps)
+	}
+}
+
+// testSearchApplications has three applications, at Acme, Globex and
+// Initech, for the search tests.
+func testSearchApplications() []store.ApplicationView {
+	apps := testActiveApplications()
+	return append(apps, store.ApplicationView{
+		Application: store.Application{ID: 30, Status: store.ApplicationStatusSubmitted},
+		Posting:     store.Posting{ID: 3, IngestedFields: store.IngestedFields{Title: "Staff Analyst"}},
+		CompanyName: "Initech",
+	})
+}
+
+// The search matches the company or the posting title.
+func TestActiveApplicationListModel_Search_EnterOpensHighlightedMatch(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		keys string
+		want int64
+	}{
+		{"by company", "/glo", 20},
+		{"by title", "/analyst", 30},
+		{"ignoring case", "/INITECH", 30},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			apps := testSearchApplications()
+			m := newActiveApplicationListModel()
+
+			typeHomeKeys(t, &m, apps, tt.keys)
+			_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
+			if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != tt.want {
+				t.Fatalf("intent after %q, enter = %#v, want enterApplicationDetailMsg for application %d", tt.keys, intent, tt.want)
+			}
+		})
+	}
+}
+
+func TestActiveApplicationListModel_Search_ArrowsMoveThroughMatches(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		down, up tea.KeyMsg
+	}{
+		{name: "arrows", down: tea.KeyMsg{Type: tea.KeyDown}, up: tea.KeyMsg{Type: tea.KeyUp}},
+		{name: "ctrl+n/ctrl+p", down: tea.KeyMsg{Type: tea.KeyCtrlN}, up: tea.KeyMsg{Type: tea.KeyCtrlP}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			apps := testSearchApplications()
+			m := newActiveApplicationListModel()
+
+			typeHomeKeys(t, &m, apps, "/er") // Engineer at Acme, Designer at Globex
+			m.Update(tt.down, apps)
+			m.Update(tt.down, apps) // past the last match: stays on it
+			_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
+			if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != 20 {
+				t.Fatalf("intent after down, down, enter = %#v, want the Globex application (20)", intent)
+			}
+
+			m.Update(tt.up, apps)
+			_, intent = m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
+			if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != 10 {
+				t.Fatalf("intent after up, enter = %#v, want the Acme application (10)", intent)
+			}
+		})
+	}
+}
+
+func TestActiveApplicationListModel_Search_BackspaceWidensMatches(t *testing.T) {
+	t.Parallel()
+
+	apps := testSearchApplications()
+	m := newActiveApplicationListModel()
+
+	typeHomeKeys(t, &m, apps, "/glx") // matches nothing
+	m.Update(tea.KeyMsg{Type: tea.KeyBackspace}, apps)
+	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
+	if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != 20 {
+		t.Fatalf("intent after backspace, enter = %#v, want the Globex application (20)", intent)
+	}
+}
+
+func TestActiveApplicationListModel_Search_BackspaceOnEmptyQueryCloses(t *testing.T) {
+	t.Parallel()
+
+	apps := testSearchApplications()
+	m := newActiveApplicationListModel()
+
+	typeHomeKeys(t, &m, apps, "/")
+	m.Update(tea.KeyMsg{Type: tea.KeyBackspace}, apps)
+	if cmd, _ := m.Update(runeKey('q'), apps); cmd == nil {
+		t.Fatal("cmd on 'q' after backspace on an empty query = nil, want tea.Quit (the prompt should be closed)")
+	}
+}
+
+// Esc keeps the highlighted application selected in the full list, so '/'
+// also serves to jump to an application and then set its status or
+// export it.
+func TestActiveApplicationListModel_Search_EscClearsAndKeepsHighlight(t *testing.T) {
+	t.Parallel()
+
+	apps := testSearchApplications()
+	m := newActiveApplicationListModel()
+
+	typeHomeKeys(t, &m, apps, "/glo")
+	if _, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc}, apps); intent != nil {
+		t.Fatalf("intent on esc in the prompt = %#v, want nil (esc closes the prompt, it doesn't leave the screen)", intent)
+	}
+	_, intent := m.Update(runeKey('e'), apps)
+	if got, ok := intent.(enterApplicationExportMsg); !ok || got.application.ID != 20 {
+		t.Fatalf("intent on 'e' after esc = %#v, want export for the Globex application (20)", intent)
+	}
+	m.Update(tea.KeyMsg{Type: tea.KeyDown}, apps)
+	_, intent = m.Update(runeKey('e'), apps)
+	if got, ok := intent.(enterApplicationExportMsg); !ok || got.application.ID != 30 {
+		t.Fatalf("intent on down, 'e' after esc = %#v, want export for the Initech application (30): the full list is back", intent)
+	}
+}
+
+// While the prompt is open, the screen's command letters are just text.
+func TestActiveApplicationListModel_Search_CommandLettersAreTyped(t *testing.T) {
+	t.Parallel()
+
+	for _, r := range "qsejk/" {
+		t.Run(string(r), func(t *testing.T) {
+			t.Parallel()
+			apps := testSearchApplications()
+			apps[1].CompanyName = "x" + string(r) + "y"
+			m := newActiveApplicationListModel()
+
+			typeHomeKeys(t, &m, apps, "/x")
+			if cmd, intent := m.Update(runeKey(r), apps); cmd != nil || intent != nil {
+				t.Fatalf("cmd, intent on %q in the prompt = %v, %#v, want nil, nil", r, cmd, intent)
+			}
+			_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
+			if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != 20 {
+				t.Fatalf("intent on enter after typing %q = %#v, want the application at %q (20)", r, intent, apps[1].CompanyName)
+			}
+		})
+	}
+}
+
+func TestActiveApplicationListModel_View_Search(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		keys    string
+		want    []string
+		notWant []string
+	}{
+		{name: "prompt open, no query yet", keys: "/", want: []string{"/", "3 of 3", "Acme", "Globex", "Initech"}},
+		{name: "some match", keys: "/er", want: []string{"/er", "2 of 3", "Acme", "Globex"}, notWant: []string{"Initech"}},
+		{name: "none match", keys: "/zz", want: []string{"/zz", "0 of 3", `No applications match "zz".`}, notWant: []string{"Acme", "Globex", "No active applications"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			apps := testSearchApplications()
+			m := newActiveApplicationListModel()
+			typeHomeKeys(t, &m, apps, tt.keys)
+			got := m.View(apps, nil, time.Time{}, 100, 40)
+			for _, want := range tt.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("View missing %q:\n%s", want, got)
+				}
+			}
+			for _, notWant := range tt.notWant {
+				if strings.Contains(got, notWant) {
+					t.Errorf("View unexpectedly contains %q:\n%s", notWant, got)
+				}
+			}
+		})
+	}
+}
+
+func TestActiveApplicationListModel_View_HelpMatchesMode(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		keys    string
+		want    []string
+		notWant []string
+	}{
+		{name: "list", keys: "", want: []string{"/: search"}},
+		{name: "prompt open", keys: "/", want: []string{"type to filter", "enter: application detail", "esc: clear"}, notWant: []string{"s: status", "q: quit"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			apps := testSearchApplications()
+			m := newActiveApplicationListModel()
+			typeHomeKeys(t, &m, apps, tt.keys)
+			got := m.View(apps, nil, time.Time{}, 100, 40)
+			for _, want := range tt.want {
+				if !strings.Contains(got, want) {
+					t.Errorf("View missing %q:\n%s", want, got)
+				}
+			}
+			for _, notWant := range tt.notWant {
+				if strings.Contains(got, notWant) {
+					t.Errorf("View unexpectedly contains %q:\n%s", notWant, got)
+				}
+			}
+		})
+	}
+}
+
+// A reload (another process changed something) keeps the cursor on the
+// same match while the prompt is open, as it does on the full list.
+func TestActiveApplicationListModel_Search_ReloadKeepsTheHighlightedMatch(t *testing.T) {
+	t.Parallel()
+
+	apps := testSearchApplications()
+	m := newActiveApplicationListModel()
+	typeHomeKeys(t, &m, apps, "/s")               // Designer at Globex, Staff Analyst at Initech
+	m.Update(tea.KeyMsg{Type: tea.KeyDown}, apps) // the Initech application (30)
+
+	// The reload brings in an application ahead of it that doesn't match,
+	// so its place in the full list moves and its place among the matches
+	// doesn't.
+	reloaded := append([]store.ApplicationView{{
+		Application: store.Application{ID: 40},
+		Posting:     store.Posting{ID: 4, IngestedFields: store.IngestedFields{Title: "Engineer II"}},
+		CompanyName: "Hooli",
+	}}, apps...)
+	m.keepCursorOn(m.selected(apps), reloaded)
+
+	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, reloaded)
+	if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != 30 {
+		t.Fatalf("intent on enter after the reload = %#v, want the Initech application (30)", intent)
+	}
+}

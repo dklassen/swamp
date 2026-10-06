@@ -124,3 +124,26 @@ func TestApp_Esc_OnATab_StaysPut(t *testing.T) {
 		}
 	}
 }
+
+// Opening a match and coming back finds the search as it was, and so does
+// a trip to the other tab.
+func TestApp_ActiveApplications_SearchSurvivesDetailAndTab(t *testing.T) {
+	t.Parallel()
+
+	app := newFullTestApp(t)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 100, Height: 24})
+	for _, r := range "/engineer 07" {
+		app = sendKeyAndApply(t, app, runeKey(r))
+	}
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	if app.screen != screenApplicationDetail || app.applicationDetail.application.Posting.Title != "Engineer 07" {
+		t.Fatalf("after enter: screen %v showing %q, want application detail for Engineer 07", app.screen, app.applicationDetail.application.Posting.Title)
+	}
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyEsc}, {Type: tea.KeyTab}, {Type: tea.KeyTab}} {
+		app = sendKeyAndApply(t, app, key)
+	}
+	if app.screen != screenActiveApplications || !app.activeApplicationList.searching || app.activeApplicationList.query != "engineer 07" {
+		t.Errorf("back on the home list: screen %v, searching %v, query %q; want the search still open on %q",
+			app.screen, app.activeApplicationList.searching, app.activeApplicationList.query, "engineer 07")
+	}
+}

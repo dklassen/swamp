@@ -7893,3 +7893,25 @@ above the pre-migration maximum could still pick up a folder.
   two rows from the screen. TestApp_Screens_BreadcrumbReplacesTheTitle
   checks every screen below the tabs for its old title, and fails for a
   screen it has no entry for.
+
+## 2026-10-06 -- '/' search on the home list
+
+- The home list gets the company list's search: '/' opens a prompt above
+  the table, every keystroke re-filters, ↑/↓ and ctrl+n/p move through
+  the matches, enter opens the highlighted one, backspace on an empty
+  query closes the prompt, and esc clears it, leaving the highlighted
+  application selected in the full list so s and e act on it. While the
+  prompt is open the command letters are text, and the help line says so.
+- It matches the company name or the posting title, case-insensitive
+  substring. The company list only has names to match; on the home list
+  "staff" finding every Staff role seemed as useful as "glo" finding
+  Globex. Status isn't matched: it's a fixed set, better as a filter if
+  it's ever wanted.
+- The cursor indexes the matches, so selected and keepCursorOn, which
+  keep the cursor on the same application across a reload, now look in
+  the matches too. Indexing the full list happened to work when a reload
+  changed nothing, and lost the cursor when one added a non-matching
+  application above the match.
+- The search code is written again rather than shared with the company
+  list: two examples, and the shared part would be a few lines of string
+  handling against two different row types.

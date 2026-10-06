@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strconv"
 	"strings"
@@ -54,6 +55,10 @@ func longestStatusLabel() int {
 
 type activeApplicationListModel struct {
 	cursor int
+	// searching is whether the '/' prompt is open and taking keys; query
+	// is what's been typed into it.
+	searching bool
+	query     string
 }
 
 func newActiveApplicationListModel() activeApplicationListModel {
@@ -78,7 +83,12 @@ type enterApplicationExportMsg struct {
 // returned tea.Msg (if non-nil) is an intent for App to apply
 // synchronously -- see companyListModel.Update for the same convention.
 func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.ApplicationView) (tea.Cmd, tea.Msg) {
+	if m.searching {
+		return m.updateSearch(msg, apps)
+	}
 	switch {
+	case msg.String() == "/":
+		m.searching = true
 	case msg.Type == tea.KeyDown, msg.String() == "j":
 		if m.cursor < len(apps)-1 {
 			m.cursor++
@@ -106,18 +116,91 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 	return nil, nil
 }
 
+// updateSearch handles a key while the '/' prompt is open. Every edit
+// to the query re-filters straight away and puts the cursor back on the
+// first match.
+func (m *activeApplicationListModel) updateSearch(msg tea.KeyMsg, apps []store.ApplicationView) (tea.Cmd, tea.Msg) {
+	switch msg.Type {
+	case tea.KeyRunes, tea.KeySpace:
+		m.query += string(msg.Runes)
+		m.cursor = 0
+	case tea.KeyBackspace:
+		if r := []rune(m.query); len(r) > 0 {
+			m.query = string(r[:len(r)-1])
+			m.cursor = 0
+		} else {
+			m.searching = false
+		}
+	case tea.KeyEsc:
+		cursor := 0
+		if visible := m.visible(apps); m.cursor < len(visible) {
+			id := visible[m.cursor].ID
+			cursor = max(slices.IndexFunc(apps, func(a store.ApplicationView) bool { return a.ID == id }), 0)
+		}
+		m.searching = false
+		m.query = ""
+		m.cursor = cursor
+	case tea.KeyDown, tea.KeyCtrlN:
+		if m.cursor < len(m.visible(apps))-1 {
+			m.cursor++
+		}
+	case tea.KeyUp, tea.KeyCtrlP:
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case tea.KeyEnter:
+		visible := m.visible(apps)
+		if m.cursor < len(visible) {
+			return nil, enterApplicationDetailMsg{application: visible[m.cursor]}
+		}
+	}
+	return nil, nil
+}
+
+// visible is the part of apps the query matches: a case-insensitive
+// substring of the company or the posting title, in the order given.
+// With no query, it's all of them.
+func (m *activeApplicationListModel) visible(apps []store.ApplicationView) []store.ApplicationView {
+	if m.query == "" {
+		return apps
+	}
+	q := strings.ToLower(m.query)
+	var matches []store.ApplicationView
+	for _, a := range apps {
+		if strings.Contains(strings.ToLower(a.CompanyName), q) || strings.Contains(strings.ToLower(a.Posting.Title), q) {
+			matches = append(matches, a)
+		}
+	}
+	return matches
+}
+
 // View renders the list in height terminal rows (App.screenRows).
 // progress holds each application's document progress by application ID,
 // from which, with its LatestReviews, each row's next step is derived
 // (see nextStep), and now is what each row's Age counts up to.
 func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress map[int64]map[documents.Type]documentProgress, now time.Time, width, height int) string {
 	var b strings.Builder
-	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  s: status  e: export PDFs  tab: companies  q: quit")
-	if len(apps) == 0 {
+	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: search  s: status  e: export PDFs  tab: companies  q: quit")
+	if m.searching {
+		help = helpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: application detail  esc: clear")
+	}
+	visible := m.visible(apps)
+	// A reload landing while the prompt is open can shrink visible under
+	// the cursor.
+	cursor := min(m.cursor, max(len(visible)-1, 0))
+	var prompt string
+	if m.searching {
+		prompt = "/" + m.query + "▏  " + dimStyle.Render(fmt.Sprintf("%d of %d", len(visible), len(apps)))
+		b.WriteString(prompt + "\n")
+	}
+	switch {
+	case len(apps) == 0:
 		b.WriteString("No active applications. Press tab to browse companies.\n")
-	} else {
-		start, end := visibleWindow(m.cursor, len(apps), tableRows(height, help))
-		cursorRow := m.cursor - start
+	case len(visible) == 0:
+		fmt.Fprintf(&b, "No applications match %q.\n", m.query)
+	default:
+		start, end := visibleWindow(cursor, len(visible), tableRows(height, help, prompt))
+		cursorRow := cursor - start
 		t := table.New().
 			Headers("Company", "Title", "Age", "Next", "Status", "Review").
 			StyleFunc(func(row, _ int) lipgloss.Style {
@@ -129,7 +212,7 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress
 			})
 		titleWidth := flexColWidth(width, homeCompanyColWidth, homeAgeColWidth, homeNextColWidth, homeStatusColWidth, homeReviewColWidth)
 		for i := start; i < end; i++ {
-			a := apps[i]
+			a := visible[i]
 			t.Row(
 				padCol(a.CompanyName, homeCompanyColWidth),
 				padCol(a.Posting.Title, titleWidth),
@@ -145,10 +228,12 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress
 	return b.String()
 }
 
-// selected is the ID of the application under the cursor, or 0.
+// selected is the ID of the application under the cursor, or 0. The
+// cursor indexes what the search shows, which is all of apps when there's
+// no query.
 func (m *activeApplicationListModel) selected(apps []store.ApplicationView) int64 {
-	if m.cursor < len(apps) {
-		return apps[m.cursor].ID
+	if visible := m.visible(apps); m.cursor < len(visible) {
+		return visible[m.cursor].ID
 	}
 	return 0
 }
@@ -157,11 +242,12 @@ func (m *activeApplicationListModel) selected(apps []store.ApplicationView) int6
 // rows above it may have come or gone; if it's gone, the cursor stays in
 // range.
 func (m *activeApplicationListModel) keepCursorOn(id int64, apps []store.ApplicationView) {
-	if i := slices.IndexFunc(apps, func(a store.ApplicationView) bool { return a.ID == id }); i >= 0 {
+	visible := m.visible(apps)
+	if i := slices.IndexFunc(visible, func(a store.ApplicationView) bool { return a.ID == id }); i >= 0 {
 		m.cursor = i
 		return
 	}
-	m.resetCursorIfOutOfBounds(len(apps))
+	m.resetCursorIfOutOfBounds(len(visible))
 }
 
 // resetCursorIfOutOfBounds resets the cursor to the top if it's no

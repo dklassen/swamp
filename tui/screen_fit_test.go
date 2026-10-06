@@ -87,6 +87,14 @@ func sizedScreens() []sizedScreen {
 		{name: "active applications", screen: screenActiveApplications, open: func(t *testing.T, app *App) *App {
 			return app
 		}},
+		{name: "active applications searching", screen: screenActiveApplications, open: func(t *testing.T, app *App) *App {
+			// "eng" matches all 40 applications, enough to fill the table
+			// under the prompt line.
+			for _, r := range "/eng" {
+				app, _ = sendKey(app, runeKey(r))
+			}
+			return app
+		}},
 		{name: "company list", screen: screenCompanyList, open: func(t *testing.T, app *App) *App {
 			app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 			return app
