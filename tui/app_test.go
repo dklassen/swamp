@@ -3705,3 +3705,19 @@ func TestApp_CompanyList_SearchThenEnter_OpensMatchAndKeepsSearchOnReturn(t *tes
 		t.Errorf("company list after coming back should still show the search for \"glo\":\n%s", view)
 	}
 }
+
+// Narrowing the window makes the terminal rewrap the frame on screen,
+// pushing its last rows below where the next frame ends; the renderer
+// only clears below a frame that got shorter, so they'd stay there.
+func TestApp_Resize_ClearsTheScreen(t *testing.T) {
+	t.Parallel()
+
+	app := New(nil, nil, documents.NewStore(t.TempDir()))
+	_, cmd := sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 24})
+	if cmd == nil {
+		t.Fatal("resize returned no command, want tea.ClearScreen")
+	}
+	if got, want := cmd(), tea.ClearScreen(); got != want {
+		t.Errorf("resize command produced %T, want %T (tea.ClearScreen)", got, want)
+	}
+}

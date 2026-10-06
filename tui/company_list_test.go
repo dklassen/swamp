@@ -553,3 +553,28 @@ func TestCompanyListModel_Search_BackspaceOnEmptyQueryCloses(t *testing.T) {
 		t.Fatal("cmd on 'q' after backspace on an empty query = nil, want tea.Quit (the prompt should be closed)")
 	}
 }
+
+func TestCompanyListModel_View_TableSpansTerminalWidth(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
+	tests := []struct {
+		name  string
+		width int
+		want  int
+	}{
+		{"narrow terminal", 80, 80},
+		{"wide terminal", 160, 160},
+		{"before the terminal reports its size", 0, fallbackTableWidth},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			m := newCompanyListModel(nil)
+			if got := tableWidthOf(t, m.View(companies, nil, tt.width, 40)); got != tt.want {
+				t.Errorf("table width = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}

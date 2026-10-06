@@ -7815,3 +7815,42 @@ above the pre-migration maximum could still pick up a folder.
   the events carry the origin if it's wanted. Being sent back from a
   deleted application still says why, since the screen changed under
   you.
+
+## 2026-10-06 -- #287: list tables fill the terminal width
+
+- The home, company and posting list tables each had fixed column
+  widths, so titles were cut at 30 or 40 columns however wide the
+  terminal was, and each screen's table was a different width. The home
+  and posting tables also changed width as rows scrolled into view: their
+  cells were cut off but not padded, so lipgloss/table sized columns to
+  the rows on screen.
+- Now every table is tableWidth(terminal width) wide. Short columns keep
+  fixed widths and are padded; one column per table takes the rest:
+  Title on the home and posting lists, Name on the company list.
+  tableWidth returns the full width for now; it is the one place a cap,
+  or a width that depends on the content, would go (user's choice: full
+  width now, room to change it later without touching each screen).
+- Rejected: lipgloss/table's own Width. Probed against v1.1.0: too
+  narrow, it wraps cells onto extra lines, which breaks visibleWindow's
+  one-line-per-row math; too wide, it spreads the extra room over every
+  column instead of the title.
+- The flexible column never goes below 10. On the home screen that's
+  what an 80-column terminal leaves; narrower, the table runs off the
+  right edge rather than losing its titles. Before the terminal reports
+  its size, tables are 100 wide.
+- At 100 columns the home Title is still 30, the width #164 sized it
+  for. Its Status and Review widths are measured from every status label
+  and document type, so a new one widens its column instead of being cut
+  off.
+- The posting list's company description line is cut at the table's
+  width instead of a fixed 100. The company info box keeps its own
+  reading-width cap; it's wrapped text, not a table.
+- Found in the manual check (user): narrowing the window left wrapped
+  table tails and duplicated last rows below the help line. The terminal
+  rewraps the old full-width frame, pushing its bottom rows down; in the
+  alternate screen bubbletea's renderer redraws from the top and only
+  clears below when the new frame has fewer lines than the last, which
+  knows nothing of the rewrapping. A resize now also returns
+  tea.ClearScreen. Rejected: a one-column margin on tableWidth, which
+  only helps when shrinking by a single column. Full-width tables made
+  this common; any line wider than the new window could always do it.
