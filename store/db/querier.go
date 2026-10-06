@@ -15,6 +15,7 @@ type Querier interface {
 	// both sides are CURRENT_TIMESTAMP-format UTC text.
 	AcquireCompanySyncLease(ctx context.Context, arg AcquireCompanySyncLeaseParams) (int64, error)
 	AddTagToPosting(ctx context.Context, arg AddTagToPostingParams) error
+	ChangeEventsAfter(ctx context.Context, id int64) ([]ChangeEvent, error)
 	// Conditional, unlike MarkPostingClosed: 0 rows affected means the
 	// posting was already closed (e.g. by an overlapping sync), so the
 	// caller records nothing (see store.ClosePosting, #147).
@@ -77,6 +78,7 @@ type Querier interface {
 	// When the application entered its current status: every status write
 	// records a row (#162), so the newest is the current status's.
 	LatestApplicationStatusChange(ctx context.Context, applicationID int64) (ApplicationStatusHistory, error)
+	LatestChangeEventID(ctx context.Context) (int64, error)
 	// id breaks ties between exports in the same second (CURRENT_TIMESTAMP
 	// has one-second resolution).
 	LatestDocumentExport(ctx context.Context, arg LatestDocumentExportParams) (DocumentExport, error)
