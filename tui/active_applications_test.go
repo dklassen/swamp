@@ -640,9 +640,9 @@ func TestActiveApplicationListModel_View_Search(t *testing.T) {
 		want    []string
 		notWant []string
 	}{
-		{name: "prompt open, no query yet", keys: "/", want: []string{"/", "3 of 3", "Acme", "Globex", "Initech"}},
-		{name: "some match", keys: "/er", want: []string{"/er", "2 of 3", "Acme", "Globex"}, notWant: []string{"Initech"}},
-		{name: "none match", keys: "/zz", want: []string{"/zz", "0 of 3", `No applications match "zz".`}, notWant: []string{"Acme", "Globex", "No active applications"}},
+		{name: "prompt open, no query yet", keys: "/", want: []string{"🔍 ", "3 of 3", "Acme", "Globex", "Initech"}},
+		{name: "some match", keys: "/er", want: []string{"🔍 er", "2 of 3", "Acme", "Globex"}, notWant: []string{"Initech"}},
+		{name: "none match", keys: "/zz", want: []string{"🔍 zz", "0 of 3", `No applications match "zz".`}, notWant: []string{"Acme", "Globex", "No active applications"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -721,5 +721,22 @@ func TestActiveApplicationListModel_Search_ReloadKeepsTheHighlightedMatch(t *tes
 	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, reloaded)
 	if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != 30 {
 		t.Fatalf("intent on enter after the reload = %#v, want the Initech application (30)", intent)
+	}
+}
+
+// The search line is always there, so opening it doesn't push the table
+// down.
+func TestActiveApplicationListModel_View_SearchLineDoesNotMoveTheTable(t *testing.T) {
+	t.Parallel()
+
+	apps := testSearchApplications()
+	m := newActiveApplicationListModel()
+	idle := m.View(apps, nil, time.Time{}, 100, 40)
+	if !strings.Contains(idle, "🔍") {
+		t.Errorf("idle view has no search line:\n%s", idle)
+	}
+	typeHomeKeys(t, &m, apps, "/")
+	if got, want := tableTop(t, m.View(apps, nil, time.Time{}, 100, 40)), tableTop(t, idle); got != want {
+		t.Errorf("table starts on line %d with the search open, want %d (as when idle)", got, want)
 	}
 }

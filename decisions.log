@@ -7915,3 +7915,16 @@ above the pre-migration maximum could still pick up a folder.
 - The search code is written again rather than shared with the company
   list: two examples, and the shared part would be a few lines of string
   handling against two different row types.
+
+## 2026-10-06 -- The search line is always there
+
+- On both searchable lists (home and companies), the line above the
+  table is always drawn: "🔍 / to search", dimmed, until '/' opens the
+  search, then "🔍 query▏  N of M". Before, the line only appeared with the
+  search open and pushed the table down a row (user: no jump when it's
+  activated; the magnifying glass says what the line is for).
+- It costs a row on both lists all the time. It isn't drawn on an empty
+  list, where there's nothing to search.
+- One searchLine function draws it for both lists: they must look the
+  same, and two copies of the format would drift. The search handling
+  itself stays separate per list (see the home search entry).

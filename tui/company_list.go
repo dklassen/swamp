@@ -175,8 +175,8 @@ func (m *companyListModel) View(companies []store.Company, openPostings map[int6
 	// the cursor.
 	cursor := min(m.cursor, max(len(visible)-1, 0))
 	var prompt string
-	if m.searching {
-		prompt = "/" + m.query + "▏  " + dimStyle.Render(fmt.Sprintf("%d of %d", len(visible), len(companies)))
+	if len(companies) > 0 {
+		prompt = searchLine(m.searching, m.query, len(visible), len(companies))
 		b.WriteString(prompt + "\n")
 	}
 	switch {
