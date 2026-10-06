@@ -27,6 +27,17 @@ type ApplicationStatusHistory struct {
 	ChangedBy     string    `json:"changed_by"`
 }
 
+type ChangeEvent struct {
+	ID        int64          `json:"id"`
+	TableName string         `json:"table_name"`
+	RowID     int64          `json:"row_id"`
+	Op        string         `json:"op"`
+	Old       sql.NullString `json:"old"`
+	New       sql.NullString `json:"new"`
+	Origin    sql.NullString `json:"origin"`
+	At        time.Time      `json:"at"`
+}
+
 type Company struct {
 	ID             int64          `json:"id"`
 	Name           string         `json:"name"`

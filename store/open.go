@@ -1,11 +1,13 @@
 package store
 
 import (
+	"context"
 	"database/sql"
+	"database/sql/driver"
 	"fmt"
 	"time"
 
-	_ "modernc.org/sqlite"
+	"modernc.org/sqlite"
 )
 
 // Config holds the tunable sqlite connection settings Open applies.
@@ -27,6 +29,12 @@ type Config struct {
 	// before writing it, and reads times back in (its _timezone DSN
 	// parameter). Empty keeps each time's own offset.
 	Timezone string
+
+	// Origin names this process in the change log (RFC 0008), as
+	// "kind:pid", e.g. "tui:4120". When set, every connection stamps the
+	// change events its own writes create; empty (tests, `swamp migrate`)
+	// leaves them unstamped, as for any writer outside Swamp.
+	Origin string
 }
 
 // DefaultConfig is the Config swamp runs with unless told otherwise.
@@ -73,5 +81,46 @@ const (
 func Open(path string, cfg Config) (*sql.DB, error) {
 	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(%s)&_txlock=%s&_time_format=%s&_timezone=%s",
 		path, cfg.BusyTimeout.Milliseconds(), journalMode, txLock, cfg.TimeFormat, cfg.Timezone)
-	return sql.Open("sqlite", dsn)
+	if cfg.Origin == "" {
+		return sql.Open("sqlite", dsn)
+	}
+	// A Driver of our own, so the hook applies to this database's
+	// connections only, not to every sqlite connection in the process.
+	d := &sqlite.Driver{}
+	d.RegisterConnectionHook(stampOrigin(cfg.Origin))
+	return sql.OpenDB(connector{driver: d, dsn: dsn}), nil
 }
+
+// stampOrigin sets a connection up to stamp origin on the change events
+// its writes create: a TEMP table holding origin, and a TEMP trigger
+// filling it in. Both exist only on that connection, so the database's own
+// triggers stay plain SQL that any writer can run (RFC 0008). It needs
+// change_events to exist, which `swamp migrate` guarantees (#273).
+func stampOrigin(origin string) sqlite.ConnectionHookFn {
+	return func(conn sqlite.ExecQuerierContext, _ string) error {
+		ctx := context.Background()
+		for _, stmt := range []struct {
+			query string
+			args  []driver.NamedValue
+		}{
+			{query: `CREATE TEMP TABLE swamp_origin (name TEXT NOT NULL)`},
+			{query: `INSERT INTO temp.swamp_origin (name) VALUES (?)`, args: []driver.NamedValue{{Ordinal: 1, Value: origin}}},
+			{query: `CREATE TEMP TRIGGER stamp_change_origin AFTER INSERT ON main.change_events WHEN NEW.origin IS NULL
+				BEGIN UPDATE main.change_events SET origin = (SELECT name FROM temp.swamp_origin) WHERE id = NEW.id; END`},
+		} {
+			if _, err := conn.ExecContext(ctx, stmt.query, stmt.args); err != nil {
+				return fmt.Errorf("store: set up change-log origin %q (run `swamp migrate` if the database is out of date): %w", origin, err)
+			}
+		}
+		return nil
+	}
+}
+
+// connector opens connections to dsn through driver, for sql.OpenDB.
+type connector struct {
+	driver *sqlite.Driver
+	dsn    string
+}
+
+func (c connector) Connect(context.Context) (driver.Conn, error) { return c.driver.Open(c.dsn) }
+func (c connector) Driver() driver.Driver                        { return c.driver }
