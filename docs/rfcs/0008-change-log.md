@@ -71,7 +71,15 @@ This doesn't need to be faster, or pushed: the log is kept, so a process that lo
 - Says who made the change: "updated by the agent", "by `swamp fetch`", "from another window", "outside Swamp".
 - Follows RFC 0007's rules for a background reload: the cursor stays on the same item, filters and scroll stay, a form in progress isn't rebuilt, and if what you're looking at was deleted, it goes back a screen and says so.
 
-Later, `mcp-serve` could use the same events to tell an agent what changed since it last looked ("the user flagged your cover letter"). Not part of this RFC.
+### 5. The agent: internal for now, pull when exposed
+
+The change log isn't exposed through `mcp-serve` yet: nothing on the agent's side would act on it. When something does, it should be **pulled**, not pushed.
+
+- **MCP can push.** Streamable HTTP keeps a stream open to the client, and the server can send resource-update and log notifications.
+- **Agents can't act on a push.** An agent works in turns. A notification arriving between tool calls has nothing in the conversation to respond to it, and clients don't surface it to the model mid-turn.
+- **What the agent needs is context when it acts.** It may be working from an old conversation. The tool results it uses to act (`stage_prepare`, `read_document`), or a `changes_since` tool, would return that application's events since its last look: "flagged by you at 14:05: 'tighten the intro'", "status moved to interviewing", "posting closed". The log's durability makes that reliable.
+
+Wave A's checks (`ExpectedSHA256`, refusing deleted applications) already stop an out-of-date agent from writing over newer work. This would only tell it why.
 
 ## What the change log is not for
 
@@ -114,7 +122,6 @@ What it does replace is RFC 0007's `PRAGMA data_version` probe (#257), which sai
 ## Open questions
 
 1. **Where to delete old events:** when `swamp fetch` runs, when the TUI starts, or both (#272).
-2. **Telling the agent what changed** through `mcp-serve`: worth a follow-up once the log exists?
 
 ## Out of scope
 
