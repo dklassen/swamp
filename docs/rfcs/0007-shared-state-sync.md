@@ -23,9 +23,9 @@ That leads to two problems:
 **Recommendation:**
 
 - **Make writes safe first (wave A).** Check that the application exists, write documents atomically, add an expected-version check to `write_document`, and stop application IDs being reused.
-- **Then add one cheap change signal (wave B).** The TUI watches the database's files and, when SQLite's `PRAGMA data_version` confirms a commit, reloads the current screen (a tick at first; changed to a file watch in #259, see "Change detection"). Document writes record a row in the database, so that one signal covers files too.
+- **Then add one cheap change signal (wave B).** The TUI watches the database's files and, when SQLite's `PRAGMA data_version` confirms a commit, reloads the current screen (superseded by RFC 0008: a change log in the database, polled every 500 ms). Document writes record a row in the database, so that one signal covers files too.
 
-No daemon, no change-feed table. The one file watcher (since #259) watches the database's directory and only wakes the `data_version` check.
+No daemon. (RFC 0008 later adds a change log in the database, which this RFC had rejected as more than needed; see its "Relationship to RFC 0007".)
 
 ## Problem
 
@@ -195,7 +195,7 @@ These don't depend on the display choice. Each is small and worth doing alone:
 **Wave B: change signal.**
 
 - **Detecting changes:** a `store` method returning the current `data_version` from a dedicated `*sql.Conn`, held open by the TUI for its lifetime.
-- **The trigger:** originally a `tea.Tick` every 1–2 s. Since #259, fsnotify on the database's directory, confirmed with the probe, with the tick as a fallback when the watcher fails (see "Change detection").
+- **The trigger:** originally a `tea.Tick` every 1–2 s. Superseded by RFC 0008: a 500 ms poll of a change log in the database (see "Change detection" for how that was reached).
 - **Making documents visible:** `documents.Store.Write` (from H3) also records the write in the database, so writing a document moves `data_version`.
   - The simplest form is touching `applications.updated_at`.
   - A small `document_writes` table (application, type, SHA-256, time) would also give history. It's the cheaper choice if H2's hashes are wanted without rereading files.
