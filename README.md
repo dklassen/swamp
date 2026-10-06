@@ -2,6 +2,32 @@
 
 Automate the collection, curation, and application of job postings from various job boards. i.e. Ashby.
 
+## Upgrading
+
+Only `swamp migrate` changes the database's schema. To upgrade:
+
+1. Stop the TUI, `mcp-serve` and any scheduled `fetch`. When the last one
+   closes cleanly, SQLite folds its write-ahead log (`swamp.db-wal`) back
+   into the database file, so a copy of that file is a complete backup.
+   If a `-wal` file is still there, something is running or crashed:
+   find it first.
+2. Build, back up, and migrate:
+
+   ```sh
+   go tool task build
+   cp "$SWAMP_DB_PATH" "$SWAMP_DB_PATH.bak"
+   ./bin/swamp migrate   # or: go tool task migrate
+   ```
+
+3. Start them again.
+
+Until the database is migrated, the TUI, `mcp-serve` and `fetch` refuse to
+start and say so. They also refuse a database migrated by a newer binary
+than themselves.
+
+For local use, `go tool task run` migrates first, then starts the TUI;
+`go tool task migrate` and `./bin/swamp migrate` still work on their own.
+
 ## Your profile and canonical resume
 
 The `apply-to-posting` skill drafts from two files you write and maintain

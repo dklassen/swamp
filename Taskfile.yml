@@ -61,8 +61,14 @@ tasks:
     cmds:
       - go build -o bin/swamp ./cmd/swamp
 
+  migrate:
+    desc: "Apply database migrations with the built binary (run after upgrading; the other commands refuse an out-of-date database)"
+    cmds:
+      - ./bin/swamp migrate
+
   run:
-    desc: Run the swamp binary with the local sqlite db
+    desc: Run the swamp binary with the local sqlite db, migrating it first
+    deps: [migrate]
     cmds:
       - ./bin/swamp
 
