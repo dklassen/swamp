@@ -1281,11 +1281,8 @@ func TestDocumentWrites_NeverReusesAnIDAndDownDropsTheTable(t *testing.T) {
 	}
 }
 
-// TestChangeEvents_ApplicationTriggersLogOldAndNew verifies 00021 (#267,
-// RFC 0008): every insert, update and delete of an application logs one
-// change event with the logged columns before and after, an update that
-// changes none of them logs nothing, and the main-schema triggers leave
-// origin NULL (a Swamp connection stamps it; see store.Open).
+// TestChangeEvents_ApplicationTriggersLogOldAndNew: origin stays NULL here;
+// only a Swamp connection stamps it (store.Open).
 func TestChangeEvents_ApplicationTriggersLogOldAndNew(t *testing.T) {
 	sqlDB := migrateTo(t, 21)
 

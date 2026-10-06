@@ -8,8 +8,7 @@ import (
 	"time"
 )
 
-// openWithOrigin is a Store on the already-migrated database at path whose
-// connections stamp change events with origin, as each Swamp process's do.
+// openWithOrigin needs path already migrated, as `swamp migrate` guarantees.
 func openWithOrigin(t *testing.T, path, origin string) *Store {
 	t.Helper()
 	cfg := DefaultConfig()
@@ -26,8 +25,6 @@ func openWithOrigin(t *testing.T, path, origin string) *Store {
 	return New(sqlDB)
 }
 
-// changeOrigins is the origin of each change event on table, in order;
-// "" for one logged without an origin.
 func changeOrigins(t *testing.T, s *Store, table string) []string {
 	t.Helper()
 	rows, err := s.sqlDB.Query(`SELECT origin FROM change_events WHERE table_name = ? ORDER BY id`, table)
@@ -46,10 +43,8 @@ func changeOrigins(t *testing.T, s *Store, table string) []string {
 	return origins
 }
 
-// TestChangeEvents_SwampConnectionsStampTheirOrigin: a Store opened with
-// an Origin stamps every change event its writes create, and a writer
-// without one (the sqlite3 CLI, say) still writes, logged with no origin
-// (RFC 0008, #267).
+// TestChangeEvents_SwampConnectionsStampTheirOrigin: a writer without an
+// origin stands in for the sqlite3 CLI, which must still be able to write.
 func TestChangeEvents_SwampConnectionsStampTheirOrigin(t *testing.T) {
 	t.Parallel()
 
@@ -74,11 +69,9 @@ func TestChangeEvents_SwampConnectionsStampTheirOrigin(t *testing.T) {
 	}
 }
 
-// TestOpen_WithOrigin_KeepsTheConnectionSettings: a Store opened with an
-// Origin goes through a Driver of its own (so the origin hook stays on
-// its connections). It must still get every setting Open applies: the
-// busy timeout and WAL (#136), times in UTC with an offset (#140), and
-// transactions that take the write lock when they begin.
+// TestOpen_WithOrigin_KeepsTheConnectionSettings: a stamped Store goes
+// through a Driver of its own, which must still apply every setting Open
+// sets for concurrent writers and times.
 func TestOpen_WithOrigin_KeepsTheConnectionSettings(t *testing.T) {
 	t.Parallel()
 
@@ -125,10 +118,6 @@ func TestOpen_WithOrigin_KeepsTheConnectionSettings(t *testing.T) {
 	}
 }
 
-// TestOpen_WithOrigin_OnAnUnmigratedDatabase_SaysToMigrate: the origin
-// trigger needs change_events, so a stamped Store on an older database
-// fails as soon as it's used, saying what to do, rather than writing
-// without stamping.
 func TestOpen_WithOrigin_OnAnUnmigratedDatabase_SaysToMigrate(t *testing.T) {
 	t.Parallel()
 
@@ -140,8 +129,6 @@ func TestOpen_WithOrigin_OnAnUnmigratedDatabase_SaysToMigrate(t *testing.T) {
 	}
 }
 
-// TestChangeEvents_RolledBackChangeLogsNothing: events are written in the
-// change's own transaction, so a change that never happened leaves none.
 func TestChangeEvents_RolledBackChangeLogsNothing(t *testing.T) {
 	t.Parallel()
 

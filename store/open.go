@@ -30,10 +30,8 @@ type Config struct {
 	// parameter). Empty keeps each time's own offset.
 	Timezone string
 
-	// Origin names this process in the change log (RFC 0008), as
-	// "kind:pid", e.g. "tui:4120". When set, every connection stamps the
-	// change events its own writes create; empty (tests, `swamp migrate`)
-	// leaves them unstamped, as for any writer outside Swamp.
+	// Origin ("kind:pid") is stamped on the change events this database's
+	// writes create. Empty leaves them unstamped.
 	Origin string
 }
 
@@ -84,18 +82,16 @@ func Open(path string, cfg Config) (*sql.DB, error) {
 	if cfg.Origin == "" {
 		return sql.Open("sqlite", dsn)
 	}
-	// A Driver of our own, so the hook applies to this database's
-	// connections only, not to every sqlite connection in the process.
+	// A Driver of our own: the package-level hook would reach every sqlite
+	// connection in the process.
 	d := &sqlite.Driver{}
 	d.RegisterConnectionHook(stampOrigin(cfg.Origin))
 	return sql.OpenDB(connector{driver: d, dsn: dsn}), nil
 }
 
-// stampOrigin sets a connection up to stamp origin on the change events
-// its writes create: a TEMP table holding origin, and a TEMP trigger
-// filling it in. Both exist only on that connection, so the database's own
-// triggers stay plain SQL that any writer can run (RFC 0008). It needs
-// change_events to exist, which `swamp migrate` guarantees (#273).
+// stampOrigin stamps origin through TEMP objects, which exist only on the
+// connection, so the database's own triggers stay plain SQL that any
+// writer, Swamp or not, can run.
 func stampOrigin(origin string) sqlite.ConnectionHookFn {
 	return func(conn sqlite.ExecQuerierContext, _ string) error {
 		ctx := context.Background()
@@ -116,7 +112,6 @@ func stampOrigin(origin string) sqlite.ConnectionHookFn {
 	}
 }
 
-// connector opens connections to dsn through driver, for sql.OpenDB.
 type connector struct {
 	driver *sqlite.Driver
 	dsn    string

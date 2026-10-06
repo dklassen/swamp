@@ -60,14 +60,11 @@ func main() {
 		runMigrate(dbPath)
 		return
 	}
-	// Only `swamp migrate` changes the schema (#273): every other command
-	// refuses a database that's behind or ahead of this binary. Checked on a
-	// plain handle, so an out-of-date database gets that message rather than
-	// the origin hook failing on a missing change_events.
+	// On a plain handle: with an origin, an out-of-date database would fail
+	// in the connection hook instead, with a less useful error.
 	checkSchema(dbPath)
 
-	// Every connection stamps the change events this process's writes
-	// create, so other processes can tell who made a change (RFC 0008).
+	// Other processes read the origin to tell who made a change.
 	cfg := store.DefaultConfig()
 	cfg.Origin = fmt.Sprintf("%s:%d", kind, os.Getpid())
 	sqlDB, err := store.Open(dbPath, cfg)
@@ -423,9 +420,7 @@ func printJSON(v any) {
 	}
 }
 
-// processKind is the kind of process args start, the first half of its
-// change-log origin: "tui" with no subcommand, "mcp" for mcp-serve, and
-// otherwise the subcommand's name.
+// processKind is the first half of this process's change-log origin.
 func processKind(args []string) string {
 	if len(args) < 2 {
 		return "tui"
@@ -436,8 +431,6 @@ func processKind(args []string) string {
 	return args[1]
 }
 
-// openPlain opens the database without a change-log origin, for
-// migrating and checking it.
 func openPlain(dbPath string) *sql.DB {
 	sqlDB, err := store.Open(dbPath, store.DefaultConfig())
 	if err != nil {
@@ -446,8 +439,6 @@ func openPlain(dbPath string) *sql.DB {
 	return sqlDB
 }
 
-// checkSchema exits with Check's message unless the database is at this
-// binary's version.
 func checkSchema(dbPath string) {
 	sqlDB := openPlain(dbPath)
 	err := migrations.Check(context.Background(), sqlDB)

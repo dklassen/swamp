@@ -2,9 +2,6 @@ package main
 
 import "testing"
 
-// TestProcessKind: the kind half of each process's change-log origin
-// ("tui:4120"), so a TUI can tell the agent's changes (mcp) from a sync's
-// (fetch) and from its own (RFC 0008).
 func TestProcessKind(t *testing.T) {
 	t.Parallel()
 
