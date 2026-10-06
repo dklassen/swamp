@@ -172,8 +172,7 @@ Which columns each table logs (first cut, to settle during the work):
 
 ## Proposal and work breakdown
 
-Build it as #259's signal, in this order (each its own issue and PR):
-
+. **Migrations as an explicit step** (#273, S): `swamp migrate`; the TUI, `mcp-serve` and `fetch` stop migrating at startup and refuse a database that's behind or ahead of them. Without it, a connection can open before `change_events` exists, and creating its TEMP trigger fails (verified: `no such table`).
 1. **Feasibility spike in code** (#267, S): the `change_events` table and the two-layer triggers on `applications` only, the connection hook stamping origin, and tests for experiments 3, 4 (outsider writes still succeed) and 7. Proves the mechanism in the real store.
 2. **Trigger generation and the drift test** (#268, S/M): one place listing logged tables and columns; the test that fails on a missing or stale trigger; AGENTS.md rule.
 3. **The remaining tables** (#269, S), per the column table above, with the sync-noise test (a fetch that only refreshes `last_seen_at` logs nothing). Events name rows by ID, so a table whose IDs can be reused needs `AUTOINCREMENT` first (#246); that matters for tables with hard deletes (`company_filters`, rebuilt on every sync; `interview_stages`). Decided: those two tables stay unlogged until #246 lands.
@@ -185,6 +184,7 @@ Build it as #259's signal, in this order (each its own issue and PR):
 - **Retention:** 30 days. Pruning is deferred to its own issue (#272).
 - **Origin:** `kind:pid`, e.g. `tui:4120`, `mcp:3981`, `fetch:5512`. No per-window names.
 - **No file watching:** poll `max(id)` every 500 ms; #259's `ChangeWatcher` (fsnotify) isn't used.
+- **Migrations are an explicit `swamp migrate` step** (#273); processes refuse a mismatched schema either way.
 - **The `data_version` probe (#257) is removed** in step 4, once the watcher reads the log instead.
 - **Work items filed** for steps 1–4; step 5 is #259 itself.
 
