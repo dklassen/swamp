@@ -55,7 +55,22 @@ func main() {
 		documentsPath = "assets"
 	}
 
-	sqlDB, err := store.Open(dbPath, store.DefaultConfig())
+	kind := processKind(os.Args)
+	if kind == "migrate" {
+		runMigrate(dbPath)
+		return
+	}
+	// Only `swamp migrate` changes the schema (#273): every other command
+	// refuses a database that's behind or ahead of this binary. Checked on a
+	// plain handle, so an out-of-date database gets that message rather than
+	// the origin hook failing on a missing change_events.
+	checkSchema(dbPath)
+
+	// Every connection stamps the change events this process's writes
+	// create, so other processes can tell who made a change (RFC 0008).
+	cfg := store.DefaultConfig()
+	cfg.Origin = fmt.Sprintf("%s:%d", kind, os.Getpid())
+	sqlDB, err := store.Open(dbPath, cfg)
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
@@ -64,16 +79,6 @@ func main() {
 			log.Printf("close db: %v", err)
 		}
 	}()
-
-	if len(os.Args) > 1 && os.Args[1] == "migrate" {
-		runMigrate(sqlDB)
-		return
-	}
-	// Only `swamp migrate` changes the schema (#273): every other command
-	// refuses a database that's behind or ahead of this binary.
-	if err := migrations.Check(context.Background(), sqlDB); err != nil {
-		log.Fatal(err)
-	}
 
 	s := store.New(sqlDB)
 	documentsStore := documents.NewStore(documentsPath)
@@ -418,9 +423,51 @@ func printJSON(v any) {
 	}
 }
 
+// processKind is the kind of process args start, the first half of its
+// change-log origin: "tui" with no subcommand, "mcp" for mcp-serve, and
+// otherwise the subcommand's name.
+func processKind(args []string) string {
+	if len(args) < 2 {
+		return "tui"
+	}
+	if args[1] == "mcp-serve" {
+		return "mcp"
+	}
+	return args[1]
+}
+
+// openPlain opens the database without a change-log origin, for
+// migrating and checking it.
+func openPlain(dbPath string) *sql.DB {
+	sqlDB, err := store.Open(dbPath, store.DefaultConfig())
+	if err != nil {
+		log.Fatalf("open db: %v", err)
+	}
+	return sqlDB
+}
+
+// checkSchema exits with Check's message unless the database is at this
+// binary's version.
+func checkSchema(dbPath string) {
+	sqlDB := openPlain(dbPath)
+	err := migrations.Check(context.Background(), sqlDB)
+	if closeErr := sqlDB.Close(); closeErr != nil {
+		log.Printf("close db: %v", closeErr)
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 // runMigrate applies the database migrations this binary has and the
 // database doesn't, and says what it did.
-func runMigrate(sqlDB *sql.DB) {
+func runMigrate(dbPath string) {
+	sqlDB := openPlain(dbPath)
+	defer func() {
+		if err := sqlDB.Close(); err != nil {
+			log.Printf("close db: %v", err)
+		}
+	}()
 	applied, err := migrations.Up(context.Background(), sqlDB)
 	if err != nil {
 		log.Fatalf("migrate: %v", err)

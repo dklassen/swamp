@@ -7701,3 +7701,28 @@ above the pre-migration maximum could still pick up a folder.
   `migrate` stays its own task, and `./bin/swamp migrate` works alone.
 - The binaries themselves still refuse a mismatched database rather
   than migrating (#273); only the Taskfile's local paths compose them.
+
+## 2026-10-06 -- #267: change_events, logged by triggers, stamped per connection (RFC 0008 step 1)
+
+- Migration 00021 adds change_events and three triggers on applications
+  (status, notes, deleted_at, as JSON before and after). An update that
+  changes none of them logs nothing. The triggers are plain SQL and
+  leave origin NULL, so any writer still works and is logged as
+  outside Swamp.
+- store.Config.Origin ("kind:pid") makes every connection of that Store
+  stamp the events its own writes create: a TEMP table holding the
+  origin and a TEMP trigger on change_events, set up by a connection
+  hook. The hook is registered on a sqlite.Driver the Store constructs
+  for itself, not with the package-level RegisterConnectionHook, which
+  would reach every sqlite connection in the process (and fail in every
+  test database opened before it's migrated). A constructed Driver lacks
+  package-level registered functions; Swamp registers none, and JSON is
+  built into SQLite. A test checks it keeps Open's settings (busy
+  timeout, WAL, UTC times, immediate transactions).
+- main.go checks the schema on a plain handle first, so an out-of-date
+  database gets #273's message, not "no such table: change_events" from
+  the hook; then it opens the app's handle with the origin. The kind is
+  the subcommand (tui with none, mcp for mcp-serve); migrate opens
+  without one.
+- Checked end to end on a scratch database: `swamp stage prepare`
+  logged its application insert with origin stage:<pid>.
