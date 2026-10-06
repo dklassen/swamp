@@ -129,6 +129,25 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress
 	return b.String()
 }
 
+// selected is the ID of the application under the cursor, or 0.
+func (m *activeApplicationListModel) selected(apps []store.ApplicationView) int64 {
+	if m.cursor < len(apps) {
+		return apps[m.cursor].ID
+	}
+	return 0
+}
+
+// keepCursorOn moves the cursor to application id after a reload, since
+// rows above it may have come or gone; if it's gone, the cursor stays in
+// range.
+func (m *activeApplicationListModel) keepCursorOn(id int64, apps []store.ApplicationView) {
+	if i := slices.IndexFunc(apps, func(a store.ApplicationView) bool { return a.ID == id }); i >= 0 {
+		m.cursor = i
+		return
+	}
+	m.resetCursorIfOutOfBounds(len(apps))
+}
+
 // resetCursorIfOutOfBounds resets the cursor to the top if it's no
 // longer a valid index into n applications -- used after a status
 // change moves an application to a terminal status and it drops out of

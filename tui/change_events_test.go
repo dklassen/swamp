@@ -86,3 +86,37 @@ func TestApp_ATickReadsTheFeed(t *testing.T) {
 		t.Error("handling the events scheduled nothing, want the next tick")
 	}
 }
+
+// TestApp_HomeListReload_KeepsTheCursorOnTheSameApplication: a row
+// disappearing above the cursor mustn't move you to a different
+// application.
+func TestApp_HomeListReload_KeepsTheCursorOnTheSameApplication(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	for i, title := range []string{"First", "Second", "Third"} {
+		posting := mustUpsertPosting(t, s, acme.ID, "job-"+string(rune('a'+i)), title)
+		if _, err := s.CreateApplication(ctx, posting.ID); err != nil {
+			t.Fatalf("CreateApplication: %v", err)
+		}
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeFeed(nil, "tui:1")
+	rows := app.activeApplications
+	if len(rows) != 3 {
+		t.Fatalf("home list has %d rows, want 3", len(rows))
+	}
+	app, _ = sendKey(app, runeKey('j'))
+	app, _ = sendKey(app, runeKey('j'))
+	onLast := rows[2].ID
+
+	if err := s.DeleteApplication(ctx, rows[0].ID); err != nil {
+		t.Fatalf("DeleteApplication: %v", err)
+	}
+	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "applications", RowID: rows[0].ID, Op: "update", Origin: "tui:2"}}})
+
+	if got := app.activeApplications[app.activeApplicationList.cursor].ID; got != onLast {
+		t.Errorf("cursor is on application %d after the reload, want %d (the one it was on)", got, onLast)
+	}
+}

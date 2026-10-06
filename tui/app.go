@@ -972,9 +972,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.companyOpenPostings = msg.openPostings
 	case activeApplicationsLoadedMsg:
 		a.err = msg.err
+		previous := a.activeApplicationList.selected(a.activeApplications)
 		a.activeApplications = msg.applications
 		a.activeApplicationProgress = msg.progress
-		a.activeApplicationList.resetCursorIfOutOfBounds(len(a.activeApplications))
+		a.activeApplicationList.keepCursorOn(previous, a.activeApplications)
 	case companyCreatedMsg:
 		a.err = msg.err
 		a.companyForm.checkResolved()
