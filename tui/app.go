@@ -1027,11 +1027,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			reload := loadCompanies(a.store)
 			if r.CompanyID == a.selectedCompany.ID {
 				// The company whose postings are currently being viewed
-				// just finished a re-sync (e.g. triggered by saving a
-				// filter selection) -- reload from the DB so the view
+				// just finished a re-sync (r on its posting list, or saving
+				// a filter selection) -- reload from the DB so the view
 				// becomes authoritative instead of just the optimistic
-				// client-side narrowing applied at save time.
-				return a, tea.Batch(reload, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived))
+				// client-side narrowing applied at save time. The cursor
+				// stays on its posting: the sync can add some ahead of it.
+				return a, tea.Batch(reload, reloadPostings(a.store, a.selectedCompany.ID, a.hideArchived))
 			}
 			return a, reload
 		}
@@ -1464,6 +1465,13 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case enterFilterSelectMsg:
 			a.screen = screenFilterSelect
 			return a, loadFilterOptions(a.store, a.selectedCompany.ID)
+		case refreshSelectedCompanyMsg:
+			if a.syncAll.running {
+				// The run may be syncing this company right now.
+				a.status = "Sync all in progress: refresh unavailable"
+				return a, nil
+			}
+			return a, refreshCompany(a.syncer, a.selectedCompany.ID)
 		case toggleHideArchivedMsg:
 			a.hideArchived = !a.hideArchived
 			return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)

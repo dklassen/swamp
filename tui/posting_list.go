@@ -121,6 +121,11 @@ type enterPostingDetailMsg struct{ postingID int64 }
 // filter-select screen.
 type enterFilterSelectMsg struct{}
 
+// refreshSelectedCompanyMsg asks App to re-sync the company whose
+// postings are on screen. App starts the sync, since only it knows whether
+// a sync-all run is already under way.
+type refreshSelectedCompanyMsg struct{}
+
 // toggleHideArchivedMsg signals that App should flip hideArchived and
 // reload postings -- hideArchived is App-owned domain state, not this
 // screen's to mutate directly.
@@ -148,6 +153,8 @@ func (m *postingListModel) Update(msg tea.KeyMsg, snap postingListSnapshot) (tea
 				return openInBrowser(url), nil
 			}
 		}
+	case msg.String() == "r":
+		return nil, refreshSelectedCompanyMsg{}
 	case msg.String() == "f":
 		return nil, enterFilterSelectMsg{}
 	case msg.String() == "i":
@@ -172,7 +179,7 @@ func (m *postingListModel) Update(msg tea.KeyMsg, snap postingListSnapshot) (tea
 // still fits.
 func (m *postingListModel) View(snap postingListSnapshot, width, height int) string {
 	var b strings.Builder
-	help := helpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back")
+	help := helpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  r: refresh  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back")
 	// The description gets one line, truncated to the table's width.
 	var description, summary, archived string
 	if snap.companyDescription != "" {
@@ -190,7 +197,7 @@ func (m *postingListModel) View(snap postingListSnapshot, width, height int) str
 		}
 	}
 	if len(snap.postings) == 0 {
-		b.WriteString("No postings yet. Press 'r' from the company list to refresh.\n")
+		b.WriteString("No postings yet. Press 'r' to refresh.\n")
 	} else {
 		start, end := visibleWindow(m.cursor, len(snap.postings), tableRows(height, description, summary, archived, help))
 		cursorRow := m.cursor - start

@@ -260,3 +260,30 @@ func TestPostingListModel_View_DescriptionUsesTableWidth(t *testing.T) {
 		t.Errorf("View at width 160 missing the %d-column description in full:\n%s", len(snap.companyDescription), view)
 	}
 }
+
+func TestPostingListModel_R_AsksToRefreshTheCompany(t *testing.T) {
+	t.Parallel()
+
+	m := newPostingListModel(nil)
+	cmd, intent := m.Update(runeKey('r'), testPostingListSnapshot())
+	if cmd != nil {
+		t.Fatalf("cmd = %v, want nil", cmd)
+	}
+	if _, ok := intent.(refreshSelectedCompanyMsg); !ok {
+		t.Fatalf("intent = %T, want refreshSelectedCompanyMsg", intent)
+	}
+}
+
+func TestPostingListModel_View_AdvertisesRefresh(t *testing.T) {
+	t.Parallel()
+
+	m := newPostingListModel(nil)
+	if got := m.View(testPostingListSnapshot(), 100, 40); !strings.Contains(got, "r: refresh") {
+		t.Errorf("View() doesn't advertise r: refresh:\n%s", got)
+	}
+	empty := testPostingListSnapshot()
+	empty.postings = nil
+	if got := m.View(empty, 100, 40); !strings.Contains(got, "No postings yet. Press 'r' to refresh.") {
+		t.Errorf("empty View() = %q, want it to point at r on this screen", got)
+	}
+}
