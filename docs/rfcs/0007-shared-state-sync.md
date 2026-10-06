@@ -23,7 +23,7 @@ That leads to two problems:
 **Recommendation:**
 
 - **Make writes safe first (wave A).** Check that the application exists, write documents atomically, add an expected-version check to `write_document`, and stop application IDs being reused.
-- **Then add one cheap change signal (wave B).** The TUI watches the database's files and, when SQLite's `PRAGMA data_version` confirms a commit, reloads the current screen (superseded by RFC 0008: a change log in the database, polled every 500 ms). Document writes record a row in the database, so that one signal covers files too.
+- **Then add one cheap change signal (wave B).** Originally: the TUI checks SQLite's `PRAGMA data_version` on a short tick and reloads the current screen when it changes. Superseded by RFC 0008: a change log in the database, polled every 500 ms. Document writes record a row in the database, so that one signal covers files too.
 
 No daemon. (RFC 0008 later adds a change log in the database, which this RFC had rejected as more than needed; see its "Relationship to RFC 0007".)
 
@@ -233,7 +233,7 @@ Effort: **S** is a few hours to a day, **M** a few days. Each task is its own is
 
 ## Open questions
 
-1. **Tick interval.** 1 s or 2 s? A tick costs about a microsecond and the reload only runs on change, so this is about how fast a change should appear, not cost. Proposed: 1 s. *Superseded (#259): the trigger is a file watch; a tick remains only as the fallback, where 1 s is still proposed.*
+1. **Tick interval.** 1 s or 2 s? A tick costs about a microsecond and the reload only runs on change, so this is about how fast a change should appear, not cost. Proposed: 1 s. *Superseded by RFC 0008: a 500 ms poll of the change log (user decision).
 2. **Hash storage.** Should H2's hashes come from rereading files, or from a `document_writes` table? Rereading is simpler and can't disagree with disk; a table adds history. Proposed: reread, and add the table only if step 8 wants it anyway.
 3. **Edits made outside Swamp.** Is reloading on screen entry enough, or is fsnotify (option 5) worth it later?
 4. **Should the TUI show that a reload happened?** For example "updated" in the status line, so a row moving under the cursor isn't a surprise.
