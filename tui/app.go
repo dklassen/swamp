@@ -1621,7 +1621,7 @@ func (a *App) View() string {
 
 	switch a.screen {
 	case screenActiveApplications:
-		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.activeApplicationProgress, time.Now(), a.screenRows()))
+		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.activeApplicationProgress, time.Now(), a.width, a.screenRows()))
 	case screenApplicationDetail:
 		b.WriteString(a.applicationDetail.View())
 	case screenCompanyList:

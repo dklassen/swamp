@@ -26,12 +26,31 @@ import (
 // enterApplicationDetailMsg below); this screen keeps only
 // status-setting as a quick shortcut for fast triage across many
 // applications (see decisions.log, the #86 follow-up).
-// Home screen column widths, narrower than the posting list's so the
-// widest row fits 100 columns with the Age and Next columns (#164).
+
+// Home screen column widths; Title takes what's left, which is 30 at
+// 100 columns, the width the home screen was first sized for.
 const (
 	homeCompanyColWidth = 16
-	homeTitleColWidth   = 30
+	// homeAgeColWidth fits up to "999d".
+	homeAgeColWidth = 4
+	// homeNextColWidth fits the longest next step, "withdraw?".
+	homeNextColWidth = 9
 )
+
+// Measured rather than counted, so a new status or document type widens
+// its column instead of being cut off.
+var (
+	homeStatusColWidth = longestStatusLabel()
+	homeReviewColWidth = lipgloss.Width(reviewGlyphSummary(nil))
+)
+
+func longestStatusLabel() int {
+	longest := 0
+	for _, status := range store.ApplicationStatuses() {
+		longest = max(longest, lipgloss.Width(applicationStatusLabel(status)))
+	}
+	return longest
+}
 
 type activeApplicationListModel struct {
 	cursor int
@@ -93,7 +112,7 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 // progress holds each application's document progress by application ID,
 // from which, with its LatestReviews, each row's next step is derived
 // (see nextStep), and now is what each row's Age counts up to.
-func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress map[int64]map[documents.Type]documentProgress, now time.Time, height int) string {
+func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress map[int64]map[documents.Type]documentProgress, now time.Time, width, height int) string {
 	var b strings.Builder
 	title := titleStyle.Render("Active Applications")
 	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  s: status  e: export PDFs  c: companies  q: quit")
@@ -112,15 +131,16 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress
 				}
 				return style
 			})
+		titleWidth := flexColWidth(width, homeCompanyColWidth, homeAgeColWidth, homeNextColWidth, homeStatusColWidth, homeReviewColWidth)
 		for i := start; i < end; i++ {
 			a := apps[i]
 			t.Row(
-				truncateCol(a.CompanyName, homeCompanyColWidth),
-				truncateCol(a.Posting.Title, homeTitleColWidth),
-				statusAge(a.StatusSince, now),
-				nextStep(a, progress[a.ID]),
-				applicationStatusLabel(a.Status),
-				reviewGlyphSummary(a.LatestReviews),
+				padCol(a.CompanyName, homeCompanyColWidth),
+				padCol(a.Posting.Title, titleWidth),
+				padCol(statusAge(a.StatusSince, now), homeAgeColWidth),
+				padCol(nextStep(a, progress[a.ID]), homeNextColWidth),
+				padCol(applicationStatusLabel(a.Status), homeStatusColWidth),
+				padCol(reviewGlyphSummary(a.LatestReviews), homeReviewColWidth),
 			)
 		}
 		b.WriteString(t.Render() + "\n")

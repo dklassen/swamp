@@ -60,7 +60,7 @@ func TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication(t *test
 	// apps[1] is left with no LatestReviews -- neither document reviewed yet.
 
 	m := newActiveApplicationListModel()
-	got := m.View(apps, nil, time.Time{}, 20)
+	got := m.View(apps, nil, time.Time{}, 0, 20)
 
 	if !containsAll(got, "CL:✗ R:✓", "CL:- R:-") {
 		t.Fatalf("View() = %q, want CL:✗ R:✓ for the reviewed application and CL:- R:- for the unreviewed one", got)
@@ -162,7 +162,7 @@ func TestActiveApplicationListModel_View_AdvertisesExport(t *testing.T) {
 
 	m := newActiveApplicationListModel()
 
-	if got := m.View(testActiveApplications(), nil, time.Time{}, 20); !strings.Contains(got, "e: export") {
+	if got := m.View(testActiveApplications(), nil, time.Time{}, 0, 20); !strings.Contains(got, "e: export") {
 		t.Errorf("View() = %q, want it to advertise the export binding", got)
 	}
 }
@@ -175,7 +175,7 @@ func TestActiveApplicationListModel_View_ShowsStatusLabelNotEnumValue(t *testing
 	apps[1].Status = store.ApplicationStatusStarted
 
 	m := newActiveApplicationListModel()
-	got := m.View(apps, nil, time.Time{}, 20)
+	got := m.View(apps, nil, time.Time{}, 0, 20)
 
 	if !containsAll(got, "Offer received", "Started") {
 		t.Errorf("View() = %q, want human-readable status labels", got)
@@ -200,7 +200,7 @@ func TestActiveApplicationListModel_View_FlagsClosedPosting(t *testing.T) {
 	apps[1].Posting.ListingStatus = "open"
 
 	m := newActiveApplicationListModel()
-	got := m.View(apps, nil, time.Time{}, 20)
+	got := m.View(apps, nil, time.Time{}, 0, 20)
 
 	if !strings.Contains(got, "closed") {
 		t.Errorf("View() = %q, want the closed posting flagged", got)
@@ -268,7 +268,7 @@ func TestActiveApplicationListModel_View_ShowsAgeAndNextStep(t *testing.T) {
 	apps[1].StatusSince = now.Add(-2 * time.Hour)
 
 	m := newActiveApplicationListModel()
-	got := m.View(apps, nil, now, 20)
+	got := m.View(apps, nil, now, 0, 20)
 
 	for _, want := range []string{"Age", "Next", "21d", "0d", "draft"} {
 		if !strings.Contains(got, want) {
@@ -357,7 +357,9 @@ func TestLoadActiveApplications_NextSteps(t *testing.T) {
 // The widest possible row must fit the 100 columns the screen-fit tests
 // use: wider lines are cut off on the right by the terminal, losing the
 // Status, Posting and Review columns without any sign of it.
-func TestActiveApplicationListModel_View_WidestRowFits100Columns(t *testing.T) {
+// The table spans the terminal, even with the widest value every fixed
+// column can hold.
+func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
@@ -380,18 +382,32 @@ func TestActiveApplicationListModel_View_WidestRowFits100Columns(t *testing.T) {
 	withdraw.Status = store.ApplicationStatusStarted
 	apps := []store.ApplicationView{widest, withdraw}
 
-	m := newActiveApplicationListModel()
-	view := ansi.Strip(m.View(apps, nil, now, 20))
-	if !strings.Contains(view, "withdraw?") {
-		t.Fatalf("View() = %q, want the widest next step \"withdraw?\" in it", view)
+	tests := []struct {
+		name  string
+		width int
+		want  int
+	}{
+		{"terminal the home screen was sized for", 100, 100},
+		{"wide terminal", 160, 160},
+		{"before the terminal reports its size", 0, fallbackTableWidth},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
 
-	for _, line := range strings.Split(view, "\n") {
-		if strings.Contains(line, "│") {
-			if width := ansi.StringWidth(line); width > 100 {
-				t.Errorf("row is %d columns wide, want at most 100: %q", width, line)
+			m := newActiveApplicationListModel()
+			view := ansi.Strip(m.View(apps, nil, now, tt.width, 20))
+			if !strings.Contains(view, "withdraw?") || !strings.Contains(view, "Offer received") {
+				t.Fatalf("View() = %q, want the widest next step and status in it", view)
 			}
-		}
+			for _, line := range strings.Split(view, "\n") {
+				if strings.ContainsAny(line, "│╭╰├") {
+					if got := ansi.StringWidth(line); got != tt.want {
+						t.Errorf("table line is %d columns wide, want %d: %q", got, tt.want, line)
+					}
+				}
+			}
+		})
 	}
 }
 
@@ -450,5 +466,16 @@ func TestReviewGlyph_EveryOutcomeHasItsOwn(t *testing.T) {
 			t.Errorf("%s and %s both render as %q", outcome, other, glyph)
 		}
 		seen[glyph] = outcome
+	}
+}
+
+// Short rows don't make the table narrower, so scrolling them into view
+// doesn't change its width.
+func TestActiveApplicationListModel_View_ShortRowsKeepTheTableWidth(t *testing.T) {
+	t.Parallel()
+
+	m := newActiveApplicationListModel()
+	if got := tableWidthOf(t, m.View(testActiveApplications(), nil, time.Time{}, 100, 20)); got != 100 {
+		t.Errorf("table width with short rows = %d, want 100", got)
 	}
 }
