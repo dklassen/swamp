@@ -207,10 +207,11 @@ func (m *companyListModel) View(companies []store.Company, openPostings map[int6
 				}
 				return style
 			})
+		nameWidth := flexColWidth(width, openColWidth, lastFetchedColWidth)
 		for i := start; i < end; i++ {
 			c := visible[i]
 			t.Row(
-				padCol(c.Name, companyNameColWidth),
+				padCol(c.Name, nameWidth),
 				fmt.Sprintf("%*d", openColWidth, openPostings[c.ID]),
 				padCol(lastFetchedLabel(c.LastFetchedAt), lastFetchedColWidth),
 			)
@@ -234,8 +235,8 @@ func (m *companyListModel) clampCursor(n int) {
 	}
 }
 
+// Company table column widths; Name takes what's left.
 const (
-	companyNameColWidth = 22
 	// openColWidth fits a count up to 99999.
 	openColWidth = 5
 	// lastFetchedColWidth fits "2006-01-02 15:04".
