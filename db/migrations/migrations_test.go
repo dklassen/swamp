@@ -1280,3 +1280,60 @@ func TestDocumentWrites_NeverReusesAnIDAndDownDropsTheTable(t *testing.T) {
 		t.Error("document_writes still exists after Down")
 	}
 }
+
+// TestChangeEvents_ApplicationTriggersLogOldAndNew: origin stays NULL here;
+// only a Swamp connection stamps it (store.Open).
+func TestChangeEvents_ApplicationTriggersLogOldAndNew(t *testing.T) {
+	sqlDB := migrateTo(t, 21)
+
+	for _, stmt := range []string{
+		`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme')`,
+		`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload) VALUES (1, 1, 'ashby', 'job-1', 'Engineer', '{}')`,
+		`INSERT INTO applications (id, posting_id, status) VALUES (1, 1, 'application_started')`,
+		`UPDATE applications SET status = 'interviewing' WHERE id = 1`,
+		`UPDATE applications SET status = 'interviewing', updated_at = CURRENT_TIMESTAMP WHERE id = 1`,
+		`DELETE FROM applications WHERE id = 1`,
+	} {
+		if _, err := sqlDB.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+
+	type event struct {
+		Table, Op, Old, New string
+		RowID               int64
+		Origin              sql.NullString
+	}
+	rows, err := sqlDB.Query(`SELECT table_name, row_id, op, coalesce(old, ''), coalesce(new, ''), origin FROM change_events ORDER BY id`)
+	if err != nil {
+		t.Fatalf("query change_events: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var got []event
+	for rows.Next() {
+		var e event
+		if err := rows.Scan(&e.Table, &e.RowID, &e.Op, &e.Old, &e.New, &e.Origin); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		got = append(got, e)
+	}
+	want := []event{
+		{Table: "applications", RowID: 1, Op: "insert", New: `{"status":"application_started","notes":"","deleted_at":null}`},
+		{Table: "applications", RowID: 1, Op: "update", Old: `{"status":"application_started","notes":"","deleted_at":null}`, New: `{"status":"interviewing","notes":"","deleted_at":null}`},
+		{Table: "applications", RowID: 1, Op: "delete", Old: `{"status":"interviewing","notes":"","deleted_at":null}`},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("change events (-want +got):\n%s", diff)
+	}
+
+	if err := goose.DownTo(sqlDB, ".", 20); err != nil {
+		t.Fatalf("migrate down to version 20: %v", err)
+	}
+	var objects int
+	if err := sqlDB.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name = 'change_events' OR tbl_name = 'change_events' OR (type = 'trigger' AND name LIKE 'applications_change_%')`).Scan(&objects); err != nil {
+		t.Fatalf("query sqlite_master: %v", err)
+	}
+	if objects != 0 {
+		t.Errorf("%d change-log objects left after Down, want 0", objects)
+	}
+}

@@ -55,7 +55,19 @@ func main() {
 		documentsPath = "assets"
 	}
 
-	sqlDB, err := store.Open(dbPath, store.DefaultConfig())
+	kind := processKind(os.Args)
+	if kind == "migrate" {
+		runMigrate(dbPath)
+		return
+	}
+	// On a plain handle: with an origin, an out-of-date database would fail
+	// in the connection hook instead, with a less useful error.
+	checkSchema(dbPath)
+
+	// Other processes read the origin to tell who made a change.
+	cfg := store.DefaultConfig()
+	cfg.Origin = fmt.Sprintf("%s:%d", kind, os.Getpid())
+	sqlDB, err := store.Open(dbPath, cfg)
 	if err != nil {
 		log.Fatalf("open db: %v", err)
 	}
@@ -64,16 +76,6 @@ func main() {
 			log.Printf("close db: %v", err)
 		}
 	}()
-
-	if len(os.Args) > 1 && os.Args[1] == "migrate" {
-		runMigrate(sqlDB)
-		return
-	}
-	// Only `swamp migrate` changes the schema (#273): every other command
-	// refuses a database that's behind or ahead of this binary.
-	if err := migrations.Check(context.Background(), sqlDB); err != nil {
-		log.Fatal(err)
-	}
 
 	s := store.New(sqlDB)
 	documentsStore := documents.NewStore(documentsPath)
@@ -418,9 +420,45 @@ func printJSON(v any) {
 	}
 }
 
+// processKind is the first half of this process's change-log origin.
+func processKind(args []string) string {
+	if len(args) < 2 {
+		return "tui"
+	}
+	if args[1] == "mcp-serve" {
+		return "mcp"
+	}
+	return args[1]
+}
+
+func openPlain(dbPath string) *sql.DB {
+	sqlDB, err := store.Open(dbPath, store.DefaultConfig())
+	if err != nil {
+		log.Fatalf("open db: %v", err)
+	}
+	return sqlDB
+}
+
+func checkSchema(dbPath string) {
+	sqlDB := openPlain(dbPath)
+	err := migrations.Check(context.Background(), sqlDB)
+	if closeErr := sqlDB.Close(); closeErr != nil {
+		log.Printf("close db: %v", closeErr)
+	}
+	if err != nil {
+		log.Fatal(err)
+	}
+}
+
 // runMigrate applies the database migrations this binary has and the
 // database doesn't, and says what it did.
-func runMigrate(sqlDB *sql.DB) {
+func runMigrate(dbPath string) {
+	sqlDB := openPlain(dbPath)
+	defer func() {
+		if err := sqlDB.Close(); err != nil {
+			log.Printf("close db: %v", err)
+		}
+	}()
 	applied, err := migrations.Up(context.Background(), sqlDB)
 	if err != nil {
 		log.Fatalf("migrate: %v", err)
