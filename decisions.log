@@ -7592,6 +7592,31 @@ above the pre-migration maximum could still pick up a folder.
   recorded writer with a change made outside Swamp. Times are shown in
   local time (stored UTC), with the date when it isn't today.
 
+## 2026-10-06 -- #259: change detection by file watch, confirmed with data_version
+
+- User decision: the TUI is told about changes by a push, not a tick.
+  store.ChangeWatcher watches the database's directory with fsnotify
+  and, after 100 ms of quiet, confirms with the data_version probe
+  (#257). This reverses RFC 0007's choice of a 1-2 s tick; the RFC now
+  has a "Change detection" section comparing the strategies.
+- Checked rather than assumed, all with modernc.org/sqlite:
+  - SQLite's commit hook never fires for another connection's commit
+    (0 calls), so callbacks can't be the cross-process signal, despite
+    being the obvious "push" option.
+  - A TRUNCATE checkpoint moves data_version (the WAL reset); a PASSIVE
+    one doesn't, though it writes the database file. The confirmation
+    filters the second; the first is one harmless extra reload.
+  - sqlite.RegisterConnectionHook reaches every pooled connection, so a
+    commit hook can count the TUI's own commits exactly.
+- Found while explaining what triggers a reload: the TUI's own commits
+  move the probe too, so the "Updated from another window or the
+  agent" status would follow every save. Recommended in the RFC: count
+  own commits with a commit hook and skip the message when only those
+  happened; fall back to a tick while the watcher reports an error.
+  Awaiting the user's decision on both.
+- Not verified here: macOS (kqueue) and Docker bind mounts written from
+  the host; the RFC marks those claims.
+
 ## 2026-10-06 -- RFC 0008: a change log in the database (exploration)
 
 - User direction: explore a stream of change events in the database,

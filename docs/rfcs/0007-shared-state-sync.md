@@ -23,9 +23,9 @@ That leads to two problems:
 **Recommendation:**
 
 - **Make writes safe first (wave A).** Check that the application exists, write documents atomically, add an expected-version check to `write_document`, and stop application IDs being reused.
-- **Then add one cheap change signal (wave B).** The TUI checks SQLite's `PRAGMA data_version` on a short tick and reloads the current screen when it changes. Document writes record a row in the database, so that one signal covers files too.
+- **Then add one cheap change signal (wave B).** The TUI watches the database's files and, when SQLite's `PRAGMA data_version` confirms a commit, reloads the current screen (a tick at first; changed to a file watch in #259, see "Change detection"). Document writes record a row in the database, so that one signal covers files too.
 
-No daemon, no file watcher, no change-feed table.
+No daemon, no change-feed table. The one file watcher (since #259) watches the database's directory and only wakes the `data_version` check.
 
 ## Problem
 
@@ -97,6 +97,83 @@ H7 is already correct in what it stores. It's listed because it needs only a war
 
 **Chosen: 4, with document writes made visible to it.** `write_document` records a row in the database in the same call (see wave B), so the signal covers documents written by Swamp. Combine it with 2: entering a screen reloads it anyway, which also covers edits made outside Swamp the next time you look. Finally, handle `editorClosedMsg`, which needs no signal at all.
 
+*Revised 2026-10-06 (#259): the trigger is now a push from the database's files rather than a tick. The detection is still `data_version`. See the next section.*
+
+### Change detection: where each strategy works and where it falls apart (2026-10-06, #259)
+
+While building #259, the user asked for push rather than polling, then whether SQLite's own change callbacks would beat fsnotify, then what fsnotify reacts to. This section records what was tested and where each approach breaks.
+
+#### Measured
+
+All on Linux, `modernc.org/sqlite`, databases opened with `store.Open` (WAL), two `*sql.DB` handles on one file standing in for two processes.
+
+| Experiment | Result |
+|---|---|
+| Commit through handle B; `data_version` on A's pinned connection | Moves (#257's tests) |
+| Commit through A's own pool, on a connection other than the probe's | Moves (#257) |
+| Read through B | Doesn't move; no file events at all |
+| `PRAGMA wal_checkpoint(PASSIVE)` through B, with frames to copy | Doesn't move, but writes the database file (a file event) |
+| `PRAGMA wal_checkpoint(TRUNCATE)` through B | **Moves.** Resetting the WAL changes the shared index header, so readers see a new version |
+| fsnotify on the database's directory, commit through B | Signal about 140 ms later (100 ms debounce), 10 of 10 runs |
+| `sqlite3_commit_hook` on A's connection, commit through B | **0 calls.** A commit on A's own connection: 1 call |
+| `sqlite.RegisterConnectionHook` adding a commit hook to each new connection, three commits on three pooled connections | Every connection got the hook; 3 of 3 counted |
+
+Not tested here: macOS, and Docker bind mounts written from the host. Claims about them below are from the libraries' and kernels' documented behavior, marked *unverified*.
+
+#### The strategies
+
+**A. Poll `data_version` on a tick** (this RFC's original choice 4).
+
+- **Works:** any writer in any process on the same machine, including ones that know nothing about Swamp (the `sqlite3` CLI, a script, an older binary). About a microsecond per check; one query only when something changed. No dependency, same on every platform.
+- **Falls apart:**
+  - Latency is the interval: about half of it on average.
+  - A WAL reset (`TRUNCATE`/`RESTART` checkpoint) reads as a change: one harmless extra reload.
+  - The TUI's own commits read as changes (see "Telling the TUI's own writes apart").
+
+**B. fsnotify on the database's directory, confirmed with `data_version`** (user decision for #259).
+
+- **Works:** every writer A sees, with about 100–150 ms latency and no work while nothing happens. Watching the directory, not the files, survives SQLite recreating and truncating `-wal`. The `data_version` confirmation filters out events that aren't commits: checkpoints copying pages (measured) and anything else touching the files.
+- **Falls apart:**
+  - **Writes the kernel doesn't see as file writes.** A writer on another machine (network filesystem) or across a VM boundary (Docker Desktop bind mounts written from the host, *unverified*) produces no inotify event. In practice WAL mode needs shared memory between readers and writers and doesn't work across those boundaries either, so Swamp can't be used that way anyway.
+  - **Dropped events.** If the kernel's event queue overflows, fsnotify reports an error instead of the events. The watcher surfaces it (`Errors()`), and the TUI shows it, but changes in that gap are missed until the next one arrives.
+  - **Platform differences** (*unverified*): on macOS fsnotify uses kqueue, which opens a descriptor per file in the watched directory; Swamp's `db/` directory holds a handful of files, so that's fine, but it's the one backend not exercised here. Windows isn't a target.
+  - Same false positives as A: a WAL reset, and the TUI's own commits.
+  - A dependency (`github.com/fsnotify/fsnotify`, already in the module graph).
+
+**C. SQLite change callbacks** (`sqlite3_update_hook`, `sqlite3_commit_hook`, the pre-update hook).
+
+- **Works:** exact, synchronous notice of every change made **through the connection that registered it**. With `RegisterConnectionHook`, that's every connection in this process.
+- **Falls apart:** they never fire for another process's commits (measured: 0 calls). Since the TUI, `mcp-serve` and `swamp fetch` are separate processes, a callback can't be the change signal. It is the right tool for the opposite question: "did *I* just commit?" (below).
+
+**D. Writers notify readers** (a Unix socket or HTTP ping from `mcp-serve` and `swamp fetch` to running TUIs).
+
+- **Works:** instant, and could say what changed.
+- **Falls apart:** every writer has to know about every reader and how to reach it, and any writer that doesn't (a script, a migration, an older binary, a crash between commit and notify) is silently missed. It's the change-feed machinery rejected above, for a single-user tool.
+
+**E. One process owns the data** (option 6 above): rejected for the same reasons.
+
+**F. fsnotify on `assets/`** (option 5 above) remains unnecessary for Swamp's own document writes, since #258 records them in the database. It would only add edits made outside Swamp, with the editor-rename and batching problems noted there.
+
+#### Telling the TUI's own writes apart
+
+A and B both see the TUI's own commits, because they go through pool connections other than the probe's. The reload is harmless: the TUI already reloads after its own changes. The message isn't: about 100 ms after you save, "Updated from another window or the agent" would replace "Application form saved", and it would be false.
+
+| Option | Works | Falls apart |
+|---|---|---|
+| **Count own commits with a commit hook** on every connection in the process (`RegisterConnectionHook`), and compare the count at each confirmed change | Exact for the common case; verified to reach every pooled connection | When the TUI's commit and another process's land in the same debounce window, `data_version` can't say there were two. The screen still reloads, and only the message is wrong (it's skipped). A hook returning non-zero would roll the commit back, so it must always return 0. The hook is process-wide: harmless in the TUI, which opens one database |
+| **Compare before and after:** show the message only if the reload changed what's on screen | Never mislabels | A comparison per screen, written and maintained for every screen. Misses "updated" when another process wrote the same values |
+| **Time window:** ignore changes within N ms after the TUI's own action | Simple | Guesswork: too short mislabels, too long hides real changes |
+| **Say nothing** | Simplest | The user chose a status line so a row moving under the cursor isn't a surprise |
+
+**Recommended:** count own commits with a commit hook. Always reload on a confirmed change; show the message only when commits other than the TUI's own happened in that window.
+
+#### Recommendation
+
+- **Signal:** B (fsnotify, confirmed with `data_version`), as decided.
+- **Own writes:** commit-hook counter, as above.
+- **Gaps in B:** when the watcher reports an error (an overflow, or it couldn't start), fall back to A's tick until it recovers, so a missed event can't leave the screen stale indefinitely. Polling is cheap enough that the fallback costs nothing.
+- **Not used:** C as a signal (can't see other processes), D and E (machinery), F (covered by #258).
+
 ### For unsafe writes (H1–H5)
 
 These don't depend on the display choice. Each is small and worth doing alone:
@@ -116,7 +193,7 @@ These don't depend on the display choice. Each is small and worth doing alone:
 **Wave B: change signal.**
 
 - **Detecting changes:** a `store` method returning the current `data_version` from a dedicated `*sql.Conn`, held open by the TUI for its lifetime.
-- **The tick:** in the TUI, a `tea.Tick` every 1–2 s reads it, and when it moves, reruns the current screen's loader.
+- **The trigger:** originally a `tea.Tick` every 1–2 s. Since #259, fsnotify on the database's directory, confirmed with the probe, with the tick as a fallback when the watcher fails (see "Change detection").
 - **Making documents visible:** `documents.Store.Write` (from H3) also records the write in the database, so writing a document moves `data_version`.
   - The simplest form is touching `applications.updated_at`.
   - A small `document_writes` table (application, type, SHA-256, time) would also give history. It's the cheaper choice if H2's hashes are wanted without rereading files.
@@ -149,12 +226,12 @@ Effort: **S** is a few hours to a day, **M** a few days. Each task is its own is
 6. **Handle `editorClosedMsg`.** Reload the application's reviews and progress. *Done:* a test that the badge updates after an edit. **S.** Could ship on its own straight away; it's a bug.
 7. **`data_version` probe in `store`.** A dedicated connection, and a method that reports whether it moved. *Done:* a test with two `*sql.DB` handles on one file. **S.**
 8. **Document writes recorded in the database.** *Done:* `write_document` moves `data_version`. *Deps:* 2, 7. **S.**
-9. **TUI tick and per-screen reload.** Rerun the current screen's loader on change, following the reload rules above. *Done:* tests that each screen reloads on a change and keeps cursor, filters and open forms. *Deps:* 7. **M.**
+9. **Change trigger and per-screen reload.** Rerun the current screen's loader on change, following the reload rules above. *Done:* tests that each screen reloads on a change and keeps cursor, filters and open forms. *Deps:* 7. **M.**
 10. **Reload on screen entry.** Where a screen doesn't already. *Done:* a test per screen. **S.**
 
 ## Open questions
 
-1. **Tick interval.** 1 s or 2 s? A tick costs about a microsecond and the reload only runs on change, so this is about how fast a change should appear, not cost. Proposed: 1 s.
+1. **Tick interval.** 1 s or 2 s? A tick costs about a microsecond and the reload only runs on change, so this is about how fast a change should appear, not cost. Proposed: 1 s. *Superseded (#259): the trigger is a file watch; a tick remains only as the fallback, where 1 s is still proposed.*
 2. **Hash storage.** Should H2's hashes come from rereading files, or from a `document_writes` table? Rereading is simpler and can't disagree with disk; a table adds history. Proposed: reread, and add the table only if step 8 wants it anyway.
 3. **Edits made outside Swamp.** Is reloading on screen entry enough, or is fsnotify (option 5) worth it later?
 4. **Should the TUI show that a reload happened?** For example "updated" in the status line, so a row moving under the cursor isn't a surprise.
