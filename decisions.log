@@ -7764,3 +7764,23 @@ above the pre-migration maximum could still pick up a folder.
   one mcpserver test, which now checks only that write_document records
   the write. Seeing that write as an event waits for #269 to log
   document_writes.
+
+## 2026-10-06 -- #269: log postings, companies and document writes, reviews and exports
+
+- User decision: a table is logged only when something reads its
+  changes and acts on it. Logged now: applications, postings,
+  companies, document_writes, document_reviews, document_exports.
+  document_writes is the one #243 needs: an agent's write_document only
+  writes there, so without it the TUI couldn't see a revised draft.
+- Not logged: posting_markup, tags, posting_tags, application forms (no
+  reader acts on them yet); application_status_history and
+  posting_history (they duplicate their tables' own events);
+  company_filters and interview_stages (IDs reused until #246).
+- Postings log updated_at, which changes only with content: a sync that
+  merely sees a posting again (MarkPostingsSeen, ~2000 a fetch) or
+  re-ingests it unchanged logs nothing (tested, with timestamps a day
+  old so the sync really changes last_seen_at; in the same second it
+  wouldn't, and the test couldn't fail).
+- changelog.go's LoggedTable gains Ops: the document tables are
+  insert-only, and the drift test now also fails on a trigger the list
+  doesn't expect.

@@ -1083,9 +1083,10 @@ func TestStagePrepare_DocumentsCarrySHA256(t *testing.T) {
 	}
 }
 
-// TestWriteDocument_IsRecorded: a file write is invisible to the database,
-// so write_document records it, saying the agent made it.
-func TestWriteDocument_IsRecorded(t *testing.T) {
+// TestWriteDocument_IsRecordedAndReachesTheChangeFeed: a file write is
+// invisible to the database, so write_document records it; that record is
+// how a TUI watching the change feed learns the agent revised a draft.
+func TestWriteDocument_IsRecordedAndReachesTheChangeFeed(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -1095,6 +1096,10 @@ func TestWriteDocument_IsRecorded(t *testing.T) {
 	mustMarkInterested(t, s, posting.ID)
 	cs := connectClient(t, srv)
 	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	feed, err := s.NewChangeFeed(ctx)
+	if err != nil {
+		t.Fatalf("NewChangeFeed: %v", err)
+	}
 	callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
 		"ApplicationID": prepared.ApplicationID,
 		"DocumentType":  "cover_letter",
@@ -1107,5 +1112,13 @@ func TestWriteDocument_IsRecorded(t *testing.T) {
 	}
 	if write.Source != store.DocumentWriteSourceWriteDocument || write.ContentSHA256 != documents.ContentSHA256("a draft") {
 		t.Errorf("recorded write = source %v, hash %q; want write_document and the draft's hash", write.Source, write.ContentSHA256)
+	}
+
+	events, err := feed.Next(ctx)
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	if len(events) != 1 || events[0].Table != "document_writes" || events[0].RowID != write.ID {
+		t.Errorf("change events after write_document = %+v, want one document_writes insert for write %d", events, write.ID)
 	}
 }
