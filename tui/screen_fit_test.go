@@ -93,13 +93,14 @@ func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 			return app
 		}},
 		{name: "company list", screen: screenCompanyList, open: func(t *testing.T, app *App) *App {
-			app, _ = sendKey(app, runeKey('c'))
+			app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 			return app
 		}},
 		{name: "company list searching, with info box", screen: screenCompanyList, open: func(t *testing.T, app *App) *App {
 			// "co" still matches 39 of the 40 companies, enough to fill
 			// the table under the prompt line.
-			for _, r := range "ci/co" {
+			app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
+			for _, r := range "i/co" {
 				app, _ = sendKey(app, runeKey(r))
 			}
 			return app

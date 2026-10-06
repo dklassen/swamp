@@ -127,17 +127,16 @@ func TestCompanyListModel_E_NoCompanies_ReturnsNothing(t *testing.T) {
 	}
 }
 
-func TestCompanyListModel_Esc_ReturnsBackToActiveApplicationsMsg(t *testing.T) {
+// The company list is a tab, so there's nothing to go back to; a stray
+// esc mustn't leave it.
+func TestCompanyListModel_EscOrB_DoesNothing(t *testing.T) {
 	t.Parallel()
 
-	m := &companyListModel{}
-
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc}, nil)
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	if _, ok := intent.(backToActiveApplicationsMsg); !ok {
-		t.Fatalf("intent = %T, want backToActiveApplicationsMsg", intent)
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyEsc}, runeKey('b')} {
+		m := &companyListModel{}
+		if cmd, intent := m.Update(key, nil); cmd != nil || intent != nil {
+			t.Errorf("Update(%v) = %v, %v, want nil, nil", key, cmd, intent)
+		}
 	}
 }
 

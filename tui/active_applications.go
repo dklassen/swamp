@@ -89,8 +89,6 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 		}
 	case msg.String() == "q":
 		return tea.Quit, nil
-	case msg.String() == "c":
-		return nil, backToCompanyListMsg{}
 	case msg.String() == "s":
 		if m.cursor < len(apps) {
 			a := apps[m.cursor]
@@ -115,10 +113,10 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress map[int64]map[documents.Type]documentProgress, now time.Time, width, height int) string {
 	var b strings.Builder
 	title := titleStyle.Render("Active Applications")
-	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  s: status  e: export PDFs  c: companies  q: quit")
+	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  s: status  e: export PDFs  tab: companies  q: quit")
 	b.WriteString(title + "\n")
 	if len(apps) == 0 {
-		b.WriteString("No active applications. Press 'c' to browse companies.\n")
+		b.WriteString("No active applications. Press tab to browse companies.\n")
 	} else {
 		start, end := visibleWindow(m.cursor, len(apps), tableRows(height, title, help))
 		cursorRow := m.cursor - start

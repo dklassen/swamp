@@ -137,7 +137,7 @@ func TestApp_CompanyListReload_KeepsTheCursorOnTheSameCompany(t *testing.T) {
 		mustCreateCompany(t, s, name, "ashby", strings.ToLower(name))
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeFeed(nil, "tui:1")
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 	if app.screen != screenCompanyList {
 		t.Fatalf("screen after c = %v, want the company list", app.screen)
 	}

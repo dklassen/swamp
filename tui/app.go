@@ -1344,14 +1344,23 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Ahead of the screen's own keys, so it works with the company search
+	// open too.
+	if msg.Type == tea.KeyTab {
+		switch a.screen {
+		case screenActiveApplications:
+			a.screen = screenCompanyList
+			// Archiving or unarchiving may have changed open counts.
+			return a, loadCompanies(a.store)
+		case screenCompanyList:
+			a.screen = screenActiveApplications
+			return a, nil
+		}
+	}
 	switch a.screen {
 	case screenActiveApplications:
 		cmd, intent := a.activeApplicationList.Update(msg, a.activeApplications)
 		switch v := intent.(type) {
-		case backToCompanyListMsg:
-			a.screen = screenCompanyList
-			// Archiving or unarchiving may have changed open counts.
-			return a, loadCompanies(a.store)
 		case enterApplicationStatusMsg:
 			return a, loadApplicationStatus(a.store, v.postingID, a.screen)
 		case enterApplicationDetailMsg:
@@ -1431,8 +1440,6 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.selectedCompany = v.company
 			a.screen = screenPostingList
 			return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
-		case backToActiveApplicationsMsg:
-			a.screen = screenActiveApplications
 		}
 		return a, cmd
 	case screenPostingList:

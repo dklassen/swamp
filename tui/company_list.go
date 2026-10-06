@@ -54,9 +54,7 @@ type syncAllKeyMsg struct{}
 type selectCompanyMsg struct{ company store.Company }
 
 // backToActiveApplicationsMsg signals that App should switch back to the
-// active-applications screen -- the app's home screen (see decisions.log,
-// #43); company list is reached from there via 'c', not the other way
-// around, so it needs its own way back.
+// active-applications tab.
 type backToActiveApplicationsMsg struct{}
 
 // Update handles one key press. The returned tea.Cmd (if non-nil) is a
@@ -80,8 +78,6 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 		}
 	case msg.String() == "q":
 		return tea.Quit, nil
-	case msg.Type == tea.KeyEsc, msg.String() == "b":
-		return nil, backToActiveApplicationsMsg{}
 	case msg.String() == "d":
 		if m.cursor < len(companies) {
 			return deleteCompany(m.store, companies[m.cursor].ID), nil
@@ -171,7 +167,7 @@ func (m *companyListModel) visible(companies []store.Company) []store.Company {
 func (m *companyListModel) View(companies []store.Company, openPostings map[int64]int, width, height int) string {
 	var b strings.Builder
 	title := titleStyle.Render("Companies")
-	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  esc/b: back  q: quit")
+	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  tab: applications  q: quit")
 	if m.searching {
 		help = helpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: view postings  esc: clear")
 	}

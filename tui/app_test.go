@@ -85,7 +85,7 @@ func runeKey(r ...rune) tea.KeyMsg {
 // selected company: to the company list, refresh, then enter.
 func openPostingList(t *testing.T, app *App) *App {
 	t.Helper()
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 	app, cmd := sendKey(app, runeKey('r'))
 	if cmd == nil {
 		t.Fatal("Update on 'r' returned nil Cmd")
@@ -133,7 +133,7 @@ func TestApp_CursorDown_MovesSelectionWithinBounds(t *testing.T) {
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	if app.companyList.cursor != 0 {
 		t.Fatalf("initial cursor = %d, want 0", app.companyList.cursor)
@@ -164,7 +164,7 @@ func TestApp_PressA_EntersCompanyForm(t *testing.T) {
 		t.Fatalf("initial screen = %v, want screenActiveApplications (the home screen)", app.screen)
 	}
 
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 	if app.screen != screenCompanyList {
 		t.Fatalf("screen after 'c' = %v, want screenCompanyList", app.screen)
 	}
@@ -182,7 +182,7 @@ func TestApp_SubmitForm_BoardRejectsSourceRef_StaysOnFormToRetry(t *testing.T) {
 		"ashby": &fakeFetcher{errBoards: map[string]error{"acmee": errors.New("404 not found")}},
 	}, sync.DefaultConfig())
 	app := newTestApp(t, s, syncer)
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 	app, _ = sendKey(app, runeKey('a'))
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab}) // source (default "ashby") -> name
 	app, _ = sendKey(app, runeKey('A', 'c', 'm', 'e'))
@@ -209,7 +209,7 @@ func TestApp_SubmitForm_BoardRejectsSourceRef_StaysOnFormToRetry(t *testing.T) {
 func TestApp_TypingInForm_UpdatesFocusedField(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app, _ = sendKey(app, runeKey('a'))
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab}) // source field is focused first; move to name
@@ -223,7 +223,7 @@ func TestApp_TypingInForm_UpdatesFocusedField(t *testing.T) {
 func TestApp_Tab_MovesFocusToNextField(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app, _ = sendKey(app, runeKey('a'))
 	if app.companyForm.focus != formFieldSource {
@@ -252,7 +252,7 @@ func TestApp_Tab_MovesFocusToNextField(t *testing.T) {
 func TestApp_SubmitForm_CreatesCompanyAndReturnsToList(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app, _ = sendKey(app, runeKey('a'))
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab}) // source (default "ashby") -> name
@@ -289,7 +289,7 @@ func TestApp_PressD_DeletesSelectedCompany(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app, cmd := sendKey(app, runeKey('d'))
 	if cmd == nil {
@@ -311,7 +311,7 @@ func TestApp_PressE_EditsCompanyName(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app, _ = sendKey(app, runeKey('e'))
 	if app.screen != screenCompanyEdit {
@@ -351,7 +351,7 @@ func TestApp_EscWhileCompanyNameSavePending_DoesNotRaceTheSave(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app, _ = sendKey(app, runeKey('e'))
 	app, _ = sendKey(app, runeKey(' ', 'C', 'o', 'r', 'p'))
@@ -391,7 +391,7 @@ func TestApp_SubmitForm_KeepsCompanyListSorted(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	// "Acme" sorts before the already-loaded "Globex" -- appending it
 	// blindly would leave the in-memory list out of order even though a
@@ -422,7 +422,7 @@ func TestApp_PressE_RenameKeepsCompanyListSorted(t *testing.T) {
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	// Renaming "Acme" (cursor at index 0) to "Zzz" moves it past "Globex"
 	// alphabetically -- an in-place replace at the old index would leave
@@ -635,7 +635,7 @@ func TestApp_OpenPostingList_HidesArchivedPostingsByDefault(t *testing.T) {
 		},
 	})
 	app := newTestApp(t, s, syncer)
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app, cmd := sendKey(app, runeKey('r'))
 	if cmd == nil {
@@ -1091,21 +1091,6 @@ func TestApp_StartsOnActiveApplicationsScreen(t *testing.T) {
 	}
 }
 
-func TestApp_ActiveApplications_C_ThenEsc_ReturnsHome(t *testing.T) {
-	s := newTestStore(t)
-	app := newTestApp(t, s, newTestSyncer(s, nil))
-
-	app, _ = sendKey(app, runeKey('c'))
-	if app.screen != screenCompanyList {
-		t.Fatalf("screen after 'c' = %v, want screenCompanyList", app.screen)
-	}
-
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
-	if app.screen != screenActiveApplications {
-		t.Fatalf("screen after esc from company list = %v, want screenActiveApplications", app.screen)
-	}
-}
-
 // TestApp_ActiveApplications_StatusChange_ReturnsToActiveApplications
 // exercises the return-screen tracking returnStack exists for: screenApplicationStatusSelect is reachable from both
 // screenPostingDetail and screenActiveApplications now, so saving (or
@@ -1364,7 +1349,7 @@ func TestApp_PressQ_ReturnsQuitCmd(t *testing.T) {
 func TestApp_PressEsc_CancelsFormBackToList(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app, _ = sendKey(app, runeKey('a'))
 	app, _ = sendKey(app, runeKey('A', 'c', 'm', 'e'))
@@ -1381,7 +1366,7 @@ func TestApp_PressEsc_CancelsFormBackToList(t *testing.T) {
 func TestApp_CancellingAScreen_ClearsStaleError(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app, _ = sendKey(app, runeKey('a'))
 	// Simulate an error left over from a failed action on this screen
@@ -1407,7 +1392,7 @@ func TestApp_PressR_RefreshesSelectedCompanyAndShowsStatus(t *testing.T) {
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app, cmd := sendKey(app, runeKey('r'))
 	if cmd == nil {
@@ -1443,7 +1428,7 @@ func TestApp_PressR_WhileCompanySyncsElsewhere_ShowsStatusNotError(t *testing.T)
 	}
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{"acme": {{SourceID: "job-1", Title: "Engineer"}}})
 	app := newTestApp(t, s, syncer)
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app, cmd := sendKey(app, runeKey('r'))
 	app, _ = sendKey(app, cmd())
@@ -2496,7 +2481,7 @@ func TestApp_CompanyList_VimJK_MoveCursorLikeArrows(t *testing.T) {
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app, _ = sendKey(app, runeKey('j'))
 	if app.companyList.cursor != 1 {
@@ -3255,7 +3240,7 @@ func TestApp_PostingDetailViaPostingList_HelpKeepsPostingNavigation(t *testing.T
 	mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	app, _ = sendKey(app, runeKey('c'))                      // active applications -> company list
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})      // active applications -> company list
 	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // -> posting list
 	app = applyCmd(t, app, cmd)
 	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // -> posting detail
@@ -3554,7 +3539,7 @@ func TestApp_PressR_UpdatesCompanyListOpenCountAndLastFetched(t *testing.T) {
 		"acme": {{SourceID: "job-1", Title: "Engineer"}, {SourceID: "job-2", Title: "Designer"}},
 	})
 	app := newTestApp(t, s, syncer)
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	if got := app.View(); !strings.Contains(got, "never") {
 		t.Fatalf("before refresh, company list should say never fetched:\n%s", got)
@@ -3683,7 +3668,7 @@ func TestApp_CompanyList_SearchThenEnter_OpensMatchAndKeepsSearchOnReturn(t *tes
 	mustCreateCompany(t, s, "Initech", "ashby", "initech")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 	for _, r := range "/glo" {
 		app, _ = sendKey(app, runeKey(r))
 	}
