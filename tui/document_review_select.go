@@ -112,7 +112,6 @@ func readDocumentForReview(applicationID int64, documentType documents.Type, pat
 
 func (m *documentReviewSelectModel) View() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Review a document") + "\n")
 	for i, opt := range m.options {
 		status := "not found"
 		if opt.exists {

@@ -146,7 +146,6 @@ func renderSourcePicker(selected int) string {
 
 func (m *companyFormModel) View() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Add company") + "\n")
 
 	sourceLabel := fieldLabel
 	if m.focus == formFieldSource {

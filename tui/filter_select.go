@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -19,8 +18,7 @@ import (
 // decisions.log #56), neither of which this screen needs to know about
 // directly.
 type filterSelectModel struct {
-	companyID   int64
-	companyName string
+	companyID int64
 
 	departmentOptions []string
 	locationOptions   []string
@@ -36,11 +34,10 @@ type filterSelectModel struct {
 // place this is constructed (filter options are loaded async, so this
 // can't be seeded synchronously the way a key-press-triggered screen
 // entry can).
-func newFilterSelectModel(companyID int64, companyName string, departments, locations []string, existingFilters []store.CompanyFilter) filterSelectModel {
+func newFilterSelectModel(companyID int64, departments, locations []string, existingFilters []store.CompanyFilter) filterSelectModel {
 	existingDepartments, existingLocations := splitCompanyFilters(existingFilters)
 	return filterSelectModel{
 		companyID:           companyID,
-		companyName:         companyName,
 		departmentOptions:   departments,
 		locationOptions:     locations,
 		selectedDepartments: toSet(existingDepartments),
@@ -158,17 +155,15 @@ func filterWindow(cursor, deptCount, locCount, rows int) (deptStart, deptEnd, lo
 }
 
 // View renders the options in height terminal rows (App.screenRows): what
-// the title and help line leave, less a row for each section label in view
+// the help line leaves, less a row for each section label in view
 // (issue #138).
 func (m *filterSelectModel) View(height int) string {
 	var b strings.Builder
-	title := titleStyle.Render(fmt.Sprintf("Filters: %s", m.companyName))
 	help := helpStyle.Render("↑/↓ (j/k): select  space: toggle  enter: save  esc/b: cancel")
-	b.WriteString(title + "\n")
 	if len(m.departmentOptions) == 0 && len(m.locationOptions) == 0 {
 		b.WriteString("No department/location values discovered yet -- refresh the company first.\n")
 	}
-	rows := height - lipgloss.Height(title) - lipgloss.Height(help)
+	rows := height - lipgloss.Height(help)
 	// Which labels show depends on the window, so allow for one, and only
 	// if that window spans both sections, make room for the second.
 	deptStart, deptEnd, locStart, locEnd := filterWindow(m.cursor, len(m.departmentOptions), len(m.locationOptions), rows-1)

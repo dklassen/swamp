@@ -74,32 +74,28 @@ func newFullTestApp(t *testing.T) *App {
 	return app
 }
 
-// TestApp_Screens_FitTheTerminalUnderTheBanner checks every screen that
-// sizes itself to the terminal fits in it, rendered through App.View()
-// with and without the status/error banner App draws above every screen.
-// Only posting detail used to leave room for the banner; the rest were
-// sized as if it weren't there, so the renderer dropped the top rows --
-// the banner itself -- and a sync's result or a failure never showed
-// (issue #138).
-func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
-	const width, height = 100, 24
+// sizedScreen is a screen that sizes itself to the terminal, and how to
+// open it on an app from newFullTestApp.
+type sizedScreen struct {
+	name   string
+	open   func(t *testing.T, app *App) *App
+	screen screen
+}
 
-	screens := []struct {
-		name   string
-		open   func(t *testing.T, app *App) *App
-		screen screen
-	}{
+func sizedScreens() []sizedScreen {
+	return []sizedScreen{
 		{name: "active applications", screen: screenActiveApplications, open: func(t *testing.T, app *App) *App {
 			return app
 		}},
 		{name: "company list", screen: screenCompanyList, open: func(t *testing.T, app *App) *App {
-			app, _ = sendKey(app, runeKey('c'))
+			app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 			return app
 		}},
 		{name: "company list searching, with info box", screen: screenCompanyList, open: func(t *testing.T, app *App) *App {
 			// "co" still matches 39 of the 40 companies, enough to fill
 			// the table under the prompt line.
-			for _, r := range "ci/co" {
+			app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
+			for _, r := range "i/co" {
 				app, _ = sendKey(app, runeKey(r))
 			}
 			return app
@@ -189,6 +185,18 @@ func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 			return applyCmd(t, app, cmd)
 		}},
 	}
+}
+
+// TestApp_Screens_FitTheTerminalUnderTheBanner checks every screen that
+// sizes itself to the terminal fits in it, rendered through App.View()
+// with and without the status/error banner App draws above every screen.
+// Only posting detail used to leave room for the banner; the rest were
+// sized as if it weren't there, so the renderer dropped the top rows --
+// the banner itself -- and a sync's result or a failure never showed
+// (issue #138).
+func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
+	const width, height = 100, 24
+
 	banners := []struct {
 		name string
 		msg  tea.Msg
@@ -198,7 +206,7 @@ func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 		{name: "status", msg: companyRefreshedMsg{result: sync.Result{Name: "Acme", Fetched: 40}}, text: "Acme: fetched 40"},
 		{name: "error", msg: browserOpenedMsg{err: errors.New("could not open browser")}, text: "error: could not open browser"},
 	}
-	for _, sc := range screens {
+	for _, sc := range sizedScreens() {
 		for _, bn := range banners {
 			t.Run(sc.name+"/"+bn.name, func(t *testing.T) {
 				app := newFullTestApp(t)

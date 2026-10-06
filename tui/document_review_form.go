@@ -65,11 +65,11 @@ func newDocumentReviewFormModel(s *store.Store, docs *documents.Store, applicati
 }
 
 // setHeight fits the screen into height terminal rows, giving the text
-// area whatever the title and help line, measured as rendered, leave
+// area whatever the help line, measured as rendered, leaves
 // (issue #138).
 func (m *documentReviewFormModel) setHeight(height int) {
 	m.height = height
-	used := lipgloss.Height(m.title()) + lipgloss.Height(documentReviewFormHelp())
+	used := lipgloss.Height(documentReviewFormHelp())
 	if m.changes != "" {
 		used += lipgloss.Height(m.changesView())
 	}
@@ -99,10 +99,6 @@ func (m *documentReviewFormModel) changesView() string {
 	}
 	notice += " This is what changed; it's what you're reviewing now. Check your notes still apply, then save again."
 	return warnStyle.Render(notice) + "\n" + strings.Join(lines, "\n") + "\n"
-}
-
-func (m *documentReviewFormModel) title() string {
-	return titleStyle.Render("Review " + m.documentType.Label())
 }
 
 func documentReviewFormHelp() string {
@@ -176,7 +172,6 @@ func (m *documentReviewFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 
 func (m *documentReviewFormModel) View() string {
 	var b strings.Builder
-	b.WriteString(m.title() + "\n")
 	if m.changes != "" {
 		b.WriteString(m.changesView())
 	}

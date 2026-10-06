@@ -68,7 +68,6 @@ func (m *companyEditModel) saveResolved() {
 
 func (m *companyEditModel) View() string {
 	var b strings.Builder
-	b.WriteString(titleStyle.Render("Edit company") + "\n")
 	b.WriteString(focusedLabel.Render("Name:") + " " + m.nameInput.View() + "\n")
 	b.WriteString(helpStyle.Render("enter: save  esc: cancel"))
 	return b.String()

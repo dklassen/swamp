@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -30,7 +29,7 @@ const postingTableChromeLines = 4
 
 // tableRows is how many data rows a table screen can show in height
 // terminal rows: what's left once the table's own chrome and everything
-// else the screen draws around it (title, help, notices, ...) have taken
+// else the screen draws around it (help, notices, ...) have taken
 // theirs. Each of around is measured as rendered, margins and all, so a
 // screen can't outgrow the terminal by drawing a line it forgot to count
 // (issue #138). An empty string is something the screen isn't drawing
@@ -102,7 +101,6 @@ func newPostingListModel(s *store.Store) postingListModel {
 // postingListSnapshot is the read-only domain data App hands in on every
 // call.
 type postingListSnapshot struct {
-	companyName             string
 	companyDescription      string
 	postings                []store.Posting
 	markup                  map[int64]store.PostingMarkup
@@ -174,7 +172,6 @@ func (m *postingListModel) Update(msg tea.KeyMsg, snap postingListSnapshot) (tea
 // still fits.
 func (m *postingListModel) View(snap postingListSnapshot, width, height int) string {
 	var b strings.Builder
-	title := titleStyle.Render(fmt.Sprintf("Postings: %s", snap.companyName))
 	help := helpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back")
 	// The description gets one line, truncated to the table's width.
 	var description, summary, archived string
@@ -187,7 +184,6 @@ func (m *postingListModel) View(snap postingListSnapshot, width, height int) str
 	if snap.hideArchived {
 		archived = helpStyle.Render("Archived postings hidden (press 'A' to show)")
 	}
-	b.WriteString(title + "\n")
 	for _, line := range []string{description, summary, archived} {
 		if line != "" {
 			b.WriteString(line + "\n")
@@ -196,7 +192,7 @@ func (m *postingListModel) View(snap postingListSnapshot, width, height int) str
 	if len(snap.postings) == 0 {
 		b.WriteString("No postings yet. Press 'r' from the company list to refresh.\n")
 	} else {
-		start, end := visibleWindow(m.cursor, len(snap.postings), tableRows(height, title, description, summary, archived, help))
+		start, end := visibleWindow(m.cursor, len(snap.postings), tableRows(height, description, summary, archived, help))
 		cursorRow := m.cursor - start
 		t := table.New().
 			Headers("", "Title", "Department", "Location", "Status").

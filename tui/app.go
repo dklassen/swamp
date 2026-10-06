@@ -27,7 +27,6 @@ import (
 )
 
 var (
-	titleStyle  = lipgloss.NewStyle().Bold(true).MarginBottom(1)
 	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
 	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).MarginTop(1)
 	// dimStyle is helpStyle's same muted color without its MarginTop(1) --
@@ -1285,7 +1284,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
-		a.filterSelect = newFilterSelectModel(a.selectedCompany.ID, a.selectedCompany.Name, msg.departments, msg.locations, msg.existingFilters)
+		a.filterSelect = newFilterSelectModel(a.selectedCompany.ID, msg.departments, msg.locations, msg.existingFilters)
 	case companyFiltersAppliedMsg:
 		if errors.Is(msg.err, sync.ErrSyncInProgress) {
 			// The filters saved; only the re-sync was skipped, because
@@ -1344,14 +1343,23 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// Ahead of the screen's own keys, so it works with the company search
+	// open too.
+	if msg.Type == tea.KeyTab {
+		switch a.screen {
+		case screenActiveApplications:
+			a.screen = screenCompanyList
+			// Archiving or unarchiving may have changed open counts.
+			return a, loadCompanies(a.store)
+		case screenCompanyList:
+			a.screen = screenActiveApplications
+			return a, nil
+		}
+	}
 	switch a.screen {
 	case screenActiveApplications:
 		cmd, intent := a.activeApplicationList.Update(msg, a.activeApplications)
 		switch v := intent.(type) {
-		case backToCompanyListMsg:
-			a.screen = screenCompanyList
-			// Archiving or unarchiving may have changed open counts.
-			return a, loadCompanies(a.store)
 		case enterApplicationStatusMsg:
 			return a, loadApplicationStatus(a.store, v.postingID, a.screen)
 		case enterApplicationDetailMsg:
@@ -1431,13 +1439,10 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.selectedCompany = v.company
 			a.screen = screenPostingList
 			return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
-		case backToActiveApplicationsMsg:
-			a.screen = screenActiveApplications
 		}
 		return a, cmd
 	case screenPostingList:
 		snap := postingListSnapshot{
-			companyName:             a.selectedCompany.Name,
 			companyDescription:      a.selectedCompany.Description,
 			postings:                a.postings,
 			markup:                  a.postingMarkup,
@@ -1610,17 +1615,19 @@ func (a *App) banner() string {
 }
 
 // screenRows is the terminal height left for the active screen once
-// View() has drawn the banner above it. Every newline in the banner ends
-// one of its rows, and the screen starts on the row after the last. A
-// banner line wider than the terminal doesn't take extra rows: bubbletea
+// View() has drawn the header and banner above it. Every newline in them
+// ends one of their rows, and the screen starts on the row after the
+// last. A line wider than the terminal doesn't take extra rows: bubbletea
 // truncates lines to the window width rather than letting them wrap.
 func (a *App) screenRows() int {
-	return max(a.height-strings.Count(a.banner(), "\n"), 0)
+	return max(a.height-strings.Count(a.header()+a.banner(), "\n"), 0)
 }
 
 func (a *App) View() string {
 	var b strings.Builder
 
+	// The header first, so a banner coming and going doesn't move it.
+	b.WriteString(a.header())
 	b.WriteString(a.banner())
 
 	switch a.screen {
@@ -1636,7 +1643,6 @@ func (a *App) View() string {
 		b.WriteString(a.companyEdit.View())
 	case screenPostingList:
 		snap := postingListSnapshot{
-			companyName:             a.selectedCompany.Name,
 			companyDescription:      a.selectedCompany.Description,
 			postings:                a.postings,
 			markup:                  a.postingMarkup,

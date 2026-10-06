@@ -67,16 +67,13 @@ func TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication(t *test
 	}
 }
 
-func TestActiveApplicationListModel_C_ReturnsBackToCompanyListMsg(t *testing.T) {
+// Tab switches to the company list; 'c' no longer does.
+func TestActiveApplicationListModel_C_DoesNothing(t *testing.T) {
 	t.Parallel()
 
 	m := newActiveApplicationListModel()
-	cmd, intent := m.Update(runeKey('c'), testActiveApplications())
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	if _, ok := intent.(backToCompanyListMsg); !ok {
-		t.Fatalf("intent = %T, want backToCompanyListMsg", intent)
+	if cmd, intent := m.Update(runeKey('c'), testActiveApplications()); cmd != nil || intent != nil {
+		t.Errorf("Update('c') = %v, %v, want nil, nil", cmd, intent)
 	}
 }
 

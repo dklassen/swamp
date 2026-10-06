@@ -32,7 +32,7 @@ func newSyncAllTestApp(t *testing.T, failing ...string) (*App, *store.Store) {
 	mustCreateCompany(t, s, "Initech", "ashby", "initech")
 	syncer := sync.New(s, map[string]sync.PostingFetcher{"ashby": &fakeFetcher{postings: postings, errBoards: errBoards}}, sync.DefaultConfig())
 	app := newTestApp(t, s, syncer)
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 	return app, s
 }
 
@@ -116,7 +116,7 @@ func TestApp_SyncAll_FailingCompany_RunContinuesAndSummaryNamesIt(t *testing.T) 
 func TestApp_SyncAll_NoCompanies_FinishesImmediately(t *testing.T) {
 	s := newTestStore(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, runeKey('c'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app, _ = sendKey(app, runeKey('R'))
 	if app.status != "0 companies, 0 failed" || app.syncAll.running {
@@ -249,9 +249,9 @@ func TestApp_SyncAll_LeavingCompanyList_RunContinues(t *testing.T) {
 	app, _ := newSyncAllTestApp(t)
 
 	app, cmd := sendKey(app, runeKey('R'))
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 	if app.screen != screenActiveApplications {
-		t.Fatalf("screen after esc = %v, want screenActiveApplications", app.screen)
+		t.Fatalf("screen after tab = %v, want screenActiveApplications", app.screen)
 	}
 	for range 3 {
 		app, cmd = step(t, app, cmd)

@@ -54,9 +54,7 @@ type syncAllKeyMsg struct{}
 type selectCompanyMsg struct{ company store.Company }
 
 // backToActiveApplicationsMsg signals that App should switch back to the
-// active-applications screen -- the app's home screen (see decisions.log,
-// #43); company list is reached from there via 'c', not the other way
-// around, so it needs its own way back.
+// active-applications tab.
 type backToActiveApplicationsMsg struct{}
 
 // Update handles one key press. The returned tea.Cmd (if non-nil) is a
@@ -80,8 +78,6 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 		}
 	case msg.String() == "q":
 		return tea.Quit, nil
-	case msg.Type == tea.KeyEsc, msg.String() == "b":
-		return nil, backToActiveApplicationsMsg{}
 	case msg.String() == "d":
 		if m.cursor < len(companies) {
 			return deleteCompany(m.store, companies[m.cursor].ID), nil
@@ -170,12 +166,10 @@ func (m *companyListModel) visible(companies []store.Company) []store.Company {
 // View renders the list in height terminal rows (App.screenRows).
 func (m *companyListModel) View(companies []store.Company, openPostings map[int64]int, width, height int) string {
 	var b strings.Builder
-	title := titleStyle.Render("Companies")
-	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  esc/b: back  q: quit")
+	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  tab: applications  q: quit")
 	if m.searching {
 		help = helpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: view postings  esc: clear")
 	}
-	b.WriteString(title + "\n")
 	visible := m.visible(companies)
 	// A sync landing while the prompt is open can shrink visible under
 	// the cursor.
@@ -196,7 +190,7 @@ func (m *companyListModel) View(companies []store.Company, openPostings map[int6
 		infoBox = companyInfoBox(visible[cursor], width)
 	}
 	if len(visible) > 0 {
-		start, end := visibleWindow(cursor, len(visible), tableRows(height, title, help, infoBox, prompt))
+		start, end := visibleWindow(cursor, len(visible), tableRows(height, help, infoBox, prompt))
 		cursorRow := cursor - start
 		t := table.New().
 			Headers("Name", "Open", "Last fetched").
@@ -305,8 +299,6 @@ func companyInfoBox(c store.Company, width int) string {
 		lines = append(lines, "")
 	}
 
-	// Bold without titleStyle's MarginBottom, which would add a line and break
-	// the box's fixed height.
 	header := lipgloss.NewStyle().Bold(true).Render(truncateCol(fmt.Sprintf("%s · %s/%s", c.Name, c.Source, c.SourceRef), textWidth))
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
