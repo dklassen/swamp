@@ -120,3 +120,35 @@ func TestApp_HomeListReload_KeepsTheCursorOnTheSameApplication(t *testing.T) {
 		t.Errorf("cursor is on application %d after the reload, want %d (the one it was on)", got, onLast)
 	}
 }
+
+// TestApp_CompanyListReload_KeepsTheCursorOnTheSameCompany: as for the home
+// list, with a company deleted in another window.
+func TestApp_CompanyListReload_KeepsTheCursorOnTheSameCompany(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	for _, name := range []string{"Acme", "Globex", "Initech"} {
+		mustCreateCompany(t, s, name, "ashby", strings.ToLower(name))
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeFeed(nil, "tui:1")
+	app, _ = sendKey(app, runeKey('c'))
+	if app.screen != screenCompanyList {
+		t.Fatalf("screen after c = %v, want the company list", app.screen)
+	}
+	companies := app.companies
+	app, _ = sendKey(app, runeKey('j'))
+	app, _ = sendKey(app, runeKey('j'))
+	onLast := companies[2].ID
+
+	if err := s.SoftDeleteCompany(context.Background(), companies[0].ID); err != nil {
+		t.Fatalf("SoftDeleteCompany: %v", err)
+	}
+	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "companies", RowID: companies[0].ID, Op: "update", Origin: "tui:2"}}})
+
+	if len(app.companies) != 2 {
+		t.Fatalf("company list has %d companies after the reload, want 2", len(app.companies))
+	}
+	if got := app.companies[app.companyList.cursor].ID; got != onLast {
+		t.Errorf("cursor is on company %d after the reload, want %d", got, onLast)
+	}
+}

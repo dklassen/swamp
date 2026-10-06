@@ -68,6 +68,11 @@ func (a *App) reloadFor(events []store.ChangeEvent) tea.Cmd {
 		if touches(events, "applications", "postings", "companies", "document_writes", "document_reviews", "document_exports") {
 			return loadActiveApplications(a.store, a.documents)
 		}
+	case screenCompanyList:
+		// postings too: the list shows each company's open postings.
+		if touches(events, "companies", "postings") {
+			return loadCompanies(a.store)
+		}
 	}
 	return nil
 }

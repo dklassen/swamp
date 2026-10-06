@@ -313,3 +313,22 @@ func companyInfoBox(c store.Company, width int) string {
 		Width(textWidth + 2).
 		Render(strings.Join(append([]string{header}, lines...), "\n"))
 }
+
+// selected is the ID of the company under the cursor, or 0.
+func (m *companyListModel) selected(companies []store.Company) int64 {
+	if visible := m.visible(companies); m.cursor < len(visible) {
+		return visible[m.cursor].ID
+	}
+	return 0
+}
+
+// keepCursorOn moves the cursor to company id after a reload; if it's
+// gone, the cursor stays in range.
+func (m *companyListModel) keepCursorOn(id int64, companies []store.Company) {
+	visible := m.visible(companies)
+	if i := indexOfCompany(visible, id); i >= 0 {
+		m.cursor = i
+		return
+	}
+	m.cursor = min(m.cursor, max(len(visible)-1, 0))
+}

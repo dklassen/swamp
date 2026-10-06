@@ -968,7 +968,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case companiesLoadedMsg:
 		a.err = msg.err
+		previousCompany := a.companyList.selected(a.companies)
 		a.companies = msg.companies
+		a.companyList.keepCursorOn(previousCompany, a.companies)
 		a.companyOpenPostings = msg.openPostings
 	case activeApplicationsLoadedMsg:
 		a.err = msg.err
