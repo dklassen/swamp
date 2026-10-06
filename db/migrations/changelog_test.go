@@ -125,6 +125,12 @@ func TestChangeLog_TriggersMatchTheList(t *testing.T) {
 			name := table + "_change_" + op
 			var sql string
 			err := sqlDB.QueryRow(`SELECT sql FROM sqlite_master WHERE type = 'trigger' AND name = ? AND tbl_name = ?`, name, table).Scan(&sql)
+			if !slices.Contains(logged.Ops, op) {
+				if err == nil {
+					t.Errorf("trigger %s exists, but changelog.go doesn't log %s on %s", name, op, table)
+				}
+				continue
+			}
 			if err != nil {
 				t.Errorf("trigger %s: %v (recreate it in the migration that rebuilt %s)", name, err, table)
 				continue
