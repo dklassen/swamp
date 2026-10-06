@@ -1218,7 +1218,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, nil
 	case documentChangedDuringReviewMsg:
 		if a.screen == screenDocumentReviewForm && a.documentReviewForm.instance == msg.from {
-			a.documentReviewForm.reload(msg.current)
+			a.documentReviewForm.reload(msg.current, msg.who)
 		}
 	case documentReviewCreatedMsg:
 		a.err = msg.err

@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/aymanbagabas/go-udiff"
 	"github.com/charmbracelet/bubbles/textarea"
@@ -37,6 +38,7 @@ type documentReviewFormModel struct {
 	// form read it: the diff from that version to content, which is now
 	// the current one.
 	changes string
+	who     string
 	height  int
 }
 
@@ -77,8 +79,9 @@ func (m *documentReviewFormModel) setHeight(height int) {
 // reload switches the form to current, the document as it is now, after a
 // save found it changed. The notes typed so far are kept, and the
 // changes are shown so you can check they still apply.
-func (m *documentReviewFormModel) reload(current string) {
+func (m *documentReviewFormModel) reload(current, who string) {
 	m.changes = udiff.Unified("what you read", "on disk now", m.content, current)
+	m.who = who
 	m.content = current
 	m.setHeight(m.height)
 }
@@ -90,7 +93,11 @@ func (m *documentReviewFormModel) changesView() string {
 	if limit := max(m.height/2, 3); len(lines) > limit {
 		lines = append(lines[:limit], fmt.Sprintf("... %d more lines", len(lines)-limit))
 	}
-	notice := "The document changed while you were reviewing, so nothing was saved. This is what changed; it's what you're reviewing now. Check your notes still apply, then save again."
+	notice := "The document changed while you were reviewing, so nothing was saved."
+	if m.who != "" {
+		notice = "The document was " + m.who + " while you were reviewing, so nothing was saved."
+	}
+	notice += " This is what changed; it's what you're reviewing now. Check your notes still apply, then save again."
 	return warnStyle.Render(notice) + "\n" + strings.Join(lines, "\n") + "\n"
 }
 
@@ -116,7 +123,10 @@ type documentReviewCreatedMsg struct {
 // longer what the form showed, so nothing was saved.
 type documentChangedDuringReviewMsg struct {
 	current string
-	from    screenInstance
+	// who says who wrote current and when, if Swamp recorded that write
+	// (#258); empty when it wasn't (an edit made outside Swamp).
+	who  string
+	from screenInstance
 }
 
 // createDocumentReview saves a review of content, unless the file no
@@ -138,7 +148,7 @@ func createDocumentReview(s *store.Store, docs *documents.Store, applicationID i
 			return documentReviewCreatedMsg{from: from, err: fmt.Errorf("check the document before saving the review: %w", err)}
 		}
 		if string(current) != content {
-			return documentChangedDuringReviewMsg{current: string(current), from: from}
+			return documentChangedDuringReviewMsg{current: string(current), who: whoWrote(s, applicationID, documentType, string(current)), from: from}
 		}
 		review, err := s.CreateDocumentReview(context.Background(), applicationID, documentType, content, outcome, notes)
 		return documentReviewCreatedMsg{review: review, from: from, err: err}
@@ -173,4 +183,41 @@ func (m *documentReviewFormModel) View() string {
 	b.WriteString(m.textarea.View() + "\n")
 	b.WriteString(documentReviewFormHelp())
 	return b.String()
+}
+
+// whoWrote describes the recorded write that produced current, e.g.
+// "rewritten by the agent at 14:05", or "" if the latest recorded write
+// is of some other version (the change was made outside Swamp).
+func whoWrote(s *store.Store, applicationID int64, documentType documents.Type, current string) string {
+	write, ok, err := s.LatestDocumentWrite(context.Background(), applicationID, documentType)
+	if err != nil {
+		return fmt.Sprintf("rewritten (couldn't tell by whom: %v)", err)
+	}
+	if !ok || write.ContentSHA256 != documents.ContentSHA256(current) {
+		return ""
+	}
+	return "rewritten by " + documentWriterLabel(write.Source) + " at " + localClock(write.WrittenAt)
+}
+
+// documentWriterLabel is who a write source is, for a sentence.
+func documentWriterLabel(source store.DocumentWriteSource) string {
+	switch source {
+	case store.DocumentWriteSourceWriteDocument:
+		return "the agent"
+	case store.DocumentWriteSourceEditor:
+		return "you, in $EDITOR,"
+	default:
+		return source.String()
+	}
+}
+
+// localClock shows t in local time: the time alone if it's today, with
+// the date otherwise. Stored times are UTC (AGENTS.md); converting is for
+// display only.
+func localClock(t time.Time) string {
+	local, now := t.Local(), time.Now()
+	if local.YearDay() == now.YearDay() && local.Year() == now.Year() {
+		return local.Format("15:04")
+	}
+	return local.Format("Jan 2 15:04")
 }
