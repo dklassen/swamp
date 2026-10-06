@@ -3686,7 +3686,7 @@ func TestApp_CompanyList_SearchThenEnter_OpensMatchAndKeepsSearchOnReturn(t *tes
 	if app.screen != screenCompanyList {
 		t.Fatalf("screen after esc = %v, want screenCompanyList", app.screen)
 	}
-	if view := app.View(); !strings.Contains(view, "/glo") || strings.Contains(view, "Initech") {
+	if view := app.View(); !strings.Contains(view, "🔍 glo") || strings.Contains(view, "Initech") {
 		t.Errorf("company list after coming back should still show the search for \"glo\":\n%s", view)
 	}
 }

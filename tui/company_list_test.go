@@ -252,8 +252,8 @@ func TestCompanyListModel_View_SameWidthWhateverIsScrolledIntoView(t *testing.T)
 	m := newCompanyListModel(nil)
 	// A height with room for one company at a time, so each cursor
 	// position scrolls a different name into view: the table's own chrome
-	// plus one row, and the help line with its margin.
-	height := postingTableChromeLines + 1 + lipgloss.Height(helpStyle.Render("help"))
+	// plus one row, the help line with its margin, and the search line.
+	height := postingTableChromeLines + 1 + lipgloss.Height(helpStyle.Render("help")) + 1
 	var widths []int
 	for range companies {
 		view := m.View(companies, nil, 0, height)
@@ -467,9 +467,9 @@ func TestCompanyListModel_View_Search(t *testing.T) {
 		want    []string
 		notWant []string
 	}{
-		{name: "prompt open, no query yet", keys: "/", want: []string{"/", "3 of 3", "Acme", "Globex"}},
-		{name: "some match", keys: "/acme", want: []string{"/acme", "2 of 3", "Acme Robotics"}, notWant: []string{"Globex"}},
-		{name: "none match", keys: "/zz", want: []string{"/zz", "0 of 3", `No companies match "zz".`}, notWant: []string{"Acme", "Globex", "No companies yet"}},
+		{name: "prompt open, no query yet", keys: "/", want: []string{"🔍 ", "3 of 3", "Acme", "Globex"}},
+		{name: "some match", keys: "/acme", want: []string{"🔍 acme", "2 of 3", "Acme Robotics"}, notWant: []string{"Globex"}},
+		{name: "none match", keys: "/zz", want: []string{"🔍 zz", "0 of 3", `No companies match "zz".`}, notWant: []string{"Acme", "Globex", "No companies yet"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -575,5 +575,34 @@ func TestCompanyListModel_View_TableSpansTerminalWidth(t *testing.T) {
 				t.Errorf("table width = %d, want %d", got, tt.want)
 			}
 		})
+	}
+}
+
+// tableTop is the line the table starts on in view.
+func tableTop(t *testing.T, view string) int {
+	t.Helper()
+	for i, line := range strings.Split(view, "\n") {
+		if strings.Contains(line, "╭") {
+			return i
+		}
+	}
+	t.Fatalf("no table in view:\n%s", view)
+	return 0
+}
+
+// The search line is always there, so opening it doesn't push the table
+// down.
+func TestCompanyListModel_View_SearchLineDoesNotMoveTheTable(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
+	m := &companyListModel{}
+	idle := m.View(companies, nil, 80, 40)
+	if !strings.Contains(idle, "🔍") {
+		t.Errorf("idle view has no search line:\n%s", idle)
+	}
+	typeKeys(t, m, companies, "/")
+	if got, want := tableTop(t, m.View(companies, nil, 80, 40)), tableTop(t, idle); got != want {
+		t.Errorf("table starts on line %d with the search open, want %d (as when idle)", got, want)
 	}
 }

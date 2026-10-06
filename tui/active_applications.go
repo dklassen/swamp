@@ -189,8 +189,8 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress
 	// the cursor.
 	cursor := min(m.cursor, max(len(visible)-1, 0))
 	var prompt string
-	if m.searching {
-		prompt = "/" + m.query + "▏  " + dimStyle.Render(fmt.Sprintf("%d of %d", len(visible), len(apps)))
+	if len(apps) > 0 {
+		prompt = searchLine(m.searching, m.query, len(visible), len(apps))
 		b.WriteString(prompt + "\n")
 	}
 	switch {
