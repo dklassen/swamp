@@ -197,7 +197,7 @@ func sizedScreens() []sizedScreen {
 
 // TestApp_Screens_FitTheTerminalUnderTheBanner checks every screen that
 // sizes itself to the terminal fits in it, rendered through App.View()
-// with and without the status/error banner App draws above every screen.
+// with and without the status/error banner App draws below every screen.
 // Only posting detail used to leave room for the banner; the rest were
 // sized as if it weren't there, so the renderer dropped the top rows --
 // the banner itself -- and a sync's result or a failure never showed
