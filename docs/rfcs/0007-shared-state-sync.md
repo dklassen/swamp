@@ -97,9 +97,11 @@ H7 is already correct in what it stores. It's listed because it needs only a war
 
 **Chosen: 4, with document writes made visible to it.** `write_document` records a row in the database in the same call (see wave B), so the signal covers documents written by Swamp. Combine it with 2: entering a screen reloads it anyway, which also covers edits made outside Swamp the next time you look. Finally, handle `editorClosedMsg`, which needs no signal at all.
 
-*Revised 2026-10-06 (#259): the trigger is now a push from the database's files rather than a tick. The detection is still `data_version`. See the next section.*
+*Revised 2026-10-06: see the next section, and RFC 0008, which replaces this signal with a change log in the database.*
 
 ### Change detection: where each strategy works and where it falls apart (2026-10-06, #259)
+
+*Superseded the same day by RFC 0008 (`docs/rfcs/0008-change-log.md`): a change log in the database, polled every 500 ms, with no file watching. Kept for the measurements and the reasoning that led there.*
 
 While building #259, the user asked for push rather than polling, then whether SQLite's own change callbacks would beat fsnotify, then what fsnotify reacts to. This section records what was tested and where each approach breaks.
 
