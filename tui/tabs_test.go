@@ -111,3 +111,16 @@ func TestApp_TabBar_UnderlinesTheTabOnScreen(t *testing.T) {
 		}
 	}
 }
+
+func TestApp_Esc_OnATab_StaysPut(t *testing.T) {
+	t.Parallel()
+
+	for _, sc := range []screen{screenActiveApplications, screenCompanyList} {
+		app := newTabsTestApp(t, 100)
+		app.screen = sc
+		app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEsc})
+		if app.screen != sc {
+			t.Errorf("screen after esc on %v = %v, want it unchanged", sc, app.screen)
+		}
+	}
+}

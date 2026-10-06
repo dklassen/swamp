@@ -7854,3 +7854,42 @@ above the pre-migration maximum could still pick up a folder.
   tea.ClearScreen. Rejected: a one-column margin on tableWidth, which
   only helps when shrinking by a single column. Full-width tables made
   this common; any line wider than the new window could always do it.
+
+## 2026-10-06 -- #288: tabbed home and breadcrumbs
+
+- Applications and Companies are two tabs. Tab is the only key between
+  them, and works with the company search open. 'c' on the home screen
+  and esc/b on the company list are gone (user: fewer keys to remember
+  beats keeping habits); esc on either tab does nothing, so a stray one
+  can't leave it. Each list keeps its cursor and search across a switch,
+  since both models outlive it.
+- The tab bar names both tabs with their counts and underlines the one on
+  screen, heavy under it and light out to the table width. App.View draws
+  it above the status banner, so a banner coming and going doesn't move
+  it.
+- Every screen below the tabs shows the path back to one, in place of its
+  own title. Every title used titleStyle, a line and a blank line, and the
+  header is a line and a rule, so no screen gets shorter. Each screen's
+  title became its crumb, forms included ("Applications › Initech ›
+  Engineering Manager › Submit"), so the rule is the same everywhere.
+- The issue said to build the path from returnStack. That only holds the
+  screens entered from more than one place; the rest set a.screen
+  directly. So the path walks back from the current screen: a screen
+  entered from one place steps to it (header.go's parents, which matches
+  each such screen's back handler and its one entry point), and one
+  entered from several takes the next returnStack entry, which it pushed.
+  Rejected: making every transition push and pop, which would make
+  returnStack the whole path, but touches every transition in app.go.
+- Posting detail opened from application detail is just "Posting": the
+  crumbs before it already name the company and posting.
+- A path too wide for the line drops its middle crumbs, oldest first,
+  behind one "…"; if the tab and the current screen still don't fit, the
+  last crumb is cut off.
+- Not done: sync-all progress at the right of the header. It already shows
+  on every screen through the status banner, so the header would repeat
+  it. The right side is left for #283's live-updates indicator.
+- Found along the way: screens size themselves from screenRows, so a
+  header above a screen still drawing its title didn't overflow, it took
+  two rows from the screen. TestApp_Screens_BreadcrumbReplacesTheTitle
+  checks every screen below the tabs for its old title, and fails for a
+  screen it has no entry for.
