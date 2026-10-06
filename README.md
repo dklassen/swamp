@@ -25,8 +25,9 @@ Until the database is migrated, the TUI, `mcp-serve` and `fetch` refuse to
 start and say so. They also refuse a database migrated by a newer binary
 than themselves.
 
-For local use, `go tool task run` migrates first, then starts the TUI;
-`go tool task migrate` and `./bin/swamp migrate` still work on their own.
+For local use, `go tool task run` and `go tool task mcp-serve` migrate
+first, then start the TUI or the MCP server; `go tool task migrate` and
+`./bin/swamp migrate` still work on their own.
 
 ## Your profile and canonical resume
 
