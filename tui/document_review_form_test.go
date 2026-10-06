@@ -142,7 +142,7 @@ func TestApp_ReviewSavedOfAnUnchangedDocument_DoesNotWarn(t *testing.T) {
 // the form is open. A review of the old version would never count as
 // current and an agent would never see its notes, so the form refuses to
 // save it: it keeps your notes, switches to the current content and shows
-// what changed, and the next save reviews what's on disk (RFC 0007, H7).
+// what changed, and the next save reviews what's on disk.
 func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
@@ -241,7 +241,7 @@ func TestApp_ReviewOfADocumentDeletedMeanwhile_SavesNothingAndSaysSo(t *testing.
 }
 
 // TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen: when Swamp
-// recorded the write that produced the current version (#258), the
+// recorded the write that produced the current version, the
 // notice names who made it and when, in local time.
 func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
 	ctx := context.Background()

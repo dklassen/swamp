@@ -11,11 +11,10 @@ import (
 	"github.com/dklassen/swamp/store"
 )
 
-// applicationDeleteModel drives the delete confirmation (#232), reached
-// with D on application detail: for an application started by accident,
-// e.g. on the wrong posting. Confirming soft-deletes the application
-// (#244): it leaves every list and the posting can start a fresh one, while
-// its history, reviews and drafts are kept. The posting is left as it was.
+// applicationDeleteModel is the delete confirmation (D on application
+// detail), for an application started by accident. Confirming soft-deletes
+// it: it leaves every list and the posting can start a fresh one, while
+// its history, reviews and drafts are kept.
 type applicationDeleteModel struct {
 	documents   *documents.Store
 	application store.ApplicationView
@@ -113,7 +112,7 @@ type applicationReloadedForDeleteMsg struct {
 
 // reloadApplicationForDelete refreshes view's application row before the
 // confirmation shows it: sync or an agent may have changed its status, or
-// deleted it, since the list loaded (RFC 0007, H5). The posting and
+// deleted it, since the list loaded. The posting and
 // company parts don't affect what's deleted, so they're kept as loaded.
 func reloadApplicationForDelete(s *store.Store, view store.ApplicationView) tea.Cmd {
 	return func() tea.Msg {

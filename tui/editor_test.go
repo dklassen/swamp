@@ -35,7 +35,7 @@ func TestEditorCommand_EditorUnset_ReturnsError(t *testing.T) {
 // TestApp_EditorClosed_ReloadsTheApplicationsReviews: editing a draft from
 // application detail can make its latest review stale. When the editor
 // closes, the badge must reflect the file as it is now, not as it was
-// before the edit (RFC 0007, step 6).
+// before the edit.
 func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	t.Parallel()
 
@@ -90,7 +90,7 @@ func TestApp_EditorClosedWithAnError_ShowsIt(t *testing.T) {
 
 // TestApp_EditorClosedAfterAChange_RecordsTheWrite: an edit in $EDITOR is
 // recorded with source editor, so the change probe sees it and the review
-// form can say you made it (#258). Swamp can't see inside the editor, so
+// form can say you made it. Swamp can't see inside the editor, so
 // it compares the file with the version from before the editor opened.
 func TestApp_EditorClosedAfterAChange_RecordsTheWrite(t *testing.T) {
 	t.Parallel()

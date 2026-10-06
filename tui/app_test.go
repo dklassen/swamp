@@ -69,7 +69,7 @@ func sendKey(app *App, msg tea.Msg) (*App, tea.Cmd) {
 }
 
 // sendKeyAndApply is sendKey followed by applyCmd, for a key whose screen
-// opens only once a load it starts has finished (the status form, #254).
+// opens only once a load it starts has finished (the status form).
 func sendKeyAndApply(t *testing.T, app *App, msg tea.Msg) *App {
 	t.Helper()
 	app, cmd := sendKey(app, msg)

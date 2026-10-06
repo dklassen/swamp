@@ -34,7 +34,7 @@ func (e *ApplicationDeletedError) Error() string {
 // application returns applicationID's application, or an error saying why
 // its documents can't be touched. Documents folders are keyed by ID alone,
 // so writing for an ID with no application would leave a draft for
-// whichever application gets that ID next (#244).
+// whichever application gets that ID next.
 func (st *Stage) application(ctx context.Context, applicationID int64) (store.Application, error) {
 	application, err := st.store.GetApplicationByIDIncludingDeleted(ctx, applicationID)
 	if errors.Is(err, store.ErrNotFound) {
@@ -69,8 +69,8 @@ func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documen
 	if err != nil {
 		return "", fmt.Errorf("stage: write %s: %w", documentType, err)
 	}
-	// Recorded so the TUI's change probe sees a file write (RFC 0007,
-	// step 8), and so the review form can say the agent wrote it.
+	// A file write is invisible to the database; recording it is how other
+	// processes learn of it, and that the agent made it.
 	if err := st.store.RecordDocumentWrite(ctx, applicationID, documentType, content, store.DocumentWriteSourceWriteDocument); err != nil {
 		return "", fmt.Errorf("stage: %s was written to %s, but recording the write failed: %w", documentType, path, err)
 	}

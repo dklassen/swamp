@@ -254,7 +254,7 @@ func writeDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[writeDocumentInput
 // documentToolError rewords stage's errors for a document the agent can't
 // use into what to do next; consequence says what the call didn't do, if
 // anything. An agent may hold an ID from long ago, so "deleted" and
-// "never existed" get different advice (#244).
+// "never existed" get different advice.
 func documentToolError(tool string, applicationID int64, documentType documents.Type, consequence string, err error) error {
 	var deleted *stage.ApplicationDeletedError
 	switch {
