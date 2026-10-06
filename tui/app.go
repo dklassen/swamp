@@ -1325,6 +1325,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// entered, so nothing to do here.
 			a.postingDetail.resize(a.width, a.screenRows())
 		}
+		// The terminal rewraps the old frame when it narrows, pushing rows
+		// below where the new one ends. The renderer only clears below a
+		// frame that got shorter, so without this they stay on screen.
+		return a, tea.ClearScreen
 	case tea.KeyMsg:
 		prevScreen := a.screen
 		model, cmd := a.updateKeyMsg(msg)

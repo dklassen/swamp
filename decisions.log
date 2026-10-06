@@ -7845,3 +7845,12 @@ above the pre-migration maximum could still pick up a folder.
 - The posting list's company description line is cut at the table's
   width instead of a fixed 100. The company info box keeps its own
   reading-width cap; it's wrapped text, not a table.
+- Found in the manual check (user): narrowing the window left wrapped
+  table tails and duplicated last rows below the help line. The terminal
+  rewraps the old full-width frame, pushing its bottom rows down; in the
+  alternate screen bubbletea's renderer redraws from the top and only
+  clears below when the new frame has fewer lines than the last, which
+  knows nothing of the rewrapping. A resize now also returns
+  tea.ClearScreen. Rejected: a one-column margin on tableWidth, which
+  only helps when shrinking by a single column. Full-width tables made
+  this common; any line wider than the new window could always do it.
