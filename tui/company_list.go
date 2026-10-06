@@ -166,12 +166,10 @@ func (m *companyListModel) visible(companies []store.Company) []store.Company {
 // View renders the list in height terminal rows (App.screenRows).
 func (m *companyListModel) View(companies []store.Company, openPostings map[int64]int, width, height int) string {
 	var b strings.Builder
-	title := titleStyle.Render("Companies")
 	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  tab: applications  q: quit")
 	if m.searching {
 		help = helpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: view postings  esc: clear")
 	}
-	b.WriteString(title + "\n")
 	visible := m.visible(companies)
 	// A sync landing while the prompt is open can shrink visible under
 	// the cursor.
@@ -192,7 +190,7 @@ func (m *companyListModel) View(companies []store.Company, openPostings map[int6
 		infoBox = companyInfoBox(visible[cursor], width)
 	}
 	if len(visible) > 0 {
-		start, end := visibleWindow(cursor, len(visible), tableRows(height, title, help, infoBox, prompt))
+		start, end := visibleWindow(cursor, len(visible), tableRows(height, help, infoBox, prompt))
 		cursorRow := cursor - start
 		t := table.New().
 			Headers("Name", "Open", "Last fetched").

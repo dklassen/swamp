@@ -112,13 +112,11 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 // (see nextStep), and now is what each row's Age counts up to.
 func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress map[int64]map[documents.Type]documentProgress, now time.Time, width, height int) string {
 	var b strings.Builder
-	title := titleStyle.Render("Active Applications")
 	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  s: status  e: export PDFs  tab: companies  q: quit")
-	b.WriteString(title + "\n")
 	if len(apps) == 0 {
 		b.WriteString("No active applications. Press tab to browse companies.\n")
 	} else {
-		start, end := visibleWindow(m.cursor, len(apps), tableRows(height, title, help))
+		start, end := visibleWindow(m.cursor, len(apps), tableRows(height, help))
 		cursorRow := m.cursor - start
 		t := table.New().
 			Headers("Company", "Title", "Age", "Next", "Status", "Review").

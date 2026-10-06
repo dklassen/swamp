@@ -1617,17 +1617,19 @@ func (a *App) banner() string {
 }
 
 // screenRows is the terminal height left for the active screen once
-// View() has drawn the banner above it. Every newline in the banner ends
-// one of its rows, and the screen starts on the row after the last. A
-// banner line wider than the terminal doesn't take extra rows: bubbletea
+// View() has drawn the header and banner above it. Every newline in them
+// ends one of their rows, and the screen starts on the row after the
+// last. A line wider than the terminal doesn't take extra rows: bubbletea
 // truncates lines to the window width rather than letting them wrap.
 func (a *App) screenRows() int {
-	return max(a.height-strings.Count(a.banner(), "\n"), 0)
+	return max(a.height-strings.Count(a.header()+a.banner(), "\n"), 0)
 }
 
 func (a *App) View() string {
 	var b strings.Builder
 
+	// The header first, so a banner coming and going doesn't move it.
+	b.WriteString(a.header())
 	b.WriteString(a.banner())
 
 	switch a.screen {

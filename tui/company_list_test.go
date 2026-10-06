@@ -252,8 +252,8 @@ func TestCompanyListModel_View_SameWidthWhateverIsScrolledIntoView(t *testing.T)
 	m := newCompanyListModel(nil)
 	// A height with room for one company at a time, so each cursor
 	// position scrolls a different name into view: the table's own chrome
-	// plus one row, and the title and help line, each with its margin.
-	height := postingTableChromeLines + 1 + lipgloss.Height(titleStyle.Render("Companies")) + lipgloss.Height(helpStyle.Render("help"))
+	// plus one row, and the help line with its margin.
+	height := postingTableChromeLines + 1 + lipgloss.Height(helpStyle.Render("help"))
 	var widths []int
 	for range companies {
 		view := m.View(companies, nil, 0, height)
