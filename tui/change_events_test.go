@@ -2,11 +2,13 @@ package tui
 
 import (
 	"context"
+	"strconv"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
@@ -188,5 +190,57 @@ func TestApp_PostingListReload_KeepsTheCursorAndShowsTheChange(t *testing.T) {
 	}
 	if got := app.postings[app.postingList.cursor].ID; got != onLast {
 		t.Errorf("cursor is on posting %d after the reload, want %d", got, onLast)
+	}
+}
+
+// TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt: the case that
+// started this. A passed review stops counting once the agent rewrites the
+// document, and the screen must show that without a refresh key.
+func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	app, application := deleteTestApp(t) // resume drafted as "# Draft\n"
+	app.WithChangeFeed(nil, "tui:1")
+	if _, err := app.store.CreateDocumentReview(ctx, application.ID, documents.Resume, "# Draft\n", store.ReviewOutcomePassed, ""); err != nil {
+		t.Fatalf("CreateDocumentReview: %v", err)
+	}
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, runeKey('u')) // show the review the test just made
+	if !strings.Contains(app.View(), "[PASSED]") {
+		t.Fatalf("application detail doesn't show the passed review:\n%s", app.View())
+	}
+
+	if _, err := app.documents.Write(application.ID, documents.Resume, "# Revised by the agent\n"); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "document_writes", RowID: 1, Op: "insert", New: `{"application_id":` + strconv.FormatInt(application.ID, 10) + `,"document_type":"resume","source":"write_document"}`, Origin: "mcp:7"}}})
+
+	view := app.View()
+	if strings.Contains(view, "[PASSED]") {
+		t.Errorf("application detail still shows the review of the old version:\n%s", view)
+	}
+	if !strings.Contains(view, "Updated by the agent") {
+		t.Errorf("application detail doesn't say who changed it:\n%s", view)
+	}
+}
+
+func TestApp_ApplicationDeletedElsewhere_GoesBackAndSaysSo(t *testing.T) {
+	t.Parallel()
+
+	app, application := deleteTestApp(t)
+	app.WithChangeFeed(nil, "tui:1")
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	if err := app.store.DeleteApplication(context.Background(), application.ID); err != nil {
+		t.Fatalf("DeleteApplication: %v", err)
+	}
+
+	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "applications", RowID: application.ID, Op: "update", Origin: "tui:2"}}})
+
+	if app.screen != screenActiveApplications {
+		t.Errorf("screen = %v, want the home list", app.screen)
+	}
+	if !strings.Contains(app.View(), "was deleted") {
+		t.Errorf("the home list doesn't say the application was deleted:\n%s", app.View())
 	}
 }

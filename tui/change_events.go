@@ -2,6 +2,8 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
+	"errors"
 	"slices"
 	"strings"
 	"time"
@@ -68,6 +70,13 @@ func (a *App) reloadFor(events []store.ChangeEvent) tea.Cmd {
 		if touches(events, "applications", "postings", "companies", "document_writes", "document_reviews", "document_exports") {
 			return loadActiveApplications(a.store, a.documents)
 		}
+	case screenApplicationDetail:
+		view := a.applicationDetail.application
+		if slices.ContainsFunc(events, func(e store.ChangeEvent) bool {
+			return eventApplicationID(e) == view.ID || (e.Table == "postings" && e.RowID == view.Posting.ID)
+		}) {
+			return tea.Batch(reloadApplicationDetail(a.store, view.ID), loadDocumentReviews(a.store, a.documents, view.ID))
+		}
 	case screenPostingList:
 		if touches(events, "postings") {
 			return reloadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
@@ -121,4 +130,59 @@ func reloadPostings(s *store.Store, companyID int64, hideArchived bool) tea.Cmd 
 		}
 		return msg
 	}
+}
+
+// eventApplicationID is the application an event is about, or 0.
+func eventApplicationID(e store.ChangeEvent) int64 {
+	switch e.Table {
+	case "applications":
+		return e.RowID
+	case "document_writes", "document_reviews", "document_exports":
+		var row struct {
+			ApplicationID int64 `json:"application_id"`
+		}
+		values := e.New
+		if values == "" {
+			values = e.Old
+		}
+		if json.Unmarshal([]byte(values), &row) == nil {
+			return row.ApplicationID
+		}
+	}
+	return 0
+}
+
+type applicationDetailReloadedMsg struct {
+	id          int64
+	application store.Application
+	deleted     bool
+	err         error
+}
+
+func reloadApplicationDetail(s *store.Store, id int64) tea.Cmd {
+	return func() tea.Msg {
+		application, err := s.GetApplicationByID(context.Background(), id)
+		if errors.Is(err, store.ErrNotFound) {
+			return applicationDetailReloadedMsg{id: id, deleted: true}
+		}
+		return applicationDetailReloadedMsg{id: id, application: application, err: err}
+	}
+}
+
+// handleApplicationDetailReloaded refreshes the application on screen, or
+// leaves it if it was deleted underneath.
+func (a *App) handleApplicationDetailReloaded(msg applicationDetailReloadedMsg) tea.Cmd {
+	if a.screen != screenApplicationDetail || a.applicationDetail.application.ID != msg.id {
+		return nil
+	}
+	a.err = msg.err
+	if msg.deleted {
+		a.screen = screenActiveApplications
+		a.status = "The application you were viewing was deleted elsewhere"
+		return loadActiveApplications(a.store, a.documents)
+	}
+	if msg.err == nil {
+		a.applicationDetail.application.Application = msg.application
+	}
+	return nil
 }

@@ -1153,6 +1153,8 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, readChanges(a.changeFeed)
 	case changesMsg:
 		return a, a.handleChanges(msg)
+	case applicationDetailReloadedMsg:
+		return a, a.handleApplicationDetailReloaded(msg)
 	case editorClosedMsg:
 		a.err = msg.err
 		// The edit may have made the latest review stale, so reload the
