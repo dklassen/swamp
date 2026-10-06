@@ -264,3 +264,21 @@ func (m *postingListModel) setCursor(i int) {
 		m.cursor = i
 	}
 }
+
+// selected is the ID of the posting under the cursor, or 0.
+func (m *postingListModel) selected(postings []store.Posting) int64 {
+	if m.cursor < len(postings) {
+		return postings[m.cursor].ID
+	}
+	return 0
+}
+
+// keepCursorOn moves the cursor to posting id after a reload in place; if
+// it's gone, the cursor stays in range.
+func (m *postingListModel) keepCursorOn(id int64, postings []store.Posting) {
+	if i := indexOfPosting(postings, id); i >= 0 {
+		m.cursor = i
+		return
+	}
+	m.clampCursor(len(postings))
+}

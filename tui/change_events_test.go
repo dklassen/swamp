@@ -5,6 +5,9 @@ import (
 	"strings"
 	"testing"
 
+	tea "github.com/charmbracelet/bubbletea"
+
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -150,5 +153,40 @@ func TestApp_CompanyListReload_KeepsTheCursorOnTheSameCompany(t *testing.T) {
 	}
 	if got := app.companies[app.companyList.cursor].ID; got != onLast {
 		t.Errorf("cursor is on company %d after the reload, want %d", got, onLast)
+	}
+}
+
+// TestApp_PostingListReload_KeepsTheCursorAndShowsTheChange: a sync elsewhere
+// renames a posting above the cursor.
+func TestApp_PostingListReload_KeepsTheCursorAndShowsTheChange(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "First"}, {SourceID: "job-2", Title: "Second"}, {SourceID: "job-3", Title: "Third"}},
+	})
+	app := newTestApp(t, s, syncer).WithChangeFeed(nil, "tui:1")
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 200, Height: 40})
+	app = openPostingList(t, app)
+	postings := app.postings
+	if len(postings) != 3 {
+		t.Fatalf("posting list has %d postings, want 3", len(postings))
+	}
+	app, _ = sendKey(app, runeKey('j'))
+	app, _ = sendKey(app, runeKey('j'))
+	onLast := postings[2].ID
+
+	renamed := postings[0]
+	if _, err := s.UpsertPosting(context.Background(), store.CreatePostingParams{CompanyID: renamed.CompanyID, Source: renamed.Source, SourceID: renamed.SourceID, IngestedFields: store.IngestedFields{Title: "Renamed by sync", RawPayload: renamed.RawPayload}}); err != nil {
+		t.Fatalf("UpsertPosting: %v", err)
+	}
+	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "postings", RowID: renamed.ID, Op: "update", Origin: "fetch:9"}}})
+
+	if !strings.Contains(app.View(), "Renamed by sync") {
+		t.Errorf("posting list doesn't show the new title:\n%s", app.View())
+	}
+	if got := app.postings[app.postingList.cursor].ID; got != onLast {
+		t.Errorf("cursor is on posting %d after the reload, want %d", got, onLast)
 	}
 }

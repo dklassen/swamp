@@ -68,6 +68,10 @@ func (a *App) reloadFor(events []store.ChangeEvent) tea.Cmd {
 		if touches(events, "applications", "postings", "companies", "document_writes", "document_reviews", "document_exports") {
 			return loadActiveApplications(a.store, a.documents)
 		}
+	case screenPostingList:
+		if touches(events, "postings") {
+			return reloadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
+		}
 	case screenCompanyList:
 		// postings too: the list shows each company's open postings.
 		if touches(events, "companies", "postings") {
@@ -103,5 +107,18 @@ func writerName(origin string) string {
 		return "another window"
 	default:
 		return "swamp " + kind
+	}
+}
+
+// reloadPostings is loadPostings for a list already on screen.
+func reloadPostings(s *store.Store, companyID int64, hideArchived bool) tea.Cmd {
+	load := loadPostings(s, companyID, hideArchived)
+	return func() tea.Msg {
+		msg := load()
+		if loaded, ok := msg.(postingsLoadedMsg); ok {
+			loaded.keepCursor = true
+			return loaded
+		}
+		return msg
 	}
 }

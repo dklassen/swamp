@@ -737,6 +737,9 @@ type postingsLoadedMsg struct {
 	departments []string
 	locations   []string
 	err         error
+	// keepCursor: a reload in place, not a fresh list, so the cursor stays
+	// on the posting it was on.
+	keepCursor bool
 }
 
 // loadPostings re-applies the company's currently-saved filters after
@@ -1033,9 +1036,14 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case postingsLoadedMsg:
 		a.err = msg.err
+		previousPosting := a.postingList.selected(a.postings)
 		a.postings = msg.postings
 		a.postingMarkup = msg.markup
-		a.postingList.resetCursor()
+		if msg.keepCursor {
+			a.postingList.keepCursorOn(previousPosting, a.postings)
+		} else {
+			a.postingList.resetCursor()
+		}
 		a.activeFilterDepartments = msg.departments
 		a.activeFilterLocations = msg.locations
 	case postingMarkupUpdatedMsg:
