@@ -41,6 +41,7 @@ type Querier interface {
 	CreateCompanyFilter(ctx context.Context, arg CreateCompanyFilterParams) (CompanyFilter, error)
 	CreateDocumentExport(ctx context.Context, arg CreateDocumentExportParams) error
 	CreateDocumentReview(ctx context.Context, arg CreateDocumentReviewParams) (DocumentReview, error)
+	CreateDocumentWrite(ctx context.Context, arg CreateDocumentWriteParams) error
 	CreateInterviewStage(ctx context.Context, arg CreateInterviewStageParams) (InterviewStage, error)
 	CreatePosting(ctx context.Context, arg CreatePostingParams) (Posting, error)
 	CreatePostingHistory(ctx context.Context, arg CreatePostingHistoryParams) (PostingHistory, error)
@@ -79,6 +80,9 @@ type Querier interface {
 	// id breaks ties between exports in the same second (CURRENT_TIMESTAMP
 	// has one-second resolution).
 	LatestDocumentExport(ctx context.Context, arg LatestDocumentExportParams) (DocumentExport, error)
+	// id breaks ties between writes in the same second (CURRENT_TIMESTAMP
+	// has one-second resolution); AUTOINCREMENT keeps it increasing.
+	LatestDocumentWrite(ctx context.Context, arg LatestDocumentWriteParams) (DocumentWrite, error)
 	// Applications not at a terminal dead-end status, joined with their
 	// posting and company name -- feeds the active-applications TUI screen
 	// (#43). Unlike ListInterestedPostings this is an inner join on

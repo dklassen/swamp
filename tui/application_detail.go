@@ -78,7 +78,11 @@ func (m *applicationDetailModel) openDocument(documentType documents.Type) tea.C
 	if err != nil {
 		return func() tea.Msg { return editorClosedMsg{err: err} }
 	}
-	return openInEditor(path)
+	before, err := m.documents.SHA256(m.application.ID, documentType)
+	if err != nil {
+		return func() tea.Msg { return editorClosedMsg{err: err} }
+	}
+	return openInEditor(path, editorClosedMsg{applicationID: m.application.ID, documentType: documentType, before: before})
 }
 
 // enterReview reads documentType's current content off disk (if it

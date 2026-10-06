@@ -69,6 +69,11 @@ func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documen
 	if err != nil {
 		return "", fmt.Errorf("stage: write %s: %w", documentType, err)
 	}
+	// Recorded so the TUI's change probe sees a file write (RFC 0007,
+	// step 8), and so the review form can say the agent wrote it.
+	if err := st.store.RecordDocumentWrite(ctx, applicationID, documentType, content, store.DocumentWriteSourceWriteDocument); err != nil {
+		return "", fmt.Errorf("stage: %s was written to %s, but recording the write failed: %w", documentType, path, err)
+	}
 	return path, nil
 }
 

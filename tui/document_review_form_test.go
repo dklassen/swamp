@@ -10,6 +10,7 @@ import (
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/store"
 )
 
 func TestDocumentReviewFormModel_New_SeedsFocusedEmptyTextarea(t *testing.T) {
@@ -236,5 +237,92 @@ func TestApp_ReviewOfADocumentDeletedMeanwhile_SavesNothingAndSaysSo(t *testing.
 	}
 	if _, ok := reviews[documents.CoverLetter]; ok {
 		t.Error("a review was saved for a deleted document, want none")
+	}
+}
+
+// TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen: when Swamp
+// recorded the write that produced the current version (#258), the
+// notice names who made it and when, in local time.
+func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 40})
+	app = openPostingList(t, app)
+	application, err := s.CreateApplication(ctx, app.postings[0].ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	if _, err := app.documents.Write(application.ID, documents.CoverLetter, "What you reviewed\n"); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	app = openPostingDetail(t, app)
+	app, _ = sendKey(app, runeKey('r'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // cover letter
+	if _, err := app.documents.Write(application.ID, documents.CoverLetter, "Rewritten by the agent\n"); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := s.RecordDocumentWrite(ctx, application.ID, documents.CoverLetter, "Rewritten by the agent\n", store.DocumentWriteSourceWriteDocument); err != nil {
+		t.Fatalf("RecordDocumentWrite: %v", err)
+	}
+	write, _, err := s.LatestDocumentWrite(ctx, application.ID, documents.CoverLetter)
+	if err != nil {
+		t.Fatalf("LatestDocumentWrite: %v", err)
+	}
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyCtrlS})
+
+	view := app.View()
+	for _, want := range []string{"rewritten by the agent", write.WrittenAt.Local().Format("15:04")} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view doesn't contain %q:\n%s", want, view)
+		}
+	}
+}
+
+// TestApp_ReviewOfADocumentChangedOutsideSwamp_DoesNotNameTheLastWriter:
+// the agent wrote the version you're reviewing, then something outside
+// Swamp changed it. The latest recorded write isn't of the current
+// version, so the notice mustn't credit the agent with the change.
+func TestApp_ReviewOfADocumentChangedOutsideSwamp_DoesNotNameTheLastWriter(t *testing.T) {
+	ctx := context.Background()
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 40})
+	app = openPostingList(t, app)
+	application, err := s.CreateApplication(ctx, app.postings[0].ID)
+	if err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	path, err := app.documents.Write(application.ID, documents.CoverLetter, "The agent's draft\n")
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if err := s.RecordDocumentWrite(ctx, application.ID, documents.CoverLetter, "The agent's draft\n", store.DocumentWriteSourceWriteDocument); err != nil {
+		t.Fatalf("RecordDocumentWrite: %v", err)
+	}
+
+	app = openPostingDetail(t, app)
+	app, _ = sendKey(app, runeKey('r'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // cover letter
+	if err := os.WriteFile(path, []byte("Changed outside Swamp\n"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyCtrlS})
+
+	view := app.View()
+	if !strings.Contains(view, "changed while you were reviewing") {
+		t.Fatalf("view doesn't show the changed notice:\n%s", view)
+	}
+	if strings.Contains(view, "by the agent") {
+		t.Errorf("notice credits the agent with a change made outside Swamp:\n%s", view)
 	}
 }

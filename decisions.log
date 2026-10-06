@@ -7566,3 +7566,28 @@ above the pre-migration maximum could still pick up a folder.
 - Tests: another handle's commit (seen once), the same Store's commit,
   and a read (ignored). RFC 0007 measured 1000 reads at about 1.3 ms, so
   a 1 s tick costs nothing.
+
+## 2026-10-05 -- #258: document writes recorded in document_writes (RFC 0007 step 8)
+
+- A document write is a file write, which PRAGMA data_version can't
+  see, so the TUI's change probe (#257) would miss an agent's draft.
+  Each write Swamp sees is now also a row in document_writes, and the
+  insert's commit moves the probe.
+- The table, not touching applications.updated_at (RFC 0007 left it
+  open): user decision, so each write records its source and time and
+  the review form (#255) can say who changed a document and when.
+  Migration 00020; AUTOINCREMENT per #246. Never pruned for now: a few
+  rows per draft.
+- Sources, as a typed store.DocumentWriteSource:
+  - write_document: recorded in stage.WriteDocument after the file is
+    written. If recording fails, the tool error says the file was
+    written, rather than implying it wasn't.
+  - editor: Swamp can't see inside $EDITOR, so openDocument hashes the
+    file before opening it and the TUI records a write on close only if
+    the hash changed. Closing without a change records nothing.
+  - Edits made outside Swamp aren't recorded; the review form's diff
+    still shows them, without a "who".
+- The review form names a writer only when the latest recorded write is
+  of the version now on disk; otherwise it would credit the last
+  recorded writer with a change made outside Swamp. Times are shown in
+  local time (stored UTC), with the date when it isn't today.

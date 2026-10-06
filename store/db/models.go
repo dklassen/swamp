@@ -70,6 +70,15 @@ type DocumentReview struct {
 	CreatedAt       time.Time `json:"created_at"`
 }
 
+type DocumentWrite struct {
+	ID            int64     `json:"id"`
+	ApplicationID int64     `json:"application_id"`
+	DocumentType  string    `json:"document_type"`
+	ContentSha256 string    `json:"content_sha256"`
+	Source        string    `json:"source"`
+	WrittenAt     time.Time `json:"written_at"`
+}
+
 type InterviewStage struct {
 	ID            int64        `json:"id"`
 	ApplicationID int64        `json:"application_id"`
