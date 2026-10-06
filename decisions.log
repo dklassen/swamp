@@ -7746,3 +7746,21 @@ above the pre-migration maximum could still pick up a folder.
   are reused after hard deletes (user decision: unlogged until #246);
   the rest are "not logged yet" until #269.
 - AGENTS.md rule next to the UTC one.
+
+## 2026-10-06 -- #270: ChangeFeed reads the change log; the data_version probe is gone
+
+- store.ChangeFeed keeps a cursor, starting at the newest event when
+  it's created (a process has already loaded what came before), and
+  Next returns the events past it, oldest first, and advances it. The
+  query is on the primary key, so a separate max(id) check first would
+  save nothing.
+- The log is durable, so a reader that looks late still gets every
+  change once (tested), and a WAL reset delivers nothing (tested; it
+  read as a change to data_version). That's what makes a plain poll
+  enough.
+- The 500 ms tick is the TUI's, so it comes with its consumer (#259)
+  rather than as an unused timer here.
+- store.ChangeProbe and its tests are deleted; nothing else used it but
+  one mcpserver test, which now checks only that write_document records
+  the write. Seeing that write as an event waits for #269 to log
+  document_writes.

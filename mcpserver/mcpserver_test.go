@@ -1083,11 +1083,9 @@ func TestStagePrepare_DocumentsCarrySHA256(t *testing.T) {
 	}
 }
 
-// TestWriteDocument_IsRecordedSoTheTUISeesIt: a document write is a file
-// write, which data_version can't see, so write_document also records it
-// in the database. That moves a ChangeProbe, and says
-// the agent wrote it.
-func TestWriteDocument_IsRecordedSoTheTUISeesIt(t *testing.T) {
+// TestWriteDocument_IsRecorded: a file write is invisible to the database,
+// so write_document records it, saying the agent made it.
+func TestWriteDocument_IsRecorded(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -1097,21 +1095,12 @@ func TestWriteDocument_IsRecordedSoTheTUISeesIt(t *testing.T) {
 	mustMarkInterested(t, s, posting.ID)
 	cs := connectClient(t, srv)
 	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
-	probe, err := s.NewChangeProbe(ctx)
-	if err != nil {
-		t.Fatalf("NewChangeProbe: %v", err)
-	}
-	t.Cleanup(func() { _ = probe.Close() })
-
 	callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
 		"ApplicationID": prepared.ApplicationID,
 		"DocumentType":  "cover_letter",
 		"Content":       "a draft",
 	})
 
-	if changed, err := probe.Changed(ctx); err != nil || !changed {
-		t.Errorf("probe after write_document = changed %v, err %v; want changed", changed, err)
-	}
 	write, ok, err := s.LatestDocumentWrite(ctx, prepared.ApplicationID, documents.CoverLetter)
 	if err != nil || !ok {
 		t.Fatalf("LatestDocumentWrite = ok %v, err %v; want the write", ok, err)
