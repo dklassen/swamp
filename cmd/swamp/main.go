@@ -1,4 +1,5 @@
-// Command swamp is the entrypoint: it launches the TUI by default, runs a
+// Command swamp is the entrypoint: it launches the TUI by default, applies
+// database migrations with the `migrate` subcommand (and only then), runs a
 // one-off refresh with the `fetch` subcommand, drives the agent hand-off
 // mechanism with the `stage` subcommand, converts an application's
 // drafted documents to PDF with the `export` subcommand, or bulk-creates
@@ -10,6 +11,7 @@ package main
 
 import (
 	"context"
+	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -23,7 +25,6 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/pressly/goose/v3"
 
 	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/db/migrations"
@@ -64,12 +65,14 @@ func main() {
 		}
 	}()
 
-	goose.SetBaseFS(migrations.FS)
-	if err := goose.SetDialect("sqlite3"); err != nil {
-		log.Fatalf("set goose dialect: %v", err)
+	if len(os.Args) > 1 && os.Args[1] == "migrate" {
+		runMigrate(sqlDB)
+		return
 	}
-	if err := goose.Up(sqlDB, "."); err != nil {
-		log.Fatalf("apply migrations: %v", err)
+	// Only `swamp migrate` changes the schema (#273): every other command
+	// refuses a database that's behind or ahead of this binary.
+	if err := migrations.Check(context.Background(), sqlDB); err != nil {
+		log.Fatal(err)
 	}
 
 	s := store.New(sqlDB)
@@ -100,7 +103,7 @@ func main() {
 			runMCPServe(s, documentsStore)
 			return
 		default:
-			fmt.Fprintf(os.Stderr, "usage: %s [fetch|stage|export|import|mcp-serve]\n", os.Args[0])
+			fmt.Fprintf(os.Stderr, "usage: %s [migrate|fetch|stage|export|import|mcp-serve]\n", os.Args[0])
 			os.Exit(1)
 		}
 	}
@@ -413,4 +416,18 @@ func printJSON(v any) {
 	if err := enc.Encode(v); err != nil {
 		log.Fatalf("encode json: %v", err)
 	}
+}
+
+// runMigrate applies the database migrations this binary has and the
+// database doesn't, and says what it did.
+func runMigrate(sqlDB *sql.DB) {
+	applied, err := migrations.Up(context.Background(), sqlDB)
+	if err != nil {
+		log.Fatalf("migrate: %v", err)
+	}
+	if len(applied) == 0 {
+		fmt.Printf("The database is already at version %d.\n", migrations.Latest())
+		return
+	}
+	fmt.Printf("Applied %d migration(s), %d to %d. The database is now at version %d.\n", len(applied), applied[0], applied[len(applied)-1], migrations.Latest())
 }

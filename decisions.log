@@ -7666,3 +7666,29 @@ above the pre-migration maximum could still pick up a folder.
   unverified kqueue backend on the macOS host. #259's ChangeWatcher
   commit won't be used; #270 no longer depends on #259's branch.
 - Cost: changes show within 500 ms instead of ~100-150 ms.
+
+## 2026-10-06 -- #273: migrations are an explicit step, `swamp migrate`
+
+- Every process used to run goose.Up as it started. That let a new
+  binary started by a scheduled fetch change the schema under a TUI or
+  mcp-serve still running the old one, and RFC 0008's per-connection
+  TEMP triggers can't be created before change_events exists, which
+  startup migration can't guarantee.
+- Now only `swamp migrate` (also `go tool task migrate`) applies
+  migrations. Every other command checks the database's version first
+  and refuses if it's behind ("run `swamp migrate`") or ahead ("use the
+  newer binary"); the user chose refusing both ways over warning when
+  ahead, since old code on a newer schema is the riskier case.
+- The check reads the version itself (MAX(version_id), the rule goose's
+  own GetDBVersion uses, verified against a goose rollback) because
+  goose's GetDBVersion creates its version table on an unmigrated
+  database, and a check run at every start mustn't write.
+- Uses goose's provider API rather than its package-level globals; the
+  provider's Close would close the caller's database, so it's never
+  called.
+- The process kind (tui, mcp, fetch) the issue mentions is left to
+  #267, the first thing that uses it.
+- README: an Upgrading section. Stop the processes first, so the
+  database file is a complete backup before migrating.
+- Taskfile (user decision): `migrate` stays its own task, and `run`
+  depends on it, so local runs migrate first. `mcp-serve` doesn't.
