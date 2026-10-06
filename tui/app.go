@@ -65,9 +65,11 @@ const (
 )
 
 type App struct {
-	store     *store.Store
-	syncer    *sync.Syncer
-	companies []store.Company
+	store      *store.Store
+	changeFeed *store.ChangeFeed
+	origin     string
+	syncer     *sync.Syncer
+	companies  []store.Company
 	// companyOpenPostings is each company's open, unarchived posting count
 	// (store.CountOpenPostingsByCompany), loaded alongside companies.
 	companyOpenPostings map[int64]int
@@ -486,7 +488,7 @@ func sortCompaniesByName(companies []store.Company) {
 }
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(loadCompanies(a.store), loadActiveApplications(a.store, a.documents))
+	return tea.Batch(loadCompanies(a.store), loadActiveApplications(a.store, a.documents), a.pollChanges())
 }
 
 type activeApplicationsLoadedMsg struct {
@@ -1136,6 +1138,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// regardless of which screen triggered the change.
 			return a, tea.Batch(loadActiveApplications(a.store, a.documents), reviewsCmd)
 		}
+	case changeTickMsg:
+		return a, readChanges(a.changeFeed)
+	case changesMsg:
+		return a, a.handleChanges(msg)
 	case editorClosedMsg:
 		a.err = msg.err
 		// The edit may have made the latest review stale, so reload the
