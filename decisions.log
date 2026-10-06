@@ -7928,3 +7928,16 @@ above the pre-migration maximum could still pick up a folder.
 - One searchLine function draws it for both lists: they must look the
   same, and two copies of the format would drift. The search handling
   itself stays separate per list (see the home search entry).
+
+## 2026-10-06 -- Status and error messages below the screen
+
+- The status/error banner ("2 PDFs exported", "error: ...") moves from
+  above the screen to below it, after the help line, with its blank line
+  now above it. A stopgap at the user's request until notifications get
+  a proper place or component: at the top, one appearing or clearing
+  pushed the whole screen up and down.
+- Both statuses and errors moved, since both are notifications; keeping
+  errors on top is a one-line split if wanted.
+- The status renders with dimStyle rather than helpStyle, whose top
+  margin would add a second blank line. screenRows still counts the
+  banner's rows, so every screen still fits with one up.
