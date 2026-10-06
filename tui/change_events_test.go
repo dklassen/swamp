@@ -13,9 +13,10 @@ import (
 	"github.com/dklassen/swamp/store"
 )
 
-// TestApp_AnotherProcessesChange_ReloadsTheHomeListAndSaysWho: the agent
-// starting an application (stage_prepare) shows up without a restart.
-func TestApp_AnotherProcessesChange_ReloadsTheHomeListAndSaysWho(t *testing.T) {
+// TestApp_AnotherProcessesChange_ReloadsTheHomeListQuietly: the agent
+// starting an application shows up without a restart, and without a
+// status line pushing the table down.
+func TestApp_AnotherProcessesChange_ReloadsTheHomeListQuietly(t *testing.T) {
 	t.Parallel()
 
 	s := newTestStore(t)
@@ -32,11 +33,11 @@ func TestApp_AnotherProcessesChange_ReloadsTheHomeListAndSaysWho(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "applications", RowID: application.ID, Op: "insert", Origin: "mcp:7"}}})
 
-	view := app.View()
-	for _, want := range []string{"Staff Engineer", "Updated by the agent"} {
-		if !strings.Contains(view, want) {
-			t.Errorf("home list after the agent's change doesn't contain %q:\n%s", want, view)
-		}
+	if view := app.View(); !strings.Contains(view, "Staff Engineer") {
+		t.Errorf("home list after the agent's change doesn't show it:\n%s", view)
+	}
+	if app.status != "" {
+		t.Errorf("status line = %q after a background reload, want none", app.status)
 	}
 }
 
@@ -220,8 +221,8 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 	if strings.Contains(view, "[PASSED]") {
 		t.Errorf("application detail still shows the review of the old version:\n%s", view)
 	}
-	if !strings.Contains(view, "Updated by the agent") {
-		t.Errorf("application detail doesn't say who changed it:\n%s", view)
+	if app.status != "" {
+		t.Errorf("status line = %q after a background reload, want none", app.status)
 	}
 }
 

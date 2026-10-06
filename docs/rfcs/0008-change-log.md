@@ -68,7 +68,7 @@ This doesn't need to be faster, or pushed: the log is kept, so a process that lo
 
 - Ignores its own (the origin is its own `kind:pid`).
 - Reloads only the screens showing the changed data: the home list for applications and documents, posting screens for postings, the company list for companies, application detail for that application.
-- Says who made the change: "updated by the agent", "by `swamp fetch`", "from another window", "outside Swamp".
+- Reloads quietly, with no status line: one pushed the table down on every change. (The events say who made each change, if an unobtrusive indicator is wanted later.)
 - Follows RFC 0007's rules for a background reload: the cursor stays on the same item, filters and scroll stay, a form in progress isn't rebuilt, and if what you're looking at was deleted, it goes back a screen and says so.
 
 ### 5. The agent: internal for now, pull when exposed

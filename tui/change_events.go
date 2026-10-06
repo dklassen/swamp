@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"slices"
-	"strings"
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -48,17 +47,14 @@ func readChanges(feed *store.ChangeFeed) tea.Cmd {
 	}
 }
 
-// handleChanges reloads what other processes' events touch and says who
-// made them. It always schedules the next read.
+// handleChanges reloads what other processes' events touch. It always
+// schedules the next read.
 func (a *App) handleChanges(msg changesMsg) tea.Cmd {
 	if msg.err != nil {
 		a.err = msg.err
 		return a.pollChanges()
 	}
 	others := slices.DeleteFunc(slices.Clone(msg.events), func(e store.ChangeEvent) bool { return e.Origin == a.origin })
-	if len(others) > 0 {
-		a.status = "Updated by " + changedBy(others)
-	}
 	// A form in progress is never rebuilt: hold the events until the
 	// screen is one that reloads, on a later tick.
 	a.heldChanges = append(a.heldChanges, others...)
@@ -115,31 +111,6 @@ func (a *App) reloadFor(events []store.ChangeEvent) tea.Cmd {
 
 func touches(events []store.ChangeEvent, tables ...string) bool {
 	return slices.ContainsFunc(events, func(e store.ChangeEvent) bool { return slices.Contains(tables, e.Table) })
-}
-
-// changedBy names the processes behind events, for the status line.
-func changedBy(events []store.ChangeEvent) string {
-	var names []string
-	for _, e := range events {
-		if name := writerName(e.Origin); !slices.Contains(names, name) {
-			names = append(names, name)
-		}
-	}
-	return strings.Join(names, " and ")
-}
-
-func writerName(origin string) string {
-	kind, _, _ := strings.Cut(origin, ":")
-	switch kind {
-	case "":
-		return "a change outside Swamp"
-	case "mcp":
-		return "the agent"
-	case "tui":
-		return "another window"
-	default:
-		return "swamp " + kind
-	}
 }
 
 // reloadPostings is loadPostings for a list already on screen.

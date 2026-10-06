@@ -78,7 +78,7 @@ The rest of wave B is in place:
 - filters, the company `/` search and scroll position stay as they were;
 - a form you're filling in is never rebuilt under you; the screens beneath it reload when you close it;
 - if the item you're looking at was deleted, go back a screen and say so;
-- the status line says who made the change.
+- it happens quietly: no status line, which would push the table down.
 
 ## Work breakdown
 

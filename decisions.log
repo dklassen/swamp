@@ -7808,3 +7808,10 @@ above the pre-migration maximum could still pick up a folder.
   nothing is new, so they don't wait for another change.
 - Tests drive changesMsg directly; a real tick inside applyCmd would
   re-arm itself forever. One test runs the tick and read by hand.
+- Revised after the manual check (user): no status line for background
+  reloads. "Updated by the agent" pushed the table down on every change
+  and was more noise than help. A small indicator on the title line
+  (e.g. a blinking dot while updates arrive) is a possible follow-up;
+  the events carry the origin if it's wanted. Being sent back from a
+  deleted application still says why, since the screen changed under
+  you.
