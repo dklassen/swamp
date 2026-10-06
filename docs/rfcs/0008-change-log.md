@@ -175,10 +175,10 @@ Which columns each table logs (first cut, to settle during the work):
 
 Build it as #259's signal, in this order (each its own issue and PR):
 
-1. **Feasibility spike in code** (S): the `change_events` table and the two-layer triggers on `applications` only, the connection hook stamping origin, and tests for experiments 3, 4 (outsider writes still succeed) and 7. Proves the mechanism in the real store.
-2. **Trigger generation and the drift test** (S/M): one place listing logged tables and columns; the test that fails on a missing or stale trigger; AGENTS.md rule.
-3. **The remaining tables** (S), per the column table above, with the sync-noise test (a fetch that only refreshes `last_seen_at` logs nothing). Events name rows by ID, so a table whose IDs can be reused needs `AUTOINCREMENT` first (#246); that matters for tables with hard deletes (`company_filters`, rebuilt on every sync; `interview_stages`).
-4. **Watcher reads the log** (S): `ChangeWatcher` confirms by reading past its cursor instead of the `data_version` probe, which is then removed (#257); a fallback poll of `max(id)`; pruning events older than 30 days.
+1. **Feasibility spike in code** (#267, S): the `change_events` table and the two-layer triggers on `applications` only, the connection hook stamping origin, and tests for experiments 3, 4 (outsider writes still succeed) and 7. Proves the mechanism in the real store.
+2. **Trigger generation and the drift test** (#268, S/M): one place listing logged tables and columns; the test that fails on a missing or stale trigger; AGENTS.md rule.
+3. **The remaining tables** (#269, S), per the column table above, with the sync-noise test (a fetch that only refreshes `last_seen_at` logs nothing). Events name rows by ID, so a table whose IDs can be reused needs `AUTOINCREMENT` first (#246); that matters for tables with hard deletes (`company_filters`, rebuilt on every sync; `interview_stages`).
+4. **Watcher reads the log** (#270, S): `ChangeWatcher` confirms by reading past its cursor instead of the `data_version` probe, which is then removed (#257); a fallback poll of `max(id)`; pruning events older than 30 days.
 5. **#259 on top** (M): the TUI consumes events, skips its own, reloads per screen, names the source.
 
 ## Decided (2026-10-06, user)
