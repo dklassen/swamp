@@ -7591,3 +7591,26 @@ above the pre-migration maximum could still pick up a folder.
   of the version now on disk; otherwise it would credit the last
   recorded writer with a change made outside Swamp. Times are shown in
   local time (stored UTC), with the date when it isn't today.
+
+## 2026-10-06 -- RFC 0008: a change log in the database (exploration)
+
+- User direction: explore a stream of change events in the database,
+  with old/new values, that each process watches for what matters to
+  it. #259 is paused on its branch meanwhile.
+- RFC 0008 (draft) records the experiments and a design. Key findings,
+  all with modernc.org/sqlite:
+  - Triggers can log old/new values as JSON atomically with the change.
+  - A trigger calling a Go-registered function breaks every writer
+    without that function (sqlite3 CLI, older binaries), and a guard
+    can't avoid it; a main-schema trigger can't read a temp table.
+  - The working design is two layers: main-schema triggers log with no
+    origin, and each Swamp connection's TEMP trigger stamps its origin.
+    Outsiders' writes still succeed and are logged as "outside Swamp".
+  - Real-data volume: ~92 meaningful posting changes a day, but every
+    sync sets last_seen_at on ~2000 postings, so triggers must log only
+    listed columns.
+- Not mutually exclusive with RFC 0007: wave A is unaffected, #258's
+  document_writes becomes an event source, #259's watcher and TUI
+  plumbing are kept, and the log replaces the data_version check and
+  the planned own-writes counter. The RFC has a table mapping each
+  RFC 0007 piece.
