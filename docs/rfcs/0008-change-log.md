@@ -32,6 +32,21 @@ This RFC **builds on RFC 0007 and replaces one piece of its wave B**. It doesn't
 
 In short: RFC 0007's wave A stands as is, and this RFC is a better wave B signal that reuses what wave B already built.
 
+### Why a change log can't replace wave A
+
+A change log records what already happened. Wave A's fixes are guarantees at the instant of writing: a check and a write that can't be interleaved. Knowing about a change and then acting on it always leaves a gap where something else can change first.
+
+| RFC 0007 item | What it guarantees | Could the log do it? |
+|---|---|---|
+| #244 `AUTOINCREMENT` + existence check | A draft can't land on a recycled or deleted application | No. The log would record the deletion, but the write must still check. ID reuse is a schema property, and the log needs `AUTOINCREMENT` itself, or its `row_id`s become ambiguous. |
+| #251 atomic file writes | No reader sees half a document | No. It's a filesystem property (temp file plus rename). |
+| #253 `ExpectedSHA256` | `write_document` can't overwrite an edit it didn't see | Only the token's form: "latest event ID for this document" could replace the hash. The compare-and-write is still needed, and edits made outside Swamp produce no event, so the file hash is the more reliable token. |
+| #254 re-read before destructive actions | You don't undo a change you never saw | The mechanism ("events on this row since I loaded it?") could replace the re-read; the check before acting stays. |
+| #255 diff on a changed document | A review describes the version on disk | No. It compares file contents; the log only adds who changed it, which #258 already gives documents. |
+| #256 reload after `$EDITOR` | The badge is current after an edit | Yes, once editor writes are events (via #258). A few lines either way. |
+
+So the log replaces #257's probe and the unbuilt own-writes counter outright. #254 and #256 could be re-expressed as event checks if the log becomes the TUI's single way of asking "is my copy stale?"; rewriting them only for that isn't worth it on its own.
+
 ## Measured (2026-10-06)
 
 All with `modernc.org/sqlite` (Swamp's driver) on a WAL database opened with `store.Open`. Two `*sql.DB` handles on one file stand in for two processes, as in RFC 0007.
@@ -60,6 +75,21 @@ From the real database (read-only):
 | Applications / status history / reviews | 39 / 62 / 30 |
 
 **What the volume means:** meaningful changes are tens to hundreds a day. But each sync sets `last_seen_at` on every listed posting (#176), so a trigger that logged every `postings` update would add about 2000 events per fetch, all noise. Triggers must list the columns that matter and skip updates that only touch the others. `raw_payload` must never be copied into an event.
+
+### Deployment and throughput
+
+**Where Swamp runs:** the user runs every Swamp process (TUI windows, `mcp-serve`, `swamp fetch`) on one macOS host. That's what WAL needs: one machine, one memory-mapped `-shm` index. The development VM sees the repository through a `virtiofs` share; it must never open the live database while the host has it open, since WAL's shared memory and locks aren't reliable across that boundary. (This RFC's real-data figures came from read-only opens made from the VM before that was known; the host's `PRAGMA integrity_check` was `ok`. Future data comes from host-side queries or copies.)
+
+**The single writer isn't a throughput limit.** Measured in the VM (`virtiofs` and local ext4; the host's APFS numbers will differ but not by orders of magnitude):
+
+| | ext4 | virtiofs |
+|---|---|---|
+| Single-row commits, no trigger | 5,000–10,500/s | 4,500–4,800/s |
+| With a change-log trigger that fires | ~9,000/s | ~1,900/s |
+
+A fetch is about 2000 one-posting commits; a trigger skips `last_seen_at`-only updates, so a fetch costs what it does today, and ~100 meaningful changes a day add tens of milliseconds a day. Sync commits each posting separately (`IngestPosting`, `ClosePosting`, `ReopenPosting`), so another writer waits at most one posting's transaction, never a whole fetch, far inside `busy_timeout` (5 s).
+
+**File events:** in the VM, one commit produced two `WRITE` events on `-wal`, on both ext4 and `virtiofs`. On the macOS host, fsnotify uses **kqueue**, which reports writes per file, not per directory: fsnotify opens each file in a watched directory to cover that, including files created later (SQLite recreates `-wal`). Not yet verified on the host: run `go test ./store/ -run 'TestChangeWatcher|TestChangeProbe' -count=5 -v` there (on #259's branch) before relying on it.
 
 ## Design
 
@@ -126,6 +156,7 @@ Which columns each table logs (first cut, to settle during the work):
 | **Large values** | Copying `raw_payload` (13.7 KB) or snapshots would bloat the log | Never logged; events carry the small columns or a hash |
 | **Write overhead** | ~25–55 µs per write (experiment 9) | Negligible at this scale; recheck if a bulk import ever matters |
 | **Driver coupling** | The origin stamping relies on `RegisterConnectionHook` and TEMP triggers | Both are plain SQLite plus one driver hook; a driver change would need the hook re-done, nothing else |
+| **kqueue on macOS** (the host) | If fsnotify missed writes to a recreated `-wal`, wake-ups would stop | Verify on the host first (see "Deployment and throughput"). The fallback poll of `max(id)` heals any missed wake-up, since the log loses nothing |
 | **Document files edited outside Swamp** | No row, so no event | Unchanged from RFC 0007: reload on entry (#260) and the review form's diff (#255) cover it |
 
 ## Options compared

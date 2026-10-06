@@ -7614,3 +7614,16 @@ above the pre-migration maximum could still pick up a folder.
   plumbing are kept, and the log replaces the data_version check and
   the planned own-writes counter. The RFC has a table mapping each
   RFC 0007 piece.
+
+## 2026-10-06 -- Swamp runs on the macOS host; the VM must not open the live database
+
+- The user runs every Swamp process (TUI, mcp-serve, swamp fetch) on
+  the macOS host. The development VM reaches the repository, and
+  db/swamp.db, through a virtiofs share.
+- SQLite WAL coordinates through the memory-mapped -shm file and file
+  locks, which aren't reliable across a VM boundary. Earlier read-only
+  opens from the VM (orphan check, RFC 0008 volume figures) were made
+  before this was known; the host's PRAGMA integrity_check was ok.
+  From now on, real data comes from host-side queries or copies.
+- For RFC 0008/#259: the host's fsnotify backend is kqueue, not
+  verified yet; VM throughput figures are indicative only.
