@@ -7591,3 +7591,78 @@ above the pre-migration maximum could still pick up a folder.
   of the version now on disk; otherwise it would credit the last
   recorded writer with a change made outside Swamp. Times are shown in
   local time (stored UTC), with the date when it isn't today.
+
+## 2026-10-06 -- #259: change detection by file watch, confirmed with data_version
+
+- User decision: the TUI is told about changes by a push, not a tick.
+  store.ChangeWatcher watches the database's directory with fsnotify
+  and, after 100 ms of quiet, confirms with the data_version probe
+  (#257). This reverses RFC 0007's choice of a 1-2 s tick; the RFC now
+  has a "Change detection" section comparing the strategies.
+- Checked rather than assumed, all with modernc.org/sqlite:
+  - SQLite's commit hook never fires for another connection's commit
+    (0 calls), so callbacks can't be the cross-process signal, despite
+    being the obvious "push" option.
+  - A TRUNCATE checkpoint moves data_version (the WAL reset); a PASSIVE
+    one doesn't, though it writes the database file. The confirmation
+    filters the second; the first is one harmless extra reload.
+  - sqlite.RegisterConnectionHook reaches every pooled connection, so a
+    commit hook can count the TUI's own commits exactly.
+- Found while explaining what triggers a reload: the TUI's own commits
+  move the probe too, so the "Updated from another window or the
+  agent" status would follow every save. Recommended in the RFC: count
+  own commits with a commit hook and skip the message when only those
+  happened; fall back to a tick while the watcher reports an error.
+  Awaiting the user's decision on both.
+- Not verified here: macOS (kqueue) and Docker bind mounts written from
+  the host; the RFC marks those claims.
+
+## 2026-10-06 -- RFC 0008: a change log in the database (exploration)
+
+- User direction: explore a stream of change events in the database,
+  with old/new values, that each process watches for what matters to
+  it. #259 is paused on its branch meanwhile.
+- RFC 0008 (draft) records the experiments and a design. Key findings,
+  all with modernc.org/sqlite:
+  - Triggers can log old/new values as JSON atomically with the change.
+  - A trigger calling a Go-registered function breaks every writer
+    without that function (sqlite3 CLI, older binaries), and a guard
+    can't avoid it; a main-schema trigger can't read a temp table.
+  - The working design is two layers: main-schema triggers log with no
+    origin, and each Swamp connection's TEMP trigger stamps its origin.
+    Outsiders' writes still succeed and are logged as "outside Swamp".
+  - Real-data volume: ~92 meaningful posting changes a day, but every
+    sync sets last_seen_at on ~2000 postings, so triggers must log only
+    listed columns.
+- Not mutually exclusive with RFC 0007: wave A is unaffected, #258's
+  document_writes becomes an event source, #259's watcher and TUI
+  plumbing are kept, and the log replaces the data_version check and
+  the planned own-writes counter. The RFC has a table mapping each
+  RFC 0007 piece.
+
+## 2026-10-06 -- Swamp runs on the macOS host; the VM must not open the live database
+
+- The user runs every Swamp process (TUI, mcp-serve, swamp fetch) on
+  the macOS host. The development VM reaches the repository, and
+  db/swamp.db, through a virtiofs share.
+- SQLite WAL coordinates through the memory-mapped -shm file and file
+  locks, which aren't reliable across a VM boundary. Earlier read-only
+  opens from the VM (orphan check, RFC 0008 volume figures) were made
+  before this was known; the host's PRAGMA integrity_check was ok.
+  From now on, real data comes from host-side queries or copies.
+- For RFC 0008/#259: the host's fsnotify backend is kqueue, not
+  verified yet; VM throughput figures are indicative only.
+
+## 2026-10-06 -- RFC 0008: poll the change log every 500 ms; no file watching
+
+- User decision, reversing the fsnotify choice made for #259 earlier
+  the same day. With a durable change log, a late look loses nothing:
+  the next read past the cursor returns every event since. So the
+  wake-up only affects latency, and a poll is enough.
+- Measured: SELECT max(id) FROM change_events takes about 3 us with
+  100,000 events; a 500 ms poll is negligible. Any pooled connection can
+  run it (unlike data_version, which needed a dedicated one).
+- Dropped with it: the fsnotify dependency, the debounce, and the
+  unverified kqueue backend on the macOS host. #259's ChangeWatcher
+  commit won't be used; #270 no longer depends on #259's branch.
+- Cost: changes show within 500 ms instead of ~100-150 ms.
