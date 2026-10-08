@@ -292,7 +292,10 @@ func TestApp_PressD_AsksBeforeDeletingACompany(t *testing.T) {
 
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustCreateCompany(t, s, "Globex", "lever", "globex")
+	mustCreateCompany(t, s, "Initech", "greenhouse", "initech")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app = sendKeyAndApply(t, app, runeKey('d'))
@@ -300,8 +303,16 @@ func TestApp_PressD_AsksBeforeDeletingACompany(t *testing.T) {
 	if app.screen != screenCompanyDelete {
 		t.Errorf("screen after d = %v, want the delete confirmation", app.screen)
 	}
-	if view := app.View(); !strings.Contains(view, "Acme") || !strings.Contains(view, "Delete it?") {
+	view := app.View()
+	if !strings.Contains(view, "Delete Acme") || !strings.Contains(view, "y: delete") {
 		t.Errorf("the confirmation doesn't name the company and ask:\n%s", view)
+	}
+	// An overlay: the list it would change stays in view behind it.
+	if !strings.Contains(view, "Globex") || !strings.Contains(view, "Initech") {
+		t.Errorf("the company list isn't visible behind the confirmation:\n%s", view)
+	}
+	if crumbs := strings.SplitN(ansi.Strip(view), "\n", 2)[0]; strings.TrimSpace(crumbs) != "Companies" {
+		t.Errorf("breadcrumbs = %q, want just Companies: the overlay isn't a screen of its own", crumbs)
 	}
 	if _, err := s.GetCompany(context.Background(), acme.ID); err != nil {
 		t.Errorf("GetCompany after d = %v, want the company still there until confirmed", err)

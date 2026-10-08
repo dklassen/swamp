@@ -1688,7 +1688,8 @@ func (a *App) View() string {
 	case screenApplicationDelete:
 		b.WriteString(a.applicationDelete.View())
 	case screenCompanyDelete:
-		b.WriteString(a.companyDelete.View())
+		list := a.companyList.View(a.companies, a.companyOpenPostings, a.width, a.screenRows())
+		b.WriteString(overlay(list, a.companyDelete.View(a.width), a.width))
 	case screenApplicationNotesEdit:
 		b.WriteString(a.applicationNotes.View())
 	case screenApplicationForm:

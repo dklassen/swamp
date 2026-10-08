@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dklassen/swamp/store"
 )
@@ -50,15 +51,24 @@ func (m *companyDeleteModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	return nil, nil
 }
 
-func (m *companyDeleteModel) View() string {
+var confirmBoxStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(lipgloss.Color("214")).
+	Padding(0, 1)
+
+// View is a box for App to draw over the company list, at most width wide.
+func (m *companyDeleteModel) View(width int) string {
 	var b strings.Builder
-	b.WriteString(fieldLabel.Render("Company:") + " " + m.company.Name + " (" + m.company.Source + ")\n")
-	b.WriteString(fieldLabel.Render("Open postings:") + fmt.Sprintf(" %d\n\n", m.openPostings))
-	b.WriteString("The company leaves the list and its open postings are closed. Its applications are kept.\n\n")
+	b.WriteString(fieldLabel.Render("Delete "+m.company.Name+"?") + " (" + m.company.Source + ")\n")
+	fmt.Fprintf(&b, "Closes its open postings (%d) and keeps its applications.\n\n", m.openPostings)
 	if m.confirmed {
-		b.WriteString("Deleting...\n")
+		b.WriteString("Deleting...")
 	} else {
-		b.WriteString("Delete it? " + fieldLabel.Render("y") + ": delete  " + fieldLabel.Render("n/esc/enter") + ": keep it\n")
+		b.WriteString(fieldLabel.Render("y") + ": delete  " + fieldLabel.Render("n/esc/enter") + ": keep it")
 	}
-	return b.String()
+	style := confirmBoxStyle
+	if w := style.GetHorizontalFrameSize(); width > w && lipgloss.Width(b.String())+w > width {
+		style = style.Width(width - w)
+	}
+	return style.Render(b.String())
 }
