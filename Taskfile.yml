@@ -51,6 +51,26 @@ tasks:
     cmds:
       - go tool goose -dir {{.MIGRATIONS_DIR}} sqlite3 "{{.DB_PATH}}" status
 
+  db:backup:
+    desc: "Back up the sqlite db to <db>.<UTC time>.bak and check it (safe while swamp is running)"
+    preconditions:
+      - sh: command -v sqlite3
+        msg: "sqlite3 not found; it ships with macOS, or install it"
+      # sqlite3 would create an empty db at a wrong path and back that up.
+      - sh: test -f "{{.DB_PATH}}"
+        msg: "no database at {{.DB_PATH}} (set SWAMP_DB_PATH, e.g. via direnv exec .)"
+    cmds:
+      # .backup, not cp: a copy of the file alone misses writes still in the WAL.
+      - |
+        backup="{{.DB_PATH}}.$(date -u +%Y%m%dT%H%M%SZ).bak"
+        sqlite3 "{{.DB_PATH}}" ".backup '$backup'"
+        result=$(sqlite3 "$backup" "PRAGMA integrity_check;")
+        if [ "$result" != "ok" ]; then
+          echo "backup $backup failed its integrity check: $result"
+          exit 1
+        fi
+        echo "backed up {{.DB_PATH}} to $backup"
+
   test:
     desc: Run the Go test suite
     cmds:
