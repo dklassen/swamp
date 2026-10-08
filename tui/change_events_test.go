@@ -283,6 +283,42 @@ func TestApp_PostingDetailReload_ShowsTheChangeAndKeepsTheScroll(t *testing.T) {
 	}
 }
 
+// TestApp_ApplicationStartedElsewhere_PostingDetailShowsIt: the agent
+// starts an application on the posting you're reading. The event comes
+// from the real change log, so it carries only what the triggers record.
+func TestApp_ApplicationStartedElsewhere_PostingDetailShowsIt(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{"acme": {{SourceID: "job-1", Title: "Engineer"}}})
+	app := newTestApp(t, s, syncer).WithChangeFeed(nil, "tui:1")
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
+	app = openPostingList(t, app)
+	app = openPostingDetail(t, app)
+	if !strings.Contains(app.View(), "No application started") {
+		t.Fatalf("posting detail already shows an application; the test can't tell a reload happened:\n%s", app.View())
+	}
+	feed, err := s.NewChangeFeed(ctx)
+	if err != nil {
+		t.Fatalf("NewChangeFeed: %v", err)
+	}
+
+	if _, err := s.CreateApplication(ctx, app.postingDetail.posting.ID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	events, err := feed.Next(ctx)
+	if err != nil {
+		t.Fatalf("Next: %v", err)
+	}
+	app = sendKeyAndApply(t, app, changesMsg{events: events})
+
+	if view := app.View(); strings.Contains(view, "No application started") || !strings.Contains(view, applicationStatusLabel(store.ApplicationStatusStarted)) {
+		t.Errorf("posting detail doesn't show the application started elsewhere:\n%s", view)
+	}
+}
+
 // TestApp_ChangesWhileAFormIsOpen_WaitUntilItCloses: a form you're filling
 // in is never rebuilt; the screen beneath catches up once you're back.
 func TestApp_ChangesWhileAFormIsOpen_WaitUntilItCloses(t *testing.T) {

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -55,8 +56,8 @@ func TestChangeFeed_DeliversAnotherProcessesChange(t *testing.T) {
 		Table:  "applications",
 		RowID:  application.ID,
 		Op:     "update",
-		Old:    `{"status":"application_started","notes":"","deleted_at":null}`,
-		New:    `{"status":"interviewing","notes":"","deleted_at":null}`,
+		Old:    `{"posting_id":1,"status":"application_started","notes":"","deleted_at":null}`,
+		New:    `{"posting_id":1,"status":"interviewing","notes":"","deleted_at":null}`,
 		Origin: "mcp:7",
 	}}
 	if diff := cmp.Diff(want, mustNext(t, feed), cmpopts.IgnoreFields(ChangeEvent{}, "ID", "At")); diff != "" {
@@ -198,6 +199,39 @@ func TestChangeFeed_EachLoggedTable(t *testing.T) {
 				t.Errorf("%s events (-want +got):\n%s", tt.table, diff)
 			}
 		})
+	}
+}
+
+// TestChangeFeed_AnApplicationEventNamesItsPosting: a screen showing a
+// posting with no application yet can only tell an application was started
+// on it from the event.
+func TestChangeFeed_AnApplicationEventNamesItsPosting(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	path := t.TempDir() + "/test.db"
+	newTestStoreAt(t, path)
+	s := openWithOrigin(t, path, "mcp:7")
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	feed := mustNewChangeFeed(t, s)
+
+	if _, err := s.CreateApplication(ctx, posting.ID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+
+	events := mustNext(t, feed)
+	if len(events) != 1 {
+		t.Fatalf("events = %+v, want one", events)
+	}
+	var row struct {
+		PostingID int64 `json:"posting_id"`
+	}
+	if err := json.Unmarshal([]byte(events[0].New), &row); err != nil {
+		t.Fatalf("event values %q: %v", events[0].New, err)
+	}
+	if row.PostingID != posting.ID {
+		t.Errorf("the application event's posting_id = %d, want %d (event values %s)", row.PostingID, posting.ID, events[0].New)
 	}
 }
 

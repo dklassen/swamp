@@ -92,7 +92,7 @@ func (a *App) reloadFor(events []store.ChangeEvent) tea.Cmd {
 	case screenPostingDetail:
 		d := a.postingDetail
 		if slices.ContainsFunc(events, func(e store.ChangeEvent) bool {
-			return (e.Table == "postings" && e.RowID == d.posting.ID) || (d.hasApplication && eventApplicationID(e) == d.application.ID)
+			return (e.Table == "postings" && e.RowID == d.posting.ID) || eventPostingID(e) == d.posting.ID || (d.hasApplication && eventApplicationID(e) == d.application.ID)
 		}) {
 			return reloadPosting(a.store, d.posting.ID)
 		}
@@ -142,6 +142,24 @@ func eventApplicationID(e store.ChangeEvent) int64 {
 		if json.Unmarshal([]byte(values), &row) == nil {
 			return row.ApplicationID
 		}
+	}
+	return 0
+}
+
+// eventPostingID is the posting an application event is about, or 0.
+func eventPostingID(e store.ChangeEvent) int64 {
+	if e.Table != "applications" {
+		return 0
+	}
+	var row struct {
+		PostingID int64 `json:"posting_id"`
+	}
+	values := e.New
+	if values == "" {
+		values = e.Old
+	}
+	if json.Unmarshal([]byte(values), &row) == nil {
+		return row.PostingID
 	}
 	return 0
 }
