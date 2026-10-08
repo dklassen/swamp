@@ -61,6 +61,7 @@ const (
 	screenApplicationSubmit
 	screenApplicationForm
 	screenApplicationDelete
+	screenCompanyDelete
 )
 
 type App struct {
@@ -132,6 +133,7 @@ type App struct {
 	openURL           func(url string) tea.Cmd
 	applicationSubmit applicationSubmitModel
 	applicationDelete applicationDeleteModel
+	companyDelete     companyDeleteModel
 	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
 	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
@@ -992,6 +994,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case companyDeletedMsg:
 		a.err = msg.err
+		// Back to the list either way: a failed delete's y is spent, and
+		// the error shows there.
+		if a.screen == screenCompanyDelete {
+			a.screen = screenCompanyList
+		}
 		if msg.err == nil {
 			if i := indexOfCompany(a.companies, msg.companyID); i != -1 {
 				a.companies = append(a.companies[:i], a.companies[i+1:]...)
@@ -1427,6 +1434,9 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case enterCompanyEditMsg:
 			a.screen = screenCompanyEdit
 			a.companyEdit = newCompanyEditModel(a.store, v.company.ID, v.company.Name)
+		case enterCompanyDeleteMsg:
+			a.screen = screenCompanyDelete
+			a.companyDelete = newCompanyDeleteModel(v.company, a.companyOpenPostings[v.company.ID])
 		case refreshCompanyMsg:
 			if a.syncAll.running {
 				// The run may be syncing this company right now (#150).
@@ -1533,6 +1543,15 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.screen = screenApplicationDetail
 		case confirmApplicationDeleteMsg:
 			return a, deleteApplication(a.store, v.application)
+		}
+		return a, cmd
+	case screenCompanyDelete:
+		cmd, intent := a.companyDelete.Update(msg)
+		switch v := intent.(type) {
+		case cancelCompanyDeleteMsg:
+			a.screen = screenCompanyList
+		case confirmCompanyDeleteMsg:
+			return a, deleteCompany(a.store, v.company.ID)
 		}
 		return a, cmd
 	case screenApplicationNotesEdit:
@@ -1668,6 +1687,8 @@ func (a *App) View() string {
 		b.WriteString(a.applicationSubmit.View())
 	case screenApplicationDelete:
 		b.WriteString(a.applicationDelete.View())
+	case screenCompanyDelete:
+		b.WriteString(a.companyDelete.View())
 	case screenApplicationNotesEdit:
 		b.WriteString(a.applicationNotes.View())
 	case screenApplicationForm:

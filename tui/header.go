@@ -73,6 +73,7 @@ var parents = map[screen]screen{
 	screenApplicationExport:    screenActiveApplications,
 	screenApplicationSubmit:    screenApplicationDetail,
 	screenApplicationDelete:    screenApplicationDetail,
+	screenCompanyDelete:        screenCompanyList,
 	screenApplicationForm:      screenApplicationDetail,
 	screenApplicationNotesEdit: screenPostingDetail,
 }
@@ -122,6 +123,8 @@ func (a *App) crumbs(path []screen) []string {
 			crumbs = append(crumbs, "Add company")
 		case screenCompanyEdit:
 			crumbs = append(crumbs, "Edit company")
+		case screenCompanyDelete:
+			crumbs = append(crumbs, "Delete company")
 		case screenFilterSelect:
 			crumbs = append(crumbs, "Filters")
 		case screenApplicationStatusSelect:

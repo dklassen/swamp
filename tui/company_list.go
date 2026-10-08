@@ -80,7 +80,7 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 		return tea.Quit, nil
 	case msg.String() == "d":
 		if m.cursor < len(companies) {
-			return deleteCompany(m.store, companies[m.cursor].ID), nil
+			return nil, enterCompanyDeleteMsg{company: companies[m.cursor]}
 		}
 	case msg.String() == "r":
 		if m.cursor < len(companies) {

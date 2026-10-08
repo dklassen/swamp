@@ -285,18 +285,85 @@ func TestApp_SubmitForm_CreatesCompanyAndReturnsToList(t *testing.T) {
 	}
 }
 
-func TestApp_PressD_DeletesSelectedCompany(t *testing.T) {
+// TestApp_PressD_AsksBeforeDeletingACompany: deleting closes all its open
+// postings, too much for one stray key.
+func TestApp_PressD_AsksBeforeDeletingACompany(t *testing.T) {
+	t.Parallel()
+
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
-	app, cmd := sendKey(app, runeKey('d'))
-	if cmd == nil {
-		t.Fatal("Update on 'd' returned nil Cmd, want a command that deletes the company")
-	}
-	app, _ = sendKey(app, cmd())
+	app = sendKeyAndApply(t, app, runeKey('d'))
 
+	if app.screen != screenCompanyDelete {
+		t.Errorf("screen after d = %v, want the delete confirmation", app.screen)
+	}
+	if view := app.View(); !strings.Contains(view, "Acme") || !strings.Contains(view, "Delete it?") {
+		t.Errorf("the confirmation doesn't name the company and ask:\n%s", view)
+	}
+	if _, err := s.GetCompany(context.Background(), acme.ID); err != nil {
+		t.Errorf("GetCompany after d = %v, want the company still there until confirmed", err)
+	}
+}
+
+// TestApp_CompanyDeleteConfirmation_AnythingButYKeepsIt: keeping is the
+// default, so enter can't delete by habit.
+func TestApp_CompanyDeleteConfirmation_AnythingButYKeepsIt(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		key  tea.KeyMsg
+	}{
+		{"n", runeKey('n')},
+		{"esc", tea.KeyMsg{Type: tea.KeyEsc}},
+		{"enter", tea.KeyMsg{Type: tea.KeyEnter}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			s := newTestStore(t)
+			for _, name := range []string{"Acme", "Globex", "Initech"} {
+				mustCreateCompany(t, s, name, "ashby", strings.ToLower(name))
+			}
+			app := newTestApp(t, s, newTestSyncer(s, nil))
+			app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
+			app, _ = sendKey(app, runeKey('j'))
+
+			app = sendKeyAndApply(t, app, runeKey('d'))
+			app = sendKeyAndApply(t, app, tt.key)
+
+			if app.screen != screenCompanyList {
+				t.Errorf("screen after %s = %v, want the company list", tt.name, app.screen)
+			}
+			if app.companyList.cursor != 1 {
+				t.Errorf("cursor after %s = %d, want 1 (where it was)", tt.name, app.companyList.cursor)
+			}
+			companies, err := s.ListActiveCompanies(context.Background())
+			if err != nil {
+				t.Fatalf("ListActiveCompanies: %v", err)
+			}
+			if len(companies) != 3 {
+				t.Errorf("%d companies after %s, want all 3 kept", len(companies), tt.name)
+			}
+		})
+	}
+}
+
+func TestApp_PressDThenY_DeletesSelectedCompany(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
+
+	app = sendKeyAndApply(t, app, runeKey('d'))
+	app = sendKeyAndApply(t, app, runeKey('y'))
+
+	if app.screen != screenCompanyList {
+		t.Errorf("screen after deleting = %v, want the company list", app.screen)
+	}
 	if len(app.companies) != 0 {
 		t.Fatalf("app.companies after delete = %+v, want empty (soft-deleted, excluded from active list)", app.companies)
 	}
