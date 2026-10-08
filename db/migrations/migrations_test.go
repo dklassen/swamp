@@ -3,6 +3,7 @@ package migrations
 import (
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -1333,5 +1334,180 @@ func TestChangeEvents_ApplicationTriggersLogOldAndNew(t *testing.T) {
 	}
 	if objects != 0 {
 		t.Errorf("%d change-log objects left after Down, want 0", objects)
+	}
+}
+
+// TestPostingsCompaniesAutoincrement_DeletedMaxIDIsNotReused: change
+// events, MCP clients and child rows hold these IDs, so one deleted by hand
+// must not come back as a different row.
+func TestPostingsCompaniesAutoincrement_DeletedMaxIDIsNotReused(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		table  string
+		insert string
+	}{
+		{"companies", `INSERT INTO companies (name, source, source_ref) VALUES ('Globex', 'lever', 'globex') RETURNING id`},
+		{"postings", `INSERT INTO postings (company_id, source, source_id, title, raw_payload) VALUES (1, 'ashby', 'job-3', 'Manager', '{}') RETURNING id`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.table, func(t *testing.T) {
+			t.Parallel()
+
+			sqlDB := migrateTo(t, 23)
+			for _, stmt := range []string{
+				`INSERT INTO companies (id, name, source, source_ref) VALUES (1, 'Acme', 'ashby', 'acme'), (2, 'Initech', 'greenhouse', 'initech')`,
+				`INSERT INTO postings (id, company_id, source, source_id, title, raw_payload) VALUES (1, 1, 'ashby', 'job-1', 'Engineer', '{}'), (2, 1, 'ashby', 'job-2', 'Staff Engineer', '{}')`,
+			} {
+				if _, err := sqlDB.Exec(stmt); err != nil {
+					t.Fatalf("%s: %v", stmt, err)
+				}
+			}
+			if err := goose.UpTo(sqlDB, ".", 24); err != nil {
+				t.Fatalf("migrate to version 24: %v", err)
+			}
+			if version, err := goose.GetDBVersion(sqlDB); err != nil || version != 24 {
+				t.Fatalf("DB version = %d (%v), want 24 (migration 00024 not found?)", version, err)
+			}
+
+			if _, err := sqlDB.Exec(`DELETE FROM ` + tt.table + ` WHERE id = 2`); err != nil {
+				t.Fatalf("delete the max id: %v", err)
+			}
+			var next int64
+			if err := sqlDB.QueryRow(tt.insert).Scan(&next); err != nil {
+				t.Fatalf("insert: %v", err)
+			}
+			if next != 3 {
+				t.Errorf("next %s id = %d, want 3 (the deleted max id 2 must not be reused)", tt.table, next)
+			}
+		})
+	}
+}
+
+// TestPostingsCompaniesAutoincrement_SchemaUnchangedButForAutoincrement: the
+// rebuilt tables are hand-copied SQL, and a dropped UNIQUE, CHECK, index or
+// trigger fails nothing; SQLite just stops enforcing it.
+func TestPostingsCompaniesAutoincrement_SchemaUnchangedButForAutoincrement(t *testing.T) {
+	t.Parallel()
+
+	space := regexp.MustCompile(`\s+`)
+	schema := func(sqlDB *sql.DB) map[string]string {
+		t.Helper()
+		rows, err := sqlDB.Query(`SELECT type || ' ' || name, sql FROM sqlite_master WHERE sql IS NOT NULL AND name != 'goose_db_version'`)
+		if err != nil {
+			t.Fatalf("query sqlite_master: %v", err)
+		}
+		defer func() { _ = rows.Close() }()
+		got := map[string]string{}
+		for rows.Next() {
+			var name, sql string
+			if err := rows.Scan(&name, &sql); err != nil {
+				t.Fatalf("scan: %v", err)
+			}
+			sql = strings.ReplaceAll(strings.ReplaceAll(sql, `"`, ""), " AUTOINCREMENT", "")
+			got[name] = space.ReplaceAllString(sql, "")
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("rows: %v", err)
+		}
+		return got
+	}
+	sqlDB := migrateTo(t, 23)
+	before := schema(sqlDB)
+
+	if err := goose.UpTo(sqlDB, ".", 24); err != nil {
+		t.Fatalf("migrate to version 24: %v", err)
+	}
+
+	if diff := cmp.Diff(before, schema(sqlDB)); diff != "" {
+		t.Errorf("schema changed beyond AUTOINCREMENT (-before +after):\n%s", diff)
+	}
+
+	if err := goose.DownTo(sqlDB, ".", 23); err != nil {
+		t.Fatalf("migrate down to version 23: %v", err)
+	}
+	var autoincrement int
+	if err := sqlDB.QueryRow(`SELECT count(*) FROM sqlite_master WHERE name IN ('companies', 'postings') AND sql LIKE '%AUTOINCREMENT%'`).Scan(&autoincrement); err != nil {
+		t.Fatalf("query sqlite_master: %v", err)
+	}
+	if autoincrement != 0 {
+		t.Errorf("%d of companies and postings still AUTOINCREMENT after Down, want 0", autoincrement)
+	}
+	if diff := cmp.Diff(before, schema(sqlDB)); diff != "" {
+		t.Errorf("schema after Down differs from before Up (-before +after):\n%s", diff)
+	}
+}
+
+// TestPostingsCompaniesAutoincrement_KeepsEveryValueAndLogsNothing: the
+// copy names each column, so two swapped columns of one type would pass the
+// schema check; and a rebuild isn't a change to tell the TUI about.
+func TestPostingsCompaniesAutoincrement_KeepsEveryValueAndLogsNothing(t *testing.T) {
+	t.Parallel()
+
+	sqlDB := migrateTo(t, 23)
+	for _, stmt := range []string{
+		`INSERT INTO companies (id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at, sync_lease_token, sync_lease_at)
+		 VALUES (7, 'Acme', 'ashby', 'acme', '2026-09-01 10:00:00', '2026-09-02 10:00:00', '2026-09-03 10:00:00', 'Makes anvils', '2026-09-04 10:00:00', 'lease-1', '2026-09-05 10:00:00')`,
+		`INSERT INTO postings (id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at)
+		 VALUES (9, 7, 'ashby', 'job-1', 'Engineer', 'Engineering', 'Platform', 'Remote', 'FullTime', 'Remote', '<p>html</p>', 'text', 'https://job', 'https://apply', '2026-08-01 10:00:00', '{"id":1}', 'closed', '2026-08-02 10:00:00', '2026-08-03 10:00:00', '2026-08-04 10:00:00', '2026-08-05 10:00:00')`,
+	} {
+		if _, err := sqlDB.Exec(stmt); err != nil {
+			t.Fatalf("%s: %v", stmt, err)
+		}
+	}
+	rows := func(table string) []map[string]any {
+		t.Helper()
+		r, err := sqlDB.Query(`SELECT * FROM ` + table + ` ORDER BY id`)
+		if err != nil {
+			t.Fatalf("query %s: %v", table, err)
+		}
+		defer func() { _ = r.Close() }()
+		columns, err := r.Columns()
+		if err != nil {
+			t.Fatalf("columns: %v", err)
+		}
+		var got []map[string]any
+		for r.Next() {
+			values := make([]any, len(columns))
+			pointers := make([]any, len(columns))
+			for i := range values {
+				pointers[i] = &values[i]
+			}
+			if err := r.Scan(pointers...); err != nil {
+				t.Fatalf("scan: %v", err)
+			}
+			row := map[string]any{}
+			for i, c := range columns {
+				row[c] = values[i]
+			}
+			got = append(got, row)
+		}
+		if err := r.Err(); err != nil {
+			t.Fatalf("rows: %v", err)
+		}
+		return got
+	}
+	events := func() int {
+		t.Helper()
+		var n int
+		if err := sqlDB.QueryRow(`SELECT count(*) FROM change_events`).Scan(&n); err != nil {
+			t.Fatalf("count change_events: %v", err)
+		}
+		return n
+	}
+	companies, postings, eventsBefore := rows("companies"), rows("postings"), events()
+
+	if err := goose.UpTo(sqlDB, ".", 24); err != nil {
+		t.Fatalf("migrate to version 24: %v", err)
+	}
+
+	if diff := cmp.Diff(companies, rows("companies")); diff != "" {
+		t.Errorf("companies changed by the rebuild (-before +after):\n%s", diff)
+	}
+	if diff := cmp.Diff(postings, rows("postings")); diff != "" {
+		t.Errorf("postings changed by the rebuild (-before +after):\n%s", diff)
+	}
+	if got := events(); got != eventsBefore {
+		t.Errorf("change_events has %d rows after the rebuild, want %d: the copy mustn't log", got, eventsBefore)
 	}
 }
