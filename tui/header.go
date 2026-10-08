@@ -13,8 +13,13 @@ import (
 // It ends in a newline, so screenRows can count its rows the way it
 // counts the banner's.
 func (a *App) header() string {
-	if isTab(a.screen) {
-		return a.tabBar()
+	s := a.screen
+	// The delete confirmation is drawn over the list, which keeps its header.
+	if s == screenCompanyDelete {
+		s = screenCompanyList
+	}
+	if isTab(s) {
+		return a.tabBar(s)
 	}
 	// Less the leading space.
 	crumbs := fitCrumbs(a.crumbs(a.path()), tableWidth(a.width)-1)
@@ -146,9 +151,8 @@ func (a *App) crumbs(path []screen) []string {
 	return crumbs
 }
 
-// tabBar names both tabs with their counts, and underlines the one on
-// screen.
-func (a *App) tabBar() string {
+// tabBar names both tabs with their counts, and underlines active.
+func (a *App) tabBar(active screen) string {
 	tabs := []struct {
 		screen screen
 		label  string
@@ -164,7 +168,7 @@ func (a *App) tabBar() string {
 			rule.WriteString(dimStyle.Render(strings.Repeat("─", len(gap))))
 		}
 		style, stroke := dimStyle, "─"
-		if tab.screen == a.screen {
+		if tab.screen == active {
 			style, stroke = sectionStyle, "━"
 		}
 		line.WriteString(style.Render(tab.label))

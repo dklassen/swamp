@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -297,6 +298,7 @@ func TestApp_PressD_AsksBeforeDeletingACompany(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
+	headerBefore := strings.SplitN(ansi.Strip(app.View()), "\n", 3)[:2]
 
 	app = sendKeyAndApply(t, app, runeKey('d'))
 
@@ -311,8 +313,8 @@ func TestApp_PressD_AsksBeforeDeletingACompany(t *testing.T) {
 	if !strings.Contains(view, "Globex") || !strings.Contains(view, "Initech") {
 		t.Errorf("the company list isn't visible behind the confirmation:\n%s", view)
 	}
-	if crumbs := strings.SplitN(ansi.Strip(view), "\n", 2)[0]; strings.TrimSpace(crumbs) != "Companies" {
-		t.Errorf("breadcrumbs = %q, want just Companies: the overlay isn't a screen of its own", crumbs)
+	if header := strings.SplitN(ansi.Strip(view), "\n", 3)[:2]; !slices.Equal(header, headerBefore) {
+		t.Errorf("header = %q, want it as before d, %q: the overlay isn't a screen of its own", header, headerBefore)
 	}
 	if _, err := s.GetCompany(context.Background(), acme.ID); err != nil {
 		t.Errorf("GetCompany after d = %v, want the company still there until confirmed", err)
