@@ -5,10 +5,12 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
@@ -94,7 +96,7 @@ func TestDeleteFlow_ConfirmingDeletesTheApplicationAndKeepsItsDocuments(t *testi
 
 func TestDeleteFlow_DecliningKeepsTheApplication(t *testing.T) {
 	t.Parallel()
-	for _, key := range []tea.KeyMsg{runeKey('n'), {Type: tea.KeyEsc}} {
+	for _, key := range []tea.KeyMsg{runeKey('n'), {Type: tea.KeyEsc}, {Type: tea.KeyEnter}} {
 		t.Run(key.String(), func(t *testing.T) {
 			t.Parallel()
 			app, application := deleteTestApp(t)
@@ -151,7 +153,7 @@ func TestDeleteFlow_ConfirmationShowsTheStatusAsItIsNow(t *testing.T) {
 
 	app = startDelete(t, app)
 
-	view := app.applicationDelete.View()
+	view := app.applicationDelete.View(120)
 	if want := applicationStatusLabel(store.ApplicationStatusInterviewing); !strings.Contains(view, want) {
 		t.Errorf("confirmation doesn't show the stored status %q:\n%s", want, view)
 	}
@@ -173,5 +175,61 @@ func TestDeleteFlow_AlreadyDeletedElsewhere_StaysOnDetailAndSaysSo(t *testing.T)
 	}
 	if app.err == nil || !strings.Contains(app.err.Error(), "already deleted") {
 		t.Errorf("err = %v, want one saying it was already deleted", app.err)
+	}
+}
+
+// TestDeleteFlow_ConfirmationIsDrawnOverDetail: like the company delete, a
+// box over the screen it was opened from, which keeps its header.
+func TestDeleteFlow_ConfirmationIsDrawnOverDetail(t *testing.T) {
+	t.Parallel()
+
+	app, _ := deleteTestApp(t)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	before := strings.SplitN(ansi.Strip(app.View()), "\n", 3)[:2]
+
+	app = sendKeyAndApply(t, app, runeKey('D'))
+
+	view := ansi.Strip(app.View())
+	if after := strings.SplitN(view, "\n", 3)[:2]; !slices.Equal(after, before) {
+		t.Errorf("header = %q, want it as before D, %q", after, before)
+	}
+	if !strings.Contains(view, "Company: Acme") {
+		t.Errorf("application detail isn't visible behind the box:\n%s", view)
+	}
+	if !strings.Contains(view, "y: delete") || !strings.Contains(view, "Delete the application") {
+		t.Errorf("no confirmation box over application detail:\n%s", view)
+	}
+}
+
+// TestDeleteFlow_FromTheHomeList: d on the list opens the same box over
+// it, and keeping the application goes back to the list.
+func TestDeleteFlow_FromTheHomeList(t *testing.T) {
+	t.Parallel()
+
+	app, application := deleteTestApp(t)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
+	before := strings.SplitN(ansi.Strip(app.View()), "\n", 3)[:2]
+
+	app = sendKeyAndApply(t, app, runeKey('d'))
+
+	if app.screen != screenApplicationDelete {
+		t.Fatalf("screen after d = %v, want the delete confirmation", app.screen)
+	}
+	view := ansi.Strip(app.View())
+	if after := strings.SplitN(view, "\n", 3)[:2]; !slices.Equal(after, before) {
+		t.Errorf("header = %q, want it as before d, %q", after, before)
+	}
+	if !strings.Contains(view, "Delete the application for Engineer?") {
+		t.Errorf("no confirmation box over the home list:\n%s", view)
+	}
+
+	app = sendKeyAndApply(t, app, runeKey('n'))
+
+	if app.screen != screenActiveApplications {
+		t.Errorf("screen after n = %v, want the home list", app.screen)
+	}
+	if _, err := app.store.GetApplicationByID(context.Background(), application.ID); err != nil {
+		t.Errorf("GetApplicationByID after n: %v, want the application kept", err)
 	}
 }

@@ -13,16 +13,13 @@ import (
 // It ends in a newline, so screenRows can count its rows the way it
 // counts the banner's.
 func (a *App) header() string {
-	s := a.screen
-	// The delete confirmation is drawn over the list, which keeps its header.
-	if s == screenCompanyDelete {
-		s = screenCompanyList
-	}
+	// A confirmation box keeps the header of the screen it's drawn over.
+	s := a.beneath()
 	if isTab(s) {
 		return a.tabBar(s)
 	}
 	// Less the leading space.
-	crumbs := fitCrumbs(a.crumbs(a.path()), tableWidth(a.width)-1)
+	crumbs := fitCrumbs(a.crumbs(a.path(s)), tableWidth(a.width)-1)
 	for i, crumb := range crumbs {
 		style := dimStyle
 		if i == len(crumbs)-1 {
@@ -77,18 +74,15 @@ var parents = map[screen]screen{
 	screenApplicationDetail:    screenActiveApplications,
 	screenApplicationExport:    screenActiveApplications,
 	screenApplicationSubmit:    screenApplicationDetail,
-	screenApplicationDelete:    screenApplicationDetail,
-	screenCompanyDelete:        screenCompanyList,
 	screenApplicationForm:      screenApplicationDetail,
 	screenApplicationNotesEdit: screenPostingDetail,
 }
 
-// path is the screens from a tab to the one on screen: the way esc goes
-// back, reversed.
-func (a *App) path() []screen {
-	path := []screen{a.screen}
+// path is the screens from a tab to on: the way esc goes back, reversed.
+func (a *App) path(on screen) []screen {
+	path := []screen{on}
 	next := len(a.returnStack) - 1
-	for s := a.screen; !isTab(s); path = append(path, s) {
+	for s := on; !isTab(s); path = append(path, s) {
 		if p, ok := parents[s]; ok {
 			s = p
 		} else if next >= 0 {
@@ -142,8 +136,6 @@ func (a *App) crumbs(path []screen) []string {
 			crumbs = append(crumbs, "Export PDFs")
 		case screenApplicationSubmit:
 			crumbs = append(crumbs, "Submit")
-		case screenApplicationDelete:
-			crumbs = append(crumbs, "Delete application")
 		case screenApplicationForm:
 			crumbs = append(crumbs, "Application form")
 		}

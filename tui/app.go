@@ -1119,9 +1119,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		if a.screen == screenApplicationDelete {
 			if msg.err != nil {
-				// Back to detail rather than leaving a confirmation whose
-				// y is already spent; the error shows there.
-				a.screen = screenApplicationDetail
+				// Back where it was opened rather than leaving a
+				// confirmation whose y is already spent; the error shows there.
+				a.screen = a.applicationDelete.from
 				return a, nil
 			}
 			a.screen = screenActiveApplications
@@ -1178,9 +1178,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case applicationReloadedForDeleteMsg:
 		a.err = msg.err
 		// Same guard as applicationFormLoadedMsg: only if the user is still
-		// on that application.
-		if msg.err == nil && a.screen == screenApplicationDetail && a.applicationDetail.application.ID == msg.application.ID {
-			a.applicationDelete = newApplicationDeleteModel(a.documents, msg.application)
+		// where delete was pressed, and on detail, on that application.
+		if msg.err == nil && a.screen == msg.from && (msg.from != screenApplicationDetail || a.applicationDetail.application.ID == msg.application.ID) {
+			a.applicationDelete = newApplicationDeleteModel(msg.application, msg.from)
 			a.screen = screenApplicationDelete
 		}
 	case applicationStatusLoadedMsg:
@@ -1376,6 +1376,8 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case enterApplicationExportMsg:
 			a.screen = screenApplicationExport
 			a.applicationExport = newApplicationExportModel(a.store, a.documents, v.application, a.exportDir, a.width)
+		case enterApplicationDeleteMsg:
+			return a, reloadApplicationForDelete(a.store, v.application, screenActiveApplications)
 		}
 		return a, cmd
 	case screenApplicationDetail:
@@ -1386,7 +1388,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case enterApplicationSubmitMsg:
 			return a, a.startApplicationSubmit(v.application)
 		case enterApplicationDeleteMsg:
-			return a, reloadApplicationForDelete(a.store, v.application)
+			return a, reloadApplicationForDelete(a.store, v.application, screenApplicationDetail)
 		case backToActiveApplicationsMsg:
 			a.screen = screenActiveApplications
 		case enterPostingDetailMsg:
@@ -1540,7 +1542,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd, intent := a.applicationDelete.Update(msg)
 		switch v := intent.(type) {
 		case cancelApplicationDeleteMsg:
-			a.screen = screenApplicationDetail
+			a.screen = a.applicationDelete.from
 		case confirmApplicationDeleteMsg:
 			return a, deleteApplication(a.store, v.application)
 		}
@@ -1652,11 +1654,32 @@ func (a *App) screenRows() int {
 }
 
 func (a *App) View() string {
-	var b strings.Builder
-
-	b.WriteString(a.header())
-
+	body := a.body(a.beneath())
 	switch a.screen {
+	case screenCompanyDelete:
+		body = overlay(body, a.companyDelete.View(a.width), a.width)
+	case screenApplicationDelete:
+		body = overlay(body, a.applicationDelete.View(a.width), a.width)
+	}
+	return a.header() + body + a.banner()
+}
+
+// beneath is the screen drawn on screen: a.screen, or the one a
+// confirmation's box is drawn over.
+func (a *App) beneath() screen {
+	switch a.screen {
+	case screenCompanyDelete:
+		return screenCompanyList
+	case screenApplicationDelete:
+		return a.applicationDelete.from
+	}
+	return a.screen
+}
+
+// body draws s, between the header and the banner.
+func (a *App) body(s screen) string {
+	var b strings.Builder
+	switch s {
 	case screenActiveApplications:
 		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.activeApplicationProgress, time.Now(), a.width, a.screenRows()))
 	case screenApplicationDetail:
@@ -1685,11 +1708,6 @@ func (a *App) View() string {
 		b.WriteString(a.applicationExport.View())
 	case screenApplicationSubmit:
 		b.WriteString(a.applicationSubmit.View())
-	case screenApplicationDelete:
-		b.WriteString(a.applicationDelete.View())
-	case screenCompanyDelete:
-		list := a.companyList.View(a.companies, a.companyOpenPostings, a.width, a.screenRows())
-		b.WriteString(overlay(list, a.companyDelete.View(a.width), a.width))
 	case screenApplicationNotesEdit:
 		b.WriteString(a.applicationNotes.View())
 	case screenApplicationForm:
@@ -1701,8 +1719,6 @@ func (a *App) View() string {
 	case screenFilterSelect:
 		b.WriteString(a.filterSelect.View(a.screenRows()))
 	}
-
-	b.WriteString(a.banner())
 	return b.String()
 }
 

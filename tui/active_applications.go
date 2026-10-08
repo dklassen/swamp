@@ -108,6 +108,10 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 		if m.cursor < len(apps) {
 			return nil, enterApplicationExportMsg{application: apps[m.cursor]}
 		}
+	case msg.String() == "d":
+		if m.cursor < len(apps) {
+			return nil, enterApplicationDeleteMsg{application: apps[m.cursor]}
+		}
 	case msg.Type == tea.KeyEnter:
 		if m.cursor < len(apps) {
 			return nil, enterApplicationDetailMsg{application: apps[m.cursor]}
@@ -180,7 +184,7 @@ func (m *activeApplicationListModel) visible(apps []store.ApplicationView) []sto
 // (see nextStep), and now is what each row's Age counts up to.
 func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress map[int64]map[documents.Type]documentProgress, now time.Time, width, height int) string {
 	var b strings.Builder
-	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: search  s: status  e: export PDFs  tab: companies  q: quit")
+	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: search  s: status  e: export PDFs  d: delete  tab: companies  q: quit")
 	if m.searching {
 		help = helpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: application detail  esc: clear")
 	}

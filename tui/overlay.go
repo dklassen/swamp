@@ -27,3 +27,17 @@ func overlay(bg, box string, width int) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+var confirmBoxStyle = lipgloss.NewStyle().
+	Border(lipgloss.RoundedBorder()).
+	BorderForeground(lipgloss.Color("214")).
+	Padding(0, 1)
+
+// confirmBox frames a destructive action's confirmation, at most width wide.
+func confirmBox(content string, width int) string {
+	style := confirmBoxStyle
+	if w := style.GetHorizontalFrameSize(); width > w && lipgloss.Width(content)+w > width {
+		style = style.Width(width - w)
+	}
+	return style.Render(content)
+}

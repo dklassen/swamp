@@ -5,7 +5,6 @@ import (
 	"strings"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dklassen/swamp/store"
 )
@@ -51,11 +50,6 @@ func (m *companyDeleteModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	return nil, nil
 }
 
-var confirmBoxStyle = lipgloss.NewStyle().
-	Border(lipgloss.RoundedBorder()).
-	BorderForeground(lipgloss.Color("214")).
-	Padding(0, 1)
-
 // View is a box for App to draw over the company list, at most width wide.
 func (m *companyDeleteModel) View(width int) string {
 	var b strings.Builder
@@ -66,9 +60,5 @@ func (m *companyDeleteModel) View(width int) string {
 	} else {
 		b.WriteString(fieldLabel.Render("y") + ": delete  " + fieldLabel.Render("n/esc/enter") + ": keep it")
 	}
-	style := confirmBoxStyle
-	if w := style.GetHorizontalFrameSize(); width > w && lipgloss.Width(b.String())+w > width {
-		style = style.Width(width - w)
-	}
-	return style.Render(b.String())
+	return confirmBox(b.String(), width)
 }
