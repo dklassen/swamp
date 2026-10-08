@@ -10,6 +10,8 @@
 /PROFILE_REFERENCE.md
 
 *.bak
+*.bak-wal
+*.bak-shm
 
 # Claude Code's per-user state: local settings (permission allowlists,
 # which can embed paths, hosts and tokens), scratch files and worktrees.
