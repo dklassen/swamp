@@ -18,8 +18,8 @@ type LoggedTable struct {
 var Logged = map[string]LoggedTable{
 	"applications": {
 		Key:     "id",
-		Columns: []string{"status", "notes", "deleted_at"},
-		Ignored: []string{"posting_id", "created_at", "updated_at"},
+		Columns: []string{"posting_id", "status", "notes", "deleted_at"},
+		Ignored: []string{"created_at", "updated_at"},
 		Ops:     allOps,
 	},
 	"companies": {
