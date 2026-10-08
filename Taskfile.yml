@@ -71,6 +71,37 @@ tasks:
         fi
         echo "backed up {{.DB_PATH}} to $backup"
 
+  db:restore:
+    desc: "Restore the sqlite db from a backup: task db:restore -- <file>.bak (backs up the current db first)"
+    preconditions:
+      - sh: test -n "{{.CLI_ARGS}}"
+        msg: "name the backup to restore: task db:restore -- <file>.bak"
+      - sh: test -f "{{.CLI_ARGS}}"
+        msg: "no backup at {{.CLI_ARGS}}"
+      - sh: command -v sqlite3
+        msg: "sqlite3 not found; it ships with macOS, or install it"
+      # A running swamp could write mid-restore, and would show stale data after.
+      - sh: "! pgrep -x swamp"
+        msg: "swamp is running (the TUI, mcp-serve or a fetch); stop it first"
+    cmds:
+      - |
+        result=$(sqlite3 "{{.CLI_ARGS}}" "PRAGMA integrity_check;")
+        if [ "$result" != "ok" ]; then
+          echo "not restoring: {{.CLI_ARGS}} failed its integrity check: $result"
+          exit 1
+        fi
+      # So a restore from the wrong backup can itself be undone.
+      - if [ -f "{{.DB_PATH}}" ]; then "{{.TASK_EXE}}" db:backup; fi
+      # .restore, not cp: a copy would leave the old db's WAL to be replayed onto it.
+      - |
+        sqlite3 "{{.DB_PATH}}" ".restore '{{.CLI_ARGS}}'"
+        result=$(sqlite3 "{{.DB_PATH}}" "PRAGMA integrity_check;")
+        if [ "$result" != "ok" ]; then
+          echo "restored {{.DB_PATH}} fails its integrity check: $result"
+          exit 1
+        fi
+        echo "restored {{.DB_PATH}} from {{.CLI_ARGS}}"
+
   test:
     desc: Run the Go test suite
     cmds:
