@@ -4,7 +4,6 @@ vars:
   MIGRATIONS_DIR: db/migrations
   DB_PATH: "${SWAMP_DB_PATH:-./swamp.db}"
   CONTAINER_HOST_NAME: host.container.internal
-  # The address host.container.internal resolves to inside the container.
   CONTAINER_HOST_IP: 203.0.113.113
 
 tasks:
@@ -133,12 +132,11 @@ tasks:
       - ./bin/swamp mcp-serve
 
   container:dns:
-    desc: "Recreate the host.container.internal DNS entry (run on the host when a container can't reach mcp-serve but it works locally)"
+    desc: "Recreate the host.container.internal DNS entry"
     preconditions:
       - sh: command -v container
         msg: "container CLI not found; run this on the Mac host, not in the container"
     cmds:
-      # The entry can stop forwarding while still listed by `dns ls`, so recreate rather than check.
       - |
         if container system dns ls | grep -qw "{{.CONTAINER_HOST_NAME}}"; then
           sudo container system dns delete "{{.CONTAINER_HOST_NAME}}"
