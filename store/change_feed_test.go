@@ -266,3 +266,42 @@ func TestChangeFeed_ASyncThatChangesNothingLogsNothing(t *testing.T) {
 		t.Errorf("a sync that changed nothing logged %d events: %+v", len(events), events)
 	}
 }
+
+// TestChangeEventsAfter_ReadsFromAnyPoint: each TUI view keeps its own
+// place in the log, so reading can't be tied to one feed's cursor.
+func TestChangeEventsAfter_ReadsFromAnyPoint(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	s := newTestStore(t)
+	start, err := s.LatestChangeEventID(ctx)
+	if err != nil {
+		t.Fatalf("LatestChangeEventID: %v", err)
+	}
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	if _, err := s.UpdateCompanyName(ctx, acme.ID, "Acme Corp"); err != nil {
+		t.Fatalf("UpdateCompanyName: %v", err)
+	}
+
+	all, err := s.ChangeEventsAfter(ctx, start)
+	if err != nil {
+		t.Fatalf("ChangeEventsAfter(start): %v", err)
+	}
+	if len(all) != 2 || all[0].Op != "insert" || all[1].Op != "update" {
+		t.Fatalf("ChangeEventsAfter(start) = %+v, want the company's insert then its update", all)
+	}
+	later, err := s.ChangeEventsAfter(ctx, all[0].ID)
+	if err != nil {
+		t.Fatalf("ChangeEventsAfter(insert): %v", err)
+	}
+	if len(later) != 1 || later[0].ID != all[1].ID {
+		t.Errorf("ChangeEventsAfter(insert) = %+v, want only the update", later)
+	}
+	latest, err := s.LatestChangeEventID(ctx)
+	if err != nil {
+		t.Fatalf("LatestChangeEventID: %v", err)
+	}
+	if latest != all[1].ID {
+		t.Errorf("LatestChangeEventID = %d, want the update's %d", latest, all[1].ID)
+	}
+}
