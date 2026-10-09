@@ -18,55 +18,102 @@ const changePollInterval = 500 * time.Millisecond
 
 type changeTickMsg struct{}
 
+// changesMsg is the events after from, read for view. tick is whether a
+// tick asked, and so whether to schedule the next.
 type changesMsg struct {
+	view   screen
+	from   int64
 	events []store.ChangeEvent
+	tick   bool
 	err    error
 }
 
-// WithChangeFeed makes the App show changes other processes make, read
-// from feed. origin is this process's own, whose events it skips.
-func (a *App) WithChangeFeed(feed *store.ChangeFeed, origin string) *App {
-	a.changeFeed = feed
+// WithChangeLog makes the App show changes other processes make, read
+// from the change log after since. origin is this process's own, whose
+// events it skips.
+func (a *App) WithChangeLog(since int64, origin string) *App {
+	a.changeLog = true
 	a.origin = origin
+	a.since = since
+	a.latestSeen = since
 	return a
 }
 
-// pollChanges schedules the next read of the change log; nil without a
-// feed (as in tests, which send changesMsg themselves).
+// pollChanges schedules the next tick; nil without a change log.
 func (a *App) pollChanges() tea.Cmd {
-	if a.changeFeed == nil {
+	if !a.changeLog {
 		return nil
 	}
 	return tea.Tick(changePollInterval, func(time.Time) tea.Msg { return changeTickMsg{} })
 }
 
-func readChanges(feed *store.ChangeFeed) tea.Cmd {
+// cursor is view's place in the change log: the newest event it has
+// accounted for.
+func (a *App) cursor(view screen) int64 {
+	if c, ok := a.seen[view]; ok {
+		return c
+	}
+	return a.since
+}
+
+func readChanges(s *store.Store, view screen, from int64, tick bool) tea.Cmd {
 	return func() tea.Msg {
-		events, err := feed.Next(context.Background())
-		return changesMsg{events: events, err: err}
+		events, err := s.ChangeEventsAfter(context.Background(), from)
+		return changesMsg{view: view, from: from, events: events, tick: tick, err: err}
 	}
 }
 
-// handleChanges reloads what other processes' events touch. It always
-// schedules the next read.
+// handleTick reads for the view on screen. A form has none: the view
+// under it catches up when it's back.
+func (a *App) handleTick() tea.Cmd {
+	if !reloads(a.screen) {
+		return a.pollChanges()
+	}
+	return readChanges(a.store, a.screen, a.cursor(a.screen), true)
+}
+
+// activate catches the view now on screen up on what changed while
+// another screen was up.
+func (a *App) activate() tea.Cmd {
+	if !a.changeLog || !reloads(a.screen) {
+		return nil
+	}
+	if a.screen == screenApplicationDetail {
+		// Its documents are files, which can change with no event.
+		a.seen[a.screen] = a.latestSeen
+		id := a.applicationDetail.application.ID
+		return tea.Batch(reloadApplicationDetail(a.store, id), loadDocumentReviews(a.store, a.documents, id))
+	}
+	return readChanges(a.store, a.screen, a.cursor(a.screen), false)
+}
+
+// handleChanges reloads the view on screen if other processes' events
+// touch it, and moves its place in the log past them.
 func (a *App) handleChanges(msg changesMsg) tea.Cmd {
+	var next tea.Cmd
+	if msg.tick {
+		next = a.pollChanges()
+	}
 	if msg.err != nil {
 		a.err = msg.err
-		return a.pollChanges()
+		return next
 	}
+	upTo := msg.from
+	if n := len(msg.events); n > 0 {
+		upTo = msg.events[n-1].ID
+	}
+	a.latestSeen = max(a.latestSeen, upTo)
+	// A read for another view, or one starting past this view's place,
+	// could lack events it hasn't seen: it keeps its place and reads again.
+	if msg.view != a.screen || msg.from > a.cursor(a.screen) {
+		return next
+	}
+	a.seen[a.screen] = max(a.cursor(a.screen), upTo)
 	others := slices.DeleteFunc(slices.Clone(msg.events), func(e store.ChangeEvent) bool { return e.Origin == a.origin })
-	// A form in progress is never rebuilt: hold the events until the
-	// screen is one that reloads, on a later tick.
-	a.heldChanges = append(a.heldChanges, others...)
-	if len(a.heldChanges) == 0 || !reloads(a.screen) {
-		return a.pollChanges()
-	}
-	events := a.heldChanges
-	a.heldChanges = nil
-	return tea.Batch(a.reloadFor(events), a.pollChanges())
+	return tea.Batch(a.reloadFor(others), next)
 }
 
-// reloads is whether reloadFor handles screen; on any other, events wait.
+// reloads is whether screen is a view that follows the change log.
 func reloads(s screen) bool {
 	switch s {
 	case screenActiveApplications, screenCompanyList, screenPostingList, screenPostingDetail, screenApplicationDetail:

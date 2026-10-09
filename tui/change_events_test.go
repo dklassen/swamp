@@ -21,7 +21,7 @@ func TestApp_AnotherProcessesChange_ReloadsTheHomeListQuietly(t *testing.T) {
 
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeFeed(nil, "tui:1")
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Staff Engineer")
 	application, err := s.CreateApplication(context.Background(), posting.ID)
 	if err != nil {
@@ -31,7 +31,7 @@ func TestApp_AnotherProcessesChange_ReloadsTheHomeListQuietly(t *testing.T) {
 		t.Fatal("the home list shows the application before any reload; the test can't tell a reload happened")
 	}
 
-	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "applications", RowID: application.ID, Op: "insert", Origin: "mcp:7"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "applications", RowID: application.ID, Op: "insert", Origin: "mcp:7"}}})
 
 	if view := app.View(); !strings.Contains(view, "Staff Engineer") {
 		t.Errorf("home list after the agent's change doesn't show it:\n%s", view)
@@ -48,14 +48,14 @@ func TestApp_ItsOwnChange_IsSkipped(t *testing.T) {
 
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeFeed(nil, "tui:1")
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Staff Engineer")
 	application, err := s.CreateApplication(context.Background(), posting.ID)
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
 
-	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "applications", RowID: application.ID, Op: "insert", Origin: "tui:1"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "applications", RowID: application.ID, Op: "insert", Origin: "tui:1"}}})
 
 	if view := app.View(); strings.Contains(view, "Staff Engineer") || strings.Contains(view, "Updated by") {
 		t.Errorf("the TUI's own change was treated as another process's:\n%s", view)
@@ -71,11 +71,11 @@ func TestApp_ATickReadsTheFeed(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Staff Engineer")
-	feed, err := s.NewChangeFeed(ctx)
+	since, err := s.LatestChangeEventID(ctx)
 	if err != nil {
-		t.Fatalf("NewChangeFeed: %v", err)
+		t.Fatalf("LatestChangeEventID: %v", err)
 	}
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeFeed(feed, "tui:1")
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(since, "tui:1")
 	if _, err := s.CreateApplication(ctx, posting.ID); err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
@@ -108,7 +108,7 @@ func TestApp_HomeListReload_KeepsTheCursorOnTheSameApplication(t *testing.T) {
 			t.Fatalf("CreateApplication: %v", err)
 		}
 	}
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeFeed(nil, "tui:1")
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
 	rows := app.activeApplications
 	if len(rows) != 3 {
 		t.Fatalf("home list has %d rows, want 3", len(rows))
@@ -120,7 +120,7 @@ func TestApp_HomeListReload_KeepsTheCursorOnTheSameApplication(t *testing.T) {
 	if err := s.DeleteApplication(ctx, rows[0].ID); err != nil {
 		t.Fatalf("DeleteApplication: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "applications", RowID: rows[0].ID, Op: "update", Origin: "tui:2"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "applications", RowID: rows[0].ID, Op: "update", Origin: "tui:2"}}})
 
 	if got := app.activeApplications[app.activeApplicationList.cursor].ID; got != onLast {
 		t.Errorf("cursor is on application %d after the reload, want %d (the one it was on)", got, onLast)
@@ -136,7 +136,7 @@ func TestApp_CompanyListReload_KeepsTheCursorOnTheSameCompany(t *testing.T) {
 	for _, name := range []string{"Acme", "Globex", "Initech"} {
 		mustCreateCompany(t, s, name, "ashby", strings.ToLower(name))
 	}
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeFeed(nil, "tui:1")
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 	if app.screen != screenCompanyList {
 		t.Fatalf("screen after c = %v, want the company list", app.screen)
@@ -149,7 +149,7 @@ func TestApp_CompanyListReload_KeepsTheCursorOnTheSameCompany(t *testing.T) {
 	if err := s.SoftDeleteCompany(context.Background(), companies[0].ID); err != nil {
 		t.Fatalf("SoftDeleteCompany: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "companies", RowID: companies[0].ID, Op: "update", Origin: "tui:2"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "companies", RowID: companies[0].ID, Op: "update", Origin: "tui:2"}}})
 
 	if len(app.companies) != 2 {
 		t.Fatalf("company list has %d companies after the reload, want 2", len(app.companies))
@@ -169,7 +169,7 @@ func TestApp_PostingListReload_KeepsTheCursorAndShowsTheChange(t *testing.T) {
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "First"}, {SourceID: "job-2", Title: "Second"}, {SourceID: "job-3", Title: "Third"}},
 	})
-	app := newTestApp(t, s, syncer).WithChangeFeed(nil, "tui:1")
+	app := newTestApp(t, s, syncer).WithChangeLog(0, "tui:1")
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 200, Height: 40})
 	app = openPostingList(t, app)
 	postings := app.postings
@@ -184,7 +184,7 @@ func TestApp_PostingListReload_KeepsTheCursorAndShowsTheChange(t *testing.T) {
 	if _, err := s.UpsertPosting(context.Background(), store.CreatePostingParams{CompanyID: renamed.CompanyID, Source: renamed.Source, SourceID: renamed.SourceID, IngestedFields: store.IngestedFields{Title: "Renamed by sync", RawPayload: renamed.RawPayload}}); err != nil {
 		t.Fatalf("UpsertPosting: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "postings", RowID: renamed.ID, Op: "update", Origin: "fetch:9"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "postings", RowID: renamed.ID, Op: "update", Origin: "fetch:9"}}})
 
 	if !strings.Contains(app.View(), "Renamed by sync") {
 		t.Errorf("posting list doesn't show the new title:\n%s", app.View())
@@ -202,7 +202,7 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 
 	ctx := context.Background()
 	app, application := deleteTestApp(t) // resume drafted as "# Draft\n"
-	app.WithChangeFeed(nil, "tui:1")
+	app.WithChangeLog(0, "tui:1")
 	if _, err := app.store.CreateDocumentReview(ctx, application.ID, documents.Resume, "# Draft\n", store.ReviewOutcomePassed, ""); err != nil {
 		t.Fatalf("CreateDocumentReview: %v", err)
 	}
@@ -215,7 +215,7 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 	if _, err := app.documents.Write(application.ID, documents.Resume, "# Revised by the agent\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "document_writes", RowID: 1, Op: "insert", New: `{"application_id":` + strconv.FormatInt(application.ID, 10) + `,"document_type":"resume","source":"write_document"}`, Origin: "mcp:7"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "document_writes", RowID: 1, Op: "insert", New: `{"application_id":` + strconv.FormatInt(application.ID, 10) + `,"document_type":"resume","source":"write_document"}`, Origin: "mcp:7"}}})
 
 	view := app.View()
 	if strings.Contains(view, "[PASSED]") {
@@ -230,13 +230,13 @@ func TestApp_ApplicationDeletedElsewhere_GoesBackAndSaysSo(t *testing.T) {
 	t.Parallel()
 
 	app, application := deleteTestApp(t)
-	app.WithChangeFeed(nil, "tui:1")
+	app.WithChangeLog(0, "tui:1")
 	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
 	if err := app.store.DeleteApplication(context.Background(), application.ID); err != nil {
 		t.Fatalf("DeleteApplication: %v", err)
 	}
 
-	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "applications", RowID: application.ID, Op: "update", Origin: "tui:2"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "applications", RowID: application.ID, Op: "update", Origin: "tui:2"}}})
 
 	if app.screen != screenActiveApplications {
 		t.Errorf("screen = %v, want the home list", app.screen)
@@ -257,7 +257,7 @@ func TestApp_PostingDetailReload_ShowsTheChangeAndKeepsTheScroll(t *testing.T) {
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", DescriptionText: long}},
 	})
-	app := newTestApp(t, s, syncer).WithChangeFeed(nil, "tui:1")
+	app := newTestApp(t, s, syncer).WithChangeLog(0, "tui:1")
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app = openPostingList(t, app)
 	app = openPostingDetail(t, app)
@@ -273,7 +273,7 @@ func TestApp_PostingDetailReload_ShowsTheChangeAndKeepsTheScroll(t *testing.T) {
 	if _, err := s.UpsertPosting(context.Background(), store.CreatePostingParams{CompanyID: p.CompanyID, Source: p.Source, SourceID: p.SourceID, IngestedFields: store.IngestedFields{Title: "Senior Engineer", DescriptionText: long, RawPayload: p.RawPayload}}); err != nil {
 		t.Fatalf("UpsertPosting: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "postings", RowID: p.ID, Op: "update", Origin: "fetch:9"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "postings", RowID: p.ID, Op: "update", Origin: "fetch:9"}}})
 
 	if got := app.postingDetail.posting.Title; got != "Senior Engineer" {
 		t.Errorf("posting detail title = %q, want the renamed %q", got, "Senior Engineer")
@@ -293,7 +293,7 @@ func TestApp_ApplicationStartedElsewhere_PostingDetailShowsIt(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{"acme": {{SourceID: "job-1", Title: "Engineer"}}})
-	app := newTestApp(t, s, syncer).WithChangeFeed(nil, "tui:1")
+	app := newTestApp(t, s, syncer).WithChangeLog(0, "tui:1")
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
 	app = openPostingList(t, app)
 	app = openPostingDetail(t, app)
@@ -312,7 +312,7 @@ func TestApp_ApplicationStartedElsewhere_PostingDetailShowsIt(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Next: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{events: events})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: events})
 
 	if view := app.View(); strings.Contains(view, "No application started") || !strings.Contains(view, applicationStatusLabel(store.ApplicationStatusStarted)) {
 		t.Errorf("posting detail doesn't show the application started elsewhere:\n%s", view)
@@ -326,7 +326,7 @@ func TestApp_ChangesWhileAFormIsOpen_WaitUntilItCloses(t *testing.T) {
 
 	ctx := context.Background()
 	app, application := deleteTestApp(t)
-	app.WithChangeFeed(nil, "tui:1")
+	app.WithChangeLog(0, "tui:1")
 	app = sendKeyAndApply(t, app, runeKey('s'))
 	if app.screen != screenApplicationStatusSelect {
 		t.Fatalf("screen after s = %v, want the status form", app.screen)
@@ -342,13 +342,16 @@ func TestApp_ChangesWhileAFormIsOpen_WaitUntilItCloses(t *testing.T) {
 		t.Fatalf("CreateApplication: %v", err)
 	}
 
-	app = sendKeyAndApply(t, app, changesMsg{events: []store.ChangeEvent{{Table: "applications", RowID: 99, Op: "insert", Origin: "mcp:7"}}})
+	// A tick while the form is open reads nothing: forms don't follow the log.
+	app, next := sendKey(app, changeTickMsg{})
+	if _, isTick := next().(changeTickMsg); !isTick {
+		t.Fatal("a tick on the form did more than schedule the next tick")
+	}
 	if app.screen != screenApplicationStatusSelect || app.applicationStatus.cursor != form.cursor {
 		t.Fatalf("the status form changed under you: screen %v, cursor %d (was %d)", app.screen, app.applicationStatus.cursor, form.cursor)
 	}
 
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
-	app = sendKeyAndApply(t, app, changesMsg{}) // the next tick, with nothing new
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEsc})
 	if !strings.Contains(app.View(), "Started By The Agent") {
 		t.Errorf("the home list didn't catch up after the form closed:\n%s", app.View())
 	}
@@ -361,4 +364,92 @@ func mustPosting(t *testing.T, s *store.Store, id int64) store.Posting {
 		t.Fatalf("GetPosting: %v", err)
 	}
 	return p
+}
+
+// TestApp_EnteringApplicationDetail_ShowsAChangeMadeBeforeIt: the home
+// list's copy of an application can be out of date, e.g. after an event
+// that arrived on another screen and was cleared there.
+func TestApp_EnteringApplicationDetail_ShowsAChangeMadeBeforeIt(t *testing.T) {
+	t.Parallel()
+
+	app, application := deleteTestApp(t)
+	app.WithChangeLog(0, "tui:1")
+	if _, err := app.store.UpdateApplicationStatus(context.Background(), application.PostingID, store.ApplicationStatusInterviewing); err != nil {
+		t.Fatalf("UpdateApplicationStatus: %v", err)
+	}
+
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if app.screen != screenApplicationDetail {
+		t.Fatalf("screen = %v, want application detail", app.screen)
+	}
+	if view := app.View(); !strings.Contains(view, "Interviewing") {
+		t.Errorf("application detail doesn't show the status changed before entering it:\n%s", view)
+	}
+}
+
+// TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere: an event
+// for another application arrives on application detail, which it doesn't
+// touch, and is cleared there; the home list must still show it.
+func TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	first := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
+	second := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-2", "Designer").ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
+	if strings.Contains(app.View(), "Interviewing") {
+		t.Fatal("the home list shows Interviewing before any change; the test can't tell a reload happened")
+	}
+
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	if app.screen != screenApplicationDetail {
+		t.Fatalf("screen = %v, want application detail", app.screen)
+	}
+	other := first
+	if app.applicationDetail.application.ID == first.ID {
+		other = second
+	}
+	if _, err := s.UpdateApplicationStatus(ctx, other.PostingID, store.ApplicationStatusInterviewing); err != nil {
+		t.Fatalf("UpdateApplicationStatus: %v", err)
+	}
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "applications", RowID: other.ID, Op: "update", Origin: "mcp:7"}}})
+
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEsc})
+
+	if app.screen != screenActiveApplications {
+		t.Fatalf("screen = %v, want the home list", app.screen)
+	}
+	if view := app.View(); !strings.Contains(view, "Interviewing") {
+		t.Errorf("the home list doesn't show the change made while on application detail:\n%s", view)
+	}
+}
+
+// TestApp_TabBackToTheHomeList_ShowsAChangeClearedOnTheCompanyList: the
+// company list reloads only for companies and postings, so an application
+// event that arrives there is cleared without reaching the home list.
+func TestApp_TabBackToTheHomeList_ShowsAChangeClearedOnTheCompanyList(t *testing.T) {
+	t.Parallel()
+
+	app, application := deleteTestApp(t)
+	app.WithChangeLog(0, "tui:1")
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
+	if app.screen != screenCompanyList {
+		t.Fatalf("screen = %v, want the company list", app.screen)
+	}
+	if _, err := app.store.UpdateApplicationStatus(context.Background(), application.PostingID, store.ApplicationStatusInterviewing); err != nil {
+		t.Fatalf("UpdateApplicationStatus: %v", err)
+	}
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "applications", RowID: application.ID, Op: "update", Origin: "mcp:7"}}})
+
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
+
+	if app.screen != screenActiveApplications {
+		t.Fatalf("screen = %v, want the home list", app.screen)
+	}
+	if view := app.View(); !strings.Contains(view, "Interviewing") {
+		t.Errorf("the home list doesn't show the change made while on the company list:\n%s", view)
+	}
 }

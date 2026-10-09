@@ -122,11 +122,12 @@ func main() {
 	defer func() { _ = closeLog() }()
 
 	syncer := newSyncer(s)
-	feed, err := s.NewChangeFeed(context.Background())
+	// Read before the TUI's first loads, which already show anything older.
+	since, err := s.LatestChangeEventID(context.Background())
 	if err != nil {
 		log.Fatalf("read the change log: %v", err)
 	}
-	app := tui.New(s, syncer, documentsStore).WithChangeFeed(feed, cfg.Origin)
+	app := tui.New(s, syncer, documentsStore).WithChangeLog(since, cfg.Origin)
 	program := tea.NewProgram(app, tea.WithAltScreen())
 	stopMCP := func(context.Context) error { return nil }
 	if withMCP {

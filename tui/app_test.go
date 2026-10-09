@@ -97,7 +97,7 @@ func openPostingList(t *testing.T, app *App) *App {
 	if cmd == nil {
 		t.Fatal("Update on enter returned nil Cmd")
 	}
-	app, _ = sendKey(app, cmd())
+	app = applyCmd(t, app, cmd)
 	return app
 }
 
