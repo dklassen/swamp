@@ -92,24 +92,21 @@ func startMCP(dbPath string, d *documents.Store, ln net.Listener, logger *slog.L
 	}, nil
 }
 
-// mcpForTUI starts the MCP server on addr for the TUI about to run, and
-// returns the status line to start the TUI with. If addr can't be bound,
-// e.g. a standalone mcp-serve holds it, the TUI runs without the server
-// and stop does nothing.
-func mcpForTUI(addr, dbPath string, d *documents.Store, logger *slog.Logger, release func()) (status string, stop func(context.Context) error) {
-	noop := func(context.Context) error { return nil }
+// mcpForTUI starts the MCP server on addr for the TUI about to run. It
+// fails if addr can't be bound, e.g. a standalone mcp-serve holds it:
+// with --mcp asked for, a TUI without the server would leave the agent's
+// tools failing unnoticed.
+func mcpForTUI(addr, dbPath string, d *documents.Store, logger *slog.Logger, release func()) (stop func(context.Context) error, err error) {
 	ln, err := net.Listen("tcp", addr)
-	if err == nil {
-		stop, err = startMCP(dbPath, d, ln, logger, release)
-		if err != nil {
-			_ = ln.Close()
-		}
-	}
 	if err != nil {
-		logger.Error("not started", "addr", addr, "err", err)
-		return fmt.Sprintf("MCP server not started on %s: %v", addr, err), noop
+		return nil, fmt.Errorf("MCP server not started on %s: %w", addr, err)
 	}
-	return "MCP server on " + addr, stop
+	stop, err = startMCP(dbPath, d, ln, logger, release)
+	if err != nil {
+		_ = ln.Close()
+		return nil, fmt.Errorf("MCP server not started on %s: %w", addr, err)
+	}
+	return stop, nil
 }
 
 // mcpAddr is where the MCP server listens: SWAMP_MCP_ADDR, by default

@@ -132,9 +132,12 @@ func main() {
 	if withMCP {
 		// About to crash anyway: a failed release has nowhere better to go.
 		release := func() { _ = program.ReleaseTerminal() }
-		var status string
-		status, stopMCP = mcpForTUI(mcpAddr(), dbPath, documentsStore, logger.With("component", "mcp"), release)
-		app.WithStatus(status)
+		addr := mcpAddr()
+		stopMCP, err = mcpForTUI(addr, dbPath, documentsStore, logger.With("component", "mcp"), release)
+		if err != nil {
+			log.Fatalf("swamp %s: %v", mcpFlag, err)
+		}
+		app.WithStatus("MCP server on " + addr)
 	}
 
 	// While the TUI owns the terminal, anything written with log would

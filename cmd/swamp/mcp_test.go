@@ -99,10 +99,10 @@ func TestStartMCP_TheAgentsWritesReachTheTUIAsAnotherProcesses(t *testing.T) {
 	}
 }
 
-// TestMCPForTUI_PortInUse_TUIRunsWithoutIt: a standalone mcp-serve, or a
-// second TUI with the flag, may already hold the address; the TUI says so
-// and runs on.
-func TestMCPForTUI_PortInUse_TUIRunsWithoutIt(t *testing.T) {
+// TestMCPForTUI_PortInUse_Fails: a standalone mcp-serve, or a second TUI
+// with the flag, may already hold the address. Asked for --mcp, a TUI
+// without the server would leave the agent's tools failing unnoticed.
+func TestMCPForTUI_PortInUse_Fails(t *testing.T) {
 	t.Parallel()
 
 	taken, err := net.Listen("tcp", "127.0.0.1:0")
@@ -112,13 +112,10 @@ func TestMCPForTUI_PortInUse_TUIRunsWithoutIt(t *testing.T) {
 	t.Cleanup(func() { _ = taken.Close() })
 	addr := taken.Addr().String()
 
-	status, stop := mcpForTUI(addr, migratedDBPath(t), documents.NewStore(t.TempDir()), slog.New(slog.NewTextHandler(io.Discard, nil)), func() {})
+	_, err = mcpForTUI(addr, migratedDBPath(t), documents.NewStore(t.TempDir()), slog.New(slog.NewTextHandler(io.Discard, nil)), func() {})
 
-	if !strings.Contains(status, "MCP server not started") || !strings.Contains(status, addr) {
-		t.Errorf("status = %q, want it to say the MCP server didn't start on %s", status, addr)
-	}
-	if err := stop(context.Background()); err != nil {
-		t.Errorf("stop with no server = %v, want nil", err)
+	if err == nil || !strings.Contains(err.Error(), addr) {
+		t.Errorf("mcpForTUI on a taken address = %v, want an error naming %s", err, addr)
 	}
 }
 
