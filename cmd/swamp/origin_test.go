@@ -10,6 +10,7 @@ func TestProcessKind(t *testing.T) {
 		want string
 	}{
 		{args: []string{"swamp"}, want: "tui"},
+		{args: []string{"swamp", "--mcp"}, want: "tui"},
 		{args: []string{"swamp", "mcp-serve"}, want: "mcp"},
 		{args: []string{"swamp", "fetch"}, want: "fetch"},
 		{args: []string{"swamp", "stage", "list"}, want: "stage"},

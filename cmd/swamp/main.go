@@ -17,14 +17,15 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/db/migrations"
@@ -32,7 +33,6 @@ import (
 	"github.com/dklassen/swamp/export"
 	"github.com/dklassen/swamp/greenhouse"
 	"github.com/dklassen/swamp/lever"
-	"github.com/dklassen/swamp/mcpserver"
 	"github.com/dklassen/swamp/seed"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
@@ -80,7 +80,8 @@ func main() {
 	s := store.New(sqlDB)
 	documentsStore := documents.NewStore(documentsPath)
 
-	if len(os.Args) > 1 {
+	withMCP := len(os.Args) > 1 && os.Args[1] == mcpFlag
+	if len(os.Args) > 1 && !withMCP {
 		switch os.Args[1] {
 		case "fetch":
 			if runFetch(s) > 0 {
@@ -105,18 +106,45 @@ func main() {
 			runMCPServe(s, documentsStore)
 			return
 		default:
-			fmt.Fprintf(os.Stderr, "usage: %s [migrate|fetch|stage|export|import|mcp-serve]\n", os.Args[0])
+			fmt.Fprintf(os.Stderr, "usage: %s [--mcp|migrate|fetch|stage|export|import|mcp-serve]\n", os.Args[0])
 			os.Exit(1)
 		}
 	}
+
+	logPath := os.Getenv("SWAMP_LOG_PATH")
+	if logPath == "" {
+		logPath = filepath.Join(filepath.Dir(dbPath), "swamp.log")
+	}
+	logger, closeLog, err := openLog(logPath)
+	if err != nil {
+		log.Fatalf("open log: %v", err)
+	}
+	defer func() { _ = closeLog() }()
 
 	syncer := newSyncer(s)
 	feed, err := s.NewChangeFeed(context.Background())
 	if err != nil {
 		log.Fatalf("read the change log: %v", err)
 	}
-	app := tui.New(s, syncer, documentsStore).WithChangeFeed(feed, cfg.Origin)
+	status, stopMCP := "", func(context.Context) error { return nil }
+	if withMCP {
+		status, stopMCP = mcpForTUI(mcpAddr(), dbPath, documentsStore, logger.With("component", "mcp"))
+	}
+	app := tui.New(s, syncer, documentsStore).WithChangeFeed(feed, cfg.Origin).WithStatus(status)
+
+	// While the TUI owns the terminal, anything written with log would
+	// garble it: send it to the log file instead.
+	log.SetFlags(0)
+	log.SetOutput(slog.NewLogLogger(logger.With("component", "tui").Handler(), slog.LevelInfo).Writer())
 	_, runErr := tea.NewProgram(app, tea.WithAltScreen()).Run()
+	log.SetFlags(log.LstdFlags)
+	log.SetOutput(os.Stderr)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	if err := stopMCP(ctx); err != nil {
+		log.Printf("stop the MCP server: %v", err)
+	}
+	cancel()
 	// Quitting abandons a refresh or sync-all still in flight, whose own
 	// lease release would then never run: free its lease before the
 	// database closes, or the next sync of that company is refused until
@@ -299,17 +327,8 @@ func runStage(s *store.Store, d *documents.Store, args []string) {
 // reached by a known local container over a known DNS name, not the
 // untrusted-browser threat this protection exists for.
 func runMCPServe(s *store.Store, d *documents.Store) {
-	addr := os.Getenv("SWAMP_MCP_ADDR")
-	if addr == "" {
-		addr = "127.0.0.1:8787"
-	}
-
-	st := newStage(s, d)
-	server := mcpserver.New(st, d, newSyncer(s))
-
-	handler := mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
-		return server
-	}, &mcp.StreamableHTTPOptions{DisableLocalhostProtection: true})
+	addr := mcpAddr()
+	handler := mcpHandler(s, d, newSyncer(s))
 
 	log.Printf("swamp mcp-serve: listening on %s", addr)
 	if err := http.ListenAndServe(addr, handler); err != nil {
@@ -425,9 +444,12 @@ func printJSON(v any) {
 	}
 }
 
+// mcpFlag runs the MCP server inside the TUI process.
+const mcpFlag = "--mcp"
+
 // processKind is the first half of this process's change-log origin.
 func processKind(args []string) string {
-	if len(args) < 2 {
+	if len(args) < 2 || args[1] == mcpFlag {
 		return "tui"
 	}
 	if args[1] == "mcp-serve" {

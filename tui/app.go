@@ -211,6 +211,12 @@ func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 	}
 }
 
+// WithStatus starts the App with status on the status line.
+func (a *App) WithStatus(status string) *App {
+	a.status = status
+	return a
+}
+
 // documentStatusLine renders a single "<label>: found (<path>)" or
 // "<label>: not found (<path>)" line for the documents section, followed
 // by that document's latest review outcome (see reviewBadge) and, when

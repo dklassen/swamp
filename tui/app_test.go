@@ -3803,3 +3803,18 @@ func refreshResult(t *testing.T, cmd tea.Cmd) tea.Msg {
 	t.Fatal("r's command has no refresh in it")
 	return nil
 }
+
+// TestApp_WithStatus_ShowsOnTheStatusLineAtStart: how the process started
+// (e.g. the in-process MCP server, or why it couldn't) is the first thing
+// on the status line.
+func TestApp_WithStatus_ShowsOnTheStatusLineAtStart(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithStatus("MCP server on 127.0.0.1:8787")
+
+	lines := strings.Split(ansi.Strip(app.View()), "\n")
+	if last := lines[len(lines)-1]; last != "MCP server on 127.0.0.1:8787" {
+		t.Errorf("last line = %q, want the start-up status", last)
+	}
+}
