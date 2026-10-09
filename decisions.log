@@ -7964,20 +7964,3 @@ above the pre-migration maximum could still pick up a folder.
   already put the cursor at the top, so nothing changes there.
 - The empty list's hint now says to press r here, not on the company
   list.
-
-## 2026-10-09 -- task container:dns recreates host.container.internal
-
-- The container lost its route to mcp-serve (ENETUNREACH, then MCP probe
-  timeouts) while mcp-serve answered fine on the host's loopback. Inside
-  the container the name still resolved (to 203.0.113.113), but no port
-  on that address connected, while the vmnet gateway did. `container
-  system dns ls` still listed the entry. Deleting it and creating it
-  again with --localhost fixed it.
-- So the task recreates the entry every time instead of checking whether
-  it exists first: a listed entry is no evidence that it forwards.
-- The address is a Taskfile var, set to what the name resolves to in the
-  container, so the forwarding matches the address the container already
-  uses.
-- Not considered: binding mcp-serve to the vmnet address (192.168.64.1)
-  instead. It skips the forwarding but puts an unauthenticated endpoint
-  on a non-loopback interface; see runMCPServe.
