@@ -10,7 +10,7 @@
 -- 1:1 for now (posting_id is UNIQUE): the common case is one application
 -- per posting. Reapplying after a posting closes and reopens under the
 -- same source_id is possible but rare/unobserved so far -- deliberately
--- not building for it now (see decisions.log). A real surrogate id (not
+-- not building for it now. A real surrogate id (not
 -- posting_id reused as the PK, unlike posting_markup) because, unlike
 -- posting_markup, applications is itself a parent table now
 -- (interview_stages references it) -- reusing posting_id as the PK would

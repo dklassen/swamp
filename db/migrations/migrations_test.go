@@ -175,7 +175,7 @@ func TestPostingMarkupInterestedArchivedFlags_MigratesInterestedStatusToTimestam
 // TestDropApplicationStatusCheckConstraint_PreservesExistingApplicationRow
 // verifies the 00004 migration's rebuild of applications (dropping its
 // status CHECK constraint -- validation moved to Go, see
-// store.ParseApplicationStatus and decisions.log) doesn't lose or alter
+// store.ParseApplicationStatus) doesn't lose or alter
 // data already in the table.
 func TestDropApplicationStatusCheckConstraint_PreservesExistingApplicationRow(t *testing.T) {
 	sqlDB := migrateTo(t, 3)
@@ -247,7 +247,7 @@ func TestDropApplicationStatusCheckConstraint_ArbitraryStatusValueAccepted(t *te
 // NULL constraint nor a DEFAULT after 00004: omitting it from an INSERT
 // must leave it NULL, not silently populate 'application_started' -- the
 // DB no longer decides the initial value, the application does (see PR
-// #17 review, decisions.log).
+// #17 review).
 func TestApplicationStatusHasNoDBDefault(t *testing.T) {
 	sqlDB := migrateTo(t, 4)
 

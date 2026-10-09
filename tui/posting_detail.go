@@ -40,7 +40,7 @@ type postingDetailModel struct {
 	// latestReviews holds the most recent DocumentReview per document
 	// type (keyed by documents.CoverLetter/documents.Resume),
 	// loaded async via loadDocumentReviews the same way application
-	// itself is (see decisions.log #83) -- absent when not yet loaded,
+	// itself is (#83) -- absent when not yet loaded,
 	// or nil when this posting has no application.
 	latestReviews map[documents.Type]store.DocumentReview
 }
@@ -140,7 +140,7 @@ type enterDocumentReviewSelectMsg struct {
 // application, document status, and reviews from disk/the store without
 // leaving posting detail -- e.g. after an external agent (see
 // .agents/skills/apply-to-posting) revises a document on disk while the
-// user is still looking at this screen (see decisions.log).
+// user is still looking at this screen.
 type refreshPostingDetailMsg struct{}
 
 func (m *postingDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {

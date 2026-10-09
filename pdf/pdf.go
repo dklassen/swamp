@@ -4,7 +4,7 @@
 // paragraphs, bold/italic emphasis, bullet/ordered lists, thematic breaks,
 // and links -- not a general-purpose markdown renderer. Kept as its own
 // package rather than folded into documents/assets, which is deliberately
-// content-unaware (see documents.go's doc comment and decisions.log,
+// content-unaware (see documents.go's doc comment and
 // issue #45) -- this package is exactly the content-processing concern
 // that one was built to stay separate from.
 package pdf
@@ -31,7 +31,7 @@ const (
 	// through AddUTF8FontFromBytes. It replaced Go's own bundled gofont
 	// family, which had the same coverage and needed no vendored files
 	// but read as recognizably "the Go font" on a resume or cover letter
-	// (see decisions.log).
+	//.
 	fontFamily = "SourceSans3"
 )
 

@@ -48,7 +48,7 @@ func main() {
 
 	// Default base directory is "assets", not "documents" -- naming the
 	// storage path is the only thing this convention was renamed for
-	// (see decisions.log); the package/env var identifiers stay as
+	//; the package/env var identifiers stay as
 	// "documents".
 	documentsPath := os.Getenv("SWAMP_DOCUMENTS_PATH")
 	if documentsPath == "" {
@@ -133,7 +133,7 @@ func main() {
 // source, keyed by the store.Company.Source value each one handles. Each
 // client satisfies sync.PostingFetcher directly -- no adapter type is
 // needed, since ashby, greenhouse, and lever all return jobboard.Posting
-// directly rather than a client-local type (see decisions.log, #57).
+// directly rather than a client-local type (#57).
 func newSyncer(s *store.Store) *sync.Syncer {
 	return sync.New(s, map[string]sync.PostingFetcher{
 		"ashby":      ashby.NewClient(),
@@ -271,8 +271,7 @@ func runStage(s *store.Store, d *documents.Store, args []string) {
 // the Streamable HTTP transport rather than one-off CLI calls -- needed
 // when the caller (an MCP-capable Claude host) is running somewhere that
 // can't spawn or reach the swamp binary directly, e.g. inside a
-// container. See decisions.log for why MCP/Streamable-HTTP specifically,
-// rather than gRPC or a plain REST API, is the right fit here.
+// container.
 //
 // Binds to SWAMP_MCP_ADDR (default "127.0.0.1:8787"). 127.0.0.1 is
 // correct, not just safe, for Apple's `container` framework: its
@@ -285,7 +284,7 @@ func runStage(s *store.Store, d *documents.Store, args []string) {
 // any other host interface; binding wider than loopback would just
 // expose this on the LAN for no reachability benefit. No auth on this
 // endpoint for now -- single-user local dev machine, same trust level as
-// running swamp directly (see decisions.log); add a bearer-token check
+// running swamp directly; add a bearer-token check
 // before this is ever reachable beyond this Mac.
 //
 // DisableLocalhostProtection is set because the SDK's default DNS-rebinding
@@ -321,7 +320,7 @@ func runMCPServe(s *store.Store, d *documents.Store) {
 // into PDFs alongside them, one sibling <name>.pdf per document that
 // exists -- most job boards' file-upload fields don't accept raw
 // markdown, and raw markdown syntax in a submission reads unprofessionally
-// regardless (see decisions.log, issue #45). Only documents that already
+// regardless (issue #45). Only documents that already
 // exist on disk are converted; a document that hasn't been drafted yet is
 // reported and skipped, not treated as an error. Exporting doesn't
 // require a passed review -- a flagged or unreviewed draft can still be
@@ -344,7 +343,7 @@ func runExport(s *store.Store, d *documents.Store, args []string) {
 	// application with nothing drafted yet -- empty reviews, a Status
 	// with Exists false for both documents -- and prints the identical
 	// "no document on disk, skipped" lines while exiting 0 (see
-	// decisions.log, issue #102).
+	// issue #102).
 	if _, err := s.GetApplicationByID(ctx, applicationID); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			log.Fatalf("export: no application with id %d", applicationID)

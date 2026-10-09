@@ -142,9 +142,9 @@ func (s *Store) ListActiveCompanies(ctx context.Context) ([]Company, error) {
 }
 
 // UpdateCompanyName changes an active company's name only -- source and
-// source_ref are immutable after creation (see decisions.log: changing
+// source_ref are immutable after creation: changing
 // either really means "this is a different board," not "edit this
-// company").
+// company".
 func (s *Store) UpdateCompanyName(ctx context.Context, id int64, name string) (Company, error) {
 	row, err := s.queries.UpdateCompanyName(ctx, db.UpdateCompanyNameParams{ID: id, Name: name})
 	if err != nil {

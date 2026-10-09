@@ -17,7 +17,7 @@ import (
 // display-time filtering (loadPostings) shares this exact conversion
 // with ingestion-time gating (SyncCompany below) instead of maintaining
 // an independent copy that could silently drift out of agreement with
-// this one (see decisions.log, #61).
+// this one (#61).
 func FilterRules(filters []store.CompanyFilter) []filter.Filter {
 	rules := make([]filter.Filter, len(filters))
 	for i, f := range filters {
@@ -32,7 +32,7 @@ func toFilterPosting(p jobboard.Posting) filter.Posting {
 
 // toIngestedFields builds the fields store.Posting and
 // store.CreatePostingParams share from a fetched Posting -- the single
-// place that conversion happens (see decisions.log, #57 and #67).
+// place that conversion happens (#57 and #67).
 func toIngestedFields(p jobboard.Posting) store.IngestedFields {
 	return store.IngestedFields{
 		Title:           p.Title,
@@ -68,8 +68,7 @@ func toCreatePostingParams(companyID int64, source string, p jobboard.Posting) s
 // ingestion (see SyncCompany below), so postings that didn't match the
 // old filters were never stored at all -- narrowing what's already in
 // the DB isn't enough to make a filter change fully take effect, only
-// re-running ingestion under the new filters is (see decisions.log,
-// #56).
+// re-running ingestion under the new filters is (#56).
 func (s *Syncer) ApplyCompanyFilters(ctx context.Context, companyID int64, departments, locations []string) (Result, error) {
 	filters := make([]store.CompanyFilter, 0, len(departments)+len(locations))
 	for _, d := range departments {

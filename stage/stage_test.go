@@ -313,7 +313,7 @@ func TestList_IncludesLatestDocumentReviews(t *testing.T) {
 		t.Fatalf("EnsureDir: %v", err)
 	}
 	// The review's content must match what's on disk, or the new
-	// staleness check (see decisions.log) treats it as not describing
+	// staleness check treats it as not describing
 	// the current document and omits it from LatestReviews.
 	if err := os.WriteFile(mustDoc(t, paths, documents.CoverLetter).Path, []byte("draft"), 0o644); err != nil {
 		t.Fatalf("write cover letter: %v", err)
@@ -348,7 +348,7 @@ func TestList_IncludesLatestDocumentReviews(t *testing.T) {
 // key behavior change this feature exists for: previously, List treated
 // "both files exist on disk" as "done" regardless of review outcome, so
 // a flagged document silently dropped out of the agent's queue with no
-// way to know it needed another pass (see decisions.log). Now a flagged
+// way to know it needed another pass. Now a flagged
 // latest review keeps the posting in the list even though both files
 // are present.
 func TestList_KeepsPostingWithBothDocumentsWhenLatestReviewIsFlagged(t *testing.T) {
@@ -627,7 +627,7 @@ func TestPrepare_IncludesApplicationNotesAndLatestReviews(t *testing.T) {
 		t.Fatalf("UpdateApplicationNotes: %v", err)
 	}
 	// The review's content must match what's on disk, or the new
-	// staleness check (see decisions.log) treats it as not describing
+	// staleness check treats it as not describing
 	// the current document and omits it from LatestReviews.
 	if err := os.WriteFile(first.Documents[documents.Resume].Path, []byte("draft"), 0o644); err != nil {
 		t.Fatalf("write resume: %v", err)
@@ -766,8 +766,8 @@ func TestPrepare_CreatesDocumentDirectory(t *testing.T) {
 
 // jsonKeys marshals v and returns its top-level JSON object's keys,
 // sorted -- used to pin the field-name set stage.Candidate/Prepared
-// serialize to for the external agent hand-off (see decisions.log,
-// #59) without being fragile to dynamic values like timestamps, which
+// serialize to for the external agent hand-off (#59)
+// without being fragile to dynamic values like timestamps, which
 // a literal golden-string comparison would be.
 func jsonKeys(t *testing.T, v any) []string {
 	t.Helper()
@@ -792,7 +792,7 @@ func jsonKeys(t *testing.T, v any) []string {
 // .agents/skills/apply-to-posting/SKILL.md documents for `stage list`.
 // A Go-side field rename with no matching json tag update would fail
 // this test instead of silently breaking the agent hand-off (see
-// decisions.log, #59).
+// #59).
 func TestCandidate_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 	t.Parallel()
 

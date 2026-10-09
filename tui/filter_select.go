@@ -15,7 +15,7 @@ import (
 // dependency of its own -- saving is App's job (see saveFilterSelectionMsg
 // below), not this model's, since applying the new filters means both a
 // store write and a syncer resync (see sync.ApplyCompanyFilters,
-// decisions.log #56), neither of which this screen needs to know about
+// #56), neither of which this screen needs to know about
 // directly.
 type filterSelectModel struct {
 	companyID int64

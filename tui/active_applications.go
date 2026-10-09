@@ -17,7 +17,7 @@ import (
 )
 
 // activeApplicationListModel drives the active-applications screen -- the
-// app's home screen (see decisions.log, #43): every application not at a
+// app's home screen (#43): every application not at a
 // terminal dead-end status (rejected, offer_declined), across every
 // company, in one place. It holds only its own private cursor -- the
 // application list itself is domain data owned by App, passed in on
@@ -26,7 +26,7 @@ import (
 // level down, on applicationDetailModel -- entered via enter (see
 // enterApplicationDetailMsg below); this screen keeps only
 // status-setting as a quick shortcut for fast triage across many
-// applications (see decisions.log, the #86 follow-up).
+// applications (see the #86 follow-up).
 
 // Home screen column widths; Title takes what's left, which is 30 at
 // 100 columns, the width the home screen was first sized for.

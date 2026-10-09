@@ -12,9 +12,8 @@ import (
 
 // applicationStatuses is the full fixed set of legal application statuses,
 // per store.ApplicationStatuses -- store.ApplicationStatus (a Go enum) is
-// the sole source of truth for valid values now (see decisions.log,
-// 2026-08-19); the DB column has no CHECK constraint of its own to stay in
-// sync with. The schema encodes no transition graph -- every status is
+// the sole source of truth for valid values now; the DB column has no
+// CHECK constraint of its own to stay in sync with. The schema encodes no transition graph -- every status is
 // reachable from every other -- so the status-select screen offers all of
 // them unconditionally rather than a hand-maintained "valid next status"
 // list.

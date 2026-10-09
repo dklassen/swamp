@@ -118,7 +118,7 @@ func (s *Store) GetApplication(ctx context.Context, postingID int64) (Applicatio
 // GetApplicationByID looks an application up by its own ID, unlike
 // GetApplication and friends which all key off a postingID. Returns
 // ErrNotFound for an ID with no row, matching GetApplication (see
-// decisions.log, issue #102).
+// issue #102).
 func (s *Store) GetApplicationByID(ctx context.Context, id int64) (Application, error) {
 	row, err := s.queries.GetApplicationByID(ctx, id)
 	if err != nil {

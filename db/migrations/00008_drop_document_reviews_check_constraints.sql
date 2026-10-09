@@ -4,7 +4,7 @@
 -- document_reviews.document_type/outcome's CHECK (... IN (...)) constraints
 -- (introduced in 00007) duplicated the same fixed sets of valid values now
 -- maintained as Go enums (store.DocumentType/store.ReviewOutcome, see
--- store/document_review.go and decisions.log) -- two copies of the same
+-- store/document_review.go) -- two copies of the same
 -- lists that could silently drift out of sync, same problem
 -- applications.status already had (see 00004). Go is the sole source of
 -- truth now: store.ParseDocumentType/ParseReviewOutcome reject anything

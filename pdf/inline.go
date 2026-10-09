@@ -46,7 +46,7 @@ func (r *renderer) renderInline(n ast.Node, styleStr string, size float64) {
 	case *ast.Link:
 		// Link text is flattened to its concatenated Text children --
 		// nested emphasis inside link text isn't supported, since the
-		// documents this package renders (see decisions.log, issue #45)
+		// documents this package renders (issue #45)
 		// never format link text and WriteLinkString takes a single
 		// styled run, not a mixed-style one.
 		r.doc.SetFont(fontFamily, styleStr+"U", size)

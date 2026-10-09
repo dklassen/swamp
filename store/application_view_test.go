@@ -63,7 +63,7 @@ func TestListActiveApplications_ExcludesRejectedAndOfferDeclined(t *testing.T) {
 // statuses should be excluded" from TerminalApplicationStatuses() itself
 // rather than hardcoding rejected/offer_declined a second time, so it
 // stays correct (and would catch a real mismatch) even if the set of
-// terminal statuses changes later (see decisions.log, issue #60).
+// terminal statuses changes later (issue #60).
 func TestListActiveApplications_MatchesTerminalApplicationStatuses(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()

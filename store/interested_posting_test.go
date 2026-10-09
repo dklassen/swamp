@@ -82,7 +82,7 @@ func TestListInterestedPostings_ExcludesArchived(t *testing.T) {
 	// also clear interested_at): this guards ListInterestedPostings' WHERE
 	// clause itself, which must exclude archived rows regardless of
 	// interested_at, not just the specific way the TUI reaches "archived"
-	// today (see decisions.log, #58).
+	// today (#58).
 	if _, err := s.sqlDB.ExecContext(ctx, "UPDATE posting_markup SET archived_at = CURRENT_TIMESTAMP WHERE posting_id = ?", posting.ID); err != nil {
 		t.Fatalf("set archived_at: %v", err)
 	}
