@@ -16,6 +16,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/cellbuf"
@@ -82,7 +83,13 @@ type App struct {
 	status              string
 	err                 error
 	// syncAll is the sync-all run, if one is or was under way (#153).
-	syncAll         syncAllState
+	syncAll syncAllState
+	// refreshing counts single-company refreshes (r) in flight, the
+	// spinner turns while it's above zero, and refreshingName is the
+	// latest one's company.
+	refreshing      int
+	refreshingName  string
+	refreshSpinner  spinner.Model
 	selectedCompany store.Company
 	postings        []store.Posting
 	postingMarkup   map[int64]store.PostingMarkup
@@ -200,6 +207,7 @@ func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 		documents:             docs,
 		exportDir:             defaultExportDir,
 		openURL:               openInBrowser,
+		refreshSpinner:        spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(cursorStyle)),
 	}
 }
 
@@ -589,6 +597,15 @@ func refreshCompany(syncer *sync.Syncer, companyID int64) tea.Cmd {
 		result, err := syncer.SyncCompany(context.Background(), companyID)
 		return companyRefreshedMsg{result: result, err: err}
 	}
+}
+
+// startRefresh re-syncs company with the spinner turning until it reports.
+// The refresh goes first in the batch so a fast one has already finished
+// when the spinner's first tick arrives, which then stops it.
+func (a *App) startRefresh(company store.Company) tea.Cmd {
+	a.refreshing++
+	a.refreshingName = company.Name
+	return tea.Batch(refreshCompany(a.syncer, company.ID), a.refreshSpinner.Tick)
 }
 
 type postingMarkupUpdatedMsg struct {
@@ -1017,7 +1034,15 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case syncAllStepMsg:
 		return a, a.handleSyncAllStep(msg)
+	case spinner.TickMsg:
+		if a.refreshing == 0 {
+			return a, nil
+		}
+		var cmd tea.Cmd
+		a.refreshSpinner, cmd = a.refreshSpinner.Update(msg)
+		return a, cmd
 	case companyRefreshedMsg:
+		a.refreshing = max(a.refreshing-1, 0)
 		if errors.Is(msg.err, sync.ErrSyncInProgress) {
 			// Another sync of this company (e.g. a scheduled `swamp fetch`)
 			// is running; this one fetched and wrote nothing (#150).
@@ -1445,7 +1470,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.status = "Sync all in progress: refresh unavailable"
 				return a, nil
 			}
-			return a, refreshCompany(a.syncer, v.company.ID)
+			return a, a.startRefresh(v.company)
 		case syncAllKeyMsg:
 			return a, a.toggleSyncAll()
 		case selectCompanyMsg:
@@ -1483,7 +1508,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.status = "Sync all in progress: refresh unavailable"
 				return a, nil
 			}
-			return a, refreshCompany(a.syncer, a.selectedCompany.ID)
+			return a, a.startRefresh(a.selectedCompany)
 		case toggleHideArchivedMsg:
 			a.hideArchived = !a.hideArchived
 			return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
@@ -1637,6 +1662,12 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (a *App) banner() string {
 	if a.err != nil {
 		return "\n\n" + errStyle.Render(fmt.Sprintf("error: %v", a.err))
+	}
+	if a.syncAll.running {
+		return "\n\n" + a.syncAll.bar() + "  " + dimStyle.Render(a.status)
+	}
+	if a.refreshing > 0 {
+		return "\n\n" + a.refreshSpinner.View() + dimStyle.Render("Refreshing "+a.refreshingName+"…")
 	}
 	if a.status != "" {
 		return "\n\n" + dimStyle.Render(a.status)

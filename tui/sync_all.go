@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dklassen/swamp/store"
@@ -33,6 +34,19 @@ type syncAllState struct {
 	running bool
 	// stopping means don't issue the next company once this one reports.
 	stopping bool
+}
+
+// syncBar draws a run's progress. Drawn from next on every render rather
+// than animated: its frame ticks would have to ride along the one-Cmd-
+// per-company chain.
+var syncBar = progress.New(progress.WithDefaultGradient(), progress.WithoutPercentage(), progress.WithWidth(24))
+
+// bar is the share of companies already synced.
+func (r *syncAllState) bar() string {
+	if len(r.companies) == 0 {
+		return syncBar.ViewAs(0)
+	}
+	return syncBar.ViewAs(float64(r.next) / float64(len(r.companies)))
 }
 
 // syncAllStepMsg is one company's result within run runID.

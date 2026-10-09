@@ -6,7 +6,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -298,4 +300,66 @@ func TestApp_SyncAll_PostingListRefreshUnavailable(t *testing.T) {
 	if want := "Sync all in progress: refresh unavailable"; app.status != want {
 		t.Errorf("status = %q, want %q", app.status, want)
 	}
+}
+
+// barCells is how much of the sync-all bar on the view's last line is
+// filled, and its length in cells; 0, 0 when there's no bar.
+func barCells(view string) (filled, total int) {
+	lines := strings.Split(ansi.Strip(view), "\n")
+	last := lines[len(lines)-1]
+	filled = strings.Count(last, "█")
+	return filled, filled + strings.Count(last, "░")
+}
+
+// TestApp_SyncAll_ProgressBarFillsAsCompaniesFinish: the bar shows the share
+// of companies already synced, beside the company in flight.
+func TestApp_SyncAll_ProgressBarFillsAsCompaniesFinish(t *testing.T) {
+	app, _ := newSyncAllTestApp(t)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	app, cmd := sendKey(app, runeKey('R'))
+	for done := range 3 {
+		filled, total := barCells(app.View())
+		if total == 0 {
+			t.Fatalf("after %d of 3 companies, no progress bar on the last line:\n%s", done, app.View())
+		}
+		if want := total * done / 3; filled < want-1 || filled > want+1 {
+			t.Errorf("after %d of 3 companies, bar filled %d of %d cells, want about %d", done, filled, total, want)
+		}
+		app, cmd = step(t, app, cmd)
+	}
+	if _, total := barCells(app.View()); total != 0 {
+		t.Errorf("progress bar still showing after the run finished:\n%s", app.View())
+	}
+}
+
+// TestApp_Refresh_ShowsASpinnerUntilTheCompanyReports: one company's
+// fetch takes as long as its board does, with nothing to measure a bar by.
+func TestApp_Refresh_ShowsASpinnerUntilTheCompanyReports(t *testing.T) {
+	app, _ := newSyncAllTestApp(t)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	app, cmd := sendKey(app, runeKey('r'))
+
+	lines := strings.Split(ansi.Strip(app.View()), "\n")
+	last := lines[len(lines)-1]
+	if !strings.Contains(last, "Refreshing Acme…") || !strings.ContainsAny(last, spinnerGlyphs()) {
+		t.Errorf("last line while refreshing = %q, want a spinner and Refreshing Acme…", last)
+	}
+
+	app = applyCmd(t, app, cmd)
+
+	lines = strings.Split(ansi.Strip(app.View()), "\n")
+	last = lines[len(lines)-1]
+	if strings.Contains(last, "Refreshing") || strings.ContainsAny(last, spinnerGlyphs()) {
+		t.Errorf("last line after the refresh = %q, want the spinner gone", last)
+	}
+	if !strings.Contains(last, "Acme: fetched 1") {
+		t.Errorf("last line after the refresh = %q, want the refresh's summary", last)
+	}
+}
+
+// spinnerGlyphs is every frame of spinner.Dot without the space each ends in.
+func spinnerGlyphs() string {
+	return strings.ReplaceAll(strings.Join(spinner.Dot.Frames, ""), " ", "")
 }
