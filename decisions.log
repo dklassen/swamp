@@ -7990,3 +7990,26 @@ above the pre-migration maximum could still pick up a folder.
   anyway. Not taken: middleware that tracks running tool calls and
   waits for them, plus a test hook to make a board fetch block -- more
   machinery than a different error text on quit is worth.
+
+## 2026-10-09 -- A panic in the in-process MCP server releases the terminal first
+
+- #302 item 4. A panic in a goroutine Bubble Tea didn't start kills the
+  process without its cleanup: the trace lands on the alt screen of a
+  terminal left raw, and the shell needs `reset` typed blind.
+- The issue assumed the SDK's goroutines (one per request, in
+  jsonrpc2's handleAsync) were out of reach. They aren't: a receiving
+  middleware runs inside them, so releaseTerminalOnPanic covers every
+  tool call. The Serve goroutine startMCP starts gets the same
+  recover. Both call tea.Program.ReleaseTerminal, which is synchronous
+  (leaves the alt screen, shows the cursor, restores the tty), then
+  re-panic: the program still crashes with the original trace.
+- main now builds the Program before starting the server, so release
+  can name it; the status line is set on the App afterwards.
+- Still out of reach: panics in the SDK's own code outside a request,
+  and runtime fatal errors.
+- Not taken: Program.Kill (asynchronous, the re-panic could win the
+  race) or saving and restoring the tty state ourselves (duplicates
+  what ReleaseTerminal already does, alt screen and cursor included).
+- Tested by re-running the test binary as a child that must crash, with
+  the release printed before the trace. Checked by hand in a real
+  terminal: pending (steps in the PR).

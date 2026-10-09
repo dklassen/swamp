@@ -126,17 +126,22 @@ func main() {
 	if err != nil {
 		log.Fatalf("read the change log: %v", err)
 	}
-	status, stopMCP := "", func(context.Context) error { return nil }
+	app := tui.New(s, syncer, documentsStore).WithChangeFeed(feed, cfg.Origin)
+	program := tea.NewProgram(app, tea.WithAltScreen())
+	stopMCP := func(context.Context) error { return nil }
 	if withMCP {
-		status, stopMCP = mcpForTUI(mcpAddr(), dbPath, documentsStore, logger.With("component", "mcp"))
+		// About to crash anyway: a failed release has nowhere better to go.
+		release := func() { _ = program.ReleaseTerminal() }
+		var status string
+		status, stopMCP = mcpForTUI(mcpAddr(), dbPath, documentsStore, logger.With("component", "mcp"), release)
+		app.WithStatus(status)
 	}
-	app := tui.New(s, syncer, documentsStore).WithChangeFeed(feed, cfg.Origin).WithStatus(status)
 
 	// While the TUI owns the terminal, anything written with log would
 	// garble it: send it to the log file instead.
 	log.SetFlags(0)
 	log.SetOutput(slog.NewLogLogger(logger.With("component", "tui").Handler(), slog.LevelInfo).Writer())
-	_, runErr := tea.NewProgram(app, tea.WithAltScreen()).Run()
+	_, runErr := program.Run()
 	log.SetFlags(log.LstdFlags)
 	log.SetOutput(os.Stderr)
 

@@ -20,17 +20,39 @@ import (
 // mcpHandler serves Swamp's MCP tools over Streamable HTTP. See runMCPServe
 // for why localhost protection is off.
 func mcpHandler(s *store.Store, d *documents.Store, syncer *sync.Syncer) http.Handler {
-	server := mcpserver.New(newStage(s, d), d, syncer)
+	return streamableHandler(mcpserver.New(newStage(s, d), d, syncer))
+}
+
+// streamableHandler serves server over Streamable HTTP.
+func streamableHandler(server *mcp.Server) http.Handler {
 	return mcp.NewStreamableHTTPHandler(func(*http.Request) *mcp.Server {
 		return server
 	}, &mcp.StreamableHTTPOptions{DisableLocalhostProtection: true})
+}
+
+// releaseTerminalOnPanic hands the terminal back before a panic in a
+// request crashes the process: the SDK runs each request in a goroutine
+// of its own, where Bubble Tea can't restore the terminal, which would
+// leave it raw with the trace drawn over the alt screen. Still crashes.
+func releaseTerminalOnPanic(release func()) mcp.Middleware {
+	return func(next mcp.MethodHandler) mcp.MethodHandler {
+		return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+			defer func() {
+				if r := recover(); r != nil {
+					release()
+					panic(r)
+				}
+			}()
+			return next(ctx, method, req)
+		}
+	}
 }
 
 // startMCP serves the MCP tools on ln in this process (swamp --mcp)
 // until the returned stop is called. It opens its own database handle: the
 // TUI skips events with its own origin, so on a shared handle every change
 // the agent makes would be invisible to it.
-func startMCP(dbPath string, d *documents.Store, ln net.Listener, logger *slog.Logger) (stop func(context.Context) error, err error) {
+func startMCP(dbPath string, d *documents.Store, ln net.Listener, logger *slog.Logger, release func()) (stop func(context.Context) error, err error) {
 	cfg := store.DefaultConfig()
 	cfg.Origin = fmt.Sprintf("mcp:%d", os.Getpid())
 	sqlDB, err := store.Open(dbPath, cfg)
@@ -42,12 +64,20 @@ func startMCP(dbPath string, d *documents.Store, ln net.Listener, logger *slog.L
 	// Cancelled on stop: an agent's open stream never goes idle, so
 	// Shutdown would otherwise wait out its whole deadline.
 	base, cancelRequests := context.WithCancel(context.Background())
+	server := mcpserver.New(newStage(s, d), d, syncer)
+	server.AddReceivingMiddleware(releaseTerminalOnPanic(release))
 	srv := &http.Server{
-		Handler:     mcpHandler(s, d, syncer),
+		Handler:     streamableHandler(server),
 		ErrorLog:    slog.NewLogLogger(logger.Handler(), slog.LevelError),
 		BaseContext: func(net.Listener) context.Context { return base },
 	}
 	go func() {
+		defer func() {
+			if r := recover(); r != nil {
+				release()
+				panic(r)
+			}
+		}()
 		if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
 			logger.Error("serve", "err", err)
 		}
@@ -66,11 +96,11 @@ func startMCP(dbPath string, d *documents.Store, ln net.Listener, logger *slog.L
 // returns the status line to start the TUI with. If addr can't be bound,
 // e.g. a standalone mcp-serve holds it, the TUI runs without the server
 // and stop does nothing.
-func mcpForTUI(addr, dbPath string, d *documents.Store, logger *slog.Logger) (status string, stop func(context.Context) error) {
+func mcpForTUI(addr, dbPath string, d *documents.Store, logger *slog.Logger, release func()) (status string, stop func(context.Context) error) {
 	noop := func(context.Context) error { return nil }
 	ln, err := net.Listen("tcp", addr)
 	if err == nil {
-		stop, err = startMCP(dbPath, d, ln, logger)
+		stop, err = startMCP(dbPath, d, ln, logger, release)
 		if err != nil {
 			_ = ln.Close()
 		}
