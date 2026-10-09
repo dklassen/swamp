@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -115,5 +116,37 @@ func TestMCPForTUI_PortInUse_TUIRunsWithoutIt(t *testing.T) {
 	}
 	if err := stop(context.Background()); err != nil {
 		t.Errorf("stop with no server = %v, want nil", err)
+	}
+}
+
+// TestStartMCP_StopWithAnAgentConnected: a connected agent holds a stream
+// open that never goes idle, so waiting for it would spend stop's whole
+// deadline and leave nothing for releasing leases.
+func TestStartMCP_StopWithAnAgentConnected(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatalf("listen: %v", err)
+	}
+	stop, err := startMCP(migratedDBPath(t), documents.NewStore(t.TempDir()), ln, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatalf("startMCP: %v", err)
+	}
+	client := mcp.NewClient(&mcp.Implementation{Name: "agent", Version: "test"}, nil)
+	cs, err := client.Connect(ctx, &mcp.StreamableClientTransport{Endpoint: "http://" + ln.Addr().String()}, nil)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	t.Cleanup(func() { _ = cs.Close() })
+
+	stopCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
+	defer cancel()
+	if err := stop(stopCtx); err != nil {
+		t.Errorf("stop with an agent connected = %v, want nil", err)
+	}
+	if stopCtx.Err() != nil {
+		t.Error("stop spent its whole deadline")
 	}
 }

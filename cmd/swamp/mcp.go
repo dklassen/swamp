@@ -39,9 +39,13 @@ func startMCP(dbPath string, d *documents.Store, ln net.Listener, logger *slog.L
 	}
 	s := store.New(sqlDB)
 	syncer := newSyncer(s)
+	// Cancelled on stop: an agent's open stream never goes idle, so
+	// Shutdown would otherwise wait out its whole deadline.
+	base, cancelRequests := context.WithCancel(context.Background())
 	srv := &http.Server{
-		Handler:  mcpHandler(s, d, syncer),
-		ErrorLog: slog.NewLogLogger(logger.Handler(), slog.LevelError),
+		Handler:     mcpHandler(s, d, syncer),
+		ErrorLog:    slog.NewLogLogger(logger.Handler(), slog.LevelError),
+		BaseContext: func(net.Listener) context.Context { return base },
 	}
 	go func() {
 		if err := srv.Serve(ln); !errors.Is(err, http.ErrServerClosed) {
@@ -51,6 +55,7 @@ func startMCP(dbPath string, d *documents.Store, ln net.Listener, logger *slog.L
 	logger.Info("listening", "addr", ln.Addr().String())
 
 	return func(ctx context.Context) error {
+		cancelRequests()
 		err := srv.Shutdown(ctx)
 		logger.Info("stopped", "err", err)
 		return errors.Join(err, syncer.ReleaseHeldLeases(ctx), sqlDB.Close())

@@ -7964,3 +7964,29 @@ above the pre-migration maximum could still pick up a folder.
   already put the cursor at the top, so nothing changes there.
 - The empty list's hint now says to press r here, not on the company
   list.
+
+## 2026-10-09 -- An unopenable log file stops the TUI from starting
+
+- With the central log, plain swamp (not just --mcp) exits with "open
+  log: ..." if SWAMP_LOG_PATH can't be opened. Kept: failing loudly
+  names the path to fix, and by default the log sits next to the
+  database, whose directory already has to be writable.
+- Not taken: opening the log only with --mcp (the TUI's own log output
+  would go back to garbling the terminal), or starting anyway with a
+  warning (a silent fallback that loses the log).
+
+## 2026-10-09 -- Stopping the in-process MCP server ends the agent's stream
+
+- With an agent connected, quitting the TUI stalled for stop's whole 5s
+  and reported "context deadline exceeded": the agent's open stream
+  never goes idle, so http.Server.Shutdown waited it out. The server's
+  requests now derive from a base context that stop cancels before
+  Shutdown; the SDK's stream returns when its request context ends.
+- A review also said leases would stay held and the database close
+  under running tool calls. No MCP tool takes a sync lease (add_company
+  fetches and creates, it doesn't sync), so there are none to release.
+  An add_company still fetching at quit can fail with "database is
+  closed", but the process exits right after and the call would die
+  anyway. Not taken: middleware that tracks running tool calls and
+  waits for them, plus a test hook to make a board fetch block -- more
+  machinery than a different error text on quit is worth.
