@@ -91,7 +91,7 @@ func openPostingList(t *testing.T, app *App) *App {
 	if cmd == nil {
 		t.Fatal("Update on 'r' returned nil Cmd")
 	}
-	app, _ = sendKey(app, cmd())
+	app, _ = sendKey(app, refreshResult(t, cmd))
 
 	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
@@ -721,7 +721,7 @@ func TestApp_OpenPostingList_HidesArchivedPostingsByDefault(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Update on 'r' returned nil Cmd")
 	}
-	app, _ = sendKey(app, cmd())
+	app, _ = sendKey(app, refreshResult(t, cmd))
 
 	postings, err := s.ListPostingsByCompany(context.Background(), app.companies[0].ID)
 	if err != nil {
@@ -1478,7 +1478,7 @@ func TestApp_PressR_RefreshesSelectedCompanyAndShowsStatus(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Update on 'r' returned nil Cmd, want a command that refreshes the company")
 	}
-	app, _ = sendKey(app, cmd())
+	app, _ = sendKey(app, refreshResult(t, cmd))
 
 	if app.status == "" {
 		t.Fatal("app.status should be set after refresh")
@@ -1511,7 +1511,7 @@ func TestApp_PressR_WhileCompanySyncsElsewhere_ShowsStatusNotError(t *testing.T)
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
 	app, cmd := sendKey(app, runeKey('r'))
-	app, _ = sendKey(app, cmd())
+	app, _ = sendKey(app, refreshResult(t, cmd))
 
 	if app.err != nil {
 		t.Errorf("app.err = %v, want nil -- another sync running isn't a failure", app.err)
@@ -3629,7 +3629,7 @@ func TestApp_PressR_UpdatesCompanyListOpenCountAndLastFetched(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Update on 'r' returned nil Cmd")
 	}
-	app, cmd = sendKey(app, cmd())
+	app, cmd = sendKey(app, refreshResult(t, cmd))
 	if cmd == nil {
 		t.Fatal("Update on the refresh result returned nil Cmd, want one that reloads companies")
 	}
@@ -3785,4 +3785,21 @@ func TestApp_Resize_ClearsTheScreen(t *testing.T) {
 	if got, want := cmd(), tea.ClearScreen(); got != want {
 		t.Errorf("resize command produced %T, want %T (tea.ClearScreen)", got, want)
 	}
+}
+
+// refreshResult runs r's command and returns the refresh's own result,
+// without the spinner tick batched with it.
+func refreshResult(t *testing.T, cmd tea.Cmd) tea.Msg {
+	t.Helper()
+	batch, ok := cmd().(tea.BatchMsg)
+	if !ok {
+		t.Fatal("r's command isn't a batch of the refresh and the spinner")
+	}
+	for _, c := range batch {
+		if msg, ok := c().(companyRefreshedMsg); ok {
+			return msg
+		}
+	}
+	t.Fatal("r's command has no refresh in it")
+	return nil
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/bubbles/spinner"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
@@ -330,4 +331,35 @@ func TestApp_SyncAll_ProgressBarFillsAsCompaniesFinish(t *testing.T) {
 	if _, total := barCells(app.View()); total != 0 {
 		t.Errorf("progress bar still showing after the run finished:\n%s", app.View())
 	}
+}
+
+// TestApp_Refresh_ShowsASpinnerUntilTheCompanyReports: one company's
+// fetch takes as long as its board does, with nothing to measure a bar by.
+func TestApp_Refresh_ShowsASpinnerUntilTheCompanyReports(t *testing.T) {
+	app, _ := newSyncAllTestApp(t)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	app, cmd := sendKey(app, runeKey('r'))
+
+	lines := strings.Split(ansi.Strip(app.View()), "\n")
+	last := lines[len(lines)-1]
+	if !strings.Contains(last, "Refreshing Acme…") || !strings.ContainsAny(last, spinnerGlyphs()) {
+		t.Errorf("last line while refreshing = %q, want a spinner and Refreshing Acme…", last)
+	}
+
+	app = applyCmd(t, app, cmd)
+
+	lines = strings.Split(ansi.Strip(app.View()), "\n")
+	last = lines[len(lines)-1]
+	if strings.Contains(last, "Refreshing") || strings.ContainsAny(last, spinnerGlyphs()) {
+		t.Errorf("last line after the refresh = %q, want the spinner gone", last)
+	}
+	if !strings.Contains(last, "Acme: fetched 1") {
+		t.Errorf("last line after the refresh = %q, want the refresh's summary", last)
+	}
+}
+
+// spinnerGlyphs is every frame of spinner.Dot without the space each ends in.
+func spinnerGlyphs() string {
+	return strings.ReplaceAll(strings.Join(spinner.Dot.Frames, ""), " ", "")
 }
