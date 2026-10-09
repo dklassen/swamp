@@ -66,13 +66,16 @@ const (
 )
 
 type App struct {
-	store      *store.Store
-	changeFeed *store.ChangeFeed
-	origin     string
-	// heldChanges are events that arrived while a form was open.
-	heldChanges []store.ChangeEvent
-	syncer      *sync.Syncer
-	companies   []store.Company
+	store     *store.Store
+	changeLog bool
+	origin    string
+	// seen is each view's place in the change log (see cursor); a view
+	// not in it is at since. latestSeen is the newest event read so far.
+	seen       map[screen]int64
+	since      int64
+	latestSeen int64
+	syncer     *sync.Syncer
+	companies  []store.Company
 	// companyOpenPostings is each company's open, unarchived posting count
 	// (store.CountOpenPostingsByCompany), loaded alongside companies.
 	companyOpenPostings map[int64]int
@@ -197,6 +200,7 @@ func renderCursorLine(line string, isCursor bool) string {
 func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 	return &App{
 		store:                 s,
+		seen:                  map[screen]int64{},
 		syncer:                syncer,
 		screen:                screenActiveApplications,
 		companyList:           newCompanyListModel(s),
@@ -973,7 +977,11 @@ func narrowPostingsToFilters(postings []store.Posting, departments, locations []
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
+	before := a.screen
 	model, cmd := a.update(msg)
+	if a.screen != before {
+		cmd = tea.Batch(cmd, a.activate())
+	}
 	// The banner above the screen can appear, change, or clear on any
 	// message -- a sync finishing, a failed browser open -- including
 	// while a screen is up, so refit the screens that keep their size in
@@ -1190,7 +1198,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, tea.Batch(loadActiveApplications(a.store, a.documents), reviewsCmd)
 		}
 	case changeTickMsg:
-		return a, readChanges(a.changeFeed)
+		return a, a.handleTick()
 	case changesMsg:
 		return a, a.handleChanges(msg)
 	case postingReloadedMsg:
@@ -1449,6 +1457,8 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			}
 			a.applicationsByPosting[appView.Posting.ID] = appView.Application
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), appView.Posting, appView.Application, true, appView.LatestReviews, a.canNavigateSiblings(appView.Posting.ID))
+			// Built from application detail's copy, so as up to date as it.
+			a.seen[screenPostingDetail] = a.cursor(screenApplicationDetail)
 			a.enterFrom(screenPostingDetail)
 		case enterDocumentReviewFormMsg:
 			if a.openDocumentReviewForm(v) {
