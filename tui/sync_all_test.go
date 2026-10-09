@@ -7,6 +7,7 @@ import (
 	"time"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -297,5 +298,36 @@ func TestApp_SyncAll_PostingListRefreshUnavailable(t *testing.T) {
 	}
 	if want := "Sync all in progress: refresh unavailable"; app.status != want {
 		t.Errorf("status = %q, want %q", app.status, want)
+	}
+}
+
+// barCells is how much of the sync-all bar on the view's last line is
+// filled, and its length in cells; 0, 0 when there's no bar.
+func barCells(view string) (filled, total int) {
+	lines := strings.Split(ansi.Strip(view), "\n")
+	last := lines[len(lines)-1]
+	filled = strings.Count(last, "█")
+	return filled, filled + strings.Count(last, "░")
+}
+
+// TestApp_SyncAll_ProgressBarFillsAsCompaniesFinish: the bar shows the share
+// of companies already synced, beside the company in flight.
+func TestApp_SyncAll_ProgressBarFillsAsCompaniesFinish(t *testing.T) {
+	app, _ := newSyncAllTestApp(t)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+
+	app, cmd := sendKey(app, runeKey('R'))
+	for done := range 3 {
+		filled, total := barCells(app.View())
+		if total == 0 {
+			t.Fatalf("after %d of 3 companies, no progress bar on the last line:\n%s", done, app.View())
+		}
+		if want := total * done / 3; filled < want-1 || filled > want+1 {
+			t.Errorf("after %d of 3 companies, bar filled %d of %d cells, want about %d", done, filled, total, want)
+		}
+		app, cmd = step(t, app, cmd)
+	}
+	if _, total := barCells(app.View()); total != 0 {
+		t.Errorf("progress bar still showing after the run finished:\n%s", app.View())
 	}
 }

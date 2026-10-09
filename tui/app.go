@@ -1638,6 +1638,9 @@ func (a *App) banner() string {
 	if a.err != nil {
 		return "\n\n" + errStyle.Render(fmt.Sprintf("error: %v", a.err))
 	}
+	if a.syncAll.running {
+		return "\n\n" + a.syncAll.bar() + "  " + dimStyle.Render(a.status)
+	}
 	if a.status != "" {
 		return "\n\n" + dimStyle.Render(a.status)
 	}
