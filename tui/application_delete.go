@@ -7,24 +7,25 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
 
-// applicationDeleteModel is the delete confirmation (D on application
-// detail), for an application started by accident. Confirming soft-deletes
-// it: it leaves every list and the posting can start a fresh one, while
-// its history, reviews and drafts are kept.
+// applicationDeleteModel is the delete confirmation, a box over the screen
+// it was opened from (d on the home list, D on application detail), for an
+// application started by accident. Confirming soft-deletes it: it leaves
+// every list and the posting can start a fresh one, while its history,
+// reviews and drafts are kept.
 type applicationDeleteModel struct {
-	documents   *documents.Store
 	application store.ApplicationView
+	// from is the screen the box is drawn over, and where n goes back to.
+	from screen
 	// confirmed is set once y is pressed, so a second y while the delete
 	// is in flight doesn't run it twice.
 	confirmed bool
 }
 
-func newApplicationDeleteModel(docs *documents.Store, application store.ApplicationView) applicationDeleteModel {
-	return applicationDeleteModel{documents: docs, application: application}
+func newApplicationDeleteModel(application store.ApplicationView, from screen) applicationDeleteModel {
+	return applicationDeleteModel{application: application, from: from}
 }
 
 // enterApplicationDeleteMsg signals that App should open the delete
@@ -33,8 +34,8 @@ type enterApplicationDeleteMsg struct {
 	application store.ApplicationView
 }
 
-// cancelApplicationDeleteMsg signals that App should go back to
-// application detail without deleting anything.
+// cancelApplicationDeleteMsg signals that App should go back to where the
+// confirmation was opened.
 type cancelApplicationDeleteMsg struct{}
 
 // confirmApplicationDeleteMsg signals that App should delete the
@@ -45,7 +46,7 @@ type confirmApplicationDeleteMsg struct {
 
 func (m *applicationDeleteModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	switch {
-	case msg.Type == tea.KeyEsc, msg.String() == "n":
+	case msg.Type == tea.KeyEsc, msg.Type == tea.KeyEnter, msg.String() == "n":
 		return nil, cancelApplicationDeleteMsg{}
 	case msg.String() == "y" && !m.confirmed:
 		m.confirmed = true
@@ -54,36 +55,18 @@ func (m *applicationDeleteModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	return nil, nil
 }
 
-func (m *applicationDeleteModel) View() string {
+// View is a box for App to draw over m.from, at most width wide.
+func (m *applicationDeleteModel) View(width int) string {
 	var b strings.Builder
-	b.WriteString(fieldLabel.Render("Company:") + " " + m.application.CompanyName + "\n")
-	b.WriteString(fieldLabel.Render("Status:") + " " + applicationStatusLabel(m.application.Status) + "\n\n")
-
-	b.WriteString("The application leaves every list, and the posting can be started again from scratch.\n")
-	b.WriteString("Its status history and reviews are kept")
-	var drafted []string
-	status := m.documents.Status(m.application.ID)
-	for _, documentType := range documents.Types() {
-		if doc, err := status.Doc(documentType); err == nil && doc.Exists {
-			drafted = append(drafted, doc.Path)
-		}
-	}
-	if len(drafted) == 0 {
-		b.WriteString(".\n")
-	} else {
-		b.WriteString(", and so are its drafts:\n")
-		for _, path := range drafted {
-			b.WriteString("  " + path + "\n")
-		}
-	}
-	b.WriteString("The posting stays as it is. There is no way to restore it from Swamp yet.\n\n")
-
+	b.WriteString(fieldLabel.Render("Delete the application for "+m.application.Posting.Title+"?") + " (" + m.application.CompanyName + ")\n")
+	b.WriteString("Status: " + applicationStatusLabel(m.application.Status) + "\n")
+	b.WriteString("Its status history, reviews and drafts are kept.\n\n")
 	if m.confirmed {
-		b.WriteString("Deleting...\n")
+		b.WriteString("Deleting...")
 	} else {
-		b.WriteString("Delete it? " + fieldLabel.Render("y") + ": delete  " + fieldLabel.Render("n/esc") + ": keep it\n")
+		b.WriteString(fieldLabel.Render("y") + ": delete  " + fieldLabel.Render("n/esc/enter") + ": keep it")
 	}
-	return b.String()
+	return confirmBox(b.String(), width)
 }
 
 // applicationDeletedMsg reports the result of deleteApplication.
@@ -103,9 +86,10 @@ func deleteApplication(s *store.Store, application store.ApplicationView) tea.Cm
 }
 
 // applicationReloadedForDeleteMsg carries the application the delete
-// confirmation describes, as stored when D was pressed.
+// confirmation describes, as stored when delete was pressed on from.
 type applicationReloadedForDeleteMsg struct {
 	application store.ApplicationView
+	from        screen
 	err         error
 }
 
@@ -113,13 +97,13 @@ type applicationReloadedForDeleteMsg struct {
 // confirmation shows it: sync or an agent may have changed its status, or
 // deleted it, since the list loaded. The posting and
 // company parts don't affect what's deleted, so they're kept as loaded.
-func reloadApplicationForDelete(s *store.Store, view store.ApplicationView) tea.Cmd {
+func reloadApplicationForDelete(s *store.Store, view store.ApplicationView, from screen) tea.Cmd {
 	return func() tea.Msg {
 		application, err := s.GetApplicationByID(context.Background(), view.ID)
 		if errors.Is(err, store.ErrNotFound) {
-			return applicationReloadedForDeleteMsg{err: errors.New("this application was already deleted")}
+			return applicationReloadedForDeleteMsg{from: from, err: errors.New("this application was already deleted")}
 		}
 		view.Application = application
-		return applicationReloadedForDeleteMsg{application: view, err: err}
+		return applicationReloadedForDeleteMsg{application: view, from: from, err: err}
 	}
 }

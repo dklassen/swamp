@@ -61,6 +61,7 @@ const (
 	screenApplicationSubmit
 	screenApplicationForm
 	screenApplicationDelete
+	screenCompanyDelete
 )
 
 type App struct {
@@ -132,6 +133,7 @@ type App struct {
 	openURL           func(url string) tea.Cmd
 	applicationSubmit applicationSubmitModel
 	applicationDelete applicationDeleteModel
+	companyDelete     companyDeleteModel
 	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
 	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
@@ -992,6 +994,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case companyDeletedMsg:
 		a.err = msg.err
+		// Back to the list either way: a failed delete's y is spent, and
+		// the error shows there.
+		if a.screen == screenCompanyDelete {
+			a.screen = screenCompanyList
+		}
 		if msg.err == nil {
 			if i := indexOfCompany(a.companies, msg.companyID); i != -1 {
 				a.companies = append(a.companies[:i], a.companies[i+1:]...)
@@ -1112,9 +1119,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		if a.screen == screenApplicationDelete {
 			if msg.err != nil {
-				// Back to detail rather than leaving a confirmation whose
-				// y is already spent; the error shows there.
-				a.screen = screenApplicationDetail
+				// Back where it was opened rather than leaving a
+				// confirmation whose y is already spent; the error shows there.
+				a.screen = a.applicationDelete.from
 				return a, nil
 			}
 			a.screen = screenActiveApplications
@@ -1171,9 +1178,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case applicationReloadedForDeleteMsg:
 		a.err = msg.err
 		// Same guard as applicationFormLoadedMsg: only if the user is still
-		// on that application.
-		if msg.err == nil && a.screen == screenApplicationDetail && a.applicationDetail.application.ID == msg.application.ID {
-			a.applicationDelete = newApplicationDeleteModel(a.documents, msg.application)
+		// where delete was pressed, and on detail, on that application.
+		if msg.err == nil && a.screen == msg.from && (msg.from != screenApplicationDetail || a.applicationDetail.application.ID == msg.application.ID) {
+			a.applicationDelete = newApplicationDeleteModel(msg.application, msg.from)
 			a.screen = screenApplicationDelete
 		}
 	case applicationStatusLoadedMsg:
@@ -1369,6 +1376,8 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case enterApplicationExportMsg:
 			a.screen = screenApplicationExport
 			a.applicationExport = newApplicationExportModel(a.store, a.documents, v.application, a.exportDir, a.width)
+		case enterApplicationDeleteMsg:
+			return a, reloadApplicationForDelete(a.store, v.application, screenActiveApplications)
 		}
 		return a, cmd
 	case screenApplicationDetail:
@@ -1379,7 +1388,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case enterApplicationSubmitMsg:
 			return a, a.startApplicationSubmit(v.application)
 		case enterApplicationDeleteMsg:
-			return a, reloadApplicationForDelete(a.store, v.application)
+			return a, reloadApplicationForDelete(a.store, v.application, screenApplicationDetail)
 		case backToActiveApplicationsMsg:
 			a.screen = screenActiveApplications
 		case enterPostingDetailMsg:
@@ -1427,6 +1436,9 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case enterCompanyEditMsg:
 			a.screen = screenCompanyEdit
 			a.companyEdit = newCompanyEditModel(a.store, v.company.ID, v.company.Name)
+		case enterCompanyDeleteMsg:
+			a.screen = screenCompanyDelete
+			a.companyDelete = newCompanyDeleteModel(v.company, a.companyOpenPostings[v.company.ID])
 		case refreshCompanyMsg:
 			if a.syncAll.running {
 				// The run may be syncing this company right now (#150).
@@ -1530,9 +1542,18 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd, intent := a.applicationDelete.Update(msg)
 		switch v := intent.(type) {
 		case cancelApplicationDeleteMsg:
-			a.screen = screenApplicationDetail
+			a.screen = a.applicationDelete.from
 		case confirmApplicationDeleteMsg:
 			return a, deleteApplication(a.store, v.application)
+		}
+		return a, cmd
+	case screenCompanyDelete:
+		cmd, intent := a.companyDelete.Update(msg)
+		switch v := intent.(type) {
+		case cancelCompanyDeleteMsg:
+			a.screen = screenCompanyList
+		case confirmCompanyDeleteMsg:
+			return a, deleteCompany(a.store, v.company.ID)
 		}
 		return a, cmd
 	case screenApplicationNotesEdit:
@@ -1633,11 +1654,32 @@ func (a *App) screenRows() int {
 }
 
 func (a *App) View() string {
-	var b strings.Builder
-
-	b.WriteString(a.header())
-
+	body := a.body(a.beneath())
 	switch a.screen {
+	case screenCompanyDelete:
+		body = overlay(body, a.companyDelete.View(a.width), a.width)
+	case screenApplicationDelete:
+		body = overlay(body, a.applicationDelete.View(a.width), a.width)
+	}
+	return a.header() + body + a.banner()
+}
+
+// beneath is the screen drawn on screen: a.screen, or the one a
+// confirmation's box is drawn over.
+func (a *App) beneath() screen {
+	switch a.screen {
+	case screenCompanyDelete:
+		return screenCompanyList
+	case screenApplicationDelete:
+		return a.applicationDelete.from
+	}
+	return a.screen
+}
+
+// body draws s, between the header and the banner.
+func (a *App) body(s screen) string {
+	var b strings.Builder
+	switch s {
 	case screenActiveApplications:
 		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.activeApplicationProgress, time.Now(), a.width, a.screenRows()))
 	case screenApplicationDetail:
@@ -1666,8 +1708,6 @@ func (a *App) View() string {
 		b.WriteString(a.applicationExport.View())
 	case screenApplicationSubmit:
 		b.WriteString(a.applicationSubmit.View())
-	case screenApplicationDelete:
-		b.WriteString(a.applicationDelete.View())
 	case screenApplicationNotesEdit:
 		b.WriteString(a.applicationNotes.View())
 	case screenApplicationForm:
@@ -1679,8 +1719,6 @@ func (a *App) View() string {
 	case screenFilterSelect:
 		b.WriteString(a.filterSelect.View(a.screenRows()))
 	}
-
-	b.WriteString(a.banner())
 	return b.String()
 }
 
