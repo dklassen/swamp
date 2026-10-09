@@ -3,7 +3,7 @@
 // for that hand-off, Prepare commits to one by ensuring its application
 // and document directory exist. Stage never drafts content itself, and
 // never reads the profile or canonical resume -- generation happens
-// entirely outside this codebase (see decisions.log).
+// entirely outside this codebase.
 package stage
 
 import (
@@ -27,7 +27,7 @@ import (
 // following .agents/skills/apply-to-posting/SKILL.md's documented
 // examples, not Go code -- an ordinary Go-side rename would otherwise
 // silently break that hand-off with no compiler or test catching it
-// (see decisions.log, #59).
+// (#59).
 type Candidate struct {
 	Posting           PostingSummary                  `json:"Posting"`
 	CompanyName       string                          `json:"CompanyName"`
@@ -152,7 +152,7 @@ func latestReviewsForJSON(reviews map[documents.Type]store.DocumentReview) map[d
 // needsRework reports whether any of reviews' latest outcomes is
 // ReviewOutcomeFlagged -- a flagged document needs another drafting
 // pass even once its file exists on disk, so List keeps surfacing it
-// rather than treating "both files exist" as "done" (see decisions.log).
+// rather than treating "both files exist" as "done".
 func needsRework(reviews map[documents.Type]store.DocumentReview) bool {
 	for _, r := range reviews {
 		if r.Outcome == store.ReviewOutcomeFlagged {

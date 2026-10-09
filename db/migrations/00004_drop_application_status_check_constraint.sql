@@ -3,8 +3,8 @@
 
 -- applications.status's CHECK (status IN (...)) constraint (introduced in
 -- 00002) duplicated the same fixed set of valid values now maintained as
--- a Go enum (store.ApplicationStatus, see store/application_status.go and
--- decisions.log) -- two copies of the same list that could silently drift
+-- a Go enum (store.ApplicationStatus, see store/application_status.go) --
+-- two copies of the same list that could silently drift
 -- out of sync, flagged in PR #16 review. Go is the sole source of truth
 -- now: store.ParseApplicationStatus rejects anything outside the known
 -- set when a row is read, so nothing is lost by dropping the DB-side

@@ -57,7 +57,7 @@ func (s *Syncer) closeMissing(ctx context.Context, company store.Company, fetche
 // status: a company routinely pulls a listing while still interviewing
 // the candidates already in its pipeline, so an application at
 // interviewing or beyond is a live process that the syncer must not
-// overwrite (see issue #105 and decisions.log). Those are left alone.
+// overwrite (see issue #105). Those are left alone.
 // So is a submitted one (#174): a listing often comes down once the
 // company has enough candidates, and the ones who applied are still
 // being reviewed. Only an application never sent can no longer be.
@@ -65,7 +65,7 @@ func (s *Syncer) closeMissing(ctx context.Context, company store.Company, fetche
 // Closing a posting's application, and undoing that when the posting
 // reappears (store.ReopenPosting, #174), are the only places sync reaches
 // past postings and posting history into application state, a deliberate
-// widening of what a sync does (see decisions.log). The policy stays
+// widening of what a sync does. The policy stays
 // here; store.ClosePosting applies it in the same transaction that
 // closes the posting (#147).
 var earlyApplicationStatuses = []store.ApplicationStatus{

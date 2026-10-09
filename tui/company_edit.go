@@ -10,7 +10,7 @@ import (
 )
 
 // companyEditModel drives the edit-company screen: name only. source/
-// source_ref are locked after creation (see decisions.log) and have no
+// source_ref are locked after creation and have no
 // field here at all -- not just disabled, since there's nothing for this
 // screen to do with them.
 type companyEditModel struct {
@@ -21,7 +21,7 @@ type companyEditModel struct {
 	// until saveResolved is called with its result. bubbletea has no way
 	// to cancel an already-dispatched command, so Esc can't actually stop
 	// an in-flight save -- it's blocked instead, so "esc: cancel" stays
-	// true rather than racing the save (see decisions.log, #37).
+	// true rather than racing the save (#37).
 	saving bool
 }
 

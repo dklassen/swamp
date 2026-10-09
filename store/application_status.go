@@ -7,9 +7,8 @@ import (
 )
 
 // ApplicationStatus is a typed enum for Application.Status. Go is the sole
-// source of truth for which values are legal (see decisions.log,
-// 2026-08-19 "Application status becomes a Go enum") -- the DB column is
-// plain TEXT with no CHECK constraint, so nothing below the store package
+// source of truth for which values are legal -- the DB column is plain
+// TEXT with no CHECK constraint, so nothing below the store package
 // boundary can enforce this; ParseApplicationStatus is where that
 // enforcement happens, at the point a raw DB row is turned into a
 // store.Application.
@@ -90,7 +89,7 @@ func ApplicationStatuses() []ApplicationStatus {
 // source of truth for "terminal": the query passes this list to sqlc's
 // slice macro at call time rather than hardcoding status strings in SQL,
 // so there's exactly one place this business rule can be edited (see
-// decisions.log, issue #60).
+// issue #60).
 var terminalApplicationStatuses = []ApplicationStatus{
 	ApplicationStatusRejected,
 	ApplicationStatusOfferDeclined,

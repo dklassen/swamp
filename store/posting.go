@@ -20,14 +20,14 @@ import (
 // content change (see IngestPosting). Pulled into one type so there's a
 // single place defining "what counts as a posting's content," rather
 // than that field list being hand-copied at every site that needs it
-// (see decisions.log, #57).
+// (#57).
 //
 // json tags pin the field names exactly as they already serialize today
 // (Go's default reflect-based names) rather than changing them -- the
 // point is making a future Go-side rename require an explicit tag edit
 // to also change the JSON contract an external LLM agent reads
 // (.agents/skills/apply-to-posting/SKILL.md), not changing that contract
-// now (see decisions.log, #59).
+// now (#59).
 type IngestedFields struct {
 	Title           string       `json:"Title"`
 	Department      string       `json:"Department"`
@@ -52,7 +52,7 @@ type IngestedFields struct {
 // directly into this struct's own JSON object, matching how the current
 // agent hand-off JSON already looks), where a tag would instead nest it
 // under an "IngestedFields" key and silently break that contract (see
-// decisions.log, #59).
+// #59).
 type Posting struct {
 	ID        int64  `json:"ID"`
 	CompanyID int64  `json:"CompanyID"`
@@ -119,7 +119,7 @@ func nullTime(t *time.Time) sql.NullTime {
 
 // nullPublishedAt is nullTime for IngestedFields.PublishedAt specifically:
 // the zero time means absent, since PublishedAt isn't pointer-optional
-// (see decisions.log, #67).
+// (#67).
 func nullPublishedAt(t OptionalTime) sql.NullTime {
 	if t.IsZero() {
 		return sql.NullTime{}

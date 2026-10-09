@@ -4,9 +4,7 @@
 // tool's arguments and behavior; the skill only says which tool to call
 // when. It's a thin protocol adapter over the stage, documents and sync
 // packages -- no business logic lives here, only translation between
-// MCP's tools/call convention and their existing Go APIs. See
-// decisions.log for why MCP (and specifically its Streamable HTTP
-// transport) is required here rather than gRPC or a plain REST API.
+// MCP's tools/call convention and their existing Go APIs.
 package mcpserver
 
 import (

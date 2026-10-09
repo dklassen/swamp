@@ -10,7 +10,7 @@
 -- have to rediscover "we don't distinguish nil from empty here" as an
 -- unenforced convention instead of the schema simply refusing the
 -- ambiguity. NOT NULL DEFAULT '' closes that seam at the schema itself
--- (see decisions.log, #74). Confirmed via SQLite's own record format that
+-- (#74). Confirmed via SQLite's own record format that
 -- this trades nothing for space or performance: a NULL and an empty TEXT
 -- both serialize to a zero-byte payload with a single-byte serial-type
 -- varint, so there's no storage cost either way.

@@ -9,7 +9,7 @@
 // A field a source's API can't supply (e.g. Greenhouse has no Team,
 // EmploymentType, or WorkplaceType) is simply left at its zero value --
 // callers never special-case which source produced a Posting (see
-// decisions.log, #57).
+// #57).
 //
 // This package depends on nothing but the standard library, and knows
 // nothing about sync or store, so ashby/greenhouse/lever taking on this

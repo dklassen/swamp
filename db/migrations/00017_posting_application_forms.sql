@@ -9,7 +9,7 @@
 --
 -- form is jobboard.ApplicationForm as JSON. It's only ever read and
 -- written whole, never queried by field, so a JSON column is simpler
--- than a table per question (see decisions.log, #168). fetched_at is
+-- than a table per question (#168). fetched_at is
 -- CURRENT_TIMESTAMP (UTC, per AGENTS.md).
 CREATE TABLE posting_application_forms (
     posting_id  INTEGER PRIMARY KEY REFERENCES postings(id),

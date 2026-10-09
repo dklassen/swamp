@@ -68,7 +68,7 @@ func (s *Store) DeleteCompanyFilters(ctx context.Context, companyID int64) error
 // no dependency on the filter package's FieldDepartment/FieldLocation
 // constants -- see filter's own doc comment on why store/sync/filter's
 // dependency direction is one-way); the caller decides what Field values
-// mean (see decisions.log, #56).
+// mean (#56).
 func (s *Store) ReplaceCompanyFilters(ctx context.Context, companyID int64, filters []CompanyFilter) error {
 	if err := s.DeleteCompanyFilters(ctx, companyID); err != nil {
 		return err

@@ -113,12 +113,12 @@ type App struct {
 	// rather than one field per screen because these nest (e.g. posting
 	// list -> posting detail -> status select), and one push/pop pair
 	// per transition keeps a new entry point from needing its own field.
-	// See decisions.log, issue #89.
+	// See issue #89.
 	returnStack        []screen
 	lastScreenInstance screenInstance
 	// activeApplications backs the home screen: every application not at
 	// a terminal dead-end status, across every company (see
-	// store.ListActiveApplications, decisions.log #43).
+	// store.ListActiveApplications, #43).
 	activeApplications []store.ApplicationView
 	// activeApplicationProgress is each active application's document
 	// progress, by application ID, loaded with activeApplications. The
@@ -147,7 +147,7 @@ type App struct {
 	// mirroring how SWAMP_DB_PATH configures the store.
 	documents *documents.Store
 	// hideArchived is ephemeral, in-memory-only display state -- not
-	// persisted (see decisions.log). Defaults true: the point of
+	// persisted. Defaults true: the point of
 	// archiving a posting is to declutter the list.
 	hideArchived bool
 	width        int
@@ -222,7 +222,7 @@ func (a *App) WithStatus(status string) *App {
 // by that document's latest review outcome (see reviewBadge) and, when
 // the review left notes, an indented "Notes:" line -- the reviewer's
 // record of what specifically to fix before the next cycle (see
-// decisions.log #83).
+// #83).
 func documentStatusLine(label string, exists bool, path string, review store.DocumentReview, hasReview bool) string {
 	status := "not found"
 	if exists {
@@ -265,8 +265,8 @@ func reviewBadge(review store.DocumentReview, hasReview bool) string {
 // reviewGlyphSummary renders a compact, single-line summary of an
 // application's latest cover-letter/resume review outcomes, for list
 // rows (e.g. the active-applications table) that don't have room for
-// reviewBadge's full "[FLAGGED]"/notes rendering -- see decisions.log
-// #83. A document with no entry in reviews (no review recorded yet)
+// reviewBadge's full "[FLAGGED]"/notes rendering (#83).
+// A document with no entry in reviews (no review recorded yet)
 // renders as a dim "-".
 func reviewGlyphSummary(reviews map[documents.Type]store.DocumentReview) string {
 	entries := make([]string, 0, len(documents.Types()))
@@ -312,7 +312,7 @@ func reviewGlyph(review store.DocumentReview, hasReview bool) string {
 // tea.Cmd/tea.Msg round trip like the rest of this file's store-backed
 // state, since checking whether two local files exist is cheap/local
 // enough that a second async fetch just to avoid it here would be
-// over-applying that convention (see decisions.log). When hasApplication
+// over-applying that convention. When hasApplication
 // is false, no documents section is rendered at all -- "no application
 // -> show nothing".
 //
@@ -320,7 +320,7 @@ func reviewGlyph(review store.DocumentReview, hasReview bool) string {
 // loadDocumentReviews/documentReviewsLoadedMsg) rather than queried here
 // -- a DB read, unlike docs.Status's local os.Stat, follows the same
 // tea.Cmd/tea.Msg convention as the rest of this file's store-backed
-// state (see decisions.log #83). A document with no entry in the map
+// state (#83). A document with no entry in the map
 // renders as "not reviewed".
 func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store, latestReviews map[documents.Type]store.DocumentReview, width int) string {
 	var b strings.Builder
@@ -415,7 +415,7 @@ func (a *App) returnBack() screen {
 // displayed rather than re-deriving it via lookupPosting. lookupPosting's
 // Posting result depends on a.postings, which is never populated when
 // posting detail was entered via application detail's fast path (see
-// decisions.log #87 follow-up) -- re-deriving it here would silently
+// #87 follow-up) -- re-deriving it here would silently
 // clobber a correct posting with a zero value. These handlers only ever
 // change application data, never which posting is shown, so the
 // already-displayed posting is always still the right one; only
@@ -520,7 +520,7 @@ type activeApplicationsLoadedMsg struct {
 // ListActiveApplications itself can't do this, and every screen this
 // list feeds (the active-applications glyph column, application detail,
 // and posting detail reached via application detail's 'p' fast path,
-// which skips its own separate load -- see decisions.log) would
+// which skips its own separate load) would
 // otherwise show a stale review as if it still described the current
 // document.
 func loadActiveApplications(s *store.Store, docs *documents.Store) tea.Cmd {
@@ -553,7 +553,7 @@ type companyCreatedMsg struct {
 
 // boardCheckTimeout bounds createCompany's live board check, so an
 // unreachable API fails the add (closed) instead of leaving the form
-// waiting (see decisions.log, #36). Syncer already gives up on any fetch
+// waiting (#36). Syncer already gives up on any fetch
 // after sync.Config.FetchTimeout (#142); this is tighter because someone
 // is sitting at the form waiting for it.
 const boardCheckTimeout = 15 * time.Second
@@ -696,13 +696,13 @@ type documentReviewsLoadedMsg struct {
 
 // loadDocumentReviews fetches the most recent review, if any, of each
 // document type for applicationID -- the data behind postingDetailContent's
-// inline review-status section (see decisions.log #83). A document type
+// inline review-status section (#83). A document type
 // with no review yet is simply absent from the returned map, not an
 // error. Reviews whose content no longer matches what's currently on
 // disk (the document was revised since being reviewed, whether in
 // direct response to that review or independently) are filtered out by
 // documents.Current -- a stale review shouldn't render as if it
-// still described the current draft (see decisions.log,
+// still described the current draft (see
 // store.DocumentReview.IsCurrent).
 func loadDocumentReviews(s *store.Store, docs *documents.Store, applicationID int64) tea.Cmd {
 	return func() tea.Msg {
@@ -784,8 +784,8 @@ type postingsLoadedMsg struct {
 //
 // Closed postings are always dropped: a listing that has closed on the job
 // board can't be applied to, so it has no place in a list for finding
-// postings to act on. They stay in the db (never deleted, see
-// decisions.log), applications on them stay reachable from the
+// postings to act on. They stay in the db (never deleted),
+// applications on them stay reachable from the
 // active-applications screen, and a posting that reopens reappears on the
 // next load. Filtered here rather than in ListPostingsByCompany because
 // sync also uses that query and needs every posting, closed ones included.
@@ -859,7 +859,7 @@ func filterOutArchived(postings []store.Posting, markup map[int64]store.PostingM
 // loadPostings' authoritative DB-driven pass and narrowPostingsToFilters'
 // optimistic post-save pass below, which both call this) can't silently
 // disagree with what was actually ingested, or with each other (see
-// decisions.log, #61). A filter.Match error (an unsupported field name)
+// #61). A filter.Match error (an unsupported field name)
 // is propagated to the caller rather than swallowed here; loadPostings
 // surfaces it as a load error, while narrowPostingsToFilters treats it
 // as unreachable given the fields it always passes.
@@ -928,7 +928,7 @@ func loadFilterOptions(s *store.Store, companyID int64) tea.Cmd {
 // companyFiltersAppliedMsg carries the result of applying a new filter
 // selection: sync.ApplyCompanyFilters' replace-then-resync as one
 // round trip, not the three-step save/resync/reload chain this used to
-// be (see decisions.log, #56).
+// be (#56).
 type companyFiltersAppliedMsg struct {
 	result sync.Result
 	err    error
@@ -950,7 +950,7 @@ func applyCompanyFilters(syncer *sync.Syncer, companyID int64, departments, loca
 // is needed -- and delegates to filterPostingsByCompanyFilters, so this
 // shares the exact same rule-construction-and-match path as loadPostings'
 // authoritative filtering rather than a second hand-copy of it (see
-// decisions.log, #61).
+// #61).
 func narrowPostingsToFilters(postings []store.Posting, departments, locations []string) []store.Posting {
 	filters := make([]store.CompanyFilter, 0, len(departments)+len(locations))
 	for _, d := range departments {
@@ -1291,7 +1291,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			// Reload so the freshly-submitted review's outcome/notes show up
 			// immediately wherever it's displayed, without having to
-			// navigate away and back (see decisions.log #83) -- which
+			// navigate away and back (#83) -- which
 			// reload depends on which screen the user is now on.
 			switch a.screen {
 			case screenApplicationDetail:

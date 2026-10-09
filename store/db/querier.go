@@ -97,12 +97,12 @@ type Querier interface {
 	// than us hand-selecting+aliasing individual columns and reconstructing
 	// them field-by-field in Go -- verified this works cleanly on this
 	// engine (sqlite, sqlc v1.31.1) alongside a plain aliased column, one
-	// inner join, no collisions (see decisions.log, ApplicationView).
+	// inner join, no collisions (see ApplicationView).
 	//
 	// sqlc.slice('terminal_statuses') keeps store.TerminalApplicationStatuses
 	// as the sole source of truth for which statuses are terminal -- no
 	// status strings are hardcoded here, they're passed in as a query
-	// parameter at call time (see decisions.log, issue #60). Verified this
+	// parameter at call time (issue #60). Verified this
 	// works correctly on this engine with real data before adopting it; the
 	// one real constraint is that sqlc.slice can't safely combine with other
 	// bound parameters on sqlite (a documented ordering bug) -- this query
@@ -116,8 +116,8 @@ type Querier interface {
 	// Keyspace discovery for filter selection: department is a company-
 	// specific vocabulary (not a fixed enum), so filter values are offered
 	// from what's actually been ingested, not guessed at. No "IS NOT NULL"
-	// check needed -- department is NOT NULL DEFAULT '' (see decisions.log,
-	// #74), so excluding '' is the only filter required.
+	// check needed -- department is NOT NULL DEFAULT '' (#74),
+	// so excluding '' is the only filter required.
 	ListDistinctDepartmentsForCompany(ctx context.Context, companyID int64) ([]string, error)
 	ListDistinctLocationsForCompany(ctx context.Context, companyID int64) ([]string, error)
 	// cycle DESC: most recent review first, matching how a human would want
@@ -130,7 +130,7 @@ type Querier interface {
 	//
 	// sqlc.embed(postings) for the always-present side (postings is inner-
 	// joined via posting_markup, never nullable here) -- same reasoning as
-	// ListActiveApplications (see decisions.log, ApplicationView). Deliberately
+	// ListActiveApplications (see ApplicationView). Deliberately
 	// NOT sqlc.embed(applications): that side is LEFT JOINed (an application
 	// may not exist yet) and sqlc.embed has a documented bug scanning a NULL
 	// embedded struct on sqlite (sqlc-dev/sqlc#2997) -- kept as individually

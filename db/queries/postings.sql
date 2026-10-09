@@ -76,8 +76,8 @@ WHERE id = ?;
 -- Keyspace discovery for filter selection: department is a company-
 -- specific vocabulary (not a fixed enum), so filter values are offered
 -- from what's actually been ingested, not guessed at. No "IS NOT NULL"
--- check needed -- department is NOT NULL DEFAULT '' (see decisions.log,
--- #74), so excluding '' is the only filter required.
+-- check needed -- department is NOT NULL DEFAULT '' (#74),
+-- so excluding '' is the only filter required.
 SELECT DISTINCT department FROM postings
 WHERE company_id = ? AND department != ''
 ORDER BY department;
@@ -95,7 +95,7 @@ ORDER BY location;
 --
 -- sqlc.embed(postings) for the always-present side (postings is inner-
 -- joined via posting_markup, never nullable here) -- same reasoning as
--- ListActiveApplications (see decisions.log, ApplicationView). Deliberately
+-- ListActiveApplications (see ApplicationView). Deliberately
 -- NOT sqlc.embed(applications): that side is LEFT JOINed (an application
 -- may not exist yet) and sqlc.embed has a documented bug scanning a NULL
 -- embedded struct on sqlite (sqlc-dev/sqlc#2997) -- kept as individually

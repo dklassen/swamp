@@ -608,8 +608,7 @@ func TestRender_LineSpacingIsAboutOneAndAQuarterTimesFontSize(t *testing.T) {
 //
 // Swept across a range of document lengths rather than pinned to the one
 // paragraph count that reproduced it, so the property still holds if the
-// spacing constants change and the failing length moves (see
-// decisions.log on not pinning fpdf's internal point math in tests).
+// spacing constants change and the failing length moves.
 func TestRender_ThematicBreakIsNeverTheLastMarkOnAPage(t *testing.T) {
 	t.Parallel()
 

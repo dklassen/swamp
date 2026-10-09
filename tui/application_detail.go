@@ -13,7 +13,7 @@ import (
 // applicationDetailModel drives the application-detail screen: the place
 // application-specific actions live -- navigating to the related
 // posting, editing the cover letter/resume in $EDITOR, and reviewing
-// each of them (see decisions.log, the #86 follow-up reorganizing the
+// each of them (see the #86 follow-up reorganizing the
 // active-applications ("application view") workflow). It holds only the
 // dependencies it needs for its own commands and the ApplicationView it
 // was constructed with -- a snapshot, not a live reference into App's
@@ -59,7 +59,7 @@ func (m *applicationDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 // application's document reviews from the store without leaving
 // application detail -- e.g. after an external agent (see
 // .agents/skills/apply-to-posting) revises a document on disk while the
-// user is still looking at this screen (see decisions.log). Document
+// user is still looking at this screen. Document
 // existence itself needs no reload: View reads m.documents.Status live
 // on every render.
 type refreshApplicationDetailMsg struct{}
@@ -67,7 +67,7 @@ type refreshApplicationDetailMsg struct{}
 // openDocument ensures the application's document directory exists (most
 // editors create the file itself on save, but not the directory) and
 // returns a command that opens documentType's document in $EDITOR -- moved here from activeApplicationListModel
-// (see decisions.log): editing a specific application's documents is
+// because editing a specific application's documents is
 // application-specific functionality, not something the cross-company
 // list screen should own directly.
 func (m *applicationDetailModel) openDocument(documentType documents.Type) tea.Cmd {

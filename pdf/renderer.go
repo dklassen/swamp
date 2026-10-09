@@ -99,7 +99,7 @@ func (r *renderer) renderBlock(n ast.Node) {
 // margin itself (not just the starting X) so a wrapped continuation line
 // also lands under the bullet/ordinal rather than back at the page edge.
 // Nested lists aren't supported -- swamp's drafted documents (see
-// decisions.log, issue #45) never use them, and this package deliberately
+// issue #45) never use them, and this package deliberately
 // covers only the markdown subset those actually contain.
 func (r *renderer) renderList(list *ast.List) {
 	left, _, _, _ := r.doc.GetMargins()

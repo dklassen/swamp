@@ -70,7 +70,7 @@ func ParseReviewOutcome(s string) (ReviewOutcome, error) {
 
 // DocumentReview is one human pass over a drafted cover letter or resume,
 // owned by the user and append-only -- never edited or deleted once
-// created (see decisions.log, #51). ContentSnapshot captures the
+// created (#51). ContentSnapshot captures the
 // document's content as of the moment it was reviewed, since
 // documents.Store overwrites cover_letter.md/resume.md in place with no
 // versioning of its own: without a snapshot, a review would become
@@ -103,7 +103,7 @@ type DocumentReview struct {
 // since diverged (whether the document was revised in direct response
 // to the review, or edited independently) describes a version of the
 // document that no longer exists; callers that surface "the current
-// review status" of a document (see decisions.log, stage.List/Prepare
+// review status" of a document (see stage.List/Prepare
 // and the TUI's review badges) should treat a non-current review the
 // same as no review at all, not as still describing what's on disk now.
 func (r DocumentReview) IsCurrent(content string) bool {
@@ -195,7 +195,7 @@ func (s *Store) LatestDocumentReview(ctx context.Context, applicationID int64, d
 // in step with its single-review semantics. Used by
 // ListActiveApplications (see application_view.go) and by the TUI
 // wherever a per-document-type review summary is needed for one
-// application (see decisions.log #83). A missing entry is the only "no
+// application (#83). A missing entry is the only "no
 // review" signal; see DocumentReview.
 func (s *Store) LatestDocumentReviews(ctx context.Context, applicationID int64) (map[documents.Type]DocumentReview, error) {
 	reviews := make(map[documents.Type]DocumentReview)

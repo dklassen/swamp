@@ -51,12 +51,12 @@ RETURNING *;
 -- than us hand-selecting+aliasing individual columns and reconstructing
 -- them field-by-field in Go -- verified this works cleanly on this
 -- engine (sqlite, sqlc v1.31.1) alongside a plain aliased column, one
--- inner join, no collisions (see decisions.log, ApplicationView).
+-- inner join, no collisions (see ApplicationView).
 --
 -- sqlc.slice('terminal_statuses') keeps store.TerminalApplicationStatuses
 -- as the sole source of truth for which statuses are terminal -- no
 -- status strings are hardcoded here, they're passed in as a query
--- parameter at call time (see decisions.log, issue #60). Verified this
+-- parameter at call time (issue #60). Verified this
 -- works correctly on this engine with real data before adopting it; the
 -- one real constraint is that sqlc.slice can't safely combine with other
 -- bound parameters on sqlite (a documented ordering bug) -- this query

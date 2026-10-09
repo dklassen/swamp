@@ -47,7 +47,7 @@ type companyFormModel struct {
 	// checking is true from the moment Enter dispatches createCompany
 	// until checkResolved is called with its result. The form ignores
 	// keys meanwhile: bubbletea can't cancel a dispatched command, so Esc
-	// would race the save (as on the edit screen, decisions.log #37) and a
+	// would race the save (as on the edit screen, #37) and a
 	// second Enter would start a duplicate check.
 	checking bool
 }

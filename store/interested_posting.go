@@ -24,7 +24,7 @@ type InterestedPosting struct {
 // row.Posting is already the exact nested db.Posting that macro
 // generates, so this runs it through the same postingFromRow every other
 // Posting goes through, rather than hand-reconstructing it field-by-field
-// from a flat row (see decisions.log, ApplicationView). The application
+// from a flat row (see ApplicationView). The application
 // side stays hand-checked (sql.NullInt64/sql.NullString .Valid) since
 // it's LEFT JOINed and genuinely optional -- sqlc.embed(applications)
 // isn't used here (see the query comment).

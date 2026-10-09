@@ -41,7 +41,7 @@ func newTestApp(t *testing.T, s *store.Store, syncer *sync.Syncer) *App {
 // further is queued. If cmd is itself a tea.Batch (App.Init returns one,
 // to load companies and active applications concurrently; several
 // posting-detail transitions do too, once loadApplication resolves and
-// triggers loadDocumentReviews -- see decisions.log #83), its BatchMsg
+// triggers loadDocumentReviews -- #83), its BatchMsg
 // unpacks into per-command messages applied individually. These tests
 // drive App directly without a real tea.Program, so this replicates both
 // behaviors by hand.
@@ -108,7 +108,7 @@ func openPostingList(t *testing.T, app *App) *App {
 // app.applicationsByPosting reflects DB state immediately. Uses applyCmd
 // rather than a raw sendKey(app, cmd()) since entry now dispatches a
 // tea.Batch of both loads whenever the posting already has an
-// application (see decisions.log #83).
+// application (#83).
 func openPostingDetail(t *testing.T, app *App) *App {
 	t.Helper()
 	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
@@ -1824,7 +1824,7 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 		t.Fatalf("CreateApplication: %v", err)
 	}
 	// Content must match what's on disk, or the staleness check (see
-	// decisions.log, store.DocumentReview.IsCurrent) treats this review
+	// store.DocumentReview.IsCurrent) treats this review
 	// as not describing the current document and omits it.
 	status := app.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
@@ -1857,7 +1857,7 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 // the old flagged review no longer describes the current draft and
 // should stop rendering as if it did -- posting detail should show
 // "[not reviewed]" for the revised document, not the stale "[FLAGGED]"
-// and its now-out-of-date notes (see decisions.log,
+// and its now-out-of-date notes (see
 // store.DocumentReview.IsCurrent).
 // TestApp_LoadActiveApplications_DocumentReadFails_SetsErr is a
 // regression test caught in code review: documents.Current used to
@@ -2086,7 +2086,7 @@ func TestApp_ApplicationDetail_P_EntersPostingDetail(t *testing.T) {
 	// full posting/application/reviews loaded (from active-applications),
 	// so entering posting detail from here renders synchronously rather
 	// than round-tripping through a.postings-dependent lookupPosting (see
-	// decisions.log #86 follow-up).
+	// #86 follow-up).
 	app, _ = sendKey(app, runeKey('p'))
 
 	if app.screen != screenPostingDetail {
@@ -2106,7 +2106,7 @@ func TestApp_ApplicationDetail_P_EntersPostingDetail(t *testing.T) {
 // on an empty, disconnected posting-list screen instead of back where the
 // user came from. returnStack now tracks where posting detail was entered
 // from, the same way it does for the other multi-entry screens (see
-// decisions.log #86 follow-up and #89).
+// #86 follow-up and #89).
 func TestApp_PostingDetailFromApplicationDetail_Esc_ReturnsToApplicationDetail(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
@@ -2128,7 +2128,7 @@ func TestApp_PostingDetailFromApplicationDetail_Esc_ReturnsToApplicationDetail(t
 // TestApp_StatusChangeFromApplicationDetailFastPath_PreservesPostingFields
 // is a regression test for a bug caught in code review: applicationDetail's
 // 'p' enters posting detail without ever populating a.postings (the fast
-// path -- see decisions.log #87 follow-up). applicationStatusUpdatedMsg's
+// path -- #87 follow-up). applicationStatusUpdatedMsg's
 // handler used to unconditionally rebuild a.postingDetail via
 // lookupPosting(a.postingDetail.posting.ID), which searches a.postings and
 // returns a zero-value store.Posting{} when not found -- so changing status
@@ -2213,7 +2213,7 @@ func TestApp_ApplicationDetail_CancelDocumentReview_ReturnsToApplicationDetail(t
 // TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately
 // mirrors TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail
 // above, but entering review from application detail (reached via the
-// active-applications "application view" -- see decisions.log #83 and
+// active-applications "application view" -- #83 and
 // its #86 follow-up reorganizing this workflow).
 func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately(t *testing.T) {
 	s := newTestStore(t)
@@ -2383,7 +2383,7 @@ func runCmd(t *testing.T, cmd tea.Cmd) []tea.Msg {
 
 // TestApp_SubmitDocumentReviewFromPostingDetailViaApplicationDetailFastPath_KeepsApplication
 // is a regression test: application detail's 'p' enters posting detail via
-// the fast path (see decisions.log #87 follow-up), which never populates
+// the fast path (#87 follow-up), which never populates
 // a.applicationsByPosting since it renders directly from the already-loaded
 // ApplicationView instead of going through loadApplication. Submitting a
 // document review from that posting-detail screen returns to
@@ -2543,7 +2543,7 @@ func TestApp_PostingDetail_NoApplication_ShowsNoDocumentsSection(t *testing.T) {
 	app = openPostingList(t, app)
 	// No CreateApplication call -- store.GetApplication will return
 	// store.ErrNotFound, per the "no application -> show nothing"
-	// decision (see decisions.log).
+	// decision.
 
 	app = openPostingDetail(t, app)
 
@@ -3058,8 +3058,8 @@ func TestFilterSummaryLine_DepartmentsAndLocations(t *testing.T) {
 
 // TestFilterPostingsByCompanyFilters_MatchSemantics pins the same
 // AND-across-fields/OR-within-field semantics SyncCompany's ingestion-time
-// gating relies on (both now share sync.FilterRules -- see decisions.log,
-// #61), via filterPostingsByCompanyFilters directly rather than through a
+// gating relies on (both now share sync.FilterRules, #61),
+// via filterPostingsByCompanyFilters directly rather than through a
 // full App.
 func TestFilterPostingsByCompanyFilters_MatchSemantics(t *testing.T) {
 	t.Parallel()
@@ -3145,7 +3145,7 @@ func TestFilterPostingsByCompanyFilters_UnsupportedField_ReturnsError(t *testing
 // msg.postings/msg.markup/msg.departments/msg.locations, so an error
 // blanks the previously-loaded list rather than leaving it visible
 // alongside the error. Documented as a deliberate trade-off (see
-// decisions.log, #61) rather than something this test argues should
+// #61) rather than something this test argues should
 // change -- it exists so a future change to this behavior is a visible,
 // intentional diff instead of a silent one.
 func TestApp_PostingsLoadedMsgWithErr_ClearsPostingsAndMarkup(t *testing.T) {

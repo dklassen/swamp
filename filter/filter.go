@@ -33,7 +33,7 @@ type Filter struct {
 // single source of truth every caller building or reading a Filter should
 // use instead of retyping the string, so a typo can't silently produce a
 // filter Match rejects with "unsupported field" (or, worse, one caller's
-// string and another's drifting apart -- see decisions.log, #61).
+// string and another's drifting apart -- #61).
 const (
 	FieldDepartment = "department"
 	FieldLocation   = "location"

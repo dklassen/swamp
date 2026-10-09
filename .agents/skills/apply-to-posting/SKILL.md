@@ -20,9 +20,9 @@ Don't read or write the sqlite db or the assets directory directly.
 The server has to be running on the host before the session starts
 (`task mcp-serve`). If the `swamp` tools aren't available or calls fail to
 connect, stop and tell the user to start it rather than falling back to
-anything else. See `decisions.log` for the `host.container.internal`
-DNS/bind-address details if the server seems unreachable from inside a
-container.
+anything else. If the server answers on the host but is unreachable from
+inside a container, have the user run `task container:dns` on the host:
+it recreates the `host.container.internal` DNS entry.
 
 ## 1. Discover eligible postings
 

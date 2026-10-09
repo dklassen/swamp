@@ -22,7 +22,7 @@ import (
 // adapter type is needed, and no field-by-field translation code exists
 // between a client and sync. Not every source can populate every field --
 // e.g. Greenhouse has no employment/workplace type -- those are simply
-// left empty (see jobboard's doc comment, and decisions.log, #57).
+// left empty (see jobboard's doc comment, and #57).
 // boardSlug is whatever that source's client needs to identify the board
 // (an Ashby slug, a Greenhouse board token, etc.) -- it's passed through
 // from store.Company.SourceRef untouched.

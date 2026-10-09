@@ -19,7 +19,7 @@ import (
 // exists for cross-cutting screens (see ListActiveApplications) that
 // don't. Embeds Application rather than duplicating its fields under a
 // different name, so it's honestly the same entity with more resolved,
-// not a second, partial representation of it (see decisions.log).
+// not a second, partial representation of it.
 type ApplicationView struct {
 	Application
 	Posting       Posting
@@ -35,7 +35,7 @@ type ApplicationView struct {
 // exact nested db types those macros generate, so this just runs them
 // through the same conversion every other Application/Posting goes
 // through, rather than hand-reconstructing them field-by-field from a
-// flat row (see decisions.log).
+// flat row.
 func applicationViewFromRow(row db.ListActiveApplicationsRow) (ApplicationView, error) {
 	app, err := applicationFromRow(row.Application)
 	if err != nil {
