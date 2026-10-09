@@ -13,6 +13,9 @@
 *.bak-wal
 *.bak-shm
 
+# The central log (SWAMP_LOG_PATH, by default next to the database).
+*.log
+
 # Claude Code's per-user state: local settings (permission allowlists,
 # which can embed paths, hosts and tokens), scratch files and worktrees.
 # skills/ stays tracked: it's how Claude Code finds the repo's skills.

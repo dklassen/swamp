@@ -16,7 +16,13 @@ import (
 
 func newExportTestStore(t *testing.T) *store.Store {
 	t.Helper()
-	sqlDB, err := store.Open(filepath.Join(t.TempDir(), "test.db"), store.DefaultConfig())
+	return newExportTestStoreAt(t, filepath.Join(t.TempDir(), "test.db"))
+}
+
+// newExportTestStoreAt is newExportTestStore on the database at path.
+func newExportTestStoreAt(t *testing.T, path string) *store.Store {
+	t.Helper()
+	sqlDB, err := store.Open(path, store.DefaultConfig())
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
