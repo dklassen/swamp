@@ -38,8 +38,8 @@ func TestCheck_DatabaseBehind_SaysToRunMigrate(t *testing.T) {
 	if behind.Current != 0 || behind.Latest != Latest() {
 		t.Errorf("BehindError = %+v, want Current 0, Latest %d", behind, Latest())
 	}
-	if !strings.Contains(err.Error(), "swamp migrate") {
-		t.Errorf("error %q doesn't say to run swamp migrate", err)
+	if !strings.Contains(err.Error(), "swamp migrate up") {
+		t.Errorf("error %q doesn't say to run swamp migrate up", err)
 	}
 }
 
@@ -144,5 +144,40 @@ func TestCheck_AfterARollback_AgreesWithGoose(t *testing.T) {
 	var behind *BehindError
 	if !errors.As(err, &behind) || behind.Current != gooseVersion || gooseVersion != Latest()-1 {
 		t.Errorf("Check after one rollback = %v; goose says version %d; want a *BehindError at %d", err, gooseVersion, Latest()-1)
+	}
+}
+
+// TestDown_RollsBackOneMigration: `swamp migrate down` undoes only the
+// newest migration, and says which.
+func TestDown_RollsBackOneMigration(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	sqlDB := openEmpty(t)
+	if _, err := Up(ctx, sqlDB); err != nil {
+		t.Fatalf("Up: %v", err)
+	}
+
+	rolledBack, err := Down(ctx, sqlDB)
+	if err != nil {
+		t.Fatalf("Down: %v", err)
+	}
+	if rolledBack != Latest() {
+		t.Errorf("Down rolled back %d, want %d", rolledBack, Latest())
+	}
+
+	var behind *BehindError
+	if err := Check(ctx, sqlDB); !errors.As(err, &behind) || behind.Current != Latest()-1 {
+		t.Errorf("Check after Down = %v, want a *BehindError at %d", err, Latest()-1)
+	}
+}
+
+// TestDown_NothingToRollBack_Errors: down on an unmigrated database fails
+// rather than reporting a rollback that didn't happen.
+func TestDown_NothingToRollBack_Errors(t *testing.T) {
+	t.Parallel()
+
+	if v, err := Down(context.Background(), openEmpty(t)); err == nil {
+		t.Errorf("Down on an unmigrated database = %d, nil; want an error", v)
 	}
 }

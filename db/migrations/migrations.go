@@ -9,7 +9,7 @@ import (
 	"github.com/pressly/goose/v3"
 )
 
-// Applying migrations is an explicit step, `swamp migrate`, not something
+// Applying migrations is an explicit step, `swamp migrate up`, not something
 // every process does as it starts. The TUI, mcp-serve and fetch
 // only Check, so an upgrade happens once, deliberately, and never under a
 // process still running the previous binary.
@@ -20,7 +20,7 @@ type BehindError struct {
 }
 
 func (e *BehindError) Error() string {
-	return fmt.Sprintf("the database is at version %d; this binary needs %d: run `swamp migrate` (back up the database first)", e.Current, e.Latest)
+	return fmt.Sprintf("the database is at version %d; this binary needs %d: run `swamp migrate up` (back up the database first)", e.Current, e.Latest)
 }
 
 // AheadError is Check's error for a database migrated by a newer binary.
@@ -101,6 +101,19 @@ func Up(ctx context.Context, db *sql.DB) ([]int64, error) {
 		applied[i] = r.Source.Version
 	}
 	return applied, nil
+}
+
+// Down rolls back db's newest migration and returns its version.
+func Down(ctx context.Context, db *sql.DB) (int64, error) {
+	p, err := provider(db)
+	if err != nil {
+		return 0, err
+	}
+	result, err := p.Down(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("migrations: roll back: %w", err)
+	}
+	return result.Source.Version, nil
 }
 
 // provider is a goose provider for db and the embedded migrations. Its
