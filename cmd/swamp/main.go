@@ -15,6 +15,7 @@ import (
 	"database/sql"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"io"
 	"log"
@@ -22,7 +23,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -42,6 +42,16 @@ import (
 )
 
 func main() {
+	rf, err := parseArgs(os.Args[1:])
+	if errors.Is(err, flag.ErrHelp) {
+		fmt.Println(usage)
+		return
+	}
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "swamp: %v\n%s\n", err, usage)
+		os.Exit(2)
+	}
+
 	dbPath := os.Getenv("SWAMP_DB_PATH")
 	if dbPath == "" {
 		dbPath = "swamp.db"
@@ -56,9 +66,8 @@ func main() {
 		documentsPath = "assets"
 	}
 
-	kind := processKind(os.Args)
-	if kind == "migrate" {
-		runMigrate(dbPath, os.Args[2:])
+	if rf.command == cmdMigrate {
+		runMigrate(dbPath, rf.migrate)
 		return
 	}
 	// On a plain handle: with an origin, an out-of-date database would fail
@@ -67,7 +76,7 @@ func main() {
 
 	// Other processes read the origin to tell who made a change.
 	cfg := store.DefaultConfig()
-	cfg.Origin = fmt.Sprintf("%s:%d", kind, os.Getpid())
+	cfg.Origin = fmt.Sprintf("%s:%d", rf.kind(), os.Getpid())
 	sqlDB, err := store.Open(dbPath, cfg)
 	if err != nil {
 		log.Fatalf("open db: %v", err)
@@ -81,35 +90,29 @@ func main() {
 	s := store.New(sqlDB)
 	documentsStore := documents.NewStore(documentsPath)
 
-	withMCP := len(os.Args) > 1 && os.Args[1] == mcpFlag
-	if len(os.Args) > 1 && !withMCP {
-		switch os.Args[1] {
-		case "fetch":
-			if runFetch(s) > 0 {
-				// os.Exit skips the deferred Close, so close first to
-				// leave the database checkpointed.
-				if err := sqlDB.Close(); err != nil {
-					log.Printf("close db: %v", err)
-				}
-				os.Exit(1)
+	switch rf.command {
+	case cmdFetch:
+		if runFetch(s) > 0 {
+			// os.Exit skips the deferred Close, so close first to
+			// leave the database checkpointed.
+			if err := sqlDB.Close(); err != nil {
+				log.Printf("close db: %v", err)
 			}
-			return
-		case "stage":
-			runStage(s, documentsStore, os.Args[2:])
-			return
-		case "export":
-			runExport(s, documentsStore, os.Args[2:])
-			return
-		case "import":
-			runImport(s, os.Args[2:])
-			return
-		case "mcp-serve":
-			runMCPServe(s, documentsStore)
-			return
-		default:
-			fmt.Fprintf(os.Stderr, "usage: %s [--mcp|migrate up|migrate down|fetch|stage|export|import|mcp-serve]\n", os.Args[0])
 			os.Exit(1)
 		}
+		return
+	case cmdStage:
+		runStage(s, documentsStore, rf.stage, rf.postingID)
+		return
+	case cmdExport:
+		runExport(s, documentsStore, rf.applicationID)
+		return
+	case cmdImport:
+		runImport(s, rf.seedFile)
+		return
+	case cmdMCPServe:
+		runMCPServe(s, documentsStore)
+		return
 	}
 
 	logPath := os.Getenv("SWAMP_LOG_PATH")
@@ -131,13 +134,13 @@ func main() {
 	app := tui.New(s, syncer, documentsStore).WithChangeLog(since, cfg.Origin)
 	program := tea.NewProgram(app, tea.WithAltScreen())
 	stopMCP := func(context.Context) error { return nil }
-	if withMCP {
+	if rf.mcp {
 		// About to crash anyway: a failed release has nowhere better to go.
 		release := func() { _ = program.ReleaseTerminal() }
 		addr := mcpAddr()
 		stopMCP, err = mcpForTUI(addr, dbPath, documentsStore, logger.With("component", "mcp"), release)
 		if err != nil {
-			log.Fatalf("swamp %s: %v", mcpFlag, err)
+			log.Fatalf("swamp --mcp: %v", err)
 		}
 		app.WithStatus("MCP server on " + addr)
 	}
@@ -194,13 +197,8 @@ func newStage(s *store.Store, d *documents.Store) *stage.Stage {
 // real API before being saved, so a bad row is reported and skipped
 // rather than silently creating a dead company; re-running the same file
 // is always safe (store.CreateCompany is idempotent on source+source_ref).
-func runImport(s *store.Store, args []string) {
-	if len(args) != 1 {
-		fmt.Fprintf(os.Stderr, "usage: %s import <seed-file.yaml>\n", os.Args[0])
-		os.Exit(1)
-	}
-
-	f, err := os.Open(args[0])
+func runImport(s *store.Store, seedFile string) {
+	f, err := os.Open(seedFile)
 	if err != nil {
 		log.Fatalf("open seed file: %v", err)
 	}
@@ -268,40 +266,25 @@ func reportFetch(stdout, stderr io.Writer, results []sync.Result) int {
 // eligible postings as a JSON array, `stage prepare <posting-id>` commits
 // to one and prints the result as a JSON object. See the stage package
 // for what each does.
-func runStage(s *store.Store, d *documents.Store, args []string) {
-	usage := func() {
-		fmt.Fprintf(os.Stderr, "usage: %s stage [list|prepare <posting-id>]\n", os.Args[0])
-		os.Exit(1)
-	}
-	if len(args) == 0 {
-		usage()
-	}
-
+func runStage(s *store.Store, d *documents.Store, action stageAction, postingID int64) {
 	st := newStage(s, d)
 	ctx := context.Background()
 
-	switch args[0] {
-	case "list":
+	switch action {
+	case stageList:
 		candidates, err := st.List(ctx)
 		if err != nil {
 			log.Fatalf("stage list: %v", err)
 		}
 		printJSON(candidates)
-	case "prepare":
-		if len(args) < 2 {
-			usage()
-		}
-		postingID, err := strconv.ParseInt(args[1], 10, 64)
-		if err != nil {
-			log.Fatalf("invalid posting id %q: %v", args[1], err)
-		}
+	case stagePrepare:
 		prepared, err := st.Prepare(ctx, postingID)
 		if err != nil {
 			log.Fatalf("stage prepare: %v", err)
 		}
 		printJSON(prepared)
 	default:
-		usage()
+		log.Fatalf("stage: unknown action %q", action)
 	}
 }
 
@@ -356,16 +339,7 @@ func runMCPServe(s *store.Store, d *documents.Store) {
 // useful to preview as a PDF -- but each line reports the latest review
 // outcome so the caller can tell a ready-to-submit document from one that
 // still needs work.
-func runExport(s *store.Store, d *documents.Store, args []string) {
-	if len(args) != 1 {
-		fmt.Fprintf(os.Stderr, "usage: %s export <application-id>\n", os.Args[0])
-		os.Exit(1)
-	}
-	applicationID, err := strconv.ParseInt(args[0], 10, 64)
-	if err != nil {
-		log.Fatalf("invalid application id %q: %v", args[0], err)
-	}
-
+func runExport(s *store.Store, d *documents.Store, applicationID int64) {
 	ctx := context.Background()
 	// Validate the ID against a real row before anything else. Without
 	// this, a typo'd or stale ID walks the same path as a real
@@ -453,20 +427,6 @@ func printJSON(v any) {
 	}
 }
 
-// mcpFlag runs the MCP server inside the TUI process.
-const mcpFlag = "--mcp"
-
-// processKind is the first half of this process's change-log origin.
-func processKind(args []string) string {
-	if len(args) < 2 || args[1] == mcpFlag {
-		return "tui"
-	}
-	if args[1] == "mcp-serve" {
-		return "mcp"
-	}
-	return args[1]
-}
-
 func openPlain(dbPath string) *sql.DB {
 	sqlDB, err := store.Open(dbPath, store.DefaultConfig())
 	if err != nil {
@@ -489,11 +449,7 @@ func checkSchema(dbPath string) {
 // runMigrate applies the database migrations this binary has and the
 // database doesn't (up), or rolls back the newest one (down), and says
 // what it did.
-func runMigrate(dbPath string, args []string) {
-	if len(args) != 1 || (args[0] != "up" && args[0] != "down") {
-		fmt.Fprintf(os.Stderr, "usage: %s migrate [up|down]\n", os.Args[0])
-		os.Exit(1)
-	}
+func runMigrate(dbPath string, direction migrateDirection) {
 	sqlDB := openPlain(dbPath)
 	defer func() {
 		if err := sqlDB.Close(); err != nil {
@@ -502,7 +458,7 @@ func runMigrate(dbPath string, args []string) {
 	}()
 	ctx := context.Background()
 
-	if args[0] == "down" {
+	if direction == migrateDown {
 		version, err := migrations.Down(ctx, sqlDB)
 		if err != nil {
 			log.Fatalf("migrate down: %v", err)
