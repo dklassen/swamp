@@ -1239,6 +1239,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case applicationFormSavedMsg:
 		a.err = msg.err
+		if msg.err != nil && a.screen == screenApplicationForm {
+			a.applicationForm.saving = false
+		}
 		if msg.err == nil {
 			a.status = "Application form saved"
 			// Same late-save guard as applicationNotesUpdatedMsg.

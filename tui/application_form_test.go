@@ -95,3 +95,25 @@ func TestApplicationFormModel_EscWithoutEdits_Cancels(t *testing.T) {
 		t.Fatalf("intent = %T, want cancelApplicationFormMsg", intent)
 	}
 }
+
+// TestApplicationFormModel_WhileSaving_IgnoresKeys: once a valid form is
+// sent to be saved, the screen waits for the result.
+func TestApplicationFormModel_WhileSaving_IgnoresKeys(t *testing.T) {
+	t.Parallel()
+
+	m := newApplicationFormModel(nil, 7, nil, 80, 20)
+	m.textarea.InsertString("Why us? *\n")
+	if cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS}); cmd == nil {
+		t.Fatal("ctrl+s on a valid form returned no save cmd")
+	}
+	typed := m.textarea.Value()
+
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyEsc}, {Type: tea.KeyRunes, Runes: []rune("x")}, {Type: tea.KeyCtrlS}} {
+		if cmd, intent := m.Update(key); cmd != nil || intent != nil {
+			t.Errorf("%v while saving: cmd %v, intent %T; want neither", key, cmd, intent)
+		}
+	}
+	if got := m.textarea.Value(); got != typed {
+		t.Errorf("textarea = %q, want %q", got, typed)
+	}
+}

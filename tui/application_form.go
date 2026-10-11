@@ -34,6 +34,9 @@ type applicationFormModel struct {
 	// lose edits.
 	seed              string
 	confirmingDiscard bool
+	// saving is set from a valid ctrl+s until App reports the save failed
+	// (on success App leaves the screen); keys are ignored meanwhile.
+	saving bool
 }
 
 func newApplicationFormModel(s *store.Store, postingID int64, previous *jobboard.ApplicationForm, width, height int) applicationFormModel {
@@ -71,6 +74,9 @@ func applicationFormDiscardPrompt() string {
 type cancelApplicationFormMsg struct{}
 
 func (m *applicationFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
+	if m.saving {
+		return nil, nil
+	}
 	if m.confirmingDiscard {
 		switch {
 		case msg.String() == "y":
@@ -96,6 +102,7 @@ func (m *applicationFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		if err != nil {
 			return nil, nil
 		}
+		m.saving = true
 		return saveApplicationForm(m.store, m.postingID, form), nil
 	}
 	var cmd tea.Cmd

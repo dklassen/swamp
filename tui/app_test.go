@@ -3846,3 +3846,27 @@ func TestApp_NotesSaveFails_UnblocksEditing(t *testing.T) {
 		t.Fatalf("notes after failed save and typing = %q, want %q (editing resumes)", got, "Hi!")
 	}
 }
+
+func TestApp_ApplicationFormSaveFails_UnblocksEditing(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 30})
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, loadCmd := sendKey(app, runeKey('f'))
+	app = applyCmd(t, app, loadCmd)
+	app, _ = sendKey(app, runeKey([]rune("Why us? *")...))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyCtrlS})
+
+	app, _ = sendKey(app, applicationFormSavedMsg{err: errors.New("disk full")})
+	app, _ = sendKey(app, runeKey('!'))
+
+	if app.screen != screenApplicationForm {
+		t.Fatalf("screen after failed save = %v, want screenApplicationForm", app.screen)
+	}
+	if got := app.applicationForm.textarea.Value(); !strings.HasSuffix(got, "Why us? *!") {
+		t.Fatalf("form after failed save and typing = %q, want it to end %q (editing resumes)", got, "Why us? *!")
+	}
+}
