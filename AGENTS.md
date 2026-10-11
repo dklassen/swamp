@@ -528,7 +528,7 @@ If `fmt:check` fails, run `gofmt -w <files>`. The pre-commit hook auto-formats s
   - `task fmt` / `task fmt:check` — gofmt, format or check-only.
   - `task lint` — golangci-lint (standard linter set: errcheck, govet, ineffassign, staticcheck, unused).
   - `task sqlc:generate` — regenerate `store/db` from `db/queries/*.sql` + `db/migrations`.
-  - `task migrate:up` / `task migrate:down` / `task migrate:status` — goose migrations against the local sqlite db.
+  - `task migrate:up` / `task migrate:down` / `task migrate:status` — `migrate:up`/`migrate:down` run `./bin/swamp migrate up|down` (build first); `migrate:status` is raw goose. `task run`/`task mcp-serve` never migrate, only check.
   - `task hooks:install` — point git at `.githooks/` (run once per clone; `core.hooksPath` itself can't be version-controlled).
   - `task build` — build the `swamp` binary to `./bin/swamp`.
   - `task test` — `go test ./...`.
