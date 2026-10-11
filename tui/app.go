@@ -1239,6 +1239,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case applicationFormSavedMsg:
 		a.err = msg.err
+		if msg.err != nil && a.screen == screenApplicationForm {
+			a.applicationForm.saving = false
+		}
 		if msg.err == nil {
 			a.status = "Application form saved"
 			// Same late-save guard as applicationNotesUpdatedMsg.
@@ -1248,6 +1251,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case applicationNotesUpdatedMsg:
 		a.err = msg.err
+		if msg.err != nil && a.screen == screenApplicationNotesEdit && a.applicationNotes.instance == msg.from {
+			a.applicationNotes.saving = false
+		}
 		if msg.err == nil {
 			if a.applicationsByPosting == nil {
 				a.applicationsByPosting = make(map[int64]store.Application)
@@ -1707,6 +1713,14 @@ func (a *App) View() string {
 		body = overlay(body, a.companyDelete.View(a.width), a.width)
 	case screenApplicationDelete:
 		body = overlay(body, a.applicationDelete.View(a.width), a.width)
+	case screenApplicationForm:
+		if a.applicationForm.confirmingDiscard {
+			body = overlay(body, a.applicationForm.discardBox(a.width), a.width)
+		}
+	case screenApplicationNotesEdit:
+		if a.applicationNotes.confirmingDiscard {
+			body = overlay(body, a.applicationNotes.discardBox(a.width), a.width)
+		}
 	}
 	return a.header() + body + a.banner()
 }

@@ -30,6 +30,13 @@ type applicationFormModel struct {
 	// parseErr is why the last ctrl+s didn't save. The screen stays open
 	// so the user can fix the line it names.
 	parseErr error
+	// seed is the text the screen opened with, to tell whether esc would
+	// lose edits.
+	seed              string
+	confirmingDiscard bool
+	// saving is set from a valid ctrl+s until App reports the save failed
+	// (on success App leaves the screen); keys are ignored meanwhile.
+	saving bool
 }
 
 func newApplicationFormModel(s *store.Store, postingID int64, previous *jobboard.ApplicationForm, width, height int) applicationFormModel {
@@ -41,7 +48,7 @@ func newApplicationFormModel(s *store.Store, postingID int64, previous *jobboard
 	}
 	ta.SetValue(jobboard.FormText(seed))
 	ta.Focus()
-	m := applicationFormModel{store: s, postingID: postingID, previous: previous, textarea: ta}
+	m := applicationFormModel{store: s, postingID: postingID, previous: previous, textarea: ta, seed: ta.Value()}
 	m.setHeight(height)
 	return m
 }
@@ -58,13 +65,42 @@ func applicationFormIntro() string {
 
 func applicationFormHelp() string { return helpStyle.Render("ctrl+s: save  esc: cancel") }
 
+// discardBox is the box App draws over the screen while esc's discard
+// question is open, at most width wide.
+func (m *applicationFormModel) discardBox(width int) string {
+	var b strings.Builder
+	b.WriteString(fieldLabel.Render("Discard unsaved changes?") + "\n")
+	b.WriteString("Your edits to the application form aren't saved.\n\n")
+	b.WriteString(fieldLabel.Render("y") + ": discard  " + fieldLabel.Render("n/esc") + ": keep editing  " + fieldLabel.Render("ctrl+s") + ": save")
+	return confirmBox(b.String(), width)
+}
+
 // cancelApplicationFormMsg signals that App should go back to application
 // detail without saving.
 type cancelApplicationFormMsg struct{}
 
 func (m *applicationFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
+	if m.saving {
+		return nil, nil
+	}
+	if m.confirmingDiscard {
+		switch {
+		case msg.String() == "y":
+			return nil, cancelApplicationFormMsg{}
+		case msg.Type == tea.KeyEsc, msg.String() == "n":
+			m.confirmingDiscard = false
+			return nil, nil
+		case msg.Type != tea.KeyCtrlS:
+			return nil, nil
+		}
+		m.confirmingDiscard = false
+	}
 	switch msg.Type {
 	case tea.KeyEsc:
+		if m.textarea.Value() != m.seed {
+			m.confirmingDiscard = true
+			return nil, nil
+		}
 		return nil, cancelApplicationFormMsg{}
 	case tea.KeyCtrlS:
 		form, err := jobboard.ParseFormText(m.textarea.Value(), m.previous)
@@ -72,6 +108,7 @@ func (m *applicationFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		if err != nil {
 			return nil, nil
 		}
+		m.saving = true
 		return saveApplicationForm(m.store, m.postingID, form), nil
 	}
 	var cmd tea.Cmd
