@@ -3870,3 +3870,61 @@ func TestApp_ApplicationFormSaveFails_UnblocksEditing(t *testing.T) {
 		t.Fatalf("form after failed save and typing = %q, want it to end %q (editing resumes)", got, "Why us? *!")
 	}
 }
+
+// TestApp_ApplicationFormEscWithEdits_DrawsDiscardBox: the discard prompt
+// is the same box over the screen as the delete confirmations.
+func TestApp_ApplicationFormEscWithEdits_DrawsDiscardBox(t *testing.T) {
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustCreateApplication(t, s, posting.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 30})
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, loadCmd := sendKey(app, runeKey('f'))
+	app = applyCmd(t, app, loadCmd)
+	app, _ = sendKey(app, runeKey([]rune("Why us? *")...))
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+
+	view := app.View()
+	box := app.applicationForm.discardBox(app.width)
+	for _, line := range strings.Split(box, "\n") {
+		if !strings.Contains(view, line) {
+			t.Fatalf("view doesn't draw the discard box line %q:\n%s", line, view)
+		}
+	}
+	if !strings.Contains(box, "╭") || !strings.Contains(box, "Discard unsaved changes?") {
+		t.Errorf("discard box isn't a confirm box asking to discard:\n%s", box)
+	}
+}
+
+func TestApp_NotesEscWithEdits_DrawsDiscardBox(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	if _, err := s.CreateApplication(context.Background(), app.postings[0].ID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	app = openPostingDetail(t, app)
+	app, _ = sendKey(app, runeKey('n'))
+	app, _ = sendKey(app, runeKey('H', 'i'))
+
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+
+	view := app.View()
+	box := app.applicationNotes.discardBox(app.width)
+	for _, line := range strings.Split(box, "\n") {
+		if !strings.Contains(view, line) {
+			t.Fatalf("view doesn't draw the discard box line %q:\n%s", line, view)
+		}
+	}
+	if !strings.Contains(box, "╭") || !strings.Contains(box, "Discard unsaved changes?") {
+		t.Errorf("discard box isn't a confirm box asking to discard:\n%s", box)
+	}
+}

@@ -53,8 +53,14 @@ func (m *applicationNotesModel) setHeight(height int) {
 
 func applicationNotesHelp() string { return helpStyle.Render("ctrl+s: save  esc: cancel") }
 
-func applicationNotesDiscardPrompt() string {
-	return helpStyle.Render("Discard unsaved changes? y: discard  n/esc: keep editing  ctrl+s: save")
+// discardBox is the box App draws over the screen while esc's discard
+// question is open, at most width wide.
+func (m *applicationNotesModel) discardBox(width int) string {
+	var b strings.Builder
+	b.WriteString(fieldLabel.Render("Discard unsaved changes?") + "\n")
+	b.WriteString("Your edits to the notes aren't saved.\n\n")
+	b.WriteString(fieldLabel.Render("y") + ": discard  " + fieldLabel.Render("n/esc") + ": keep editing  " + fieldLabel.Render("ctrl+s") + ": save")
+	return confirmBox(b.String(), width)
 }
 
 // cancelApplicationNotesMsg signals that App should switch back to the
@@ -96,10 +102,6 @@ func (m *applicationNotesModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 func (m *applicationNotesModel) View() string {
 	var b strings.Builder
 	b.WriteString(m.textarea.View() + "\n")
-	if m.confirmingDiscard {
-		b.WriteString(applicationNotesDiscardPrompt())
-	} else {
-		b.WriteString(applicationNotesHelp())
-	}
+	b.WriteString(applicationNotesHelp())
 	return b.String()
 }

@@ -38,8 +38,8 @@ func TestApplicationFormModel_EscWithUnsavedEdits_AsksBeforeDiscarding(t *testin
 	if cmd != nil || intent != nil {
 		t.Fatalf("esc with unsaved edits: cmd %v, intent %T; want neither (screen stays to ask)", cmd, intent)
 	}
-	if view := m.View(); !strings.Contains(view, "Discard unsaved changes?") {
-		t.Errorf("view doesn't ask before discarding:\n%s", view)
+	if !m.confirmingDiscard {
+		t.Error("esc with unsaved edits didn't open the discard question")
 	}
 }
 
@@ -77,7 +77,7 @@ func TestApplicationFormModel_DiscardPrompt(t *testing.T) {
 			if saved := cmd != nil; saved != tt.wantSave {
 				t.Errorf("save cmd returned: %v, want %v", saved, tt.wantSave)
 			}
-			if prompt := strings.Contains(m.View(), "Discard unsaved changes?"); !tt.wantCancel && prompt != tt.wantPrompt {
+			if prompt := m.confirmingDiscard; !tt.wantCancel && prompt != tt.wantPrompt {
 				t.Errorf("prompt shown: %v, want %v", prompt, tt.wantPrompt)
 			}
 			if got := m.textarea.Value(); got != typed {

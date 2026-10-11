@@ -65,8 +65,14 @@ func applicationFormIntro() string {
 
 func applicationFormHelp() string { return helpStyle.Render("ctrl+s: save  esc: cancel") }
 
-func applicationFormDiscardPrompt() string {
-	return helpStyle.Render("Discard unsaved changes? y: discard  n/esc: keep editing  ctrl+s: save")
+// discardBox is the box App draws over the screen while esc's discard
+// question is open, at most width wide.
+func (m *applicationFormModel) discardBox(width int) string {
+	var b strings.Builder
+	b.WriteString(fieldLabel.Render("Discard unsaved changes?") + "\n")
+	b.WriteString("Your edits to the application form aren't saved.\n\n")
+	b.WriteString(fieldLabel.Render("y") + ": discard  " + fieldLabel.Render("n/esc") + ": keep editing  " + fieldLabel.Render("ctrl+s") + ": save")
+	return confirmBox(b.String(), width)
 }
 
 // cancelApplicationFormMsg signals that App should go back to application
@@ -118,11 +124,7 @@ func (m *applicationFormModel) View() string {
 	}
 	b.WriteString("\n")
 	b.WriteString(m.textarea.View() + "\n")
-	if m.confirmingDiscard {
-		b.WriteString(applicationFormDiscardPrompt())
-	} else {
-		b.WriteString(applicationFormHelp())
-	}
+	b.WriteString(applicationFormHelp())
 	return b.String()
 }
 

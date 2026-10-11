@@ -1713,6 +1713,14 @@ func (a *App) View() string {
 		body = overlay(body, a.companyDelete.View(a.width), a.width)
 	case screenApplicationDelete:
 		body = overlay(body, a.applicationDelete.View(a.width), a.width)
+	case screenApplicationForm:
+		if a.applicationForm.confirmingDiscard {
+			body = overlay(body, a.applicationForm.discardBox(a.width), a.width)
+		}
+	case screenApplicationNotesEdit:
+		if a.applicationNotes.confirmingDiscard {
+			body = overlay(body, a.applicationNotes.discardBox(a.width), a.width)
+		}
 	}
 	return a.header() + body + a.banner()
 }
