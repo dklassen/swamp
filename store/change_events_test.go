@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-// openWithOrigin needs path already migrated, as `swamp migrate` guarantees.
+// openWithOrigin needs path already migrated, as `swamp migrate up` guarantees.
 func openWithOrigin(t *testing.T, path, origin string) *Store {
 	t.Helper()
 	cfg := DefaultConfig()
@@ -124,8 +124,8 @@ func TestOpen_WithOrigin_OnAnUnmigratedDatabase_SaysToMigrate(t *testing.T) {
 	s := openWithOrigin(t, t.TempDir()+"/test.db", "tui:1")
 
 	err := s.sqlDB.Ping()
-	if err == nil || !strings.Contains(err.Error(), "swamp migrate") {
-		t.Errorf("first use of a stamped store on an unmigrated database = %v, want an error saying to run swamp migrate", err)
+	if err == nil || !strings.Contains(err.Error(), "swamp migrate up") {
+		t.Errorf("first use of a stamped store on an unmigrated database = %v, want an error saying to run swamp migrate up", err)
 	}
 }
 

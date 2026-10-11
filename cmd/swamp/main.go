@@ -1,5 +1,6 @@
 // Command swamp is the entrypoint: it launches the TUI by default, applies
-// database migrations with the `migrate` subcommand (and only then), runs a
+// or rolls back database migrations with `migrate up` and `migrate down`
+// (and only then), runs a
 // one-off refresh with the `fetch` subcommand, drives the agent hand-off
 // mechanism with the `stage` subcommand, converts an application's
 // drafted documents to PDF with the `export` subcommand, or bulk-creates
@@ -57,7 +58,7 @@ func main() {
 
 	kind := processKind(os.Args)
 	if kind == "migrate" {
-		runMigrate(dbPath)
+		runMigrate(dbPath, os.Args[2:])
 		return
 	}
 	// On a plain handle: with an origin, an out-of-date database would fail
@@ -106,7 +107,7 @@ func main() {
 			runMCPServe(s, documentsStore)
 			return
 		default:
-			fmt.Fprintf(os.Stderr, "usage: %s [--mcp|migrate|fetch|stage|export|import|mcp-serve]\n", os.Args[0])
+			fmt.Fprintf(os.Stderr, "usage: %s [--mcp|migrate up|migrate down|fetch|stage|export|import|mcp-serve]\n", os.Args[0])
 			os.Exit(1)
 		}
 	}
@@ -486,17 +487,33 @@ func checkSchema(dbPath string) {
 }
 
 // runMigrate applies the database migrations this binary has and the
-// database doesn't, and says what it did.
-func runMigrate(dbPath string) {
+// database doesn't (up), or rolls back the newest one (down), and says
+// what it did.
+func runMigrate(dbPath string, args []string) {
+	if len(args) != 1 || (args[0] != "up" && args[0] != "down") {
+		fmt.Fprintf(os.Stderr, "usage: %s migrate [up|down]\n", os.Args[0])
+		os.Exit(1)
+	}
 	sqlDB := openPlain(dbPath)
 	defer func() {
 		if err := sqlDB.Close(); err != nil {
 			log.Printf("close db: %v", err)
 		}
 	}()
-	applied, err := migrations.Up(context.Background(), sqlDB)
+	ctx := context.Background()
+
+	if args[0] == "down" {
+		version, err := migrations.Down(ctx, sqlDB)
+		if err != nil {
+			log.Fatalf("migrate down: %v", err)
+		}
+		fmt.Printf("Rolled back migration %d. Until `swamp migrate up`, the other commands refuse this database.\n", version)
+		return
+	}
+
+	applied, err := migrations.Up(ctx, sqlDB)
 	if err != nil {
-		log.Fatalf("migrate: %v", err)
+		log.Fatalf("migrate up: %v", err)
 	}
 	if len(applied) == 0 {
 		fmt.Printf("The database is already at version %d.\n", migrations.Latest())

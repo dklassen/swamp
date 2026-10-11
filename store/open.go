@@ -105,7 +105,7 @@ func stampOrigin(origin string) sqlite.ConnectionHookFn {
 				BEGIN UPDATE main.change_events SET origin = (SELECT name FROM temp.swamp_origin) WHERE id = NEW.id; END`},
 		} {
 			if _, err := conn.ExecContext(ctx, stmt.query, stmt.args); err != nil {
-				return fmt.Errorf("store: set up change-log origin %q (run `swamp migrate` if the database is out of date): %w", origin, err)
+				return fmt.Errorf("store: set up change-log origin %q (run `swamp migrate up` if the database is out of date): %w", origin, err)
 			}
 		}
 		return nil

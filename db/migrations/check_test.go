@@ -43,7 +43,7 @@ func TestCheck_DatabaseBehind_SaysToRunMigrate(t *testing.T) {
 	}
 }
 
-// TestUp_MigratesToLatestAndIsANoOpAfter: `swamp migrate` on a new or
+// TestUp_MigratesToLatestAndIsANoOpAfter: `swamp migrate up` on a new or
 // older database brings it to Latest, and running it again changes
 // nothing.
 func TestUp_MigratesToLatestAndIsANoOpAfter(t *testing.T) {
