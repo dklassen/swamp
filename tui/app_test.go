@@ -1319,9 +1319,10 @@ func TestApp_NotesEdit_Esc_CancelsWithoutSaving(t *testing.T) {
 
 	app, _ = sendKey(app, runeKey('H', 'i'))
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	app, _ = sendKey(app, runeKey('y')) // discard the unsaved "Hi"
 
 	if app.screen != screenPostingDetail {
-		t.Fatalf("screen after esc = %v, want screenPostingDetail", app.screen)
+		t.Fatalf("screen after esc and discarding = %v, want screenPostingDetail", app.screen)
 	}
 	stored, err := s.GetApplication(context.Background(), postingID)
 	if err != nil {
@@ -3530,7 +3531,7 @@ func TestApp_NestedBackOut_RetracesPath(t *testing.T) {
 // being pulled back to posting detail after the user's own esc already
 // popped its returnStack entry would leave the next esc with nowhere
 // correct to go.
-func TestApp_NotesSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T) {
+func TestApp_NotesEsc_WhileSaving_WaitsForTheSave(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3549,16 +3550,15 @@ func TestApp_NotesSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T)
 	if saveCmd == nil {
 		t.Fatal("Update on ctrl+s (notes edit) returned nil Cmd, want a command that saves notes")
 	}
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc}) // notes edit -> posting detail, save still in flight
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc}) // posting detail -> posting list
-	if app.screen != screenPostingList {
-		t.Fatalf("screen after backing out = %v, want screenPostingList", app.screen)
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc}) // ignored: the save is still in flight
+	if app.screen != screenApplicationNotesEdit {
+		t.Fatalf("screen after esc while saving = %v, want screenApplicationNotesEdit", app.screen)
 	}
 
 	app = applyCmd(t, app, saveCmd)
 
-	if app.screen != screenPostingList {
-		t.Fatalf("screen after late save result = %v, want screenPostingList (where the user already was)", app.screen)
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen after the save result = %v, want screenPostingDetail", app.screen)
 	}
 }
 
@@ -3576,18 +3576,18 @@ func TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T
 	}
 	app = openPostingDetail(t, app)
 	app, _ = sendKey(app, runeKey('n'))
-	app, _ = sendKey(app, runeKey('H', 'i'))
-	app, saveCmd := sendKey(app, tea.KeyMsg{Type: tea.KeyCtrlS})
-	if saveCmd == nil {
-		t.Fatal("Update on ctrl+s (notes edit) returned nil Cmd, want a command that saves notes")
-	}
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc}) // notes edit -> posting detail, save still in flight
+	earlier := app.applicationNotes.instance
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc}) // notes edit -> posting detail
 	app, _ = sendKey(app, runeKey('n'))                 // posting detail -> notes edit again
 	if app.screen != screenApplicationNotesEdit {
 		t.Fatalf("screen after re-entering = %v, want screenApplicationNotesEdit", app.screen)
 	}
+	stored, err := s.GetApplication(context.Background(), app.postings[0].ID)
+	if err != nil {
+		t.Fatalf("GetApplication: %v", err)
+	}
 
-	app = applyCmd(t, app, saveCmd)
+	app, _ = sendKey(app, applicationNotesUpdatedMsg{application: stored, from: earlier})
 
 	if app.screen != screenApplicationNotesEdit {
 		t.Fatalf("screen after the earlier instance's save result = %v, want screenApplicationNotesEdit (the reopened one stays open)", app.screen)
@@ -3816,5 +3816,33 @@ func TestApp_WithStatus_ShowsOnTheStatusLineAtStart(t *testing.T) {
 	lines := strings.Split(ansi.Strip(app.View()), "\n")
 	if last := lines[len(lines)-1]; last != "MCP server on 127.0.0.1:8787" {
 		t.Errorf("last line = %q, want the start-up status", last)
+	}
+}
+
+func TestApp_NotesSaveFails_UnblocksEditing(t *testing.T) {
+	s := newTestStore(t)
+	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	if _, err := s.CreateApplication(context.Background(), app.postings[0].ID); err != nil {
+		t.Fatalf("CreateApplication: %v", err)
+	}
+	app = openPostingDetail(t, app)
+	app, _ = sendKey(app, runeKey('n'))
+	app, _ = sendKey(app, runeKey('H', 'i'))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyCtrlS})
+
+	app, _ = sendKey(app, applicationNotesUpdatedMsg{from: app.applicationNotes.instance, err: errors.New("disk full")})
+	app, _ = sendKey(app, runeKey('!'))
+
+	if app.screen != screenApplicationNotesEdit {
+		t.Fatalf("screen after failed save = %v, want screenApplicationNotesEdit", app.screen)
+	}
+	if got := app.applicationNotes.textarea.Value(); got != "Hi!" {
+		t.Fatalf("notes after failed save and typing = %q, want %q (editing resumes)", got, "Hi!")
 	}
 }

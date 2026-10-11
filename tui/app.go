@@ -1248,6 +1248,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case applicationNotesUpdatedMsg:
 		a.err = msg.err
+		if msg.err != nil && a.screen == screenApplicationNotesEdit && a.applicationNotes.instance == msg.from {
+			a.applicationNotes.saving = false
+		}
 		if msg.err == nil {
 			if a.applicationsByPosting == nil {
 				a.applicationsByPosting = make(map[int64]store.Application)
