@@ -4,7 +4,8 @@ Automate the collection, curation, and application of job postings from various 
 
 ## Upgrading
 
-Only `swamp migrate` changes the database's schema. To upgrade:
+Only `swamp migrate up` and `swamp migrate down` change the database's
+schema. To upgrade:
 
 1. Stop the TUI, `mcp-serve` and any scheduled `fetch`. When the last one
    closes cleanly, SQLite folds its write-ahead log (`swamp.db-wal`) back
@@ -16,7 +17,7 @@ Only `swamp migrate` changes the database's schema. To upgrade:
    ```sh
    go tool task build
    cp "$SWAMP_DB_PATH" "$SWAMP_DB_PATH.bak"
-   ./bin/swamp migrate   # or: go tool task migrate
+   ./bin/swamp migrate up   # or: go tool task migrate:up
    ```
 
 3. Start them again.
@@ -25,9 +26,9 @@ Until the database is migrated, the TUI, `mcp-serve` and `fetch` refuse to
 start and say so. They also refuse a database migrated by a newer binary
 than themselves.
 
-For local use, `go tool task run` and `go tool task mcp-serve` migrate
-first, then start the TUI or the MCP server; `go tool task migrate` and
-`./bin/swamp migrate` still work on their own.
+`go tool task run` and `go tool task mcp-serve` don't migrate; they only
+check. `./bin/swamp migrate down` (or `go tool task migrate:down`) rolls
+back the newest migration.
 
 ## Your profile and canonical resume
 

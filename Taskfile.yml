@@ -39,14 +39,14 @@ tasks:
       - go tool sqlc generate
 
   migrate:up:
-    desc: Apply all pending migrations to the local sqlite db
+    desc: "Apply pending migrations with the built binary (run after upgrading; the other commands refuse an out-of-date database)"
     cmds:
-      - go tool goose -dir {{.MIGRATIONS_DIR}} sqlite3 "{{.DB_PATH}}" up
+      - ./bin/swamp migrate up
 
   migrate:down:
-    desc: Roll back the most recently applied migration
+    desc: Roll back the most recently applied migration with the built binary
     cmds:
-      - go tool goose -dir {{.MIGRATIONS_DIR}} sqlite3 "{{.DB_PATH}}" down
+      - ./bin/swamp migrate down
 
   migrate:status:
     desc: Show migration status for the local sqlite db
@@ -114,20 +114,13 @@ tasks:
     cmds:
       - go build -o bin/swamp ./cmd/swamp
 
-  migrate:
-    desc: "Apply database migrations with the built binary (run after upgrading; the other commands refuse an out-of-date database)"
-    cmds:
-      - ./bin/swamp migrate
-
   run:
-    desc: Run the swamp binary with the local sqlite db, migrating it first
-    deps: [migrate]
+    desc: Run the swamp binary with the local sqlite db
     cmds:
       - ./bin/swamp --mcp
 
   mcp-serve:
-    desc: "Run swamp as an MCP server over Streamable HTTP (SWAMP_MCP_ADDR, default 127.0.0.1:8787), migrating the database first"
-    deps: [migrate]
+    desc: "Run swamp as an MCP server over Streamable HTTP (SWAMP_MCP_ADDR, default 127.0.0.1:8787)"
     cmds:
       - ./bin/swamp mcp-serve
 
