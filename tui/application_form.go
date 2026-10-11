@@ -30,6 +30,10 @@ type applicationFormModel struct {
 	// parseErr is why the last ctrl+s didn't save. The screen stays open
 	// so the user can fix the line it names.
 	parseErr error
+	// seed is the text the screen opened with, to tell whether esc would
+	// lose edits.
+	seed              string
+	confirmingDiscard bool
 }
 
 func newApplicationFormModel(s *store.Store, postingID int64, previous *jobboard.ApplicationForm, width, height int) applicationFormModel {
@@ -41,7 +45,7 @@ func newApplicationFormModel(s *store.Store, postingID int64, previous *jobboard
 	}
 	ta.SetValue(jobboard.FormText(seed))
 	ta.Focus()
-	m := applicationFormModel{store: s, postingID: postingID, previous: previous, textarea: ta}
+	m := applicationFormModel{store: s, postingID: postingID, previous: previous, textarea: ta, seed: ta.Value()}
 	m.setHeight(height)
 	return m
 }
@@ -58,13 +62,33 @@ func applicationFormIntro() string {
 
 func applicationFormHelp() string { return helpStyle.Render("ctrl+s: save  esc: cancel") }
 
+func applicationFormDiscardPrompt() string {
+	return helpStyle.Render("Discard unsaved changes? y: discard  n/esc: keep editing  ctrl+s: save")
+}
+
 // cancelApplicationFormMsg signals that App should go back to application
 // detail without saving.
 type cancelApplicationFormMsg struct{}
 
 func (m *applicationFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
+	if m.confirmingDiscard {
+		switch {
+		case msg.String() == "y":
+			return nil, cancelApplicationFormMsg{}
+		case msg.Type == tea.KeyEsc, msg.String() == "n":
+			m.confirmingDiscard = false
+			return nil, nil
+		case msg.Type != tea.KeyCtrlS:
+			return nil, nil
+		}
+		m.confirmingDiscard = false
+	}
 	switch msg.Type {
 	case tea.KeyEsc:
+		if m.textarea.Value() != m.seed {
+			m.confirmingDiscard = true
+			return nil, nil
+		}
 		return nil, cancelApplicationFormMsg{}
 	case tea.KeyCtrlS:
 		form, err := jobboard.ParseFormText(m.textarea.Value(), m.previous)
@@ -87,7 +111,11 @@ func (m *applicationFormModel) View() string {
 	}
 	b.WriteString("\n")
 	b.WriteString(m.textarea.View() + "\n")
-	b.WriteString(applicationFormHelp())
+	if m.confirmingDiscard {
+		b.WriteString(applicationFormDiscardPrompt())
+	} else {
+		b.WriteString(applicationFormHelp())
+	}
 	return b.String()
 }
 
