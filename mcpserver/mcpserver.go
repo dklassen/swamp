@@ -56,17 +56,6 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 	}, readPostingHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "start_scoring_run",
-		Description: "Start a run scoring how well postings fit the user's profile. Call read_profile first and pass its SHA256: the run is refused if the profile has changed since. Model is your own model ID. Scope unscored (the default) covers postings with no score on their current content; use all only when the user asks for a rescore, for example after editing their profile. Returns the run, with how many postings are pending.",
-		InputSchema: startScoringRunInputSchema(),
-	}, startScoringRunHandler(st))
-
-	mcp.AddTool(server, &mcp.Tool{
-		Name:        "list_scoring_runs",
-		Description: "List recent scoring runs, newest first: each one's model, client, profile hash, scope, start time, and how many postings it has scored and how many are still pending. Use it to resume a run that was interrupted.",
-	}, listScoringRunsHandler(st))
-
-	mcp.AddTool(server, &mcp.Tool{
 		Name:        "stage_prepare",
 		Description: "Commit to drafting one posting's application: creates its application record if one doesn't exist yet, ensures its document directory exists, and returns the resolved cover letter/resume paths plus any existing review feedback. Idempotent -- safe to call again for the same posting.",
 	}, stagePrepareHandler(st))
@@ -85,7 +74,7 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_canonical_resume",
-		Description: "Read the user's canonical resume: their maintained, best-version resume in markdown, the baseline to tailor for each posting instead of writing a resume from scratch. Read-only; the user maintains it. SHA256 is the content's hash: pass it to start_scoring_run when scoring postings against this profile.",
+		Description: "Read the user's canonical resume: their maintained, best-version resume in markdown, the baseline to tailor for each posting instead of writing a resume from scratch. Read-only; the user maintains it. SHA256 is the content's hash, which identifies the version read.",
 	}, readCanonicalHandler("read_canonical_resume", d.CanonicalResumePath()))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -404,55 +393,5 @@ func addCompanyHandler(syncer *sync.Syncer) mcp.ToolHandlerFor[addCompanyInput, 
 			Name:      res.Company.Name,
 			OpenJobs:  res.OpenJobs,
 		}, nil
-	}
-}
-
-type startScoringRunInput struct {
-	Model         string `json:"Model" jsonschema:"your model ID, e.g. claude-opus-5-5"`
-	ProfileSHA256 string `json:"ProfileSHA256" jsonschema:"read_profile's SHA256"`
-	Scope         string `json:"Scope,omitempty" jsonschema:"unscored (the default) or all"`
-}
-
-// startScoringRunInputSchema advertises Scope's names as an enum, from the
-// store's own table.
-func startScoringRunInputSchema() *jsonschema.Schema {
-	schema, err := jsonschema.For[startScoringRunInput](nil)
-	if err != nil {
-		panic(fmt.Sprintf("mcpserver: infer start_scoring_run input schema: %v", err))
-	}
-	var scopes []any
-	for _, scope := range store.ScoringScopes() {
-		scopes = append(scopes, scope.String())
-	}
-	schema.Properties["Scope"].Enum = scopes
-	return schema
-}
-
-func startScoringRunHandler(st *stage.Stage) mcp.ToolHandlerFor[startScoringRunInput, stage.ScoringRun] {
-	return func(ctx context.Context, req *mcp.CallToolRequest, in startScoringRunInput) (*mcp.CallToolResult, stage.ScoringRun, error) {
-		opts := stage.StartRunOptions{Model: in.Model, ProfileSHA256: in.ProfileSHA256, Scope: in.Scope}
-		// Client info is optional in MCP; a run without it records none.
-		if params := req.Session.InitializeParams(); params != nil && params.ClientInfo != nil {
-			opts.ClientName, opts.ClientVersion = params.ClientInfo.Name, params.ClientInfo.Version
-		}
-		run, err := st.StartScoringRun(ctx, opts)
-		if err != nil {
-			return nil, stage.ScoringRun{}, fmt.Errorf("start_scoring_run: %w", err)
-		}
-		return nil, run, nil
-	}
-}
-
-type listScoringRunsInput struct {
-	Limit int `json:"Limit,omitempty" jsonschema:"runs to list: 10 by default, at most 50"`
-}
-
-func listScoringRunsHandler(st *stage.Stage) mcp.ToolHandlerFor[listScoringRunsInput, stage.ScoringRuns] {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, in listScoringRunsInput) (*mcp.CallToolResult, stage.ScoringRuns, error) {
-		runs, err := st.ScoringRuns(ctx, in.Limit)
-		if err != nil {
-			return nil, stage.ScoringRuns{}, fmt.Errorf("list_scoring_runs: %w", err)
-		}
-		return nil, runs, nil
 	}
 }
