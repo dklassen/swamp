@@ -282,3 +282,134 @@ func (s *Store) PendingPostings(ctx context.Context, runID, afterID int64, limit
 	}
 	return page, nil
 }
+
+// ScoreEntry is one posting's score, as the agent gives it.
+type ScoreEntry struct {
+	PostingID int64
+	// Score is 0 to 100.
+	Score int
+	// Reason is the one line shown with the score.
+	Reason string
+	// ContentSHA256 is the posting's content hash the agent read, which
+	// must still be current.
+	ContentSHA256 string
+}
+
+// ScoreRefusal is why RecordScores didn't record an entry.
+type ScoreRefusal int
+
+const (
+	// ScoreNoSuchPosting: no posting has the entry's ID.
+	ScoreNoSuchPosting ScoreRefusal = iota
+	// ScoreOutOfRange: the score isn't between 0 and 100.
+	ScoreOutOfRange
+	// ScoreNoReason: the reason is empty.
+	ScoreNoReason
+	// ScoreContentChanged: the posting's content changed since the agent
+	// read it; it stays pending.
+	ScoreContentChanged
+	// ScoreAlreadyInRun: the posting already has a score in this run.
+	ScoreAlreadyInRun
+)
+
+// scoreRefusalNames is the single name table for ScoreRefusal, indexed by
+// its value.
+var scoreRefusalNames = [...]string{
+	ScoreNoSuchPosting:  "no_such_posting",
+	ScoreOutOfRange:     "score_out_of_range",
+	ScoreNoReason:       "no_reason",
+	ScoreContentChanged: "content_changed",
+	ScoreAlreadyInRun:   "already_scored_in_run",
+}
+
+func (r ScoreRefusal) String() string {
+	if r < 0 || int(r) >= len(scoreRefusalNames) {
+		return fmt.Sprintf("ScoreRefusal(%d)", int(r))
+	}
+	return scoreRefusalNames[r]
+}
+
+// RefusedScore is an entry RecordScores didn't record, and why.
+type RefusedScore struct {
+	PostingID int64
+	Why       ScoreRefusal
+}
+
+// RecordScoresResult is what RecordScores did with each entry.
+type RecordScoresResult struct {
+	// Recorded is the posting IDs scored, in the entries' order.
+	Recorded []int64
+	// Refused is the entries not recorded, in the entries' order.
+	Refused []RefusedScore
+}
+
+// RecordScores records entries as scores in runID, in one transaction:
+// every valid entry is committed together, or none is if the write fails.
+// An entry that can't be recorded is refused, and the result says why;
+// an unknown run is ErrNotFound, with nothing recorded.
+func (s *Store) RecordScores(ctx context.Context, runID int64, entries []ScoreEntry) (RecordScoresResult, error) {
+	if _, err := s.scoringRun(ctx, runID); err != nil {
+		return RecordScoresResult{}, err
+	}
+	tx, err := s.sqlDB.BeginTx(ctx, nil)
+	if err != nil {
+		return RecordScoresResult{}, fmt.Errorf("store: begin record scores tx: %w", err)
+	}
+	defer func() { _ = tx.Rollback() }()
+	qtx := s.queries.WithTx(tx)
+
+	var result RecordScoresResult
+	for _, e := range entries {
+		why, ok, err := checkScoreEntry(ctx, qtx, runID, e)
+		if err != nil {
+			return RecordScoresResult{}, err
+		}
+		if !ok {
+			result.Refused = append(result.Refused, RefusedScore{PostingID: e.PostingID, Why: why})
+			continue
+		}
+		if err := qtx.CreatePostingScore(ctx, db.CreatePostingScoreParams{
+			RunID:         runID,
+			PostingID:     e.PostingID,
+			Score:         int64(e.Score),
+			Reason:        e.Reason,
+			ContentSha256: e.ContentSHA256,
+		}); err != nil {
+			return RecordScoresResult{}, fmt.Errorf("store: record score for posting %d: %w", e.PostingID, err)
+		}
+		result.Recorded = append(result.Recorded, e.PostingID)
+	}
+	if err := tx.Commit(); err != nil {
+		return RecordScoresResult{}, fmt.Errorf("store: commit record scores tx: %w", err)
+	}
+	return result, nil
+}
+
+// checkScoreEntry says whether e can be recorded in runID, and if not, why.
+// It reads inside the transaction, so an entry earlier in the same batch
+// counts as already scored.
+func checkScoreEntry(ctx context.Context, qtx *db.Queries, runID int64, e ScoreEntry) (ScoreRefusal, bool, error) {
+	switch {
+	case e.Score < 0 || e.Score > 100:
+		return ScoreOutOfRange, false, nil
+	case e.Reason == "":
+		return ScoreNoReason, false, nil
+	}
+	current, err := qtx.GetPostingContentSHA256(ctx, e.PostingID)
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return ScoreNoSuchPosting, false, nil
+	case err != nil:
+		return 0, false, fmt.Errorf("store: posting %d: %w", e.PostingID, err)
+	case current != e.ContentSHA256:
+		return ScoreContentChanged, false, nil
+	}
+	scored, err := qtx.HasScoreInRun(ctx, db.HasScoreInRunParams{RunID: runID, PostingID: e.PostingID})
+	if err != nil {
+		return 0, false, fmt.Errorf("store: posting %d: %w", e.PostingID, err)
+	}
+	if scored {
+		return ScoreAlreadyInRun, false, nil
+	}
+	return 0, true, nil
+}

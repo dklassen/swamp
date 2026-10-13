@@ -60,3 +60,14 @@ WHERE run_id = ?;
 SELECT * FROM scoring_runs
 ORDER BY id DESC
 LIMIT ?;
+
+-- name: GetPostingContentSHA256 :one
+SELECT content_sha256 FROM postings
+WHERE id = ?;
+
+-- name: HasScoreInRun :one
+SELECT EXISTS (SELECT 1 FROM posting_scores WHERE run_id = ? AND posting_id = ?);
+
+-- name: CreatePostingScore :exec
+INSERT INTO posting_scores (run_id, posting_id, score, reason, content_sha256)
+VALUES (?, ?, ?, ?, ?);

@@ -52,6 +52,7 @@ type Querier interface {
 	// leaving callers to remember a second call. Relies on column defaults
 	// (interested_at=NULL, archived_at=NULL, notes='').
 	CreatePostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
+	CreatePostingScore(ctx context.Context, arg CreatePostingScoreParams) error
 	CreateScoringRun(ctx context.Context, arg CreateScoringRunParams) (ScoringRun, error)
 	CreateTag(ctx context.Context, name string) (Tag, error)
 	DeleteCompanyFilters(ctx context.Context, companyID int64) error
@@ -72,12 +73,14 @@ type Querier interface {
 	GetPosting(ctx context.Context, id int64) (Posting, error)
 	GetPostingApplicationForm(ctx context.Context, postingID int64) (PostingApplicationForm, error)
 	GetPostingBySourceAndSourceID(ctx context.Context, arg GetPostingBySourceAndSourceIDParams) (Posting, error)
+	GetPostingContentSHA256(ctx context.Context, id int64) (string, error)
 	GetPostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
 	GetScoringRun(ctx context.Context, id int64) (ScoringRun, error)
 	// Not filtered on deleted_at: used for existence checks (e.g. before
 	// creating) where callers need to know about a soft-deleted tag too, not
 	// just active ones.
 	GetTagByName(ctx context.Context, name string) (Tag, error)
+	HasScoreInRun(ctx context.Context, arg HasScoreInRunParams) (bool, error)
 	// When the application entered its current status: every status write
 	// records a row (#162), so the newest is the current status's.
 	LatestApplicationStatusChange(ctx context.Context, applicationID int64) (ApplicationStatusHistory, error)

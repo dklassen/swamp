@@ -248,3 +248,73 @@ func TestScoringRuns_NewestFirstWithTheirCounts(t *testing.T) {
 		t.Errorf("runs (-want +got):\n%s", diff)
 	}
 }
+
+func TestRecordScores_RecordsValidEntriesAndRefusesTheRest(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	good := mustUpsertPostingIn(t, s, acme.ID, "1", "Good", "")
+	stale := mustUpsertPostingIn(t, s, acme.ID, "2", "Stale", "")
+	other := mustUpsertPostingIn(t, s, acme.ID, "3", "Other", "")
+	already := mustUpsertPostingIn(t, s, acme.ID, "4", "Already scored", "")
+	run := mustStartScoringRun(t, s, ScoringScopeAll)
+	mustInsertScore(t, s, run.ID, already.ID, already.ContentSHA256)
+
+	result, err := s.RecordScores(ctx, run.ID, []ScoreEntry{
+		{PostingID: good.ID, Score: 72, Reason: "Go, remote", ContentSHA256: good.ContentSHA256},
+		{PostingID: stale.ID, Score: 50, Reason: "ok", ContentSHA256: "an older hash"},
+		{PostingID: other.ID, Score: 101, Reason: "too high", ContentSHA256: other.ContentSHA256},
+		{PostingID: other.ID, Score: -1, Reason: "too low", ContentSHA256: other.ContentSHA256},
+		{PostingID: other.ID, Score: 40, Reason: "", ContentSHA256: other.ContentSHA256},
+		{PostingID: 999, Score: 40, Reason: "no such posting", ContentSHA256: "x"},
+		{PostingID: already.ID, Score: 40, Reason: "again", ContentSHA256: already.ContentSHA256},
+		{PostingID: good.ID, Score: 10, Reason: "twice in one batch", ContentSHA256: good.ContentSHA256},
+	})
+	if err != nil {
+		t.Fatalf("RecordScores: %v", err)
+	}
+
+	if diff := cmp.Diff([]int64{good.ID}, result.Recorded); diff != "" {
+		t.Errorf("recorded (-want +got):\n%s", diff)
+	}
+	want := []RefusedScore{
+		{PostingID: stale.ID, Why: ScoreContentChanged},
+		{PostingID: other.ID, Why: ScoreOutOfRange},
+		{PostingID: other.ID, Why: ScoreOutOfRange},
+		{PostingID: other.ID, Why: ScoreNoReason},
+		{PostingID: 999, Why: ScoreNoSuchPosting},
+		{PostingID: already.ID, Why: ScoreAlreadyInRun},
+		{PostingID: good.ID, Why: ScoreAlreadyInRun},
+	}
+	if diff := cmp.Diff(want, result.Refused); diff != "" {
+		t.Errorf("refused (-want +got):\n%s", diff)
+	}
+	var scores int
+	if err := s.sqlDB.QueryRow(`SELECT count(*) FROM posting_scores WHERE run_id = ?`, run.ID).Scan(&scores); err != nil {
+		t.Fatalf("count scores: %v", err)
+	}
+	if scores != 2 {
+		t.Errorf("%d scores stored in the run, want 2: the fixture's and the one recorded", scores)
+	}
+}
+
+func TestRecordScores_AnUnknownRunRecordsNothing(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	p := mustUpsertPostingIn(t, s, acme.ID, "1", "Role", "")
+
+	_, err := s.RecordScores(context.Background(), 999, []ScoreEntry{{PostingID: p.ID, Score: 50, Reason: "ok", ContentSHA256: p.ContentSHA256}})
+
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("err = %v, want ErrNotFound", err)
+	}
+	var scores int
+	if err := s.sqlDB.QueryRow(`SELECT count(*) FROM posting_scores`).Scan(&scores); err != nil {
+		t.Fatalf("count scores: %v", err)
+	}
+	if scores != 0 {
+		t.Errorf("%d scores stored for an unknown run, want 0", scores)
+	}
+}

@@ -22,6 +22,30 @@ func (q *Queries) CountScoresInRun(ctx context.Context, runID int64) (int64, err
 	return count, err
 }
 
+const createPostingScore = `-- name: CreatePostingScore :exec
+INSERT INTO posting_scores (run_id, posting_id, score, reason, content_sha256)
+VALUES (?, ?, ?, ?, ?)
+`
+
+type CreatePostingScoreParams struct {
+	RunID         int64  `json:"run_id"`
+	PostingID     int64  `json:"posting_id"`
+	Score         int64  `json:"score"`
+	Reason        string `json:"reason"`
+	ContentSha256 string `json:"content_sha256"`
+}
+
+func (q *Queries) CreatePostingScore(ctx context.Context, arg CreatePostingScoreParams) error {
+	_, err := q.db.ExecContext(ctx, createPostingScore,
+		arg.RunID,
+		arg.PostingID,
+		arg.Score,
+		arg.Reason,
+		arg.ContentSha256,
+	)
+	return err
+}
+
 const createScoringRun = `-- name: CreateScoringRun :one
 INSERT INTO scoring_runs (model, client_name, client_version, profile_sha256, scope)
 VALUES (?, ?, ?, ?, ?)
@@ -57,6 +81,18 @@ func (q *Queries) CreateScoringRun(ctx context.Context, arg CreateScoringRunPara
 	return i, err
 }
 
+const getPostingContentSHA256 = `-- name: GetPostingContentSHA256 :one
+SELECT content_sha256 FROM postings
+WHERE id = ?
+`
+
+func (q *Queries) GetPostingContentSHA256(ctx context.Context, id int64) (string, error) {
+	row := q.db.QueryRowContext(ctx, getPostingContentSHA256, id)
+	var content_sha256 string
+	err := row.Scan(&content_sha256)
+	return content_sha256, err
+}
+
 const getScoringRun = `-- name: GetScoringRun :one
 SELECT id, model, client_name, client_version, profile_sha256, scope, started_at FROM scoring_runs
 WHERE id = ?
@@ -75,6 +111,22 @@ func (q *Queries) GetScoringRun(ctx context.Context, id int64) (ScoringRun, erro
 		&i.StartedAt,
 	)
 	return i, err
+}
+
+const hasScoreInRun = `-- name: HasScoreInRun :one
+SELECT EXISTS (SELECT 1 FROM posting_scores WHERE run_id = ? AND posting_id = ?)
+`
+
+type HasScoreInRunParams struct {
+	RunID     int64 `json:"run_id"`
+	PostingID int64 `json:"posting_id"`
+}
+
+func (q *Queries) HasScoreInRun(ctx context.Context, arg HasScoreInRunParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, hasScoreInRun, arg.RunID, arg.PostingID)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
 }
 
 const listPendingPostings = `-- name: ListPendingPostings :many
