@@ -399,3 +399,142 @@ func TestAllPostings_MarkedInterestedElsewhere_ShowsTheStar(t *testing.T) {
 		t.Errorf("view doesn't star the posting another window marked interested:\n%s", app.View())
 	}
 }
+
+func TestAllPostings_SlashOpensTheSearchLine(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustUpsertPosting(t, s, acme.ID, "1", "Role 1")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = openAllPostings(t, app)
+	if view := app.View(); !strings.Contains(view, "/ to search") {
+		t.Errorf("view doesn't offer / to search:\n%s", view)
+	}
+
+	app = sendKeyAndApply(t, app, runeKey('/'))
+
+	if !app.allPostings.searching || !strings.Contains(app.View(), "🔍 ▏") {
+		t.Errorf("after /: searching %v, view:\n%s", app.allPostings.searching, app.View())
+	}
+}
+
+// Typing reloads page 1 once, after a pause: the timer a key starts does
+// nothing if another key came after it.
+func TestAllPostings_TypingSearchesAfterAPause(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	globex := mustCreateCompany(t, s, "Globex", "ashby", "globex")
+	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
+	mustUpsertPosting(t, s, acme.ID, "2", "Designer")
+	mustUpsertPosting(t, s, globex.ID, "3", "Platform Lead")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = openAllPostings(t, app)
+	app = sendKeyAndApply(t, app, runeKey('/'))
+
+	var timers []tea.Cmd
+	for _, r := range "plat" {
+		var cmd tea.Cmd
+		app, cmd = sendKey(app, runeKey(r))
+		timers = append(timers, cmd)
+	}
+	if app.allPostings.query != "plat" || len(pageTitles(app)) != 3 {
+		t.Fatalf("while typing: query %q, %d postings; want \"plat\" and the page not yet reloaded", app.allPostings.query, len(pageTitles(app)))
+	}
+
+	app = applyCmd(t, app, timers[0])
+	if len(pageTitles(app)) != 3 {
+		t.Errorf("the first key's timer reloaded the page: %q", pageTitles(app))
+	}
+	app = applyCmd(t, app, timers[len(timers)-1])
+
+	if diff := cmp.Diff([]string{"Platform Lead", "Platform Engineer"}, pageTitles(app)); diff != "" {
+		t.Errorf("after the pause (-want +got):\n%s", diff)
+	}
+	if !strings.Contains(app.View(), "2 of 3") {
+		t.Errorf("search line doesn't say 2 of 3:\n%s", app.View())
+	}
+}
+
+// searchAllPostings opens the search line and types query, then runs the
+// search its pause would.
+func searchAllPostings(t *testing.T, app *App, query string) *App {
+	t.Helper()
+	app = sendKeyAndApply(t, app, runeKey('/'))
+	for _, r := range query {
+		app, _ = sendKey(app, runeKey(r))
+	}
+	return sendKeyAndApply(t, app, allPostingsSearchMsg{typed: app.allPostings.typed})
+}
+
+func TestAllPostings_EscClearsTheSearch(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
+	mustUpsertPosting(t, s, acme.ID, "2", "Designer")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = openAllPostings(t, app)
+	app = searchAllPostings(t, app, "design")
+	if diff := cmp.Diff([]string{"Designer"}, pageTitles(app)); diff != "" {
+		t.Fatalf("search results (-want +got):\n%s", diff)
+	}
+
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEsc})
+
+	if app.allPostings.searching || app.allPostings.query != "" {
+		t.Errorf("after esc: searching %v, query %q; want closed and empty", app.allPostings.searching, app.allPostings.query)
+	}
+	if diff := cmp.Diff([]string{"Designer", "Platform Engineer"}, pageTitles(app)); diff != "" {
+		t.Errorf("after esc (-want +got):\n%s", diff)
+	}
+	if app.screen != screenAllPostings {
+		t.Errorf("esc left the view: screen %v", app.screen)
+	}
+}
+
+func TestAllPostings_PagesThroughSearchResults(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	for i := 1; i <= 7; i++ {
+		mustUpsertPosting(t, s, acme.ID, fmt.Sprintf("p%d", i), fmt.Sprintf("Platform %d", i))
+		mustUpsertPosting(t, s, acme.ID, fmt.Sprintf("d%d", i), fmt.Sprintf("Designer %d", i))
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
+	app = openAllPostings(t, app)
+	app = searchAllPostings(t, app, "platform")
+	size := app.allPostings.size
+	if size >= 7 {
+		t.Fatalf("page size %d, want fewer than the 7 matches", size)
+	}
+	pages := (7 + size - 1) / size
+
+	var seen []string
+	for n := 1; n <= pages; n++ {
+		if line := fmt.Sprintf("Page %d of %d · 7 postings", n, pages); !strings.Contains(app.View(), line) {
+			t.Errorf("view doesn't say %q:\n%s", line, app.View())
+		}
+		seen = append(seen, pageTitles(app)...)
+		app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyRight})
+	}
+	want := []string{"Platform 7", "Platform 6", "Platform 5", "Platform 4", "Platform 3", "Platform 2", "Platform 1"}
+	if diff := cmp.Diff(want, seen); diff != "" {
+		t.Errorf("paging through the matches (-want +got):\n%s", diff)
+	}
+	if !app.allPostings.searching || app.allPostings.query != "platform" {
+		t.Errorf("paging closed the search: searching %v, query %q", app.allPostings.searching, app.allPostings.query)
+	}
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyLeft})
+	if len(app.allPostings.afterIDs) != pages-1 {
+		t.Errorf("← went to page %d, want %d", len(app.allPostings.afterIDs), pages-1)
+	}
+}
