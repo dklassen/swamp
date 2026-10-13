@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 	"database/sql"
+	"strings"
 	"testing"
 	"time"
 )
@@ -138,6 +139,52 @@ func TestOpen_WritesTimesInTheConfiguredFormat(t *testing.T) {
 			}
 			if got != tt.want {
 				t.Errorf("stored %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
+
+// TestOpen_EqualFold_AgreesWithGo: SQL that matches values ignoring case
+// must agree with filter.Match, which uses strings.EqualFold; SQLite's
+// NOCASE and lower() fold ASCII only.
+func TestOpen_EqualFold_AgreesWithGo(t *testing.T) {
+	t.Parallel()
+
+	pairs := [][2]string{
+		{"Engineering", "engineering"},
+		{"Engineering", "Engineer"},
+		{"Zürich", "zürich"},
+		{"Zürich", "ZÜRICH"},
+		{"Montréal", "MONTRÉAL"},
+		{"Kraków", "Krakow"},
+		{"", ""},
+	}
+	for _, origin := range []string{"", "tui:1"} {
+		t.Run("origin "+origin, func(t *testing.T) {
+			t.Parallel()
+
+			path := t.TempDir() + "/test.db"
+			newTestStoreAt(t, path) // migrate, so the origin can be stamped
+			cfg := DefaultConfig()
+			cfg.Origin = origin
+			sqlDB, err := Open(path, cfg)
+			if err != nil {
+				t.Fatalf("Open: %v", err)
+			}
+			t.Cleanup(func() {
+				if err := sqlDB.Close(); err != nil {
+					t.Errorf("close db: %v", err)
+				}
+			})
+
+			for _, p := range pairs {
+				var got bool
+				if err := sqlDB.QueryRow("SELECT equal_fold(?, ?)", p[0], p[1]).Scan(&got); err != nil {
+					t.Fatalf("equal_fold(%q, %q): %v", p[0], p[1], err)
+				}
+				if want := strings.EqualFold(p[0], p[1]); got != want {
+					t.Errorf("equal_fold(%q, %q) = %v, want %v as strings.EqualFold", p[0], p[1], got, want)
+				}
 			}
 		})
 	}
