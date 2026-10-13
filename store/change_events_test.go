@@ -69,9 +69,8 @@ func TestChangeEvents_SwampConnectionsStampTheirOrigin(t *testing.T) {
 	}
 }
 
-// TestOpen_WithOrigin_KeepsTheConnectionSettings: a stamped Store goes
-// through a Driver of its own, which must still apply every setting Open
-// sets for concurrent writers and times.
+// TestOpen_WithOrigin_KeepsTheConnectionSettings: stamping a connection
+// must keep every setting Open sets for concurrent writers and times.
 func TestOpen_WithOrigin_KeepsTheConnectionSettings(t *testing.T) {
 	t.Parallel()
 

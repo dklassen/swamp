@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"database/sql/driver"
 	"fmt"
+	"strings"
 	"time"
 
 	"modernc.org/sqlite"
@@ -79,43 +80,79 @@ const (
 func Open(path string, cfg Config) (*sql.DB, error) {
 	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(%s)&_txlock=%s&_time_format=%s&_timezone=%s",
 		path, cfg.BusyTimeout.Milliseconds(), journalMode, txLock, cfg.TimeFormat, cfg.Timezone)
-	if cfg.Origin == "" {
-		return sql.Open("sqlite", dsn)
+	return sql.OpenDB(connector{dsn: dsn, origin: cfg.Origin}), nil
+}
+
+// sharedDriver is modernc's package-level driver, the only one functions
+// registered with sqlite.Register*Function reach; the package doesn't
+// export it.
+var sharedDriver = func() driver.Driver {
+	db, err := sql.Open("sqlite", "")
+	if err != nil {
+		panic(fmt.Sprintf("store: get the sqlite driver: %v", err))
 	}
-	// A Driver of our own: the package-level hook would reach every sqlite
-	// connection in the process.
-	d := &sqlite.Driver{}
-	d.RegisterConnectionHook(stampOrigin(cfg.Origin))
-	return sql.OpenDB(connector{driver: d, dsn: dsn}), nil
+	d := db.Driver()
+	if err := db.Close(); err != nil {
+		panic(fmt.Sprintf("store: get the sqlite driver: %v", err))
+	}
+	return d
+}()
+
+// equal_fold(a, b) is strings.EqualFold, so SQL ignores case the way
+// filter.Match does; SQLite's NOCASE and lower() fold ASCII only.
+func init() {
+	sqlite.MustRegisterDeterministicScalarFunction("equal_fold", 2, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		a, aok := args[0].(string)
+		b, bok := args[1].(string)
+		if !aok || !bok {
+			return nil, fmt.Errorf("equal_fold: want two strings, got %T and %T", args[0], args[1])
+		}
+		return strings.EqualFold(a, b), nil
+	})
 }
 
 // stampOrigin stamps origin through TEMP objects, which exist only on the
 // connection, so the database's own triggers stay plain SQL that any
 // writer, Swamp or not, can run.
-func stampOrigin(origin string) sqlite.ConnectionHookFn {
-	return func(conn sqlite.ExecQuerierContext, _ string) error {
-		ctx := context.Background()
-		for _, stmt := range []struct {
-			query string
-			args  []driver.NamedValue
-		}{
-			{query: `CREATE TEMP TABLE swamp_origin (name TEXT NOT NULL)`},
-			{query: `INSERT INTO temp.swamp_origin (name) VALUES (?)`, args: []driver.NamedValue{{Ordinal: 1, Value: origin}}},
-			{query: `CREATE TEMP TRIGGER stamp_change_origin AFTER INSERT ON main.change_events WHEN NEW.origin IS NULL
-				BEGIN UPDATE main.change_events SET origin = (SELECT name FROM temp.swamp_origin) WHERE id = NEW.id; END`},
-		} {
-			if _, err := conn.ExecContext(ctx, stmt.query, stmt.args); err != nil {
-				return fmt.Errorf("store: set up change-log origin %q (run `swamp migrate up` if the database is out of date): %w", origin, err)
-			}
+func stampOrigin(ctx context.Context, conn driver.ExecerContext, origin string) error {
+	for _, stmt := range []struct {
+		query string
+		args  []driver.NamedValue
+	}{
+		{query: `CREATE TEMP TABLE swamp_origin (name TEXT NOT NULL)`},
+		{query: `INSERT INTO temp.swamp_origin (name) VALUES (?)`, args: []driver.NamedValue{{Ordinal: 1, Value: origin}}},
+		{query: `CREATE TEMP TRIGGER stamp_change_origin AFTER INSERT ON main.change_events WHEN NEW.origin IS NULL
+			BEGIN UPDATE main.change_events SET origin = (SELECT name FROM temp.swamp_origin) WHERE id = NEW.id; END`},
+	} {
+		if _, err := conn.ExecContext(ctx, stmt.query, stmt.args); err != nil {
+			return fmt.Errorf("store: set up change-log origin %q (run `swamp migrate up` if the database is out of date): %w", origin, err)
 		}
-		return nil
 	}
+	return nil
 }
 
+// connector stamps origin on its own connections only, so other sqlite
+// connections in the process stay unstamped.
 type connector struct {
-	driver *sqlite.Driver
 	dsn    string
+	origin string
 }
 
-func (c connector) Connect(context.Context) (driver.Conn, error) { return c.driver.Open(c.dsn) }
-func (c connector) Driver() driver.Driver                        { return c.driver }
+func (c connector) Connect(ctx context.Context) (driver.Conn, error) {
+	conn, err := sharedDriver.Open(c.dsn)
+	if err != nil || c.origin == "" {
+		return conn, err
+	}
+	execer, ok := conn.(driver.ExecerContext)
+	if !ok {
+		_ = conn.Close()
+		return nil, fmt.Errorf("store: sqlite connection %T can't run statements", conn)
+	}
+	if err := stampOrigin(ctx, execer, c.origin); err != nil {
+		_ = conn.Close()
+		return nil, err
+	}
+	return conn, nil
+}
+
+func (c connector) Driver() driver.Driver { return sharedDriver }
