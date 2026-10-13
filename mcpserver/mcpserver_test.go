@@ -877,6 +877,27 @@ func TestSearchPostings_InterestedShortlist(t *testing.T) {
 	}
 }
 
+func TestSearchPostings_QueryNarrowsByText(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	acme := mustCreateCompany(t, s, "Acme")
+	globex := mustCreateCompany(t, s, "Globex")
+	platform := mustUpsertPosting(t, s, acme.ID, "job-1", "Platform Engineer")
+	mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
+	globexPlatform := mustUpsertPosting(t, s, globex.ID, "job-3", "Platform Lead")
+	cs := connectClient(t, srv)
+
+	got := callTool[searchPostingsResult](t, cs, "search_postings", map[string]any{"Query": "PLATFORM acme"})
+	if diff := cmp.Diff([]int64{platform.ID}, searchIDs(got)); diff != "" {
+		t.Errorf("Query \"PLATFORM acme\" (-want +got):\n%s", diff)
+	}
+	got = callTool[searchPostingsResult](t, cs, "search_postings", map[string]any{"Query": "platform"})
+	if diff := cmp.Diff([]int64{platform.ID, globexPlatform.ID}, searchIDs(got)); diff != "" {
+		t.Errorf("Query \"platform\" (-want +got):\n%s", diff)
+	}
+}
+
 // TestSearchPostings_PagesThroughACompany: three pages of two concatenate
 // to the company's five postings; a cursor passed with other filters is
 // a tool error, not a page.
