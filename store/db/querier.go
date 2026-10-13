@@ -187,6 +187,10 @@ type Querier interface {
 	// filter on this". Postings of a company the user deleted are never
 	// included.
 	//
+	// Each company's filters apply as filter.Match's do: a field with filters
+	// must equal one of them, ignoring case. equal_fold is strings.EqualFold,
+	// which store registers; NOCASE folds ASCII only.
+	//
 	// The inner query applies the filters and counts every match
 	// (COUNT(*) OVER ()); the outer one applies the keyset condition and the
 	// LIMIT. So total is the whole result's size on every page, while only

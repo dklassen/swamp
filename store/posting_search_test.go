@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/dklassen/swamp/filter"
 )
 
 // searchFixture is two live companies' postings, plus a deleted company's,
@@ -450,6 +452,116 @@ func TestSearchPostings_PublishedDesc(t *testing.T) {
 		}
 		if diff := cmp.Diff(want, got); diff != "" {
 			t.Errorf("limit %d: order mismatch (-want +got):\n%s", limit, diff)
+		}
+	}
+}
+
+// TestSearchPostings_AppliesCompanyFiltersLikeFilterMatch: the TUI's
+// company lists use filter.Match and SearchPostings matches in SQL, so one
+// table drives both and they can't drift apart.
+func TestSearchPostings_AppliesCompanyFiltersLikeFilterMatch(t *testing.T) {
+	t.Parallel()
+
+	dept := func(v string) filter.Filter { return filter.Filter{Field: filter.FieldDepartment, Value: v} }
+	loc := func(v string) filter.Filter { return filter.Filter{Field: filter.FieldLocation, Value: v} }
+	tests := []struct {
+		name    string
+		filters []filter.Filter
+		posting filter.Posting
+		want    bool
+	}{
+		{name: "no filters", posting: filter.Posting{Department: "Sales", Location: "Remote"}, want: true},
+		{name: "department matches", filters: []filter.Filter{dept("Engineering")}, posting: filter.Posting{Department: "Engineering"}, want: true},
+		{name: "department doesn't match", filters: []filter.Filter{dept("Engineering")}, posting: filter.Posting{Department: "Sales"}, want: false},
+		{name: "no department, filtered on department", filters: []filter.Filter{dept("Engineering")}, posting: filter.Posting{Location: "Remote"}, want: false},
+		{name: "one of several departments", filters: []filter.Filter{dept("Engineering"), dept("Data")}, posting: filter.Posting{Department: "Data"}, want: true},
+		{name: "none of several departments", filters: []filter.Filter{dept("Engineering"), dept("Data")}, posting: filter.Posting{Department: "Sales"}, want: false},
+		{name: "only location filtered", filters: []filter.Filter{loc("Remote")}, posting: filter.Posting{Department: "Sales", Location: "Remote"}, want: true},
+		{name: "both fields match", filters: []filter.Filter{dept("Engineering"), loc("Remote")}, posting: filter.Posting{Department: "Engineering", Location: "Remote"}, want: true},
+		{name: "department matches, location doesn't", filters: []filter.Filter{dept("Engineering"), loc("Remote")}, posting: filter.Posting{Department: "Engineering", Location: "Berlin"}, want: false},
+		{name: "location matches, department doesn't", filters: []filter.Filter{dept("Engineering"), loc("Remote")}, posting: filter.Posting{Department: "Sales", Location: "Remote"}, want: false},
+		{name: "case differs", filters: []filter.Filter{dept("engineering")}, posting: filter.Posting{Department: "ENGINEERING"}, want: true},
+		{name: "case differs outside ASCII", filters: []filter.Filter{loc("Zürich")}, posting: filter.Posting{Location: "ZÜRICH"}, want: true},
+		{name: "same letters, different accent", filters: []filter.Filter{loc("Krakow")}, posting: filter.Posting{Location: "Kraków"}, want: false},
+		{name: "a prefix isn't a match", filters: []filter.Filter{dept("Engineer")}, posting: filter.Posting{Department: "Engineering"}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
+			matched, err := filter.Match(tt.posting, tt.filters)
+			if err != nil {
+				t.Fatalf("filter.Match: %v", err)
+			}
+			if matched != tt.want {
+				t.Fatalf("filter.Match = %v, want %v", matched, tt.want)
+			}
+
+			ctx := context.Background()
+			s := newTestStore(t)
+			// Another company's filter must not reach this company's postings.
+			other := mustCreateCompany(t, s, "Other", "ashby", "other")
+			if _, err := s.CreateCompanyFilter(ctx, other.ID, filter.FieldDepartment, "Nothing matches this"); err != nil {
+				t.Fatalf("CreateCompanyFilter: %v", err)
+			}
+			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			for _, f := range tt.filters {
+				if _, err := s.CreateCompanyFilter(ctx, acme.ID, f.Field, f.Value); err != nil {
+					t.Fatalf("CreateCompanyFilter: %v", err)
+				}
+			}
+			posting, err := s.UpsertPosting(ctx, CreatePostingParams{
+				CompanyID: acme.ID,
+				Source:    "ashby",
+				SourceID:  "1",
+				IngestedFields: IngestedFields{
+					Title:      "Engineer",
+					Department: tt.posting.Department,
+					Location:   tt.posting.Location,
+					RawPayload: `{"id":"1"}`,
+				},
+			})
+			if err != nil {
+				t.Fatalf("UpsertPosting: %v", err)
+			}
+
+			for _, order := range PostingOrders() {
+				page, err := s.SearchPostings(ctx, PostingSearch{Order: order, Limit: 10})
+				if err != nil {
+					t.Fatalf("%s: SearchPostings: %v", order, err)
+				}
+				found := slices.Contains(listingIDs(page.Listings), posting.ID)
+				if found != tt.want {
+					t.Errorf("%s: SearchPostings found the posting = %v, want %v as filter.Match", order, found, tt.want)
+				}
+				if wantTotal := len(page.Listings); page.Total != wantTotal {
+					t.Errorf("%s: Total = %d, want %d, the postings left after filtering", order, page.Total, wantTotal)
+				}
+			}
+		})
+	}
+}
+
+func TestSearchPostings_IgnoreCompanyFilters(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	if _, err := s.CreateCompanyFilter(ctx, acme.ID, filter.FieldDepartment, "Engineering"); err != nil {
+		t.Fatalf("CreateCompanyFilter: %v", err)
+	}
+	hidden := mustUpsertPosting(t, s, acme.ID, "1", "Account Executive") // no department
+
+	for _, order := range PostingOrders() {
+		page, err := s.SearchPostings(ctx, PostingSearch{IgnoreCompanyFilters: true, Order: order, Limit: 10})
+		if err != nil {
+			t.Fatalf("%s: SearchPostings: %v", order, err)
+		}
+		if diff := cmp.Diff([]int64{hidden.ID}, listingIDs(page.Listings)); diff != "" {
+			t.Errorf("%s: postings (-want +got):\n%s", order, diff)
+		}
+		if page.Total != 1 {
+			t.Errorf("%s: Total = %d, want 1", order, page.Total)
 		}
 	}
 }
