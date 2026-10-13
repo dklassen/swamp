@@ -562,15 +562,19 @@ FROM (
       AND (?4 IS NULL OR (applications.id IS NOT NULL) = ?4)
       AND (?5 IS NULL OR (posting_markup.interested_at IS NOT NULL) = ?5)
       AND (?6 IS NULL OR applications.status IN (SELECT value FROM json_each(?6)))
-      AND (?7
+      AND NOT EXISTS (
+          SELECT 1 FROM json_each(?7) AS t
+          WHERE NOT contains_fold(postings.title || ' ' || companies.name || ' ' || postings.department || ' ' || postings.location, t.value)
+      )
+      AND (?8
            OR ((NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
                 OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
                AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
                     OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))))
 ) AS m
-WHERE ?8 IS NULL OR m.id > ?8
+WHERE ?9 IS NULL OR m.id > ?9
 ORDER BY m.id
-LIMIT ?9
+LIMIT ?10
 `
 
 type SearchPostingsByIDParams struct {
@@ -580,6 +584,7 @@ type SearchPostingsByIDParams struct {
 	HasApplication       interface{} `json:"has_application"`
 	Interested           interface{} `json:"interested"`
 	Statuses             interface{} `json:"statuses"`
+	Terms                interface{} `json:"terms"`
 	IgnoreCompanyFilters interface{} `json:"ignore_company_filters"`
 	AfterID              interface{} `json:"after_id"`
 	MaxRows              int64       `json:"max_rows"`
@@ -614,6 +619,9 @@ type SearchPostingsByIDRow struct {
 // must equal one of them, ignoring case. equal_fold is strings.EqualFold,
 // which store registers; NOCASE folds ASCII only.
 //
+// Every query term must appear somewhere in the title, company, department
+// or location, ignoring case (contains_fold, which store registers too).
+//
 // The inner query applies the filters and counts every match
 // (COUNT(*) OVER ()); the outer one applies the keyset condition and the
 // LIMIT. So total is the whole result's size on every page, while only
@@ -632,6 +640,7 @@ func (q *Queries) SearchPostingsByID(ctx context.Context, arg SearchPostingsByID
 		arg.HasApplication,
 		arg.Interested,
 		arg.Statuses,
+		arg.Terms,
 		arg.IgnoreCompanyFilters,
 		arg.AfterID,
 		arg.MaxRows,
@@ -707,15 +716,19 @@ FROM (
       AND (?4 IS NULL OR (applications.id IS NOT NULL) = ?4)
       AND (?5 IS NULL OR (posting_markup.interested_at IS NOT NULL) = ?5)
       AND (?6 IS NULL OR applications.status IN (SELECT value FROM json_each(?6)))
-      AND (?7
+      AND NOT EXISTS (
+          SELECT 1 FROM json_each(?7) AS t
+          WHERE NOT contains_fold(postings.title || ' ' || companies.name || ' ' || postings.department || ' ' || postings.location, t.value)
+      )
+      AND (?8
            OR ((NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
                 OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
                AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
                     OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))))
 ) AS m
-WHERE ?8 IS NULL OR m.id < ?8
+WHERE ?9 IS NULL OR m.id < ?9
 ORDER BY m.id DESC
-LIMIT ?9
+LIMIT ?10
 `
 
 type SearchPostingsByIDDescParams struct {
@@ -725,6 +738,7 @@ type SearchPostingsByIDDescParams struct {
 	HasApplication       interface{} `json:"has_application"`
 	Interested           interface{} `json:"interested"`
 	Statuses             interface{} `json:"statuses"`
+	Terms                interface{} `json:"terms"`
 	IgnoreCompanyFilters interface{} `json:"ignore_company_filters"`
 	BeforeID             interface{} `json:"before_id"`
 	MaxRows              int64       `json:"max_rows"`
@@ -775,6 +789,7 @@ func (q *Queries) SearchPostingsByIDDesc(ctx context.Context, arg SearchPostings
 		arg.HasApplication,
 		arg.Interested,
 		arg.Statuses,
+		arg.Terms,
 		arg.IgnoreCompanyFilters,
 		arg.BeforeID,
 		arg.MaxRows,
@@ -850,20 +865,24 @@ FROM (
       AND (?4 IS NULL OR (applications.id IS NOT NULL) = ?4)
       AND (?5 IS NULL OR (posting_markup.interested_at IS NOT NULL) = ?5)
       AND (?6 IS NULL OR applications.status IN (SELECT value FROM json_each(?6)))
-      AND (?7
+      AND NOT EXISTS (
+          SELECT 1 FROM json_each(?7) AS t
+          WHERE NOT contains_fold(postings.title || ' ' || companies.name || ' ' || postings.department || ' ' || postings.location, t.value)
+      )
+      AND (?8
            OR ((NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
                 OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
                AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
                     OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))))
 ) AS m
-WHERE ?8 IS NULL
-   OR (?9 IS NOT NULL
+WHERE ?9 IS NULL
+   OR (?10 IS NOT NULL
        AND (m.published_at IS NULL
-            OR m.published_at < ?9
-            OR (m.published_at = ?9 AND m.id < ?8)))
-   OR (?9 IS NULL AND m.published_at IS NULL AND m.id < ?8)
+            OR m.published_at < ?10
+            OR (m.published_at = ?10 AND m.id < ?9)))
+   OR (?10 IS NULL AND m.published_at IS NULL AND m.id < ?9)
 ORDER BY m.published_at IS NULL, m.published_at DESC, m.id DESC
-LIMIT ?10
+LIMIT ?11
 `
 
 type SearchPostingsByPublishedDescParams struct {
@@ -873,6 +892,7 @@ type SearchPostingsByPublishedDescParams struct {
 	HasApplication       interface{} `json:"has_application"`
 	Interested           interface{} `json:"interested"`
 	Statuses             interface{} `json:"statuses"`
+	Terms                interface{} `json:"terms"`
 	IgnoreCompanyFilters interface{} `json:"ignore_company_filters"`
 	CursorID             interface{} `json:"cursor_id"`
 	CursorPublished      interface{} `json:"cursor_published"`
@@ -930,6 +950,7 @@ func (q *Queries) SearchPostingsByPublishedDesc(ctx context.Context, arg SearchP
 		arg.HasApplication,
 		arg.Interested,
 		arg.Statuses,
+		arg.Terms,
 		arg.IgnoreCompanyFilters,
 		arg.CursorID,
 		arg.CursorPublished,

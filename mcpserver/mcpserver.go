@@ -46,7 +46,7 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "search_postings",
-		Description: "Find postings by what they are -- company, application and its status, interested, open or closed -- across every company being tracked, whether or not they have an application. Use it to resolve a posting or application the user names (get the company's ID from list_companies first), or to review the interested shortlist. Every filter is optional; by default it returns open, non-archived postings that their company's filters let through, as the user's company lists show them. Results come a page at a time: pass NextCursor back as Cursor, with the same filters, for the next page; it's null on the last page. Total is the number of matches when the page was read: if it's large, narrow the filters rather than paging through everything.",
+		Description: "Find postings by what they are -- company, application and its status, interested, open or closed -- across every company being tracked, whether or not they have an application. Use it to resolve a posting or application the user names (get the company's ID from list_companies first), or to review the interested shortlist. Every filter is optional; by default it returns open, non-archived postings that their company's filters let through, as the user's company lists show them. Query looks postings up by words, each of which must appear in the title, company, department or location (\"platform dublin\"). Results come a page at a time: pass NextCursor back as Cursor, with the same filters, for the next page; it's null on the last page. Total is the number of matches when the page was read: if it's large, narrow the filters rather than paging through everything.",
 		InputSchema: searchPostingsInputSchema(),
 	}, searchPostingsHandler(st))
 
@@ -136,6 +136,7 @@ type searchPostingsInput struct {
 	IncludeArchived     bool     `json:"IncludeArchived,omitempty" jsonschema:"include postings the user archived"`
 	Sort                string   `json:"Sort,omitempty"` // enum and description from stage.SortOrders(), in searchPostingsInputSchema
 	Cursor              string   `json:"Cursor,omitempty" jsonschema:"the previous page's NextCursor, unchanged; omit for the first page"`
+	Query               string   `json:"Query,omitempty" jsonschema:"space-separated words, each of which must appear in the title, company, department or location, ignoring case"`
 	Limit               int      `json:"Limit,omitempty" jsonschema:"postings per page: 50 by default, at most 100"`
 }
 
@@ -186,6 +187,7 @@ func searchPostingsHandler(st *stage.Stage) mcp.ToolHandlerFor[searchPostingsInp
 			Interested:          in.Interested,
 			ListingStatus:       in.ListingStatus,
 			IncludeArchived:     in.IncludeArchived,
+			Query:               in.Query,
 			Sort:                in.Sort,
 			Cursor:              in.Cursor,
 			Limit:               in.Limit,

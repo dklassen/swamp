@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"strings"
 
 	"github.com/dklassen/swamp/cursor"
 	"github.com/dklassen/swamp/store"
@@ -56,6 +57,9 @@ type SearchOptions struct {
 	// ListingStatus is "open" (the default when empty), "closed" or "any".
 	ListingStatus   string
 	IncludeArchived bool
+	// Query is space-separated terms, each of which must appear in the
+	// title, company, department or location, ignoring case.
+	Query string
 	// Sort is a SortOrders name; empty is SortIDAsc.
 	Sort string
 	// Cursor is the previous page's NextCursor, passed back unchanged
@@ -102,6 +106,9 @@ type searchFilters struct {
 	ApplicationStatuses []string
 	ListingStatus       string
 	IncludeArchived     bool
+	// Terms are the query's, lowered: a query that finds the same
+	// postings fingerprints the same.
+	Terms []string
 }
 
 // Search finds postings by what they are -- company, application,
@@ -141,6 +148,9 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 		ListingStatus:   listingStatus,
 		IncludeArchived: opts.IncludeArchived,
 	}
+	for _, term := range strings.Fields(opts.Query) {
+		filters.Terms = append(filters.Terms, strings.ToLower(term))
+	}
 	for _, status := range opts.ApplicationStatuses {
 		filters.ApplicationStatuses = append(filters.ApplicationStatuses, status.String())
 	}
@@ -154,6 +164,7 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 		HasApplication:      opts.HasApplication,
 		Interested:          opts.Interested,
 		ApplicationStatuses: opts.ApplicationStatuses,
+		Query:               opts.Query,
 		Limit:               limit,
 	}
 	if listingStatus != "any" {

@@ -351,3 +351,31 @@ func TestSearch_PublishedDescPagesNewestOnTheBoardFirst(t *testing.T) {
 		t.Errorf("PublishedAt = %v ... %v, want %v ... none", first.Postings[0].Posting.PublishedAt, first.Postings[3].Posting.PublishedAt, day(20))
 	}
 }
+
+// A cursor belongs to its query: another query's is refused, the same
+// query spaced or cased differently finds the same postings and isn't.
+func TestSearch_CursorIsBoundToTheQuery(t *testing.T) {
+	t.Parallel()
+	f := newSearchStage(t)
+	ctx := context.Background()
+
+	first, err := f.st.Search(ctx, SearchOptions{Query: "engineer", Limit: 1})
+	if err != nil {
+		t.Fatalf("Search: %v", err)
+	}
+	if first.NextCursor == nil {
+		t.Fatal("first page has no NextCursor")
+	}
+	next := *first.NextCursor
+
+	if _, err := f.st.Search(ctx, SearchOptions{Query: "designer", Cursor: next}); !errors.Is(err, cursor.ErrMismatch) {
+		t.Errorf("cursor with another query: err = %v, want cursor.ErrMismatch", err)
+	}
+	second, err := f.st.Search(ctx, SearchOptions{Query: "  ENGINEER ", Limit: 5, Cursor: next})
+	if err != nil {
+		t.Fatalf("same query, spaced and cased differently: %v", err)
+	}
+	if diff := cmp.Diff(postingIDs(f.started, f.betaPosting), matchIDs(second.Postings)); diff != "" {
+		t.Errorf("second page (-want +got):\n%s", diff)
+	}
+}

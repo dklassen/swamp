@@ -191,6 +191,9 @@ type Querier interface {
 	// must equal one of them, ignoring case. equal_fold is strings.EqualFold,
 	// which store registers; NOCASE folds ASCII only.
 	//
+	// Every query term must appear somewhere in the title, company, department
+	// or location, ignoring case (contains_fold, which store registers too).
+	//
 	// The inner query applies the filters and counts every match
 	// (COUNT(*) OVER ()); the outer one applies the keyset condition and the
 	// LIMIT. So total is the whole result's size on every page, while only
