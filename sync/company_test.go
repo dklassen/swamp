@@ -44,7 +44,9 @@ func TestSyncCompany_NewPostingNoFilters_Created(t *testing.T) {
 	}
 }
 
-func TestSyncCompany_PostingDoesNotMatchFilters_NotCreated(t *testing.T) {
+// Filters only decide what's shown: a posting they leave out is still
+// stored, so a stale filter can hide it but never lose it.
+func TestSyncCompany_PostingDoesNotMatchFilters_Created(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
@@ -62,19 +64,59 @@ func TestSyncCompany_PostingDoesNotMatchFilters_NotCreated(t *testing.T) {
 		t.Fatalf("SyncCompany: %v", err)
 	}
 
-	if result.Created != 0 {
-		t.Fatalf("result.Created = %d, want 0", result.Created)
-	}
-	if result.Fetched != 1 {
-		t.Fatalf("result.Fetched = %d, want 1", result.Fetched)
+	if result.Created != 1 {
+		t.Fatalf("result.Created = %d, want 1", result.Created)
 	}
 
 	postings, err := s.ListPostingsByCompany(ctx, company.ID)
 	if err != nil {
 		t.Fatalf("ListPostingsByCompany: %v", err)
 	}
-	if len(postings) != 0 {
-		t.Fatalf("got %d postings, want 0", len(postings))
+	if len(postings) != 1 || postings[0].Department != "Engineering" {
+		t.Fatalf("postings = %+v, want the one Engineering posting", postings)
+	}
+}
+
+// A company renaming a department mustn't freeze its stored postings at
+// their old content just because the filter names the old value.
+func TestSyncCompany_DepartmentRenamedPastFilter_ContentUpdated(t *testing.T) {
+	s := newTestStore(t)
+	ctx := context.Background()
+
+	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	if _, err := s.CreateCompanyFilter(ctx, company.ID, "department", "Engineering"); err != nil {
+		t.Fatalf("CreateCompanyFilter: %v", err)
+	}
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
+		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
+	}}
+	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
+		t.Fatalf("initial SyncCompany: %v", err)
+	}
+
+	fetcher.postings["acme"] = []jobboard.Posting{samplePosting("job-1", "Engineer", "Eng", "Remote")}
+	result, err := syncer.SyncCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("SyncCompany: %v", err)
+	}
+	if result.Updated != 1 {
+		t.Fatalf("result.Updated = %d, want 1", result.Updated)
+	}
+
+	postings, err := s.ListPostingsByCompany(ctx, company.ID)
+	if err != nil {
+		t.Fatalf("ListPostingsByCompany: %v", err)
+	}
+	if len(postings) != 1 || postings[0].Department != "Eng" || postings[0].ListingStatus != "open" {
+		t.Fatalf("postings = %+v, want the one posting, open, with department Eng", postings)
+	}
+	history, err := s.ListPostingHistory(ctx, postings[0].ID)
+	if err != nil {
+		t.Fatalf("ListPostingHistory: %v", err)
+	}
+	if len(history) != 1 || history[0].ChangeType != "content_updated" {
+		t.Fatalf("history = %+v, want one content_updated row", history)
 	}
 }
 
@@ -297,91 +339,6 @@ func TestSyncCompany_FetchedPostingHasWhitespace_SavedTrimmed(t *testing.T) {
 	}
 	if postings[0].Location != "Dublin, Ireland" {
 		t.Fatalf("posting location = %q, want %q", postings[0].Location, "Dublin, Ireland")
-	}
-}
-
-// This is the concrete bug the whitespace issue caused: filter.Match does
-// an exact (case-insensitive) comparison, so a clean filter value like
-// "Canada" silently failed to match a fetched posting location of
-// "Canada " before fetched postings were sanitized.
-func TestSyncCompany_FilterValueMatchesTrimmedLocation_PostingCreated(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-
-	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	if _, err := s.CreateCompanyFilter(ctx, company.ID, "location", "Canada"); err != nil {
-		t.Fatalf("CreateCompanyFilter: %v", err)
-	}
-	padded := samplePosting("job-1", "Engineer", "Engineering", "Canada ")
-	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": {padded}}}
-
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
-	result, err := syncer.SyncCompany(ctx, company.ID)
-	if err != nil {
-		t.Fatalf("SyncCompany: %v", err)
-	}
-	if result.Created != 1 {
-		t.Fatalf("result.Created = %d, want 1", result.Created)
-	}
-}
-
-func TestApplyCompanyFilters_ReplacesFiltersThenSyncs(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-
-	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	if _, err := s.CreateCompanyFilter(ctx, company.ID, "department", "Sales"); err != nil {
-		t.Fatalf("CreateCompanyFilter: %v", err)
-	}
-	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
-		"acme": {
-			samplePosting("job-1", "Engineer", "Engineering", "Remote"),
-			samplePosting("job-2", "Salesperson", "Sales", "Remote"),
-		},
-	}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
-
-	result, err := syncer.ApplyCompanyFilters(ctx, company.ID, []string{"Engineering"}, nil)
-	if err != nil {
-		t.Fatalf("ApplyCompanyFilters: %v", err)
-	}
-
-	// Sync ran under the new filters (Engineering, not the old Sales
-	// filter): only the Engineering posting should have been created.
-	if result.Created != 1 {
-		t.Fatalf("result.Created = %d, want 1 (only the Engineering posting matches the new filter)", result.Created)
-	}
-
-	saved, err := s.ListCompanyFilters(ctx, company.ID)
-	if err != nil {
-		t.Fatalf("ListCompanyFilters: %v", err)
-	}
-	if len(saved) != 1 || saved[0].Field != "department" || saved[0].Value != "Engineering" {
-		t.Fatalf("saved filters = %+v, want one department=Engineering filter (old Sales filter replaced)", saved)
-	}
-}
-
-func TestApplyCompanyFilters_NoDepartmentsOrLocations_ClearsFilters(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-
-	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	if _, err := s.CreateCompanyFilter(ctx, company.ID, "department", "Sales"); err != nil {
-		t.Fatalf("CreateCompanyFilter: %v", err)
-	}
-	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
-
-	if _, err := syncer.ApplyCompanyFilters(ctx, company.ID, nil, nil); err != nil {
-		t.Fatalf("ApplyCompanyFilters: %v", err)
-	}
-
-	saved, err := s.ListCompanyFilters(ctx, company.ID)
-	if err != nil {
-		t.Fatalf("ListCompanyFilters: %v", err)
-	}
-	if len(saved) != 0 {
-		t.Fatalf("saved filters = %+v, want empty", saved)
 	}
 }
 
