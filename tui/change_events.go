@@ -116,7 +116,7 @@ func (a *App) handleChanges(msg changesMsg) tea.Cmd {
 // reloads is whether screen is a view that follows the change log.
 func reloads(s screen) bool {
 	switch s {
-	case screenActiveApplications, screenCompanyList, screenPostingList, screenPostingDetail, screenApplicationDetail:
+	case screenActiveApplications, screenCompanyList, screenAllPostings, screenPostingList, screenPostingDetail, screenApplicationDetail:
 		return true
 	}
 	return false
@@ -146,6 +146,11 @@ func (a *App) reloadFor(events []store.ChangeEvent) tea.Cmd {
 	case screenPostingList:
 		if touches(events, "postings") {
 			return reloadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
+		}
+	case screenAllPostings:
+		// companies too: a deleted company's postings leave the list.
+		if touches(events, "postings", "posting_markup", "companies") {
+			return a.allPostings.load(a.allPostings.size)
 		}
 	case screenCompanyList:
 		// postings too: the list shows each company's open postings.

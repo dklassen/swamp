@@ -346,3 +346,56 @@ func TestAllPostings_OOpensTheJobURL(t *testing.T) {
 		t.Errorf("URLs opened (-want +got):\n%s", diff)
 	}
 }
+
+// Another process's new posting updates the count and lands on page 1,
+// not under the page the user is reading.
+func TestAllPostings_ANewPostingElsewhere_KeepsThePageAndCountsIt(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	for i := 1; i <= 7; i++ {
+		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
+	app = openAllPostings(t, app)
+	for _, key := range []tea.KeyMsg{runeKey('l'), runeKey('j')} {
+		app = sendKeyAndApply(t, app, key)
+	}
+	page2 := pageTitles(app)
+
+	added := mustUpsertPosting(t, s, acme.ID, "8", "Role 8")
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "postings", RowID: added.ID, Op: "insert", Origin: "fetch:9"}}})
+
+	if diff := cmp.Diff(page2, pageTitles(app)); diff != "" {
+		t.Errorf("page 2 changed under the user (-before +after):\n%s", diff)
+	}
+	if len(app.allPostings.afterIDs) != 2 || app.allPostings.cursor != 1 || app.allPostings.page.Total != 8 {
+		t.Errorf("page %d, row %d, Total %d; want page 2, row 1, Total 8", len(app.allPostings.afterIDs), app.allPostings.cursor, app.allPostings.page.Total)
+	}
+	app = sendKeyAndApply(t, app, runeKey('h'))
+	if titles := pageTitles(app); len(titles) == 0 || titles[0] != "Role 8" {
+		t.Errorf("page 1 = %q, want Role 8 first", titles)
+	}
+}
+
+func TestAllPostings_MarkedInterestedElsewhere_ShowsTheStar(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "1", "Role 1")
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = openAllPostings(t, app)
+
+	if _, err := s.SetPostingInterested(context.Background(), posting.ID); err != nil {
+		t.Fatalf("SetPostingInterested: %v", err)
+	}
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "posting_markup", RowID: posting.ID, Op: "update", Origin: "tui:2"}}})
+
+	if !strings.Contains(app.View(), "★") {
+		t.Errorf("view doesn't star the posting another window marked interested:\n%s", app.View())
+	}
+}
