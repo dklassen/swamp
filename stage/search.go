@@ -194,6 +194,7 @@ func searchMatch(l store.PostingListing) SearchMatch {
 			WorkplaceType:  l.WorkplaceType,
 			ApplicationURL: l.ApplicationURL,
 			PublishedAt:    store.OptionalTime{Time: l.PublishedAt},
+			FirstSeenAt:    l.FirstSeenAt,
 		},
 		CompanyName:   l.CompanyName,
 		ListingStatus: l.ListingStatus,

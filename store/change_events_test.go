@@ -6,6 +6,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/google/go-cmp/cmp"
 )
 
 // openWithOrigin needs path already migrated, as `swamp migrate up` guarantees.
@@ -150,5 +152,47 @@ func TestChangeEvents_RolledBackChangeLogsNothing(t *testing.T) {
 
 	if got := changeOrigins(t, s, "applications"); len(got) != 0 {
 		t.Errorf("%d change events after a rolled-back insert, want 0", len(got))
+	}
+}
+
+// TestChangeEvents_PostingMarkupLogsItsMarks: another TUI window shows a
+// posting marked interested or archived, so those marks are logged; notes
+// aren't.
+func TestChangeEvents_PostingMarkupLogsItsMarks(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	if _, err := s.SetPostingInterested(ctx, posting.ID); err != nil {
+		t.Fatalf("SetPostingInterested: %v", err)
+	}
+	if _, err := s.UpdatePostingMarkupNotes(ctx, posting.ID, "ask about on-call"); err != nil {
+		t.Fatalf("UpdatePostingMarkupNotes: %v", err)
+	}
+
+	rows, err := s.sqlDB.Query(`SELECT op, row_id FROM change_events WHERE table_name = 'posting_markup' ORDER BY id`)
+	if err != nil {
+		t.Fatalf("query change_events: %v", err)
+	}
+	defer func() { _ = rows.Close() }()
+	var got []string
+	for rows.Next() {
+		var op string
+		var rowID int64
+		if err := rows.Scan(&op, &rowID); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		if rowID != posting.ID {
+			t.Errorf("%s event names row %d, want the posting's ID %d", op, rowID, posting.ID)
+		}
+		got = append(got, op)
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("rows: %v", err)
+	}
+	if diff := cmp.Diff([]string{"insert", "update"}, got); diff != "" {
+		t.Errorf("posting_markup events (-want +got), creating the posting, marking it interested, then changing only its notes:\n%s", diff)
 	}
 }

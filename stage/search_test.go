@@ -131,6 +131,9 @@ func TestSearch_MatchCarriesItsApplication(t *testing.T) {
 	if m.Posting.ID != f.started.ID || m.Posting.Title != "Data Engineer" || m.CompanyName != "Acme" || m.ListingStatus != "open" {
 		t.Errorf("match = %+v, want the started Data Engineer posting at Acme, open", m)
 	}
+	if m.Posting.FirstSeenAt.IsZero() || !m.Posting.FirstSeenAt.Equal(f.started.FirstSeenAt) {
+		t.Errorf("match FirstSeenAt = %v, want the posting's %v", m.Posting.FirstSeenAt, f.started.FirstSeenAt)
+	}
 	if m.ApplicationID == nil || *m.ApplicationID != f.startedApp.ID ||
 		m.ApplicationStatus == nil || *m.ApplicationStatus != store.ApplicationStatusStarted {
 		t.Errorf("match application = %v %v, want %d started", m.ApplicationID, m.ApplicationStatus, f.startedApp.ID)

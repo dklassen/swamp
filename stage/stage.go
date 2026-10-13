@@ -51,6 +51,8 @@ type PostingSummary struct {
 	// PublishedAt is when the board says it was published; null when it
 	// didn't say. Shown so newest-first search results say why (#224).
 	PublishedAt store.OptionalTime `json:"PublishedAt"`
+	// FirstSeenAt is when Swamp first stored the posting.
+	FirstSeenAt time.Time `json:"FirstSeenAt"`
 }
 
 func postingSummary(p store.Posting) PostingSummary {
@@ -62,6 +64,7 @@ func postingSummary(p store.Posting) PostingSummary {
 		WorkplaceType:  p.WorkplaceType,
 		ApplicationURL: p.ApplicationURL,
 		PublishedAt:    p.PublishedAt,
+		FirstSeenAt:    p.FirstSeenAt,
 	}
 }
 

@@ -37,6 +37,14 @@ var Logged = map[string]LoggedTable{
 		Ignored: []string{"source", "source_id", "description_html", "description_text", "job_url", "application_url", "raw_payload", "first_seen_at", "last_seen_at", "created_at"},
 		Ops:     allOps,
 	},
+	// Keyed by its posting's ID, which is never reused. The marks show in
+	// every TUI window; notes don't.
+	"posting_markup": {
+		Key:     "posting_id",
+		Columns: []string{"interested_at", "archived_at"},
+		Ignored: []string{"notes", "created_at", "updated_at"},
+		Ops:     allOps,
+	},
 	"document_reviews": {
 		Key:     "id",
 		Columns: []string{"application_id", "document_type", "outcome"},
@@ -72,7 +80,6 @@ var NotLogged = map[string]string{
 	"posting_history":            "duplicates postings' events",
 
 	// Logged once something reads their changes and acts on them.
-	"posting_markup":            "no reader acts on its changes yet",
 	"posting_application_forms": "no reader acts on its changes yet",
 	"posting_tags":              "no reader acts on its changes yet",
 	"tags":                      "no reader acts on its changes yet",
