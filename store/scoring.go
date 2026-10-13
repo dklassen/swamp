@@ -10,7 +10,7 @@ import (
 	"github.com/dklassen/swamp/store/db"
 )
 
-// ScoringScope is which postings a scoring run covers (RFC 0009).
+// ScoringScope is which postings a scoring run covers.
 type ScoringScope int
 
 const (
@@ -55,7 +55,7 @@ func ScoringScopes() []ScoringScope {
 	return scopes
 }
 
-// ScoringRun is one scoring session the agent started (RFC 0009).
+// ScoringRun is one scoring session the agent started.
 type ScoringRun struct {
 	ID            int64
 	Model         string
@@ -283,7 +283,7 @@ func (s *Store) PendingPostings(ctx context.Context, runID, afterID int64, limit
 	return page, nil
 }
 
-// Scores are 1 to 5 (RFC 0009, open question 4): coarse enough that a 4
+// Scores are 1 to 5: coarse enough that a 4
 // means the same from run to run and model to model, where 0-100 would
 // ask the agent for precision it would invent.
 const (

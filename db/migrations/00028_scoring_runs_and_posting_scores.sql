@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- Fit scores (RFC 0009, part 4). A run is one scoring session the agent
+-- Fit scores. A run is one scoring session the agent
 -- starts; a score is one posting's score within a run. Rows are only ever
 -- inserted: a posting's current score is its newest. No CHECK on scope or
 -- score: Go validates both, as 00004 and 00008 decided for value lists.

@@ -1,5 +1,5 @@
 // Package contenthash identifies the version of a posting's content the
-// agent reads, so a fit score can be tied to what it scored (RFC 0009).
+// agent reads, so a fit score can be tied to what it scored.
 // Both store, as it ingests a posting, and the migration that backfills
 // existing ones compute it here, so the two can't disagree.
 package contenthash
