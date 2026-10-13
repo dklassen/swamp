@@ -80,7 +80,7 @@ const (
 func Open(path string, cfg Config) (*sql.DB, error) {
 	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(%s)&_txlock=%s&_time_format=%s&_timezone=%s",
 		path, cfg.BusyTimeout.Milliseconds(), journalMode, txLock, cfg.TimeFormat, cfg.Timezone)
-	return sql.OpenDB(connector{dsn: dsn, origin: cfg.Origin}), nil
+	return sql.OpenDB(connector{driver: sharedDriver, dsn: dsn, origin: cfg.Origin}), nil
 }
 
 // sharedDriver is modernc's package-level driver, the only one functions
@@ -134,12 +134,13 @@ func stampOrigin(ctx context.Context, conn driver.ExecerContext, origin string) 
 // connector stamps origin on its own connections only, so other sqlite
 // connections in the process stay unstamped.
 type connector struct {
+	driver driver.Driver
 	dsn    string
 	origin string
 }
 
 func (c connector) Connect(ctx context.Context) (driver.Conn, error) {
-	conn, err := sharedDriver.Open(c.dsn)
+	conn, err := c.driver.Open(c.dsn)
 	if err != nil || c.origin == "" {
 		return conn, err
 	}
@@ -155,4 +156,4 @@ func (c connector) Connect(ctx context.Context) (driver.Conn, error) {
 	return conn, nil
 }
 
-func (c connector) Driver() driver.Driver { return sharedDriver }
+func (c connector) Driver() driver.Driver { return c.driver }
