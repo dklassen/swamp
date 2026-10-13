@@ -1424,6 +1424,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	// The terminal is in raw mode, so ctrl+c reaches us as a key rather
+	// than stopping the program.
+	if msg.Type == tea.KeyCtrlC {
+		return a, tea.Quit
+	}
 	// Ahead of the screen's own keys, so it works with the company search
 	// open too.
 	if msg.Type == tea.KeyTab {
