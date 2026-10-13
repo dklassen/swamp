@@ -63,6 +63,7 @@ const (
 	screenApplicationForm
 	screenApplicationDelete
 	screenCompanyDelete
+	screenAllPostings
 )
 
 type App struct {
@@ -80,6 +81,7 @@ type App struct {
 	// (store.CountOpenPostingsByCompany), loaded alongside companies.
 	companyOpenPostings map[int64]int
 	companyList         companyListModel
+	allPostings         allPostingsModel
 	screen              screen
 	companyForm         companyFormModel
 	companyEdit         companyEditModel
@@ -98,6 +100,8 @@ type App struct {
 	postingMarkup   map[int64]store.PostingMarkup
 	postingList     postingListModel
 	postingDetail   postingDetailModel
+	// postingDetailFrom is the screen that opened posting detail.
+	postingDetailFrom screen
 	// applicationsByPosting holds the application for each posting_id that
 	// has one (fetched async on entering posting detail -- see
 	// loadApplication). A posting with no entry has no application yet
@@ -204,6 +208,7 @@ func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 		syncer:                syncer,
 		screen:                screenActiveApplications,
 		companyList:           newCompanyListModel(s),
+		allPostings:           newAllPostingsModel(s),
 		companyForm:           newCompanyFormModel(syncer),
 		postingList:           newPostingListModel(s),
 		activeApplicationList: newActiveApplicationListModel(),
@@ -509,7 +514,8 @@ func sortCompaniesByName(companies []store.Company) {
 }
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(loadCompanies(a.store), loadActiveApplications(a.store, a.documents), a.pollChanges())
+	// The all-postings page too, for its tab's count.
+	return tea.Batch(loadCompanies(a.store), loadActiveApplications(a.store, a.documents), a.allPostings.load(a.allPostings.pageSize(a.screenRows())), a.pollChanges())
 }
 
 type activeApplicationsLoadedMsg struct {
@@ -1111,6 +1117,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				a.postingList.clampCursor(len(a.postings))
 			}
+			if a.screen == screenAllPostings {
+				return a, a.allPostings.load(a.allPostings.size)
+			}
 		}
 	case applicationLoadedMsg:
 		a.err = msg.err
@@ -1124,7 +1133,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				delete(a.applicationsByPosting, msg.postingID)
 			}
 			if a.screen == screenPostingDetail {
-				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
+				// The posting on screen, which a.postings lacks when the detail
+				// was opened from all postings.
+				p := a.postingDetail.posting
+				_, app, hasApp := a.lookupPosting(p.ID)
 				a.replacePostingDetail(newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID)))
 				return a, maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 			}
@@ -1145,7 +1157,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			var reviewsCmd tea.Cmd
 			if a.screen == screenPostingDetail {
-				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
+				// The posting on screen, which a.postings lacks when the detail
+				// was opened from all postings.
+				p := a.postingDetail.posting
+				_, app, hasApp := a.lookupPosting(p.ID)
 				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 				reviewsCmd = maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 			}
@@ -1200,6 +1215,24 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handleTick()
 	case changesMsg:
 		return a, a.handleChanges(msg)
+	case allPostingsLoadedMsg:
+		// It also loads in the background for its tab's count, so success
+		// mustn't clear another load's error.
+		if msg.err != nil {
+			a.err = msg.err
+		} else {
+			return a, a.allPostings.loaded(msg)
+		}
+	case allPostingsDetailLoadedMsg:
+		a.err = msg.err
+		// Only if the user is still where they pressed enter.
+		if msg.err == nil && a.screen == screenAllPostings {
+			a.postingDetailFrom = screenAllPostings
+			app, hasApp := a.applicationsByPosting[msg.posting.ID]
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), msg.posting, app, hasApp, nil, a.canNavigateSiblings(msg.posting.ID))
+			a.enterFrom(screenPostingDetail)
+			return a, tea.Batch(loadApplication(a.store, msg.posting.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
+		}
 	case postingReloadedMsg:
 		return a, a.handlePostingReloaded(msg)
 	case applicationDetailReloadedMsg:
@@ -1366,10 +1399,14 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// entered, so nothing to do here.
 			a.postingDetail.resize(a.width, a.screenRows())
 		}
+		var reload tea.Cmd
+		if size := a.allPostings.pageSize(a.screenRows()); a.screen == screenAllPostings && size != a.allPostings.size {
+			reload = a.allPostings.load(size)
+		}
 		// The terminal rewraps the old frame when it narrows, pushing rows
 		// below where the new one ends. The renderer only clears below a
 		// frame that got shorter, so without this they stay on screen.
-		return a, tea.ClearScreen
+		return a, tea.Batch(tea.ClearScreen, reload)
 	case tea.KeyMsg:
 		prevScreen := a.screen
 		model, cmd := a.updateKeyMsg(msg)
@@ -1394,11 +1431,23 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Archiving or unarchiving may have changed open counts.
 			return a, loadCompanies(a.store)
 		case screenCompanyList:
+			a.screen = screenAllPostings
+			return a, a.allPostings.load(a.allPostings.pageSize(a.screenRows()))
+		case screenAllPostings:
 			a.screen = screenActiveApplications
 			return a, nil
 		}
 	}
 	switch a.screen {
+	case screenAllPostings:
+		cmd, intent := a.allPostings.Update(msg, a.allPostings.pageSize(a.screenRows()))
+		switch v := intent.(type) {
+		case enterPostingDetailMsg:
+			return a, loadAllPostingsDetail(a.store, v.postingID)
+		case openJobURLMsg:
+			return a, a.openURL(v.url)
+		}
+		return a, cmd
 	case screenActiveApplications:
 		cmd, intent := a.activeApplicationList.Update(msg, a.activeApplications)
 		switch v := intent.(type) {
@@ -1446,6 +1495,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// reads only from this map, not from appView. Without seeding it
 			// here, that lookup misses and hasApp wrongly flips to false even
 			// though the application is unchanged.
+			a.postingDetailFrom = screenApplicationDetail
 			appView := a.applicationDetail.application
 			if a.applicationsByPosting == nil {
 				a.applicationsByPosting = make(map[int64]store.Application)
@@ -1506,6 +1556,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Archiving or unarchiving may have changed open counts.
 			return a, loadCompanies(a.store)
 		case enterPostingDetailMsg:
+			a.postingDetailFrom = screenPostingList
 			p, app, hasApp := a.lookupPosting(v.postingID)
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 			a.enterFrom(screenPostingDetail)
@@ -1724,6 +1775,8 @@ func (a *App) body(s screen) string {
 		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.activeApplicationProgress, time.Now(), a.width, a.screenRows()))
 	case screenApplicationDetail:
 		b.WriteString(a.applicationDetail.View())
+	case screenAllPostings:
+		b.WriteString(a.allPostings.View(a.width, a.screenRows()))
 	case screenCompanyList:
 		b.WriteString(a.companyList.View(a.companies, a.companyOpenPostings, a.width, a.screenRows()))
 	case screenCompanyForm:
@@ -1772,7 +1825,7 @@ func (a *App) body(s screen) string {
 // along, so it always reflects what a.postings holds now rather than
 // what it held when the screen was first entered.
 func (a *App) canNavigateSiblings(postingID int64) bool {
-	return indexOfPosting(a.postings, postingID) >= 0
+	return a.postingDetailFrom == screenPostingList && indexOfPosting(a.postings, postingID) >= 0
 }
 
 // sectionHeading renders a posting-detail section heading: name, then a

@@ -565,3 +565,33 @@ func TestSearchPostings_IgnoreCompanyFilters(t *testing.T) {
 		}
 	}
 }
+
+func TestSearchPostings_ListingCarriesTheJobURL(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	posting, err := s.UpsertPosting(ctx, CreatePostingParams{
+		CompanyID: acme.ID,
+		Source:    "ashby",
+		SourceID:  "1",
+		IngestedFields: IngestedFields{
+			Title:      "Engineer",
+			JobURL:     "https://jobs.example.com/acme/1",
+			RawPayload: `{"id":"1"}`,
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpsertPosting: %v", err)
+	}
+
+	for _, order := range PostingOrders() {
+		page, err := s.SearchPostings(ctx, PostingSearch{Order: order, Limit: 10})
+		if err != nil {
+			t.Fatalf("%s: SearchPostings: %v", order, err)
+		}
+		if len(page.Listings) != 1 || page.Listings[0].JobURL != posting.JobURL {
+			t.Errorf("%s: listings = %+v, want one with JobURL %q", order, page.Listings, posting.JobURL)
+		}
+	}
+}

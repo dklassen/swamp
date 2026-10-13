@@ -444,7 +444,9 @@ func TestApp_TabBackToTheHomeList_ShowsAChangeClearedOnTheCompanyList(t *testing
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "applications", RowID: application.ID, Op: "update", Origin: "mcp:7"}}})
 
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
+	for range 2 {
+		app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
+	}
 
 	if app.screen != screenActiveApplications {
 		t.Fatalf("screen = %v, want the home list", app.screen)

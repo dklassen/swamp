@@ -30,6 +30,8 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 	}{
 		{"posting list", screenPostingList, nil, "Companies › Globex"},
 		{"posting detail from the list", screenPostingDetail, []screen{screenPostingList}, "Companies › Globex › Staff Engineer"},
+		{"posting detail from all postings", screenPostingDetail, []screen{screenAllPostings}, "All postings › Staff Engineer"},
+		{"notes, under posting detail from all postings", screenApplicationNotesEdit, []screen{screenAllPostings}, "All postings › Staff Engineer › Edit notes"},
 		{"application detail", screenApplicationDetail, nil, "Applications › Initech › Engineering Manager"},
 		{"posting detail from an application", screenPostingDetail, []screen{screenApplicationDetail}, "Applications › Initech › Engineering Manager › Posting"},
 		{"notes, under posting detail from the list", screenApplicationNotesEdit, []screen{screenPostingList}, "Companies › Globex › Staff Engineer › Edit notes"},

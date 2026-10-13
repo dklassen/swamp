@@ -190,6 +190,7 @@ FROM (
         postings.published_at,
         applications.notes AS application_notes,
         postings.first_seen_at,
+        postings.job_url,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
@@ -248,6 +249,7 @@ FROM (
         postings.published_at,
         applications.notes AS application_notes,
         postings.first_seen_at,
+        postings.job_url,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
@@ -312,6 +314,7 @@ FROM (
         postings.published_at,
         applications.notes AS application_notes,
         postings.first_seen_at,
+        postings.job_url,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
