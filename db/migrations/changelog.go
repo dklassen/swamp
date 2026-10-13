@@ -45,6 +45,14 @@ var Logged = map[string]LoggedTable{
 		Ignored: []string{"notes", "created_at", "updated_at"},
 		Ops:     allOps,
 	},
+	// Rows are only inserted. A score event names its run, so run IDs are
+	// never reused either.
+	"posting_scores": {
+		Key:     "id",
+		Columns: []string{"run_id", "posting_id", "score"},
+		Ignored: []string{"reason", "content_sha256", "scored_at"},
+		Ops:     []string{"insert"},
+	},
 	"document_reviews": {
 		Key:     "id",
 		Columns: []string{"application_id", "document_type", "outcome"},
@@ -83,4 +91,5 @@ var NotLogged = map[string]string{
 	"posting_application_forms": "no reader acts on its changes yet",
 	"posting_tags":              "no reader acts on its changes yet",
 	"tags":                      "no reader acts on its changes yet",
+	"scoring_runs":              "nothing reads its changes",
 }
