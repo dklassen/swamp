@@ -51,6 +51,7 @@ type Querier interface {
 	// leaving callers to remember a second call. Relies on column defaults
 	// (interested_at=NULL, archived_at=NULL, notes='').
 	CreatePostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
+	CreateScoringRun(ctx context.Context, arg CreateScoringRunParams) (ScoringRun, error)
 	CreateTag(ctx context.Context, name string) (Tag, error)
 	DeleteCompanyFilters(ctx context.Context, companyID int64) error
 	DeleteInterviewStage(ctx context.Context, id int64) error
@@ -71,6 +72,7 @@ type Querier interface {
 	GetPostingApplicationForm(ctx context.Context, postingID int64) (PostingApplicationForm, error)
 	GetPostingBySourceAndSourceID(ctx context.Context, arg GetPostingBySourceAndSourceIDParams) (Posting, error)
 	GetPostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
+	GetScoringRun(ctx context.Context, id int64) (ScoringRun, error)
 	// Not filtered on deleted_at: used for existence checks (e.g. before
 	// creating) where callers need to know about a soft-deleted tag too, not
 	// just active ones.
@@ -149,6 +151,18 @@ type Querier interface {
 	// What store.SoftDeleteCompany closes: a deleted company is never synced
 	// again, so nothing else would ever close these (#178).
 	ListOpenPostingIDsByCompany(ctx context.Context, companyID int64) ([]int64, error)
+	// One page of a run's pending postings, by posting ID after an optional
+	// cursor, with how many there are in all (RFC 0009).
+	//
+	// Eligible: open, not archived, not interested, no application, at a
+	// company the user hasn't deleted, and let through by that company's
+	// filters, matched as the SearchPostings queries match them. Pending: no
+	// score in this run, and either the run rescores everything or the
+	// posting has no score on its current content. has_score and
+	// has_current_score say why; the store names the reason.
+	// The cursor is a narg, as in the SearchPostings queries: with sqlc.arg there,
+	// sqlc can't resolve the alias m.
+	ListPendingPostings(ctx context.Context, arg ListPendingPostingsParams) ([]ListPendingPostingsRow, error)
 	ListPostingHistoryByPosting(ctx context.Context, postingID int64) ([]PostingHistory, error)
 	// id DESC is a tiebreaker: a single sync inserts many rows within the same
 	// CURRENT_TIMESTAMP second (sqlite has only second resolution), so

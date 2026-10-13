@@ -1,6 +1,14 @@
 package store
 
-import "fmt"
+import (
+	"context"
+	"database/sql"
+	"errors"
+	"fmt"
+	"time"
+
+	"github.com/dklassen/swamp/store/db"
+)
 
 // ScoringScope is which postings a scoring run covers (RFC 0009).
 type ScoringScope int
@@ -45,4 +53,188 @@ func ScoringScopes() []ScoringScope {
 		scopes[i] = ScoringScope(i)
 	}
 	return scopes
+}
+
+// ScoringRun is one scoring session the agent started (RFC 0009).
+type ScoringRun struct {
+	ID            int64
+	Model         string
+	ClientName    string
+	ClientVersion string
+	ProfileSHA256 string
+	Scope         ScoringScope
+	StartedAt     time.Time
+}
+
+func scoringRunFromRow(row db.ScoringRun) (ScoringRun, error) {
+	scope, err := ParseScoringScope(row.Scope)
+	if err != nil {
+		return ScoringRun{}, fmt.Errorf("store: scoring run %d: %w", row.ID, err)
+	}
+	return ScoringRun{
+		ID:            row.ID,
+		Model:         row.Model,
+		ClientName:    row.ClientName,
+		ClientVersion: row.ClientVersion,
+		ProfileSHA256: row.ProfileSha256,
+		Scope:         scope,
+		StartedAt:     row.StartedAt,
+	}, nil
+}
+
+// StartScoringRunParams is what a scoring run records about itself. The
+// client's name and version may be empty: MCP client info is optional.
+type StartScoringRunParams struct {
+	Model         string
+	ClientName    string
+	ClientVersion string
+	ProfileSHA256 string
+	Scope         ScoringScope
+}
+
+// StartScoringRun records a new scoring run.
+func (s *Store) StartScoringRun(ctx context.Context, params StartScoringRunParams) (ScoringRun, error) {
+	switch {
+	case params.Model == "":
+		return ScoringRun{}, errors.New("store: start scoring run: model is required")
+	case params.ProfileSHA256 == "":
+		return ScoringRun{}, errors.New("store: start scoring run: profile hash is required")
+	case params.Scope < 0 || int(params.Scope) >= len(scoringScopeNames):
+		return ScoringRun{}, fmt.Errorf("store: start scoring run: unknown scope %v", params.Scope)
+	}
+	row, err := s.queries.CreateScoringRun(ctx, db.CreateScoringRunParams{
+		Model:         params.Model,
+		ClientName:    params.ClientName,
+		ClientVersion: params.ClientVersion,
+		ProfileSha256: params.ProfileSHA256,
+		Scope:         params.Scope.String(),
+	})
+	if err != nil {
+		return ScoringRun{}, fmt.Errorf("store: start scoring run: %w", err)
+	}
+	return scoringRunFromRow(row)
+}
+
+// scoringRun is the run with id, or ErrNotFound: foreign keys aren't
+// enforced (00006), so nothing else stops a score naming a run that
+// doesn't exist.
+func (s *Store) scoringRun(ctx context.Context, id int64) (ScoringRun, error) {
+	row, err := s.queries.GetScoringRun(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ScoringRun{}, fmt.Errorf("store: scoring run %d: %w", id, ErrNotFound)
+	}
+	if err != nil {
+		return ScoringRun{}, fmt.Errorf("store: scoring run %d: %w", id, err)
+	}
+	return scoringRunFromRow(row)
+}
+
+// PendingReason is why a posting is pending in a run.
+type PendingReason int
+
+const (
+	// PendingNew: the posting has never been scored.
+	PendingNew PendingReason = iota
+	// PendingChanged: it was scored, but its content has changed since.
+	PendingChanged
+	// PendingRescore: it has a score on its current content, and the run
+	// rescores everything.
+	PendingRescore
+)
+
+// pendingReasonNames is the single name table for PendingReason, indexed
+// by its value.
+var pendingReasonNames = [...]string{
+	PendingNew:     "new",
+	PendingChanged: "changed",
+	PendingRescore: "rescore",
+}
+
+func (r PendingReason) String() string {
+	if r < 0 || int(r) >= len(pendingReasonNames) {
+		return fmt.Sprintf("PendingReason(%d)", int(r))
+	}
+	return pendingReasonNames[r]
+}
+
+// PendingPosting is a posting a run still has to score: enough to judge
+// it from, and the content hash its score must name.
+type PendingPosting struct {
+	ID            int64
+	Title         string
+	CompanyName   string
+	Department    string
+	Location      string
+	WorkplaceType string
+	// PublishedAt is zero when the board didn't say.
+	PublishedAt   time.Time
+	ContentSHA256 string
+	Reason        PendingReason
+}
+
+// PendingPostingsPage is one page of a run's pending postings.
+type PendingPostingsPage struct {
+	Postings []PendingPosting
+	// HasMore is whether pending postings follow this page.
+	HasMore bool
+	// Total is how many are pending in all, when the page was read; 0 on
+	// an empty page.
+	Total int
+}
+
+// PendingPostings returns one page of runID's pending postings, by ID,
+// after afterID (0 for the first page). Eligible postings are open, not
+// archived, not interested, without an application, at a company the
+// user hasn't deleted, and let through by its filters. One is pending
+// when it has no score in this run, and either the run rescores
+// everything or it has no score on its current content.
+func (s *Store) PendingPostings(ctx context.Context, runID, afterID int64, limit int) (PendingPostingsPage, error) {
+	if limit <= 0 {
+		return PendingPostingsPage{}, fmt.Errorf("store: pending postings: limit %d, want at least 1", limit)
+	}
+	run, err := s.scoringRun(ctx, runID)
+	if err != nil {
+		return PendingPostingsPage{}, err
+	}
+	params := db.ListPendingPostingsParams{
+		RunID:      runID,
+		RescoreAll: run.Scope == ScoringScopeAll,
+		// One more than asked for, to learn whether another page follows.
+		MaxRows: int64(limit) + 1,
+	}
+	if afterID != 0 {
+		params.AfterID = afterID
+	}
+	rows, err := s.queries.ListPendingPostings(ctx, params)
+	if err != nil {
+		return PendingPostingsPage{}, fmt.Errorf("store: pending postings: %w", err)
+	}
+	page := PendingPostingsPage{}
+	if len(rows) > limit {
+		page.HasMore = true
+		rows = rows[:limit]
+	}
+	page.Postings = make([]PendingPosting, len(rows))
+	for i, row := range rows {
+		page.Total = int(row.Total)
+		reason := PendingNew
+		switch {
+		case row.HasCurrentScore:
+			reason = PendingRescore
+		case row.HasScore:
+			reason = PendingChanged
+		}
+		page.Postings[i] = PendingPosting{
+			ID:            row.ID,
+			Title:         row.Title,
+			CompanyName:   row.CompanyName,
+			Department:    row.Department,
+			Location:      row.Location,
+			WorkplaceType: row.WorkplaceType,
+			PublishedAt:   row.PublishedAt.Time,
+			ContentSHA256: row.ContentSha256,
+			Reason:        reason,
+		}
+	}
+	return page, nil
 }
