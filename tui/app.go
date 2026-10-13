@@ -1215,6 +1215,8 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handleTick()
 	case changesMsg:
 		return a, a.handleChanges(msg)
+	case allPostingsSearchMsg:
+		return a, a.allPostings.searched(msg, a.allPostings.pageSize(a.screenRows()))
 	case allPostingsLoadedMsg:
 		// It also loads in the background for its tab's count, so success
 		// mustn't clear another load's error.
