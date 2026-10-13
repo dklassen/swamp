@@ -318,3 +318,41 @@ func TestRecordScores_AnUnknownRunRecordsNothing(t *testing.T) {
 		t.Errorf("%d scores stored for an unknown run, want 0", scores)
 	}
 }
+
+func TestSearchPostings_RowsCarryTheNewestScore(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	scored := mustUpsertPostingIn(t, s, acme.ID, "1", "Scored twice", "")
+	unscored := mustUpsertPostingIn(t, s, acme.ID, "2", "Unscored", "")
+	for _, e := range []ScoreEntry{
+		{PostingID: scored.ID, Score: 40, Reason: "first look", ContentSHA256: scored.ContentSHA256},
+		{PostingID: scored.ID, Score: 85, Reason: "after the profile changed", ContentSHA256: scored.ContentSHA256},
+	} {
+		run := mustStartScoringRun(t, s, ScoringScopeAll)
+		if _, err := s.RecordScores(ctx, run.ID, []ScoreEntry{e}); err != nil {
+			t.Fatalf("RecordScores: %v", err)
+		}
+	}
+
+	type score struct {
+		Scored bool
+		Score  int
+		Reason string
+	}
+	want := map[int64]score{scored.ID: {true, 85, "after the profile changed"}, unscored.ID: {}}
+	for _, order := range PostingOrders() {
+		page, err := s.SearchPostings(ctx, PostingSearch{Order: order, Limit: 10})
+		if err != nil {
+			t.Fatalf("%s: SearchPostings: %v", order, err)
+		}
+		got := map[int64]score{}
+		for _, l := range page.Listings {
+			got[l.ID] = score{l.Scored, l.Score, l.ScoreReason}
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("%s: scores (-want +got):\n%s", order, diff)
+		}
+	}
+}

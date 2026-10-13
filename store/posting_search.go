@@ -30,6 +30,11 @@ type PostingListing struct {
 	CompanyName   string
 	Interested    bool
 	Archived      bool
+	// Scored is whether the posting has a score; Score and ScoreReason are
+	// its current one, the newest, and mean nothing when it hasn't.
+	Scored      bool
+	Score       int
+	ScoreReason string
 	// ApplicationID is 0 when the posting has no application; the other
 	// Application fields are meaningless then.
 	ApplicationID     int64
@@ -202,6 +207,11 @@ func (s *Store) SearchPostings(ctx context.Context, search PostingSearch) (Posti
 			CompanyName:    row.CompanyName,
 			Interested:     row.InterestedAt.Valid,
 			Archived:       row.ArchivedAt.Valid,
+		}
+		if row.CurrentScore.Valid {
+			listing.Scored = true
+			listing.Score = int(row.CurrentScore.Int64)
+			listing.ScoreReason = row.CurrentScoreReason.String
 		}
 		if row.ApplicationID.Valid {
 			status, err := ParseApplicationStatus(row.ApplicationStatus.String)
