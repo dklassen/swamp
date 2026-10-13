@@ -35,7 +35,7 @@ func TestParseScoringScope(t *testing.T) {
 // mustInsertScore records a score directly, for a fixture's history.
 func mustInsertScore(t *testing.T, s *Store, runID, postingID int64, contentSHA256 string) {
 	t.Helper()
-	if _, err := s.sqlDB.Exec(`INSERT INTO posting_scores (run_id, posting_id, score, reason, content_sha256) VALUES (?, ?, 50, 'fixture', ?)`, runID, postingID, contentSHA256); err != nil {
+	if _, err := s.sqlDB.Exec(`INSERT INTO posting_scores (run_id, posting_id, score, reason, content_sha256) VALUES (?, ?, 3, 'fixture', ?)`, runID, postingID, contentSHA256); err != nil {
 		t.Fatalf("insert score: %v", err)
 	}
 }
@@ -262,14 +262,14 @@ func TestRecordScores_RecordsValidEntriesAndRefusesTheRest(t *testing.T) {
 	mustInsertScore(t, s, run.ID, already.ID, already.ContentSHA256)
 
 	result, err := s.RecordScores(ctx, run.ID, []ScoreEntry{
-		{PostingID: good.ID, Score: 72, Reason: "Go, remote", ContentSHA256: good.ContentSHA256},
-		{PostingID: stale.ID, Score: 50, Reason: "ok", ContentSHA256: "an older hash"},
-		{PostingID: other.ID, Score: 101, Reason: "too high", ContentSHA256: other.ContentSHA256},
-		{PostingID: other.ID, Score: -1, Reason: "too low", ContentSHA256: other.ContentSHA256},
-		{PostingID: other.ID, Score: 40, Reason: "", ContentSHA256: other.ContentSHA256},
-		{PostingID: 999, Score: 40, Reason: "no such posting", ContentSHA256: "x"},
-		{PostingID: already.ID, Score: 40, Reason: "again", ContentSHA256: already.ContentSHA256},
-		{PostingID: good.ID, Score: 10, Reason: "twice in one batch", ContentSHA256: good.ContentSHA256},
+		{PostingID: good.ID, Score: 4, Reason: "Go, remote", ContentSHA256: good.ContentSHA256},
+		{PostingID: stale.ID, Score: 3, Reason: "ok", ContentSHA256: "an older hash"},
+		{PostingID: other.ID, Score: 6, Reason: "too high", ContentSHA256: other.ContentSHA256},
+		{PostingID: other.ID, Score: 0, Reason: "too low", ContentSHA256: other.ContentSHA256},
+		{PostingID: other.ID, Score: 2, Reason: "", ContentSHA256: other.ContentSHA256},
+		{PostingID: 999, Score: 2, Reason: "no such posting", ContentSHA256: "x"},
+		{PostingID: already.ID, Score: 2, Reason: "again", ContentSHA256: already.ContentSHA256},
+		{PostingID: good.ID, Score: 1, Reason: "twice in one batch", ContentSHA256: good.ContentSHA256},
 	})
 	if err != nil {
 		t.Fatalf("RecordScores: %v", err)
@@ -305,7 +305,7 @@ func TestRecordScores_AnUnknownRunRecordsNothing(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	p := mustUpsertPostingIn(t, s, acme.ID, "1", "Role", "")
 
-	_, err := s.RecordScores(context.Background(), 999, []ScoreEntry{{PostingID: p.ID, Score: 50, Reason: "ok", ContentSHA256: p.ContentSHA256}})
+	_, err := s.RecordScores(context.Background(), 999, []ScoreEntry{{PostingID: p.ID, Score: 3, Reason: "ok", ContentSHA256: p.ContentSHA256}})
 
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("err = %v, want ErrNotFound", err)
@@ -327,8 +327,8 @@ func TestSearchPostings_RowsCarryTheNewestScore(t *testing.T) {
 	scored := mustUpsertPostingIn(t, s, acme.ID, "1", "Scored twice", "")
 	unscored := mustUpsertPostingIn(t, s, acme.ID, "2", "Unscored", "")
 	for _, e := range []ScoreEntry{
-		{PostingID: scored.ID, Score: 40, Reason: "first look", ContentSHA256: scored.ContentSHA256},
-		{PostingID: scored.ID, Score: 85, Reason: "after the profile changed", ContentSHA256: scored.ContentSHA256},
+		{PostingID: scored.ID, Score: 2, Reason: "first look", ContentSHA256: scored.ContentSHA256},
+		{PostingID: scored.ID, Score: 5, Reason: "after the profile changed", ContentSHA256: scored.ContentSHA256},
 	} {
 		run := mustStartScoringRun(t, s, ScoringScopeAll)
 		if _, err := s.RecordScores(ctx, run.ID, []ScoreEntry{e}); err != nil {
@@ -337,11 +337,10 @@ func TestSearchPostings_RowsCarryTheNewestScore(t *testing.T) {
 	}
 
 	type score struct {
-		Scored bool
 		Score  int
 		Reason string
 	}
-	want := map[int64]score{scored.ID: {true, 85, "after the profile changed"}, unscored.ID: {}}
+	want := map[int64]score{scored.ID: {5, "after the profile changed"}, unscored.ID: {}}
 	for _, order := range PostingOrders() {
 		page, err := s.SearchPostings(ctx, PostingSearch{Order: order, Limit: 10})
 		if err != nil {
@@ -349,7 +348,7 @@ func TestSearchPostings_RowsCarryTheNewestScore(t *testing.T) {
 		}
 		got := map[int64]score{}
 		for _, l := range page.Listings {
-			got[l.ID] = score{l.Scored, l.Score, l.ScoreReason}
+			got[l.ID] = score{l.Score, l.ScoreReason}
 		}
 		if diff := cmp.Diff(want, got); diff != "" {
 			t.Errorf("%s: scores (-want +got):\n%s", order, diff)

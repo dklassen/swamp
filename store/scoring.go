@@ -283,10 +283,18 @@ func (s *Store) PendingPostings(ctx context.Context, runID, afterID int64, limit
 	return page, nil
 }
 
+// Scores are 1 to 5 (RFC 0009, open question 4): coarse enough that a 4
+// means the same from run to run and model to model, where 0-100 would
+// ask the agent for precision it would invent.
+const (
+	minScore = 1
+	maxScore = 5
+)
+
 // ScoreEntry is one posting's score, as the agent gives it.
 type ScoreEntry struct {
 	PostingID int64
-	// Score is 0 to 100.
+	// Score is 1 to 5.
 	Score int
 	// Reason is the one line shown with the score.
 	Reason string
@@ -301,7 +309,7 @@ type ScoreRefusal int
 const (
 	// ScoreNoSuchPosting: no posting has the entry's ID.
 	ScoreNoSuchPosting ScoreRefusal = iota
-	// ScoreOutOfRange: the score isn't between 0 and 100.
+	// ScoreOutOfRange: the score isn't between 1 and 5.
 	ScoreOutOfRange
 	// ScoreNoReason: the reason is empty.
 	ScoreNoReason
@@ -390,7 +398,7 @@ func (s *Store) RecordScores(ctx context.Context, runID int64, entries []ScoreEn
 // counts as already scored.
 func checkScoreEntry(ctx context.Context, qtx *db.Queries, runID int64, e ScoreEntry) (ScoreRefusal, bool, error) {
 	switch {
-	case e.Score < 0 || e.Score > 100:
+	case e.Score < minScore || e.Score > maxScore:
 		return ScoreOutOfRange, false, nil
 	case e.Reason == "":
 		return ScoreNoReason, false, nil

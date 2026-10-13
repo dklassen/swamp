@@ -177,7 +177,7 @@ A **score** is one posting's score within a run:
 | `id` | `INTEGER PRIMARY KEY AUTOINCREMENT`. |
 | `run_id` | The run. |
 | `posting_id` | The posting. `UNIQUE (run_id, posting_id)`: once per run. |
-| `score` | 0–100. |
+| `score` | 1–5 (open question 4). |
 | `reason` | One line, shown with the score, e.g. "Go and distributed systems, remote". |
 | `content_sha256` | The posting's content hash when it was scored (section 2). |
 | `scored_at` | UTC, `CURRENT_TIMESTAMP`. |
@@ -300,7 +300,7 @@ Each item is its own issue and PR.
 1. **What should the agent see by default?** Part 1 applies company filters to `search_postings` by default, matching the TUI. For scoring, seeing everything is the point, so a scoring run may want to ignore them.
 2. **Should the all-postings view have a key to show postings the company filters hide?**
 3. **Should a company with no filters show everything?** That's today's behavior, and part 1 keeps it.
-4. **The score scale.** 0–100 is proposed. A coarser scale (1–5) would make scores from different runs more comparable, and give the agent less false precision to invent.
+4. **The score scale.** Decided (#319): 1–5. It makes scores from different runs and models more comparable, and gives the agent less false precision to invent than 0–100. Ties are expected, so a sort by score needs a tie-breaker.
 5. **Should the view hide low scores** (a threshold), or only sort by them?
 6. **Excluding interested postings and those with applications** keeps runs small, but leaves them without a score. Is that wanted, or should they be scored too, for the record?
 7. **A way to set postings aside** (the first draft's "dismiss") without archiving them. Not proposed until the view is in use.
