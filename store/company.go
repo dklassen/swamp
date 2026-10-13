@@ -207,6 +207,19 @@ func (s *Store) GetCompanyBySourceRef(ctx context.Context, source, sourceRef str
 	return companyFromRow(row), nil
 }
 
+// GetCompanyIncludingDeleted finds company id even if the user deleted it
+// (check DeletedAt), or returns ErrNotFound.
+func (s *Store) GetCompanyIncludingDeleted(ctx context.Context, id int64) (Company, error) {
+	row, err := s.queries.GetCompanyIncludingDeleted(ctx, id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return Company{}, ErrNotFound
+	}
+	if err != nil {
+		return Company{}, err
+	}
+	return companyFromRow(row), nil
+}
+
 // UpdateCompanyDescription sets who the company is (what it builds, stage,
 // domain). Like UpdateCompanyName it excludes soft-deleted companies.
 func (s *Store) UpdateCompanyDescription(ctx context.Context, id int64, description string) (Company, error) {

@@ -51,6 +51,11 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 	}, searchPostingsHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "read_posting",
+		Description: "Read one posting in full: its summary, the description as text, the job URL, its company's description, and ContentSHA256, the hash of the content you read. Use it to judge a posting before scoring it; a score must name the ContentSHA256 it was given for. Refuses an unknown posting, or one at a company the user deleted.",
+	}, readPostingHandler(st))
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "stage_prepare",
 		Description: "Commit to drafting one posting's application: creates its application record if one doesn't exist yet, ensures its document directory exists, and returns the resolved cover letter/resume paths plus any existing review feedback. Idempotent -- safe to call again for the same posting.",
 	}, stagePrepareHandler(st))
@@ -218,6 +223,20 @@ func stagePrepareHandler(st *stage.Stage) mcp.ToolHandlerFor[stagePrepareInput, 
 			return nil, nil, fmt.Errorf("stage_prepare: %w", err)
 		}
 		return nil, prepared, nil
+	}
+}
+
+type readPostingInput struct {
+	PostingID int64 `json:"PostingID" jsonschema:"the posting's id, from search_postings' Posting.ID field"`
+}
+
+func readPostingHandler(st *stage.Stage) mcp.ToolHandlerFor[readPostingInput, any] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in readPostingInput) (*mcp.CallToolResult, any, error) {
+		posting, err := st.ReadPosting(ctx, in.PostingID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("read_posting: %w", err)
+		}
+		return nil, posting, nil
 	}
 }
 
