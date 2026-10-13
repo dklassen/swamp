@@ -109,7 +109,7 @@ func (q *Queries) GetApplicationByIDIncludingDeleted(ctx context.Context, id int
 }
 
 const listActiveApplications = `-- name: ListActiveApplications :many
-SELECT applications.id, applications.posting_id, applications.status, applications.notes, applications.created_at, applications.updated_at, applications.deleted_at, postings.id, postings.company_id, postings.source, postings.source_id, postings.title, postings.department, postings.team, postings.location, postings.employment_type, postings.workplace_type, postings.description_html, postings.description_text, postings.job_url, postings.application_url, postings.published_at, postings.raw_payload, postings.listing_status, postings.first_seen_at, postings.last_seen_at, postings.created_at, postings.updated_at, companies.name AS company_name
+SELECT applications.id, applications.posting_id, applications.status, applications.notes, applications.created_at, applications.updated_at, applications.deleted_at, postings.id, postings.company_id, postings.source, postings.source_id, postings.title, postings.department, postings.team, postings.location, postings.employment_type, postings.workplace_type, postings.description_html, postings.description_text, postings.job_url, postings.application_url, postings.published_at, postings.raw_payload, postings.listing_status, postings.first_seen_at, postings.last_seen_at, postings.created_at, postings.updated_at, postings.content_sha256, companies.name AS company_name
 FROM applications
 JOIN postings ON postings.id = applications.posting_id
 JOIN companies ON companies.id = postings.company_id
@@ -194,6 +194,7 @@ func (q *Queries) ListActiveApplications(ctx context.Context, terminalStatuses [
 			&i.Posting.LastSeenAt,
 			&i.Posting.CreatedAt,
 			&i.Posting.UpdatedAt,
+			&i.Posting.ContentSha256,
 			&i.CompanyName,
 		); err != nil {
 			return nil, err

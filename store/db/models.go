@@ -124,6 +124,7 @@ type Posting struct {
 	LastSeenAt      time.Time    `json:"last_seen_at"`
 	CreatedAt       time.Time    `json:"created_at"`
 	UpdatedAt       time.Time    `json:"updated_at"`
+	ContentSha256   string       `json:"content_sha256"`
 }
 
 type PostingApplicationForm struct {

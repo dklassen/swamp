@@ -34,7 +34,7 @@ var Logged = map[string]LoggedTable{
 	"postings": {
 		Key:     "id",
 		Columns: []string{"company_id", "listing_status", "title", "department", "team", "location", "workplace_type", "employment_type", "published_at", "updated_at"},
-		Ignored: []string{"source", "source_id", "description_html", "description_text", "job_url", "application_url", "raw_payload", "first_seen_at", "last_seen_at", "created_at"},
+		Ignored: []string{"source", "source_id", "description_html", "description_text", "job_url", "application_url", "raw_payload", "first_seen_at", "last_seen_at", "created_at", "content_sha256"},
 		Ops:     allOps,
 	},
 	// Keyed by its posting's ID, which is never reused. The marks show in
