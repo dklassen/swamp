@@ -2803,7 +2803,7 @@ func TestApp_FilterSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 	}
 }
 
-func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) {
+func TestApp_FilterSelect_Enter_SavesAndNarrows(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -2828,13 +2828,13 @@ func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) 
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
 
 	// Enter narrows synchronously (no round trip needed) and returns the
-	// applyCompanyFilters Cmd that persists the selection and re-syncs.
+	// saveCompanyFilters Cmd that persists the selection.
 	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 	if app.screen != screenPostingList {
 		t.Fatalf("screen after enter = %v, want screenPostingList", app.screen)
 	}
 	if len(app.postings) != 1 {
-		t.Fatalf("postings after enter = %+v, want 1 (narrowed to %s, before applyCompanyFilters' Cmd even runs)", app.postings, wantDept)
+		t.Fatalf("postings after enter = %+v, want 1 (narrowed to %s, before saveCompanyFilters' Cmd even runs)", app.postings, wantDept)
 	}
 	if app.postings[0].Department != wantDept {
 		t.Fatalf("remaining posting department = %q, want %q", app.postings[0].Department, wantDept)
@@ -2843,9 +2843,6 @@ func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) 
 		t.Fatal("Update on enter returned nil Cmd, want a command that applies the filters")
 	}
 
-	// Run applyCompanyFilters: persists the filters, then re-syncs (hits
-	// the fake fetcher again, no new data), producing
-	// companyFiltersAppliedMsg.
 	app, cmd = sendKey(app, cmd())
 
 	saved, err := s.ListCompanyFilters(context.Background(), acme.ID)
@@ -2855,8 +2852,11 @@ func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) 
 	if len(saved) != 1 || saved[0].Field != filter.FieldDepartment || saved[0].Value != wantDept {
 		t.Fatalf("saved filters = %+v, want one department=%s filter", saved, wantDept)
 	}
+	if want := "Acme filters saved"; app.status != want {
+		t.Errorf("app.status = %q, want %q", app.status, want)
+	}
 	if cmd == nil {
-		t.Fatal("Update on companyFiltersAppliedMsg returned nil Cmd, want a command that reloads postings")
+		t.Fatal("Update on companyFiltersSavedMsg returned nil Cmd, want a command that reloads postings")
 	}
 
 	// Drive the reload: this must NOT silently undo the narrowing by
@@ -2866,19 +2866,17 @@ func TestApp_FilterSelect_Enter_SavesPersistsAndNarrowsAndReSyncs(t *testing.T) 
 	app, _ = sendKey(app, cmd())
 
 	if len(app.postings) != 1 {
-		t.Fatalf("postings after post-sync reload = %+v, want still 1 (filter should survive the reload)", app.postings)
+		t.Fatalf("postings after post-save reload = %+v, want still 1 (filter should survive the reload)", app.postings)
 	}
 	if app.postings[0].Department != wantDept {
 		t.Fatalf("posting department after reload = %q, want %q", app.postings[0].Department, wantDept)
 	}
 }
 
-// TestApp_FilterSelect_Enter_WhileCompanySyncsElsewhere_SavesAndSaysSyncSkipped:
-// the filters still save when another sync holds the company's lease;
-// only the re-sync is skipped, and the status says so rather than showing
-// an error (#150). Postings still reload, so the view reflects the saved
-// filters.
-func TestApp_FilterSelect_Enter_WhileCompanySyncsElsewhere_SavesAndSaysSyncSkipped(t *testing.T) {
+// TestApp_FilterSelect_Enter_WhileCompanySyncsElsewhere_Saves: saving
+// filters doesn't sync, so another sync holding the company's lease
+// changes nothing about it.
+func TestApp_FilterSelect_Enter_WhileCompanySyncsElsewhere_Saves(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -2904,16 +2902,16 @@ func TestApp_FilterSelect_Enter_WhileCompanySyncsElsewhere_SavesAndSaysSyncSkipp
 		t.Fatalf("ListCompanyFilters: %v", err)
 	}
 	if len(saved) != 1 {
-		t.Errorf("saved filters = %+v, want the selection saved even though the sync was skipped", saved)
+		t.Errorf("saved filters = %+v, want the selection saved", saved)
 	}
 	if app.err != nil {
 		t.Errorf("app.err = %v, want nil", app.err)
 	}
-	if want := "Acme filters saved; sync skipped"; !strings.Contains(app.status, want) {
-		t.Errorf("app.status = %q, want it to contain %q", app.status, want)
+	if want := "Acme filters saved"; app.status != want {
+		t.Errorf("app.status = %q, want %q", app.status, want)
 	}
 	if cmd == nil {
-		t.Error("Update on the skipped sync returned nil Cmd, want a command that reloads postings")
+		t.Error("Update on the save returned nil Cmd, want a command that reloads postings")
 	}
 }
 
@@ -2926,7 +2924,7 @@ func TestApp_CompanyRefreshed_ForCurrentlyViewedCompany_ReloadsPostings(t *testi
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
 
-	// Simulate the background re-sync (triggered by saving a filter)
+	// Simulate a background re-sync (r on the posting list)
 	// completing for the company currently being viewed.
 	app, cmd := sendKey(app, companyRefreshedMsg{
 		result: sync.Result{CompanyID: acme.ID, Name: acme.Name},
@@ -3027,7 +3025,7 @@ func TestApp_FilterSelect_Enter_UpdatesActiveFiltersImmediately(t *testing.T) {
 	wantDept := app.filterSelect.departmentOptions[0]
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
 	// Updated synchronously on enter -- no need to run the returned
-	// applyCompanyFilters Cmd to observe it, unlike the old design.
+	// saveCompanyFilters Cmd to observe it.
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 
 	if diff := cmp.Diff([]string{wantDept}, app.activeFilterDepartments); diff != "" {

@@ -929,33 +929,21 @@ func loadFilterOptions(s *store.Store, companyID int64) tea.Cmd {
 	}
 }
 
-// companyFiltersAppliedMsg carries the result of applying a new filter
-// selection: sync.ApplyCompanyFilters' replace-then-resync as one
-// round trip, not the three-step save/resync/reload chain this used to
-// be (#56).
-type companyFiltersAppliedMsg struct {
-	result sync.Result
-	err    error
+// companyFiltersSavedMsg reports saving a new filter selection. Filters
+// only decide what's shown, so saving them is the whole job: there's
+// nothing to re-sync.
+type companyFiltersSavedMsg struct {
+	err error
 }
 
-func applyCompanyFilters(syncer *sync.Syncer, companyID int64, departments, locations []string) tea.Cmd {
+func saveCompanyFilters(s *store.Store, companyID int64, departments, locations []string) tea.Cmd {
 	return func() tea.Msg {
-		result, err := syncer.ApplyCompanyFilters(context.Background(), companyID, departments, locations)
-		return companyFiltersAppliedMsg{result: result, err: err}
+		err := s.ReplaceCompanyFilters(context.Background(), companyID, companyFiltersFrom(departments, locations))
+		return companyFiltersSavedMsg{err: err}
 	}
 }
 
-// narrowPostingsToFilters keeps only postings matching the given
-// department/location values (OR within a field, AND across fields, same
-// semantics as filter.Match), for the optimistic client-side narrowing
-// shown immediately after saving a filter selection, before the
-// background re-sync completes. Builds synthetic store.CompanyFilter
-// rows -- sync.FilterRules only reads Field/Value, so no DB round trip
-// is needed -- and delegates to filterPostingsByCompanyFilters, so this
-// shares the exact same rule-construction-and-match path as loadPostings'
-// authoritative filtering rather than a second hand-copy of it (see
-// #61).
-func narrowPostingsToFilters(postings []store.Posting, departments, locations []string) []store.Posting {
+func companyFiltersFrom(departments, locations []string) []store.CompanyFilter {
 	filters := make([]store.CompanyFilter, 0, len(departments)+len(locations))
 	for _, d := range departments {
 		filters = append(filters, store.CompanyFilter{Field: filter.FieldDepartment, Value: d})
@@ -963,8 +951,21 @@ func narrowPostingsToFilters(postings []store.Posting, departments, locations []
 	for _, l := range locations {
 		filters = append(filters, store.CompanyFilter{Field: filter.FieldLocation, Value: l})
 	}
+	return filters
+}
 
-	narrowed, err := filterPostingsByCompanyFilters(postings, filters)
+// narrowPostingsToFilters keeps only postings matching the given
+// department/location values (OR within a field, AND across fields, same
+// semantics as filter.Match), for the optimistic client-side narrowing
+// shown immediately after saving a filter selection, before the save
+// completes. Builds synthetic store.CompanyFilter
+// rows -- sync.FilterRules only reads Field/Value, so no DB round trip
+// is needed -- and delegates to filterPostingsByCompanyFilters, so this
+// shares the exact same rule-construction-and-match path as loadPostings'
+// authoritative filtering rather than a second hand-copy of it (see
+// #61).
+func narrowPostingsToFilters(postings []store.Posting, departments, locations []string) []store.Posting {
+	narrowed, err := filterPostingsByCompanyFilters(postings, companyFiltersFrom(departments, locations))
 	if err != nil {
 		// Unreachable: filters is built entirely from filter.FieldDepartment/
 		// FieldLocation above, both always-supported by filter.Match.
@@ -1073,11 +1074,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			reload := loadCompanies(a.store)
 			if r.CompanyID == a.selectedCompany.ID {
 				// The company whose postings are currently being viewed
-				// just finished a re-sync (r on its posting list, or saving
-				// a filter selection) -- reload from the DB so the view
-				// becomes authoritative instead of just the optimistic
-				// client-side narrowing applied at save time. The cursor
-				// stays on its posting: the sync can add some ahead of it.
+				// just finished a re-sync (r on its posting list): reload
+				// them from the DB. The cursor stays on its posting: the
+				// sync can add some ahead of it.
 				return a, tea.Batch(reload, reloadPostings(a.store, a.selectedCompany.ID, a.hideArchived))
 			}
 			return a, reload
@@ -1338,20 +1337,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
 		a.filterSelect = newFilterSelectModel(a.selectedCompany.ID, msg.departments, msg.locations, msg.existingFilters)
-	case companyFiltersAppliedMsg:
-		if errors.Is(msg.err, sync.ErrSyncInProgress) {
-			// The filters saved; only the re-sync was skipped, because
-			// another sync of this company is running (#150). Reload so
-			// the view reflects the saved filters.
-			a.err = nil
-			a.status = msg.result.Name + " filters saved; sync skipped, it's already syncing elsewhere"
-			return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
-		}
+	case companyFiltersSavedMsg:
 		a.err = msg.err
 		if msg.err == nil {
-			r := msg.result
-			a.status = fmt.Sprintf("%s: fetched %d, created %d, updated %d, closed %d, reopened %d",
-				r.Name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
+			a.status = a.selectedCompany.Name + " filters saved"
 			// Reload from the DB so the view becomes authoritative instead
 			// of just the optimistic narrowing applied synchronously when
 			// the filter selection was saved (see screenFilterSelect's
@@ -1640,25 +1629,15 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case cancelFilterSelectMsg:
 			a.screen = screenPostingList
 		case saveFilterSelectionMsg:
-			if a.syncAll.running {
-				// Saving re-syncs the company, which the run may be syncing
-				// right now (#150). Refuse rather than queue: nothing is saved
-				// or narrowed, and the selection stays on screen to save later.
-				a.status = "Sync all in progress: save filters when it finishes"
-				return a, nil
-			}
-			// Narrowed synchronously, before applyCompanyFilters' Cmd even
-			// runs -- this needs nothing the async save/resync produces (it's
-			// the same in-memory narrowing loadPostings' own authoritative
-			// pass uses, just working off what's already loaded), so there's
-			// no reason to wait on a round trip for it the way the old
-			// three-step save/resync/reload chain did.
+			// Narrowed synchronously, before saveCompanyFilters' Cmd even
+			// runs -- it's the same in-memory narrowing loadPostings' own
+			// authoritative pass uses, working off what's already loaded.
 			a.screen = screenPostingList
 			a.postings = narrowPostingsToFilters(a.postings, v.departments, v.locations)
 			a.activeFilterDepartments = v.departments
 			a.activeFilterLocations = v.locations
 			a.postingList.resetCursorIfOutOfBounds(len(a.postings))
-			return a, applyCompanyFilters(a.syncer, a.selectedCompany.ID, v.departments, v.locations)
+			return a, saveCompanyFilters(a.store, a.selectedCompany.ID, v.departments, v.locations)
 		}
 		return a, cmd
 	case screenCompanyForm:

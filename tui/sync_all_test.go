@@ -212,12 +212,18 @@ func TestApp_SyncAll_RDuringRun_Refused(t *testing.T) {
 	}
 }
 
-// TestApp_SyncAll_FilterSaveDuringRun_Refused: saving a filter selection
-// re-syncs the company, so it's refused during a run too -- nothing is
-// saved or narrowed, and the user stays on the filter screen to save once
-// the run finishes.
-func TestApp_SyncAll_FilterSaveDuringRun_Refused(t *testing.T) {
+// TestApp_SyncAll_FilterSaveDuringRun_Saves: saving filters doesn't sync,
+// so a run in progress is no reason to refuse it.
+func TestApp_SyncAll_FilterSaveDuringRun_Saves(t *testing.T) {
 	app, s := newSyncAllTestApp(t)
+	if _, err := s.UpsertPosting(t.Context(), store.CreatePostingParams{
+		CompanyID:      app.companies[0].ID,
+		Source:         "ashby",
+		SourceID:       "acme-eng",
+		IngestedFields: store.IngestedFields{Title: "Engineer", Department: "Engineering"},
+	}); err != nil {
+		t.Fatalf("UpsertPosting: %v", err)
+	}
 	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // Acme's postings
 	app = applyCmd(t, app, cmd)
 	app, cmd = sendKey(app, runeKey('f'))
@@ -226,21 +232,19 @@ func TestApp_SyncAll_FilterSaveDuringRun_Refused(t *testing.T) {
 
 	app.syncAll = syncAllState{runID: 1, running: true, companies: app.companies}
 	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
-	if cmd != nil {
-		t.Error("saving filters during a sync-all run returned a Cmd, want nil")
+	if app.screen != screenPostingList {
+		t.Errorf("screen = %v, want screenPostingList", app.screen)
 	}
-	if app.screen != screenFilterSelect {
-		t.Errorf("screen = %v, want still screenFilterSelect", app.screen)
+	if cmd == nil {
+		t.Fatal("saving filters during a sync-all run returned nil Cmd, want one that saves them")
 	}
-	if want := "Sync all in progress: save filters when it finishes"; app.status != want {
-		t.Errorf("status = %q, want %q", app.status, want)
-	}
+	app = applyCmd(t, app, cmd)
 	saved, err := s.ListCompanyFilters(t.Context(), app.selectedCompany.ID)
 	if err != nil {
 		t.Fatalf("ListCompanyFilters: %v", err)
 	}
-	if len(saved) != 0 {
-		t.Errorf("saved filters = %+v, want none", saved)
+	if len(saved) != 1 {
+		t.Errorf("saved filters = %+v, want the one selected", saved)
 	}
 }
 

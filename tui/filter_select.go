@@ -13,10 +13,8 @@ import (
 // filterSelectModel drives the department/location filter-select screen
 // for a single company. It's pure UI selection state with no I/O
 // dependency of its own -- saving is App's job (see saveFilterSelectionMsg
-// below), not this model's, since applying the new filters means both a
-// store write and a syncer resync (see sync.ApplyCompanyFilters,
-// #56), neither of which this screen needs to know about
-// directly.
+// below), not this model's: the store write is App's, and this screen
+// needn't know about it directly.
 type filterSelectModel struct {
 	companyID int64
 
@@ -81,10 +79,9 @@ type cancelFilterSelectMsg struct{}
 
 // saveFilterSelectionMsg signals that App should apply this department/
 // location selection: narrow the currently-displayed postings
-// immediately (a pure in-memory step App does itself), then dispatch the
-// async store-write-plus-resync (see sync.ApplyCompanyFilters). This
-// model has no store/syncer access of its own to do either part (see the
-// struct's own doc comment).
+// immediately (a pure in-memory step App does itself), then save it in
+// the background. This model has no store access of its own to do either
+// part (see the struct's own doc comment).
 type saveFilterSelectionMsg struct {
 	departments []string
 	locations   []string

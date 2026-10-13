@@ -13,21 +13,14 @@ import (
 )
 
 // FilterRules converts a company's saved filter rows into the rules
-// filter.Match evaluates against a posting. Exported so tui's
-// display-time filtering (loadPostings) shares this exact conversion
-// with ingestion-time gating (SyncCompany below) instead of maintaining
-// an independent copy that could silently drift out of agreement with
-// this one (#61).
+// filter.Match evaluates against a posting, for deciding which postings
+// to show.
 func FilterRules(filters []store.CompanyFilter) []filter.Filter {
 	rules := make([]filter.Filter, len(filters))
 	for i, f := range filters {
 		rules[i] = filter.Filter{Field: f.Field, Value: f.Value}
 	}
 	return rules
-}
-
-func toFilterPosting(p jobboard.Posting) filter.Posting {
-	return filter.Posting{Department: p.Department, Location: p.Location}
 }
 
 // toIngestedFields builds the fields store.Posting and
@@ -59,33 +52,8 @@ func toCreatePostingParams(companyID int64, source string, p jobboard.Posting) s
 	}
 }
 
-// ApplyCompanyFilters replaces companyID's saved filters and re-syncs it
-// against its job board -- "changing a company's filters" as one unit,
-// testable at the store+syncer boundary with no TUI dependency, rather
-// than the two independently-triggered async round trips (save, then
-// separately kick off a resync) tui/app.go used to glue together by
-// hand. A resync is required, not optional: filter matching also gates
-// ingestion (see SyncCompany below), so postings that didn't match the
-// old filters were never stored at all -- narrowing what's already in
-// the DB isn't enough to make a filter change fully take effect, only
-// re-running ingestion under the new filters is (#56).
-func (s *Syncer) ApplyCompanyFilters(ctx context.Context, companyID int64, departments, locations []string) (Result, error) {
-	filters := make([]store.CompanyFilter, 0, len(departments)+len(locations))
-	for _, d := range departments {
-		filters = append(filters, store.CompanyFilter{Field: filter.FieldDepartment, Value: d})
-	}
-	for _, l := range locations {
-		filters = append(filters, store.CompanyFilter{Field: filter.FieldLocation, Value: l})
-	}
-	if err := s.store.ReplaceCompanyFilters(ctx, companyID, filters); err != nil {
-		return Result{}, fmt.Errorf("sync: replace company filters: %w", err)
-	}
-	return s.SyncCompany(ctx, companyID)
-}
-
-// SyncCompany refreshes a single company's postings: fetches its board,
-// gates new postings through the company's filters, and upserts matches
-// into store.
+// SyncCompany refreshes a single company's postings: fetches its board
+// and upserts every posting it lists into store.
 //
 // Cancelling ctx stops the fetch, never the writes (#149). Before the
 // board answers, nothing has been written, so abandoning it is safe;
@@ -151,8 +119,8 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result Resul
 }
 
 // syncHeld is SyncCompany's work once it holds the company's lease: fetch,
-// save what matches the company's filters (ingest), close what's gone
-// (closeMissing, reconcile.go).
+// save every posting (ingest), close what's gone (closeMissing,
+// reconcile.go).
 func (s *Syncer) syncHeld(ctx context.Context, company store.Company, fetcher PostingFetcher, result Result) (Result, error) {
 	companyID := company.ID
 	fetched, err := s.fetch(ctx, fetcher, company.SourceRef)
@@ -165,13 +133,7 @@ func (s *Syncer) syncHeld(ctx context.Context, company store.Company, fetcher Po
 		fetched[i] = sanitizePosting(fetched[i])
 	}
 
-	filters, err := s.store.ListCompanyFilters(ctx, companyID)
-	if err != nil {
-		return result, fmt.Errorf("sync: list company filters: %w", err)
-	}
-	rules := FilterRules(filters)
-
-	result, err = s.ingest(ctx, company, fetched, rules, result)
+	result, err = s.ingest(ctx, company, fetched, result)
 	if err != nil {
 		// The close pass doesn't run after a failed ingest: see
 		// SyncCompany's partial-failure contract.
@@ -188,19 +150,11 @@ func (s *Syncer) syncHeld(ctx context.Context, company store.Company, fetcher Po
 	return result, nil
 }
 
-// ingest saves each fetched posting that matches rules: creating it,
-// updating its content, or reopening it if it was closed. It stops at the
-// first error.
-func (s *Syncer) ingest(ctx context.Context, company store.Company, fetched []jobboard.Posting, rules []filter.Filter, result Result) (Result, error) {
+// ingest saves every fetched posting, whatever the company's filters say
+// (they only decide what's shown): creating it, updating its content, or
+// reopening it if it was closed. It stops at the first error.
+func (s *Syncer) ingest(ctx context.Context, company store.Company, fetched []jobboard.Posting, result Result) (Result, error) {
 	for _, p := range fetched {
-		matches, err := filter.Match(toFilterPosting(p), rules)
-		if err != nil {
-			return result, fmt.Errorf("sync: match filter: %w", err)
-		}
-		if !matches {
-			continue
-		}
-
 		ingested, err := s.store.IngestPosting(ctx, toCreatePostingParams(company.ID, company.Source, p))
 		if err != nil {
 			return result, fmt.Errorf("sync: save posting: %w", err)
@@ -232,7 +186,7 @@ func (s *Syncer) ingest(ctx context.Context, company store.Company, fetched []jo
 // up front instead of surfacing later as a fetch error, or silently as
 // zero postings. It fails closed: any fetch error, including a timeout,
 // blocks the create. The fetched postings are discarded; ingestion waits
-// for the next sync, after the user has had a chance to set filters.
+// for the next sync.
 // Shared by the TUI's add-company form and ImportCompanies.
 func (s *Syncer) CreateCompany(ctx context.Context, name, source, sourceRef string) (store.Company, error) {
 	fetcher, ok := s.fetchers[source]

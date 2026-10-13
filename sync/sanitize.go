@@ -7,12 +7,12 @@ import (
 )
 
 // sanitizePosting trims leading/trailing whitespace from every
-// free-text field a source's API returns before it's used for filter
-// matching or persisted. Job board data is inconsistent in practice --
-// e.g. Initech's Greenhouse listings have shown up as both "Dublin" and
-// "Dublin " -- and filter.Match does an exact (case-insensitive)
-// comparison, so untrimmed padding silently breaks matching in addition
-// to leaving messy values in storage.
+// free-text field a source's API returns before it's persisted. Job
+// board data is inconsistent in practice -- e.g. Initech's Greenhouse
+// listings have shown up as both "Dublin" and "Dublin " -- and
+// filter.Match does an exact (case-insensitive) comparison against the
+// stored values, so untrimmed padding would silently break filters in
+// addition to leaving messy values in storage.
 //
 // RawPayload is deliberately left untouched: it's the source's raw JSON
 // response, kept verbatim for audit/debugging, not a display field.
