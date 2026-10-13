@@ -541,3 +541,27 @@ func TestSearchPostings_AppliesCompanyFiltersLikeFilterMatch(t *testing.T) {
 		})
 	}
 }
+
+func TestSearchPostings_IgnoreCompanyFilters(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	if _, err := s.CreateCompanyFilter(ctx, acme.ID, filter.FieldDepartment, "Engineering"); err != nil {
+		t.Fatalf("CreateCompanyFilter: %v", err)
+	}
+	hidden := mustUpsertPosting(t, s, acme.ID, "1", "Account Executive") // no department
+
+	for _, order := range PostingOrders() {
+		page, err := s.SearchPostings(ctx, PostingSearch{IgnoreCompanyFilters: true, Order: order, Limit: 10})
+		if err != nil {
+			t.Fatalf("%s: SearchPostings: %v", order, err)
+		}
+		if diff := cmp.Diff([]int64{hidden.ID}, listingIDs(page.Listings)); diff != "" {
+			t.Errorf("%s: postings (-want +got):\n%s", order, diff)
+		}
+		if page.Total != 1 {
+			t.Errorf("%s: Total = %d, want 1", order, page.Total)
+		}
+	}
+}

@@ -45,6 +45,9 @@ type PostingSearch struct {
 	HasApplication      *bool
 	Interested          *bool
 	ApplicationStatuses []ApplicationStatus
+	// IgnoreCompanyFilters includes postings their company's filters
+	// hide; by default a search shows what the company's list shows.
+	IgnoreCompanyFilters bool
 	// Order is the sort order; the zero value is PostingOrderIDAsc.
 	Order PostingOrder
 	// AfterID is the last posting ID of the previous page: the next page
@@ -122,7 +125,8 @@ func (s *Store) SearchPostings(ctx context.Context, search PostingSearch) (Posti
 		return PostingSearchPage{}, fmt.Errorf("store: search postings: limit %d, want at least 1", search.Limit)
 	}
 	params := db.SearchPostingsByIDParams{
-		IncludeArchived: search.IncludeArchived,
+		IncludeArchived:      search.IncludeArchived,
+		IgnoreCompanyFilters: search.IgnoreCompanyFilters,
 		// One more than asked for, to learn whether another page follows.
 		MaxRows: int64(search.Limit) + 1,
 	}
@@ -206,14 +210,15 @@ func (s *Store) searchPostingsInOrder(ctx context.Context, search PostingSearch,
 		return s.queries.SearchPostingsByID(ctx, params)
 	case PostingOrderIDDesc:
 		rows, err := s.queries.SearchPostingsByIDDesc(ctx, db.SearchPostingsByIDDescParams{
-			CompanyID:       params.CompanyID,
-			ListingStatus:   params.ListingStatus,
-			IncludeArchived: params.IncludeArchived,
-			HasApplication:  params.HasApplication,
-			Interested:      params.Interested,
-			Statuses:        params.Statuses,
-			BeforeID:        params.AfterID,
-			MaxRows:         params.MaxRows,
+			CompanyID:            params.CompanyID,
+			ListingStatus:        params.ListingStatus,
+			IncludeArchived:      params.IncludeArchived,
+			HasApplication:       params.HasApplication,
+			Interested:           params.Interested,
+			Statuses:             params.Statuses,
+			IgnoreCompanyFilters: params.IgnoreCompanyFilters,
+			BeforeID:             params.AfterID,
+			MaxRows:              params.MaxRows,
 		})
 		converted := make([]db.SearchPostingsByIDRow, len(rows))
 		for i, row := range rows {
@@ -222,14 +227,15 @@ func (s *Store) searchPostingsInOrder(ctx context.Context, search PostingSearch,
 		return converted, err
 	case PostingOrderPublishedDesc:
 		values := db.SearchPostingsByPublishedDescParams{
-			CompanyID:       params.CompanyID,
-			ListingStatus:   params.ListingStatus,
-			IncludeArchived: params.IncludeArchived,
-			HasApplication:  params.HasApplication,
-			Interested:      params.Interested,
-			Statuses:        params.Statuses,
-			CursorID:        params.AfterID,
-			MaxRows:         params.MaxRows,
+			CompanyID:            params.CompanyID,
+			ListingStatus:        params.ListingStatus,
+			IncludeArchived:      params.IncludeArchived,
+			HasApplication:       params.HasApplication,
+			Interested:           params.Interested,
+			Statuses:             params.Statuses,
+			IgnoreCompanyFilters: params.IgnoreCompanyFilters,
+			CursorID:             params.AfterID,
+			MaxRows:              params.MaxRows,
 		}
 		if search.AfterID != 0 && !search.AfterPublishedAt.IsZero() {
 			values.CursorPublished = search.AfterPublishedAt

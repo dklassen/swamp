@@ -201,10 +201,11 @@ FROM (
       AND (sqlc.narg('has_application') IS NULL OR (applications.id IS NOT NULL) = sqlc.narg('has_application'))
       AND (sqlc.narg('interested') IS NULL OR (posting_markup.interested_at IS NOT NULL) = sqlc.narg('interested'))
       AND (sqlc.narg('statuses') IS NULL OR applications.status IN (SELECT value FROM json_each(sqlc.narg('statuses'))))
-      AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
-           OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
-      AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
-           OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))
+      AND (sqlc.arg('ignore_company_filters')
+           OR ((NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
+                OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
+               AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
+                    OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))))
 ) AS m
 WHERE sqlc.narg('after_id') IS NULL OR m.id > sqlc.narg('after_id')
 ORDER BY m.id
@@ -257,10 +258,11 @@ FROM (
       AND (sqlc.narg('has_application') IS NULL OR (applications.id IS NOT NULL) = sqlc.narg('has_application'))
       AND (sqlc.narg('interested') IS NULL OR (posting_markup.interested_at IS NOT NULL) = sqlc.narg('interested'))
       AND (sqlc.narg('statuses') IS NULL OR applications.status IN (SELECT value FROM json_each(sqlc.narg('statuses'))))
-      AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
-           OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
-      AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
-           OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))
+      AND (sqlc.arg('ignore_company_filters')
+           OR ((NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
+                OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
+               AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
+                    OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))))
 ) AS m
 WHERE sqlc.narg('before_id') IS NULL OR m.id < sqlc.narg('before_id')
 ORDER BY m.id DESC
@@ -319,10 +321,11 @@ FROM (
       AND (sqlc.narg('has_application') IS NULL OR (applications.id IS NOT NULL) = sqlc.narg('has_application'))
       AND (sqlc.narg('interested') IS NULL OR (posting_markup.interested_at IS NOT NULL) = sqlc.narg('interested'))
       AND (sqlc.narg('statuses') IS NULL OR applications.status IN (SELECT value FROM json_each(sqlc.narg('statuses'))))
-      AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
-           OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
-      AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
-           OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))
+      AND (sqlc.arg('ignore_company_filters')
+           OR ((NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
+                OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
+               AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
+                    OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))))
 ) AS m
 WHERE sqlc.narg('cursor_id') IS NULL
    OR (sqlc.narg('cursor_published') IS NOT NULL
