@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"testing"
 	"time"
@@ -593,5 +594,73 @@ func TestSearchPostings_ListingCarriesTheJobURL(t *testing.T) {
 		if len(page.Listings) != 1 || page.Listings[0].JobURL != posting.JobURL {
 			t.Errorf("%s: listings = %+v, want one with JobURL %q", order, page.Listings, posting.JobURL)
 		}
+	}
+}
+
+func TestSearchPostings_Query(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	globex := mustCreateCompany(t, s, "Globex", "ashby", "globex")
+	for i, p := range []struct {
+		companyID                   int64
+		title, department, location string
+	}{
+		{acme.ID, "Senior Platform Engineer", "Infrastructure", "Dublin, Ireland"},
+		{acme.ID, "Backend Developer", "Engineering", "Remote"},
+		{acme.ID, "Account_Manager", "Sales", "Toronto"},
+		{globex.ID, "Data Analyst", "Data", "ZÜRICH"},
+		{globex.ID, "Growth Lead (100% remote)", "Marketing", "New York"},
+	} {
+		if _, err := s.UpsertPosting(ctx, CreatePostingParams{
+			CompanyID: p.companyID, Source: "ashby", SourceID: fmt.Sprint(i),
+			IngestedFields: IngestedFields{Title: p.title, Department: p.department, Location: p.location, RawPayload: "{}"},
+		}); err != nil {
+			t.Fatalf("UpsertPosting: %v", err)
+		}
+	}
+
+	tests := []struct {
+		name  string
+		query string
+		want  []string
+	}{
+		{"empty matches everything", "", []string{"Account_Manager", "Backend Developer", "Data Analyst", "Growth Lead (100% remote)", "Senior Platform Engineer"}},
+		{"in the title", "platform", []string{"Senior Platform Engineer"}},
+		{"in the company", "globex", []string{"Data Analyst", "Growth Lead (100% remote)"}},
+		{"in the department", "infrastructure", []string{"Senior Platform Engineer"}},
+		{"in the location", "dublin", []string{"Senior Platform Engineer"}},
+		{"a part of a word", "eng", []string{"Backend Developer", "Senior Platform Engineer"}},
+		{"every term, across fields", "acme remote", []string{"Backend Developer"}},
+		{"a term missing", "platform toronto", nil},
+		{"case", "PLATFORM", []string{"Senior Platform Engineer"}},
+		{"case outside ASCII", "zürich", []string{"Data Analyst"}},
+		{"% literally", "100%", []string{"Growth Lead (100% remote)"}},
+		{"% isn't a wildcard", "e%r", nil},
+		{"_ literally", "t_m", []string{"Account_Manager"}},
+		{"extra spaces", "  platform   dublin ", []string{"Senior Platform Engineer"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			for _, order := range PostingOrders() {
+				page, err := s.SearchPostings(ctx, PostingSearch{Query: tt.query, Order: order, Limit: 10})
+				if err != nil {
+					t.Fatalf("%s: SearchPostings: %v", order, err)
+				}
+				var got []string
+				for _, l := range page.Listings {
+					got = append(got, l.Title)
+				}
+				slices.Sort(got)
+				if diff := cmp.Diff(tt.want, got); diff != "" {
+					t.Errorf("%s: titles (-want +got):\n%s", order, diff)
+				}
+				if page.Total != len(tt.want) {
+					t.Errorf("%s: Total = %d, want %d", order, page.Total, len(tt.want))
+				}
+			}
+		})
 	}
 }

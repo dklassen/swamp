@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/dklassen/swamp/store/db"
@@ -48,6 +49,10 @@ type PostingSearch struct {
 	HasApplication      *bool
 	Interested          *bool
 	ApplicationStatuses []ApplicationStatus
+	// Query is space-separated terms, each of which must appear in the
+	// posting's title, company, department or location, ignoring case.
+	// "" matches every posting.
+	Query string
 	// IgnoreCompanyFilters includes postings their company's filters
 	// hide; by default a search shows what the company's list shows.
 	IgnoreCompanyFilters bool
@@ -160,6 +165,13 @@ func (s *Store) SearchPostings(ctx context.Context, search PostingSearch) (Posti
 		}
 		params.Statuses = string(encoded)
 	}
+	if terms := strings.Fields(search.Query); len(terms) > 0 {
+		encoded, err := json.Marshal(terms)
+		if err != nil {
+			return PostingSearchPage{}, fmt.Errorf("store: encode query terms: %w", err)
+		}
+		params.Terms = string(encoded)
+	}
 	if search.AfterID != 0 {
 		params.AfterID = search.AfterID
 	}
@@ -221,6 +233,7 @@ func (s *Store) searchPostingsInOrder(ctx context.Context, search PostingSearch,
 			HasApplication:       params.HasApplication,
 			Interested:           params.Interested,
 			Statuses:             params.Statuses,
+			Terms:                params.Terms,
 			IgnoreCompanyFilters: params.IgnoreCompanyFilters,
 			BeforeID:             params.AfterID,
 			MaxRows:              params.MaxRows,
@@ -238,6 +251,7 @@ func (s *Store) searchPostingsInOrder(ctx context.Context, search PostingSearch,
 			HasApplication:       params.HasApplication,
 			Interested:           params.Interested,
 			Statuses:             params.Statuses,
+			Terms:                params.Terms,
 			IgnoreCompanyFilters: params.IgnoreCompanyFilters,
 			CursorID:             params.AfterID,
 			MaxRows:              params.MaxRows,

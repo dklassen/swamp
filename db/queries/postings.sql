@@ -162,6 +162,9 @@ WHERE id IN (sqlc.slice('ids'));
 -- must equal one of them, ignoring case. equal_fold is strings.EqualFold,
 -- which store registers; NOCASE folds ASCII only.
 --
+-- Every query term must appear somewhere in the title, company, department
+-- or location, ignoring case (contains_fold, which store registers too).
+--
 -- The inner query applies the filters and counts every match
 -- (COUNT(*) OVER ()); the outer one applies the keyset condition and the
 -- LIMIT. So total is the whole result's size on every page, while only
@@ -203,6 +206,10 @@ FROM (
       AND (sqlc.narg('has_application') IS NULL OR (applications.id IS NOT NULL) = sqlc.narg('has_application'))
       AND (sqlc.narg('interested') IS NULL OR (posting_markup.interested_at IS NOT NULL) = sqlc.narg('interested'))
       AND (sqlc.narg('statuses') IS NULL OR applications.status IN (SELECT value FROM json_each(sqlc.narg('statuses'))))
+      AND NOT EXISTS (
+          SELECT 1 FROM json_each(sqlc.narg('terms')) AS t
+          WHERE NOT contains_fold(postings.title || ' ' || companies.name || ' ' || postings.department || ' ' || postings.location, t.value)
+      )
       AND (sqlc.arg('ignore_company_filters')
            OR ((NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
                 OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
@@ -262,6 +269,10 @@ FROM (
       AND (sqlc.narg('has_application') IS NULL OR (applications.id IS NOT NULL) = sqlc.narg('has_application'))
       AND (sqlc.narg('interested') IS NULL OR (posting_markup.interested_at IS NOT NULL) = sqlc.narg('interested'))
       AND (sqlc.narg('statuses') IS NULL OR applications.status IN (SELECT value FROM json_each(sqlc.narg('statuses'))))
+      AND NOT EXISTS (
+          SELECT 1 FROM json_each(sqlc.narg('terms')) AS t
+          WHERE NOT contains_fold(postings.title || ' ' || companies.name || ' ' || postings.department || ' ' || postings.location, t.value)
+      )
       AND (sqlc.arg('ignore_company_filters')
            OR ((NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
                 OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
@@ -327,6 +338,10 @@ FROM (
       AND (sqlc.narg('has_application') IS NULL OR (applications.id IS NOT NULL) = sqlc.narg('has_application'))
       AND (sqlc.narg('interested') IS NULL OR (posting_markup.interested_at IS NOT NULL) = sqlc.narg('interested'))
       AND (sqlc.narg('statuses') IS NULL OR applications.status IN (SELECT value FROM json_each(sqlc.narg('statuses'))))
+      AND NOT EXISTS (
+          SELECT 1 FROM json_each(sqlc.narg('terms')) AS t
+          WHERE NOT contains_fold(postings.title || ' ' || companies.name || ' ' || postings.department || ' ' || postings.location, t.value)
+      )
       AND (sqlc.arg('ignore_company_filters')
            OR ((NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
                 OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
