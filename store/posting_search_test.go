@@ -169,13 +169,13 @@ func TestSearchPostings_ListingFields(t *testing.T) {
 		t.Fatalf("SearchPostings: %v", err)
 	}
 	want := []PostingListing{
-		{ID: f.platform.ID, Title: "Platform Engineer", ListingStatus: "open", CompanyName: "Acme", Interested: true,
+		{ID: f.platform.ID, FirstSeenAt: f.platform.FirstSeenAt, Title: "Platform Engineer", ListingStatus: "open", CompanyName: "Acme", Interested: true,
 			ApplicationID: f.platformApp.ID, ApplicationStatus: ApplicationStatusStarted},
-		{ID: f.data.ID, Title: "Data Engineer", ListingStatus: "open", CompanyName: "Acme",
+		{ID: f.data.ID, FirstSeenAt: f.data.FirstSeenAt, Title: "Data Engineer", ListingStatus: "open", CompanyName: "Acme",
 			ApplicationID: f.dataApp.ID, ApplicationStatus: ApplicationStatusSubmitted, ApplicationNotes: "heard back"},
-		{ID: f.designer.ID, Title: "Designer", ListingStatus: "open", CompanyName: "Acme", Interested: true},
-		{ID: f.writer.ID, Title: "Writer", ListingStatus: "closed", CompanyName: "Acme"},
-		{ID: f.shelf.ID, Title: "Shelved Role", ListingStatus: "open", CompanyName: "Acme", Archived: true},
+		{ID: f.designer.ID, FirstSeenAt: f.designer.FirstSeenAt, Title: "Designer", ListingStatus: "open", CompanyName: "Acme", Interested: true},
+		{ID: f.writer.ID, FirstSeenAt: f.writer.FirstSeenAt, Title: "Writer", ListingStatus: "closed", CompanyName: "Acme"},
+		{ID: f.shelf.ID, FirstSeenAt: f.shelf.FirstSeenAt, Title: "Shelved Role", ListingStatus: "open", CompanyName: "Acme", Archived: true},
 	}
 	if diff := cmp.Diff(want, got.Listings); diff != "" {
 		t.Errorf("listings mismatch (-want +got):\n%s", diff)

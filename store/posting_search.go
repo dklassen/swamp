@@ -21,7 +21,9 @@ type PostingListing struct {
 	ApplicationURL string
 	// PublishedAt is when the board says the posting was published; zero
 	// when it didn't say.
-	PublishedAt   time.Time
+	PublishedAt time.Time
+	// FirstSeenAt is when Swamp first stored the posting.
+	FirstSeenAt   time.Time
 	ListingStatus string
 	CompanyName   string
 	Interested    bool
@@ -181,6 +183,7 @@ func (s *Store) SearchPostings(ctx context.Context, search PostingSearch) (Posti
 			WorkplaceType:  row.WorkplaceType,
 			ApplicationURL: row.ApplicationUrl,
 			PublishedAt:    row.PublishedAt.Time,
+			FirstSeenAt:    row.FirstSeenAt,
 			ListingStatus:  row.ListingStatus,
 			CompanyName:    row.CompanyName,
 			Interested:     row.InterestedAt.Valid,
