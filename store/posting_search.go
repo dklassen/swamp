@@ -18,6 +18,7 @@ type PostingListing struct {
 	Department     string
 	Location       string
 	WorkplaceType  string
+	JobURL         string
 	ApplicationURL string
 	// PublishedAt is when the board says the posting was published; zero
 	// when it didn't say.
@@ -181,6 +182,7 @@ func (s *Store) SearchPostings(ctx context.Context, search PostingSearch) (Posti
 			Department:     row.Department,
 			Location:       row.Location,
 			WorkplaceType:  row.WorkplaceType,
+			JobURL:         row.JobUrl,
 			ApplicationURL: row.ApplicationUrl,
 			PublishedAt:    row.PublishedAt.Time,
 			FirstSeenAt:    row.FirstSeenAt,

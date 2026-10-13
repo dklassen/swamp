@@ -531,7 +531,7 @@ func (q *Queries) ReopenPostingIfClosed(ctx context.Context, id int64) (int64, e
 }
 
 const searchPostingsByID = `-- name: SearchPostingsByID :many
-SELECT m.id, m.title, m.department, m.location, m.workplace_type, m.application_url, m.listing_status, m.company_name, m.interested_at, m.archived_at, m.application_id, m.application_status, m.published_at, m.application_notes, m.first_seen_at, m.total
+SELECT m.id, m.title, m.department, m.location, m.workplace_type, m.application_url, m.listing_status, m.company_name, m.interested_at, m.archived_at, m.application_id, m.application_status, m.published_at, m.application_notes, m.first_seen_at, m.job_url, m.total
 FROM (
     SELECT
         postings.id,
@@ -549,6 +549,7 @@ FROM (
         postings.published_at,
         applications.notes AS application_notes,
         postings.first_seen_at,
+        postings.job_url,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
@@ -600,6 +601,7 @@ type SearchPostingsByIDRow struct {
 	PublishedAt       sql.NullTime   `json:"published_at"`
 	ApplicationNotes  sql.NullString `json:"application_notes"`
 	FirstSeenAt       time.Time      `json:"first_seen_at"`
+	JobUrl            string         `json:"job_url"`
 	Total             int64          `json:"total"`
 }
 
@@ -657,6 +659,7 @@ func (q *Queries) SearchPostingsByID(ctx context.Context, arg SearchPostingsByID
 			&i.PublishedAt,
 			&i.ApplicationNotes,
 			&i.FirstSeenAt,
+			&i.JobUrl,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -673,7 +676,7 @@ func (q *Queries) SearchPostingsByID(ctx context.Context, arg SearchPostingsByID
 }
 
 const searchPostingsByIDDesc = `-- name: SearchPostingsByIDDesc :many
-SELECT m.id, m.title, m.department, m.location, m.workplace_type, m.application_url, m.listing_status, m.company_name, m.interested_at, m.archived_at, m.application_id, m.application_status, m.published_at, m.application_notes, m.first_seen_at, m.total
+SELECT m.id, m.title, m.department, m.location, m.workplace_type, m.application_url, m.listing_status, m.company_name, m.interested_at, m.archived_at, m.application_id, m.application_status, m.published_at, m.application_notes, m.first_seen_at, m.job_url, m.total
 FROM (
     SELECT
         postings.id,
@@ -691,6 +694,7 @@ FROM (
         postings.published_at,
         applications.notes AS application_notes,
         postings.first_seen_at,
+        postings.job_url,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
@@ -742,6 +746,7 @@ type SearchPostingsByIDDescRow struct {
 	PublishedAt       sql.NullTime   `json:"published_at"`
 	ApplicationNotes  sql.NullString `json:"application_notes"`
 	FirstSeenAt       time.Time      `json:"first_seen_at"`
+	JobUrl            string         `json:"job_url"`
 	Total             int64          `json:"total"`
 }
 
@@ -797,6 +802,7 @@ func (q *Queries) SearchPostingsByIDDesc(ctx context.Context, arg SearchPostings
 			&i.PublishedAt,
 			&i.ApplicationNotes,
 			&i.FirstSeenAt,
+			&i.JobUrl,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -813,7 +819,7 @@ func (q *Queries) SearchPostingsByIDDesc(ctx context.Context, arg SearchPostings
 }
 
 const searchPostingsByPublishedDesc = `-- name: SearchPostingsByPublishedDesc :many
-SELECT m.id, m.title, m.department, m.location, m.workplace_type, m.application_url, m.listing_status, m.company_name, m.interested_at, m.archived_at, m.application_id, m.application_status, m.published_at, m.application_notes, m.first_seen_at, m.total
+SELECT m.id, m.title, m.department, m.location, m.workplace_type, m.application_url, m.listing_status, m.company_name, m.interested_at, m.archived_at, m.application_id, m.application_status, m.published_at, m.application_notes, m.first_seen_at, m.job_url, m.total
 FROM (
     SELECT
         postings.id,
@@ -831,6 +837,7 @@ FROM (
         postings.published_at,
         applications.notes AS application_notes,
         postings.first_seen_at,
+        postings.job_url,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
@@ -888,6 +895,7 @@ type SearchPostingsByPublishedDescRow struct {
 	PublishedAt       sql.NullTime   `json:"published_at"`
 	ApplicationNotes  sql.NullString `json:"application_notes"`
 	FirstSeenAt       time.Time      `json:"first_seen_at"`
+	JobUrl            string         `json:"job_url"`
 	Total             int64          `json:"total"`
 }
 
@@ -950,6 +958,7 @@ func (q *Queries) SearchPostingsByPublishedDesc(ctx context.Context, arg SearchP
 			&i.PublishedAt,
 			&i.ApplicationNotes,
 			&i.FirstSeenAt,
+			&i.JobUrl,
 			&i.Total,
 		); err != nil {
 			return nil, err
