@@ -75,9 +75,9 @@ const createPosting = `-- name: CreatePosting :one
 INSERT INTO postings (
     company_id, source, source_id, title, department, team, location,
     employment_type, workplace_type, description_html, description_text,
-    job_url, application_url, published_at, raw_payload
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-RETURNING id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at
+    job_url, application_url, published_at, raw_payload, content_sha256
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+RETURNING id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at, content_sha256
 `
 
 type CreatePostingParams struct {
@@ -96,6 +96,7 @@ type CreatePostingParams struct {
 	ApplicationUrl  string       `json:"application_url"`
 	PublishedAt     sql.NullTime `json:"published_at"`
 	RawPayload      string       `json:"raw_payload"`
+	ContentSha256   string       `json:"content_sha256"`
 }
 
 func (q *Queries) CreatePosting(ctx context.Context, arg CreatePostingParams) (Posting, error) {
@@ -115,6 +116,7 @@ func (q *Queries) CreatePosting(ctx context.Context, arg CreatePostingParams) (P
 		arg.ApplicationUrl,
 		arg.PublishedAt,
 		arg.RawPayload,
+		arg.ContentSha256,
 	)
 	var i Posting
 	err := row.Scan(
@@ -139,12 +141,13 @@ func (q *Queries) CreatePosting(ctx context.Context, arg CreatePostingParams) (P
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ContentSha256,
 	)
 	return i, err
 }
 
 const getPosting = `-- name: GetPosting :one
-SELECT id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at FROM postings
+SELECT id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at, content_sha256 FROM postings
 WHERE id = ?
 `
 
@@ -173,12 +176,13 @@ func (q *Queries) GetPosting(ctx context.Context, id int64) (Posting, error) {
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ContentSha256,
 	)
 	return i, err
 }
 
 const getPostingBySourceAndSourceID = `-- name: GetPostingBySourceAndSourceID :one
-SELECT id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at FROM postings
+SELECT id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at, content_sha256 FROM postings
 WHERE source = ? AND source_id = ?
 `
 
@@ -212,6 +216,7 @@ func (q *Queries) GetPostingBySourceAndSourceID(ctx context.Context, arg GetPost
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ContentSha256,
 	)
 	return i, err
 }
@@ -281,7 +286,7 @@ func (q *Queries) ListDistinctLocationsForCompany(ctx context.Context, companyID
 
 const listInterestedPostings = `-- name: ListInterestedPostings :many
 SELECT
-    postings.id, postings.company_id, postings.source, postings.source_id, postings.title, postings.department, postings.team, postings.location, postings.employment_type, postings.workplace_type, postings.description_html, postings.description_text, postings.job_url, postings.application_url, postings.published_at, postings.raw_payload, postings.listing_status, postings.first_seen_at, postings.last_seen_at, postings.created_at, postings.updated_at,
+    postings.id, postings.company_id, postings.source, postings.source_id, postings.title, postings.department, postings.team, postings.location, postings.employment_type, postings.workplace_type, postings.description_html, postings.description_text, postings.job_url, postings.application_url, postings.published_at, postings.raw_payload, postings.listing_status, postings.first_seen_at, postings.last_seen_at, postings.created_at, postings.updated_at, postings.content_sha256,
     companies.name AS company_name,
     applications.id AS application_id,
     applications.status AS application_status
@@ -364,6 +369,7 @@ func (q *Queries) ListInterestedPostings(ctx context.Context, terminalStatuses [
 			&i.Posting.LastSeenAt,
 			&i.Posting.CreatedAt,
 			&i.Posting.UpdatedAt,
+			&i.Posting.ContentSha256,
 			&i.CompanyName,
 			&i.ApplicationID,
 			&i.ApplicationStatus,
@@ -413,7 +419,7 @@ func (q *Queries) ListOpenPostingIDsByCompany(ctx context.Context, companyID int
 }
 
 const listPostingsByCompany = `-- name: ListPostingsByCompany :many
-SELECT id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at FROM postings
+SELECT id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at, content_sha256 FROM postings
 WHERE company_id = ?
 ORDER BY first_seen_at DESC, id DESC
 `
@@ -452,6 +458,7 @@ func (q *Queries) ListPostingsByCompany(ctx context.Context, companyID int64) ([
 			&i.LastSeenAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ContentSha256,
 		); err != nil {
 			return nil, err
 		}
@@ -1009,10 +1016,11 @@ SET title = ?,
     application_url = ?,
     published_at = ?,
     raw_payload = ?,
+    content_sha256 = ?,
     last_seen_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
-RETURNING id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at
+RETURNING id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at, content_sha256
 `
 
 type UpdatePostingParams struct {
@@ -1028,6 +1036,7 @@ type UpdatePostingParams struct {
 	ApplicationUrl  string       `json:"application_url"`
 	PublishedAt     sql.NullTime `json:"published_at"`
 	RawPayload      string       `json:"raw_payload"`
+	ContentSha256   string       `json:"content_sha256"`
 	ID              int64        `json:"id"`
 }
 
@@ -1050,6 +1059,7 @@ func (q *Queries) UpdatePosting(ctx context.Context, arg UpdatePostingParams) (P
 		arg.ApplicationUrl,
 		arg.PublishedAt,
 		arg.RawPayload,
+		arg.ContentSha256,
 		arg.ID,
 	)
 	var i Posting
@@ -1075,6 +1085,7 @@ func (q *Queries) UpdatePosting(ctx context.Context, arg UpdatePostingParams) (P
 		&i.LastSeenAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ContentSha256,
 	)
 	return i, err
 }

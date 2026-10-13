@@ -32,12 +32,13 @@ func (e *AheadError) Error() string {
 	return fmt.Sprintf("the database is at version %d, newer than this binary's %d: use the newer binary", e.Current, e.Latest)
 }
 
-// Latest is the version of the newest embedded migration.
+// Latest is the version of the newest migration, SQL or Go.
 func Latest() int64 {
 	names, err := fs.Glob(FS, "*.sql")
 	if err != nil {
 		panic(fmt.Sprintf("migrations: list embedded files: %v", err))
 	}
+	names = append(names, goMigrations...)
 	var latest int64
 	for _, name := range names {
 		version, err := goose.NumericComponent(name)
@@ -125,4 +126,16 @@ func provider(db *sql.DB) (*goose.Provider, error) {
 		return nil, fmt.Errorf("migrations: %w", err)
 	}
 	return p, nil
+}
+
+// goMigrations are the Go migrations' file names, which Latest counts
+// alongside the embedded SQL.
+var goMigrations []string
+
+// registerGoMigration adds a migration written in Go, for what SQL can't
+// do. goose's global registry is where both its Provider and its package
+// functions, which the tests use, find Go migrations.
+func registerGoMigration(filename string, up, down goose.GoMigrationContext) {
+	goMigrations = append(goMigrations, filename)
+	goose.AddNamedMigrationContext(filename, up, down)
 }

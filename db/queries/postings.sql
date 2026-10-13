@@ -2,8 +2,8 @@
 INSERT INTO postings (
     company_id, source, source_id, title, department, team, location,
     employment_type, workplace_type, description_html, description_text,
-    job_url, application_url, published_at, raw_payload
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    job_url, application_url, published_at, raw_payload, content_sha256
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING *;
 
 -- name: UpdatePosting :one
@@ -25,6 +25,7 @@ SET title = ?,
     application_url = ?,
     published_at = ?,
     raw_payload = ?,
+    content_sha256 = ?,
     last_seen_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
