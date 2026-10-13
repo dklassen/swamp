@@ -264,34 +264,34 @@ Measure the posting count with one "sync all" before part 1 (see part 1, section
 ## Work breakdown
 
 ### Part 1: store every posting
-1. **Measure:** one "sync all", recording each company's `Fetched` and open count. Then, on a copy of the database, time a page of `SearchPostings` and a `LIKE` search. Decide whether part 1's cost section holds, and whether the bulky columns need their own table first.
-2. **Store every posting:** `SyncCompany` ingests everything, and `ApplyCompanyFilters` stops re-syncing (needs 1).
-3. **`SearchPostings` applies company filters by default** (`IgnoreCompanyFilters` to turn that off), with the test shared with `filter.Match` (needs 2).
-4. **Stale filters:** counts on the filter screen, and a mark on the company list (needs 2).
+1. (#309) **Measure:** one "sync all", recording each company's `Fetched` and open count. Then, on a copy of the database, time a page of `SearchPostings` and a `LIKE` search. Decide whether part 1's cost section holds, and whether the bulky columns need their own table first.
+2. (#310) **Store every posting:** `SyncCompany` ingests everything, and `ApplyCompanyFilters` stops re-syncing (needs 1).
+3. (#311) **`SearchPostings` applies company filters by default** (`IgnoreCompanyFilters` to turn that off), with the test shared with `filter.Match` (needs 2).
+4. (#312) **Stale filters:** counts on the filter screen, and a mark on the company list (needs 2).
 
 ### Part 2: all postings
-5. Store: `first_seen_at` on the search page row; log `posting_markup` (migration, `changelog.go`, triggers).
-6. TUI: the all-postings view, paged and live (needs 3 and 5).
+5. (#313) Store: `first_seen_at` on the search page row; log `posting_markup` (migration, `changelog.go`, triggers).
+6. (#314) TUI: the all-postings view, paged and live (needs 3 and 5).
 
 ### Part 3: search
-7. Store and MCP: `Query` on `PostingSearch` and `search_postings`, matched in every `SearchPostingsBy*` query. Needs nothing before it.
-8. TUI: `/` in the all-postings view (needs 6 and 7).
+7. (#315) Store and MCP: `Query` on `PostingSearch` and `search_postings`, matched in every `SearchPostingsBy*` query. Needs nothing before it.
+8. (#316) TUI: `/` in the all-postings view (needs 6 and 7).
 
 ### Part 4a: storage (needs nothing from parts 1–3)
-9. Migration: `postings.content_sha256` with a Go backfill; `IngestPosting` sets it.
-10. Migration: `scoring_runs` and `posting_scores`, with their `changelog.go` classification (`posting_scores` logged, inserts only; `scoring_runs` not logged, since nothing reads its changes) and triggers.
-11. Store: `StartScoringRun`, `ScoringRuns`, `PendingPostings` (paged, with why), `RecordScores`, and the current score on search rows (needs 9 and 10).
+9. (#317) Migration: `postings.content_sha256` with a Go backfill; `IngestPosting` sets it.
+10. (#318) Migration: `scoring_runs` and `posting_scores`, with their `changelog.go` classification (`posting_scores` logged, inserts only; `scoring_runs` not logged, since nothing reads its changes) and triggers.
+11. (#319) Store: `StartScoringRun`, `ScoringRuns`, `PendingPostings` (paged, with why), `RecordScores`, and the current score on search rows (needs 9 and 10).
 
 ### Part 4b: MCP (needs 11)
-12. `read_profile` returns `SHA256`.
-13. `read_posting`.
-14. `start_scoring_run` and `list_scoring_runs`.
-15. `list_pending_postings`.
-16. `record_scores`.
+12. (#320) `read_profile` returns `SHA256`.
+13. (#321) `read_posting`.
+14. (#322) `start_scoring_run` and `list_scoring_runs`.
+15. (#323) `list_pending_postings`.
+16. (#324) `record_scores`.
 
 ### Part 4c: user-facing
-17. TUI: score column, sort by score, score history in the posting detail (needs 6 and 11).
-18. The `score-postings` skill (needs 2 and 12–16).
+17. (#325) TUI: score column, sort by score, score history in the posting detail (needs 6 and 11).
+18. (#326) The `score-postings` skill (needs 2 and 12–16).
 
 Each item is its own issue and PR.
 
