@@ -98,7 +98,9 @@ func (m *allPostingsModel) View(width, height int) string {
 	if len(m.page.Listings) == 0 {
 		b.WriteString("No open postings.\n")
 	} else {
-		cursorRow := m.cursor
+		// A banner can take rows after the page was read, so draw what fits.
+		start, end := visibleWindow(m.cursor, len(m.page.Listings), tableRows(height-1, help))
+		cursorRow := m.cursor - start
 		t := table.New().
 			Headers("Seen", "Company", "Title", "Department", "Location", "").
 			StyleFunc(func(row, _ int) lipgloss.Style {
@@ -109,7 +111,7 @@ func (m *allPostingsModel) View(width, height int) string {
 				return style
 			})
 		titleWidth := flexColWidth(width, seenColWidth, homeCompanyColWidth, departmentColWidth, locationColWidth, markerColWidth)
-		for _, l := range m.page.Listings {
+		for _, l := range m.page.Listings[start:end] {
 			marker := " "
 			if l.Interested {
 				marker = "★"
@@ -127,4 +129,32 @@ func (m *allPostingsModel) View(width, height int) string {
 	}
 	b.WriteString(help)
 	return b.String()
+}
+
+// Update handles a key on the all-postings view, given the page size that
+// fills the window now.
+func (m *allPostingsModel) Update(msg tea.KeyMsg, size int) (tea.Cmd, tea.Msg) {
+	switch {
+	case msg.Type == tea.KeyDown, msg.String() == "j":
+		if m.cursor < len(m.page.Listings)-1 {
+			m.cursor++
+		}
+	case msg.Type == tea.KeyUp, msg.String() == "k":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case msg.Type == tea.KeyRight, msg.String() == "l":
+		if n := len(m.page.Listings); n > 0 && m.page.HasMore {
+			m.afterIDs = append(m.afterIDs, m.page.Listings[n-1].ID)
+			m.cursor = 0
+			return m.load(size), nil
+		}
+	case msg.Type == tea.KeyLeft, msg.String() == "h":
+		if len(m.afterIDs) > 1 {
+			m.afterIDs = m.afterIDs[:len(m.afterIDs)-1]
+			m.cursor = 0
+			return m.load(size), nil
+		}
+	}
+	return nil, nil
 }

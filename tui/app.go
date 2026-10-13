@@ -1378,10 +1378,14 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// entered, so nothing to do here.
 			a.postingDetail.resize(a.width, a.screenRows())
 		}
+		var reload tea.Cmd
+		if size := a.allPostings.pageSize(a.screenRows()); a.screen == screenAllPostings && size != a.allPostings.size {
+			reload = a.allPostings.load(size)
+		}
 		// The terminal rewraps the old frame when it narrows, pushing rows
 		// below where the new one ends. The renderer only clears below a
 		// frame that got shorter, so without this they stay on screen.
-		return a, tea.ClearScreen
+		return a, tea.Batch(tea.ClearScreen, reload)
 	case tea.KeyMsg:
 		prevScreen := a.screen
 		model, cmd := a.updateKeyMsg(msg)
@@ -1414,6 +1418,9 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	switch a.screen {
+	case screenAllPostings:
+		cmd, _ := a.allPostings.Update(msg, a.allPostings.pageSize(a.screenRows()))
+		return a, cmd
 	case screenActiveApplications:
 		cmd, intent := a.activeApplicationList.Update(msg, a.activeApplications)
 		switch v := intent.(type) {

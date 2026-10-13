@@ -95,6 +95,9 @@ func sizedScreens() []sizedScreen {
 			}
 			return app
 		}},
+		{name: "all postings", screen: screenAllPostings, open: func(t *testing.T, app *App) *App {
+			return openAllPostings(t, app)
+		}},
 		{name: "company list", screen: screenCompanyList, open: func(t *testing.T, app *App) *App {
 			app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 			return app

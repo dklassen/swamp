@@ -2,10 +2,12 @@ package tui
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/store"
@@ -87,5 +89,91 @@ func TestAllPostings_ShowsOpenPostingsAcrossCompaniesNewestFirst(t *testing.T) {
 		if !strings.Contains(view, want) {
 			t.Errorf("view is missing %q:\n%s", want, view)
 		}
+	}
+}
+
+// pageTitles is the titles on the page on screen, top to bottom.
+func pageTitles(app *App) []string {
+	var titles []string
+	for _, l := range app.allPostings.page.Listings {
+		titles = append(titles, l.Title)
+	}
+	return titles
+}
+
+func TestAllPostings_PagesForwardAndBack(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	for i := 1; i <= 7; i++ {
+		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
+	app = openAllPostings(t, app)
+	size := app.allPostings.size
+	if size < 1 || size >= 7 {
+		t.Fatalf("page size = %d at height 13, want fewer than seven so they take several pages", size)
+	}
+	pages := (7 + size - 1) / size
+	// want is page n's titles, newest first.
+	want := func(n int) []string {
+		var titles []string
+		for i := 7 - (n-1)*size; i >= 1 && len(titles) < size; i-- {
+			titles = append(titles, fmt.Sprintf("Role %d", i))
+		}
+		return titles
+	}
+	check := func(n int) {
+		t.Helper()
+		if diff := cmp.Diff(want(n), pageTitles(app)); diff != "" {
+			t.Errorf("page %d titles (-want +got):\n%s", n, diff)
+		}
+		if line := fmt.Sprintf("Page %d of %d", n, pages); !strings.Contains(app.View(), line) {
+			t.Errorf("view doesn't say %q:\n%s", line, app.View())
+		}
+	}
+
+	check(1)
+	app = sendKeyAndApply(t, app, runeKey('h'))
+	check(1) // no page before the first
+	for n := 2; n <= pages; n++ {
+		key := runeKey('l')
+		if n%2 == 0 {
+			key = tea.KeyMsg{Type: tea.KeyRight}
+		}
+		app = sendKeyAndApply(t, app, key)
+		check(n)
+	}
+	app = sendKeyAndApply(t, app, runeKey('l'))
+	check(pages) // no page after the last
+	for n := pages - 1; n >= 1; n-- {
+		key := runeKey('h')
+		if n%2 == 0 {
+			key = tea.KeyMsg{Type: tea.KeyLeft}
+		}
+		app = sendKeyAndApply(t, app, key)
+		check(n)
+	}
+}
+
+func TestAllPostings_ResizingReadsThePageAtTheNewSize(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	for i := 1; i <= 30; i++ {
+		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
+	app = openAllPostings(t, app)
+	tall := app.allPostings.size
+
+	app = sendKeyAndApply(t, app, tea.WindowSizeMsg{Width: 120, Height: 13})
+
+	if short := app.allPostings.pageSize(app.screenRows()); short >= tall || app.allPostings.size != short || len(app.allPostings.page.Listings) != short {
+		t.Errorf("after shrinking: page read at %d rows with %d listings, want %d (it was %d)", app.allPostings.size, len(app.allPostings.page.Listings), short, tall)
 	}
 }
