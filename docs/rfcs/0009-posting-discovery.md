@@ -1,6 +1,6 @@
 # RFC 0009: Discovering postings that fit, through the agent
 
-- **Status:** Draft
+- **Status:** Accepted (work items #310–#326; #309 dropped)
 - **Date:** 2026-10-11, rewritten 2026-10-13
 - **Related:** RFC 0006 (structured posting search, whose `SearchPostings` part 2 builds on; its open question 4 anticipated this); RFC 0008 (the change log, which carries new postings and scores to the TUI); RFC 0002 (the application workflow a good fit feeds); #56 (filters gate ingestion, so changing them re-syncs); #61 (one matching path for sync and display)
 
