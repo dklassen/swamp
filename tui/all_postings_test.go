@@ -538,3 +538,20 @@ func TestAllPostings_PagesThroughSearchResults(t *testing.T) {
 		t.Errorf("← went to page %d, want %d", len(app.allPostings.afterIDs), pages-1)
 	}
 }
+
+func TestAllPostings_NoMatches_SaysWhatWasSearched(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = openAllPostings(t, app)
+
+	app = searchAllPostings(t, app, "kafka")
+
+	if view := app.View(); !strings.Contains(view, `No postings match "kafka".`) {
+		t.Errorf("view doesn't say what matched nothing:\n%s", view)
+	}
+}

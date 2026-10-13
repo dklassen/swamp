@@ -177,9 +177,12 @@ func (m *allPostingsModel) View(width, height int) string {
 	}
 	b.WriteString(searchLine(m.searching, m.query, m.page.Total, m.total) + "\n")
 	fmt.Fprintf(&b, "%s\n", dimStyle.Render(fmt.Sprintf("Page %d of %d · %d postings", len(m.afterIDs), m.pages(), m.page.Total)))
-	if len(m.page.Listings) == 0 {
+	switch {
+	case len(m.page.Listings) == 0 && m.query != "":
+		fmt.Fprintf(&b, "No postings match %q.\n", m.query)
+	case len(m.page.Listings) == 0:
 		b.WriteString("No open postings.\n")
-	} else {
+	default:
 		// A banner can take rows after the page was read, so draw what fits.
 		start, end := visibleWindow(m.cursor, len(m.page.Listings), tableRows(height-2, help))
 		cursorRow := m.cursor - start
