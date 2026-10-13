@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/contenthash"
 	"github.com/dklassen/swamp/store/db"
 )
 
@@ -59,6 +60,9 @@ type Posting struct {
 	Source    string `json:"Source"`
 	SourceID  string `json:"SourceID"`
 	IngestedFields
+	// ContentSHA256 is contenthash.Of the content: the version a fit score
+	// is tied to.
+	ContentSHA256 string    `json:"ContentSHA256"`
 	ListingStatus string    `json:"ListingStatus"`
 	FirstSeenAt   time.Time `json:"FirstSeenAt"`
 	LastSeenAt    time.Time `json:"LastSeenAt"`
@@ -84,6 +88,7 @@ func postingFromRow(row db.Posting) Posting {
 		CompanyID:     row.CompanyID,
 		Source:        row.Source,
 		SourceID:      row.SourceID,
+		ContentSHA256: row.ContentSha256,
 		ListingStatus: row.ListingStatus,
 		FirstSeenAt:   row.FirstSeenAt,
 		LastSeenAt:    row.LastSeenAt,
@@ -104,6 +109,11 @@ func postingFromRow(row db.Posting) Posting {
 			RawPayload:      row.RawPayload,
 		},
 	}
+}
+
+// postingContentSHA256 is contenthash.Of the fields the agent reads.
+func postingContentSHA256(f IngestedFields) string {
+	return contenthash.Of(contenthash.Posting{Title: f.Title, Department: f.Department, Location: f.Location, WorkplaceType: f.WorkplaceType, DescriptionText: f.DescriptionText})
 }
 
 // nullTime converts an optional *time.Time into the DB layer's nullable
@@ -192,6 +202,7 @@ func (s *Store) IngestPosting(ctx context.Context, params CreatePostingParams) (
 			ApplicationUrl:  params.ApplicationURL,
 			PublishedAt:     nullPublishedAt(params.PublishedAt),
 			RawPayload:      params.RawPayload,
+			ContentSha256:   postingContentSHA256(params.IngestedFields),
 		})
 		if err != nil {
 			return IngestResult{}, fmt.Errorf("store: create posting: %w", err)
@@ -232,6 +243,7 @@ func (s *Store) IngestPosting(ctx context.Context, params CreatePostingParams) (
 			ApplicationUrl:  params.ApplicationURL,
 			PublishedAt:     nullPublishedAt(params.PublishedAt),
 			RawPayload:      params.RawPayload,
+			ContentSha256:   postingContentSHA256(params.IngestedFields),
 		})
 		if err != nil {
 			return IngestResult{}, fmt.Errorf("store: update posting: %w", err)

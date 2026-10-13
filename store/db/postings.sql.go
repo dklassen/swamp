@@ -75,8 +75,8 @@ const createPosting = `-- name: CreatePosting :one
 INSERT INTO postings (
     company_id, source, source_id, title, department, team, location,
     employment_type, workplace_type, description_html, description_text,
-    job_url, application_url, published_at, raw_payload
-) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    job_url, application_url, published_at, raw_payload, content_sha256
+) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 RETURNING id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at, content_sha256
 `
 
@@ -96,6 +96,7 @@ type CreatePostingParams struct {
 	ApplicationUrl  string       `json:"application_url"`
 	PublishedAt     sql.NullTime `json:"published_at"`
 	RawPayload      string       `json:"raw_payload"`
+	ContentSha256   string       `json:"content_sha256"`
 }
 
 func (q *Queries) CreatePosting(ctx context.Context, arg CreatePostingParams) (Posting, error) {
@@ -115,6 +116,7 @@ func (q *Queries) CreatePosting(ctx context.Context, arg CreatePostingParams) (P
 		arg.ApplicationUrl,
 		arg.PublishedAt,
 		arg.RawPayload,
+		arg.ContentSha256,
 	)
 	var i Posting
 	err := row.Scan(
@@ -1014,6 +1016,7 @@ SET title = ?,
     application_url = ?,
     published_at = ?,
     raw_payload = ?,
+    content_sha256 = ?,
     last_seen_at = CURRENT_TIMESTAMP,
     updated_at = CURRENT_TIMESTAMP
 WHERE id = ?
@@ -1033,6 +1036,7 @@ type UpdatePostingParams struct {
 	ApplicationUrl  string       `json:"application_url"`
 	PublishedAt     sql.NullTime `json:"published_at"`
 	RawPayload      string       `json:"raw_payload"`
+	ContentSha256   string       `json:"content_sha256"`
 	ID              int64        `json:"id"`
 }
 
@@ -1055,6 +1059,7 @@ func (q *Queries) UpdatePosting(ctx context.Context, arg UpdatePostingParams) (P
 		arg.ApplicationUrl,
 		arg.PublishedAt,
 		arg.RawPayload,
+		arg.ContentSha256,
 		arg.ID,
 	)
 	var i Posting

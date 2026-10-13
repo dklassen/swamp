@@ -11,6 +11,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/dklassen/swamp/contenthash"
 )
 
 func TestUpsertPosting_NewPosting_ThenGet_ReturnsSamePosting(t *testing.T) {
@@ -949,5 +951,65 @@ func TestMarkPostingsSeen_AdvancesOnlyLastSeenAtOfTheGivenPostings(t *testing.T)
 	}
 	if !untouched.LastSeenAt.Equal(longAgo) {
 		t.Errorf("other posting LastSeenAt = %v, want %v unchanged", untouched.LastSeenAt, longAgo)
+	}
+}
+
+func TestIngestPosting_SetsTheContentHash(t *testing.T) {
+	t.Parallel()
+
+	fields := IngestedFields{
+		Title: "Engineer", Department: "Platform", Location: "Dublin", WorkplaceType: "Hybrid",
+		DescriptionText: "Build things.", JobURL: "https://jobs.example.com/1", RawPayload: `{"v":1}`,
+	}
+	hashOf := func(f IngestedFields) string {
+		return contenthash.Of(contenthash.Posting{Title: f.Title, Department: f.Department, Location: f.Location, WorkplaceType: f.WorkplaceType, DescriptionText: f.DescriptionText})
+	}
+	tests := []struct {
+		name        string
+		change      func(f *IngestedFields)
+		wantChanged bool
+	}{
+		{"title", func(f *IngestedFields) { f.Title = "Senior Engineer" }, true},
+		{"description", func(f *IngestedFields) { f.DescriptionText = "Build other things." }, true},
+		{"raw payload only", func(f *IngestedFields) { f.RawPayload = `{"v":2}` }, false},
+		{"job URL only", func(f *IngestedFields) { f.JobURL = "https://jobs.example.com/one" }, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			s := newTestStore(t)
+			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			params := CreatePostingParams{CompanyID: acme.ID, Source: "ashby", SourceID: "1", IngestedFields: fields}
+
+			created, err := s.IngestPosting(ctx, params)
+			if err != nil {
+				t.Fatalf("IngestPosting: %v", err)
+			}
+			if want := hashOf(fields); created.Posting.ContentSHA256 != want {
+				t.Fatalf("new posting's hash = %q, want %q", created.Posting.ContentSHA256, want)
+			}
+			tt.change(&params.IngestedFields)
+			updated, err := s.IngestPosting(ctx, params)
+			if err != nil {
+				t.Fatalf("IngestPosting: %v", err)
+			}
+			if !updated.Updated {
+				t.Fatal("the change wasn't stored")
+			}
+			if want := hashOf(params.IngestedFields); updated.Posting.ContentSHA256 != want {
+				t.Errorf("hash after changing the %s = %q, want %q", tt.name, updated.Posting.ContentSHA256, want)
+			}
+			if changed := updated.Posting.ContentSHA256 != created.Posting.ContentSHA256; changed != tt.wantChanged {
+				t.Errorf("changing the %s changed the hash: %v, want %v", tt.name, changed, tt.wantChanged)
+			}
+			stored, err := s.GetPosting(ctx, created.Posting.ID)
+			if err != nil {
+				t.Fatalf("GetPosting: %v", err)
+			}
+			if stored.ContentSHA256 != updated.Posting.ContentSHA256 {
+				t.Errorf("stored hash %q, IngestPosting returned %q", stored.ContentSHA256, updated.Posting.ContentSHA256)
+			}
+		})
 	}
 }
