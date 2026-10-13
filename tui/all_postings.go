@@ -149,6 +149,10 @@ func (m *allPostingsModel) Update(msg tea.KeyMsg, size int) (tea.Cmd, tea.Msg) {
 			m.cursor = 0
 			return m.load(size), nil
 		}
+	case msg.Type == tea.KeyEnter:
+		if m.cursor < len(m.page.Listings) {
+			return nil, enterPostingDetailMsg{postingID: m.page.Listings[m.cursor].ID}
+		}
 	case msg.Type == tea.KeyLeft, msg.String() == "h":
 		if len(m.afterIDs) > 1 {
 			m.afterIDs = m.afterIDs[:len(m.afterIDs)-1]
@@ -157,4 +161,18 @@ func (m *allPostingsModel) Update(msg tea.KeyMsg, size int) (tea.Cmd, tea.Msg) {
 		}
 	}
 	return nil, nil
+}
+
+// allPostingsDetailLoadedMsg is the posting enter opened: a page row
+// lacks the description the detail shows.
+type allPostingsDetailLoadedMsg struct {
+	posting store.Posting
+	err     error
+}
+
+func loadAllPostingsDetail(s *store.Store, id int64) tea.Cmd {
+	return func() tea.Msg {
+		p, err := s.GetPosting(context.Background(), id)
+		return allPostingsDetailLoadedMsg{posting: p, err: err}
+	}
 }

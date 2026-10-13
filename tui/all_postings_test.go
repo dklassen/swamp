@@ -177,3 +177,60 @@ func TestAllPostings_ResizingReadsThePageAtTheNewSize(t *testing.T) {
 		t.Errorf("after shrinking: page read at %d rows with %d listings, want %d (it was %d)", app.allPostings.size, len(app.allPostings.page.Listings), short, tall)
 	}
 }
+
+func TestAllPostings_EnterOpensTheDetailAndEscComesBack(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	for i := 1; i <= 7; i++ {
+		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
+	app = openAllPostings(t, app)
+	for _, key := range []tea.KeyMsg{runeKey('l'), runeKey('j')} {
+		app = sendKeyAndApply(t, app, key)
+	}
+	want := app.allPostings.page.Listings[1]
+
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if app.screen != screenPostingDetail || app.postingDetail.posting.ID != want.ID || app.postingDetail.posting.Title != want.Title {
+		t.Fatalf("after enter: screen %v showing posting %d %q, want detail for %d %q", app.screen, app.postingDetail.posting.ID, app.postingDetail.posting.Title, want.ID, want.Title)
+	}
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEsc})
+	if app.screen != screenAllPostings || len(app.allPostings.afterIDs) != 2 || app.allPostings.cursor != 1 {
+		t.Errorf("after esc: screen %v, page %d, row %d; want all postings, page 2, row 1", app.screen, len(app.allPostings.afterIDs), app.allPostings.cursor)
+	}
+}
+
+// A company's list browsed earlier stays in a.postings, but its order
+// isn't the all-postings page's, so the detail mustn't step through it.
+func TestAllPostings_DetailDoesNotStepThroughACompanyListBrowsedEarlier(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	for i := 1; i <= 3; i++ {
+		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	if app.screen != screenPostingList || len(app.postings) != 3 {
+		t.Fatalf("screen %v with %d postings, want Acme's posting list with 3", app.screen, len(app.postings))
+	}
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
+
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+
+	if app.screen != screenPostingDetail {
+		t.Fatalf("screen = %v, want posting detail", app.screen)
+	}
+	if app.postingDetail.canNavigateSiblings {
+		t.Error("posting detail opened from all postings offers stepping through Acme's posting list")
+	}
+}

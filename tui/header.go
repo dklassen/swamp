@@ -106,6 +106,8 @@ func (a *App) crumbs(path []screen) []string {
 			crumbs = append(crumbs, "Applications")
 		case screenCompanyList:
 			crumbs = append(crumbs, "Companies")
+		case screenAllPostings:
+			crumbs = append(crumbs, "All postings")
 		case screenPostingList:
 			crumbs = append(crumbs, a.selectedCompany.Name)
 		case screenPostingDetail:

@@ -100,6 +100,8 @@ type App struct {
 	postingMarkup   map[int64]store.PostingMarkup
 	postingList     postingListModel
 	postingDetail   postingDetailModel
+	// postingDetailFrom is the screen that opened posting detail.
+	postingDetailFrom screen
 	// applicationsByPosting holds the application for each posting_id that
 	// has one (fetched async on entering posting detail -- see
 	// loadApplication). A posting with no entry has no application yet
@@ -1128,7 +1130,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				delete(a.applicationsByPosting, msg.postingID)
 			}
 			if a.screen == screenPostingDetail {
-				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
+				// The posting on screen, which a.postings lacks when the detail
+				// was opened from all postings.
+				p := a.postingDetail.posting
+				_, app, hasApp := a.lookupPosting(p.ID)
 				a.replacePostingDetail(newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID)))
 				return a, maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 			}
@@ -1149,7 +1154,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			var reviewsCmd tea.Cmd
 			if a.screen == screenPostingDetail {
-				p, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
+				// The posting on screen, which a.postings lacks when the detail
+				// was opened from all postings.
+				p := a.postingDetail.posting
+				_, app, hasApp := a.lookupPosting(p.ID)
 				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 				reviewsCmd = maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 			}
@@ -1211,6 +1219,16 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.err = msg.err
 		} else {
 			a.allPostings.loaded(msg)
+		}
+	case allPostingsDetailLoadedMsg:
+		a.err = msg.err
+		// Only if the user is still where they pressed enter.
+		if msg.err == nil && a.screen == screenAllPostings {
+			a.postingDetailFrom = screenAllPostings
+			app, hasApp := a.applicationsByPosting[msg.posting.ID]
+			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), msg.posting, app, hasApp, nil, a.canNavigateSiblings(msg.posting.ID))
+			a.enterFrom(screenPostingDetail)
+			return a, tea.Batch(loadApplication(a.store, msg.posting.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
 		}
 	case postingReloadedMsg:
 		return a, a.handlePostingReloaded(msg)
@@ -1419,7 +1437,10 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	}
 	switch a.screen {
 	case screenAllPostings:
-		cmd, _ := a.allPostings.Update(msg, a.allPostings.pageSize(a.screenRows()))
+		cmd, intent := a.allPostings.Update(msg, a.allPostings.pageSize(a.screenRows()))
+		if v, ok := intent.(enterPostingDetailMsg); ok {
+			return a, loadAllPostingsDetail(a.store, v.postingID)
+		}
 		return a, cmd
 	case screenActiveApplications:
 		cmd, intent := a.activeApplicationList.Update(msg, a.activeApplications)
@@ -1468,6 +1489,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// reads only from this map, not from appView. Without seeding it
 			// here, that lookup misses and hasApp wrongly flips to false even
 			// though the application is unchanged.
+			a.postingDetailFrom = screenApplicationDetail
 			appView := a.applicationDetail.application
 			if a.applicationsByPosting == nil {
 				a.applicationsByPosting = make(map[int64]store.Application)
@@ -1528,6 +1550,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Archiving or unarchiving may have changed open counts.
 			return a, loadCompanies(a.store)
 		case enterPostingDetailMsg:
+			a.postingDetailFrom = screenPostingList
 			p, app, hasApp := a.lookupPosting(v.postingID)
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 			a.enterFrom(screenPostingDetail)
@@ -1796,7 +1819,7 @@ func (a *App) body(s screen) string {
 // along, so it always reflects what a.postings holds now rather than
 // what it held when the screen was first entered.
 func (a *App) canNavigateSiblings(postingID int64) bool {
-	return indexOfPosting(a.postings, postingID) >= 0
+	return a.postingDetailFrom == screenPostingList && indexOfPosting(a.postings, postingID) >= 0
 }
 
 // sectionHeading renders a posting-detail section heading: name, then a
