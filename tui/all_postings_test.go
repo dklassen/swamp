@@ -234,3 +234,115 @@ func TestAllPostings_DetailDoesNotStepThroughACompanyListBrowsedEarlier(t *testi
 		t.Error("posting detail opened from all postings offers stepping through Acme's posting list")
 	}
 }
+
+func TestAllPostings_IMarksAndUnmarksInterested(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustUpsertPosting(t, s, acme.ID, "1", "Role 1")
+	posting := mustUpsertPosting(t, s, acme.ID, "2", "Role 2")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = openAllPostings(t, app)
+
+	for _, want := range []bool{true, false} {
+		app = sendKeyAndApply(t, app, runeKey('i'))
+		markup, err := s.GetPostingMarkup(context.Background(), posting.ID)
+		if err != nil {
+			t.Fatalf("GetPostingMarkup: %v", err)
+		}
+		if got := markup.InterestedAt != nil; got != want {
+			t.Errorf("after i: interested = %v, want %v", got, want)
+		}
+		if got := app.allPostings.page.Listings[0]; got.ID != posting.ID || got.Interested != want {
+			t.Errorf("after i: top row = %d interested %v, want %d interested %v", got.ID, got.Interested, posting.ID, want)
+		}
+		if got := strings.Contains(app.View(), "★"); got != want {
+			t.Errorf("after i: view shows ★ = %v, want %v", got, want)
+		}
+	}
+}
+
+func TestAllPostings_XArchivesAndThePostingLeavesThePage(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	for i := 1; i <= 3; i++ {
+		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = openAllPostings(t, app)
+	app = sendKeyAndApply(t, app, runeKey('j'))
+	archived := app.allPostings.page.Listings[1]
+
+	app = sendKeyAndApply(t, app, runeKey('x'))
+
+	markup, err := s.GetPostingMarkup(context.Background(), archived.ID)
+	if err != nil {
+		t.Fatalf("GetPostingMarkup: %v", err)
+	}
+	if markup.ArchivedAt == nil {
+		t.Fatalf("%q isn't archived after x", archived.Title)
+	}
+	if diff := cmp.Diff([]string{"Role 3", "Role 1"}, pageTitles(app)); diff != "" {
+		t.Errorf("page after archiving %q (-want +got):\n%s", archived.Title, diff)
+	}
+	if app.allPostings.page.Total != 2 || app.allPostings.cursor != 1 {
+		t.Errorf("Total %d, cursor on row %d; want 2, on row 1", app.allPostings.page.Total, app.allPostings.cursor)
+	}
+}
+
+func TestAllPostings_ArchivingTheLastPagesOnlyPostingStepsBack(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
+	size := app.allPostings.pageSize(app.screenRows())
+	// One more than a page: the second page has one posting.
+	for i := 1; i <= size+1; i++ {
+		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+	}
+	app = openAllPostings(t, app)
+	app = sendKeyAndApply(t, app, runeKey('l'))
+	if len(app.allPostings.afterIDs) != 2 || len(app.allPostings.page.Listings) != 1 {
+		t.Fatalf("on page %d with %d postings, want page 2 with 1", len(app.allPostings.afterIDs), len(app.allPostings.page.Listings))
+	}
+
+	app = sendKeyAndApply(t, app, runeKey('x'))
+
+	if len(app.allPostings.afterIDs) != 1 || len(app.allPostings.page.Listings) != size {
+		t.Errorf("after archiving page 2's only posting: page %d with %d postings, want page 1 with %d", len(app.allPostings.afterIDs), len(app.allPostings.page.Listings), size)
+	}
+}
+
+func TestAllPostings_OOpensTheJobURL(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	if _, err := s.UpsertPosting(context.Background(), store.CreatePostingParams{
+		CompanyID: acme.ID, Source: "ashby", SourceID: "1",
+		IngestedFields: store.IngestedFields{Title: "Engineer", JobURL: "https://jobs.example.com/acme/1"},
+	}); err != nil {
+		t.Fatalf("UpsertPosting: %v", err)
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	var opened []string
+	app.openURL = func(url string) tea.Cmd {
+		opened = append(opened, url)
+		return nil
+	}
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = openAllPostings(t, app)
+
+	sendKeyAndApply(t, app, runeKey('o'))
+
+	if diff := cmp.Diff([]string{"https://jobs.example.com/acme/1"}, opened); diff != "" {
+		t.Errorf("URLs opened (-want +got):\n%s", diff)
+	}
+}

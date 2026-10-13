@@ -62,13 +62,19 @@ func (m *allPostingsModel) load(size int) tea.Cmd {
 	}
 }
 
-// loaded shows msg's page, if it's still the page on screen.
-func (m *allPostingsModel) loaded(msg allPostingsLoadedMsg) {
+// loaded shows msg's page, if it's still the page on screen. A page past
+// the first that has emptied, its postings archived or closed, steps back.
+func (m *allPostingsModel) loaded(msg allPostingsLoadedMsg) tea.Cmd {
 	if msg.afterID != m.afterIDs[len(m.afterIDs)-1] {
-		return
+		return nil
+	}
+	if len(msg.page.Listings) == 0 && len(m.afterIDs) > 1 {
+		m.afterIDs = m.afterIDs[:len(m.afterIDs)-1]
+		return m.load(msg.size)
 	}
 	m.page, m.size = msg.page, msg.size
 	m.cursor = min(m.cursor, max(len(m.page.Listings)-1, 0))
+	return nil
 }
 
 // pages is how many pages Total fills at the page size.
@@ -153,6 +159,20 @@ func (m *allPostingsModel) Update(msg tea.KeyMsg, size int) (tea.Cmd, tea.Msg) {
 		if m.cursor < len(m.page.Listings) {
 			return nil, enterPostingDetailMsg{postingID: m.page.Listings[m.cursor].ID}
 		}
+	case msg.String() == "i":
+		if m.cursor < len(m.page.Listings) {
+			l := m.page.Listings[m.cursor]
+			return toggleInterested(m.store, l.ID, l.Interested), nil
+		}
+	case msg.String() == "x":
+		if m.cursor < len(m.page.Listings) {
+			l := m.page.Listings[m.cursor]
+			return toggleArchived(m.store, l.ID, l.Archived), nil
+		}
+	case msg.String() == "o":
+		if m.cursor < len(m.page.Listings) && m.page.Listings[m.cursor].JobURL != "" {
+			return nil, openJobURLMsg{url: m.page.Listings[m.cursor].JobURL}
+		}
 	case msg.Type == tea.KeyLeft, msg.String() == "h":
 		if len(m.afterIDs) > 1 {
 			m.afterIDs = m.afterIDs[:len(m.afterIDs)-1]
@@ -162,6 +182,9 @@ func (m *allPostingsModel) Update(msg tea.KeyMsg, size int) (tea.Cmd, tea.Msg) {
 	}
 	return nil, nil
 }
+
+// openJobURLMsg asks App to open a posting in the browser.
+type openJobURLMsg struct{ url string }
 
 // allPostingsDetailLoadedMsg is the posting enter opened: a page row
 // lacks the description the detail shows.

@@ -1117,6 +1117,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				a.postingList.clampCursor(len(a.postings))
 			}
+			if a.screen == screenAllPostings {
+				return a, a.allPostings.load(a.allPostings.size)
+			}
 		}
 	case applicationLoadedMsg:
 		a.err = msg.err
@@ -1218,7 +1221,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err != nil {
 			a.err = msg.err
 		} else {
-			a.allPostings.loaded(msg)
+			return a, a.allPostings.loaded(msg)
 		}
 	case allPostingsDetailLoadedMsg:
 		a.err = msg.err
@@ -1438,8 +1441,11 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	switch a.screen {
 	case screenAllPostings:
 		cmd, intent := a.allPostings.Update(msg, a.allPostings.pageSize(a.screenRows()))
-		if v, ok := intent.(enterPostingDetailMsg); ok {
+		switch v := intent.(type) {
+		case enterPostingDetailMsg:
 			return a, loadAllPostingsDetail(a.store, v.postingID)
+		case openJobURLMsg:
+			return a, a.openURL(v.url)
 		}
 		return a, cmd
 	case screenActiveApplications:
