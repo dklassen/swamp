@@ -297,7 +297,7 @@ Each item is its own issue and PR.
 
 ## Open questions
 
-1. **What should the agent see by default?** Part 1 applies company filters to `search_postings` by default, matching the TUI. For scoring, seeing everything is the point, so a scoring run may want to ignore them.
+1. **What should the agent see by default?** Decided (#319): company filters apply everywhere by default, `search_postings` and scoring alike, so a run scores what the user sees. `IgnoreCompanyFilters` exists for search; scoring could gain an "ignore filters" scope later if a filter is hiding good fits.
 2. **Should the all-postings view have a key to show postings the company filters hide?**
 3. **Should a company with no filters show everything?** That's today's behavior, and part 1 keeps it.
 4. **The score scale.** Decided (#319): 1–5. It makes scores from different runs and models more comparable, and gives the agent less false precision to invent than 0–100. Ties are expected, so a sort by score needs a tie-breaker.
