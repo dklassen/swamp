@@ -195,11 +195,14 @@ FROM (
         applications.notes AS application_notes,
         postings.first_seen_at,
         postings.job_url,
+        current_score.score AS current_score,
+        current_score.reason AS current_score_reason,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
     LEFT JOIN posting_markup ON posting_markup.posting_id = postings.id
     LEFT JOIN applications ON applications.posting_id = postings.id AND applications.deleted_at IS NULL
+    LEFT JOIN posting_scores AS current_score ON current_score.id = (SELECT max(id) FROM posting_scores WHERE posting_id = postings.id)
     WHERE companies.deleted_at IS NULL
       AND (sqlc.narg('company_id') IS NULL OR postings.company_id = sqlc.narg('company_id'))
       AND (sqlc.narg('listing_status') IS NULL OR postings.listing_status = sqlc.narg('listing_status'))
@@ -258,11 +261,14 @@ FROM (
         applications.notes AS application_notes,
         postings.first_seen_at,
         postings.job_url,
+        current_score.score AS current_score,
+        current_score.reason AS current_score_reason,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
     LEFT JOIN posting_markup ON posting_markup.posting_id = postings.id
     LEFT JOIN applications ON applications.posting_id = postings.id AND applications.deleted_at IS NULL
+    LEFT JOIN posting_scores AS current_score ON current_score.id = (SELECT max(id) FROM posting_scores WHERE posting_id = postings.id)
     WHERE companies.deleted_at IS NULL
       AND (sqlc.narg('company_id') IS NULL OR postings.company_id = sqlc.narg('company_id'))
       AND (sqlc.narg('listing_status') IS NULL OR postings.listing_status = sqlc.narg('listing_status'))
@@ -327,11 +333,14 @@ FROM (
         applications.notes AS application_notes,
         postings.first_seen_at,
         postings.job_url,
+        current_score.score AS current_score,
+        current_score.reason AS current_score_reason,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
     LEFT JOIN posting_markup ON posting_markup.posting_id = postings.id
     LEFT JOIN applications ON applications.posting_id = postings.id AND applications.deleted_at IS NULL
+    LEFT JOIN posting_scores AS current_score ON current_score.id = (SELECT max(id) FROM posting_scores WHERE posting_id = postings.id)
     WHERE companies.deleted_at IS NULL
       AND (sqlc.narg('company_id') IS NULL OR postings.company_id = sqlc.narg('company_id'))
       AND (sqlc.narg('listing_status') IS NULL OR postings.listing_status = sqlc.narg('listing_status'))

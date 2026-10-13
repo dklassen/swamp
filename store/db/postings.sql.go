@@ -538,7 +538,7 @@ func (q *Queries) ReopenPostingIfClosed(ctx context.Context, id int64) (int64, e
 }
 
 const searchPostingsByID = `-- name: SearchPostingsByID :many
-SELECT m.id, m.title, m.department, m.location, m.workplace_type, m.application_url, m.listing_status, m.company_name, m.interested_at, m.archived_at, m.application_id, m.application_status, m.published_at, m.application_notes, m.first_seen_at, m.job_url, m.total
+SELECT m.id, m.title, m.department, m.location, m.workplace_type, m.application_url, m.listing_status, m.company_name, m.interested_at, m.archived_at, m.application_id, m.application_status, m.published_at, m.application_notes, m.first_seen_at, m.job_url, m.current_score, m.current_score_reason, m.total
 FROM (
     SELECT
         postings.id,
@@ -557,11 +557,14 @@ FROM (
         applications.notes AS application_notes,
         postings.first_seen_at,
         postings.job_url,
+        current_score.score AS current_score,
+        current_score.reason AS current_score_reason,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
     LEFT JOIN posting_markup ON posting_markup.posting_id = postings.id
     LEFT JOIN applications ON applications.posting_id = postings.id AND applications.deleted_at IS NULL
+    LEFT JOIN posting_scores AS current_score ON current_score.id = (SELECT max(id) FROM posting_scores WHERE posting_id = postings.id)
     WHERE companies.deleted_at IS NULL
       AND (?1 IS NULL OR postings.company_id = ?1)
       AND (?2 IS NULL OR postings.listing_status = ?2)
@@ -598,23 +601,25 @@ type SearchPostingsByIDParams struct {
 }
 
 type SearchPostingsByIDRow struct {
-	ID                int64          `json:"id"`
-	Title             string         `json:"title"`
-	Department        string         `json:"department"`
-	Location          string         `json:"location"`
-	WorkplaceType     string         `json:"workplace_type"`
-	ApplicationUrl    string         `json:"application_url"`
-	ListingStatus     string         `json:"listing_status"`
-	CompanyName       string         `json:"company_name"`
-	InterestedAt      sql.NullTime   `json:"interested_at"`
-	ArchivedAt        sql.NullTime   `json:"archived_at"`
-	ApplicationID     sql.NullInt64  `json:"application_id"`
-	ApplicationStatus sql.NullString `json:"application_status"`
-	PublishedAt       sql.NullTime   `json:"published_at"`
-	ApplicationNotes  sql.NullString `json:"application_notes"`
-	FirstSeenAt       time.Time      `json:"first_seen_at"`
-	JobUrl            string         `json:"job_url"`
-	Total             int64          `json:"total"`
+	ID                 int64          `json:"id"`
+	Title              string         `json:"title"`
+	Department         string         `json:"department"`
+	Location           string         `json:"location"`
+	WorkplaceType      string         `json:"workplace_type"`
+	ApplicationUrl     string         `json:"application_url"`
+	ListingStatus      string         `json:"listing_status"`
+	CompanyName        string         `json:"company_name"`
+	InterestedAt       sql.NullTime   `json:"interested_at"`
+	ArchivedAt         sql.NullTime   `json:"archived_at"`
+	ApplicationID      sql.NullInt64  `json:"application_id"`
+	ApplicationStatus  sql.NullString `json:"application_status"`
+	PublishedAt        sql.NullTime   `json:"published_at"`
+	ApplicationNotes   sql.NullString `json:"application_notes"`
+	FirstSeenAt        time.Time      `json:"first_seen_at"`
+	JobUrl             string         `json:"job_url"`
+	CurrentScore       sql.NullInt64  `json:"current_score"`
+	CurrentScoreReason sql.NullString `json:"current_score_reason"`
+	Total              int64          `json:"total"`
 }
 
 // One page of the postings matching every given filter, in posting ID
@@ -676,6 +681,8 @@ func (q *Queries) SearchPostingsByID(ctx context.Context, arg SearchPostingsByID
 			&i.ApplicationNotes,
 			&i.FirstSeenAt,
 			&i.JobUrl,
+			&i.CurrentScore,
+			&i.CurrentScoreReason,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -692,7 +699,7 @@ func (q *Queries) SearchPostingsByID(ctx context.Context, arg SearchPostingsByID
 }
 
 const searchPostingsByIDDesc = `-- name: SearchPostingsByIDDesc :many
-SELECT m.id, m.title, m.department, m.location, m.workplace_type, m.application_url, m.listing_status, m.company_name, m.interested_at, m.archived_at, m.application_id, m.application_status, m.published_at, m.application_notes, m.first_seen_at, m.job_url, m.total
+SELECT m.id, m.title, m.department, m.location, m.workplace_type, m.application_url, m.listing_status, m.company_name, m.interested_at, m.archived_at, m.application_id, m.application_status, m.published_at, m.application_notes, m.first_seen_at, m.job_url, m.current_score, m.current_score_reason, m.total
 FROM (
     SELECT
         postings.id,
@@ -711,11 +718,14 @@ FROM (
         applications.notes AS application_notes,
         postings.first_seen_at,
         postings.job_url,
+        current_score.score AS current_score,
+        current_score.reason AS current_score_reason,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
     LEFT JOIN posting_markup ON posting_markup.posting_id = postings.id
     LEFT JOIN applications ON applications.posting_id = postings.id AND applications.deleted_at IS NULL
+    LEFT JOIN posting_scores AS current_score ON current_score.id = (SELECT max(id) FROM posting_scores WHERE posting_id = postings.id)
     WHERE companies.deleted_at IS NULL
       AND (?1 IS NULL OR postings.company_id = ?1)
       AND (?2 IS NULL OR postings.listing_status = ?2)
@@ -752,23 +762,25 @@ type SearchPostingsByIDDescParams struct {
 }
 
 type SearchPostingsByIDDescRow struct {
-	ID                int64          `json:"id"`
-	Title             string         `json:"title"`
-	Department        string         `json:"department"`
-	Location          string         `json:"location"`
-	WorkplaceType     string         `json:"workplace_type"`
-	ApplicationUrl    string         `json:"application_url"`
-	ListingStatus     string         `json:"listing_status"`
-	CompanyName       string         `json:"company_name"`
-	InterestedAt      sql.NullTime   `json:"interested_at"`
-	ArchivedAt        sql.NullTime   `json:"archived_at"`
-	ApplicationID     sql.NullInt64  `json:"application_id"`
-	ApplicationStatus sql.NullString `json:"application_status"`
-	PublishedAt       sql.NullTime   `json:"published_at"`
-	ApplicationNotes  sql.NullString `json:"application_notes"`
-	FirstSeenAt       time.Time      `json:"first_seen_at"`
-	JobUrl            string         `json:"job_url"`
-	Total             int64          `json:"total"`
+	ID                 int64          `json:"id"`
+	Title              string         `json:"title"`
+	Department         string         `json:"department"`
+	Location           string         `json:"location"`
+	WorkplaceType      string         `json:"workplace_type"`
+	ApplicationUrl     string         `json:"application_url"`
+	ListingStatus      string         `json:"listing_status"`
+	CompanyName        string         `json:"company_name"`
+	InterestedAt       sql.NullTime   `json:"interested_at"`
+	ArchivedAt         sql.NullTime   `json:"archived_at"`
+	ApplicationID      sql.NullInt64  `json:"application_id"`
+	ApplicationStatus  sql.NullString `json:"application_status"`
+	PublishedAt        sql.NullTime   `json:"published_at"`
+	ApplicationNotes   sql.NullString `json:"application_notes"`
+	FirstSeenAt        time.Time      `json:"first_seen_at"`
+	JobUrl             string         `json:"job_url"`
+	CurrentScore       sql.NullInt64  `json:"current_score"`
+	CurrentScoreReason sql.NullString `json:"current_score_reason"`
+	Total              int64          `json:"total"`
 }
 
 // SearchPostingsByID newest first: the same filters, in descending posting
@@ -825,6 +837,8 @@ func (q *Queries) SearchPostingsByIDDesc(ctx context.Context, arg SearchPostings
 			&i.ApplicationNotes,
 			&i.FirstSeenAt,
 			&i.JobUrl,
+			&i.CurrentScore,
+			&i.CurrentScoreReason,
 			&i.Total,
 		); err != nil {
 			return nil, err
@@ -841,7 +855,7 @@ func (q *Queries) SearchPostingsByIDDesc(ctx context.Context, arg SearchPostings
 }
 
 const searchPostingsByPublishedDesc = `-- name: SearchPostingsByPublishedDesc :many
-SELECT m.id, m.title, m.department, m.location, m.workplace_type, m.application_url, m.listing_status, m.company_name, m.interested_at, m.archived_at, m.application_id, m.application_status, m.published_at, m.application_notes, m.first_seen_at, m.job_url, m.total
+SELECT m.id, m.title, m.department, m.location, m.workplace_type, m.application_url, m.listing_status, m.company_name, m.interested_at, m.archived_at, m.application_id, m.application_status, m.published_at, m.application_notes, m.first_seen_at, m.job_url, m.current_score, m.current_score_reason, m.total
 FROM (
     SELECT
         postings.id,
@@ -860,11 +874,14 @@ FROM (
         applications.notes AS application_notes,
         postings.first_seen_at,
         postings.job_url,
+        current_score.score AS current_score,
+        current_score.reason AS current_score_reason,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
     LEFT JOIN posting_markup ON posting_markup.posting_id = postings.id
     LEFT JOIN applications ON applications.posting_id = postings.id AND applications.deleted_at IS NULL
+    LEFT JOIN posting_scores AS current_score ON current_score.id = (SELECT max(id) FROM posting_scores WHERE posting_id = postings.id)
     WHERE companies.deleted_at IS NULL
       AND (?1 IS NULL OR postings.company_id = ?1)
       AND (?2 IS NULL OR postings.listing_status = ?2)
@@ -907,23 +924,25 @@ type SearchPostingsByPublishedDescParams struct {
 }
 
 type SearchPostingsByPublishedDescRow struct {
-	ID                int64          `json:"id"`
-	Title             string         `json:"title"`
-	Department        string         `json:"department"`
-	Location          string         `json:"location"`
-	WorkplaceType     string         `json:"workplace_type"`
-	ApplicationUrl    string         `json:"application_url"`
-	ListingStatus     string         `json:"listing_status"`
-	CompanyName       string         `json:"company_name"`
-	InterestedAt      sql.NullTime   `json:"interested_at"`
-	ArchivedAt        sql.NullTime   `json:"archived_at"`
-	ApplicationID     sql.NullInt64  `json:"application_id"`
-	ApplicationStatus sql.NullString `json:"application_status"`
-	PublishedAt       sql.NullTime   `json:"published_at"`
-	ApplicationNotes  sql.NullString `json:"application_notes"`
-	FirstSeenAt       time.Time      `json:"first_seen_at"`
-	JobUrl            string         `json:"job_url"`
-	Total             int64          `json:"total"`
+	ID                 int64          `json:"id"`
+	Title              string         `json:"title"`
+	Department         string         `json:"department"`
+	Location           string         `json:"location"`
+	WorkplaceType      string         `json:"workplace_type"`
+	ApplicationUrl     string         `json:"application_url"`
+	ListingStatus      string         `json:"listing_status"`
+	CompanyName        string         `json:"company_name"`
+	InterestedAt       sql.NullTime   `json:"interested_at"`
+	ArchivedAt         sql.NullTime   `json:"archived_at"`
+	ApplicationID      sql.NullInt64  `json:"application_id"`
+	ApplicationStatus  sql.NullString `json:"application_status"`
+	PublishedAt        sql.NullTime   `json:"published_at"`
+	ApplicationNotes   sql.NullString `json:"application_notes"`
+	FirstSeenAt        time.Time      `json:"first_seen_at"`
+	JobUrl             string         `json:"job_url"`
+	CurrentScore       sql.NullInt64  `json:"current_score"`
+	CurrentScoreReason sql.NullString `json:"current_score_reason"`
+	Total              int64          `json:"total"`
 }
 
 // SearchPostingsByID newest on the board first (#224): the same filters,
@@ -987,6 +1006,8 @@ func (q *Queries) SearchPostingsByPublishedDesc(ctx context.Context, arg SearchP
 			&i.ApplicationNotes,
 			&i.FirstSeenAt,
 			&i.JobUrl,
+			&i.CurrentScore,
+			&i.CurrentScoreReason,
 			&i.Total,
 		); err != nil {
 			return nil, err

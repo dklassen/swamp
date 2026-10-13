@@ -18,7 +18,7 @@ func insertScore(t *testing.T, sqlDB *sql.DB) int64 {
 			t.Fatalf("%s: %v", stmt, err)
 		}
 	}
-	res, err := sqlDB.Exec(`INSERT INTO posting_scores (run_id, posting_id, score, reason, content_sha256) VALUES (1, 1, 72, 'Go, remote', 'def')`)
+	res, err := sqlDB.Exec(`INSERT INTO posting_scores (run_id, posting_id, score, reason, content_sha256) VALUES (1, 1, 4, 'Go, remote', 'def')`)
 	if err != nil {
 		t.Fatalf("insert score: %v", err)
 	}
@@ -52,7 +52,7 @@ func TestPostingScores_ASecondScoreForAPostingInOneRunIsRefused(t *testing.T) {
 	sqlDB := migrateTo(t, Latest())
 	insertScore(t, sqlDB)
 
-	if _, err := sqlDB.Exec(`INSERT INTO posting_scores (run_id, posting_id, score, reason, content_sha256) VALUES (1, 1, 40, 'again', 'def')`); err == nil {
+	if _, err := sqlDB.Exec(`INSERT INTO posting_scores (run_id, posting_id, score, reason, content_sha256) VALUES (1, 1, 2, 'again', 'def')`); err == nil {
 		t.Error("a second score for posting 1 in run 1 was stored, want it refused")
 	}
 }
