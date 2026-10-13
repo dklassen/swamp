@@ -156,7 +156,7 @@ type Querier interface {
 	// again, so nothing else would ever close these (#178).
 	ListOpenPostingIDsByCompany(ctx context.Context, companyID int64) ([]int64, error)
 	// One page of a run's pending postings, by posting ID after an optional
-	// cursor, with how many there are in all (RFC 0009).
+	// cursor, with how many there are in all.
 	//
 	// Eligible: open, not archived, not interested, no application, at a
 	// company the user hasn't deleted, and let through by that company's
