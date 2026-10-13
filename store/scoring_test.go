@@ -40,7 +40,7 @@ func mustInsertScore(t *testing.T, s *Store, runID, postingID int64, contentSHA2
 	}
 }
 
-func mustStartScoringRun(t *testing.T, s *Store, scope ScoringScope) ScoringRun {
+func mustStartScoringRun(t *testing.T, s *Store, scope ScoringScope) ScoringRunSummary {
 	t.Helper()
 	run, err := s.StartScoringRun(context.Background(), StartScoringRunParams{Model: "claude-opus-5-5", ProfileSHA256: "profile", Scope: scope})
 	if err != nil {
@@ -175,5 +175,76 @@ func TestPendingPostings_Pages(t *testing.T) {
 	}
 	if diff := cmp.Diff([]bool{true, true, false}, hasMore); diff != "" {
 		t.Errorf("HasMore (-want +got):\n%s", diff)
+	}
+}
+
+func TestStartScoringRun_SaysHowManyArePending(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	scored := mustUpsertPostingIn(t, s, acme.ID, "1", "Scored", "")
+	mustUpsertPostingIn(t, s, acme.ID, "2", "Unscored", "")
+	mustUpsertPostingIn(t, s, acme.ID, "3", "Also unscored", "")
+	earlier := mustStartScoringRun(t, s, ScoringScopeUnscored)
+	mustInsertScore(t, s, earlier.ID, scored.ID, scored.ContentSHA256)
+
+	for scope, want := range map[ScoringScope]int{ScoringScopeUnscored: 2, ScoringScopeAll: 3} {
+		run := mustStartScoringRun(t, s, scope)
+		if run.Pending != want || run.Scored != 0 || run.Scope != scope {
+			t.Errorf("%s run: scope %v, %d pending, %d scored; want %d pending, 0 scored", scope, run.Scope, run.Pending, run.Scored, want)
+		}
+	}
+}
+
+func TestStartScoringRun_RefusesWhatItCantRecord(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	valid := StartScoringRunParams{Model: "claude-opus-5-5", ProfileSHA256: "profile", Scope: ScoringScopeAll}
+	tests := []struct {
+		name   string
+		change func(p *StartScoringRunParams)
+	}{
+		{"no model", func(p *StartScoringRunParams) { p.Model = "" }},
+		{"no profile hash", func(p *StartScoringRunParams) { p.ProfileSHA256 = "" }},
+		{"unknown scope", func(p *StartScoringRunParams) { p.Scope = ScoringScope(7) }},
+	}
+	for _, tt := range tests {
+		params := valid
+		tt.change(&params)
+		if _, err := s.StartScoringRun(context.Background(), params); err == nil {
+			t.Errorf("%s: StartScoringRun succeeded, want it refused", tt.name)
+		}
+	}
+	if _, err := s.StartScoringRun(context.Background(), valid); err != nil {
+		t.Errorf("valid run refused: %v", err)
+	}
+}
+
+func TestScoringRuns_NewestFirstWithTheirCounts(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	first := mustUpsertPostingIn(t, s, acme.ID, "1", "First", "")
+	second := mustUpsertPostingIn(t, s, acme.ID, "2", "Second", "")
+	older := mustStartScoringRun(t, s, ScoringScopeAll)
+	mustInsertScore(t, s, older.ID, first.ID, first.ContentSHA256)
+	mustInsertScore(t, s, older.ID, second.ID, second.ContentSHA256)
+	newer := mustStartScoringRun(t, s, ScoringScopeAll)
+	mustInsertScore(t, s, newer.ID, first.ID, first.ContentSHA256)
+
+	runs, err := s.ScoringRuns(context.Background(), 10)
+	if err != nil {
+		t.Fatalf("ScoringRuns: %v", err)
+	}
+	type counts struct {
+		ID              int64
+		Scored, Pending int
+	}
+	var got []counts
+	for _, r := range runs {
+		got = append(got, counts{r.ID, r.Scored, r.Pending})
+	}
+	if diff := cmp.Diff([]counts{{newer.ID, 1, 1}, {older.ID, 2, 0}}, got); diff != "" {
+		t.Errorf("runs (-want +got):\n%s", diff)
 	}
 }

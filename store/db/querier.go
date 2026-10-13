@@ -27,6 +27,7 @@ type Querier interface {
 	// postings are already gated by filters at ingestion, and a filter added
 	// later only narrows the posting list's display, not this count.
 	CountOpenPostingsByCompany(ctx context.Context) ([]CountOpenPostingsByCompanyRow, error)
+	CountScoresInRun(ctx context.Context, runID int64) (int64, error)
 	// Unlike posting_markup, not auto-created for every posting -- an
 	// application exists only once the user takes an explicit "start
 	// application" action. status is supplied explicitly by the caller
@@ -168,6 +169,7 @@ type Querier interface {
 	// CURRENT_TIMESTAMP second (sqlite has only second resolution), so
 	// first_seen_at alone leaves ties with no guaranteed order.
 	ListPostingsByCompany(ctx context.Context, companyID int64) ([]Posting, error)
+	ListScoringRuns(ctx context.Context, limit int64) ([]ScoringRun, error)
 	// Active tags only: this is the pick list for tagging postings, and a
 	// soft-deleted tag shouldn't be offered for new use.
 	ListTags(ctx context.Context) ([]Tag, error)

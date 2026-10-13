@@ -10,6 +10,18 @@ import (
 	"database/sql"
 )
 
+const countScoresInRun = `-- name: CountScoresInRun :one
+SELECT count(*) FROM posting_scores
+WHERE run_id = ?
+`
+
+func (q *Queries) CountScoresInRun(ctx context.Context, runID int64) (int64, error) {
+	row := q.db.QueryRowContext(ctx, countScoresInRun, runID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createScoringRun = `-- name: CreateScoringRun :one
 INSERT INTO scoring_runs (model, client_name, client_version, profile_sha256, scope)
 VALUES (?, ?, ?, ?, ?)
@@ -158,6 +170,43 @@ func (q *Queries) ListPendingPostings(ctx context.Context, arg ListPendingPostin
 			&i.HasScore,
 			&i.HasCurrentScore,
 			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listScoringRuns = `-- name: ListScoringRuns :many
+SELECT id, model, client_name, client_version, profile_sha256, scope, started_at FROM scoring_runs
+ORDER BY id DESC
+LIMIT ?
+`
+
+func (q *Queries) ListScoringRuns(ctx context.Context, limit int64) ([]ScoringRun, error) {
+	rows, err := q.db.QueryContext(ctx, listScoringRuns, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []ScoringRun
+	for rows.Next() {
+		var i ScoringRun
+		if err := rows.Scan(
+			&i.ID,
+			&i.Model,
+			&i.ClientName,
+			&i.ClientVersion,
+			&i.ProfileSha256,
+			&i.Scope,
+			&i.StartedAt,
 		); err != nil {
 			return nil, err
 		}

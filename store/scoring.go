@@ -92,15 +92,23 @@ type StartScoringRunParams struct {
 	Scope         ScoringScope
 }
 
-// StartScoringRun records a new scoring run.
-func (s *Store) StartScoringRun(ctx context.Context, params StartScoringRunParams) (ScoringRun, error) {
+// ScoringRunSummary is a run with how far it has got, when it was read.
+type ScoringRunSummary struct {
+	ScoringRun
+	Scored  int
+	Pending int
+}
+
+// StartScoringRun records a new scoring run, and says how many postings
+// it has to score.
+func (s *Store) StartScoringRun(ctx context.Context, params StartScoringRunParams) (ScoringRunSummary, error) {
 	switch {
 	case params.Model == "":
-		return ScoringRun{}, errors.New("store: start scoring run: model is required")
+		return ScoringRunSummary{}, errors.New("store: start scoring run: model is required")
 	case params.ProfileSHA256 == "":
-		return ScoringRun{}, errors.New("store: start scoring run: profile hash is required")
+		return ScoringRunSummary{}, errors.New("store: start scoring run: profile hash is required")
 	case params.Scope < 0 || int(params.Scope) >= len(scoringScopeNames):
-		return ScoringRun{}, fmt.Errorf("store: start scoring run: unknown scope %v", params.Scope)
+		return ScoringRunSummary{}, fmt.Errorf("store: start scoring run: unknown scope %v", params.Scope)
 	}
 	row, err := s.queries.CreateScoringRun(ctx, db.CreateScoringRunParams{
 		Model:         params.Model,
@@ -110,9 +118,45 @@ func (s *Store) StartScoringRun(ctx context.Context, params StartScoringRunParam
 		Scope:         params.Scope.String(),
 	})
 	if err != nil {
-		return ScoringRun{}, fmt.Errorf("store: start scoring run: %w", err)
+		return ScoringRunSummary{}, fmt.Errorf("store: start scoring run: %w", err)
 	}
-	return scoringRunFromRow(row)
+	run, err := scoringRunFromRow(row)
+	if err != nil {
+		return ScoringRunSummary{}, err
+	}
+	return s.summarize(ctx, run)
+}
+
+// ScoringRuns returns the limit most recent runs, newest first, each with
+// its scored and pending counts.
+func (s *Store) ScoringRuns(ctx context.Context, limit int) ([]ScoringRunSummary, error) {
+	rows, err := s.queries.ListScoringRuns(ctx, int64(limit))
+	if err != nil {
+		return nil, fmt.Errorf("store: scoring runs: %w", err)
+	}
+	runs := make([]ScoringRunSummary, len(rows))
+	for i, row := range rows {
+		run, err := scoringRunFromRow(row)
+		if err != nil {
+			return nil, err
+		}
+		if runs[i], err = s.summarize(ctx, run); err != nil {
+			return nil, err
+		}
+	}
+	return runs, nil
+}
+
+func (s *Store) summarize(ctx context.Context, run ScoringRun) (ScoringRunSummary, error) {
+	scored, err := s.queries.CountScoresInRun(ctx, run.ID)
+	if err != nil {
+		return ScoringRunSummary{}, fmt.Errorf("store: scoring run %d: %w", run.ID, err)
+	}
+	pending, err := s.PendingPostings(ctx, run.ID, 0, 1)
+	if err != nil {
+		return ScoringRunSummary{}, err
+	}
+	return ScoringRunSummary{ScoringRun: run, Scored: int(scored), Pending: pending.Total}, nil
 }
 
 // scoringRun is the run with id, or ErrNotFound: foreign keys aren't

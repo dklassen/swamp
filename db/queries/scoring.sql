@@ -51,3 +51,12 @@ FROM (
 WHERE sqlc.narg('after_id') IS NULL OR m.id > sqlc.narg('after_id')
 ORDER BY m.id
 LIMIT sqlc.arg('max_rows');
+
+-- name: CountScoresInRun :one
+SELECT count(*) FROM posting_scores
+WHERE run_id = ?;
+
+-- name: ListScoringRuns :many
+SELECT * FROM scoring_runs
+ORDER BY id DESC
+LIMIT ?;
