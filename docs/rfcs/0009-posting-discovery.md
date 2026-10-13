@@ -2,6 +2,7 @@
 
 - **Status:** Draft
 - **Date:** 2026-10-11, rewritten 2026-10-13
+- **Depends on:** RFC 0010 (store every posting; company filters only decide what's shown). Without it, the all-postings view and scoring see only what the company filters let in, and miss postings when a company renames a department.
 - **Related:** RFC 0006 (structured posting search, whose `SearchPostings` step 1 builds on; its open question 4 anticipated this); RFC 0008 (the change log, which carries new scores to the TUI); RFC 0002 (the application workflow a good fit feeds)
 
 ## Summary
@@ -52,7 +53,7 @@ All postings (1,972)                                           page 1 of 50
 ↑/↓ (j/k): select  ←/→ (h/l): page  enter: detail  i: interested  x: archive  o: open  tab: applications
 ```
 
-- **Which postings:** open, not archived, and not at a deleted company. This is `search_postings`' default, so the agent and the user see the same set.
+- **Which postings:** open, not archived, not at a deleted company, and matching that company's filters. This is `search_postings`' default once RFC 0010 makes it apply company filters, so the agent and the user see the same set.
 - **Columns:** first seen, company, title, department, location (with workplace type), and a mark if interested.
 - **`enter`** opens the existing posting detail. **`i`**, **`x`** and **`o`** work as they do in a company's posting list.
 - **Live:** postings are a logged table (RFC 0008). A sync in another process adds rows and updates the total without a manual refresh. The page the user is on is kept: new postings appear on page 1, not under the cursor.
