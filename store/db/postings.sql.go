@@ -559,6 +559,10 @@ FROM (
       AND (?4 IS NULL OR (applications.id IS NOT NULL) = ?4)
       AND (?5 IS NULL OR (posting_markup.interested_at IS NOT NULL) = ?5)
       AND (?6 IS NULL OR applications.status IN (SELECT value FROM json_each(?6)))
+      AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
+           OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
+      AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
+           OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))
 ) AS m
 WHERE ?7 IS NULL OR m.id > ?7
 ORDER BY m.id
@@ -598,6 +602,10 @@ type SearchPostingsByIDRow struct {
 // order, after an optional cursor ID (#218, RFC 0006). NULL means "don't
 // filter on this". Postings of a company the user deleted are never
 // included.
+//
+// Each company's filters apply as filter.Match's do: a field with filters
+// must equal one of them, ignoring case. equal_fold is strings.EqualFold,
+// which store registers; NOCASE folds ASCII only.
 //
 // The inner query applies the filters and counts every match
 // (COUNT(*) OVER ()); the outer one applies the keyset condition and the
@@ -687,6 +695,10 @@ FROM (
       AND (?4 IS NULL OR (applications.id IS NOT NULL) = ?4)
       AND (?5 IS NULL OR (posting_markup.interested_at IS NOT NULL) = ?5)
       AND (?6 IS NULL OR applications.status IN (SELECT value FROM json_each(?6)))
+      AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
+           OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
+      AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
+           OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))
 ) AS m
 WHERE ?7 IS NULL OR m.id < ?7
 ORDER BY m.id DESC
@@ -817,6 +829,10 @@ FROM (
       AND (?4 IS NULL OR (applications.id IS NOT NULL) = ?4)
       AND (?5 IS NULL OR (posting_markup.interested_at IS NOT NULL) = ?5)
       AND (?6 IS NULL OR applications.status IN (SELECT value FROM json_each(?6)))
+      AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
+           OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
+      AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
+           OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))
 ) AS m
 WHERE ?7 IS NULL
    OR (?8 IS NOT NULL
