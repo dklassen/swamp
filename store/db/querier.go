@@ -70,6 +70,7 @@ type Querier interface {
 	// needs to find a soft-deleted match too, in order to restore it instead of
 	// violating the UNIQUE constraint with a duplicate insert.
 	GetCompanyBySourceAndSourceRef(ctx context.Context, arg GetCompanyBySourceAndSourceRefParams) (Company, error)
+	GetCompanyIncludingDeleted(ctx context.Context, id int64) (Company, error)
 	GetPosting(ctx context.Context, id int64) (Posting, error)
 	GetPostingApplicationForm(ctx context.Context, postingID int64) (PostingApplicationForm, error)
 	GetPostingBySourceAndSourceID(ctx context.Context, arg GetPostingBySourceAndSourceIDParams) (Posting, error)

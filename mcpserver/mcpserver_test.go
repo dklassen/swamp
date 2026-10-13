@@ -1143,3 +1143,66 @@ func TestWriteDocument_IsRecordedAndReachesTheChangeFeed(t *testing.T) {
 		t.Errorf("change events after write_document = %+v, want one document_writes insert for write %d", events, write.ID)
 	}
 }
+
+func TestReadPosting_ReturnsThePostingInFull(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme")
+	if _, err := s.UpdateCompanyDescription(ctx, acme.ID, "Builds rockets."); err != nil {
+		t.Fatalf("UpdateCompanyDescription: %v", err)
+	}
+	posting, err := s.UpsertPosting(ctx, store.CreatePostingParams{
+		CompanyID: acme.ID, Source: "ashby", SourceID: "job-1",
+		IngestedFields: store.IngestedFields{
+			Title: "Platform Engineer", Department: "Infra", Location: "Dublin", WorkplaceType: "Hybrid",
+			DescriptionText: "Run the platform.", DescriptionHTML: "<p>Run the platform.</p>",
+			JobURL: "https://jobs.example.com/acme/1", ApplicationURL: "https://jobs.example.com/acme/1/apply", RawPayload: "{}",
+		},
+	})
+	if err != nil {
+		t.Fatalf("UpsertPosting: %v", err)
+	}
+	cs := connectClient(t, srv)
+
+	got := callTool[stage.FullPosting](t, cs, "read_posting", map[string]any{"PostingID": posting.ID})
+
+	want := stage.FullPosting{
+		ID: posting.ID, Title: "Platform Engineer", CompanyName: "Acme", CompanyDescription: "Builds rockets.",
+		Department: "Infra", Location: "Dublin", WorkplaceType: "Hybrid", ListingStatus: "open",
+		DescriptionText: "Run the platform.", JobURL: "https://jobs.example.com/acme/1", ApplicationURL: "https://jobs.example.com/acme/1/apply",
+		FirstSeenAt: posting.FirstSeenAt, ContentSHA256: posting.ContentSHA256,
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("read_posting (-want +got):\n%s", diff)
+	}
+	if got.ContentSHA256 == "" {
+		t.Error("ContentSHA256 is empty")
+	}
+}
+
+func TestReadPosting_RefusesWhatItCantShow(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	gone := mustCreateCompany(t, s, "Gone")
+	atGone := mustUpsertPosting(t, s, gone.ID, "job-1", "Engineer")
+	if err := s.SoftDeleteCompany(context.Background(), gone.ID); err != nil {
+		t.Fatalf("SoftDeleteCompany: %v", err)
+	}
+	cs := connectClient(t, srv)
+
+	for _, tt := range []struct {
+		name      string
+		postingID int64
+		want      string
+	}{
+		{"unknown posting", 999, "no posting 999"},
+		{"deleted company", atGone.ID, "Gone, which was deleted"},
+	} {
+		if text := callToolError(t, cs, "read_posting", map[string]any{"PostingID": tt.postingID}); !strings.Contains(text, tt.want) {
+			t.Errorf("%s: tool error %q, want it to say %q", tt.name, text, tt.want)
+		}
+	}
+}

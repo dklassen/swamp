@@ -123,6 +123,30 @@ func (q *Queries) GetCompanyBySourceAndSourceRef(ctx context.Context, arg GetCom
 	return i, err
 }
 
+const getCompanyIncludingDeleted = `-- name: GetCompanyIncludingDeleted :one
+SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at, sync_lease_token, sync_lease_at FROM companies
+WHERE id = ?
+`
+
+func (q *Queries) GetCompanyIncludingDeleted(ctx context.Context, id int64) (Company, error) {
+	row := q.db.QueryRowContext(ctx, getCompanyIncludingDeleted, id)
+	var i Company
+	err := row.Scan(
+		&i.ID,
+		&i.Name,
+		&i.Source,
+		&i.SourceRef,
+		&i.DeletedAt,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.Description,
+		&i.LastFetchedAt,
+		&i.SyncLeaseToken,
+		&i.SyncLeaseAt,
+	)
+	return i, err
+}
+
 const listActiveCompanies = `-- name: ListActiveCompanies :many
 SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at, sync_lease_token, sync_lease_at FROM companies
 WHERE deleted_at IS NULL
