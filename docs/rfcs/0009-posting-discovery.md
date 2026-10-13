@@ -2,25 +2,32 @@
 
 - **Status:** Draft
 - **Date:** 2026-10-11, rewritten 2026-10-13
-- **Depends on:** RFC 0010 (store every posting; company filters only decide what's shown). Without it, the all-postings view and scoring see only what the company filters let in, and miss postings when a company renames a department.
-- **Related:** RFC 0006 (structured posting search, whose `SearchPostings` step 1 builds on; its open question 4 anticipated this); RFC 0008 (the change log, which carries new scores to the TUI); RFC 0002 (the application workflow a good fit feeds)
+- **Related:** RFC 0006 (structured posting search, whose `SearchPostings` step 2 builds on; its open question 4 anticipated this); RFC 0008 (the change log, which carries new postings and scores to the TUI); RFC 0002 (the application workflow a good fit feeds); #56 (filters gate ingestion, so changing them re-syncs); #61 (one matching path for sync and display)
 
 ## Summary
 
-There are now too many companies and postings to read through. Postings that would suit the user, and new ones, get lost because each company's postings are listed separately.
+There are now too many companies and postings to read through. Postings that would suit the user, and new ones, get lost because each company's postings are listed separately. Worse, some are never stored at all: a company's filters decide what a sync keeps, so a posting the filters leave out is lost for good.
 
-This RFC takes two steps, each useful by itself:
+This RFC takes three steps, each useful by itself:
 
-1. **All postings.** A new TUI view lists the open postings of every company in one place, newest first, a page at a time.
-2. **Fit scores.** The agent scores postings against `profile.md`, and Swamp records each score as it's given. Every scoring belongs to a **run**, which records when it happened, which model scored, from which client, and against which version of the profile. Scores are only ever added, never changed, so the history stays. The all-postings view shows each posting's latest score and can sort by it.
+1. **Store every posting.** Every sync stores every posting on the board. Company filters stay as they are, but they only decide what's shown. A filter that's gone stale then hides postings without losing them, and Swamp can say when one has gone stale.
+2. **All postings.** A new TUI view lists the open postings of every company in one place, newest first, a page at a time.
+3. **Fit scores.** The agent scores postings against `profile.md`, and Swamp records each score as it's given. Every scoring belongs to a **run**, which records when it happened, which model scored, from which client, and against which version of the profile. Scores are only ever added, never changed, so the history stays. The all-postings view shows each posting's latest score and can sort by it.
 
 Swamp never calls a model. Every score is the agent's, made in a conversation the user started.
 
 ## Problem
 
-1. **No single list.** Across 44 companies there are about 2,000 open postings (1,972 on 2026-10-01; see RFC 0006), and up to 393 at one company. The TUI only lists postings company by company, so seeing what's new means opening each one.
-2. **Finding fits.** Even in one list, 2,000 titles are too many to read. Something has to rank them.
-3. **Trusting the ranking.** A score is only as good as what produced it. Later the user will want to know which model gave it, when, and against which profile, so a score from an old profile or a weaker model can be weighed or redone.
+1. **Filters lose postings silently.** A company's filters decide which postings a sync stores (`sync/company.go`, `ingest`), matching exactly but ignoring case (`filter.Match`). If a company renames its "Engineering" department to "Eng", a filter on "engineering" stops matching:
+   - Every new engineering posting is skipped.
+   - Postings already stored stop getting updates. They aren't closed, because the board still lists them (`sync/reconcile.go`), so they stay open with stale content.
+   - The company's list still looks normal, so it looks like the company stopped hiring.
+   - It can't be fixed from the TUI. The filter screen offers only values from stored postings (`ListDistinctDepartmentsForCompany`), and "Eng" was never stored. The only way to find out is to read the company's job board.
+2. **Postings that come and go while filtered out are never seen.** A posting let in later gets "first seen" set to when the filter widened, and its earlier changes have no history.
+3. **Stored postings and shown postings already disagree.** Narrowing a filter doesn't close what's stored. A company's list applies the current filters again when it displays (`filterPostingsByCompanyFilters`), but `SearchPostings`, and so `search_postings`, doesn't. So the agent sees postings the user's views hide.
+4. **No single list.** Across 44 companies there are about 2,000 open postings (1,972 on 2026-10-01; see RFC 0006), and up to 393 at one company. The TUI only lists postings company by company, so seeing what's new means opening each one.
+5. **Finding fits.** Even in one list, 2,000 titles are too many to read. Something has to rank them. And whatever ranks them can't consider a posting a filter kept out, such as a platform role filed under "Infrastructure" when the filter is "Engineering".
+6. **Trusting the ranking.** A score is only as good as what produced it. Later the user will want to know which model gave it, when, and against which profile, so a score from an old profile or a weaker model can be weighed or redone.
 
 What the agent can't do today:
 - No tool returns a posting's description (`search_postings` returns summary fields only, #117).
@@ -30,7 +37,10 @@ What the agent can't do today:
 
 | Question | Decision |
 |---|---|
-| Order | Step 1 ships alone first. Scoring builds on it. |
+| Order | Step 1 (store every posting) first, then step 2 (all postings), then step 3 (scores). Each ships alone. |
+| What a sync stores | Every posting the board lists. Filters play no part in syncing. |
+| What filters do | Decide which of a company's postings are shown, in the TUI and to the agent. The rules stay the same: values within a field are alternatives, and every field must match one, ignoring case. |
+| Changing filters | Saves them. No re-sync: there's nothing new to fetch. |
 | Where the list lives | A TUI view. The agent can already page through every company's postings with `search_postings`. |
 | Sort | By when Swamp first saw the posting, newest first. That's posting ID order: IDs are `AUTOINCREMENT` and never reused (migration 00024), so the order is stable while paging. The board's published date is unreliable (missing or backdated). |
 | Paging | Fixed pages that fill the window, with next and previous page keys and "page 3 of 40". |
@@ -38,7 +48,45 @@ What the agent can't do today:
 | Score records | Added only, never updated. A newer score replaces an older one in the view, but the older one stays. Each belongs to a run that records when, which model, which client and which profile. |
 | Profile changes | Rescoring is an explicit run the user asks for. Editing `profile.md` never queues anything by itself. |
 
-## Step 1: All postings
+## Step 1: Store every posting
+
+### 1. Syncing
+
+`SyncCompany` stops reading the company's filters. `ingest` stores every fetched posting. `closeMissing` already compares against the whole fetch, so closing doesn't change.
+
+`ApplyCompanyFilters` becomes a store write only. The re-sync it does today (#56) existed only because filters controlled what was stored.
+
+### 2. Showing
+
+Filters are applied wherever postings are listed:
+- **A company's posting list:** as today (`filterPostingsByCompanyFilters`). It now works on everything stored, so widening a filter takes effect immediately.
+- **The filter screen:** offers every value the stored postings have, which is now everything on the board, with a count of open postings for each value.
+- **`SearchPostings`** (and so `search_postings` and step 2's view) applies each company's filters by default. A new `IgnoreCompanyFilters` option turns this off. The matching is in SQL: for each field, either the company has no filter on that field, or one of its values equals the posting's, ignoring case (`EXISTS` against `company_filters`).
+
+The rules then live in two places: `filter.Match` in Go, and the SQL. One test runs both against the same table of cases, so they can't drift apart (#61).
+
+### 3. Stale filters
+
+A filter value that matches none of a company's open postings is almost certainly stale. Every posting is now stored, so this can be computed from the database at any time, with no work during a sync:
+- The filter screen marks such a value: `☑ engineering (0 open)`.
+- The company list marks a company with a stale filter value, so a rename doesn't go unnoticed until you happen to open the filter screen.
+
+### 4. The first sync after deploying
+
+The first sync of each company stores every posting its filters used to skip, all at once:
+- **"First seen" is the time of that sync.** On step 2's view, they appear as new. That's a one-time burst. It can't be told apart from postings that really are new, since Swamp has no earlier record of them.
+- **Each one adds a `change_events` row** (RFC 0008), and the TUI picks them up in its twice-a-second check, in batches rather than once per posting. How the burst feels in an open TUI should be checked when item 1 is built.
+- **Postings that froze after a rename** get their content updated, with a `content_updated` history row.
+
+### 5. What it costs
+
+These figures haven't been measured yet. Each sync summary already prints `Fetched` (the whole board) next to `Created`, and a company list shows its open count. One "sync all" before deciding gives the ratio.
+
+- **Storage:** about 13.7 KB of raw payload per posting (RFC 0008). At 10,000 postings that's about 140 MB of payload.
+- **Sync time:** one ingest transaction per fetched posting instead of per matching posting. Unchanged postings are compared and skipped, so this grows with board size, not with how much changes.
+- **Scoring (step 3):** a full scoring run grows with the number of postings (see Estimates).
+
+## Step 2: All postings
 
 ### The view
 
@@ -53,20 +101,20 @@ All postings (1,972)                                           page 1 of 50
 ↑/↓ (j/k): select  ←/→ (h/l): page  enter: detail  i: interested  x: archive  o: open  tab: applications
 ```
 
-- **Which postings:** open, not archived, not at a deleted company, and matching that company's filters. This is `search_postings`' default once RFC 0010 makes it apply company filters, so the agent and the user see the same set.
+- **Which postings:** open, not archived, not at a deleted company, and matching that company's filters. This is `search_postings`' default after step 1, so the agent and the user see the same set.
 - **Columns:** first seen, company, title, department, location (with workplace type), and a mark if interested.
 - **`enter`** opens the existing posting detail. **`i`**, **`x`** and **`o`** work as they do in a company's posting list.
 - **Live:** postings are a logged table (RFC 0008). A sync in another process adds rows and updates the total without a manual refresh. The page the user is on is kept: new postings appear on page 1, not under the cursor.
 
 ### Paging
 
-Each page is one `store.SearchPostings` call with `Order: PostingOrderIDDesc`, `Limit` set to the rows that fit the window, and the previous page's last ID as the cursor. The query already exists (RFC 0006, #223), so step 1 needs no new SQL beyond one column. The TUI keeps a stack of the cursors it has used, so going back a page is one call too. `Total` gives the page count.
+Each page is one `store.SearchPostings` call with `Order: PostingOrderIDDesc`, `Limit` set to the rows that fit the window, and the previous page's last ID as the cursor. The query already exists (RFC 0006, #223), so step 2 needs no new SQL beyond one column. The TUI keeps a stack of the cursors it has used, so going back a page is one call too. `Total` gives the page count.
 
 Two small additions to the store:
 - The page row needs `first_seen_at` for the first column (it has `published_at` today).
 - `posting_markup` becomes a logged table (`interested_at`, `archived_at`). This view hides archived postings and marks interested ones, and changes to those from another TUI window should show here. RFC 0008 and `changelog.go` kept it unlogged only because nothing read its changes yet.
 
-## Step 2: Fit scores
+## Step 3: Fit scores
 
 ### 1. Runs and scores
 
@@ -144,13 +192,16 @@ A new `score-postings` skill, next to `apply-to-posting`, runs the loop:
 
 ## Estimates (not measured)
 
-- The summary fields come to roughly 30–40 tokens per posting. Scoring all of about 2,000 postings is roughly 60–80k tokens of listings, across pages. A routine run after a sync, with tens of new postings, is small.
+- The summary fields come to roughly 30–40 tokens per posting. Scoring all of about 2,000 postings is roughly 60–80k tokens of listings, across pages. Once step 1 stores every posting, the count may be several times that: 10,000 postings would be about 300–400k tokens, across several sessions. A routine run after a sync, with tens of new postings, stays small. If a full run is too much, eligibility can respect company filters by default.
 - A description is roughly 500–1,500 tokens. Scoring from the summary first keeps descriptions to a small fraction.
 
-Measure both on a copy of the real database before writing the skill.
+Measure the posting count with one "sync all" before step 1 (see step 1, section 5). Measure token counts on a copy of the real database before writing the skill.
 
 ## Where it can go wrong
 
+- **Filter matching drifting between Go and SQL.** If `filter.Match` and `SearchPostings`' SQL disagree, the agent and the TUI disagree about what's shown. The shared test table guards this.
+- **Large boards.** A company listing thousands of postings, most of them irrelevant, costs storage and sync time with nothing to show for it. Deleting the company is the way out. A per-company option to keep filters deciding what's stored would bring back the silent loss, so it isn't proposed.
+- **Greenhouse jobs in several departments** are stored as one value joined with `;` (`greenhouse/client.go`), and an exact match on one department misses them. Step 1 doesn't change this, but it becomes visible once the filter screen offers every value.
 - **A score on content the agent didn't see.** `record_scores`' `ContentSHA256` check prevents it.
 - **A misreported model.** `model` is whatever the agent says. `client_name` and `client_version` come from the protocol, not the agent, so at least the client is reliable.
 - **Scores from a summary only.** A posting scored from its title alone may be underrated. That's the cost of not reading every description. The reason makes it auditable, and a rescore can fix it.
@@ -159,46 +210,60 @@ Measure both on a copy of the real database before writing the skill.
 
 ## Options considered
 
-1. **One verdict per posting, replaced in place** (this RFC's first draft: `suggest` or `not_a_fit`, plus a generation counter for rescores). It's simpler, but it keeps no history and nothing about what produced a verdict. Replaced by runs and scores added only.
-2. **The agent marks postings interested directly.** It needs no new storage, but the agent's picks can't be told apart from the user's, and unreviewed picks would fill the apply queue. Rejected.
-3. **Tags (`tags`/`posting_tags`, in the schema but unused).** A tag carries no score, reason or record of what produced it. Rejected.
-4. **Swamp scores with embeddings or a model.** Ranking would be automatic, but Swamp would choose a model, pay for it and handle stale scores. Rejected: the agent already has the profile and the judgment.
-5. **Offset paging in the TUI.** Simpler, but a sync adding postings while the user reads shifts every page. The keyset query already exists. Rejected.
-6. **Keyword prefilter with FTS5 (RFC 0006, option 3).** It's cheap, but it misses fits the keywords don't anticipate. It could come later as a filter on `list_pending_postings`.
+1. **Keep filters deciding what's stored, and warn on stale values.** Smaller: the sync counts matches for each filter value on the fetch and warns on zero. But postings are still lost between the rename and the user noticing the warning, and the agent still can't consider what's skipped. Rejected.
+2. **Store everything, but only summary fields for postings that don't match.** It saves the payload for those, but makes two kinds of posting that every reader has to handle, and widening a filter needs a re-fetch again. Rejected.
+3. **Close postings that stop matching** (keeping filters deciding what's stored). It fixes problem 3 but makes problem 1 worse: a rename would close the postings that are still listed. Rejected.
+4. **One verdict per posting, replaced in place** (this RFC's first draft: `suggest` or `not_a_fit`, plus a generation counter for rescores). It's simpler, but it keeps no history and nothing about what produced a verdict. Replaced by runs and scores added only.
+5. **The agent marks postings interested directly.** It needs no new storage, but the agent's picks can't be told apart from the user's, and unreviewed picks would fill the apply queue. Rejected.
+6. **Tags (`tags`/`posting_tags`, in the schema but unused).** A tag carries no score, reason or record of what produced it. Rejected.
+7. **Swamp scores with embeddings or a model.** Ranking would be automatic, but Swamp would choose a model, pay for it and handle stale scores. Rejected: the agent already has the profile and the judgment.
+8. **Offset paging in the TUI.** Simpler, but a sync adding postings while the user reads shifts every page. The keyset query already exists. Rejected.
+9. **Keyword prefilter with FTS5 (RFC 0006, option 3).** It's cheap, but it misses fits the keywords don't anticipate. It could come later as a filter on `list_pending_postings`.
 
 ## Work breakdown
 
-### Step 1: all postings
-1. Store: `first_seen_at` on the search page row; log `posting_markup` (migration, `changelog.go`, triggers).
-2. TUI: the all-postings view, paged and live.
+### Step 1: store every posting
+0. **Measure:** one "sync all", recording each company's `Fetched` and open count. Decide whether step 1's cost section holds.
+1. **Store every posting:** `SyncCompany` ingests everything, and `ApplyCompanyFilters` stops re-syncing.
+2. **`SearchPostings` applies company filters by default** (`IgnoreCompanyFilters` to turn that off), with the test shared with `filter.Match`.
+3. **Stale filters:** counts on the filter screen, and a mark on the company list.
 
-### Step 2a: storage (needs nothing from step 1)
-3. Migration: `postings.content_sha256` with a Go backfill; `IngestPosting` sets it.
-4. Migration: `scoring_runs` and `posting_scores`, with their `changelog.go` classification (`posting_scores` logged, inserts only; `scoring_runs` not logged, since nothing reads its changes) and triggers.
-5. Store: `StartScoringRun`, `ScoringRuns`, `PendingPostings` (paged, with why), `RecordScores`, and the current score on search rows.
+2 and 3 don't depend on each other. Both make sense only after 1.
 
-### Step 2b: MCP (needs 2a)
-6. `read_profile` returns `SHA256`.
-7. `read_posting`.
-8. `start_scoring_run` and `list_scoring_runs`.
-9. `list_pending_postings`.
-10. `record_scores`.
+### Step 2: all postings (needs 2)
+4. Store: `first_seen_at` on the search page row; log `posting_markup` (migration, `changelog.go`, triggers).
+5. TUI: the all-postings view, paged and live.
 
-### Step 2c: user-facing (needs 1, 2 and 2b)
-11. TUI: score column, sort by score, score history in the posting detail.
-12. The `score-postings` skill.
+### Step 3a: storage (needs nothing from steps 1 and 2)
+6. Migration: `postings.content_sha256` with a Go backfill; `IngestPosting` sets it.
+7. Migration: `scoring_runs` and `posting_scores`, with their `changelog.go` classification (`posting_scores` logged, inserts only; `scoring_runs` not logged, since nothing reads its changes) and triggers.
+8. Store: `StartScoringRun`, `ScoringRuns`, `PendingPostings` (paged, with why), `RecordScores`, and the current score on search rows.
+
+### Step 3b: MCP (needs 3a)
+9. `read_profile` returns `SHA256`.
+10. `read_posting`.
+11. `start_scoring_run` and `list_scoring_runs`.
+12. `list_pending_postings`.
+13. `record_scores`.
+
+### Step 3c: user-facing (needs 1, 5 and 3b)
+14. TUI: score column, sort by score, score history in the posting detail.
+15. The `score-postings` skill.
 
 Each item is its own issue and PR.
 
 ## Open questions
 
-1. **The score scale.** 0–100 is proposed. A coarser scale (1–5) would make scores from different runs more comparable, and give the agent less false precision to invent.
-2. **Should the view hide low scores** (a threshold), or only sort by them?
-3. **Excluding interested postings and those with applications** keeps runs small, but leaves them without a score. Is that wanted, or should they be scored too, for the record?
-4. **A way to set postings aside** (the first draft's "dismiss") without archiving them. Not proposed until the view is in use.
+1. **What should the agent see by default?** Step 1 applies company filters to `search_postings` by default, matching the TUI. For scoring, seeing everything is the point, so a scoring run may want to ignore them.
+2. **Should the all-postings view have a key to show postings the company filters hide?**
+3. **Should a company with no filters show everything?** That's today's behavior, and step 1 keeps it.
+4. **The score scale.** 0–100 is proposed. A coarser scale (1–5) would make scores from different runs more comparable, and give the agent less false precision to invent.
+5. **Should the view hide low scores** (a threshold), or only sort by them?
+6. **Excluding interested postings and those with applications** keeps runs small, but leaves them without a score. Is that wanted, or should they be scored too, for the record?
+7. **A way to set postings aside** (the first draft's "dismiss") without archiving them. Not proposed until the view is in use.
 
 ## Out of scope
 
-- Free-text or keyword search (see option 6).
+- Free-text or keyword search (see option 9).
 - Notifications, or scoring on a schedule. Scoring runs when the user asks the agent.
 - Learning from the user's interested and archive decisions.
