@@ -683,7 +683,7 @@ func TestReadCanonical_ReturnsContentWhenPresent(t *testing.T) {
 			cs := connectClient(t, srv)
 			got := callTool[readCanonicalOutput](t, cs, tc.tool, map[string]any{})
 
-			want := readCanonicalOutput{Path: path, Exists: true, Content: "# " + tc.tool}
+			want := readCanonicalOutput{Path: path, Exists: true, Content: "# " + tc.tool, SHA256: documents.ContentSHA256("# " + tc.tool)}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("%s result mismatch (-want +got):\n%s", tc.tool, diff)
 			}

@@ -69,7 +69,7 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_canonical_resume",
-		Description: "Read the user's canonical resume: their maintained, best-version resume in markdown, the baseline to tailor for each posting instead of writing a resume from scratch. Read-only; the user maintains it.",
+		Description: "Read the user's canonical resume: their maintained, best-version resume in markdown, the baseline to tailor for each posting instead of writing a resume from scratch. Read-only; the user maintains it. SHA256 is the content's hash, which identifies the version read.",
 	}, readCanonicalHandler("read_canonical_resume", d.CanonicalResumePath()))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -296,6 +296,9 @@ type readCanonicalOutput struct {
 	Path    string `json:"Path"`
 	Exists  bool   `json:"Exists"`
 	Content string `json:"Content"`
+	// SHA256 is Content's documents.ContentSHA256, the hash a scoring run
+	// records for the profile it scored against.
+	SHA256 string `json:"SHA256"`
 }
 
 // readCanonicalHandler serves the user-maintained file at path, read-only.
@@ -310,7 +313,7 @@ func readCanonicalHandler(tool, path string) mcp.ToolHandlerFor[readCanonicalInp
 		if err != nil {
 			return nil, readCanonicalOutput{}, fmt.Errorf("%s: read %s: %w", tool, path, err)
 		}
-		return nil, readCanonicalOutput{Path: path, Exists: true, Content: string(content)}, nil
+		return nil, readCanonicalOutput{Path: path, Exists: true, Content: string(content), SHA256: documents.ContentSHA256(string(content))}, nil
 	}
 }
 
