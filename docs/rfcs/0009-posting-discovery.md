@@ -13,7 +13,7 @@ This RFC takes four parts, each useful by itself:
 1. **Store every posting.** Every sync stores every posting on the board. Company filters stay as they are, but they only decide what's shown. A filter that's gone stale then hides postings without losing them, and Swamp can say when one has gone stale.
 2. **All postings.** A new TUI view lists the open postings of every company in one place, newest first, a page at a time.
 3. **Search.** `/` in that view searches every company's postings by title, company, department and location. The same search is on `search_postings`, so the agent can use it too.
-4. **Fit scores.** The agent scores postings against `profile.md`, and Swamp records each score as it's given. Every scoring belongs to a **run**, which records when it happened, which model scored, from which client, and against which version of the profile. Scores are only ever added, never changed, so the history stays. The all-postings view shows each posting's latest score and can sort by it.
+4. **Fit scores.** The agent scores postings against `profile.md`, and Swamp records each score as it's given. Each score records when it was given, which model gave it, from which client, and against which version of the profile and the posting. Scores are only ever added, never changed, so the history stays. The all-postings view shows each posting's latest score and can sort by it.
 
 Swamp never calls a model. Every score is the agent's, made in a conversation the user started.
 
@@ -47,8 +47,8 @@ What the agent can't do today:
 | Sort | By when Swamp first saw the posting, newest first. That's posting ID order: IDs are `AUTOINCREMENT` and never reused (migration 00024), so the order is stable while paging. The board's published date is unreliable (missing or backdated). |
 | Paging | Fixed pages that fill the window, with next and previous page keys and "page 3 of 40". |
 | Who scores | The agent, from `read_profile`. Swamp stores the scores and computes none. |
-| Score records | Added only, never updated. A newer score replaces an older one in the view, but the older one stays. Each belongs to a run that records when, which model, which client and which profile. |
-| Profile changes | Rescoring is an explicit run the user asks for. Editing `profile.md` never queues anything by itself. |
+| Score records | Added only, never updated. A newer score replaces an older one in the view, but the older one stays. Each records when, which model, which client, which profile and which posting content. |
+| Profile changes | Rescoring is an explicit request the user makes. Editing `profile.md` never queues anything by itself. |
 
 ## Part 1: Store every posting
 
@@ -87,7 +87,7 @@ Every posting is stored whatever this costs: part 1 is a decision, not condition
 - **Storage:** the raw payload alone averages 13.7 KB per posting (measured over 2,962 postings for RFC 0008), about 40 MB today. Each description is stored three times: in `description_html`, in `description_text`, and inside `raw_payload`. Every `content_updated` history row also snapshots the whole posting. So a posting is more like 20 KB or more, plus history: 10,000 postings would be a few hundred MB. That's no problem for disk space. 10,000 is a guess.
 - **Scan speed:** `listing_status`, `first_seen_at` and `last_seen_at` come after `raw_payload` in `postings`. Reading them means following each large row's overflow pages, so a scan that reads them can read most of the table's bytes. The index on `listing_status` may avoid this, but that hasn't been measured. If paging or search (part 3) is slow at the real size, the fix is to move `description_html`, `description_text` and `raw_payload` to their own table, joined only when the full posting is read. Watch for it once part 1 ships.
 - **Sync time:** one ingest transaction per fetched posting instead of per matching posting. Unchanged postings are compared and skipped, so this grows with board size, not with how much changes.
-- **Scoring (part 4):** a full scoring run grows with the number of postings (see Estimates).
+- **Scoring (part 4):** a full scoring grows with the number of postings (see Estimates).
 
 ## Part 2: All postings
 
@@ -157,32 +157,25 @@ In the all-postings view, `/` opens the search line above the table, as in the c
 
 ## Part 4: Fit scores
 
-### 1. Runs and scores
+### 1. Scores
 
-A **run** is one scoring session, started by the agent:
-
-| Column (`scoring_runs`) | Meaning |
-|---|---|
-| `id` | `INTEGER PRIMARY KEY AUTOINCREMENT`. |
-| `model` | The model ID the agent reports for itself, e.g. `claude-opus-5-5`. Required. Swamp can't check it. |
-| `client_name`, `client_version` | The MCP client's name and version (e.g. `claude-code`, `2.4.1`), from the request's client info (`ServerRequest.ClientInfo` in the go-sdk). Swamp records these itself. |
-| `profile_sha256` | The hash of `profile.md` the agent scored against (below). |
-| `scope` | `unscored` or `all` (section 3). |
-| `started_at` | UTC, `CURRENT_TIMESTAMP`. |
-
-A **score** is one posting's score within a run:
+A **score** is one posting's score, with everything about what produced it. There are no runs: each score carries its own provenance, so a single posting can be scored on its own, and a session of hundreds is just many scores.
 
 | Column (`posting_scores`) | Meaning |
 |---|---|
 | `id` | `INTEGER PRIMARY KEY AUTOINCREMENT`. |
-| `run_id` | The run. |
-| `posting_id` | The posting. `UNIQUE (run_id, posting_id)`: once per run. |
+| `posting_id` | The posting. |
 | `score` | 1–5 (open question 4). |
 | `reason` | One line, shown with the score, e.g. "Go and distributed systems, remote". |
 | `content_sha256` | The posting's content hash when it was scored (section 2). |
+| `profile_sha256` | The hash of `profile.md` it was scored against. |
+| `model` | The model ID the agent reports for itself, e.g. `claude-opus-5-5`. Required. Swamp can't check it. |
+| `client_name`, `client_version` | The MCP client's name and version (e.g. `claude-code`, `2.4.1`), from the session's client info. Swamp records these itself; empty when the client gives none. |
 | `scored_at` | UTC, `CURRENT_TIMESTAMP`. |
 
 Rows are only ever inserted. A posting's **current score** is its newest row (highest `id`). One `record_scores` call is one database transaction: every valid entry in it is committed together, or none is if the write fails.
+
+A posting can't be scored twice for nothing: an entry is refused if the posting already has a score on the same content, against the same profile, from the same model.
 
 ### 2. Content hash
 
@@ -192,15 +185,17 @@ It can't be the `posting_history` ID. A `content_updated` row is written wheneve
 
 SQLite has no built-in SHA-256, so existing rows are backfilled by a Go migration. It would be the first one: goose supports them, but every migration so far is SQL.
 
-### 3. What's pending in a run
+### 3. What's pending
 
-A posting is **eligible** when it's open, not archived, and its company isn't deleted, and it isn't marked interested and has no application (the user has already decided about those).
+A posting is **eligible** when it's open, not archived, its company isn't deleted and its filters let it through, and it isn't marked interested and has no application (the user has already decided about those).
 
-Within a run, an eligible posting is **pending** when it has no score in that run and either:
-- the run's scope is `unscored`, and the posting has no score anywhere with its current `content_sha256` (it's new, or its content changed since it was scored); or
-- the run's scope is `all` (a rescore after a profile change, or with a different model).
+An eligible posting is **pending** when it has no score on its current `content_sha256` (it's new, or its content changed since it was scored). That's the default, and it's what "score what's new" means. Editing `profile.md` doesn't make anything pending by itself.
 
-So "what's new since I last checked" needs no cursor: it's whatever has no score on its current content. And an interrupted run picks up where it stopped. An `all` run is continued by its ID. A new `unscored` run finds the same postings anyway.
+A **rescore** is asked for explicitly, with the profile it's against: an eligible posting is pending when it has no score on its current content *against that profile*. After a profile edit, that's every eligible posting, and it shrinks as scores against the new profile are recorded.
+
+So nothing needs a cursor or a session to resume. "What's new since I last checked" is whatever has no score on its current content. An interrupted rescore picks up where it stopped, because what it already did has scores against the new profile.
+
+A change of model alone doesn't make anything pending. With a 1–5 scale, a score from one model is close enough to another's; a per-model rescore can be added if that turns out wrong.
 
 ### 4. MCP tools
 
@@ -208,10 +203,10 @@ So "what's new since I last checked" needs no cursor: it's whatever has no score
 |---|---|
 | `read_profile` (changed) | Also returns the content's `SHA256`. |
 | `read_posting` (new) | One posting in full: the summary fields, the description as text, the job URL, the company's description, and `ContentSHA256`. |
-| `start_scoring_run` (new) | Takes `Model`, `ProfileSHA256` and `Scope`. Refuses if `ProfileSHA256` isn't the hash of `profile.md` right now, so a run can't claim a profile the agent didn't read. Returns the run ID and how many postings are pending. The description says to use `Scope: all` only when the user asks for a rescore. |
-| `list_scoring_runs` (new) | Recent runs with their metadata, how many postings each scored, and how many are still pending. For resuming a run. |
-| `list_pending_postings` (new) | One page of a run's pending postings: ID, company, title, department, location, workplace type, published date, `ContentSHA256`, and why it's pending (`new`, `changed`, `rescore`). Keyset paged with an opaque cursor, like `search_postings`. Also returns `Total`. |
-| `record_scores` (new) | A run ID and a batch of `[{PostingID, Score, Reason, ContentSHA256}]`, stored in one transaction. An entry is refused, and the result says so, if its `ContentSHA256` isn't current (the posting changed since the agent saw it; it stays pending) or the posting already has a score in this run. |
+| `list_pending_postings` (new) | One page of pending postings: ID, company, title, department, location, workplace type, published date, `ContentSHA256`, and why it's pending (`new`, `changed`, `rescore`). Takes `ProfileSHA256` and an optional `Rescore`; the description says to rescore only when the user asks. Keyset paged with an opaque cursor, like `search_postings`. Also returns `Total`. |
+| `record_scores` (new) | `Model`, `ProfileSHA256` and a batch of `[{PostingID, Score, Reason, ContentSHA256}]`, stored in one transaction, with the client recorded from the session. A batch of one scores a single posting. An entry is refused, and the result says why, if its score isn't 1–5, its reason is empty, its `ContentSHA256` isn't current (the posting changed since the agent saw it; it stays pending), or the posting already has a score on that content, against that profile, from that model. |
+
+Both refuse a `ProfileSHA256` that isn't the hash of `profile.md` right now, so a score can't claim a profile the agent didn't read.
 
 Batching matters. A full scoring involves hundreds of scores, and one call each would cost far more than the scores themselves.
 
@@ -226,14 +221,14 @@ Batching matters. A full scoring involves hundreds of scores, and one call each 
 
 A new `score-postings` skill, next to `apply-to-posting`, runs the loop:
 1. `read_profile`, and keep its `SHA256`.
-2. `start_scoring_run` with the agent's model ID and `Scope: unscored`, or `all` if the user asked for a rescore. Say how many are pending.
-3. Page through `list_pending_postings`. Score clear misses from the summary fields alone, in batches.
+2. `list_pending_postings` with that `SHA256`, and `Rescore` only if the user asked for one. Say how many are pending (`Total`).
+3. Page through it. Score clear misses from the summary fields alone, in batches of `record_scores` with the agent's model ID.
 4. For the plausible ones, `read_posting`, then score with a reason.
 5. Report how many were scored, and list the best ones.
 
 ## Estimates (not measured)
 
-- The summary fields come to roughly 30–40 tokens per posting. Scoring all of about 2,000 postings is roughly 60–80k tokens of listings, across pages. Once part 1 stores every posting, the count may be several times that: 10,000 postings would be about 300–400k tokens, across several sessions. A routine run after a sync, with tens of new postings, stays small. If a full run is too much, eligibility can respect company filters by default.
+- The summary fields come to roughly 30–40 tokens per posting. Scoring all of about 2,000 postings is roughly 60–80k tokens of listings, across pages. Once part 1 stores every posting, the count may be several times that: 10,000 postings would be about 300–400k tokens, across several sessions. Routine scoring after a sync, with tens of new postings, stays small. Eligibility respects company filters (open question 1), which keeps a full scoring to what the user sees.
 - A description is roughly 500–1,500 tokens. Scoring from the summary first keeps descriptions to a small fraction.
 
 Measure token counts on a copy of the real database before writing the skill.
@@ -246,20 +241,21 @@ Measure token counts on a copy of the real database before writing the skill.
 - **A score on content the agent didn't see.** `record_scores`' `ContentSHA256` check prevents it.
 - **A misreported model.** `model` is whatever the agent says. `client_name` and `client_version` come from the protocol, not the agent, so at least the client is reliable.
 - **Scores from a summary only.** A posting scored from its title alone may be underrated. That's the cost of not reading every description. The reason makes it auditable, and a rescore can fix it.
-- **Two agents at once.** Each has its own run, so both may score the same posting. The newer score is current, and both are kept.
-- **Scores across runs aren't comparable.** A 70 from one model or profile isn't the same as a 70 from another. The view shows each posting's newest score regardless. Sorting by score across mixed runs is approximate, and the detail shows which run each score came from.
+- **Two agents at once.** Both may score the same posting. The newer score is current, and both are kept; one from the same model on the same content and profile is refused as a repeat.
+- **Scores from different models or profiles aren't quite comparable.** A 4 from one isn't exactly a 4 from another. The view shows each posting's newest score regardless; the 1–5 scale keeps the difference small, and the detail shows each score's model and date.
 
 ## Options considered
 
 1. **Keep filters deciding what's stored, and warn on stale values.** Smaller: the sync counts matches for each filter value on the fetch and warns on zero. But postings are still lost between the rename and the user noticing the warning, and the agent still can't consider what's skipped. Rejected.
 2. **Store everything, but only summary fields for postings that don't match.** It saves the payload for those, but makes two kinds of posting that every reader has to handle, and widening a filter needs a re-fetch again. Rejected.
 3. **Close postings that stop matching** (keeping filters deciding what's stored). It fixes problem 3 but makes problem 1 worse: a rename would close the postings that are still listed. Rejected.
-4. **One verdict per posting, replaced in place** (this RFC's first draft: `suggest` or `not_a_fit`, plus a generation counter for rescores). It's simpler, but it keeps no history and nothing about what produced a verdict. Replaced by runs and scores added only.
+4. **One verdict per posting, replaced in place** (this RFC's first draft: `suggest` or `not_a_fit`, plus a generation counter for rescores). It's simpler, but it keeps no history and nothing about what produced a verdict. Replaced by scores added only, each recording what produced it.
 5. **The agent marks postings interested directly.** It needs no new storage, but the agent's picks can't be told apart from the user's, and unreviewed picks would fill the apply queue. Rejected.
 6. **Tags (`tags`/`posting_tags`, in the schema but unused).** A tag carries no score, reason or record of what produced it. Rejected.
 7. **Swamp scores with embeddings or a model.** Ranking would be automatic, but Swamp would choose a model, pay for it and handle stale scores. Rejected: the agent already has the profile and the judgment.
 8. **Offset paging in the TUI.** Simpler, but a sync adding postings while the user reads shifts every page. The keyset query already exists. Rejected.
 9. **FTS5 full-text search (RFC 0006, option 3).** It would give word matching, prefix search and ranking, and make searching descriptions cheap. But it needs a separate index table kept in step with `postings` by triggers, and a new way of writing queries. Deferred until the substring search in part 3 proves too limited. As a prefilter for scoring, it would miss fits the keywords don't anticipate.
+10. **Scoring runs** (this RFC's second draft, built in #318, #319 and #322): a run grouped a session's scores and recorded the model, client and profile once, and `scope: all` defined a rescore, resumed by run ID. But each score can record that itself, and "pending against this profile" defines a rescore and resumes it with no session to keep. Runs only added a concept, a table and two tools, and made scoring a single posting awkward. Dropped by #346 before anything was scored.
 
 ## Work breakdown
 
@@ -279,30 +275,31 @@ Measure token counts on a copy of the real database before writing the skill.
 
 ### Part 4a: storage (needs nothing from parts 1–3)
 9. (#317) Migration: `postings.content_sha256` with a Go backfill; `IngestPosting` sets it.
-10. (#318) Migration: `scoring_runs` and `posting_scores`, with their `changelog.go` classification (`posting_scores` logged, inserts only; `scoring_runs` not logged, since nothing reads its changes) and triggers.
-11. (#319) Store: `StartScoringRun`, `ScoringRuns`, `PendingPostings` (paged, with why), `RecordScores`, and the current score on search rows (needs 9 and 10).
+10. (#318) Migration: `posting_scores` (with the `scoring_runs` that #346 drops), logged, inserts only, with its trigger.
+11. (#319) Store: `PendingPostings` (paged, with why), `RecordScores`, and the current score on search rows (needs 9 and 10). Built with runs; #346 reworks it without them.
 
 ### Part 4b: MCP (needs 11)
 12. (#320) `read_profile` returns `SHA256`.
 13. (#321) `read_posting`.
-14. (#322) `start_scoring_run` and `list_scoring_runs`.
-15. (#323) `list_pending_postings`.
-16. (#324) `record_scores`.
+14. (#322) `start_scoring_run` and `list_scoring_runs`. Built, then dropped by #346.
+14a. (#346) Drop scoring runs: each score carries its own model, client and profile; `PendingPostings` rescores against a profile; the two run tools go (needs 11 and 14).
+15. (#323) `list_pending_postings` (needs 14a).
+16. (#324) `record_scores` (needs 14a).
 
 ### Part 4c: user-facing
 17. (#325) TUI: score column, sort by score, score history in the posting detail (needs 6 and 11).
-18. (#326) The `score-postings` skill (needs 2 and 12–16).
+18. (#326) The `score-postings` skill (needs 2, 12, 13, 15 and 16).
 
 Each item is its own issue and PR.
 
 ## Open questions
 
-1. **What should the agent see by default?** Decided (#319): company filters apply everywhere by default, `search_postings` and scoring alike, so a run scores what the user sees. `IgnoreCompanyFilters` exists for search; scoring could gain an "ignore filters" scope later if a filter is hiding good fits.
+1. **What should the agent see by default?** Decided (#319): company filters apply everywhere by default, `search_postings` and scoring alike, so scoring covers what the user sees. `IgnoreCompanyFilters` exists for search; scoring could gain an "ignore filters" scope later if a filter is hiding good fits.
 2. **Should the all-postings view have a key to show postings the company filters hide?**
 3. **Should a company with no filters show everything?** That's today's behavior, and part 1 keeps it.
-4. **The score scale.** Decided (#319): 1–5. It makes scores from different runs and models more comparable, and gives the agent less false precision to invent than 0–100. Ties are expected, so a sort by score needs a tie-breaker.
+4. **The score scale.** Decided (#319): 1–5. It makes scores from different sessions and models more comparable, and gives the agent less false precision to invent than 0–100. Ties are expected, so a sort by score needs a tie-breaker.
 5. **Should the view hide low scores** (a threshold), or only sort by them?
-6. **Excluding interested postings and those with applications** keeps runs small, but leaves them without a score. Is that wanted, or should they be scored too, for the record?
+6. **Excluding interested postings and those with applications** keeps scoring small, but leaves them without a score. Is that wanted, or should they be scored too, for the record?
 7. **A way to set postings aside** (the first draft's "dismiss") without archiving them. Not proposed until the view is in use.
 8. **Should search include descriptions?** Measure the scan time on the real posting count after part 1 first.
 
