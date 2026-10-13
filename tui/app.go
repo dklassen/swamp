@@ -63,6 +63,7 @@ const (
 	screenApplicationForm
 	screenApplicationDelete
 	screenCompanyDelete
+	screenAllPostings
 )
 
 type App struct {
@@ -80,6 +81,7 @@ type App struct {
 	// (store.CountOpenPostingsByCompany), loaded alongside companies.
 	companyOpenPostings map[int64]int
 	companyList         companyListModel
+	allPostings         allPostingsModel
 	screen              screen
 	companyForm         companyFormModel
 	companyEdit         companyEditModel
@@ -204,6 +206,7 @@ func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
 		syncer:                syncer,
 		screen:                screenActiveApplications,
 		companyList:           newCompanyListModel(s),
+		allPostings:           newAllPostingsModel(s),
 		companyForm:           newCompanyFormModel(syncer),
 		postingList:           newPostingListModel(s),
 		activeApplicationList: newActiveApplicationListModel(),
@@ -509,7 +512,8 @@ func sortCompaniesByName(companies []store.Company) {
 }
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(loadCompanies(a.store), loadActiveApplications(a.store, a.documents), a.pollChanges())
+	// The all-postings page too, for its tab's count.
+	return tea.Batch(loadCompanies(a.store), loadActiveApplications(a.store, a.documents), a.allPostings.load(a.allPostings.pageSize(a.screenRows())), a.pollChanges())
 }
 
 type activeApplicationsLoadedMsg struct {
@@ -1200,6 +1204,14 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handleTick()
 	case changesMsg:
 		return a, a.handleChanges(msg)
+	case allPostingsLoadedMsg:
+		// It also loads in the background for its tab's count, so success
+		// mustn't clear another load's error.
+		if msg.err != nil {
+			a.err = msg.err
+		} else {
+			a.allPostings.loaded(msg)
+		}
 	case postingReloadedMsg:
 		return a, a.handlePostingReloaded(msg)
 	case applicationDetailReloadedMsg:
@@ -1394,6 +1406,9 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Archiving or unarchiving may have changed open counts.
 			return a, loadCompanies(a.store)
 		case screenCompanyList:
+			a.screen = screenAllPostings
+			return a, a.allPostings.load(a.allPostings.pageSize(a.screenRows()))
+		case screenAllPostings:
 			a.screen = screenActiveApplications
 			return a, nil
 		}
@@ -1724,6 +1739,8 @@ func (a *App) body(s screen) string {
 		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.activeApplicationProgress, time.Now(), a.width, a.screenRows()))
 	case screenApplicationDetail:
 		b.WriteString(a.applicationDetail.View())
+	case screenAllPostings:
+		b.WriteString(a.allPostings.View(a.width, a.screenRows()))
 	case screenCompanyList:
 		b.WriteString(a.companyList.View(a.companies, a.companyOpenPostings, a.width, a.screenRows()))
 	case screenCompanyForm:

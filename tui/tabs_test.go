@@ -17,7 +17,8 @@ func TestApp_Tab_SwitchesBetweenTheLists(t *testing.T) {
 		want screen
 	}{
 		{"applications to companies", screenActiveApplications, screenCompanyList},
-		{"companies to applications", screenCompanyList, screenActiveApplications},
+		{"companies to all postings", screenCompanyList, screenAllPostings},
+		{"all postings to applications", screenAllPostings, screenActiveApplications},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -45,10 +46,12 @@ func TestApp_Tab_KeepsTheCompanySearch(t *testing.T) {
 	for _, key := range []tea.KeyMsg{runeKey('/'), runeKey('g'), {Type: tea.KeyTab}} {
 		app = sendKeyAndApply(t, app, key)
 	}
-	if app.screen != screenActiveApplications {
-		t.Fatalf("screen after tab while searching = %v, want active applications", app.screen)
+	if app.screen != screenAllPostings {
+		t.Fatalf("screen after tab while searching = %v, want all postings", app.screen)
 	}
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
+	for range 2 {
+		app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
+	}
 	if !app.companyList.searching || app.companyList.query != "g" {
 		t.Errorf("search after switching back = %v %q, want open with %q", app.companyList.searching, app.companyList.query, "g")
 	}
@@ -70,14 +73,20 @@ func viewLines(app *App) []string {
 	return strings.Split(ansi.Strip(app.View()), "\n")
 }
 
-func TestApp_TabBar_ShowsBothTabsWithCounts(t *testing.T) {
+func TestApp_TabBar_ShowsEveryTabWithItsCount(t *testing.T) {
 	t.Parallel()
 
-	for _, sc := range []screen{screenActiveApplications, screenCompanyList} {
-		app := newTabsTestApp(t, 100)
+	// The all-postings count is right before that tab has been opened.
+	for _, sc := range []screen{screenActiveApplications, screenCompanyList, screenAllPostings} {
+		s := newTestStore(t)
+		acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+		mustCreateCompany(t, s, "Globex", "ashby", "globex")
+		mustUpsertPosting(t, s, acme.ID, "1", "Engineer")
+		app := newTestApp(t, s, newTestSyncer(s, nil))
+		app, _ = sendKey(app, tea.WindowSizeMsg{Width: 100, Height: 24})
 		app.screen = sc
-		if got := viewLines(app)[0]; !strings.Contains(got, "Applications 0") || !strings.Contains(got, "Companies 2") {
-			t.Errorf("screen %v: first line = %q, want both tabs with their counts", sc, got)
+		if got := viewLines(app)[0]; !strings.Contains(got, "Applications 0") || !strings.Contains(got, "Companies 2") || !strings.Contains(got, "All postings 1") {
+			t.Errorf("screen %v: first line = %q, want every tab with its count", sc, got)
 		}
 	}
 }
@@ -139,7 +148,7 @@ func TestApp_ActiveApplications_SearchSurvivesDetailAndTab(t *testing.T) {
 	if app.screen != screenApplicationDetail || app.applicationDetail.application.Posting.Title != "Engineer 07" {
 		t.Fatalf("after enter: screen %v showing %q, want application detail for Engineer 07", app.screen, app.applicationDetail.application.Posting.Title)
 	}
-	for _, key := range []tea.KeyMsg{{Type: tea.KeyEsc}, {Type: tea.KeyTab}, {Type: tea.KeyTab}} {
+	for _, key := range []tea.KeyMsg{{Type: tea.KeyEsc}, {Type: tea.KeyTab}, {Type: tea.KeyTab}, {Type: tea.KeyTab}} {
 		app = sendKeyAndApply(t, app, key)
 	}
 	if app.screen != screenActiveApplications || !app.activeApplicationList.searching || app.activeApplicationList.query != "engineer 07" {

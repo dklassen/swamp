@@ -60,7 +60,7 @@ func fitCrumbs(crumbs []string, width int) []string {
 }
 
 func isTab(s screen) bool {
-	return s == screenActiveApplications || s == screenCompanyList
+	return s == screenActiveApplications || s == screenCompanyList || s == screenAllPostings
 }
 
 // parents maps each screen entered from only one place to that place,
@@ -143,7 +143,7 @@ func (a *App) crumbs(path []screen) []string {
 	return crumbs
 }
 
-// tabBar names both tabs with their counts, and underlines active.
+// tabBar names every tab with its count, and underlines active.
 func (a *App) tabBar(active screen) string {
 	tabs := []struct {
 		screen screen
@@ -151,6 +151,7 @@ func (a *App) tabBar(active screen) string {
 	}{
 		{screenActiveApplications, fmt.Sprintf(" Applications %d ", len(a.activeApplications))},
 		{screenCompanyList, fmt.Sprintf(" Companies %d ", len(a.companies))},
+		{screenAllPostings, fmt.Sprintf(" All postings %d ", a.allPostings.page.Total)},
 	}
 	const gap = "  "
 	var line, rule strings.Builder

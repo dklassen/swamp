@@ -256,8 +256,8 @@ func TestApp_SyncAll_LeavingCompanyList_RunContinues(t *testing.T) {
 
 	app, cmd := sendKey(app, runeKey('R'))
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
-	if app.screen != screenActiveApplications {
-		t.Fatalf("screen after tab = %v, want screenActiveApplications", app.screen)
+	if app.screen != screenAllPostings {
+		t.Fatalf("screen after tab = %v, want screenAllPostings", app.screen)
 	}
 	for range 3 {
 		app, cmd = step(t, app, cmd)
