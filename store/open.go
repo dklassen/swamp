@@ -98,9 +98,9 @@ var sharedDriver = func() driver.Driver {
 	return d
 }()
 
-// equal_fold(a, b) is strings.EqualFold, so SQL ignores case the way
-// filter.Match does; SQLite's NOCASE and lower() fold ASCII only.
 func init() {
+	// equal_fold(a, b) is strings.EqualFold, so SQL ignores case the way
+	// filter.Match does; SQLite's NOCASE and lower() fold ASCII only.
 	sqlite.MustRegisterDeterministicScalarFunction("equal_fold", 2, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
 		a, aok := args[0].(string)
 		b, bok := args[1].(string)
@@ -108,6 +108,17 @@ func init() {
 			return nil, fmt.Errorf("equal_fold: want two strings, got %T and %T", args[0], args[1])
 		}
 		return strings.EqualFold(a, b), nil
+	})
+	// contains_fold(text, term) finds term in text ignoring case, as the
+	// TUI's list searches do; LIKE folds ASCII only and gives % and _
+	// meaning.
+	sqlite.MustRegisterDeterministicScalarFunction("contains_fold", 2, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
+		text, tok := args[0].(string)
+		term, mok := args[1].(string)
+		if !tok || !mok {
+			return nil, fmt.Errorf("contains_fold: want two strings, got %T and %T", args[0], args[1])
+		}
+		return strings.Contains(strings.ToLower(text), strings.ToLower(term)), nil
 	})
 }
 

@@ -189,3 +189,52 @@ func TestOpen_EqualFold_AgreesWithGo(t *testing.T) {
 		})
 	}
 }
+
+// TestOpen_ContainsFold_AgreesWithGo: posting search matches text the way
+// the TUI's lists do, with strings.Contains on lowered strings; SQLite's
+// LIKE folds ASCII only and gives % and _ meaning.
+func TestOpen_ContainsFold_AgreesWithGo(t *testing.T) {
+	t.Parallel()
+
+	pairs := [][2]string{
+		{"Senior Platform Engineer", "platform"},
+		{"Senior Platform Engineer", "PLATFORM ENG"},
+		{"Platform Engineer", "backend"},
+		{"ZÜRICH", "zürich"},
+		{"Montréal", "MONTRÉ"},
+		{"100% remote", "100%"},
+		{"Engineer", "eng_neer"},
+		{"Engineer", "e%r"},
+		{"Engineer", ""},
+		{"", "eng"},
+	}
+	for _, origin := range []string{"", "tui:1"} {
+		t.Run("origin "+origin, func(t *testing.T) {
+			t.Parallel()
+
+			path := t.TempDir() + "/test.db"
+			newTestStoreAt(t, path) // migrate, so the origin can be stamped
+			cfg := DefaultConfig()
+			cfg.Origin = origin
+			sqlDB, err := Open(path, cfg)
+			if err != nil {
+				t.Fatalf("Open: %v", err)
+			}
+			t.Cleanup(func() {
+				if err := sqlDB.Close(); err != nil {
+					t.Errorf("close db: %v", err)
+				}
+			})
+
+			for _, p := range pairs {
+				var got bool
+				if err := sqlDB.QueryRow("SELECT contains_fold(?, ?)", p[0], p[1]).Scan(&got); err != nil {
+					t.Fatalf("contains_fold(%q, %q): %v", p[0], p[1], err)
+				}
+				if want := strings.Contains(strings.ToLower(p[0]), strings.ToLower(p[1])); got != want {
+					t.Errorf("contains_fold(%q, %q) = %v, want %v", p[0], p[1], got, want)
+				}
+			}
+		})
+	}
+}
