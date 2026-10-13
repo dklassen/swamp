@@ -82,10 +82,10 @@ The first sync of each company stores every posting its filters used to skip, al
 
 ### 5. What it costs
 
-These figures haven't been measured yet. Each sync summary already prints `Fetched` (the whole board) next to `Created`, and a company list shows its open count. One "sync all" before deciding gives the ratio.
+Every posting is stored whatever this costs: part 1 is a decision, not conditional on measuring first (#309, closed). These are estimates, to watch for once it ships.
 
-- **Storage:** the raw payload alone averages 13.7 KB per posting (measured over 2,962 postings for RFC 0008), about 40 MB today. Each description is stored three times: in `description_html`, in `description_text`, and inside `raw_payload`. Every `content_updated` history row also snapshots the whole posting. So a posting is more like 20 KB or more, plus history: 10,000 postings would be a few hundred MB. That's no problem for disk space. 10,000 is a guess, and item 1 measures the real count.
-- **Scan speed:** `listing_status`, `first_seen_at` and `last_seen_at` come after `raw_payload` in `postings`. Reading them means following each large row's overflow pages, so a scan that reads them can read most of the table's bytes. The index on `listing_status` may avoid this, but that hasn't been measured. If paging or search (part 3) is slow at the real size, the fix is to move `description_html`, `description_text` and `raw_payload` to their own table, joined only when the full posting is read. Item 1 times this.
+- **Storage:** the raw payload alone averages 13.7 KB per posting (measured over 2,962 postings for RFC 0008), about 40 MB today. Each description is stored three times: in `description_html`, in `description_text`, and inside `raw_payload`. Every `content_updated` history row also snapshots the whole posting. So a posting is more like 20 KB or more, plus history: 10,000 postings would be a few hundred MB. That's no problem for disk space. 10,000 is a guess.
+- **Scan speed:** `listing_status`, `first_seen_at` and `last_seen_at` come after `raw_payload` in `postings`. Reading them means following each large row's overflow pages, so a scan that reads them can read most of the table's bytes. The index on `listing_status` may avoid this, but that hasn't been measured. If paging or search (part 3) is slow at the real size, the fix is to move `description_html`, `description_text` and `raw_payload` to their own table, joined only when the full posting is read. Watch for it once part 1 ships.
 - **Sync time:** one ingest transaction per fetched posting instead of per matching posting. Unchanged postings are compared and skipped, so this grows with board size, not with how much changes.
 - **Scoring (part 4):** a full scoring run grows with the number of postings (see Estimates).
 
@@ -236,7 +236,7 @@ A new `score-postings` skill, next to `apply-to-posting`, runs the loop:
 - The summary fields come to roughly 30–40 tokens per posting. Scoring all of about 2,000 postings is roughly 60–80k tokens of listings, across pages. Once part 1 stores every posting, the count may be several times that: 10,000 postings would be about 300–400k tokens, across several sessions. A routine run after a sync, with tens of new postings, stays small. If a full run is too much, eligibility can respect company filters by default.
 - A description is roughly 500–1,500 tokens. Scoring from the summary first keeps descriptions to a small fraction.
 
-Measure the posting count with one "sync all" before part 1 (see part 1, section 5). Measure token counts on a copy of the real database before writing the skill.
+Measure token counts on a copy of the real database before writing the skill.
 
 ## Where it can go wrong
 
@@ -264,8 +264,8 @@ Measure the posting count with one "sync all" before part 1 (see part 1, section
 ## Work breakdown
 
 ### Part 1: store every posting
-1. (#309) **Measure:** one "sync all", recording each company's `Fetched` and open count. Then, on a copy of the database, time a page of `SearchPostings` and a `LIKE` search. Decide whether part 1's cost section holds, and whether the bulky columns need their own table first.
-2. (#310) **Store every posting:** `SyncCompany` ingests everything, and `ApplyCompanyFilters` stops re-syncing (needs 1).
+1. ~~(#309) **Measure** the full boards first.~~ Dropped: every posting is stored regardless.
+2. (#310) **Store every posting:** `SyncCompany` ingests everything, and `ApplyCompanyFilters` stops re-syncing.
 3. (#311) **`SearchPostings` applies company filters by default** (`IgnoreCompanyFilters` to turn that off), with the test shared with `filter.Match` (needs 2).
 4. (#312) **Stale filters:** counts on the filter screen, and a mark on the company list (needs 2).
 
