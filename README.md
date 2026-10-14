@@ -41,6 +41,9 @@ default `assets/`), which is gitignored, so they never get committed:
 | `assets/canonical/profile.md` | Your background: experience, skills, framing options, and voice/style notes. The source every draft comes from. **Required**: the skill stops without it. | `docs/canonical/profile.md.example` |
 | `assets/canonical/resume.md` | Your best-version resume in markdown. The skill tailors it for each posting (reorders, trims, rephrases) instead of writing a resume from scratch. **Optional**: without it, resumes are drafted from the profile alone. | `docs/canonical/resume.md.example` |
 
+The `score-postings` skill scores postings' fit against the profile alone,
+and stops without it too.
+
 To set them up:
 
 ```sh
