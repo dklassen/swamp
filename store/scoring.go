@@ -90,12 +90,12 @@ type PendingPostingsPage struct {
 }
 
 // PendingPostings returns one page of the postings with no score on their
-// current content, by ID, after afterID (0 for the first page). For a
+// current content, newest first, before beforeID (0 for the first page). For a
 // rescore, rescoreProfileSHA256 names the profile, and a score against
 // another one doesn't count; "" is no rescore. Eligible postings are open,
 // not archived, not interested, without an application, at a company the
 // user hasn't deleted, and let through by its filters.
-func (s *Store) PendingPostings(ctx context.Context, rescoreProfileSHA256 string, afterID int64, limit int) (PendingPostingsPage, error) {
+func (s *Store) PendingPostings(ctx context.Context, rescoreProfileSHA256 string, beforeID int64, limit int) (PendingPostingsPage, error) {
 	if limit <= 0 {
 		return PendingPostingsPage{}, fmt.Errorf("store: pending postings: limit %d, want at least 1", limit)
 	}
@@ -106,8 +106,8 @@ func (s *Store) PendingPostings(ctx context.Context, rescoreProfileSHA256 string
 	if rescoreProfileSHA256 != "" {
 		params.RescoreProfile = rescoreProfileSHA256
 	}
-	if afterID != 0 {
-		params.AfterID = afterID
+	if beforeID != 0 {
+		params.BeforeID = beforeID
 	}
 	rows, err := s.queries.ListPendingPostings(ctx, params)
 	if err != nil {

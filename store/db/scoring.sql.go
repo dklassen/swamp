@@ -114,14 +114,14 @@ FROM (
             AND (?1 IS NULL OR s.profile_sha256 = ?1)
       )
 ) AS m
-WHERE ?2 IS NULL OR m.id > ?2
-ORDER BY m.id
+WHERE ?2 IS NULL OR m.id < ?2
+ORDER BY m.id DESC
 LIMIT ?3
 `
 
 type ListPendingPostingsParams struct {
 	RescoreProfile interface{} `json:"rescore_profile"`
-	AfterID        interface{} `json:"after_id"`
+	BeforeID       interface{} `json:"before_id"`
 	MaxRows        int64       `json:"max_rows"`
 }
 
@@ -139,8 +139,9 @@ type ListPendingPostingsRow struct {
 	Total           int64        `json:"total"`
 }
 
-// One page of the pending postings, by posting ID after an optional
-// cursor, with how many there are in all.
+// One page of the pending postings, newest first (by posting ID, as the
+// all-postings view shows them) before an optional cursor, with how many
+// there are in all.
 //
 // Eligible: open, not archived, not interested, no application, at a
 // company the user hasn't deleted, and let through by that company's
@@ -152,7 +153,7 @@ type ListPendingPostingsRow struct {
 // The cursor is a narg, as in the SearchPostings queries: with sqlc.arg there,
 // sqlc can't resolve the alias m.
 func (q *Queries) ListPendingPostings(ctx context.Context, arg ListPendingPostingsParams) ([]ListPendingPostingsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listPendingPostings, arg.RescoreProfile, arg.AfterID, arg.MaxRows)
+	rows, err := q.db.QueryContext(ctx, listPendingPostings, arg.RescoreProfile, arg.BeforeID, arg.MaxRows)
 	if err != nil {
 		return nil, err
 	}

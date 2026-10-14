@@ -1264,8 +1264,8 @@ func TestListPendingPostings_PagesToTheLastPage(t *testing.T) {
 	}
 	second := callTool[stage.PendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileSHA256": profile, "Limit": 2, "Cursor": *first.NextCursor})
 
-	if diff := cmp.Diff(ids, append(pendingIDs(first), pendingIDs(second)...)); diff != "" {
-		t.Errorf("pending across both pages (-want +got):\n%s", diff)
+	if diff := cmp.Diff([]int64{ids[2], ids[1], ids[0]}, append(pendingIDs(first), pendingIDs(second)...)); diff != "" {
+		t.Errorf("pending across both pages, newest first (-want +got):\n%s", diff)
 	}
 	if second.NextCursor != nil {
 		t.Errorf("last page's NextCursor = %q, want null", *second.NextCursor)

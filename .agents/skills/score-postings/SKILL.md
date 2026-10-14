@@ -43,6 +43,9 @@ Call `list_pending_postings` with the profile's `SHA256`. Pass
 posting with no score against this profile, which after a profile edit is
 all of them.
 
+Postings come newest first, the order the TUI's all-postings view shows
+by default, so "the first 10" is the newest 10 pending.
+
 Tell the user how many are pending (`Total`). If they haven't said how
 many to score, ask, since a full scoring of a large `Total` takes several
 sessions. When they ask for a number up to 100, pass it as `Limit` and

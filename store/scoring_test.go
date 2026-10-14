@@ -139,9 +139,9 @@ func TestPendingPostings_Pages(t *testing.T) {
 
 	var got [][]int64
 	var hasMore []bool
-	var after int64
+	var before int64
 	for range 3 {
-		page, err := s.PendingPostings(ctx, "", after, 2)
+		page, err := s.PendingPostings(ctx, "", before, 2)
 		if err != nil {
 			t.Fatalf("PendingPostings: %v", err)
 		}
@@ -154,9 +154,9 @@ func TestPendingPostings_Pages(t *testing.T) {
 		}
 		got = append(got, pageIDs)
 		hasMore = append(hasMore, page.HasMore)
-		after = pageIDs[len(pageIDs)-1]
+		before = pageIDs[len(pageIDs)-1]
 	}
-	if diff := cmp.Diff([][]int64{ids[0:2], ids[2:4], ids[4:5]}, got); diff != "" {
+	if diff := cmp.Diff([][]int64{{ids[4], ids[3]}, {ids[2], ids[1]}, {ids[0]}}, got); diff != "" {
 		t.Errorf("pages (-want +got):\n%s", diff)
 	}
 	if diff := cmp.Diff([]bool{true, true, false}, hasMore); diff != "" {

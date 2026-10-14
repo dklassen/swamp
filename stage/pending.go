@@ -78,16 +78,16 @@ func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (Pend
 		filters.ProfileSHA256, rescoreProfile = opts.ProfileSHA256, opts.ProfileSHA256
 	}
 	fingerprint := cursor.Fingerprint(filters)
-	var afterID int64
+	var beforeID int64
 	if opts.Cursor != "" {
 		key, err := cursor.Decode(opts.Cursor, pendingSort, fingerprint)
 		if err != nil {
 			return PendingResult{}, fmt.Errorf("stage: %w", err)
 		}
-		afterID = key.ID
+		beforeID = key.ID
 	}
 
-	page, err := st.store.PendingPostings(ctx, rescoreProfile, afterID, limit)
+	page, err := st.store.PendingPostings(ctx, rescoreProfile, beforeID, limit)
 	if err != nil {
 		return PendingResult{}, fmt.Errorf("stage: %w", err)
 	}
