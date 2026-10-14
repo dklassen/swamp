@@ -67,9 +67,11 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 	if m.searching {
 		return m.updateSearch(msg, companies)
 	}
+	// Commands act on the matches a kept search shows, not the whole list.
+	visible := m.visible(companies)
 	switch {
 	case msg.Type == tea.KeyDown, msg.String() == "j":
-		if m.cursor < len(companies)-1 {
+		if m.cursor < len(visible)-1 {
 			m.cursor++
 		}
 	case msg.Type == tea.KeyUp, msg.String() == "k":
@@ -79,12 +81,12 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 	case msg.String() == "q":
 		return tea.Quit, nil
 	case msg.String() == "d":
-		if m.cursor < len(companies) {
-			return nil, enterCompanyDeleteMsg{company: companies[m.cursor]}
+		if m.cursor < len(visible) {
+			return nil, enterCompanyDeleteMsg{company: visible[m.cursor]}
 		}
 	case msg.String() == "r":
-		if m.cursor < len(companies) {
-			return nil, refreshCompanyMsg{company: companies[m.cursor]}
+		if m.cursor < len(visible) {
+			return nil, refreshCompanyMsg{company: visible[m.cursor]}
 		}
 	case msg.String() == "R":
 		return nil, syncAllKeyMsg{}
@@ -94,13 +96,15 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 		return nil, enterCompanyFormMsg{}
 	case msg.String() == "/":
 		m.searching = true
+	case msg.Type == tea.KeyEsc:
+		m.clearSearch(companies)
 	case msg.String() == "e":
-		if m.cursor < len(companies) {
-			return nil, enterCompanyEditMsg{company: companies[m.cursor]}
+		if m.cursor < len(visible) {
+			return nil, enterCompanyEditMsg{company: visible[m.cursor]}
 		}
 	case msg.Type == tea.KeyEnter:
-		if m.cursor < len(companies) {
-			return nil, selectCompanyMsg{company: companies[m.cursor]}
+		if m.cursor < len(visible) {
+			return nil, selectCompanyMsg{company: visible[m.cursor]}
 		}
 	}
 	return nil, nil
@@ -122,13 +126,8 @@ func (m *companyListModel) updateSearch(msg tea.KeyMsg, companies []store.Compan
 			m.searching = false
 		}
 	case tea.KeyEsc:
-		cursor := 0
-		if visible := m.visible(companies); m.cursor < len(visible) {
-			cursor = max(indexOfCompany(companies, visible[m.cursor].ID), 0)
-		}
 		m.searching = false
-		m.query = ""
-		m.cursor = cursor
+		m.clearSearch(companies)
 	case tea.KeyDown, tea.KeyCtrlN:
 		if m.cursor < len(m.visible(companies))-1 {
 			m.cursor++
@@ -138,12 +137,21 @@ func (m *companyListModel) updateSearch(msg tea.KeyMsg, companies []store.Compan
 			m.cursor--
 		}
 	case tea.KeyEnter:
-		visible := m.visible(companies)
-		if m.cursor < len(visible) {
-			return nil, selectCompanyMsg{company: visible[m.cursor]}
-		}
+		// Keeps the matches, so letters act on them instead of being typed.
+		m.searching = false
 	}
 	return nil, nil
+}
+
+// clearSearch drops the query, keeping the highlighted company highlighted
+// in the full list.
+func (m *companyListModel) clearSearch(companies []store.Company) {
+	cursor := 0
+	if visible := m.visible(companies); m.cursor < len(visible) {
+		cursor = max(indexOfCompany(companies, visible[m.cursor].ID), 0)
+	}
+	m.query = ""
+	m.cursor = cursor
 }
 
 // visible is the part of companies the query matches: a case-insensitive
@@ -167,8 +175,11 @@ func (m *companyListModel) visible(companies []store.Company) []store.Company {
 func (m *companyListModel) View(companies []store.Company, openPostings map[int64]int, width, height int) string {
 	var b strings.Builder
 	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  tab: applications  q: quit")
-	if m.searching {
-		help = helpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: view postings  esc: clear")
+	switch {
+	case m.searching:
+		help = helpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: keep results  esc: clear")
+	case m.query != "":
+		help = helpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: edit search  esc: clear search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  q: quit")
 	}
 	visible := m.visible(companies)
 	// A sync landing while the prompt is open can shrink visible under
