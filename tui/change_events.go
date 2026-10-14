@@ -149,7 +149,7 @@ func (a *App) reloadFor(events []store.ChangeEvent) tea.Cmd {
 		}
 	case screenAllPostings:
 		// companies too: a deleted company's postings leave the list.
-		if touches(events, "postings", "posting_markup", "companies") {
+		if touches(events, "postings", "posting_markup", "posting_scores", "companies") {
 			return a.allPostings.load(a.allPostings.size)
 		}
 	case screenCompanyList:

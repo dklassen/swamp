@@ -16,7 +16,10 @@ import (
 // seenColWidth fits a first-seen date, "Sep 30".
 const seenColWidth = 6
 
-const allPostingsHelp = "↑/↓ (j/k): select  ←/→ (h/l): page  enter: detail  i: interested  x: archive  o: open  tab: applications"
+// fitColWidth fits the column's header, "Fit"; a score is one digit.
+const fitColWidth = 3
+
+const allPostingsHelp = "↑/↓ (j/k): select  ←/→ (h/l): page  s: sort  enter: detail  i: interested  x: archive  o: open  tab: applications"
 
 const allPostingsSearchHelp = "type to search  ↑/↓ (ctrl+n/p): select  ←/→: page  enter: detail  esc: clear"
 
@@ -27,10 +30,12 @@ const allPostingsSearchHelp = "type to search  ↑/↓ (ctrl+n/p): select  ←/�
 type allPostingsModel struct {
 	store  *store.Store
 	cursor int
-	// afterIDs is the cursor each page so far was read after, page 1's
-	// being 0; the last is the page on screen.
-	afterIDs []int64
-	page     store.PostingSearchPage
+	// starts is where each page so far began, page 1's being the zero
+	// start; the last is the page on screen.
+	starts []pageStart
+	// order is newest first or best fit first.
+	order store.PostingOrder
+	page  store.PostingSearchPage
 	// size is the number of rows page was read at.
 	size int
 	// searching is whether the '/' line is open and taking keys; query is
@@ -45,16 +50,24 @@ type allPostingsModel struct {
 }
 
 func newAllPostingsModel(s *store.Store) allPostingsModel {
-	return allPostingsModel{store: s, afterIDs: []int64{0}}
+	return allPostingsModel{store: s, starts: []pageStart{{}}, order: store.PostingOrderIDDesc}
+}
+
+// pageStart is the row a page was read after: its ID, and its score for the
+// order by fit.
+type pageStart struct {
+	id    int64
+	score int
 }
 
 type allPostingsLoadedMsg struct {
-	afterID int64
-	query   string
-	size    int
-	page    store.PostingSearchPage
-	total   int
-	err     error
+	start pageStart
+	order store.PostingOrder
+	query string
+	size  int
+	page  store.PostingSearchPage
+	total int
+	err   error
 }
 
 // searchPause is how long typing must stop before the search runs, so fast
@@ -73,14 +86,15 @@ func (m *allPostingsModel) pageSize(height int) int {
 // load reads the page on screen again, size rows long, with the query and,
 // when there is one, the total without it.
 func (m *allPostingsModel) load(size int) tea.Cmd {
-	s, afterID, query := m.store, m.afterIDs[len(m.afterIDs)-1], m.query
+	s, start, order, query := m.store, m.starts[len(m.starts)-1], m.order, m.query
 	return func() tea.Msg {
 		ctx := context.Background()
 		page, err := s.SearchPostings(ctx, store.PostingSearch{
-			Order:   store.PostingOrderIDDesc,
-			AfterID: afterID,
-			Query:   query,
-			Limit:   size,
+			Order:      order,
+			AfterID:    start.id,
+			AfterScore: start.score,
+			Query:      query,
+			Limit:      size,
 		})
 		total := page.Total
 		if err == nil && query != "" {
@@ -88,18 +102,18 @@ func (m *allPostingsModel) load(size int) tea.Cmd {
 			all, err = s.SearchPostings(ctx, store.PostingSearch{Limit: 1})
 			total = all.Total
 		}
-		return allPostingsLoadedMsg{afterID: afterID, query: query, size: size, page: page, total: total, err: err}
+		return allPostingsLoadedMsg{start: start, order: order, query: query, size: size, page: page, total: total, err: err}
 	}
 }
 
 // loaded shows msg's page, if it's still the page on screen. A page past
 // the first that has emptied, its postings archived or closed, steps back.
 func (m *allPostingsModel) loaded(msg allPostingsLoadedMsg) tea.Cmd {
-	if msg.afterID != m.afterIDs[len(m.afterIDs)-1] || msg.query != m.query {
+	if msg.start != m.starts[len(m.starts)-1] || msg.order != m.order || msg.query != m.query {
 		return nil
 	}
-	if len(msg.page.Listings) == 0 && len(m.afterIDs) > 1 {
-		m.afterIDs = m.afterIDs[:len(m.afterIDs)-1]
+	if len(msg.page.Listings) == 0 && len(m.starts) > 1 {
+		m.starts = m.starts[:len(m.starts)-1]
 		return m.load(msg.size)
 	}
 	m.page, m.size, m.total = msg.page, msg.size, msg.total
@@ -117,7 +131,7 @@ func (m *allPostingsModel) searched(msg allPostingsSearchMsg, size int) tea.Cmd 
 }
 
 func (m *allPostingsModel) firstPage(size int) tea.Cmd {
-	m.afterIDs = []int64{0}
+	m.starts = []pageStart{{}}
 	m.cursor = 0
 	return m.load(size)
 }
@@ -127,16 +141,17 @@ func (m *allPostingsModel) nextPage(size int) tea.Cmd {
 	if n == 0 || !m.page.HasMore {
 		return nil
 	}
-	m.afterIDs = append(m.afterIDs, m.page.Listings[n-1].ID)
+	last := m.page.Listings[n-1]
+	m.starts = append(m.starts, pageStart{id: last.ID, score: last.Score})
 	m.cursor = 0
 	return m.load(size)
 }
 
 func (m *allPostingsModel) previousPage(size int) tea.Cmd {
-	if len(m.afterIDs) == 1 {
+	if len(m.starts) == 1 {
 		return nil
 	}
-	m.afterIDs = m.afterIDs[:len(m.afterIDs)-1]
+	m.starts = m.starts[:len(m.starts)-1]
 	m.cursor = 0
 	return m.load(size)
 }
@@ -149,12 +164,33 @@ func (m *allPostingsModel) typedKey(query string) tea.Cmd {
 	return tea.Tick(searchPause, func(time.Time) tea.Msg { return allPostingsSearchMsg{typed: typed} })
 }
 
+// orderLabel names the order the pages are in.
+func (m *allPostingsModel) orderLabel() string {
+	if m.order == store.PostingOrderScoreDesc {
+		return "best fit first"
+	}
+	return "newest first"
+}
+
 // pages is how many pages Total fills at the page size.
 func (m *allPostingsModel) pages() int {
 	if m.size <= 0 {
 		return 1
 	}
 	return max((m.page.Total+m.size-1)/m.size, 1)
+}
+
+// fitCell is a posting's current score, blank when it has none and dimmed
+// when its content has changed since.
+func fitCell(l store.PostingListing) string {
+	if l.Score == 0 {
+		return padCol("", fitColWidth)
+	}
+	cell := padCol(fmt.Sprint(l.Score), fitColWidth)
+	if l.ScoreStale {
+		return dimStyle.Render(cell)
+	}
+	return cell
 }
 
 // locationLabel is a posting's location with its workplace type, when the
@@ -176,7 +212,7 @@ func (m *allPostingsModel) View(width, height int) string {
 		help = helpStyle.Render(allPostingsSearchHelp)
 	}
 	b.WriteString(searchLine(m.searching, m.query, m.page.Total, m.total) + "\n")
-	fmt.Fprintf(&b, "%s\n", dimStyle.Render(fmt.Sprintf("Page %d of %d · %d postings", len(m.afterIDs), m.pages(), m.page.Total)))
+	fmt.Fprintf(&b, "%s\n", dimStyle.Render(fmt.Sprintf("Page %d of %d · %d postings · %s", len(m.starts), m.pages(), m.page.Total, m.orderLabel())))
 	switch {
 	case len(m.page.Listings) == 0 && m.query != "":
 		fmt.Fprintf(&b, "No postings match %q.\n", m.query)
@@ -187,7 +223,7 @@ func (m *allPostingsModel) View(width, height int) string {
 		start, end := visibleWindow(m.cursor, len(m.page.Listings), tableRows(height-2, help))
 		cursorRow := m.cursor - start
 		t := table.New().
-			Headers("Seen", "Company", "Title", "Department", "Location", "").
+			Headers("Seen", "Company", "Title", "Department", "Location", "", "Fit").
 			StyleFunc(func(row, _ int) lipgloss.Style {
 				style := lipgloss.NewStyle().Padding(0, 1)
 				if row == cursorRow {
@@ -195,7 +231,7 @@ func (m *allPostingsModel) View(width, height int) string {
 				}
 				return style
 			})
-		titleWidth := flexColWidth(width, seenColWidth, homeCompanyColWidth, departmentColWidth, locationColWidth, markerColWidth)
+		titleWidth := flexColWidth(width, seenColWidth, homeCompanyColWidth, departmentColWidth, locationColWidth, markerColWidth, fitColWidth)
 		for _, l := range m.page.Listings[start:end] {
 			marker := " "
 			if l.Interested {
@@ -208,6 +244,7 @@ func (m *allPostingsModel) View(width, height int) string {
 				padCol(l.Department, departmentColWidth),
 				padCol(locationLabel(l), locationColWidth),
 				padCol(marker, markerColWidth),
+				fitCell(l),
 			)
 		}
 		b.WriteString(t.Render() + "\n")
@@ -237,6 +274,13 @@ func (m *allPostingsModel) Update(msg tea.KeyMsg, size int) (tea.Cmd, tea.Msg) {
 		if m.cursor < len(m.page.Listings) {
 			return nil, enterPostingDetailMsg{postingID: m.page.Listings[m.cursor].ID}
 		}
+	case msg.String() == "s":
+		if m.order == store.PostingOrderScoreDesc {
+			m.order = store.PostingOrderIDDesc
+		} else {
+			m.order = store.PostingOrderScoreDesc
+		}
+		return m.firstPage(size), nil
 	case msg.String() == "/":
 		m.searching = true
 	case msg.String() == "i":

@@ -200,8 +200,8 @@ func TestAllPostings_EnterOpensTheDetailAndEscComesBack(t *testing.T) {
 		t.Fatalf("after enter: screen %v showing posting %d %q, want detail for %d %q", app.screen, app.postingDetail.posting.ID, app.postingDetail.posting.Title, want.ID, want.Title)
 	}
 	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEsc})
-	if app.screen != screenAllPostings || len(app.allPostings.afterIDs) != 2 || app.allPostings.cursor != 1 {
-		t.Errorf("after esc: screen %v, page %d, row %d; want all postings, page 2, row 1", app.screen, len(app.allPostings.afterIDs), app.allPostings.cursor)
+	if app.screen != screenAllPostings || len(app.allPostings.starts) != 2 || app.allPostings.cursor != 1 {
+		t.Errorf("after esc: screen %v, page %d, row %d; want all postings, page 2, row 1", app.screen, len(app.allPostings.starts), app.allPostings.cursor)
 	}
 }
 
@@ -309,14 +309,14 @@ func TestAllPostings_ArchivingTheLastPagesOnlyPostingStepsBack(t *testing.T) {
 	}
 	app = openAllPostings(t, app)
 	app = sendKeyAndApply(t, app, runeKey('l'))
-	if len(app.allPostings.afterIDs) != 2 || len(app.allPostings.page.Listings) != 1 {
-		t.Fatalf("on page %d with %d postings, want page 2 with 1", len(app.allPostings.afterIDs), len(app.allPostings.page.Listings))
+	if len(app.allPostings.starts) != 2 || len(app.allPostings.page.Listings) != 1 {
+		t.Fatalf("on page %d with %d postings, want page 2 with 1", len(app.allPostings.starts), len(app.allPostings.page.Listings))
 	}
 
 	app = sendKeyAndApply(t, app, runeKey('x'))
 
-	if len(app.allPostings.afterIDs) != 1 || len(app.allPostings.page.Listings) != size {
-		t.Errorf("after archiving page 2's only posting: page %d with %d postings, want page 1 with %d", len(app.allPostings.afterIDs), len(app.allPostings.page.Listings), size)
+	if len(app.allPostings.starts) != 1 || len(app.allPostings.page.Listings) != size {
+		t.Errorf("after archiving page 2's only posting: page %d with %d postings, want page 1 with %d", len(app.allPostings.starts), len(app.allPostings.page.Listings), size)
 	}
 }
 
@@ -371,8 +371,8 @@ func TestAllPostings_ANewPostingElsewhere_KeepsThePageAndCountsIt(t *testing.T) 
 	if diff := cmp.Diff(page2, pageTitles(app)); diff != "" {
 		t.Errorf("page 2 changed under the user (-before +after):\n%s", diff)
 	}
-	if len(app.allPostings.afterIDs) != 2 || app.allPostings.cursor != 1 || app.allPostings.page.Total != 8 {
-		t.Errorf("page %d, row %d, Total %d; want page 2, row 1, Total 8", len(app.allPostings.afterIDs), app.allPostings.cursor, app.allPostings.page.Total)
+	if len(app.allPostings.starts) != 2 || app.allPostings.cursor != 1 || app.allPostings.page.Total != 8 {
+		t.Errorf("page %d, row %d, Total %d; want page 2, row 1, Total 8", len(app.allPostings.starts), app.allPostings.cursor, app.allPostings.page.Total)
 	}
 	app = sendKeyAndApply(t, app, runeKey('h'))
 	if titles := pageTitles(app); len(titles) == 0 || titles[0] != "Role 8" {
@@ -534,8 +534,8 @@ func TestAllPostings_PagesThroughSearchResults(t *testing.T) {
 		t.Errorf("paging closed the search: searching %v, query %q", app.allPostings.searching, app.allPostings.query)
 	}
 	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyLeft})
-	if len(app.allPostings.afterIDs) != pages-1 {
-		t.Errorf("← went to page %d, want %d", len(app.allPostings.afterIDs), pages-1)
+	if len(app.allPostings.starts) != pages-1 {
+		t.Errorf("← went to page %d, want %d", len(app.allPostings.starts), pages-1)
 	}
 }
 
@@ -553,5 +553,111 @@ func TestAllPostings_NoMatches_SaysWhatWasSearched(t *testing.T) {
 
 	if view := app.View(); !strings.Contains(view, `No postings match "kafka".`) {
 		t.Errorf("view doesn't say what matched nothing:\n%s", view)
+	}
+}
+
+// mustScore records score for p against a fixed profile.
+func mustScore(t *testing.T, s *store.Store, p store.Posting, score int, profile string) {
+	t.Helper()
+	if _, err := s.RecordScores(context.Background(), store.ScoreProvenance{Model: "claude-opus-5-5", ProfileSHA256: profile}, []store.ScoreEntry{
+		{PostingID: p.ID, Score: score, Reason: "reason", ContentSHA256: p.ContentSHA256},
+	}); err != nil {
+		t.Fatalf("RecordScores: %v", err)
+	}
+}
+
+func TestAllPostings_ShowsEachPostingsFit(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	scored := mustUpsertPosting(t, s, acme.ID, "1", "Scored")
+	stale := mustUpsertPosting(t, s, acme.ID, "2", "Rewritten since")
+	mustUpsertPosting(t, s, acme.ID, "3", "Unscored")
+	mustScore(t, s, scored, 4, "p")
+	mustScore(t, s, stale, 2, "p")
+	if _, err := s.UpsertPosting(context.Background(), store.CreatePostingParams{CompanyID: acme.ID, Source: "ashby", SourceID: "2",
+		IngestedFields: store.IngestedFields{Title: "Rewritten since", DescriptionText: "New text."}}); err != nil {
+		t.Fatalf("UpsertPosting: %v", err)
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 140, Height: 30})
+	app = openAllPostings(t, app)
+
+	fit := map[string]string{}
+	for _, line := range viewLines(app) {
+		for _, title := range []string{"Scored", "Rewritten since", "Unscored"} {
+			if strings.Contains(line, title) {
+				fields := strings.Split(line, "│")
+				fit[title] = strings.TrimSpace(fields[len(fields)-2])
+			}
+		}
+	}
+	if diff := cmp.Diff(map[string]string{"Scored": "4", "Rewritten since": "2", "Unscored": ""}, fit); diff != "" {
+		t.Errorf("Fit column (-want +got):\n%s", diff)
+	}
+	if !strings.Contains(app.View(), dimStyle.Render(padCol("2", fitColWidth))) {
+		t.Error("the stale score isn't drawn dimmed")
+	}
+}
+
+func TestAllPostings_SSortsByFitAndBack(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	var postings []store.Posting
+	for i := 1; i <= 6; i++ {
+		postings = append(postings, mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i)))
+	}
+	// Scores by first seen: 1:3, 2:5, 3:none, 4:1, 5:5, 6:none.
+	for i, score := range map[int]int{0: 3, 1: 5, 3: 1, 4: 5} {
+		mustScore(t, s, postings[i], score, "p")
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 140, Height: 13})
+	app = openAllPostings(t, app)
+	app = sendKeyAndApply(t, app, runeKey('l')) // leave page 1, which s returns to
+
+	app = sendKeyAndApply(t, app, runeKey('s'))
+
+	if len(app.allPostings.starts) != 1 || !strings.Contains(app.View(), "best fit first") {
+		t.Fatalf("after s: page %d, view:\n%s", len(app.allPostings.starts), app.View())
+	}
+	var seen []string
+	for {
+		seen = append(seen, pageTitles(app)...)
+		if !app.allPostings.page.HasMore {
+			break
+		}
+		app = sendKeyAndApply(t, app, runeKey('l'))
+	}
+	want := []string{"Role 5", "Role 2", "Role 1", "Role 4", "Role 6", "Role 3"}
+	if diff := cmp.Diff(want, seen); diff != "" {
+		t.Errorf("by fit, page by page (-want +got):\n%s", diff)
+	}
+
+	app = sendKeyAndApply(t, app, runeKey('s'))
+
+	if titles := pageTitles(app); len(app.allPostings.starts) != 1 || len(titles) == 0 || titles[0] != "Role 6" {
+		t.Errorf("after s again: page %d starting %q, want page 1 newest first", len(app.allPostings.starts), titles)
+	}
+}
+
+func TestAllPostings_AScoreRecordedElsewhere_Shows(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	p := mustUpsertPosting(t, s, acme.ID, "1", "Role 1")
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 140, Height: 30})
+	app = openAllPostings(t, app)
+
+	mustScore(t, s, p, 4, "p")
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "posting_scores", RowID: 1, Op: "insert", Origin: "mcp:7"}}})
+
+	if got := app.allPostings.page.Listings[0].Score; got != 4 {
+		t.Errorf("score after the agent recorded one = %d, want 4", got)
 	}
 }
