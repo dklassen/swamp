@@ -1,6 +1,7 @@
 -- name: ListPendingPostings :many
--- One page of the pending postings, by posting ID after an optional
--- cursor, with how many there are in all.
+-- One page of the pending postings, newest first (by posting ID, as the
+-- all-postings view shows them) before an optional cursor, with how many
+-- there are in all.
 --
 -- Eligible: open, not archived, not interested, no application, at a
 -- company the user hasn't deleted, and let through by that company's
@@ -44,8 +45,8 @@ FROM (
             AND (sqlc.narg('rescore_profile') IS NULL OR s.profile_sha256 = sqlc.narg('rescore_profile'))
       )
 ) AS m
-WHERE sqlc.narg('after_id') IS NULL OR m.id > sqlc.narg('after_id')
-ORDER BY m.id
+WHERE sqlc.narg('before_id') IS NULL OR m.id < sqlc.narg('before_id')
+ORDER BY m.id DESC
 LIMIT sqlc.arg('max_rows');
 
 -- name: GetPostingContentSHA256 :one

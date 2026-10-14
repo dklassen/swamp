@@ -226,12 +226,16 @@ A new `score-postings` skill, next to `apply-to-posting`, runs the loop:
 4. For the plausible ones, `read_posting`, then score with a reason.
 5. Report how many were scored, and list the best ones.
 
-## Estimates (not measured)
+## Estimates
 
-- The summary fields come to roughly 30–40 tokens per posting. Scoring all of about 2,000 postings is roughly 60–80k tokens of listings, across pages. Once part 1 stores every posting, the count may be several times that: 10,000 postings would be about 300–400k tokens, across several sessions. Routine scoring after a sync, with tens of new postings, stays small. Eligibility respects company filters (open question 1), which keeps a full scoring to what the user sees.
-- A description is roughly 500–1,500 tokens. Scoring from the summary first keeps descriptions to a small fraction.
+Measured on 2026-10-14 against the real database, through the MCP tools, before writing the skill (#326). Sizes are the bytes of each response. Token counts are estimated from them (about 4 characters a token for prose, 2–3 for hex), not counted with a tokenizer.
 
-Measure token counts on a copy of the real database before writing the skill.
+- **Profile:** 10.5 KB, about 2.6k tokens, read once per session.
+- **A pending row:** about 260 bytes, or 80–100 tokens, not the 30–40 guessed before. `ContentSHA256` is a quarter of the bytes, and hex tokenizes poorly, so it's 25–35 of those tokens. A page of 50 is about 13 KB, or 4–5k tokens.
+- **A full scoring:** 1,442 postings were pending: about 375 KB, or 110–140k tokens of listings, across sessions. Each score sent back with `record_scores` repeats the hash and adds a reason, about 60 tokens of the agent's output, so 70–90k more for all of them. Routine scoring after a sync, with tens of new postings, stays small.
+- **A description:** three plausible postings were 4.2, 4.9 and 6.3 KB, or 1.0–1.6k tokens each, the top of the 500–1,500 guessed before. Scoring from the summary first keeps them to a small fraction.
+
+Eligibility respects company filters (open question 1), but many companies have none, so most of a full scoring is clear misses (internships, contract annotation, design and marketing roles, other countries). Scoring them from the summary is cheap. Easier filtering for companies would make it cheaper, and is left for later.
 
 ## Where it can go wrong
 

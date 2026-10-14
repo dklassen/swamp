@@ -155,8 +155,9 @@ type Querier interface {
 	// What store.SoftDeleteCompany closes: a deleted company is never synced
 	// again, so nothing else would ever close these (#178).
 	ListOpenPostingIDsByCompany(ctx context.Context, companyID int64) ([]int64, error)
-	// One page of the pending postings, by posting ID after an optional
-	// cursor, with how many there are in all.
+	// One page of the pending postings, newest first (by posting ID, as the
+	// all-postings view shows them) before an optional cursor, with how many
+	// there are in all.
 	//
 	// Eligible: open, not archived, not interested, no application, at a
 	// company the user hasn't deleted, and let through by that company's
