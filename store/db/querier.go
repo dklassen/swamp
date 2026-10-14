@@ -169,6 +169,7 @@ type Querier interface {
 	// sqlc can't resolve the alias m.
 	ListPendingPostings(ctx context.Context, arg ListPendingPostingsParams) ([]ListPendingPostingsRow, error)
 	ListPostingHistoryByPosting(ctx context.Context, postingID int64) ([]PostingHistory, error)
+	ListPostingScores(ctx context.Context, postingID int64) ([]PostingScore, error)
 	// id DESC is a tiebreaker: a single sync inserts many rows within the same
 	// CURRENT_TIMESTAMP second (sqlite has only second resolution), so
 	// first_seen_at alone leaves ties with no guaranteed order.

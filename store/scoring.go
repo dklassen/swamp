@@ -38,6 +38,32 @@ func (r PendingReason) String() string {
 	return pendingReasonNames[r]
 }
 
+// ParsePendingReason is the reason named s, or an error for any other name.
+func ParsePendingReason(s string) (PendingReason, error) {
+	for i, name := range pendingReasonNames {
+		if name == s {
+			return PendingReason(i), nil
+		}
+	}
+	return 0, fmt.Errorf("store: unknown pending reason %q", s)
+}
+
+// MarshalText encodes r as its name, so JSON readers never see the const
+// order.
+func (r PendingReason) MarshalText() ([]byte, error) {
+	return []byte(r.String()), nil
+}
+
+// UnmarshalText is MarshalText's inverse.
+func (r *PendingReason) UnmarshalText(text []byte) error {
+	parsed, err := ParsePendingReason(string(text))
+	if err != nil {
+		return err
+	}
+	*r = parsed
+	return nil
+}
+
 // PendingPosting is a posting with no score yet on what it says now:
 // enough to judge it from, and the content hash its score must name.
 type PendingPosting struct {
@@ -181,6 +207,41 @@ func (r ScoreRefusal) String() string {
 	return scoreRefusalNames[r]
 }
 
+// ScoreRefusals returns every refusal, in const order.
+func ScoreRefusals() []ScoreRefusal {
+	refusals := make([]ScoreRefusal, len(scoreRefusalNames))
+	for i := range scoreRefusalNames {
+		refusals[i] = ScoreRefusal(i)
+	}
+	return refusals
+}
+
+// ParseScoreRefusal is the refusal named s, or an error for any other name.
+func ParseScoreRefusal(s string) (ScoreRefusal, error) {
+	for i, name := range scoreRefusalNames {
+		if name == s {
+			return ScoreRefusal(i), nil
+		}
+	}
+	return 0, fmt.Errorf("store: unknown score refusal %q", s)
+}
+
+// MarshalText encodes r as its name, so JSON readers never see the const
+// order.
+func (r ScoreRefusal) MarshalText() ([]byte, error) {
+	return []byte(r.String()), nil
+}
+
+// UnmarshalText is MarshalText's inverse.
+func (r *ScoreRefusal) UnmarshalText(text []byte) error {
+	parsed, err := ParseScoreRefusal(string(text))
+	if err != nil {
+		return err
+	}
+	*r = parsed
+	return nil
+}
+
 // RefusedScore is an entry RecordScores didn't record, and why.
 type RefusedScore struct {
 	PostingID int64
@@ -274,4 +335,40 @@ func checkScoreEntry(ctx context.Context, qtx *db.Queries, provenance ScoreProve
 		return ScoreRepeat, false, nil
 	}
 	return 0, true, nil
+}
+
+// PostingScore is one score a posting was given, and what produced it.
+type PostingScore struct {
+	ID int64
+	ScoreProvenance
+	Score         int
+	Reason        string
+	ContentSHA256 string
+	ScoredAt      time.Time
+}
+
+// PostingScores returns every score postingID was given, newest, its
+// current one, first.
+func (s *Store) PostingScores(ctx context.Context, postingID int64) ([]PostingScore, error) {
+	rows, err := s.queries.ListPostingScores(ctx, postingID)
+	if err != nil {
+		return nil, fmt.Errorf("store: scores of posting %d: %w", postingID, err)
+	}
+	scores := make([]PostingScore, len(rows))
+	for i, row := range rows {
+		scores[i] = PostingScore{
+			ID: row.ID,
+			ScoreProvenance: ScoreProvenance{
+				Model:         row.Model,
+				ClientName:    row.ClientName,
+				ClientVersion: row.ClientVersion,
+				ProfileSHA256: row.ProfileSha256,
+			},
+			Score:         int(row.Score),
+			Reason:        row.Reason,
+			ContentSHA256: row.ContentSha256,
+			ScoredAt:      row.ScoredAt,
+		}
+	}
+	return scores, nil
 }

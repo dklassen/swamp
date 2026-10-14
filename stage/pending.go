@@ -44,16 +44,15 @@ type PendingResult struct {
 // PendingMatch is a posting still to score: enough to judge it from, the
 // content hash its score must name, and why it's pending.
 type PendingMatch struct {
-	ID            int64              `json:"ID"`
-	Title         string             `json:"Title"`
-	CompanyName   string             `json:"CompanyName"`
-	Department    string             `json:"Department"`
-	Location      string             `json:"Location"`
-	WorkplaceType string             `json:"WorkplaceType"`
-	PublishedAt   store.OptionalTime `json:"PublishedAt"`
-	ContentSHA256 string             `json:"ContentSHA256"`
-	// Reason is new, changed or rescore.
-	Reason string `json:"Reason"`
+	ID            int64               `json:"ID"`
+	Title         string              `json:"Title"`
+	CompanyName   string              `json:"CompanyName"`
+	Department    string              `json:"Department"`
+	Location      string              `json:"Location"`
+	WorkplaceType string              `json:"WorkplaceType"`
+	PublishedAt   store.OptionalTime  `json:"PublishedAt"`
+	ContentSHA256 string              `json:"ContentSHA256"`
+	Reason        store.PendingReason `json:"Reason"`
 }
 
 // pendingFilters is what a list_pending_postings cursor is bound to.
@@ -103,7 +102,7 @@ func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (Pend
 			WorkplaceType: p.WorkplaceType,
 			PublishedAt:   store.OptionalTime{Time: p.PublishedAt},
 			ContentSHA256: p.ContentSHA256,
-			Reason:        p.Reason.String(),
+			Reason:        p.Reason,
 		}
 	}
 	if page.HasMore {

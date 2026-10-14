@@ -63,3 +63,8 @@ SELECT EXISTS (
 -- name: CreatePostingScore :exec
 INSERT INTO posting_scores (posting_id, score, reason, content_sha256, profile_sha256, model, client_name, client_version)
 VALUES (?, ?, ?, ?, ?, ?, ?, ?);
+
+-- name: ListPostingScores :many
+SELECT * FROM posting_scores
+WHERE posting_id = ?
+ORDER BY id DESC;

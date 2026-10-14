@@ -61,6 +61,12 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 	}, listPendingPostingsHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:         "record_scores",
+		Description:  "Record how well postings fit the user, in one batch: each score is 1 (no fit) to 5 (apply now), with a one-line reason shown next to it and the ContentSHA256 you read from list_pending_postings or read_posting. Pass your own model ID and read_profile's SHA256; a stale SHA256 records nothing. Batch many scores per call. Each entry is recorded or refused, with why: no_such_posting, score_out_of_range, no_reason, content_changed (the posting changed since you read it; it stays pending) or already_scored (a score on that content, against that profile, from that model exists).",
+		OutputSchema: recordScoresOutputSchema(),
+	}, recordScoresHandler(st))
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "stage_prepare",
 		Description: "Commit to drafting one posting's application: creates its application record if one doesn't exist yet, ensures its document directory exists, and returns the resolved cover letter/resume paths plus any existing review feedback. Idempotent -- safe to call again for the same posting.",
 	}, stagePrepareHandler(st))
@@ -79,7 +85,7 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_canonical_resume",
-		Description: "Read the user's canonical resume: their maintained, best-version resume in markdown, the baseline to tailor for each posting instead of writing a resume from scratch. Read-only; the user maintains it. SHA256 is the content's hash: pass it to list_pending_postings when scoring postings against this profile.",
+		Description: "Read the user's canonical resume: their maintained, best-version resume in markdown, the baseline to tailor for each posting instead of writing a resume from scratch. Read-only; the user maintains it. SHA256 is the content's hash: pass it to list_pending_postings and record_scores when scoring postings against this profile.",
 	}, readCanonicalHandler("read_canonical_resume", d.CanonicalResumePath()))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -257,6 +263,42 @@ func listPendingPostingsHandler(st *stage.Stage) mcp.ToolHandlerFor[listPendingP
 		result, err := st.PendingPostings(ctx, stage.PendingOptions{ProfileSHA256: in.ProfileSHA256, Rescore: in.Rescore, Cursor: in.Cursor, Limit: in.Limit})
 		if err != nil {
 			return nil, nil, fmt.Errorf("list_pending_postings: %w", err)
+		}
+		return nil, result, nil
+	}
+}
+
+type recordScoresInput struct {
+	Model         string             `json:"Model" jsonschema:"your model ID, e.g. claude-opus-5-5"`
+	ProfileSHA256 string             `json:"ProfileSHA256" jsonschema:"read_profile's SHA256"`
+	Scores        []stage.ScoreInput `json:"Scores" jsonschema:"the scores, each with PostingID, Score (1-5), Reason (one line) and the ContentSHA256 you read"`
+}
+
+// recordScoresOutputSchema advertises a refusal's Why as its name, one of
+// the store's refusals: inferred, it would be ScoreRefusal's int.
+func recordScoresOutputSchema() *jsonschema.Schema {
+	schema, err := jsonschema.For[stage.RecordResult](nil)
+	if err != nil {
+		panic(fmt.Sprintf("mcpserver: infer record_scores output schema: %v", err))
+	}
+	var names []any
+	for _, refusal := range store.ScoreRefusals() {
+		names = append(names, refusal.String())
+	}
+	schema.Properties["Refused"].Items.Properties["Why"] = &jsonschema.Schema{Type: "string", Enum: names}
+	return schema
+}
+
+func recordScoresHandler(st *stage.Stage) mcp.ToolHandlerFor[recordScoresInput, stage.RecordResult] {
+	return func(ctx context.Context, req *mcp.CallToolRequest, in recordScoresInput) (*mcp.CallToolResult, stage.RecordResult, error) {
+		opts := stage.RecordOptions{Model: in.Model, ProfileSHA256: in.ProfileSHA256, Scores: in.Scores}
+		// Client info is optional in MCP; scores without it record none.
+		if params := req.Session.InitializeParams(); params != nil && params.ClientInfo != nil {
+			opts.ClientName, opts.ClientVersion = params.ClientInfo.Name, params.ClientInfo.Version
+		}
+		result, err := st.RecordScores(ctx, opts)
+		if err != nil {
+			return nil, stage.RecordResult{}, fmt.Errorf("record_scores: %w", err)
 		}
 		return nil, result, nil
 	}

@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -298,5 +299,83 @@ func TestSearchPostings_RowsCarryTheNewestScore(t *testing.T) {
 		if diff := cmp.Diff(want, got); diff != "" {
 			t.Errorf("%s: scores (-want +got):\n%s", order, diff)
 		}
+	}
+}
+
+func TestPostingScores_NewestFirstWithWhatProducedThem(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	p := mustUpsertPostingIn(t, s, acme.ID, "1", "Role", "")
+	other := mustUpsertPostingIn(t, s, acme.ID, "2", "Other", "")
+	first := ScoreProvenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: "profile"}
+	second := ScoreProvenance{Model: "claude-opus-5-5", ClientName: "claude-code", ClientVersion: "2.4.1", ProfileSHA256: "edited profile"}
+	for _, r := range []struct {
+		provenance ScoreProvenance
+		entries    []ScoreEntry
+	}{
+		{first, []ScoreEntry{{PostingID: p.ID, Score: 2, Reason: "first look", ContentSHA256: p.ContentSHA256}, {PostingID: other.ID, Score: 1, Reason: "not this one", ContentSHA256: other.ContentSHA256}}},
+		{second, []ScoreEntry{{PostingID: p.ID, Score: 4, Reason: "after the edit", ContentSHA256: p.ContentSHA256}}},
+	} {
+		if _, err := s.RecordScores(ctx, r.provenance, r.entries); err != nil {
+			t.Fatalf("RecordScores: %v", err)
+		}
+	}
+
+	scores, err := s.PostingScores(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("PostingScores: %v", err)
+	}
+	type summary struct {
+		Score      int
+		Reason     string
+		Provenance ScoreProvenance
+		Content    string
+	}
+	var got []summary
+	for _, sc := range scores {
+		if sc.ScoredAt.IsZero() {
+			t.Errorf("score %d has no ScoredAt", sc.ID)
+		}
+		got = append(got, summary{sc.Score, sc.Reason, sc.ScoreProvenance, sc.ContentSHA256})
+	}
+	want := []summary{{4, "after the edit", second, p.ContentSHA256}, {2, "first look", first, p.ContentSHA256}}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("scores (-want +got):\n%s", diff)
+	}
+}
+
+// The vocabularies the agent reads go to and from JSON as their names.
+func TestScoringVocabularies_RoundTripThroughJSONByName(t *testing.T) {
+	t.Parallel()
+
+	for _, r := range []PendingReason{PendingNew, PendingChanged, PendingRescore} {
+		encoded, err := json.Marshal(r)
+		if err != nil {
+			t.Fatalf("Marshal(%v): %v", r, err)
+		}
+		var decoded PendingReason
+		if err := json.Unmarshal(encoded, &decoded); err != nil || decoded != r || string(encoded) != `"`+r.String()+`"` {
+			t.Errorf("%v: encoded %s, decoded %v (%v)", r, encoded, decoded, err)
+		}
+	}
+	for _, r := range []ScoreRefusal{ScoreNoSuchPosting, ScoreOutOfRange, ScoreNoReason, ScoreContentChanged, ScoreRepeat} {
+		encoded, err := json.Marshal(r)
+		if err != nil {
+			t.Fatalf("Marshal(%v): %v", r, err)
+		}
+		var decoded ScoreRefusal
+		if err := json.Unmarshal(encoded, &decoded); err != nil || decoded != r || string(encoded) != `"`+r.String()+`"` {
+			t.Errorf("%v: encoded %s, decoded %v (%v)", r, encoded, decoded, err)
+		}
+	}
+	var reason PendingReason
+	if err := json.Unmarshal([]byte(`"stale"`), &reason); err == nil {
+		t.Error(`decoding the pending reason "stale" succeeded, want it refused`)
+	}
+	var refusal ScoreRefusal
+	if err := json.Unmarshal([]byte(`"too_high"`), &refusal); err == nil {
+		t.Error(`decoding the refusal "too_high" succeeded, want it refused`)
 	}
 }
