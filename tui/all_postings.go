@@ -21,7 +21,10 @@ const fitColWidth = 3
 
 const allPostingsHelp = "↑/↓ (j/k): select  ←/→ (h/l): page  s: sort  enter: detail  i: interested  x: archive  o: open  tab: applications"
 
-const allPostingsSearchHelp = "type to search  ↑/↓ (ctrl+n/p): select  ←/→: page  enter: detail  esc: clear"
+const allPostingsSearchHelp = "type to search  ↑/↓ (ctrl+n/p): select  ←/→: page  enter: keep results  esc: clear"
+
+// allPostingsResultsHelp is the help once enter has kept a search's results.
+const allPostingsResultsHelp = "↑/↓ (j/k): select  ←/→ (h/l): page  s: sort  enter: detail  i: interested  x: archive  o: open  /: edit search  esc: clear search"
 
 // allPostingsModel drives the all-postings view: every company's open
 // postings that its filters let through, newest to Swamp first, a page at
@@ -39,7 +42,7 @@ type allPostingsModel struct {
 	// size is the number of rows page was read at.
 	size int
 	// searching is whether the '/' line is open and taking keys; query is
-	// what's been typed into it.
+	// what's been typed into it, kept with its results once enter closes it.
 	searching bool
 	query     string
 	// typed counts keys typed into the search, so only the pause after the
@@ -208,8 +211,11 @@ func locationLabel(l store.PostingListing) string {
 func (m *allPostingsModel) View(width, height int) string {
 	var b strings.Builder
 	help := helpStyle.Render(allPostingsHelp)
-	if m.searching {
+	switch {
+	case m.searching:
 		help = helpStyle.Render(allPostingsSearchHelp)
+	case m.query != "":
+		help = helpStyle.Render(allPostingsResultsHelp)
 	}
 	b.WriteString(searchLine(m.searching, m.query, m.page.Total, m.total) + "\n")
 	fmt.Fprintf(&b, "%s\n", dimStyle.Render(fmt.Sprintf("Page %d of %d · %d postings · %s", len(m.starts), m.pages(), m.page.Total, m.orderLabel())))
@@ -283,6 +289,8 @@ func (m *allPostingsModel) Update(msg tea.KeyMsg, size int) (tea.Cmd, tea.Msg) {
 		return m.firstPage(size), nil
 	case msg.String() == "/":
 		m.searching = true
+	case msg.Type == tea.KeyEsc:
+		return m.clearSearch(size), nil
 	case msg.String() == "i":
 		if m.cursor < len(m.page.Listings) {
 			l := m.page.Listings[m.cursor]
@@ -316,11 +324,7 @@ func (m *allPostingsModel) updateSearch(msg tea.KeyMsg, size int) (tea.Cmd, tea.
 		m.searching = false
 	case tea.KeyEsc:
 		m.searching = false
-		if m.query != "" {
-			m.query = ""
-			m.typed++
-			return m.firstPage(size), nil
-		}
+		return m.clearSearch(size), nil
 	case tea.KeyDown, tea.KeyCtrlN:
 		if m.cursor < len(m.page.Listings)-1 {
 			m.cursor++
@@ -334,11 +338,20 @@ func (m *allPostingsModel) updateSearch(msg tea.KeyMsg, size int) (tea.Cmd, tea.
 	case tea.KeyLeft:
 		return m.previousPage(size), nil
 	case tea.KeyEnter:
-		if m.cursor < len(m.page.Listings) {
-			return nil, enterPostingDetailMsg{postingID: m.page.Listings[m.cursor].ID}
-		}
+		// Keeps the results, so letters act on them instead of being typed.
+		m.searching = false
 	}
 	return nil, nil
+}
+
+// clearSearch drops the query and reloads page 1 without it, if there was one.
+func (m *allPostingsModel) clearSearch(size int) tea.Cmd {
+	if m.query == "" {
+		return nil
+	}
+	m.query = ""
+	m.typed++
+	return m.firstPage(size)
 }
 
 // openJobURLMsg asks App to open a posting in the browser.

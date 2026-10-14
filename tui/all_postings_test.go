@@ -500,6 +500,107 @@ func TestAllPostings_EscClearsTheSearch(t *testing.T) {
 	}
 }
 
+func TestAllPostings_EnterKeepsTheResultsAndKeysActOnThem(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
+	designer := mustUpsertPosting(t, s, acme.ID, "2", "Designer")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = openAllPostings(t, app)
+	app = searchAllPostings(t, app, "design")
+
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, runeKey('i'))
+
+	if app.screen != screenAllPostings || app.allPostings.searching || app.allPostings.query != "design" {
+		t.Errorf("after enter, i: screen %v, searching %v, query %q; want the view, not typing, query \"design\"", app.screen, app.allPostings.searching, app.allPostings.query)
+	}
+	markup, err := s.GetPostingMarkup(context.Background(), designer.ID)
+	if err != nil {
+		t.Fatalf("GetPostingMarkup: %v", err)
+	}
+	if markup.InterestedAt == nil {
+		t.Error("i didn't mark the highlighted match interested")
+	}
+	if diff := cmp.Diff([]string{"Designer"}, pageTitles(app)); diff != "" {
+		t.Errorf("results after enter, i (-want +got):\n%s", diff)
+	}
+}
+
+func TestAllPostings_View_KeptResults(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
+	mustUpsertPosting(t, s, acme.ID, "2", "Designer")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 200, Height: 30})
+	app = openAllPostings(t, app)
+	app = searchAllPostings(t, app, "design")
+	if view := app.View(); !strings.Contains(view, "enter: keep results") {
+		t.Errorf("typing help doesn't say enter keeps the results:\n%s", view)
+	}
+
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+
+	view := app.View()
+	for _, want := range []string{"🔍 design  1 of 2", "/: edit search", "esc: clear search", "i: interested"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view doesn't show %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "▏") {
+		t.Errorf("view shows a typing caret after enter:\n%s", view)
+	}
+}
+
+func TestAllPostings_SlashEditsKeptResultsQuery(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustUpsertPosting(t, s, acme.ID, "1", "Designer")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = openAllPostings(t, app)
+	app = searchAllPostings(t, app, "design")
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+
+	app = sendKeyAndApply(t, app, runeKey('/'))
+	app, _ = sendKey(app, runeKey('i'))
+
+	if !app.allPostings.searching || app.allPostings.query != "designi" {
+		t.Errorf("after /, i: searching %v, query %q; want typing, \"designi\"", app.allPostings.searching, app.allPostings.query)
+	}
+}
+
+func TestAllPostings_EscClearsKeptResults(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
+	mustUpsertPosting(t, s, acme.ID, "2", "Designer")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = openAllPostings(t, app)
+	app = searchAllPostings(t, app, "design")
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEsc})
+
+	if app.screen != screenAllPostings || app.allPostings.query != "" {
+		t.Errorf("after esc: screen %v, query %q; want the view, query cleared", app.screen, app.allPostings.query)
+	}
+	if diff := cmp.Diff([]string{"Designer", "Platform Engineer"}, pageTitles(app)); diff != "" {
+		t.Errorf("after esc (-want +got):\n%s", diff)
+	}
+}
+
 func TestAllPostings_PagesThroughSearchResults(t *testing.T) {
 	t.Parallel()
 
