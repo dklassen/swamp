@@ -145,14 +145,15 @@ func TestApp_ActiveApplications_SearchSurvivesDetailAndTab(t *testing.T) {
 		app = sendKeyAndApply(t, app, runeKey(r))
 	}
 	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
 	if app.screen != screenApplicationDetail || app.applicationDetail.application.Posting.Title != "Engineer 07" {
-		t.Fatalf("after enter: screen %v showing %q, want application detail for Engineer 07", app.screen, app.applicationDetail.application.Posting.Title)
+		t.Fatalf("after enter, enter: screen %v showing %q, want application detail for Engineer 07", app.screen, app.applicationDetail.application.Posting.Title)
 	}
 	for _, key := range []tea.KeyMsg{{Type: tea.KeyEsc}, {Type: tea.KeyTab}, {Type: tea.KeyTab}, {Type: tea.KeyTab}} {
 		app = sendKeyAndApply(t, app, key)
 	}
-	if app.screen != screenActiveApplications || !app.activeApplicationList.searching || app.activeApplicationList.query != "engineer 07" {
-		t.Errorf("back on the home list: screen %v, searching %v, query %q; want the search still open on %q",
+	if app.screen != screenActiveApplications || app.activeApplicationList.searching || app.activeApplicationList.query != "engineer 07" {
+		t.Errorf("back on the home list: screen %v, searching %v, query %q; want the matches for %q still kept",
 			app.screen, app.activeApplicationList.searching, app.activeApplicationList.query, "engineer 07")
 	}
 }
