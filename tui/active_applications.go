@@ -86,11 +86,15 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 	if m.searching {
 		return m.updateSearch(msg, apps)
 	}
+	// Commands act on the matches a kept search shows, not the whole list.
+	visible := m.visible(apps)
 	switch {
 	case msg.String() == "/":
 		m.searching = true
+	case msg.Type == tea.KeyEsc:
+		m.clearSearch(apps)
 	case msg.Type == tea.KeyDown, msg.String() == "j":
-		if m.cursor < len(apps)-1 {
+		if m.cursor < len(visible)-1 {
 			m.cursor++
 		}
 	case msg.Type == tea.KeyUp, msg.String() == "k":
@@ -100,21 +104,21 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 	case msg.String() == "q":
 		return tea.Quit, nil
 	case msg.String() == "s":
-		if m.cursor < len(apps) {
-			a := apps[m.cursor]
+		if m.cursor < len(visible) {
+			a := visible[m.cursor]
 			return nil, enterApplicationStatusMsg{postingID: a.Posting.ID}
 		}
 	case msg.String() == "e":
-		if m.cursor < len(apps) {
-			return nil, enterApplicationExportMsg{application: apps[m.cursor]}
+		if m.cursor < len(visible) {
+			return nil, enterApplicationExportMsg{application: visible[m.cursor]}
 		}
 	case msg.String() == "d":
-		if m.cursor < len(apps) {
-			return nil, enterApplicationDeleteMsg{application: apps[m.cursor]}
+		if m.cursor < len(visible) {
+			return nil, enterApplicationDeleteMsg{application: visible[m.cursor]}
 		}
 	case msg.Type == tea.KeyEnter:
-		if m.cursor < len(apps) {
-			return nil, enterApplicationDetailMsg{application: apps[m.cursor]}
+		if m.cursor < len(visible) {
+			return nil, enterApplicationDetailMsg{application: visible[m.cursor]}
 		}
 	}
 	return nil, nil
@@ -136,14 +140,8 @@ func (m *activeApplicationListModel) updateSearch(msg tea.KeyMsg, apps []store.A
 			m.searching = false
 		}
 	case tea.KeyEsc:
-		cursor := 0
-		if visible := m.visible(apps); m.cursor < len(visible) {
-			id := visible[m.cursor].ID
-			cursor = max(slices.IndexFunc(apps, func(a store.ApplicationView) bool { return a.ID == id }), 0)
-		}
 		m.searching = false
-		m.query = ""
-		m.cursor = cursor
+		m.clearSearch(apps)
 	case tea.KeyDown, tea.KeyCtrlN:
 		if m.cursor < len(m.visible(apps))-1 {
 			m.cursor++
@@ -153,12 +151,22 @@ func (m *activeApplicationListModel) updateSearch(msg tea.KeyMsg, apps []store.A
 			m.cursor--
 		}
 	case tea.KeyEnter:
-		visible := m.visible(apps)
-		if m.cursor < len(visible) {
-			return nil, enterApplicationDetailMsg{application: visible[m.cursor]}
-		}
+		// Keeps the matches, so letters act on them instead of being typed.
+		m.searching = false
 	}
 	return nil, nil
+}
+
+// clearSearch drops the query, keeping the highlighted application
+// highlighted in the full list.
+func (m *activeApplicationListModel) clearSearch(apps []store.ApplicationView) {
+	cursor := 0
+	if visible := m.visible(apps); m.cursor < len(visible) {
+		id := visible[m.cursor].ID
+		cursor = max(slices.IndexFunc(apps, func(a store.ApplicationView) bool { return a.ID == id }), 0)
+	}
+	m.query = ""
+	m.cursor = cursor
 }
 
 // visible is the part of apps the query matches: a case-insensitive
@@ -185,8 +193,11 @@ func (m *activeApplicationListModel) visible(apps []store.ApplicationView) []sto
 func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress map[int64]map[documents.Type]documentProgress, now time.Time, width, height int) string {
 	var b strings.Builder
 	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: search  s: status  e: export PDFs  d: delete  tab: companies  q: quit")
-	if m.searching {
-		help = helpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: application detail  esc: clear")
+	switch {
+	case m.searching:
+		help = helpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: keep results  esc: clear")
+	case m.query != "":
+		help = helpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: edit search  esc: clear search  s: status  e: export PDFs  d: delete  q: quit")
 	}
 	visible := m.visible(apps)
 	// A reload landing while the prompt is open can shrink visible under
