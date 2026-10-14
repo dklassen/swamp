@@ -275,3 +275,39 @@ func checkScoreEntry(ctx context.Context, qtx *db.Queries, provenance ScoreProve
 	}
 	return 0, true, nil
 }
+
+// PostingScore is one score a posting was given, and what produced it.
+type PostingScore struct {
+	ID int64
+	ScoreProvenance
+	Score         int
+	Reason        string
+	ContentSHA256 string
+	ScoredAt      time.Time
+}
+
+// PostingScores returns every score postingID was given, newest, its
+// current one, first.
+func (s *Store) PostingScores(ctx context.Context, postingID int64) ([]PostingScore, error) {
+	rows, err := s.queries.ListPostingScores(ctx, postingID)
+	if err != nil {
+		return nil, fmt.Errorf("store: scores of posting %d: %w", postingID, err)
+	}
+	scores := make([]PostingScore, len(rows))
+	for i, row := range rows {
+		scores[i] = PostingScore{
+			ID: row.ID,
+			ScoreProvenance: ScoreProvenance{
+				Model:         row.Model,
+				ClientName:    row.ClientName,
+				ClientVersion: row.ClientVersion,
+				ProfileSHA256: row.ProfileSha256,
+			},
+			Score:         int(row.Score),
+			Reason:        row.Reason,
+			ContentSHA256: row.ContentSha256,
+			ScoredAt:      row.ScoredAt,
+		}
+	}
+	return scores, nil
+}

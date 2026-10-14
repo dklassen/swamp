@@ -185,3 +185,43 @@ func (q *Queries) ListPendingPostings(ctx context.Context, arg ListPendingPostin
 	}
 	return items, nil
 }
+
+const listPostingScores = `-- name: ListPostingScores :many
+SELECT id, posting_id, score, reason, content_sha256, profile_sha256, model, client_name, client_version, scored_at FROM posting_scores
+WHERE posting_id = ?
+ORDER BY id DESC
+`
+
+func (q *Queries) ListPostingScores(ctx context.Context, postingID int64) ([]PostingScore, error) {
+	rows, err := q.db.QueryContext(ctx, listPostingScores, postingID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PostingScore
+	for rows.Next() {
+		var i PostingScore
+		if err := rows.Scan(
+			&i.ID,
+			&i.PostingID,
+			&i.Score,
+			&i.Reason,
+			&i.ContentSha256,
+			&i.ProfileSha256,
+			&i.Model,
+			&i.ClientName,
+			&i.ClientVersion,
+			&i.ScoredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
