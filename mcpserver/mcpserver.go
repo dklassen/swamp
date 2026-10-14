@@ -52,17 +52,17 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_posting",
-		Description: "Read one posting in full: its summary, the description as text, the job URL, its company's description, and ContentSHA256, the hash of the content you read. Use it to judge a posting before scoring it; a score must name the ContentSHA256 it was given for. Refuses an unknown posting, or one at a company the user deleted.",
+		Description: "Read one posting in full: its summary, the description as text, the job URL, its company's description, and Version, the version of the content you read. Use it to judge a posting before scoring it; a score must name the Version it was given for as its PostingVersion. Refuses an unknown posting, or one at a company the user deleted.",
 	}, readPostingHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "list_pending_postings",
-		Description: "List the postings still to score for fit, a page at a time, newest first (the all-postings view's default order): each one's ID, company, title, department, location, workplace type, published date, ContentSHA256 (which its score must name) and why it's pending: new (never scored) or changed (its content changed since). Pass read_profile's SHA256; it's refused if the profile has changed since. Rescore lists postings with no score against this profile instead, which after a profile edit is all of them (reason rescore): use it only when the user asks for a rescore. Eligible postings are open, not archived, not interested, without an application, and let through by their company's filters. Pass NextCursor back as Cursor, with the same ProfileSHA256 and Rescore, for the next page; it's null on the last page. Total is how many are pending.",
+		Description: "List the postings still to score for fit, a page at a time, newest first (the all-postings view's default order): each one's ID, company, title, department, location, workplace type, published date, Version (which its score must name as PostingVersion) and why it's pending: new (never scored) or changed (its content changed since). Pass read_profile's Version as ProfileVersion; it's refused if the profile has changed since. Rescore lists postings with no score against this profile instead, which after a profile edit is all of them (reason rescore): use it only when the user asks for a rescore. Eligible postings are open, not archived, not interested, without an application, and let through by their company's filters. Pass NextCursor back as Cursor, with the same ProfileVersion and Rescore, for the next page; it's null on the last page. Total is how many are pending.",
 	}, listPendingPostingsHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:         "record_scores",
-		Description:  "Record how well postings fit the user, in one batch: each score is 1 (no fit) to 5 (apply now), with a one-line reason shown next to it and the ContentSHA256 you read from list_pending_postings or read_posting. Pass your own model ID and read_profile's SHA256; a stale SHA256 records nothing. Batch many scores per call. Each entry is recorded or refused, with why: no_such_posting, score_out_of_range, no_reason, content_changed (the posting changed since you read it; it stays pending) or already_scored (a score on that content, against that profile, from that model exists).",
+		Description:  "Record how well postings fit the user, in one batch: each score is 1 (no fit) to 5 (apply now), with a one-line reason shown next to it and, as PostingVersion, the Version you read from list_pending_postings or read_posting. Pass your own model ID and read_profile's Version as ProfileVersion; a stale one records nothing. Batch many scores per call. Each entry is recorded or refused, with why: no_such_posting, score_out_of_range, no_reason, content_changed (the posting changed since you read it; it stays pending) or already_scored (a score on that content, against that profile, from that model exists).",
 		OutputSchema: recordScoresOutputSchema(),
 	}, recordScoresHandler(st))
 
@@ -73,7 +73,7 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "write_document",
-		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have. Refuses, writing nothing, an application that doesn't exist or that the user deleted, or (given ExpectedSHA256) a document that changed since it was read; the error says what to do instead.",
+		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have. Refuses, writing nothing, an application that doesn't exist or that the user deleted, or (given ReplacesVersion) a document that changed since it was read; the error says what to do instead.",
 		InputSchema: documentInputSchema[writeDocumentInput](),
 	}, writeDocumentHandler(st))
 
@@ -85,7 +85,7 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_canonical_resume",
-		Description: "Read the user's canonical resume: their maintained, best-version resume in markdown, the baseline to tailor for each posting instead of writing a resume from scratch. Read-only; the user maintains it. SHA256 is the content's hash: pass it to list_pending_postings and record_scores when scoring postings against this profile.",
+		Description: "Read the user's canonical resume: their maintained, best-version resume in markdown, the baseline to tailor for each posting instead of writing a resume from scratch. Read-only; the user maintains it.",
 	}, readCanonicalHandler("read_canonical_resume", d.CanonicalResumePath()))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -252,15 +252,15 @@ func readPostingHandler(st *stage.Stage) mcp.ToolHandlerFor[readPostingInput, an
 }
 
 type listPendingPostingsInput struct {
-	ProfileSHA256 string `json:"ProfileSHA256" jsonschema:"read_profile's SHA256"`
-	Rescore       bool   `json:"Rescore,omitempty" jsonschema:"list postings with no score against this profile, not just none at all; only when the user asks for a rescore"`
-	Cursor        string `json:"Cursor,omitempty" jsonschema:"the previous page's NextCursor, unchanged; omit for the first page"`
-	Limit         int    `json:"Limit,omitempty" jsonschema:"postings per page: 50 by default, at most 100"`
+	ProfileVersion string `json:"ProfileVersion" jsonschema:"read_profile's Version"`
+	Rescore        bool   `json:"Rescore,omitempty" jsonschema:"list postings with no score against this profile, not just none at all; only when the user asks for a rescore"`
+	Cursor         string `json:"Cursor,omitempty" jsonschema:"the previous page's NextCursor, unchanged; omit for the first page"`
+	Limit          int    `json:"Limit,omitempty" jsonschema:"postings per page: 50 by default, at most 100"`
 }
 
 func listPendingPostingsHandler(st *stage.Stage) mcp.ToolHandlerFor[listPendingPostingsInput, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in listPendingPostingsInput) (*mcp.CallToolResult, any, error) {
-		result, err := st.PendingPostings(ctx, stage.PendingOptions{ProfileSHA256: in.ProfileSHA256, Rescore: in.Rescore, Cursor: in.Cursor, Limit: in.Limit})
+		result, err := st.PendingPostings(ctx, stage.PendingOptions{ProfileVersion: in.ProfileVersion, Rescore: in.Rescore, Cursor: in.Cursor, Limit: in.Limit})
 		if err != nil {
 			return nil, nil, fmt.Errorf("list_pending_postings: %w", err)
 		}
@@ -269,9 +269,9 @@ func listPendingPostingsHandler(st *stage.Stage) mcp.ToolHandlerFor[listPendingP
 }
 
 type recordScoresInput struct {
-	Model         string             `json:"Model" jsonschema:"your model ID, e.g. claude-opus-5-5"`
-	ProfileSHA256 string             `json:"ProfileSHA256" jsonschema:"read_profile's SHA256"`
-	Scores        []stage.ScoreInput `json:"Scores" jsonschema:"the scores, each with PostingID, Score (1-5), Reason (one line) and the ContentSHA256 you read"`
+	Model          string             `json:"Model" jsonschema:"your model ID, e.g. claude-opus-5-5"`
+	ProfileVersion string             `json:"ProfileVersion" jsonschema:"read_profile's Version"`
+	Scores         []stage.ScoreInput `json:"Scores" jsonschema:"the scores, each with PostingID, Score (1-5), Reason (one line) and, as PostingVersion, the posting's Version you read"`
 }
 
 // recordScoresOutputSchema advertises a refusal's Why as its name, one of
@@ -291,7 +291,7 @@ func recordScoresOutputSchema() *jsonschema.Schema {
 
 func recordScoresHandler(st *stage.Stage) mcp.ToolHandlerFor[recordScoresInput, stage.RecordResult] {
 	return func(ctx context.Context, req *mcp.CallToolRequest, in recordScoresInput) (*mcp.CallToolResult, stage.RecordResult, error) {
-		opts := stage.RecordOptions{Model: in.Model, ProfileSHA256: in.ProfileSHA256, Scores: in.Scores}
+		opts := stage.RecordOptions{Model: in.Model, ProfileVersion: in.ProfileVersion, Scores: in.Scores}
 		// Client info is optional in MCP; scores without it record none.
 		if params := req.Session.InitializeParams(); params != nil && params.ClientInfo != nil {
 			opts.ClientName, opts.ClientVersion = params.ClientInfo.Name, params.ClientInfo.Version
@@ -310,7 +310,7 @@ type writeDocumentInput struct {
 	Content       string         `json:"Content" jsonschema:"the full document content to write, replacing whatever is there"`
 	// A pointer so an empty value is refused rather than taken for omitted,
 	// which writes unconditionally.
-	ExpectedSHA256 *string `json:"ExpectedSHA256,omitempty" jsonschema:"the SHA256 from the stage_prepare or read_document you drafted from, which is no_document_yet when the document doesn't exist yet; the write is refused if the document changed since. Omit only when the user asked to overwrite regardless"`
+	ReplacesVersion *string `json:"ReplacesVersion,omitempty" jsonschema:"the Version this write replaces: from the read_document or stage_prepare you drafted from, which is no_document_yet when the document doesn't exist yet; the write is refused if the document changed since. Omit only when the user asked to overwrite regardless"`
 }
 
 type writeDocumentOutput struct {
@@ -320,12 +320,12 @@ type writeDocumentOutput struct {
 
 func writeDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[writeDocumentInput, writeDocumentOutput] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in writeDocumentInput) (*mcp.CallToolResult, writeDocumentOutput, error) {
-		path, err := st.WriteDocument(ctx, in.ApplicationID, in.DocumentType, in.Content, in.ExpectedSHA256)
+		path, err := st.WriteDocument(ctx, in.ApplicationID, in.DocumentType, in.Content, in.ReplacesVersion)
 		if errors.Is(err, documents.ErrChanged) {
-			if *in.ExpectedSHA256 == stage.NoDocumentYet {
+			if *in.ReplacesVersion == stage.NoDocumentYet {
 				return nil, writeDocumentOutput{}, fmt.Errorf("write_document: application %d already has a %s, written since you saw it missing, so nothing was written; read it with read_document and ask the user before replacing it", in.ApplicationID, in.DocumentType)
 			}
-			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: application %d's %s changed since you read it, so nothing was written; read it again with read_document, apply your changes to what's there now, and pass its SHA256 as ExpectedSHA256", in.ApplicationID, in.DocumentType)
+			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: application %d's %s changed since you read it, so nothing was written; read it again with read_document, apply your changes to what's there now, and pass its Version as ReplacesVersion", in.ApplicationID, in.DocumentType)
 		}
 		if err != nil {
 			return nil, writeDocumentOutput{}, documentToolError("write_document", in.ApplicationID, in.DocumentType, ", so nothing was written", err)
@@ -347,8 +347,8 @@ func documentToolError(tool string, applicationID int64, documentType documents.
 		return fmt.Errorf("%s: there is no application %d%s; get the ApplicationID from stage_prepare for the posting you are drafting", tool, applicationID, consequence)
 	case errors.Is(err, stage.ErrDocumentNotWritten):
 		return fmt.Errorf("%s: application %d has no %s yet; draft one and save it with write_document", tool, applicationID, documentType)
-	case errors.Is(err, stage.ErrEmptyExpectedSHA256):
-		return fmt.Errorf("%s: ExpectedSHA256 is empty%s; pass %q if you expect no document yet, or the SHA256 stage_prepare or read_document gave you", tool, consequence, stage.NoDocumentYet)
+	case errors.Is(err, stage.ErrEmptyReplacesVersion):
+		return fmt.Errorf("%s: ReplacesVersion is empty%s; pass %q if you expect no document yet, or the Version stage_prepare or read_document gave you", tool, consequence, stage.NoDocumentYet)
 	default:
 		return fmt.Errorf("%s: %w", tool, err)
 	}
@@ -362,7 +362,7 @@ type readDocumentInput struct {
 type readDocumentOutput struct {
 	Path    string `json:"Path"`
 	Content string `json:"Content"`
-	SHA256  string `json:"SHA256" jsonschema:"pass this to write_document as ExpectedSHA256 when saving a revision of this content"`
+	Version string `json:"Version" jsonschema:"pass this to write_document as ReplacesVersion when saving a revision of this content"`
 }
 
 func readDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[readDocumentInput, readDocumentOutput] {
@@ -371,7 +371,7 @@ func readDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[readDocumentInput, 
 		if err != nil {
 			return nil, readDocumentOutput{}, documentToolError("read_document", in.ApplicationID, in.DocumentType, "", err)
 		}
-		return nil, readDocumentOutput{Path: path, Content: content, SHA256: documents.ContentSHA256(content)}, nil
+		return nil, readDocumentOutput{Path: path, Content: content, Version: documents.ContentSHA256(content)}, nil
 	}
 }
 
@@ -381,9 +381,9 @@ type readCanonicalOutput struct {
 	Path    string `json:"Path"`
 	Exists  bool   `json:"Exists"`
 	Content string `json:"Content"`
-	// SHA256 is Content's documents.ContentSHA256, the hash a scoring run
-	// records for the profile it scored against.
-	SHA256 string `json:"SHA256"`
+	// Version is Content's documents.ContentSHA256, which the scoring tools
+	// take back as ProfileVersion.
+	Version string `json:"Version"`
 }
 
 // readCanonicalHandler serves the user-maintained file at path, read-only.
@@ -398,7 +398,7 @@ func readCanonicalHandler(tool, path string) mcp.ToolHandlerFor[readCanonicalInp
 		if err != nil {
 			return nil, readCanonicalOutput{}, fmt.Errorf("%s: read %s: %w", tool, path, err)
 		}
-		return nil, readCanonicalOutput{Path: path, Exists: true, Content: string(content), SHA256: documents.ContentSHA256(string(content))}, nil
+		return nil, readCanonicalOutput{Path: path, Exists: true, Content: string(content), Version: documents.ContentSHA256(string(content))}, nil
 	}
 }
 

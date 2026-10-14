@@ -97,7 +97,7 @@ posting.
 
 Its `Documents` field has one entry per document type, keyed by the
 type's name (`cover_letter`, `resume`), each with a `Path`, whether it
-`Exists`, and its `SHA256` (the version on disk, `no_document_yet` when it
+`Exists`, and its `Version` (the version on disk, `no_document_yet` when it
 doesn't exist). Use those names as `DocumentType` with `read_document` and
 `write_document`. Treat the paths as informational -- they're locations
 on the host running the server, not something to open or write yourself.
@@ -189,14 +189,14 @@ version, briefly, so they review a diff rather than a whole new resume.
 A revision (a flagged review, step 2) still starts from the existing
 draft, not the canonical resume: the notes are about that draft.
 
-Save each one with `write_document`, always passing `ExpectedSHA256`: the
-`SHA256` of the version you drafted from -- from `read_document` for a
-revision, otherwise from `stage_prepare` (`no_document_yet` for a new
-document). If the write is refused because the document changed, the user
-(or another session) edited it since you read it: don't retry blindly.
-Read it again, tell the user what changed, and ask before replacing their
-edits. Omit `ExpectedSHA256` only when the user explicitly asks to
-overwrite whatever is there.
+Save each one with `write_document`, always passing `ReplacesVersion`: the
+`Version` you drafted from -- from `read_document` for a revision,
+otherwise from `stage_prepare` (`no_document_yet` for a new document). If
+the write is refused because the document changed, the user (or another
+session) edited it since you read it: don't retry blindly. Read it again,
+tell the user what changed, and ask before replacing their edits. Omit
+`ReplacesVersion` only when the user explicitly asks to overwrite whatever
+is there.
 
 The custom questions aren't drafted yet (an answers document is coming,
 #169). List the required ones for the user in the review checkpoint, so

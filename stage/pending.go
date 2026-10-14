@@ -18,8 +18,8 @@ const pendingSort = "pending"
 
 // PendingOptions is list_pending_postings' input.
 type PendingOptions struct {
-	// ProfileSHA256 is read_profile's, which must still be profile.md's.
-	ProfileSHA256 string
+	// ProfileVersion is read_profile's Version, which must still be profile.md's.
+	ProfileVersion string
 	// Rescore lists postings with no score against this profile, rather
 	// than none at all, on their current content.
 	Rescore bool
@@ -51,19 +51,19 @@ type PendingMatch struct {
 	Location      string              `json:"Location"`
 	WorkplaceType string              `json:"WorkplaceType"`
 	PublishedAt   store.OptionalTime  `json:"PublishedAt"`
-	ContentSHA256 string              `json:"ContentSHA256"`
+	Version       string              `json:"Version"`
 	Reason        store.PendingReason `json:"Reason"`
 }
 
 // pendingFilters is what a list_pending_postings cursor is bound to.
 type pendingFilters struct {
-	Rescore       bool
-	ProfileSHA256 string
+	Rescore        bool
+	ProfileVersion string
 }
 
 // PendingPostings returns one page of the postings still to score.
 func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (PendingResult, error) {
-	if err := st.checkProfile(opts.ProfileSHA256); err != nil {
+	if err := st.checkProfile(opts.ProfileVersion); err != nil {
 		return PendingResult{}, err
 	}
 	limit := opts.Limit
@@ -75,7 +75,7 @@ func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (Pend
 	filters := pendingFilters{Rescore: opts.Rescore}
 	var rescoreProfile string
 	if opts.Rescore {
-		filters.ProfileSHA256, rescoreProfile = opts.ProfileSHA256, opts.ProfileSHA256
+		filters.ProfileVersion, rescoreProfile = opts.ProfileVersion, opts.ProfileVersion
 	}
 	fingerprint := cursor.Fingerprint(filters)
 	var beforeID int64
@@ -101,7 +101,7 @@ func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (Pend
 			Location:      p.Location,
 			WorkplaceType: p.WorkplaceType,
 			PublishedAt:   store.OptionalTime{Time: p.PublishedAt},
-			ContentSHA256: p.ContentSHA256,
+			Version:       p.ContentSHA256,
 			Reason:        p.Reason,
 		}
 	}
@@ -124,7 +124,7 @@ func (st *Stage) checkProfile(sha256 string) error {
 		return fmt.Errorf("stage: read profile: %w", err)
 	}
 	if documents.ContentSHA256(string(content)) != sha256 {
-		return errors.New("stage: the profile isn't the one whose SHA256 you gave (it changed, or wasn't read): call read_profile and pass its SHA256")
+		return errors.New("stage: the profile isn't the version you gave (it changed, or wasn't read): call read_profile and pass its Version")
 	}
 	return nil
 }

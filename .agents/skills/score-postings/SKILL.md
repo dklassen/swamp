@@ -24,7 +24,8 @@ it recreates the `host.container.internal` DNS entry.
 
 ## 1. Read the profile
 
-Call `read_profile`, and keep its `SHA256`: every other call takes it.
+Call `read_profile`, and keep its `Version`: every other call takes it as
+`ProfileVersion`.
 
 **If `Exists` is false, stop and tell the user** (the README says how to
 set it up, from `docs/canonical/profile.md.example`). A score is a
@@ -38,10 +39,10 @@ it's the user's document and may change.
 
 ## 2. See what's pending
 
-Call `list_pending_postings` with the profile's `SHA256`. Pass
-`Rescore: true` only when the user asked for a rescore: it lists every
-posting with no score against this profile, which after a profile edit is
-all of them.
+Call `list_pending_postings` with the profile's `Version` as
+`ProfileVersion`. Pass `Rescore: true` only when the user asked for a
+rescore: it lists every posting with no score against this profile, which
+after a profile edit is all of them.
 
 Postings come newest first, the order the TUI's all-postings view shows
 by default, so "the first 10" is the newest 10 pending.
@@ -50,7 +51,7 @@ Tell the user how many are pending (`Total`). If they haven't said how
 many to score, ask, since a full scoring of a large `Total` takes several
 sessions. When they ask for a number up to 100, pass it as `Limit` and
 score just that page. Otherwise page through: pass `NextCursor` back as
-`Cursor`, with the same `ProfileSHA256` and `Rescore`, until it's null or
+`Cursor`, with the same `ProfileVersion` and `Rescore`, until it's null or
 the user's number is reached.
 
 ## 3. Score
@@ -71,17 +72,18 @@ For each posting on the page:
 
 - **A clear miss from the summary alone** (a different job, an
   internship, a location the profile rules out): score it 1 or 2 from the
-  summary, with the listed `ContentSHA256`. Say in the reason that it was
-  judged from the title, e.g. "Product design role; from the title".
+  summary, with the listed `Version` as its `PostingVersion`. Say in the
+  reason that it was judged from the title, e.g. "Product design role; from
+  the title".
 - **Anything that could be a 3 or more:** call `read_posting` first and
-  score from the description, with the `ContentSHA256` that
-  `read_posting` returned. A title alone underrates or overrates too often
-  to score a plausible posting on it.
+  score from the description, with the `Version` that `read_posting`
+  returned as its `PostingVersion`. A title alone underrates or overrates
+  too often to score a plausible posting on it.
 
 When in doubt, read the description. It costs about 1.5k tokens; a good
 posting buried at 2 costs the user the posting.
 
-Several postings sometimes share a title, company and `ContentSHA256` (a
+Several postings sometimes share a title, company and `Version` (a
 board listing one role more than once). Read the description once and
 give each the same score; each ID still needs its own.
 
@@ -92,8 +94,8 @@ remote Canada" or "Staff, but AWS-heavy and the profile says GCP".
 ## 4. Record
 
 Call `record_scores` with your own model ID as `Model`, the profile's
-`SHA256`, and the page's scores in one batch. Batch them; one call per
-score costs far more than the scores themselves.
+`Version` as `ProfileVersion`, and the page's scores in one batch. Batch
+them; one call per score costs far more than the scores themselves.
 
 Each entry comes back recorded or refused, with why:
 
