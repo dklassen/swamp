@@ -10,75 +10,34 @@ import (
 	"database/sql"
 )
 
-const countScoresInRun = `-- name: CountScoresInRun :one
-SELECT count(*) FROM posting_scores
-WHERE run_id = ?
-`
-
-func (q *Queries) CountScoresInRun(ctx context.Context, runID int64) (int64, error) {
-	row := q.db.QueryRowContext(ctx, countScoresInRun, runID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createPostingScore = `-- name: CreatePostingScore :exec
-INSERT INTO posting_scores (run_id, posting_id, score, reason, content_sha256)
-VALUES (?, ?, ?, ?, ?)
+INSERT INTO posting_scores (posting_id, score, reason, content_sha256, profile_sha256, model, client_name, client_version)
+VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 `
 
 type CreatePostingScoreParams struct {
-	RunID         int64  `json:"run_id"`
 	PostingID     int64  `json:"posting_id"`
 	Score         int64  `json:"score"`
 	Reason        string `json:"reason"`
 	ContentSha256 string `json:"content_sha256"`
+	ProfileSha256 string `json:"profile_sha256"`
+	Model         string `json:"model"`
+	ClientName    string `json:"client_name"`
+	ClientVersion string `json:"client_version"`
 }
 
 func (q *Queries) CreatePostingScore(ctx context.Context, arg CreatePostingScoreParams) error {
 	_, err := q.db.ExecContext(ctx, createPostingScore,
-		arg.RunID,
 		arg.PostingID,
 		arg.Score,
 		arg.Reason,
 		arg.ContentSha256,
-	)
-	return err
-}
-
-const createScoringRun = `-- name: CreateScoringRun :one
-INSERT INTO scoring_runs (model, client_name, client_version, profile_sha256, scope)
-VALUES (?, ?, ?, ?, ?)
-RETURNING id, model, client_name, client_version, profile_sha256, scope, started_at
-`
-
-type CreateScoringRunParams struct {
-	Model         string `json:"model"`
-	ClientName    string `json:"client_name"`
-	ClientVersion string `json:"client_version"`
-	ProfileSha256 string `json:"profile_sha256"`
-	Scope         string `json:"scope"`
-}
-
-func (q *Queries) CreateScoringRun(ctx context.Context, arg CreateScoringRunParams) (ScoringRun, error) {
-	row := q.db.QueryRowContext(ctx, createScoringRun,
+		arg.ProfileSha256,
 		arg.Model,
 		arg.ClientName,
 		arg.ClientVersion,
-		arg.ProfileSha256,
-		arg.Scope,
 	)
-	var i ScoringRun
-	err := row.Scan(
-		&i.ID,
-		&i.Model,
-		&i.ClientName,
-		&i.ClientVersion,
-		&i.ProfileSha256,
-		&i.Scope,
-		&i.StartedAt,
-	)
-	return i, err
+	return err
 }
 
 const getPostingContentSHA256 = `-- name: GetPostingContentSHA256 :one
@@ -93,37 +52,29 @@ func (q *Queries) GetPostingContentSHA256(ctx context.Context, id int64) (string
 	return content_sha256, err
 }
 
-const getScoringRun = `-- name: GetScoringRun :one
-SELECT id, model, client_name, client_version, profile_sha256, scope, started_at FROM scoring_runs
-WHERE id = ?
+const hasRepeatScore = `-- name: HasRepeatScore :one
+SELECT EXISTS (
+    SELECT 1 FROM posting_scores
+    WHERE posting_id = ? AND content_sha256 = ? AND profile_sha256 = ? AND model = ?
+)
 `
 
-func (q *Queries) GetScoringRun(ctx context.Context, id int64) (ScoringRun, error) {
-	row := q.db.QueryRowContext(ctx, getScoringRun, id)
-	var i ScoringRun
-	err := row.Scan(
-		&i.ID,
-		&i.Model,
-		&i.ClientName,
-		&i.ClientVersion,
-		&i.ProfileSha256,
-		&i.Scope,
-		&i.StartedAt,
+type HasRepeatScoreParams struct {
+	PostingID     int64  `json:"posting_id"`
+	ContentSha256 string `json:"content_sha256"`
+	ProfileSha256 string `json:"profile_sha256"`
+	Model         string `json:"model"`
+}
+
+// Whether the posting already has a score that a new one would only repeat:
+// on the same content, against the same profile, from the same model.
+func (q *Queries) HasRepeatScore(ctx context.Context, arg HasRepeatScoreParams) (bool, error) {
+	row := q.db.QueryRowContext(ctx, hasRepeatScore,
+		arg.PostingID,
+		arg.ContentSha256,
+		arg.ProfileSha256,
+		arg.Model,
 	)
-	return i, err
-}
-
-const hasScoreInRun = `-- name: HasScoreInRun :one
-SELECT EXISTS (SELECT 1 FROM posting_scores WHERE run_id = ? AND posting_id = ?)
-`
-
-type HasScoreInRunParams struct {
-	RunID     int64 `json:"run_id"`
-	PostingID int64 `json:"posting_id"`
-}
-
-func (q *Queries) HasScoreInRun(ctx context.Context, arg HasScoreInRunParams) (bool, error) {
-	row := q.db.QueryRowContext(ctx, hasScoreInRun, arg.RunID, arg.PostingID)
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
@@ -156,19 +107,22 @@ FROM (
            OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
       AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
            OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))
-      AND NOT EXISTS (SELECT 1 FROM posting_scores s WHERE s.run_id = ?1 AND s.posting_id = postings.id)
-      AND (?2 OR NOT EXISTS (SELECT 1 FROM posting_scores s WHERE s.posting_id = postings.id AND s.content_sha256 = postings.content_sha256))
+      AND NOT EXISTS (
+          SELECT 1 FROM posting_scores s
+          WHERE s.posting_id = postings.id
+            AND s.content_sha256 = postings.content_sha256
+            AND (?1 IS NULL OR s.profile_sha256 = ?1)
+      )
 ) AS m
-WHERE ?3 IS NULL OR m.id > ?3
+WHERE ?2 IS NULL OR m.id > ?2
 ORDER BY m.id
-LIMIT ?4
+LIMIT ?3
 `
 
 type ListPendingPostingsParams struct {
-	RunID      int64       `json:"run_id"`
-	RescoreAll interface{} `json:"rescore_all"`
-	AfterID    interface{} `json:"after_id"`
-	MaxRows    int64       `json:"max_rows"`
+	RescoreProfile interface{} `json:"rescore_profile"`
+	AfterID        interface{} `json:"after_id"`
+	MaxRows        int64       `json:"max_rows"`
 }
 
 type ListPendingPostingsRow struct {
@@ -185,24 +139,20 @@ type ListPendingPostingsRow struct {
 	Total           int64        `json:"total"`
 }
 
-// One page of a run's pending postings, by posting ID after an optional
+// One page of the pending postings, by posting ID after an optional
 // cursor, with how many there are in all.
 //
 // Eligible: open, not archived, not interested, no application, at a
 // company the user hasn't deleted, and let through by that company's
 // filters, matched as the SearchPostings queries match them. Pending: no
-// score in this run, and either the run rescores everything or the
-// posting has no score on its current content. has_score and
-// has_current_score say why; the store names the reason.
+// score on its current content, or for a rescore, none on its current
+// content against rescore_profile. has_score and has_current_score say
+// why; the store names the reason.
+//
 // The cursor is a narg, as in the SearchPostings queries: with sqlc.arg there,
 // sqlc can't resolve the alias m.
 func (q *Queries) ListPendingPostings(ctx context.Context, arg ListPendingPostingsParams) ([]ListPendingPostingsRow, error) {
-	rows, err := q.db.QueryContext(ctx, listPendingPostings,
-		arg.RunID,
-		arg.RescoreAll,
-		arg.AfterID,
-		arg.MaxRows,
-	)
+	rows, err := q.db.QueryContext(ctx, listPendingPostings, arg.RescoreProfile, arg.AfterID, arg.MaxRows)
 	if err != nil {
 		return nil, err
 	}
@@ -222,43 +172,6 @@ func (q *Queries) ListPendingPostings(ctx context.Context, arg ListPendingPostin
 			&i.HasScore,
 			&i.HasCurrentScore,
 			&i.Total,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listScoringRuns = `-- name: ListScoringRuns :many
-SELECT id, model, client_name, client_version, profile_sha256, scope, started_at FROM scoring_runs
-ORDER BY id DESC
-LIMIT ?
-`
-
-func (q *Queries) ListScoringRuns(ctx context.Context, limit int64) ([]ScoringRun, error) {
-	rows, err := q.db.QueryContext(ctx, listScoringRuns, limit)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	var items []ScoringRun
-	for rows.Next() {
-		var i ScoringRun
-		if err := rows.Scan(
-			&i.ID,
-			&i.Model,
-			&i.ClientName,
-			&i.ClientVersion,
-			&i.ProfileSha256,
-			&i.Scope,
-			&i.StartedAt,
 		); err != nil {
 			return nil, err
 		}

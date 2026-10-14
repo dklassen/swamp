@@ -152,27 +152,20 @@ type PostingMarkup struct {
 
 type PostingScore struct {
 	ID            int64     `json:"id"`
-	RunID         int64     `json:"run_id"`
 	PostingID     int64     `json:"posting_id"`
 	Score         int64     `json:"score"`
 	Reason        string    `json:"reason"`
 	ContentSha256 string    `json:"content_sha256"`
+	ProfileSha256 string    `json:"profile_sha256"`
+	Model         string    `json:"model"`
+	ClientName    string    `json:"client_name"`
+	ClientVersion string    `json:"client_version"`
 	ScoredAt      time.Time `json:"scored_at"`
 }
 
 type PostingTag struct {
 	PostingID int64 `json:"posting_id"`
 	TagID     int64 `json:"tag_id"`
-}
-
-type ScoringRun struct {
-	ID            int64     `json:"id"`
-	Model         string    `json:"model"`
-	ClientName    string    `json:"client_name"`
-	ClientVersion string    `json:"client_version"`
-	ProfileSha256 string    `json:"profile_sha256"`
-	Scope         string    `json:"scope"`
-	StartedAt     time.Time `json:"started_at"`
 }
 
 type Tag struct {

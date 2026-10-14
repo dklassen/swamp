@@ -1207,70 +1207,20 @@ func TestReadPosting_RefusesWhatItCantShow(t *testing.T) {
 	}
 }
 
-// mustWriteProfile writes the user's profile and returns its hash.
-func mustWriteProfile(t *testing.T, d *documents.Store, content string) string {
-	t.Helper()
-	path := d.ProfilePath()
-	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
-		t.Fatalf("write profile: %v", err)
-	}
-	return documents.ContentSHA256(content)
-}
-
-func TestStartScoringRun_RecordsTheRunAndItsClient(t *testing.T) {
+// Scores carry their own provenance, so there are no runs to start
+// or list.
+func TestServer_HasNoScoringRunTools(t *testing.T) {
 	t.Parallel()
 
-	srv, s, d := newTestServer(t)
-	acme := mustCreateCompany(t, s, "Acme")
-	mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
-	mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
-	profile := mustWriteProfile(t, d, "# Me")
+	srv, _, _ := newTestServer(t)
 	cs := connectClient(t, srv)
-
-	got := callTool[stage.ScoringRun](t, cs, "start_scoring_run", map[string]any{"Model": "claude-opus-5-5", "ProfileSHA256": profile, "Scope": "unscored"})
-
-	if got.ID == 0 || got.Model != "claude-opus-5-5" || got.ProfileSHA256 != profile || got.Scope != "unscored" || got.Pending != 2 || got.Scored != 0 {
-		t.Errorf("run = %+v, want a new unscored run for claude-opus-5-5 with 2 pending", got)
+	tools, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
 	}
-	if got.ClientName != "mcpserver-test" || got.ClientVersion != "test" {
-		t.Errorf("client = %q %q, want the connecting client's mcpserver-test test", got.ClientName, got.ClientVersion)
-	}
-}
-
-func TestStartScoringRun_RefusesAProfileItDidntRead(t *testing.T) {
-	t.Parallel()
-
-	srv, _, d := newTestServer(t)
-	mustWriteProfile(t, d, "# Me, edited since")
-	cs := connectClient(t, srv)
-
-	text := callToolError(t, cs, "start_scoring_run", map[string]any{"Model": "claude-opus-5-5", "ProfileSHA256": documents.ContentSHA256("# Me"), "Scope": "unscored"})
-
-	if !strings.Contains(text, "read_profile") {
-		t.Errorf("tool error %q, want it to say to read the profile again with read_profile", text)
-	}
-}
-
-func TestListScoringRuns_ShowsEachRunsCounts(t *testing.T) {
-	t.Parallel()
-
-	srv, s, d := newTestServer(t)
-	acme := mustCreateCompany(t, s, "Acme")
-	first := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
-	mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
-	profile := mustWriteProfile(t, d, "# Me")
-	cs := connectClient(t, srv)
-	run := callTool[stage.ScoringRun](t, cs, "start_scoring_run", map[string]any{"Model": "claude-opus-5-5", "ProfileSHA256": profile, "Scope": "all"})
-	if _, err := s.RecordScores(context.Background(), run.ID, []store.ScoreEntry{{PostingID: first.ID, Score: 4, Reason: "good fit", ContentSHA256: first.ContentSHA256}}); err != nil {
-		t.Fatalf("RecordScores: %v", err)
-	}
-
-	got := callTool[stage.ScoringRuns](t, cs, "list_scoring_runs", map[string]any{})
-
-	if len(got.Runs) != 1 || got.Runs[0].ID != run.ID || got.Runs[0].Scored != 1 || got.Runs[0].Pending != 1 || got.Runs[0].Scope != "all" {
-		t.Errorf("runs = %+v, want run %d, all, 1 scored and 1 pending", got.Runs, run.ID)
+	for _, tool := range tools.Tools {
+		if tool.Name == "start_scoring_run" || tool.Name == "list_scoring_runs" {
+			t.Errorf("the server still offers %s", tool.Name)
+		}
 	}
 }
