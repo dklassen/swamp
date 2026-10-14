@@ -1342,3 +1342,63 @@ func TestListPendingPostings_RefusesACursorFromAnotherListing(t *testing.T) {
 		t.Errorf("tool error %q, want it to say the cursor doesn't fit", text)
 	}
 }
+
+func TestRecordScores_StoresValidEntriesAndReportsTheRest(t *testing.T) {
+	t.Parallel()
+
+	srv, s, d := newTestServer(t)
+	acme := mustCreateCompany(t, s, "Acme")
+	good := mustUpsertPosting(t, s, acme.ID, "job-1", "Platform Engineer")
+	other := mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
+	profile := mustWriteProfile(t, d, "# Me")
+	cs := connectClient(t, srv)
+
+	got := callTool[stage.RecordResult](t, cs, "record_scores", map[string]any{
+		"Model":         "claude-opus-5-5",
+		"ProfileSHA256": profile,
+		"Scores": []map[string]any{
+			{"PostingID": good.ID, "Score": 4, "Reason": "Go, remote", "ContentSHA256": good.ContentSHA256},
+			{"PostingID": other.ID, "Score": 9, "Reason": "off the scale", "ContentSHA256": other.ContentSHA256},
+			{"PostingID": 999, "Score": 3, "Reason": "no such posting", "ContentSHA256": "x"},
+		},
+	})
+
+	want := stage.RecordResult{
+		Recorded: []int64{good.ID},
+		Refused:  []stage.RefusedEntry{{PostingID: other.ID, Why: "score_out_of_range"}, {PostingID: 999, Why: "no_such_posting"}},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("record_scores (-want +got):\n%s", diff)
+	}
+	scores, err := s.PostingScores(context.Background(), good.ID)
+	if err != nil {
+		t.Fatalf("PostingScores: %v", err)
+	}
+	wantProvenance := store.ScoreProvenance{Model: "claude-opus-5-5", ClientName: "mcpserver-test", ClientVersion: "test", ProfileSHA256: profile}
+	if len(scores) != 1 || scores[0].Score != 4 || scores[0].ScoreProvenance != wantProvenance {
+		t.Errorf("stored scores = %+v, want one 4 with %+v", scores, wantProvenance)
+	}
+}
+
+func TestRecordScores_RefusesAProfileItDidntReadAndRecordsNothing(t *testing.T) {
+	t.Parallel()
+
+	srv, s, d := newTestServer(t)
+	acme := mustCreateCompany(t, s, "Acme")
+	p := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustWriteProfile(t, d, "# Me, edited since")
+	cs := connectClient(t, srv)
+
+	text := callToolError(t, cs, "record_scores", map[string]any{
+		"Model":         "claude-opus-5-5",
+		"ProfileSHA256": documents.ContentSHA256("# Me"),
+		"Scores":        []map[string]any{{"PostingID": p.ID, "Score": 4, "Reason": "ok", "ContentSHA256": p.ContentSHA256}},
+	})
+
+	if !strings.Contains(text, "read_profile") {
+		t.Errorf("tool error %q, want it to say to call read_profile again", text)
+	}
+	if scores, err := s.PostingScores(context.Background(), p.ID); err != nil || len(scores) != 0 {
+		t.Errorf("scores after a refused call = %+v, %v; want none", scores, err)
+	}
+}
