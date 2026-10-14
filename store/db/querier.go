@@ -27,7 +27,6 @@ type Querier interface {
 	// postings are already gated by filters at ingestion, and a filter added
 	// later only narrows the posting list's display, not this count.
 	CountOpenPostingsByCompany(ctx context.Context) ([]CountOpenPostingsByCompanyRow, error)
-	CountScoresInRun(ctx context.Context, runID int64) (int64, error)
 	// Unlike posting_markup, not auto-created for every posting -- an
 	// application exists only once the user takes an explicit "start
 	// application" action. status is supplied explicitly by the caller
@@ -53,7 +52,6 @@ type Querier interface {
 	// (interested_at=NULL, archived_at=NULL, notes='').
 	CreatePostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
 	CreatePostingScore(ctx context.Context, arg CreatePostingScoreParams) error
-	CreateScoringRun(ctx context.Context, arg CreateScoringRunParams) (ScoringRun, error)
 	CreateTag(ctx context.Context, name string) (Tag, error)
 	DeleteCompanyFilters(ctx context.Context, companyID int64) error
 	DeleteInterviewStage(ctx context.Context, id int64) error
@@ -76,12 +74,13 @@ type Querier interface {
 	GetPostingBySourceAndSourceID(ctx context.Context, arg GetPostingBySourceAndSourceIDParams) (Posting, error)
 	GetPostingContentSHA256(ctx context.Context, id int64) (string, error)
 	GetPostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
-	GetScoringRun(ctx context.Context, id int64) (ScoringRun, error)
 	// Not filtered on deleted_at: used for existence checks (e.g. before
 	// creating) where callers need to know about a soft-deleted tag too, not
 	// just active ones.
 	GetTagByName(ctx context.Context, name string) (Tag, error)
-	HasScoreInRun(ctx context.Context, arg HasScoreInRunParams) (bool, error)
+	// Whether the posting already has a score that a new one would only repeat:
+	// on the same content, against the same profile, from the same model.
+	HasRepeatScore(ctx context.Context, arg HasRepeatScoreParams) (bool, error)
 	// When the application entered its current status: every status write
 	// records a row (#162), so the newest is the current status's.
 	LatestApplicationStatusChange(ctx context.Context, applicationID int64) (ApplicationStatusHistory, error)
@@ -156,15 +155,16 @@ type Querier interface {
 	// What store.SoftDeleteCompany closes: a deleted company is never synced
 	// again, so nothing else would ever close these (#178).
 	ListOpenPostingIDsByCompany(ctx context.Context, companyID int64) ([]int64, error)
-	// One page of a run's pending postings, by posting ID after an optional
+	// One page of the pending postings, by posting ID after an optional
 	// cursor, with how many there are in all.
 	//
 	// Eligible: open, not archived, not interested, no application, at a
 	// company the user hasn't deleted, and let through by that company's
 	// filters, matched as the SearchPostings queries match them. Pending: no
-	// score in this run, and either the run rescores everything or the
-	// posting has no score on its current content. has_score and
-	// has_current_score say why; the store names the reason.
+	// score on its current content, or for a rescore, none on its current
+	// content against rescore_profile. has_score and has_current_score say
+	// why; the store names the reason.
+	//
 	// The cursor is a narg, as in the SearchPostings queries: with sqlc.arg there,
 	// sqlc can't resolve the alias m.
 	ListPendingPostings(ctx context.Context, arg ListPendingPostingsParams) ([]ListPendingPostingsRow, error)
@@ -173,7 +173,6 @@ type Querier interface {
 	// CURRENT_TIMESTAMP second (sqlite has only second resolution), so
 	// first_seen_at alone leaves ties with no guaranteed order.
 	ListPostingsByCompany(ctx context.Context, companyID int64) ([]Posting, error)
-	ListScoringRuns(ctx context.Context, limit int64) ([]ScoringRun, error)
 	// Active tags only: this is the pick list for tagging postings, and a
 	// soft-deleted tag shouldn't be offered for new use.
 	ListTags(ctx context.Context) ([]Tag, error)

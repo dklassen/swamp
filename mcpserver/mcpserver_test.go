@@ -1207,7 +1207,7 @@ func TestReadPosting_RefusesWhatItCantShow(t *testing.T) {
 	}
 }
 
-// Scores carry their own provenance (#346), so there are no runs to start
+// Scores carry their own provenance, so there are no runs to start
 // or list.
 func TestServer_HasNoScoringRunTools(t *testing.T) {
 	t.Parallel()

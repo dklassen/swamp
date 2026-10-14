@@ -2,7 +2,6 @@ package store
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"testing"
 
@@ -11,42 +10,12 @@ import (
 	"github.com/dklassen/swamp/filter"
 )
 
-func TestParseScoringScope(t *testing.T) {
-	t.Parallel()
-
-	for _, scope := range ScoringScopes() {
-		got, err := ParseScoringScope(scope.String())
-		if err != nil || got != scope {
-			t.Errorf("ParseScoringScope(%q) = %v, %v; want %v", scope, got, err, scope)
-		}
-	}
-	for _, name := range []string{"unscored", "all"} {
-		if _, err := ParseScoringScope(name); err != nil {
-			t.Errorf("ParseScoringScope(%q): %v", name, err)
-		}
-	}
-	for _, name := range []string{"", "ALL", "rescore"} {
-		if _, err := ParseScoringScope(name); err == nil {
-			t.Errorf("ParseScoringScope(%q) succeeded, want it refused", name)
-		}
-	}
-}
-
 // mustInsertScore records a score directly, for a fixture's history.
-func mustInsertScore(t *testing.T, s *Store, runID, postingID int64, contentSHA256 string) {
+func mustInsertScore(t *testing.T, s *Store, postingID int64, contentSHA256, profileSHA256 string) {
 	t.Helper()
-	if _, err := s.sqlDB.Exec(`INSERT INTO posting_scores (run_id, posting_id, score, reason, content_sha256) VALUES (?, ?, 3, 'fixture', ?)`, runID, postingID, contentSHA256); err != nil {
+	if _, err := s.sqlDB.Exec(`INSERT INTO posting_scores (posting_id, score, reason, content_sha256, profile_sha256, model) VALUES (?, 3, 'fixture', ?, ?, 'model')`, postingID, contentSHA256, profileSHA256); err != nil {
 		t.Fatalf("insert score: %v", err)
 	}
-}
-
-func mustStartScoringRun(t *testing.T, s *Store, scope ScoringScope) ScoringRunSummary {
-	t.Helper()
-	run, err := s.StartScoringRun(context.Background(), StartScoringRunParams{Model: "claude-opus-5-5", ProfileSHA256: "profile", Scope: scope})
-	if err != nil {
-		t.Fatalf("StartScoringRun: %v", err)
-	}
-	return run
 }
 
 // mustUpsertPostingIn is mustUpsertPosting with a department.
@@ -60,6 +29,20 @@ func mustUpsertPostingIn(t *testing.T, s *Store, companyID int64, sourceID, titl
 		t.Fatalf("UpsertPosting: %v", err)
 	}
 	return p
+}
+
+// pendingReasons is every pending posting, by ID, with why.
+func pendingReasons(t *testing.T, s *Store, rescoreProfile string) (map[int64]PendingReason, int) {
+	t.Helper()
+	page, err := s.PendingPostings(context.Background(), rescoreProfile, 0, 100)
+	if err != nil {
+		t.Fatalf("PendingPostings: %v", err)
+	}
+	got := map[int64]PendingReason{}
+	for _, p := range page.Postings {
+		got[p.ID] = p.Reason
+	}
+	return got, page.Total
 }
 
 func TestPendingPostings(t *testing.T) {
@@ -76,14 +59,13 @@ func TestPendingPostings(t *testing.T) {
 	fresh := mustUpsertPostingIn(t, s, acme.ID, "1", "Fresh", "")
 	changed := mustUpsertPostingIn(t, s, acme.ID, "2", "Changed", "")
 	current := mustUpsertPostingIn(t, s, acme.ID, "3", "Current", "")
-	scoredInRun := mustUpsertPostingIn(t, s, acme.ID, "4", "Scored in this run", "")
-	shown := mustUpsertPostingIn(t, s, globex.ID, "5", "Shown by the filter", "Engineering")
-	mustUpsertPostingIn(t, s, globex.ID, "6", "Hidden by the filter", "Sales")
-	closed := mustUpsertPostingIn(t, s, acme.ID, "7", "Closed", "")
-	archived := mustUpsertPostingIn(t, s, acme.ID, "8", "Archived", "")
-	interested := mustUpsertPostingIn(t, s, acme.ID, "9", "Interested", "")
-	applied := mustUpsertPostingIn(t, s, acme.ID, "10", "Applied", "")
-	mustUpsertPostingIn(t, s, gone.ID, "11", "At a deleted company", "")
+	shown := mustUpsertPostingIn(t, s, globex.ID, "4", "Shown by the filter", "Engineering")
+	mustUpsertPostingIn(t, s, globex.ID, "5", "Hidden by the filter", "Sales")
+	closed := mustUpsertPostingIn(t, s, acme.ID, "6", "Closed", "")
+	archived := mustUpsertPostingIn(t, s, acme.ID, "7", "Archived", "")
+	interested := mustUpsertPostingIn(t, s, acme.ID, "8", "Interested", "")
+	applied := mustUpsertPostingIn(t, s, acme.ID, "9", "Applied", "")
+	mustUpsertPostingIn(t, s, gone.ID, "10", "At a deleted company", "")
 	if err := s.MarkPostingClosed(ctx, closed.ID); err != nil {
 		t.Fatalf("MarkPostingClosed: %v", err)
 	}
@@ -98,45 +80,49 @@ func TestPendingPostings(t *testing.T) {
 		t.Fatalf("SoftDeleteCompany: %v", err)
 	}
 
-	earlier := mustStartScoringRun(t, s, ScoringScopeUnscored)
-	mustInsertScore(t, s, earlier.ID, changed.ID, changed.ContentSHA256)
-	mustInsertScore(t, s, earlier.ID, current.ID, current.ContentSHA256)
+	mustInsertScore(t, s, changed.ID, changed.ContentSHA256, "old profile")
+	mustInsertScore(t, s, current.ID, current.ContentSHA256, "old profile")
 	if _, err := s.UpsertPosting(ctx, CreatePostingParams{CompanyID: acme.ID, Source: "ashby", SourceID: "2",
 		IngestedFields: IngestedFields{Title: "Changed", DescriptionText: "Rewritten.", RawPayload: "{}"}}); err != nil {
 		t.Fatalf("UpsertPosting: %v", err)
 	}
 
 	tests := []struct {
-		scope ScoringScope
-		want  map[int64]PendingReason
+		name           string
+		rescoreProfile string
+		want           map[int64]PendingReason
 	}{
-		{ScoringScopeUnscored, map[int64]PendingReason{fresh.ID: PendingNew, changed.ID: PendingChanged, shown.ID: PendingNew}},
-		{ScoringScopeAll, map[int64]PendingReason{fresh.ID: PendingNew, changed.ID: PendingChanged, current.ID: PendingRescore, shown.ID: PendingNew}},
+		{"default: no score on the current content", "", map[int64]PendingReason{fresh.ID: PendingNew, changed.ID: PendingChanged, shown.ID: PendingNew}},
+		{"rescore against a new profile", "new profile", map[int64]PendingReason{fresh.ID: PendingNew, changed.ID: PendingChanged, current.ID: PendingRescore, shown.ID: PendingNew}},
+		{"rescore against the profile already used", "old profile", map[int64]PendingReason{fresh.ID: PendingNew, changed.ID: PendingChanged, shown.ID: PendingNew}},
 	}
 	for _, tt := range tests {
-		t.Run(tt.scope.String(), func(t *testing.T) {
-			run := mustStartScoringRun(t, s, tt.scope)
-			mustInsertScore(t, s, run.ID, scoredInRun.ID, scoredInRun.ContentSHA256)
-
-			page, err := s.PendingPostings(ctx, run.ID, 0, 100)
-			if err != nil {
-				t.Fatalf("PendingPostings: %v", err)
-			}
-			got := map[int64]PendingReason{}
-			for _, p := range page.Postings {
-				got[p.ID] = p.Reason
-			}
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("pending postings and why (-want +got):\n%s", diff)
-			}
-			if page.Total != len(tt.want) {
-				t.Errorf("Total = %d, want %d", page.Total, len(tt.want))
-			}
-		})
+		got, total := pendingReasons(t, s, tt.rescoreProfile)
+		if diff := cmp.Diff(tt.want, got); diff != "" {
+			t.Errorf("%s: pending postings and why (-want +got):\n%s", tt.name, diff)
+		}
+		if total != len(tt.want) {
+			t.Errorf("%s: Total = %d, want %d", tt.name, total, len(tt.want))
+		}
 	}
+}
 
-	if _, err := s.PendingPostings(ctx, 999, 0, 100); !errors.Is(err, ErrNotFound) {
-		t.Errorf("PendingPostings for no such run: err = %v, want ErrNotFound", err)
+// A rescore needs no session to resume: what it has done has scores
+// against the new profile.
+func TestPendingPostings_ARescoreResumes(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	done := mustUpsertPostingIn(t, s, acme.ID, "1", "Rescored", "")
+	left := mustUpsertPostingIn(t, s, acme.ID, "2", "Not yet", "")
+	mustInsertScore(t, s, done.ID, done.ContentSHA256, "old profile")
+	mustInsertScore(t, s, left.ID, left.ContentSHA256, "old profile")
+
+	mustInsertScore(t, s, done.ID, done.ContentSHA256, "new profile")
+
+	got, _ := pendingReasons(t, s, "new profile")
+	if diff := cmp.Diff(map[int64]PendingReason{left.ID: PendingRescore}, got); diff != "" {
+		t.Errorf("rescore pending (-want +got):\n%s", diff)
 	}
 }
 
@@ -149,13 +135,12 @@ func TestPendingPostings_Pages(t *testing.T) {
 	for i := 1; i <= 5; i++ {
 		ids = append(ids, mustUpsertPostingIn(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i), "").ID)
 	}
-	run := mustStartScoringRun(t, s, ScoringScopeUnscored)
 
 	var got [][]int64
 	var hasMore []bool
 	var after int64
 	for range 3 {
-		page, err := s.PendingPostings(ctx, run.ID, after, 2)
+		page, err := s.PendingPostings(ctx, "", after, 2)
 		if err != nil {
 			t.Fatalf("PendingPostings: %v", err)
 		}
@@ -178,77 +163,6 @@ func TestPendingPostings_Pages(t *testing.T) {
 	}
 }
 
-func TestStartScoringRun_SaysHowManyArePending(t *testing.T) {
-	t.Parallel()
-	s := newTestStore(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	scored := mustUpsertPostingIn(t, s, acme.ID, "1", "Scored", "")
-	mustUpsertPostingIn(t, s, acme.ID, "2", "Unscored", "")
-	mustUpsertPostingIn(t, s, acme.ID, "3", "Also unscored", "")
-	earlier := mustStartScoringRun(t, s, ScoringScopeUnscored)
-	mustInsertScore(t, s, earlier.ID, scored.ID, scored.ContentSHA256)
-
-	for scope, want := range map[ScoringScope]int{ScoringScopeUnscored: 2, ScoringScopeAll: 3} {
-		run := mustStartScoringRun(t, s, scope)
-		if run.Pending != want || run.Scored != 0 || run.Scope != scope {
-			t.Errorf("%s run: scope %v, %d pending, %d scored; want %d pending, 0 scored", scope, run.Scope, run.Pending, run.Scored, want)
-		}
-	}
-}
-
-func TestStartScoringRun_RefusesWhatItCantRecord(t *testing.T) {
-	t.Parallel()
-	s := newTestStore(t)
-	valid := StartScoringRunParams{Model: "claude-opus-5-5", ProfileSHA256: "profile", Scope: ScoringScopeAll}
-	tests := []struct {
-		name   string
-		change func(p *StartScoringRunParams)
-	}{
-		{"no model", func(p *StartScoringRunParams) { p.Model = "" }},
-		{"no profile hash", func(p *StartScoringRunParams) { p.ProfileSHA256 = "" }},
-		{"unknown scope", func(p *StartScoringRunParams) { p.Scope = ScoringScope(7) }},
-	}
-	for _, tt := range tests {
-		params := valid
-		tt.change(&params)
-		if _, err := s.StartScoringRun(context.Background(), params); err == nil {
-			t.Errorf("%s: StartScoringRun succeeded, want it refused", tt.name)
-		}
-	}
-	if _, err := s.StartScoringRun(context.Background(), valid); err != nil {
-		t.Errorf("valid run refused: %v", err)
-	}
-}
-
-func TestScoringRuns_NewestFirstWithTheirCounts(t *testing.T) {
-	t.Parallel()
-	s := newTestStore(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	first := mustUpsertPostingIn(t, s, acme.ID, "1", "First", "")
-	second := mustUpsertPostingIn(t, s, acme.ID, "2", "Second", "")
-	older := mustStartScoringRun(t, s, ScoringScopeAll)
-	mustInsertScore(t, s, older.ID, first.ID, first.ContentSHA256)
-	mustInsertScore(t, s, older.ID, second.ID, second.ContentSHA256)
-	newer := mustStartScoringRun(t, s, ScoringScopeAll)
-	mustInsertScore(t, s, newer.ID, first.ID, first.ContentSHA256)
-
-	runs, err := s.ScoringRuns(context.Background(), 10)
-	if err != nil {
-		t.Fatalf("ScoringRuns: %v", err)
-	}
-	type counts struct {
-		ID              int64
-		Scored, Pending int
-	}
-	var got []counts
-	for _, r := range runs {
-		got = append(got, counts{r.ID, r.Scored, r.Pending})
-	}
-	if diff := cmp.Diff([]counts{{newer.ID, 1, 1}, {older.ID, 2, 0}}, got); diff != "" {
-		t.Errorf("runs (-want +got):\n%s", diff)
-	}
-}
-
 func TestRecordScores_RecordsValidEntriesAndRefusesTheRest(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -257,18 +171,20 @@ func TestRecordScores_RecordsValidEntriesAndRefusesTheRest(t *testing.T) {
 	good := mustUpsertPostingIn(t, s, acme.ID, "1", "Good", "")
 	stale := mustUpsertPostingIn(t, s, acme.ID, "2", "Stale", "")
 	other := mustUpsertPostingIn(t, s, acme.ID, "3", "Other", "")
-	already := mustUpsertPostingIn(t, s, acme.ID, "4", "Already scored", "")
-	run := mustStartScoringRun(t, s, ScoringScopeAll)
-	mustInsertScore(t, s, run.ID, already.ID, already.ContentSHA256)
+	repeat := mustUpsertPostingIn(t, s, acme.ID, "4", "Already scored", "")
+	provenance := ScoreProvenance{Model: "claude-opus-5-5", ClientName: "claude-code", ClientVersion: "2.4.1", ProfileSHA256: "profile"}
+	if _, err := s.RecordScores(ctx, provenance, []ScoreEntry{{PostingID: repeat.ID, Score: 2, Reason: "first", ContentSHA256: repeat.ContentSHA256}}); err != nil {
+		t.Fatalf("RecordScores: %v", err)
+	}
 
-	result, err := s.RecordScores(ctx, run.ID, []ScoreEntry{
+	result, err := s.RecordScores(ctx, provenance, []ScoreEntry{
 		{PostingID: good.ID, Score: 4, Reason: "Go, remote", ContentSHA256: good.ContentSHA256},
 		{PostingID: stale.ID, Score: 3, Reason: "ok", ContentSHA256: "an older hash"},
 		{PostingID: other.ID, Score: 6, Reason: "too high", ContentSHA256: other.ContentSHA256},
 		{PostingID: other.ID, Score: 0, Reason: "too low", ContentSHA256: other.ContentSHA256},
 		{PostingID: other.ID, Score: 2, Reason: "", ContentSHA256: other.ContentSHA256},
 		{PostingID: 999, Score: 2, Reason: "no such posting", ContentSHA256: "x"},
-		{PostingID: already.ID, Score: 2, Reason: "again", ContentSHA256: already.ContentSHA256},
+		{PostingID: repeat.ID, Score: 2, Reason: "again", ContentSHA256: repeat.ContentSHA256},
 		{PostingID: good.ID, Score: 1, Reason: "twice in one batch", ContentSHA256: good.ContentSHA256},
 	})
 	if err != nil {
@@ -284,38 +200,65 @@ func TestRecordScores_RecordsValidEntriesAndRefusesTheRest(t *testing.T) {
 		{PostingID: other.ID, Why: ScoreOutOfRange},
 		{PostingID: other.ID, Why: ScoreNoReason},
 		{PostingID: 999, Why: ScoreNoSuchPosting},
-		{PostingID: already.ID, Why: ScoreAlreadyInRun},
-		{PostingID: good.ID, Why: ScoreAlreadyInRun},
+		{PostingID: repeat.ID, Why: ScoreRepeat},
+		{PostingID: good.ID, Why: ScoreRepeat},
 	}
 	if diff := cmp.Diff(want, result.Refused); diff != "" {
 		t.Errorf("refused (-want +got):\n%s", diff)
 	}
-	var scores int
-	if err := s.sqlDB.QueryRow(`SELECT count(*) FROM posting_scores WHERE run_id = ?`, run.ID).Scan(&scores); err != nil {
-		t.Fatalf("count scores: %v", err)
+
+	var model, client, version, profile string
+	if err := s.sqlDB.QueryRow(`SELECT model, client_name, client_version, profile_sha256 FROM posting_scores WHERE posting_id = ?`, good.ID).Scan(&model, &client, &version, &profile); err != nil {
+		t.Fatalf("read score: %v", err)
 	}
-	if scores != 2 {
-		t.Errorf("%d scores stored in the run, want 2: the fixture's and the one recorded", scores)
+	if got := (ScoreProvenance{Model: model, ClientName: client, ClientVersion: version, ProfileSHA256: profile}); got != provenance {
+		t.Errorf("stored provenance %+v, want %+v", got, provenance)
 	}
 }
 
-func TestRecordScores_AnUnknownRunRecordsNothing(t *testing.T) {
+// The same content scored by another model, or against another profile,
+// isn't a repeat.
+func TestRecordScores_AnotherModelOrProfileIsntARepeat(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	p := mustUpsertPostingIn(t, s, acme.ID, "1", "Role", "")
+	entry := []ScoreEntry{{PostingID: p.ID, Score: 3, Reason: "ok", ContentSHA256: p.ContentSHA256}}
+
+	for _, provenance := range []ScoreProvenance{
+		{Model: "claude-opus-5-5", ProfileSHA256: "profile"},
+		{Model: "claude-sonnet-5", ProfileSHA256: "profile"},
+		{Model: "claude-opus-5-5", ProfileSHA256: "edited profile"},
+	} {
+		result, err := s.RecordScores(ctx, provenance, entry)
+		if err != nil {
+			t.Fatalf("RecordScores: %v", err)
+		}
+		if len(result.Recorded) != 1 {
+			t.Errorf("%+v: refused %+v, want it recorded", provenance, result.Refused)
+		}
+	}
+}
+
+func TestRecordScores_RefusesACallWithNoModelOrProfile(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	p := mustUpsertPostingIn(t, s, acme.ID, "1", "Role", "")
+	entry := []ScoreEntry{{PostingID: p.ID, Score: 3, Reason: "ok", ContentSHA256: p.ContentSHA256}}
 
-	_, err := s.RecordScores(context.Background(), 999, []ScoreEntry{{PostingID: p.ID, Score: 3, Reason: "ok", ContentSHA256: p.ContentSHA256}})
-
-	if !errors.Is(err, ErrNotFound) {
-		t.Errorf("err = %v, want ErrNotFound", err)
+	for _, provenance := range []ScoreProvenance{{ProfileSHA256: "profile"}, {Model: "claude-opus-5-5"}} {
+		if _, err := s.RecordScores(context.Background(), provenance, entry); err == nil {
+			t.Errorf("%+v: RecordScores succeeded, want it refused", provenance)
+		}
 	}
 	var scores int
 	if err := s.sqlDB.QueryRow(`SELECT count(*) FROM posting_scores`).Scan(&scores); err != nil {
 		t.Fatalf("count scores: %v", err)
 	}
 	if scores != 0 {
-		t.Errorf("%d scores stored for an unknown run, want 0", scores)
+		t.Errorf("%d scores stored, want 0", scores)
 	}
 }
 
@@ -326,12 +269,14 @@ func TestSearchPostings_RowsCarryTheNewestScore(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	scored := mustUpsertPostingIn(t, s, acme.ID, "1", "Scored twice", "")
 	unscored := mustUpsertPostingIn(t, s, acme.ID, "2", "Unscored", "")
-	for _, e := range []ScoreEntry{
-		{PostingID: scored.ID, Score: 2, Reason: "first look", ContentSHA256: scored.ContentSHA256},
-		{PostingID: scored.ID, Score: 5, Reason: "after the profile changed", ContentSHA256: scored.ContentSHA256},
+	for _, e := range []struct {
+		profile string
+		entry   ScoreEntry
+	}{
+		{"profile", ScoreEntry{PostingID: scored.ID, Score: 2, Reason: "first look", ContentSHA256: scored.ContentSHA256}},
+		{"edited profile", ScoreEntry{PostingID: scored.ID, Score: 5, Reason: "after the profile changed", ContentSHA256: scored.ContentSHA256}},
 	} {
-		run := mustStartScoringRun(t, s, ScoringScopeAll)
-		if _, err := s.RecordScores(ctx, run.ID, []ScoreEntry{e}); err != nil {
+		if _, err := s.RecordScores(ctx, ScoreProvenance{Model: "claude-opus-5-5", ProfileSHA256: e.profile}, []ScoreEntry{e.entry}); err != nil {
 			t.Fatalf("RecordScores: %v", err)
 		}
 	}
