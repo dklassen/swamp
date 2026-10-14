@@ -39,6 +39,7 @@ var sortOrders = []SortOrder{
 	{store.PostingOrderIDAsc, "the order Swamp first saw the postings in (the default). Stable while paging: postings added meanwhile land on later pages."},
 	{store.PostingOrderIDDesc, "newest to Swamp first. Stable while paging; postings added meanwhile sort ahead of the first page, so they aren't seen until you start again."},
 	{store.PostingOrderPublishedDesc, "newest on the board first (by PublishedAt; postings with no publish date last). Stable while paging, unless a board changes a posting's publish date meanwhile: that one posting may then be missed or seen twice."},
+	{store.PostingOrderScoreDesc, "best fit first (by Score, the current fit score; among equal scores, newest to Swamp first; unscored postings last). Stable while paging, unless a posting is scored meanwhile: that one posting may then be missed or seen twice."},
 }
 
 // SortOrders returns the registered sort orders, default first.
@@ -94,6 +95,10 @@ type SearchMatch struct {
 	ApplicationID     *int64                   `json:"ApplicationID"`
 	ApplicationStatus *store.ApplicationStatus `json:"ApplicationStatus"`
 	ApplicationNotes  string                   `json:"ApplicationNotes"`
+	// Score is the posting's current fit score, 1 to 5, with its reason; 0
+	// when it has none.
+	Score       int    `json:"Score"`
+	ScoreReason string `json:"ScoreReason"`
 }
 
 // searchFilters is what a cursor is bound to: the filters after defaults
@@ -177,6 +182,7 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 		}
 		search.AfterID = key.ID
 		search.AfterPublishedAt = key.PublishedAt
+		search.AfterScore = key.Score
 	}
 
 	page, err := st.store.SearchPostings(ctx, search)
@@ -189,7 +195,7 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 	}
 	if page.HasMore {
 		last := page.Listings[len(page.Listings)-1]
-		next := cursor.Encode(cursor.Key{Sort: sort, Filters: fingerprint, ID: last.ID, PublishedAt: last.PublishedAt})
+		next := cursor.Encode(cursor.Key{Sort: sort, Filters: fingerprint, ID: last.ID, PublishedAt: last.PublishedAt, Score: last.Score})
 		result.NextCursor = &next
 	}
 	return result, nil
@@ -211,6 +217,8 @@ func searchMatch(l store.PostingListing) SearchMatch {
 		ListingStatus: l.ListingStatus,
 		Interested:    l.Interested,
 		Archived:      l.Archived,
+		Score:         l.Score,
+		ScoreReason:   l.ScoreReason,
 	}
 	if l.ApplicationID != 0 {
 		id, status := l.ApplicationID, l.ApplicationStatus

@@ -41,6 +41,9 @@ type Key struct {
 	// PublishedAt is the last row's publish time, for orders by it; zero
 	// when the row had none, or the order doesn't use it.
 	PublishedAt time.Time
+	// Score is the last row's score, for orders by it; 0 when the row had
+	// none, or the order doesn't use it.
+	Score int
 }
 
 // token is Key as encoded, with its format version.
@@ -52,11 +55,13 @@ type token struct {
 	// PublishedAt is RFC 3339 with nanoseconds, omitted when zero, so
 	// ID-order tokens are unchanged by it.
 	PublishedAt string `json:"published_at,omitempty"`
+	// Score is omitted when 0, so other tokens are unchanged by it.
+	Score int `json:"score,omitempty"`
 }
 
 // Encode makes the opaque token for key.
 func Encode(key Key) string {
-	tok := token{V: version, Sort: key.Sort, Filters: key.Filters, ID: key.ID}
+	tok := token{V: version, Sort: key.Sort, Filters: key.Filters, ID: key.ID, Score: key.Score}
 	if !key.PublishedAt.IsZero() {
 		tok.PublishedAt = key.PublishedAt.UTC().Format(time.RFC3339Nano)
 	}
@@ -90,7 +95,10 @@ func Decode(t, sort, filters string) (Key, error) {
 	case tok.Sort != sort || tok.Filters != filters:
 		return Key{}, ErrMismatch
 	}
-	key := Key{Sort: tok.Sort, Filters: tok.Filters, ID: tok.ID}
+	if tok.Score < 0 {
+		return Key{}, fmt.Errorf("%w: bad score", ErrInvalid)
+	}
+	key := Key{Sort: tok.Sort, Filters: tok.Filters, ID: tok.ID, Score: tok.Score}
 	if tok.PublishedAt != "" {
 		if key.PublishedAt, err = time.Parse(time.RFC3339Nano, tok.PublishedAt); err != nil {
 			return Key{}, fmt.Errorf("%w: bad published_at", ErrInvalid)

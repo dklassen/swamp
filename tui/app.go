@@ -1161,7 +1161,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// was opened from all postings.
 				p := a.postingDetail.posting
 				_, app, hasApp := a.lookupPosting(p.ID)
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
+				a.replacePostingDetail(newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID)))
 				reviewsCmd = maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
 			}
 			// A freshly-started application should show up in the active-
@@ -1233,8 +1233,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			app, hasApp := a.applicationsByPosting[msg.posting.ID]
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), msg.posting, app, hasApp, nil, a.canNavigateSiblings(msg.posting.ID))
 			a.enterFrom(screenPostingDetail)
-			return a, tea.Batch(loadApplication(a.store, msg.posting.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
+			return a, tea.Batch(loadApplication(a.store, msg.posting.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID), loadPostingScores(a.store, msg.posting.ID))
 		}
+	case postingScoresLoadedMsg:
+		a.handlePostingScoresLoaded(msg)
 	case postingReloadedMsg:
 		return a, a.handlePostingReloaded(msg)
 	case applicationDetailReloadedMsg:
@@ -1512,6 +1514,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// Built from application detail's copy, so as up to date as it.
 			a.seen[screenPostingDetail] = a.cursor(screenApplicationDetail)
 			a.enterFrom(screenPostingDetail)
+			return a, tea.Batch(cmd, loadPostingScores(a.store, appView.Posting.ID))
 		case enterDocumentReviewFormMsg:
 			if a.openDocumentReviewForm(v) {
 				a.enterFrom(screenDocumentReviewForm)
@@ -1567,7 +1570,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			p, app, hasApp := a.lookupPosting(v.postingID)
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 			a.enterFrom(screenPostingDetail)
-			return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
+			return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID), loadPostingScores(a.store, p.ID))
 		case enterFilterSelectMsg:
 			a.screen = screenFilterSelect
 			return a, loadFilterOptions(a.store, a.selectedCompany.ID)
@@ -1597,7 +1600,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				p := a.postings[newIdx]
 				app, hasApp := a.applicationsByPosting[p.ID]
 				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
-				return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID))
+				return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID), loadPostingScores(a.store, p.ID))
 			}
 		case enterApplicationStatusMsg:
 			return a, loadApplicationStatus(a.store, v.postingID, a.screen)

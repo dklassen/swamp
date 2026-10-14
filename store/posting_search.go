@@ -34,6 +34,8 @@ type PostingListing struct {
 	// Score is 0 when it has none, since scores start at 1.
 	Score       int
 	ScoreReason string
+	// ScoreStale is whether the content has changed since it was scored.
+	ScoreStale bool
 	// ApplicationID is 0 when the posting has no application; the other
 	// Application fields are meaningless then.
 	ApplicationID     int64
@@ -69,7 +71,10 @@ type PostingSearch struct {
 	// PostingOrderPublishedDesc; zero when it had none. Other orders
 	// ignore it.
 	AfterPublishedAt time.Time
-	Limit            int
+	// AfterScore is that row's Score, for PostingOrderScoreDesc; 0 when it
+	// had none. Other orders ignore it.
+	AfterScore int
+	Limit      int
 }
 
 // PostingOrder is a sort order SearchPostings pages in (#223, RFC 0006).
@@ -87,6 +92,9 @@ const (
 	// last. Stable while paging unless a board changes a posting's
 	// published_at mid-paging: that posting can cross the cursor.
 	PostingOrderPublishedDesc
+	// PostingOrderScoreDesc: best fit first, by current score, then newest
+	// to Swamp among equal scores; unscored postings last.
+	PostingOrderScoreDesc
 )
 
 // postingOrderNames is the single name table for PostingOrder, indexed by
@@ -95,6 +103,7 @@ var postingOrderNames = [...]string{
 	PostingOrderIDAsc:         "id_asc",
 	PostingOrderIDDesc:        "id_desc",
 	PostingOrderPublishedDesc: "published_desc",
+	PostingOrderScoreDesc:     "score_desc",
 }
 
 func (o PostingOrder) String() string {
@@ -210,6 +219,7 @@ func (s *Store) SearchPostings(ctx context.Context, search PostingSearch) (Posti
 		if row.CurrentScore.Valid {
 			listing.Score = int(row.CurrentScore.Int64)
 			listing.ScoreReason = row.CurrentScoreReason.String
+			listing.ScoreStale = row.CurrentScoreContentSha256.String != row.ContentSha256
 		}
 		if row.ApplicationID.Valid {
 			status, err := ParseApplicationStatus(row.ApplicationStatus.String)
@@ -268,6 +278,28 @@ func (s *Store) searchPostingsInOrder(ctx context.Context, search PostingSearch,
 			values.CursorPublished = search.AfterPublishedAt
 		}
 		rows, err := s.queries.SearchPostingsByPublishedDesc(ctx, values)
+		converted := make([]db.SearchPostingsByIDRow, len(rows))
+		for i, row := range rows {
+			converted[i] = db.SearchPostingsByIDRow(row)
+		}
+		return converted, err
+	case PostingOrderScoreDesc:
+		values := db.SearchPostingsByScoreDescParams{
+			CompanyID:            params.CompanyID,
+			ListingStatus:        params.ListingStatus,
+			IncludeArchived:      params.IncludeArchived,
+			HasApplication:       params.HasApplication,
+			Interested:           params.Interested,
+			Statuses:             params.Statuses,
+			Terms:                params.Terms,
+			IgnoreCompanyFilters: params.IgnoreCompanyFilters,
+			CursorID:             params.AfterID,
+			MaxRows:              params.MaxRows,
+		}
+		if search.AfterID != 0 && search.AfterScore != 0 {
+			values.CursorScore = search.AfterScore
+		}
+		rows, err := s.queries.SearchPostingsByScoreDesc(ctx, values)
 		converted := make([]db.SearchPostingsByIDRow, len(rows))
 		for i, row := range rows {
 			converted[i] = db.SearchPostingsByIDRow(row)

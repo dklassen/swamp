@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/viewport"
@@ -43,6 +44,10 @@ type postingDetailModel struct {
 	// itself is (#83) -- absent when not yet loaded,
 	// or nil when this posting has no application.
 	latestReviews map[documents.Type]store.DocumentReview
+
+	// scores is every score the posting was given, newest first; loaded
+	// async, and empty until then or when it has none.
+	scores []store.PostingScore
 }
 
 // newPostingDetailModel returns a detail screen for p, sized to
@@ -55,10 +60,56 @@ func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height 
 	inner := detailInnerWidth(width)
 	help := indentLines(wrapToWidth(postingDetailHelp(canNavigateSiblings), inner), detailPadding)
 	vp := viewport.New(width, 0)
-	vp.SetContent(indentLines(wrapToWidth(postingDetailContent(p, app, hasApp, docs, latestReviews, inner), inner), detailPadding))
 	m := postingDetailModel{store: s, documents: docs, viewport: vp, width: width, help: help, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews, canNavigateSiblings: canNavigateSiblings}
+	m.setContent()
 	m.setHeight(height)
 	return m
+}
+
+// setContent lays the detail out at the model's width, keeping the scroll.
+func (m *postingDetailModel) setContent() {
+	inner := detailInnerWidth(m.width)
+	offset := m.viewport.YOffset
+	m.viewport.SetContent(indentLines(wrapToWidth(postingScoresSection(m.posting, m.scores, inner)+postingDetailContent(m.posting, m.application, m.hasApplication, m.documents, m.latestReviews, inner), inner), detailPadding))
+	m.viewport.SetYOffset(offset)
+}
+
+// setScores shows scores, newest first, keeping the scroll.
+func (m *postingDetailModel) setScores(scores []store.PostingScore) {
+	m.scores = scores
+	m.setContent()
+}
+
+// postingScoresSection is the posting's fit: its current score with its
+// reason and what gave it, then the earlier ones. Empty when it has none.
+func postingScoresSection(p store.Posting, scores []store.PostingScore, width int) string {
+	if len(scores) == 0 {
+		return ""
+	}
+	var b strings.Builder
+	b.WriteString(sectionHeading("Fit", width) + "\n")
+	current := scores[0]
+	b.WriteString(detailField("Score", fmt.Sprintf("%d · %s", current.Score, current.Reason), width))
+	b.WriteString(detailField("Scored", scoredBy(current), width))
+	if current.ContentSHA256 != p.ContentSHA256 {
+		b.WriteString(helpStyle.Render("The posting has changed since this score.") + "\n")
+	}
+	if len(scores) > 1 {
+		b.WriteString(fieldLabel.Render("Earlier") + "\n")
+		for _, earlier := range scores[1:] {
+			b.WriteString(dimStyle.Render(fmt.Sprintf("  %d · %s (%s)", earlier.Score, earlier.Reason, scoredBy(earlier))) + "\n")
+		}
+	}
+	return b.String() + "\n"
+}
+
+// scoredBy says when a score was given and by what.
+func scoredBy(s store.PostingScore) string {
+	by := s.ScoredAt.Local().Format("Jan 2") + " by " + s.Model
+	if s.ClientName != "" {
+		by += " (" + strings.TrimSpace(s.ClientName+" "+s.ClientVersion) + ")"
+	}
+	return by
 }
 
 // setHeight fits the screen into height terminal rows -- everything App
@@ -192,7 +243,9 @@ func (m *postingDetailModel) View() string {
 // posting/application data -- called on window resize while this screen
 // is active (see tea.WindowSizeMsg in App.Update).
 func (m *postingDetailModel) resize(width, height int) {
+	scores := m.scores
 	*m = newPostingDetailModel(m.store, m.documents, width, height, m.posting, m.application, m.hasApplication, m.latestReviews, m.canNavigateSiblings)
+	m.setScores(scores)
 }
 
 // postingDetailHelp is the detail screen's key help, advertising prev/next

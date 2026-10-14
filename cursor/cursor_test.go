@@ -114,3 +114,19 @@ func TestPublishedAt(t *testing.T) {
 		t.Errorf("unparseable published_at: err = %v, want ErrInvalid", err)
 	}
 }
+
+func TestScore_RoundTripsAndStaysOutOfOtherTokens(t *testing.T) {
+	t.Parallel()
+	key := Key{Sort: "score_desc", Filters: "f", ID: 812, Score: 4}
+
+	got, err := Decode(Encode(key), key.Sort, key.Filters)
+	if err != nil {
+		t.Fatalf("Decode(Encode(key)): %v", err)
+	}
+	if diff := cmp.Diff(key, got); diff != "" {
+		t.Errorf("round trip mismatch (-want +got):\n%s", diff)
+	}
+	if plain, scored := Encode(Key{Sort: "id_asc", Filters: "f", ID: 812}), Encode(Key{Sort: "id_asc", Filters: "f", ID: 812, Score: 0}); plain != scored {
+		t.Errorf("a zero score changed the token: %q vs %q", plain, scored)
+	}
+}

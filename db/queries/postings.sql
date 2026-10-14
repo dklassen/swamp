@@ -197,6 +197,8 @@ FROM (
         postings.job_url,
         current_score.score AS current_score,
         current_score.reason AS current_score_reason,
+        current_score.content_sha256 AS current_score_content_sha256,
+        postings.content_sha256,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
@@ -263,6 +265,8 @@ FROM (
         postings.job_url,
         current_score.score AS current_score,
         current_score.reason AS current_score_reason,
+        current_score.content_sha256 AS current_score_content_sha256,
+        postings.content_sha256,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
@@ -335,6 +339,8 @@ FROM (
         postings.job_url,
         current_score.score AS current_score,
         current_score.reason AS current_score_reason,
+        current_score.content_sha256 AS current_score_content_sha256,
+        postings.content_sha256,
         COUNT(*) OVER () AS total
     FROM postings
     JOIN companies ON companies.id = postings.company_id
@@ -365,4 +371,80 @@ WHERE sqlc.narg('cursor_id') IS NULL
             OR (m.published_at = sqlc.narg('cursor_published') AND m.id < sqlc.narg('cursor_id'))))
    OR (sqlc.narg('cursor_published') IS NULL AND m.published_at IS NULL AND m.id < sqlc.narg('cursor_id'))
 ORDER BY m.published_at IS NULL, m.published_at DESC, m.id DESC
+LIMIT sqlc.arg('max_rows');
+
+-- name: SearchPostingsByScoreDesc :many
+-- SearchPostingsByID by fit: the same filters, ordered by the current score
+-- descending, then posting ID descending, so among equal scores the newest
+-- to Swamp comes first, with unscored postings last (by ID, descending).
+-- The filters must stay identical to SearchPostingsByID's; a test checks
+-- every order matches the same postings. NULL means "don't filter on this".
+--
+-- The cursor is the previous page's last row: cursor_score (NULL when that
+-- row had no score) and cursor_id. Postings of a company the user deleted
+-- are never included.
+--
+-- The inner query applies the filters and counts every match
+-- (COUNT(*) OVER ()); the outer one applies the keyset condition and the
+-- LIMIT. So total is the whole result's size on every page, while only
+-- max_rows rows ever leave the database.
+--
+-- Application statuses come in as one JSON array read with json_each,
+-- not sqlc.slice, which can't be mixed with other bound parameters on
+-- sqlite (see ListActiveApplications). Summary columns only; the
+-- application side is individually aliased nullable columns, not
+-- sqlc.embed (see ListInterestedPostings).
+SELECT m.*
+FROM (
+    SELECT
+        postings.id,
+        postings.title,
+        postings.department,
+        postings.location,
+        postings.workplace_type,
+        postings.application_url,
+        postings.listing_status,
+        companies.name AS company_name,
+        posting_markup.interested_at,
+        posting_markup.archived_at,
+        applications.id AS application_id,
+        applications.status AS application_status,
+        postings.published_at,
+        applications.notes AS application_notes,
+        postings.first_seen_at,
+        postings.job_url,
+        current_score.score AS current_score,
+        current_score.reason AS current_score_reason,
+        current_score.content_sha256 AS current_score_content_sha256,
+        postings.content_sha256,
+        COUNT(*) OVER () AS total
+    FROM postings
+    JOIN companies ON companies.id = postings.company_id
+    LEFT JOIN posting_markup ON posting_markup.posting_id = postings.id
+    LEFT JOIN applications ON applications.posting_id = postings.id AND applications.deleted_at IS NULL
+    LEFT JOIN posting_scores AS current_score ON current_score.id = (SELECT max(id) FROM posting_scores WHERE posting_id = postings.id)
+    WHERE companies.deleted_at IS NULL
+      AND (sqlc.narg('company_id') IS NULL OR postings.company_id = sqlc.narg('company_id'))
+      AND (sqlc.narg('listing_status') IS NULL OR postings.listing_status = sqlc.narg('listing_status'))
+      AND (sqlc.arg('include_archived') OR posting_markup.archived_at IS NULL)
+      AND (sqlc.narg('has_application') IS NULL OR (applications.id IS NOT NULL) = sqlc.narg('has_application'))
+      AND (sqlc.narg('interested') IS NULL OR (posting_markup.interested_at IS NOT NULL) = sqlc.narg('interested'))
+      AND (sqlc.narg('statuses') IS NULL OR applications.status IN (SELECT value FROM json_each(sqlc.narg('statuses'))))
+      AND NOT EXISTS (
+          SELECT 1 FROM json_each(sqlc.narg('terms')) AS t
+          WHERE NOT contains_fold(postings.title || ' ' || companies.name || ' ' || postings.department || ' ' || postings.location, t.value)
+      )
+      AND (sqlc.arg('ignore_company_filters')
+           OR ((NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
+                OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
+               AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
+                    OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))))
+) AS m
+WHERE sqlc.narg('cursor_id') IS NULL
+   OR (sqlc.narg('cursor_score') IS NOT NULL
+       AND (m.current_score IS NULL
+            OR m.current_score < sqlc.narg('cursor_score')
+            OR (m.current_score = sqlc.narg('cursor_score') AND m.id < sqlc.narg('cursor_id'))))
+   OR (sqlc.narg('cursor_score') IS NULL AND m.current_score IS NULL AND m.id < sqlc.narg('cursor_id'))
+ORDER BY m.current_score IS NULL, m.current_score DESC, m.id DESC
 LIMIT sqlc.arg('max_rows');
