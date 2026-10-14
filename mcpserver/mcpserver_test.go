@@ -1224,3 +1224,121 @@ func TestServer_HasNoScoringRunTools(t *testing.T) {
 		}
 	}
 }
+
+// mustWriteProfile writes the user's profile and returns its hash.
+func mustWriteProfile(t *testing.T, d *documents.Store, content string) string {
+	t.Helper()
+	path := d.ProfilePath()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write profile: %v", err)
+	}
+	return documents.ContentSHA256(content)
+}
+
+func pendingIDs(r stage.PendingResult) []int64 {
+	var ids []int64
+	for _, p := range r.Postings {
+		ids = append(ids, p.ID)
+	}
+	return ids
+}
+
+func TestListPendingPostings_PagesToTheLastPage(t *testing.T) {
+	t.Parallel()
+
+	srv, s, d := newTestServer(t)
+	acme := mustCreateCompany(t, s, "Acme")
+	var ids []int64
+	for i := 1; i <= 3; i++ {
+		ids = append(ids, mustUpsertPosting(t, s, acme.ID, fmt.Sprintf("job-%d", i), fmt.Sprintf("Role %d", i)).ID)
+	}
+	profile := mustWriteProfile(t, d, "# Me")
+	cs := connectClient(t, srv)
+
+	first := callTool[stage.PendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileSHA256": profile, "Limit": 2})
+	if first.NextCursor == nil || first.Total != 3 {
+		t.Fatalf("first page: NextCursor %v, Total %d; want a cursor and 3", first.NextCursor, first.Total)
+	}
+	second := callTool[stage.PendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileSHA256": profile, "Limit": 2, "Cursor": *first.NextCursor})
+
+	if diff := cmp.Diff(ids, append(pendingIDs(first), pendingIDs(second)...)); diff != "" {
+		t.Errorf("pending across both pages (-want +got):\n%s", diff)
+	}
+	if second.NextCursor != nil {
+		t.Errorf("last page's NextCursor = %q, want null", *second.NextCursor)
+	}
+	if first.Postings[0].Reason != "new" || first.Postings[0].ContentSHA256 == "" {
+		t.Errorf("first posting = %+v, want new, with its content hash", first.Postings[0])
+	}
+}
+
+func TestListPendingPostings_SaysWhyEachIsPending(t *testing.T) {
+	t.Parallel()
+
+	srv, s, d := newTestServer(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme")
+	fresh := mustUpsertPosting(t, s, acme.ID, "job-1", "Fresh")
+	scored := mustUpsertPosting(t, s, acme.ID, "job-2", "Scored before the profile changed")
+	oldProfile := documents.ContentSHA256("# Me")
+	if _, err := s.RecordScores(ctx, store.ScoreProvenance{Model: "claude-opus-5-5", ProfileSHA256: oldProfile}, []store.ScoreEntry{
+		{PostingID: scored.ID, Score: 3, Reason: "ok", ContentSHA256: scored.ContentSHA256},
+	}); err != nil {
+		t.Fatalf("RecordScores: %v", err)
+	}
+	profile := mustWriteProfile(t, d, "# Me, edited")
+	cs := connectClient(t, srv)
+
+	reasons := func(args map[string]any) map[int64]string {
+		got := map[int64]string{}
+		for _, p := range callTool[stage.PendingResult](t, cs, "list_pending_postings", args).Postings {
+			got[p.ID] = p.Reason
+		}
+		return got
+	}
+	if diff := cmp.Diff(map[int64]string{fresh.ID: "new"}, reasons(map[string]any{"ProfileSHA256": profile})); diff != "" {
+		t.Errorf("by default, an edited profile queues nothing (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(map[int64]string{fresh.ID: "new", scored.ID: "rescore"}, reasons(map[string]any{"ProfileSHA256": profile, "Rescore": true})); diff != "" {
+		t.Errorf("rescore (-want +got):\n%s", diff)
+	}
+}
+
+func TestListPendingPostings_RefusesAProfileItDidntRead(t *testing.T) {
+	t.Parallel()
+
+	srv, _, d := newTestServer(t)
+	mustWriteProfile(t, d, "# Me, edited since")
+	cs := connectClient(t, srv)
+
+	text := callToolError(t, cs, "list_pending_postings", map[string]any{"ProfileSHA256": documents.ContentSHA256("# Me")})
+
+	if !strings.Contains(text, "read_profile") {
+		t.Errorf("tool error %q, want it to say to call read_profile again", text)
+	}
+}
+
+func TestListPendingPostings_RefusesACursorFromAnotherListing(t *testing.T) {
+	t.Parallel()
+
+	srv, s, d := newTestServer(t)
+	acme := mustCreateCompany(t, s, "Acme")
+	for i := 1; i <= 3; i++ {
+		mustUpsertPosting(t, s, acme.ID, fmt.Sprintf("job-%d", i), "Role")
+	}
+	profile := mustWriteProfile(t, d, "# Me")
+	cs := connectClient(t, srv)
+	first := callTool[stage.PendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileSHA256": profile, "Limit": 1})
+	if first.NextCursor == nil {
+		t.Fatal("first page has no NextCursor")
+	}
+
+	text := callToolError(t, cs, "list_pending_postings", map[string]any{"ProfileSHA256": profile, "Rescore": true, "Cursor": *first.NextCursor})
+
+	if !strings.Contains(text, "cursor") {
+		t.Errorf("tool error %q, want it to say the cursor doesn't fit", text)
+	}
+}
