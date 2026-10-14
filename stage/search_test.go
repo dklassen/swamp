@@ -379,3 +379,43 @@ func TestSearch_CursorIsBoundToTheQuery(t *testing.T) {
 		t.Errorf("second page (-want +got):\n%s", diff)
 	}
 }
+
+func TestSearch_ScoreDescPagesBestFitFirst(t *testing.T) {
+	t.Parallel()
+	st, s, _ := newTestStage(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme")
+	low := mustUpsertPosting(t, s, acme.ID, "1", "Low")
+	high := mustUpsertPosting(t, s, acme.ID, "2", "High")
+	unscored := mustUpsertPosting(t, s, acme.ID, "3", "Unscored")
+	if _, err := s.RecordScores(ctx, store.ScoreProvenance{Model: "m", ProfileSHA256: "p"}, []store.ScoreEntry{
+		{PostingID: low.ID, Score: 2, Reason: "weak", ContentSHA256: low.ContentSHA256},
+		{PostingID: high.ID, Score: 5, Reason: "strong", ContentSHA256: high.ContentSHA256},
+	}); err != nil {
+		t.Fatalf("RecordScores: %v", err)
+	}
+
+	var got []int64
+	var scores []int
+	opts := SearchOptions{Sort: "score_desc", Limit: 1}
+	for pages := 0; pages < 5; pages++ {
+		page, err := st.Search(ctx, opts)
+		if err != nil {
+			t.Fatalf("Search: %v", err)
+		}
+		for _, m := range page.Postings {
+			got = append(got, m.Posting.ID)
+			scores = append(scores, m.Score)
+		}
+		if page.NextCursor == nil {
+			break
+		}
+		opts.Cursor = *page.NextCursor
+	}
+	if diff := cmp.Diff([]int64{high.ID, low.ID, unscored.ID}, got); diff != "" {
+		t.Errorf("order (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff([]int{5, 2, 0}, scores); diff != "" {
+		t.Errorf("scores (-want +got):\n%s", diff)
+	}
+}

@@ -379,3 +379,87 @@ func TestScoringVocabularies_RoundTripThroughJSONByName(t *testing.T) {
 		t.Error(`decoding the refusal "too_high" succeeded, want it refused`)
 	}
 }
+
+// A score given for content that has changed since is stale: the view dims it.
+func TestSearchPostings_RowsSayWhenTheScoreIsStale(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	kept := mustUpsertPostingIn(t, s, acme.ID, "1", "Unchanged", "")
+	rewritten := mustUpsertPostingIn(t, s, acme.ID, "2", "Rewritten", "")
+	if _, err := s.RecordScores(ctx, ScoreProvenance{Model: "m", ProfileSHA256: "p"}, []ScoreEntry{
+		{PostingID: kept.ID, Score: 4, Reason: "ok", ContentSHA256: kept.ContentSHA256},
+		{PostingID: rewritten.ID, Score: 4, Reason: "ok", ContentSHA256: rewritten.ContentSHA256},
+	}); err != nil {
+		t.Fatalf("RecordScores: %v", err)
+	}
+	if _, err := s.UpsertPosting(ctx, CreatePostingParams{CompanyID: acme.ID, Source: "ashby", SourceID: "2",
+		IngestedFields: IngestedFields{Title: "Rewritten", DescriptionText: "New text.", RawPayload: "{}"}}); err != nil {
+		t.Fatalf("UpsertPosting: %v", err)
+	}
+
+	for _, order := range PostingOrders() {
+		page, err := s.SearchPostings(ctx, PostingSearch{Order: order, Limit: 10})
+		if err != nil {
+			t.Fatalf("%s: SearchPostings: %v", order, err)
+		}
+		got := map[int64]bool{}
+		for _, l := range page.Listings {
+			got[l.ID] = l.ScoreStale
+		}
+		if diff := cmp.Diff(map[int64]bool{kept.ID: false, rewritten.ID: true}, got); diff != "" {
+			t.Errorf("%s: stale scores (-want +got):\n%s", order, diff)
+		}
+	}
+}
+
+func TestSearchPostings_ScoreDesc(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	score := func(p Posting, value int, profile string) {
+		t.Helper()
+		if _, err := s.RecordScores(ctx, ScoreProvenance{Model: "m", ProfileSHA256: profile}, []ScoreEntry{
+			{PostingID: p.ID, Score: value, Reason: "r", ContentSHA256: p.ContentSHA256},
+		}); err != nil {
+			t.Fatalf("RecordScores: %v", err)
+		}
+	}
+	fiveOld := mustUpsertPostingIn(t, s, acme.ID, "1", "Five, older", "")
+	three := mustUpsertPostingIn(t, s, acme.ID, "2", "Three", "")
+	unscoredOld := mustUpsertPostingIn(t, s, acme.ID, "3", "Unscored, older", "")
+	fiveNew := mustUpsertPostingIn(t, s, acme.ID, "4", "Five, newer", "")
+	unscoredNew := mustUpsertPostingIn(t, s, acme.ID, "5", "Unscored, newer", "")
+	rescored := mustUpsertPostingIn(t, s, acme.ID, "6", "Three, then one", "")
+	score(fiveOld, 5, "p")
+	score(three, 3, "p")
+	score(fiveNew, 5, "p")
+	score(rescored, 3, "p")
+	score(rescored, 1, "edited p")
+	want := []int64{fiveNew.ID, fiveOld.ID, three.ID, rescored.ID, unscoredNew.ID, unscoredOld.ID}
+
+	for limit := 1; limit <= len(want); limit++ {
+		search := PostingSearch{Order: PostingOrderScoreDesc, Limit: limit}
+		var got []int64
+		for pages := 0; ; pages++ {
+			if pages > len(want) {
+				t.Fatalf("limit %d: paging didn't end", limit)
+			}
+			page, err := s.SearchPostings(ctx, search)
+			if err != nil {
+				t.Fatalf("limit %d: SearchPostings: %v", limit, err)
+			}
+			got = append(got, listingIDs(page.Listings)...)
+			if !page.HasMore {
+				break
+			}
+			last := page.Listings[len(page.Listings)-1]
+			search.AfterID, search.AfterScore = last.ID, last.Score
+		}
+		if diff := cmp.Diff(want, got); diff != "" {
+			t.Errorf("limit %d: order (-want +got):\n%s", limit, diff)
+		}
+	}
+}

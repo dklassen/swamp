@@ -267,6 +267,27 @@ type Querier interface {
 	// application side is individually aliased nullable columns, not
 	// sqlc.embed (see ListInterestedPostings).
 	SearchPostingsByPublishedDesc(ctx context.Context, arg SearchPostingsByPublishedDescParams) ([]SearchPostingsByPublishedDescRow, error)
+	// SearchPostingsByID by fit: the same filters, ordered by the current score
+	// descending, then posting ID descending, so among equal scores the newest
+	// to Swamp comes first, with unscored postings last (by ID, descending).
+	// The filters must stay identical to SearchPostingsByID's; a test checks
+	// every order matches the same postings. NULL means "don't filter on this".
+	//
+	// The cursor is the previous page's last row: cursor_score (NULL when that
+	// row had no score) and cursor_id. Postings of a company the user deleted
+	// are never included.
+	//
+	// The inner query applies the filters and counts every match
+	// (COUNT(*) OVER ()); the outer one applies the keyset condition and the
+	// LIMIT. So total is the whole result's size on every page, while only
+	// max_rows rows ever leave the database.
+	//
+	// Application statuses come in as one JSON array read with json_each,
+	// not sqlc.slice, which can't be mixed with other bound parameters on
+	// sqlite (see ListActiveApplications). Summary columns only; the
+	// application side is individually aliased nullable columns, not
+	// sqlc.embed (see ListInterestedPostings).
+	SearchPostingsByScoreDesc(ctx context.Context, arg SearchPostingsByScoreDescParams) ([]SearchPostingsByScoreDescRow, error)
 	// See SetPostingInterested -- same mutual-exclusivity reasoning, mirrored.
 	SetPostingArchived(ctx context.Context, postingID int64) (PostingMarkup, error)
 	// Sets interested_at and also clears archived_at: the TUI treats
