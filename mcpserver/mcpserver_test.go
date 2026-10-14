@@ -1270,7 +1270,7 @@ func TestListPendingPostings_PagesToTheLastPage(t *testing.T) {
 	if second.NextCursor != nil {
 		t.Errorf("last page's NextCursor = %q, want null", *second.NextCursor)
 	}
-	if first.Postings[0].Reason != "new" || first.Postings[0].ContentSHA256 == "" {
+	if first.Postings[0].Reason != store.PendingNew || first.Postings[0].ContentSHA256 == "" {
 		t.Errorf("first posting = %+v, want new, with its content hash", first.Postings[0])
 	}
 }
@@ -1292,17 +1292,17 @@ func TestListPendingPostings_SaysWhyEachIsPending(t *testing.T) {
 	profile := mustWriteProfile(t, d, "# Me, edited")
 	cs := connectClient(t, srv)
 
-	reasons := func(args map[string]any) map[int64]string {
-		got := map[int64]string{}
+	reasons := func(args map[string]any) map[int64]store.PendingReason {
+		got := map[int64]store.PendingReason{}
 		for _, p := range callTool[stage.PendingResult](t, cs, "list_pending_postings", args).Postings {
 			got[p.ID] = p.Reason
 		}
 		return got
 	}
-	if diff := cmp.Diff(map[int64]string{fresh.ID: "new"}, reasons(map[string]any{"ProfileSHA256": profile})); diff != "" {
+	if diff := cmp.Diff(map[int64]store.PendingReason{fresh.ID: store.PendingNew}, reasons(map[string]any{"ProfileSHA256": profile})); diff != "" {
 		t.Errorf("by default, an edited profile queues nothing (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff(map[int64]string{fresh.ID: "new", scored.ID: "rescore"}, reasons(map[string]any{"ProfileSHA256": profile, "Rescore": true})); diff != "" {
+	if diff := cmp.Diff(map[int64]store.PendingReason{fresh.ID: store.PendingNew, scored.ID: store.PendingRescore}, reasons(map[string]any{"ProfileSHA256": profile, "Rescore": true})); diff != "" {
 		t.Errorf("rescore (-want +got):\n%s", diff)
 	}
 }
@@ -1365,7 +1365,7 @@ func TestRecordScores_StoresValidEntriesAndReportsTheRest(t *testing.T) {
 
 	want := stage.RecordResult{
 		Recorded: []int64{good.ID},
-		Refused:  []stage.RefusedEntry{{PostingID: other.ID, Why: "score_out_of_range"}, {PostingID: 999, Why: "no_such_posting"}},
+		Refused:  []stage.RefusedEntry{{PostingID: other.ID, Why: store.ScoreOutOfRange}, {PostingID: 999, Why: store.ScoreNoSuchPosting}},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("record_scores (-want +got):\n%s", diff)
@@ -1400,5 +1400,54 @@ func TestRecordScores_RefusesAProfileItDidntReadAndRecordsNothing(t *testing.T) 
 	}
 	if scores, err := s.PostingScores(context.Background(), p.ID); err != nil || len(scores) != 0 {
 		t.Errorf("scores after a refused call = %+v, %v; want none", scores, err)
+	}
+}
+
+// A refusal's Why is advertised as one of the store's names, so the agent
+// learns the vocabulary from the schema.
+func TestRecordScores_AdvertisesTheRefusalNames(t *testing.T) {
+	t.Parallel()
+
+	srv, _, _ := newTestServer(t)
+	cs := connectClient(t, srv)
+	res, err := cs.ListTools(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("ListTools: %v", err)
+	}
+	var raw []byte
+	for _, tool := range res.Tools {
+		if tool.Name == "record_scores" {
+			if raw, err = json.Marshal(tool.OutputSchema); err != nil {
+				t.Fatalf("marshal schema: %v", err)
+			}
+		}
+	}
+	var schema struct {
+		Properties struct {
+			Refused struct {
+				Items struct {
+					Properties struct {
+						Why struct {
+							Type string
+							Enum []string
+						}
+					}
+				}
+			}
+		}
+	}
+	if err := json.Unmarshal(raw, &schema); err != nil {
+		t.Fatalf("unmarshal schema %s: %v", raw, err)
+	}
+	var want []string
+	for _, r := range store.ScoreRefusals() {
+		want = append(want, r.String())
+	}
+	why := schema.Properties.Refused.Items.Properties.Why
+	if why.Type != "string" {
+		t.Errorf("Why's type = %q, want string", why.Type)
+	}
+	if diff := cmp.Diff(want, why.Enum); diff != "" {
+		t.Errorf("Why's names (-want +got):\n%s", diff)
 	}
 }

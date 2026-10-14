@@ -32,11 +32,10 @@ type RecordResult struct {
 	Refused  []RefusedEntry `json:"Refused"`
 }
 
-// RefusedEntry is a score that wasn't recorded, and why: no_such_posting,
-// score_out_of_range, no_reason, content_changed or already_scored.
+// RefusedEntry is a score that wasn't recorded, and why.
 type RefusedEntry struct {
-	PostingID int64  `json:"PostingID"`
-	Why       string `json:"Why"`
+	PostingID int64              `json:"PostingID"`
+	Why       store.ScoreRefusal `json:"Why"`
 }
 
 // RecordScores records the agent's scores against the profile it read, in
@@ -60,7 +59,7 @@ func (st *Stage) RecordScores(ctx context.Context, opts RecordOptions) (RecordRe
 	}
 	result := RecordResult{Recorded: append([]int64{}, recorded.Recorded...), Refused: make([]RefusedEntry, len(recorded.Refused))}
 	for i, r := range recorded.Refused {
-		result.Refused[i] = RefusedEntry{PostingID: r.PostingID, Why: r.Why.String()}
+		result.Refused[i] = RefusedEntry{PostingID: r.PostingID, Why: r.Why}
 	}
 	return result, nil
 }

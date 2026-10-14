@@ -2,6 +2,7 @@ package store
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"testing"
 
@@ -342,5 +343,39 @@ func TestPostingScores_NewestFirstWithWhatProducedThem(t *testing.T) {
 	want := []summary{{4, "after the edit", second, p.ContentSHA256}, {2, "first look", first, p.ContentSHA256}}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("scores (-want +got):\n%s", diff)
+	}
+}
+
+// The vocabularies the agent reads go to and from JSON as their names.
+func TestScoringVocabularies_RoundTripThroughJSONByName(t *testing.T) {
+	t.Parallel()
+
+	for _, r := range []PendingReason{PendingNew, PendingChanged, PendingRescore} {
+		encoded, err := json.Marshal(r)
+		if err != nil {
+			t.Fatalf("Marshal(%v): %v", r, err)
+		}
+		var decoded PendingReason
+		if err := json.Unmarshal(encoded, &decoded); err != nil || decoded != r || string(encoded) != `"`+r.String()+`"` {
+			t.Errorf("%v: encoded %s, decoded %v (%v)", r, encoded, decoded, err)
+		}
+	}
+	for _, r := range []ScoreRefusal{ScoreNoSuchPosting, ScoreOutOfRange, ScoreNoReason, ScoreContentChanged, ScoreRepeat} {
+		encoded, err := json.Marshal(r)
+		if err != nil {
+			t.Fatalf("Marshal(%v): %v", r, err)
+		}
+		var decoded ScoreRefusal
+		if err := json.Unmarshal(encoded, &decoded); err != nil || decoded != r || string(encoded) != `"`+r.String()+`"` {
+			t.Errorf("%v: encoded %s, decoded %v (%v)", r, encoded, decoded, err)
+		}
+	}
+	var reason PendingReason
+	if err := json.Unmarshal([]byte(`"stale"`), &reason); err == nil {
+		t.Error(`decoding the pending reason "stale" succeeded, want it refused`)
+	}
+	var refusal ScoreRefusal
+	if err := json.Unmarshal([]byte(`"too_high"`), &refusal); err == nil {
+		t.Error(`decoding the refusal "too_high" succeeded, want it refused`)
 	}
 }

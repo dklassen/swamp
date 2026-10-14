@@ -61,8 +61,9 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 	}, listPendingPostingsHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
-		Name:        "record_scores",
-		Description: "Record how well postings fit the user, in one batch: each score is 1 (no fit) to 5 (apply now), with a one-line reason shown next to it and the ContentSHA256 you read from list_pending_postings or read_posting. Pass your own model ID and read_profile's SHA256; a stale SHA256 records nothing. Batch many scores per call. Each entry is recorded or refused, with why: no_such_posting, score_out_of_range, no_reason, content_changed (the posting changed since you read it; it stays pending) or already_scored (a score on that content, against that profile, from that model exists).",
+		Name:         "record_scores",
+		Description:  "Record how well postings fit the user, in one batch: each score is 1 (no fit) to 5 (apply now), with a one-line reason shown next to it and the ContentSHA256 you read from list_pending_postings or read_posting. Pass your own model ID and read_profile's SHA256; a stale SHA256 records nothing. Batch many scores per call. Each entry is recorded or refused, with why: no_such_posting, score_out_of_range, no_reason, content_changed (the posting changed since you read it; it stays pending) or already_scored (a score on that content, against that profile, from that model exists).",
+		OutputSchema: recordScoresOutputSchema(),
 	}, recordScoresHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -271,6 +272,21 @@ type recordScoresInput struct {
 	Model         string             `json:"Model" jsonschema:"your model ID, e.g. claude-opus-5-5"`
 	ProfileSHA256 string             `json:"ProfileSHA256" jsonschema:"read_profile's SHA256"`
 	Scores        []stage.ScoreInput `json:"Scores" jsonschema:"the scores, each with PostingID, Score (1-5), Reason (one line) and the ContentSHA256 you read"`
+}
+
+// recordScoresOutputSchema advertises a refusal's Why as its name, one of
+// the store's refusals: inferred, it would be ScoreRefusal's int.
+func recordScoresOutputSchema() *jsonschema.Schema {
+	schema, err := jsonschema.For[stage.RecordResult](nil)
+	if err != nil {
+		panic(fmt.Sprintf("mcpserver: infer record_scores output schema: %v", err))
+	}
+	var names []any
+	for _, refusal := range store.ScoreRefusals() {
+		names = append(names, refusal.String())
+	}
+	schema.Properties["Refused"].Items.Properties["Why"] = &jsonschema.Schema{Type: "string", Enum: names}
+	return schema
 }
 
 func recordScoresHandler(st *stage.Stage) mcp.ToolHandlerFor[recordScoresInput, stage.RecordResult] {
