@@ -1402,7 +1402,7 @@ func TestApp_PostingDetail_NavigatingBetweenPostings_LoadsEachPostingsOwnApplica
 	if cmd == nil {
 		t.Fatal("Update on right (posting detail nav) returned nil Cmd, want a command that loads the next posting's application")
 	}
-	app, _ = sendKey(app, cmd())
+	app = applyCmd(t, app, cmd)
 
 	if !strings.Contains(app.postingDetail.viewport.View(), applicationStatusLabel(store.ApplicationStatusInterviewing)) {
 		t.Fatalf("detail view for Designer = %q, want it to contain %q", app.postingDetail.viewport.View(), applicationStatusLabel(store.ApplicationStatusInterviewing))

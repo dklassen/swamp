@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/filter"
@@ -659,5 +660,48 @@ func TestAllPostings_AScoreRecordedElsewhere_Shows(t *testing.T) {
 
 	if got := app.allPostings.page.Listings[0].Score; got != 4 {
 		t.Errorf("score after the agent recorded one = %d, want 4", got)
+	}
+}
+
+func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
+	t.Parallel()
+
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	p := mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
+	if _, err := s.RecordScores(context.Background(), store.ScoreProvenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: "p"}, []store.ScoreEntry{
+		{PostingID: p.ID, Score: 2, Reason: "first look", ContentSHA256: p.ContentSHA256},
+	}); err != nil {
+		t.Fatalf("RecordScores: %v", err)
+	}
+	if _, err := s.RecordScores(context.Background(), store.ScoreProvenance{Model: "claude-opus-5-5", ClientName: "claude-code", ClientVersion: "2.4.1", ProfileSHA256: "edited p"}, []store.ScoreEntry{
+		{PostingID: p.ID, Score: 4, Reason: "Go and Kafka, remote", ContentSHA256: p.ContentSHA256},
+	}); err != nil {
+		t.Fatalf("RecordScores: %v", err)
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 140, Height: 60})
+	app = openAllPostings(t, app)
+	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+
+	view := ansi.Strip(app.View())
+	for _, want := range []string{"Fit", "4 · Go and Kafka, remote", "claude-opus-5-5", "claude-code 2.4.1", "2 · first look", "claude-sonnet-5"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("detail is missing %q:\n%s", want, view)
+		}
+	}
+	if strings.Index(view, "4 · Go and Kafka") > strings.Index(view, "2 · first look") {
+		t.Errorf("the current score isn't above the earlier one:\n%s", view)
+	}
+
+	if _, err := s.RecordScores(context.Background(), store.ScoreProvenance{Model: "claude-opus-5-5", ProfileSHA256: "rewritten p"}, []store.ScoreEntry{
+		{PostingID: p.ID, Score: 5, Reason: "after the rewrite", ContentSHA256: p.ContentSHA256},
+	}); err != nil {
+		t.Fatalf("RecordScores: %v", err)
+	}
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "posting_scores", RowID: 3, Op: "insert", New: fmt.Sprintf(`{"posting_id":%d,"score":5}`, p.ID), Origin: "mcp:7"}}})
+
+	if view := ansi.Strip(app.View()); !strings.Contains(view, "5 · after the rewrite") {
+		t.Errorf("detail doesn't show the score the agent just recorded:\n%s", view)
 	}
 }

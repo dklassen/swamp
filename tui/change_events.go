@@ -138,11 +138,18 @@ func (a *App) reloadFor(events []store.ChangeEvent) tea.Cmd {
 		}
 	case screenPostingDetail:
 		d := a.postingDetail
+		var cmds []tea.Cmd
 		if slices.ContainsFunc(events, func(e store.ChangeEvent) bool {
-			return (e.Table == "postings" && e.RowID == d.posting.ID) || eventPostingID(e) == d.posting.ID || (d.hasApplication && eventApplicationID(e) == d.application.ID)
+			return (e.Table == "postings" && e.RowID == d.posting.ID) || (e.Table == "applications" && eventPostingID(e) == d.posting.ID) || (d.hasApplication && eventApplicationID(e) == d.application.ID)
 		}) {
-			return reloadPosting(a.store, d.posting.ID)
+			cmds = append(cmds, reloadPosting(a.store, d.posting.ID))
 		}
+		if slices.ContainsFunc(events, func(e store.ChangeEvent) bool {
+			return e.Table == "posting_scores" && eventPostingID(e) == d.posting.ID
+		}) {
+			cmds = append(cmds, loadPostingScores(a.store, d.posting.ID))
+		}
+		return tea.Batch(cmds...)
 	case screenPostingList:
 		if touches(events, "postings") {
 			return reloadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
@@ -198,9 +205,10 @@ func eventApplicationID(e store.ChangeEvent) int64 {
 	return 0
 }
 
-// eventPostingID is the posting an application event is about, or 0.
+// eventPostingID is the posting an application or score event is about, or
+// 0.
 func eventPostingID(e store.ChangeEvent) int64 {
-	if e.Table != "applications" {
+	if e.Table != "applications" && e.Table != "posting_scores" {
 		return 0
 	}
 	var row struct {
@@ -255,6 +263,7 @@ func (a *App) handleApplicationDetailReloaded(msg applicationDetailReloadedMsg) 
 // the same posting: a reload mustn't jump you back to the top.
 func (a *App) replacePostingDetail(m postingDetailModel) {
 	if m.posting.ID == a.postingDetail.posting.ID {
+		m.setScores(a.postingDetail.scores)
 		m.viewport.SetYOffset(a.postingDetail.viewport.YOffset)
 	}
 	a.postingDetail = m
@@ -285,4 +294,29 @@ func (a *App) handlePostingReloaded(msg postingReloadedMsg) tea.Cmd {
 	d := a.postingDetail
 	a.replacePostingDetail(newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), msg.posting, d.application, d.hasApplication, d.latestReviews, a.canNavigateSiblings(msg.posting.ID)))
 	return loadApplication(a.store, msg.posting.ID)
+}
+
+type postingScoresLoadedMsg struct {
+	postingID int64
+	scores    []store.PostingScore
+	err       error
+}
+
+func loadPostingScores(s *store.Store, postingID int64) tea.Cmd {
+	return func() tea.Msg {
+		scores, err := s.PostingScores(context.Background(), postingID)
+		return postingScoresLoadedMsg{postingID: postingID, scores: scores, err: err}
+	}
+}
+
+// handlePostingScoresLoaded shows a posting's scores, if its detail is
+// still the one open, under whatever screen is on top of it.
+func (a *App) handlePostingScoresLoaded(msg postingScoresLoadedMsg) {
+	if msg.err != nil {
+		a.err = msg.err
+		return
+	}
+	if a.postingDetail.posting.ID == msg.postingID {
+		a.postingDetail.setScores(msg.scores)
+	}
 }
