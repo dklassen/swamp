@@ -19,13 +19,13 @@ var ErrApplicationNotFound = errors.New("stage: application not found")
 // whose document hasn't been written yet.
 var ErrDocumentNotWritten = errors.New("stage: document not written yet")
 
-// NoDocumentYet stands in for the SHA256 of a document that doesn't exist:
-// Prepare reports it, and WriteDocument takes it back to expect none.
+// NoDocumentYet is the Version of a document that doesn't exist: Prepare
+// reports it, and WriteDocument takes it back to expect none.
 const NoDocumentYet = "no_document_yet"
 
-// ErrEmptyExpectedSHA256 is WriteDocument's error for an empty
-// expectedSHA256, which reads too much like an omitted one.
-var ErrEmptyExpectedSHA256 = errors.New("stage: expected SHA256 is empty")
+// ErrEmptyReplacesVersion is WriteDocument's error for an empty
+// replacesVersion, which reads too much like an omitted one.
+var ErrEmptyReplacesVersion = errors.New("stage: replaces version is empty")
 
 // ApplicationDeletedError is WriteDocument and ReadDocument's error for an
 // application the user deleted. PostingID is the posting it was for,
@@ -59,13 +59,13 @@ func (st *Stage) application(ctx context.Context, applicationID int64) (store.Ap
 
 // WriteDocument replaces applicationID's documentType document with
 // content and returns its path. It refuses an application that doesn't
-// exist rather than creating a folder for it. With expectedSHA256, it
+// exist rather than creating a folder for it. With replacesVersion, it
 // writes only if the document is still that version (NoDocumentYet: still
 // absent), and fails with documents.ErrChanged otherwise; nil writes
 // unconditionally.
-func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documentType documents.Type, content string, expectedSHA256 *string) (string, error) {
-	if expectedSHA256 != nil && *expectedSHA256 == "" {
-		return "", ErrEmptyExpectedSHA256
+func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documentType documents.Type, content string, replacesVersion *string) (string, error) {
+	if replacesVersion != nil && *replacesVersion == "" {
+		return "", ErrEmptyReplacesVersion
 	}
 	if _, err := st.application(ctx, applicationID); err != nil {
 		return "", err
@@ -73,12 +73,12 @@ func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documen
 	var path string
 	var err error
 	switch {
-	case expectedSHA256 == nil:
+	case replacesVersion == nil:
 		path, err = st.documents.Write(applicationID, documentType, content)
-	case *expectedSHA256 == NoDocumentYet:
+	case *replacesVersion == NoDocumentYet:
 		path, err = st.documents.WriteIfUnchanged(applicationID, documentType, content, "")
 	default:
-		path, err = st.documents.WriteIfUnchanged(applicationID, documentType, content, *expectedSHA256)
+		path, err = st.documents.WriteIfUnchanged(applicationID, documentType, content, *replacesVersion)
 	}
 	if err != nil {
 		return "", fmt.Errorf("stage: write %s: %w", documentType, err)

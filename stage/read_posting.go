@@ -26,7 +26,7 @@ type FullPosting struct {
 	DescriptionText    string             `json:"DescriptionText"`
 	JobURL             string             `json:"JobURL"`
 	ApplicationURL     string             `json:"ApplicationURL"`
-	ContentSHA256      string             `json:"ContentSHA256"`
+	Version            string             `json:"Version"`
 }
 
 // ReadPosting returns posting id in full. A posting at a company the user
@@ -60,6 +60,6 @@ func (st *Stage) ReadPosting(ctx context.Context, id int64) (FullPosting, error)
 		DescriptionText:    posting.DescriptionText,
 		JobURL:             posting.JobURL,
 		ApplicationURL:     posting.ApplicationURL,
-		ContentSHA256:      posting.ContentSHA256,
+		Version:            posting.ContentSHA256,
 	}, nil
 }

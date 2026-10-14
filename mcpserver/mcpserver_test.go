@@ -502,7 +502,7 @@ func TestReadDocument_ReturnsWrittenContent(t *testing.T) {
 				"DocumentType":  tc.documentType,
 			})
 
-			want := readDocumentOutput{Path: tc.wantPath, Content: content, SHA256: documents.ContentSHA256(content)}
+			want := readDocumentOutput{Path: tc.wantPath, Content: content, Version: documents.ContentSHA256(content)}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("read_document result mismatch (-want +got):\n%s", diff)
 			}
@@ -683,7 +683,7 @@ func TestReadCanonical_ReturnsContentWhenPresent(t *testing.T) {
 			cs := connectClient(t, srv)
 			got := callTool[readCanonicalOutput](t, cs, tc.tool, map[string]any{})
 
-			want := readCanonicalOutput{Path: path, Exists: true, Content: "# " + tc.tool, SHA256: documents.ContentSHA256("# " + tc.tool)}
+			want := readCanonicalOutput{Path: path, Exists: true, Content: "# " + tc.tool, Version: documents.ContentSHA256("# " + tc.tool)}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("%s result mismatch (-want +got):\n%s", tc.tool, diff)
 			}
@@ -1007,10 +1007,10 @@ func TestSearchPostings_AdvertisesEnums(t *testing.T) {
 	}
 }
 
-// TestWriteDocument_ExpectedSHA256: an agent passes the hash of what it
+// TestWriteDocument_ReplacesVersion: an agent passes the Version of what it
 // read, so a draft the user edited since isn't silently replaced (RFC
 // 0007, H2). Omitting it still writes unconditionally.
-func TestWriteDocument_ExpectedSHA256(t *testing.T) {
+func TestWriteDocument_ReplacesVersion(t *testing.T) {
 	t.Parallel()
 
 	const edited = "edited by the user"
@@ -1049,7 +1049,7 @@ func TestWriteDocument_ExpectedSHA256(t *testing.T) {
 				"Content":       "the agent's draft",
 			}
 			if tt.expected != nil {
-				args["ExpectedSHA256"] = tt.expected
+				args["ReplacesVersion"] = tt.expected
 			}
 
 			want := "the agent's draft"
@@ -1076,9 +1076,9 @@ func TestWriteDocument_ExpectedSHA256(t *testing.T) {
 	}
 }
 
-// An empty ExpectedSHA256 is easy to mistake for an omitted one, which writes
+// An empty ReplacesVersion is easy to mistake for an omitted one, which writes
 // unconditionally, so it's refused: "no_document_yet" says so instead.
-func TestWriteDocument_EmptyExpectedSHA256_IsRefused(t *testing.T) {
+func TestWriteDocument_EmptyReplacesVersion_IsRefused(t *testing.T) {
 	t.Parallel()
 
 	srv, s, _ := newTestServer(t)
@@ -1089,10 +1089,10 @@ func TestWriteDocument_EmptyExpectedSHA256_IsRefused(t *testing.T) {
 	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 
 	msg := callToolError(t, cs, "write_document", map[string]any{
-		"ApplicationID":  prepared.ApplicationID,
-		"DocumentType":   "cover_letter",
-		"Content":        "the agent's draft",
-		"ExpectedSHA256": "",
+		"ApplicationID":   prepared.ApplicationID,
+		"DocumentType":    "cover_letter",
+		"Content":         "the agent's draft",
+		"ReplacesVersion": "",
 	})
 
 	for _, part := range []string{"nothing was written", `"no_document_yet"`} {
@@ -1105,10 +1105,10 @@ func TestWriteDocument_EmptyExpectedSHA256_IsRefused(t *testing.T) {
 	}
 }
 
-// TestStagePrepare_DocumentsCarrySHA256: what an agent passes to
-// write_document as ExpectedSHA256 when it drafts from stage_prepare,
+// TestStagePrepare_DocumentsCarryVersion: what an agent passes to
+// write_document as ReplacesVersion when it drafts from stage_prepare,
 // stage.NoDocumentYet for a document that doesn't exist yet.
-func TestStagePrepare_DocumentsCarrySHA256(t *testing.T) {
+func TestStagePrepare_DocumentsCarryVersion(t *testing.T) {
 	t.Parallel()
 
 	srv, s, _ := newTestServer(t)
@@ -1125,11 +1125,11 @@ func TestStagePrepare_DocumentsCarrySHA256(t *testing.T) {
 
 	got := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 
-	if want := documents.ContentSHA256("a draft"); got.Documents[documents.CoverLetter].SHA256 != want {
-		t.Errorf("cover letter SHA256 = %q, want %q", got.Documents[documents.CoverLetter].SHA256, want)
+	if want := documents.ContentSHA256("a draft"); got.Documents[documents.CoverLetter].Version != want {
+		t.Errorf("cover letter Version = %q, want %q", got.Documents[documents.CoverLetter].Version, want)
 	}
-	if got := got.Documents[documents.Resume].SHA256; got != stage.NoDocumentYet {
-		t.Errorf("resume SHA256 = %q, want %q (never written)", got, stage.NoDocumentYet)
+	if got := got.Documents[documents.Resume].Version; got != stage.NoDocumentYet {
+		t.Errorf("resume Version = %q, want %q (never written)", got, stage.NoDocumentYet)
 	}
 }
 
@@ -1201,13 +1201,13 @@ func TestReadPosting_ReturnsThePostingInFull(t *testing.T) {
 		ID: posting.ID, Title: "Platform Engineer", CompanyName: "Acme", CompanyDescription: "Builds rockets.",
 		Department: "Infra", Location: "Dublin", WorkplaceType: "Hybrid", ListingStatus: "open",
 		DescriptionText: "Run the platform.", JobURL: "https://jobs.example.com/acme/1", ApplicationURL: "https://jobs.example.com/acme/1/apply",
-		FirstSeenAt: posting.FirstSeenAt, ContentSHA256: posting.ContentSHA256,
+		FirstSeenAt: posting.FirstSeenAt, Version: posting.ContentSHA256,
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("read_posting (-want +got):\n%s", diff)
 	}
-	if got.ContentSHA256 == "" {
-		t.Error("ContentSHA256 is empty")
+	if got.Version == "" {
+		t.Error("Version is empty")
 	}
 }
 
@@ -1287,11 +1287,11 @@ func TestListPendingPostings_PagesToTheLastPage(t *testing.T) {
 	profile := mustWriteProfile(t, d, "# Me")
 	cs := connectClient(t, srv)
 
-	first := callTool[stage.PendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileSHA256": profile, "Limit": 2})
+	first := callTool[stage.PendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileVersion": profile, "Limit": 2})
 	if first.NextCursor == nil || first.Total != 3 {
 		t.Fatalf("first page: NextCursor %v, Total %d; want a cursor and 3", first.NextCursor, first.Total)
 	}
-	second := callTool[stage.PendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileSHA256": profile, "Limit": 2, "Cursor": *first.NextCursor})
+	second := callTool[stage.PendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileVersion": profile, "Limit": 2, "Cursor": *first.NextCursor})
 
 	if diff := cmp.Diff([]int64{ids[2], ids[1], ids[0]}, append(pendingIDs(first), pendingIDs(second)...)); diff != "" {
 		t.Errorf("pending across both pages, newest first (-want +got):\n%s", diff)
@@ -1299,7 +1299,7 @@ func TestListPendingPostings_PagesToTheLastPage(t *testing.T) {
 	if second.NextCursor != nil {
 		t.Errorf("last page's NextCursor = %q, want null", *second.NextCursor)
 	}
-	if first.Postings[0].Reason != store.PendingNew || first.Postings[0].ContentSHA256 == "" {
+	if first.Postings[0].Reason != store.PendingNew || first.Postings[0].Version == "" {
 		t.Errorf("first posting = %+v, want new, with its content hash", first.Postings[0])
 	}
 }
@@ -1328,10 +1328,10 @@ func TestListPendingPostings_SaysWhyEachIsPending(t *testing.T) {
 		}
 		return got
 	}
-	if diff := cmp.Diff(map[int64]store.PendingReason{fresh.ID: store.PendingNew}, reasons(map[string]any{"ProfileSHA256": profile})); diff != "" {
+	if diff := cmp.Diff(map[int64]store.PendingReason{fresh.ID: store.PendingNew}, reasons(map[string]any{"ProfileVersion": profile})); diff != "" {
 		t.Errorf("by default, an edited profile queues nothing (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff(map[int64]store.PendingReason{fresh.ID: store.PendingNew, scored.ID: store.PendingRescore}, reasons(map[string]any{"ProfileSHA256": profile, "Rescore": true})); diff != "" {
+	if diff := cmp.Diff(map[int64]store.PendingReason{fresh.ID: store.PendingNew, scored.ID: store.PendingRescore}, reasons(map[string]any{"ProfileVersion": profile, "Rescore": true})); diff != "" {
 		t.Errorf("rescore (-want +got):\n%s", diff)
 	}
 }
@@ -1343,7 +1343,7 @@ func TestListPendingPostings_RefusesAProfileItDidntRead(t *testing.T) {
 	mustWriteProfile(t, d, "# Me, edited since")
 	cs := connectClient(t, srv)
 
-	text := callToolError(t, cs, "list_pending_postings", map[string]any{"ProfileSHA256": documents.ContentSHA256("# Me")})
+	text := callToolError(t, cs, "list_pending_postings", map[string]any{"ProfileVersion": documents.ContentSHA256("# Me")})
 
 	if !strings.Contains(text, "read_profile") {
 		t.Errorf("tool error %q, want it to say to call read_profile again", text)
@@ -1360,12 +1360,12 @@ func TestListPendingPostings_RefusesACursorFromAnotherListing(t *testing.T) {
 	}
 	profile := mustWriteProfile(t, d, "# Me")
 	cs := connectClient(t, srv)
-	first := callTool[stage.PendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileSHA256": profile, "Limit": 1})
+	first := callTool[stage.PendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileVersion": profile, "Limit": 1})
 	if first.NextCursor == nil {
 		t.Fatal("first page has no NextCursor")
 	}
 
-	text := callToolError(t, cs, "list_pending_postings", map[string]any{"ProfileSHA256": profile, "Rescore": true, "Cursor": *first.NextCursor})
+	text := callToolError(t, cs, "list_pending_postings", map[string]any{"ProfileVersion": profile, "Rescore": true, "Cursor": *first.NextCursor})
 
 	if !strings.Contains(text, "cursor") {
 		t.Errorf("tool error %q, want it to say the cursor doesn't fit", text)
@@ -1383,12 +1383,12 @@ func TestRecordScores_StoresValidEntriesAndReportsTheRest(t *testing.T) {
 	cs := connectClient(t, srv)
 
 	got := callTool[stage.RecordResult](t, cs, "record_scores", map[string]any{
-		"Model":         "claude-opus-5-5",
-		"ProfileSHA256": profile,
+		"Model":          "claude-opus-5-5",
+		"ProfileVersion": profile,
 		"Scores": []map[string]any{
-			{"PostingID": good.ID, "Score": 4, "Reason": "Go, remote", "ContentSHA256": good.ContentSHA256},
-			{"PostingID": other.ID, "Score": 9, "Reason": "off the scale", "ContentSHA256": other.ContentSHA256},
-			{"PostingID": 999, "Score": 3, "Reason": "no such posting", "ContentSHA256": "x"},
+			{"PostingID": good.ID, "Score": 4, "Reason": "Go, remote", "PostingVersion": good.ContentSHA256},
+			{"PostingID": other.ID, "Score": 9, "Reason": "off the scale", "PostingVersion": other.ContentSHA256},
+			{"PostingID": 999, "Score": 3, "Reason": "no such posting", "PostingVersion": "x"},
 		},
 	})
 
@@ -1419,9 +1419,9 @@ func TestRecordScores_RefusesAProfileItDidntReadAndRecordsNothing(t *testing.T) 
 	cs := connectClient(t, srv)
 
 	text := callToolError(t, cs, "record_scores", map[string]any{
-		"Model":         "claude-opus-5-5",
-		"ProfileSHA256": documents.ContentSHA256("# Me"),
-		"Scores":        []map[string]any{{"PostingID": p.ID, "Score": 4, "Reason": "ok", "ContentSHA256": p.ContentSHA256}},
+		"Model":          "claude-opus-5-5",
+		"ProfileVersion": documents.ContentSHA256("# Me"),
+		"Scores":         []map[string]any{{"PostingID": p.ID, "Score": 4, "Reason": "ok", "PostingVersion": p.ContentSHA256}},
 	})
 
 	if !strings.Contains(text, "read_profile") {
@@ -1478,5 +1478,39 @@ func TestRecordScores_AdvertisesTheRefusalNames(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, why.Enum); diff != "" {
 		t.Errorf("Why's names (-want +got):\n%s", diff)
+	}
+}
+
+// Arguments named for the hash rather than its purpose are refused, not
+// ignored: a write whose ExpectedSHA256 was dropped would replace whatever
+// is there, and a score whose ProfileSHA256 was dropped would be refused
+// only for the wrong reason.
+func TestOldVersionArgumentNames_AreRefused(t *testing.T) {
+	t.Parallel()
+
+	srv, s, d := newTestServer(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	profile := mustWriteProfile(t, d, "# Me")
+	cs := connectClient(t, srv)
+	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+
+	calls := []struct {
+		tool string
+		args map[string]any
+	}{
+		{"write_document", map[string]any{"ApplicationID": prepared.ApplicationID, "DocumentType": "cover_letter", "Content": "a draft", "ExpectedSHA256": "no_document_yet"}},
+		{"list_pending_postings", map[string]any{"ProfileSHA256": profile}},
+		{"record_scores", map[string]any{"Model": "claude-opus-5-5", "ProfileSHA256": profile, "Scores": []any{}}},
+	}
+	for _, c := range calls {
+		res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{Name: c.tool, Arguments: c.args})
+		if err == nil && !res.IsError {
+			t.Errorf("%s with an old argument name succeeded, want it refused", c.tool)
+		}
+	}
+	if _, err := os.Stat(prepared.Documents[documents.CoverLetter].Path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("cover letter on disk after a refused write: Stat error %v, want not exist", err)
 	}
 }
