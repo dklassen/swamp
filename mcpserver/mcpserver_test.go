@@ -1023,8 +1023,8 @@ func TestWriteDocument_ExpectedSHA256(t *testing.T) {
 		{name: "omitted", onDisk: edited, expected: nil},
 		{name: "matches", onDisk: edited, expected: documents.ContentSHA256(edited)},
 		{name: "changed since read", onDisk: edited, expected: documents.ContentSHA256("what the agent read"), wantError: "changed since you read it"},
-		{name: "expected absent, still absent", expected: ""},
-		{name: "expected absent, one appeared", onDisk: edited, expected: "", wantError: "already has a cover_letter"},
+		{name: "no document yet, still absent", expected: "no_document_yet"},
+		{name: "no document yet, one appeared", onDisk: edited, expected: "no_document_yet", wantError: "already has a cover_letter"},
 	}
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1076,9 +1076,38 @@ func TestWriteDocument_ExpectedSHA256(t *testing.T) {
 	}
 }
 
+// An empty ExpectedSHA256 is easy to mistake for an omitted one, which writes
+// unconditionally, so it's refused: "no_document_yet" says so instead.
+func TestWriteDocument_EmptyExpectedSHA256_IsRefused(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	cs := connectClient(t, srv)
+	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+
+	msg := callToolError(t, cs, "write_document", map[string]any{
+		"ApplicationID":  prepared.ApplicationID,
+		"DocumentType":   "cover_letter",
+		"Content":        "the agent's draft",
+		"ExpectedSHA256": "",
+	})
+
+	for _, part := range []string{"nothing was written", `"no_document_yet"`} {
+		if !strings.Contains(msg, part) {
+			t.Errorf("error %q doesn't contain %q", msg, part)
+		}
+	}
+	if _, err := os.Stat(prepared.Documents[documents.CoverLetter].Path); !errors.Is(err, os.ErrNotExist) {
+		t.Errorf("cover letter on disk after a refused write: Stat error %v, want not exist", err)
+	}
+}
+
 // TestStagePrepare_DocumentsCarrySHA256: what an agent passes to
 // write_document as ExpectedSHA256 when it drafts from stage_prepare,
-// empty for a document that doesn't exist yet.
+// stage.NoDocumentYet for a document that doesn't exist yet.
 func TestStagePrepare_DocumentsCarrySHA256(t *testing.T) {
 	t.Parallel()
 
@@ -1099,8 +1128,8 @@ func TestStagePrepare_DocumentsCarrySHA256(t *testing.T) {
 	if want := documents.ContentSHA256("a draft"); got.Documents[documents.CoverLetter].SHA256 != want {
 		t.Errorf("cover letter SHA256 = %q, want %q", got.Documents[documents.CoverLetter].SHA256, want)
 	}
-	if got := got.Documents[documents.Resume].SHA256; got != "" {
-		t.Errorf("resume SHA256 = %q, want empty (never written)", got)
+	if got := got.Documents[documents.Resume].SHA256; got != stage.NoDocumentYet {
+		t.Errorf("resume SHA256 = %q, want %q (never written)", got, stage.NoDocumentYet)
 	}
 }
 
