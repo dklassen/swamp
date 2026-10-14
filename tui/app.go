@@ -406,6 +406,14 @@ func (a *App) openDocumentReviewForm(msg enterDocumentReviewFormMsg) bool {
 	return true
 }
 
+// setLoadErr records a load's failure. Loads finish in any order, so a
+// success leaves another load's error in place.
+func (a *App) setLoadErr(err error) {
+	if err != nil {
+		a.err = err
+	}
+}
+
 // returnBack pops returnStack and switches to the screen on top,
 // returning it. An empty stack means a push was missed somewhere; falling
 // back to the home screen beats panicking or staying stuck.
@@ -1011,13 +1019,13 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case companiesLoadedMsg:
-		a.err = msg.err
+		a.setLoadErr(msg.err)
 		previousCompany := a.companyList.selected(a.companies)
 		a.companies = msg.companies
 		a.companyList.keepCursorOn(previousCompany, a.companies)
 		a.companyOpenPostings = msg.openPostings
 	case activeApplicationsLoadedMsg:
-		a.err = msg.err
+		a.setLoadErr(msg.err)
 		previous := a.activeApplicationList.selected(a.activeApplications)
 		a.activeApplications = msg.applications
 		a.activeApplicationProgress = msg.progress
@@ -1088,7 +1096,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, reload
 		}
 	case postingsLoadedMsg:
-		a.err = msg.err
+		a.setLoadErr(msg.err)
 		previousPosting := a.postingList.selected(a.postings)
 		a.postings = msg.postings
 		a.postingMarkup = msg.markup
@@ -1122,7 +1130,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case applicationLoadedMsg:
-		a.err = msg.err
+		a.setLoadErr(msg.err)
 		if msg.err == nil {
 			if a.applicationsByPosting == nil {
 				a.applicationsByPosting = make(map[int64]store.Application)
@@ -1354,7 +1362,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case documentReviewsLoadedMsg:
-		a.err = msg.err
+		a.setLoadErr(msg.err)
 		// A response for a posting/application the user has since
 		// navigated away from is simply discarded -- msg.applicationID no
 		// longer matching what's on screen means this result is stale.
