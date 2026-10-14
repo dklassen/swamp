@@ -56,6 +56,11 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 	}, readPostingHandler(st))
 
 	mcp.AddTool(server, &mcp.Tool{
+		Name:        "list_pending_postings",
+		Description: "List the postings still to score for fit, a page at a time: each one's ID, company, title, department, location, workplace type, published date, ContentSHA256 (which its score must name) and why it's pending: new (never scored) or changed (its content changed since). Pass read_profile's SHA256; it's refused if the profile has changed since. Rescore lists postings with no score against this profile instead, which after a profile edit is all of them (reason rescore): use it only when the user asks for a rescore. Eligible postings are open, not archived, not interested, without an application, and let through by their company's filters. Pass NextCursor back as Cursor, with the same ProfileSHA256 and Rescore, for the next page; it's null on the last page. Total is how many are pending.",
+	}, listPendingPostingsHandler(st))
+
+	mcp.AddTool(server, &mcp.Tool{
 		Name:        "stage_prepare",
 		Description: "Commit to drafting one posting's application: creates its application record if one doesn't exist yet, ensures its document directory exists, and returns the resolved cover letter/resume paths plus any existing review feedback. Idempotent -- safe to call again for the same posting.",
 	}, stagePrepareHandler(st))
@@ -74,7 +79,7 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_canonical_resume",
-		Description: "Read the user's canonical resume: their maintained, best-version resume in markdown, the baseline to tailor for each posting instead of writing a resume from scratch. Read-only; the user maintains it. SHA256 is the content's hash, which identifies the version read.",
+		Description: "Read the user's canonical resume: their maintained, best-version resume in markdown, the baseline to tailor for each posting instead of writing a resume from scratch. Read-only; the user maintains it. SHA256 is the content's hash: pass it to list_pending_postings when scoring postings against this profile.",
 	}, readCanonicalHandler("read_canonical_resume", d.CanonicalResumePath()))
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -237,6 +242,23 @@ func readPostingHandler(st *stage.Stage) mcp.ToolHandlerFor[readPostingInput, an
 			return nil, nil, fmt.Errorf("read_posting: %w", err)
 		}
 		return nil, posting, nil
+	}
+}
+
+type listPendingPostingsInput struct {
+	ProfileSHA256 string `json:"ProfileSHA256" jsonschema:"read_profile's SHA256"`
+	Rescore       bool   `json:"Rescore,omitempty" jsonschema:"list postings with no score against this profile, not just none at all; only when the user asks for a rescore"`
+	Cursor        string `json:"Cursor,omitempty" jsonschema:"the previous page's NextCursor, unchanged; omit for the first page"`
+	Limit         int    `json:"Limit,omitempty" jsonschema:"postings per page: 50 by default, at most 100"`
+}
+
+func listPendingPostingsHandler(st *stage.Stage) mcp.ToolHandlerFor[listPendingPostingsInput, any] {
+	return func(ctx context.Context, _ *mcp.CallToolRequest, in listPendingPostingsInput) (*mcp.CallToolResult, any, error) {
+		result, err := st.PendingPostings(ctx, stage.PendingOptions{ProfileSHA256: in.ProfileSHA256, Rescore: in.Rescore, Cursor: in.Cursor, Limit: in.Limit})
+		if err != nil {
+			return nil, nil, fmt.Errorf("list_pending_postings: %w", err)
+		}
+		return nil, result, nil
 	}
 }
 
