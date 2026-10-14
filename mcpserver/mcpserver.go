@@ -308,9 +308,9 @@ type writeDocumentInput struct {
 	ApplicationID int64          `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
 	DocumentType  documents.Type `json:"DocumentType" jsonschema:"the document type: one of the keys of stage_prepare's Documents"`
 	Content       string         `json:"Content" jsonschema:"the full document content to write, replacing whatever is there"`
-	// A pointer because omitted (write unconditionally) and empty (expect
-	// no document) mean different things.
-	ExpectedSHA256 *string `json:"ExpectedSHA256,omitempty" jsonschema:"the SHA256 from the stage_prepare or read_document you drafted from; the write is refused if the document changed since. Empty means you expect no document yet. Omit only when the user asked to overwrite regardless"`
+	// A pointer so an empty value is refused rather than taken for omitted,
+	// which writes unconditionally.
+	ExpectedSHA256 *string `json:"ExpectedSHA256,omitempty" jsonschema:"the SHA256 from the stage_prepare or read_document you drafted from, which is no_document_yet when the document doesn't exist yet; the write is refused if the document changed since. Omit only when the user asked to overwrite regardless"`
 }
 
 type writeDocumentOutput struct {
@@ -322,7 +322,7 @@ func writeDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[writeDocumentInput
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in writeDocumentInput) (*mcp.CallToolResult, writeDocumentOutput, error) {
 		path, err := st.WriteDocument(ctx, in.ApplicationID, in.DocumentType, in.Content, in.ExpectedSHA256)
 		if errors.Is(err, documents.ErrChanged) {
-			if *in.ExpectedSHA256 == "" {
+			if *in.ExpectedSHA256 == stage.NoDocumentYet {
 				return nil, writeDocumentOutput{}, fmt.Errorf("write_document: application %d already has a %s, written since you saw it missing, so nothing was written; read it with read_document and ask the user before replacing it", in.ApplicationID, in.DocumentType)
 			}
 			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: application %d's %s changed since you read it, so nothing was written; read it again with read_document, apply your changes to what's there now, and pass its SHA256 as ExpectedSHA256", in.ApplicationID, in.DocumentType)
@@ -347,6 +347,8 @@ func documentToolError(tool string, applicationID int64, documentType documents.
 		return fmt.Errorf("%s: there is no application %d%s; get the ApplicationID from stage_prepare for the posting you are drafting", tool, applicationID, consequence)
 	case errors.Is(err, stage.ErrDocumentNotWritten):
 		return fmt.Errorf("%s: application %d has no %s yet; draft one and save it with write_document", tool, applicationID, documentType)
+	case errors.Is(err, stage.ErrEmptyExpectedSHA256):
+		return fmt.Errorf("%s: ExpectedSHA256 is empty%s; pass %q if you expect no document yet, or the SHA256 stage_prepare or read_document gave you", tool, consequence, stage.NoDocumentYet)
 	default:
 		return fmt.Errorf("%s: %w", tool, err)
 	}

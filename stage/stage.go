@@ -119,8 +119,8 @@ func preparedPosting(p store.Posting) PreparedPosting {
 
 // Document is one document's resolved path and whether it already exists
 // on disk, so an agent can tell a partially-generated application apart
-// from a fresh one. SHA256 is the version on disk (empty when it doesn't
-// exist), which write_document takes back as ExpectedSHA256.
+// from a fresh one. SHA256 is the version on disk (NoDocumentYet when it
+// doesn't exist), which write_document takes back as ExpectedSHA256.
 type Document struct {
 	Path   string `json:"Path"`
 	Exists bool   `json:"Exists"`
@@ -368,6 +368,9 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 		sha, err := st.documents.SHA256(application.ID, documentType)
 		if err != nil {
 			return nil, fmt.Errorf("stage: hash %s: %w", documentType, err)
+		}
+		if sha == "" {
+			sha = NoDocumentYet
 		}
 		preparedDocuments[documentType] = Document{Path: doc.Path, Exists: doc.Exists, SHA256: sha}
 	}
