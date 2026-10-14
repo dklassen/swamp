@@ -3738,7 +3738,7 @@ func TestApp_ApplicationDetail_EnterApplicationFormByHand(t *testing.T) {
 
 // Searching the company list and pressing enter opens the highlighted
 // match's postings; coming back finds the search as it was left.
-func TestApp_CompanyList_SearchThenEnter_OpensMatchAndKeepsSearchOnReturn(t *testing.T) {
+func TestApp_CompanyList_SearchEnterEnter_OpensMatchAndKeepsSearchOnReturn(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
@@ -3750,10 +3750,11 @@ func TestApp_CompanyList_SearchThenEnter_OpensMatchAndKeepsSearchOnReturn(t *tes
 	for _, r := range "/glo" {
 		app, _ = sendKey(app, runeKey(r))
 	}
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 	app = applyCmd(t, app, cmd)
 	if app.screen != screenPostingList {
-		t.Fatalf("screen after enter = %v, want screenPostingList", app.screen)
+		t.Fatalf("screen after enter, enter = %v, want screenPostingList", app.screen)
 	}
 	if app.selectedCompany.Name != "Globex" {
 		t.Fatalf("selectedCompany = %q, want %q", app.selectedCompany.Name, "Globex")

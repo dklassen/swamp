@@ -326,6 +326,15 @@ func TestCompanyListModel_View_InfoBoxTakesItsSpaceFromTheTable(t *testing.T) {
 	}
 }
 
+// openHighlighted presses enter to keep the matches, then enter again to
+// open the highlighted one, returning that intent.
+func openHighlighted(t *testing.T, m *companyListModel, companies []store.Company) tea.Msg {
+	t.Helper()
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	return intent
+}
+
 // typeKeys sends each rune of s to m as a key press.
 func typeKeys(t *testing.T, m *companyListModel, companies []store.Company, s string) {
 	t.Helper()
@@ -334,20 +343,69 @@ func typeKeys(t *testing.T, m *companyListModel, companies []store.Company, s st
 	}
 }
 
-func TestCompanyListModel_Search_EnterOpensHighlightedMatch(t *testing.T) {
+// Enter keeps the matches and stops typing, as on the all-postings view,
+// so letters act on the highlighted match instead of going into the query.
+func TestCompanyListModel_Search_EnterKeepsMatchesForCommands(t *testing.T) {
 	t.Parallel()
 
 	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
 	m := &companyListModel{}
 
 	typeKeys(t, m, companies, "/glo")
-	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
-	sel, ok := intent.(selectCompanyMsg)
-	if !ok {
-		t.Fatalf("intent = %T, want selectCompanyMsg", intent)
+	if _, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies); intent != nil {
+		t.Fatalf("enter while typing: intent = %#v, want none", intent)
 	}
-	if sel.company.ID != 2 {
-		t.Fatalf("selectCompanyMsg.company.ID = %d, want 2 (Globex)", sel.company.ID)
+	if m.searching || m.query != "glo" {
+		t.Fatalf("after enter: searching %v, query %q; want not typing, query \"glo\"", m.searching, m.query)
+	}
+
+	_, intent := m.Update(runeKey('e'), companies)
+	if edit, ok := intent.(enterCompanyEditMsg); !ok || edit.company.ID != 2 {
+		t.Errorf("e on the kept matches: intent = %#v, want enterCompanyEditMsg for Globex", intent)
+	}
+	_, intent = m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
+		t.Errorf("enter on the kept matches: intent = %#v, want selectCompanyMsg for Globex", intent)
+	}
+}
+
+func TestCompanyListModel_Search_EscClearsKeptMatchesAndKeepsHighlight(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
+	m := &companyListModel{}
+	typeKeys(t, m, companies, "/glo")
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+
+	if _, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc}, companies); intent != nil {
+		t.Errorf("esc on kept matches: intent = %#v, want none", intent)
+	}
+
+	if m.searching || m.query != "" || m.cursor != 1 {
+		t.Errorf("after esc: searching %v, query %q, cursor %d; want closed, empty, on Globex (1)", m.searching, m.query, m.cursor)
+	}
+}
+
+func TestCompanyListModel_View_KeptMatches(t *testing.T) {
+	t.Parallel()
+
+	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
+	m := &companyListModel{}
+	typeKeys(t, m, companies, "/glo")
+	if view := m.View(companies, nil, 200, 20); !strings.Contains(view, "enter: keep results") {
+		t.Errorf("typing help doesn't say enter keeps the results:\n%s", view)
+	}
+
+	m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+
+	view := m.View(companies, nil, 200, 20)
+	for _, want := range []string{"🔍 glo  1 of 3", "/: edit search", "esc: clear search", "e: edit"} {
+		if !strings.Contains(view, want) {
+			t.Errorf("view doesn't show %q:\n%s", want, view)
+		}
+	}
+	if strings.Contains(view, "▏") || strings.Contains(view, "Initech") {
+		t.Errorf("view shows a typing caret or a non-match after enter:\n%s", view)
 	}
 }
 
@@ -370,13 +428,14 @@ func TestCompanyListModel_Search_ArrowsMoveThroughMatches(t *testing.T) {
 			typeKeys(t, m, companies, "/acme")
 			m.Update(tt.down, companies)
 			m.Update(tt.down, companies) // past the last match: stays on it
-			_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+			intent := openHighlighted(t, m, companies)
 			if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
 				t.Fatalf("intent after down, down, enter = %#v, want selectCompanyMsg for Acme Robotics (ID 2)", intent)
 			}
 
+			m.Update(runeKey('/'), companies)
 			m.Update(tt.up, companies)
-			_, intent = m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+			intent = openHighlighted(t, m, companies)
 			if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 1 {
 				t.Fatalf("intent after up, enter = %#v, want selectCompanyMsg for Acme (ID 1)", intent)
 			}
@@ -392,7 +451,7 @@ func TestCompanyListModel_Search_BackspaceWidensMatches(t *testing.T) {
 
 	typeKeys(t, m, companies, "/gx") // matches nothing
 	m.Update(tea.KeyMsg{Type: tea.KeyBackspace}, companies)
-	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	intent := openHighlighted(t, m, companies)
 	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
 		t.Fatalf("intent after backspace, enter = %#v, want selectCompanyMsg for Globex (ID 2)", intent)
 	}
@@ -406,7 +465,7 @@ func TestCompanyListModel_Search_SpaceIsPartOfTheQuery(t *testing.T) {
 
 	typeKeys(t, m, companies, "/acme")
 	m.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}, companies)
-	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	intent := openHighlighted(t, m, companies)
 	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
 		t.Fatalf("intent after \"acme \", enter = %#v, want selectCompanyMsg for Acme Robotics (ID 2)", intent)
 	}
@@ -449,7 +508,7 @@ func TestCompanyListModel_Search_CommandLettersAreTyped(t *testing.T) {
 			if cmd, intent := m.Update(runeKey(r), companies); cmd != nil || intent != nil {
 				t.Fatalf("cmd, intent on %q in the prompt = %v, %#v, want nil, nil", r, cmd, intent)
 			}
-			_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+			intent := openHighlighted(t, m, companies)
 			if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
 				t.Fatalf("intent on enter after typing %q = %#v, want selectCompanyMsg for ID 2", r, intent)
 			}
@@ -502,7 +561,7 @@ func TestCompanyListModel_View_HelpMatchesMode(t *testing.T) {
 		notWant []string
 	}{
 		{name: "list", keys: "", want: []string{"/: search"}},
-		{name: "prompt open", keys: "/", want: []string{"type to filter", "enter: view postings", "esc: clear"}, notWant: []string{"d: delete", "q: quit"}},
+		{name: "prompt open", keys: "/", want: []string{"type to filter", "enter: keep results", "esc: clear"}, notWant: []string{"d: delete", "q: quit"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
