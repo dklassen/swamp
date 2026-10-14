@@ -247,7 +247,7 @@ func (a *App) handleApplicationDetailReloaded(msg applicationDetailReloadedMsg) 
 	if a.screen != screenApplicationDetail || a.applicationDetail.application.ID != msg.id {
 		return nil
 	}
-	a.err = msg.err
+	a.setLoadErr(msg.err)
 	if msg.deleted {
 		a.screen = screenActiveApplications
 		a.status = "The application you were viewing was deleted elsewhere"
@@ -284,7 +284,7 @@ func reloadPosting(s *store.Store, id int64) tea.Cmd {
 // handlePostingReloaded shows the posting's new content, then reloads its
 // application, which rebuilds the screen again with the same scroll.
 func (a *App) handlePostingReloaded(msg postingReloadedMsg) tea.Cmd {
-	a.err = msg.err
+	a.setLoadErr(msg.err)
 	if msg.err != nil || a.screen != screenPostingDetail || a.postingDetail.posting.ID != msg.posting.ID {
 		return nil
 	}

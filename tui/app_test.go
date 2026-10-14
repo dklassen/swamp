@@ -1897,6 +1897,56 @@ func TestApp_LoadActiveApplications_DocumentReadFails_SetsErr(t *testing.T) {
 	}
 }
 
+// Init's loads finish in any order, so one's success mustn't clear
+// another's failure.
+func TestApp_LoadSucceedsAfterAnotherFails_KeepsTheError(t *testing.T) {
+	t.Parallel()
+	loadErr := errors.New("disk on fire")
+	tests := []struct {
+		name    string
+		failed  tea.Msg
+		succeed tea.Msg
+	}{
+		{"applications fail, companies succeed", activeApplicationsLoadedMsg{err: loadErr}, companiesLoadedMsg{}},
+		{"companies fail, applications succeed", companiesLoadedMsg{err: loadErr}, activeApplicationsLoadedMsg{}},
+		{"companies fail, postings succeed", companiesLoadedMsg{err: loadErr}, postingsLoadedMsg{}},
+		{"companies fail, application succeeds", companiesLoadedMsg{err: loadErr}, applicationLoadedMsg{}},
+		{"companies fail, document reviews succeed", companiesLoadedMsg{err: loadErr}, documentReviewsLoadedMsg{}},
+		{"companies fail, posting reload succeeds", companiesLoadedMsg{err: loadErr}, postingReloadedMsg{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app := newTestApp(t, newTestStore(t), nil)
+			app, _ = sendKey(app, tt.failed)
+			app, _ = sendKey(app, tt.succeed)
+			if !errors.Is(app.err, loadErr) {
+				t.Errorf("app.err = %v, want %v", app.err, loadErr)
+			}
+		})
+	}
+}
+
+func TestApp_ApplicationDetailReloadSucceedsAfterAnotherLoadFails_KeepsTheError(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	application := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	if app.screen != screenApplicationDetail {
+		t.Fatalf("screen after enter = %v, want application detail", app.screen)
+	}
+	loadErr := errors.New("disk on fire")
+
+	app, _ = sendKey(app, companiesLoadedMsg{err: loadErr})
+	app, _ = sendKey(app, applicationDetailReloadedMsg{id: application.ID, application: application})
+
+	if !errors.Is(app.err, loadErr) {
+		t.Errorf("app.err = %v, want %v", app.err, loadErr)
+	}
+}
+
 func TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag(t *testing.T) {
 	s := newTestStore(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
