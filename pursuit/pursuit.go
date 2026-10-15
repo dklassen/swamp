@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
@@ -18,7 +19,7 @@ type Application struct {
 	store.Application
 	Posting       store.Posting
 	CompanyName   string
-	LatestReviews map[documents.Type]store.DocumentReview
+	LatestReviews map[documents.Type]docrecord.Review
 	// StatusSince is when the application entered its current status.
 	StatusSince time.Time
 }
@@ -35,7 +36,7 @@ func List(ctx context.Context, s *store.Store) ([]Application, error) {
 	}
 	apps := make([]Application, len(active))
 	for i, a := range active {
-		reviews, err := s.LatestDocumentReviews(ctx, a.ID)
+		reviews, err := docrecord.LatestReviews(ctx, s.DB(), a.ID)
 		if err != nil {
 			return nil, fmt.Errorf("pursuit: reviews of application %d: %w", a.ID, err)
 		}

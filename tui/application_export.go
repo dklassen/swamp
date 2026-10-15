@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/export"
 	"github.com/dklassen/swamp/pursuit"
@@ -98,7 +99,7 @@ type applicationExportedMsg struct {
 // application, so gating here would hide work without telling the user
 // why (same reasoning as the CLI's -- see cmd/swamp/main.go's runExport).
 //
-// Each PDF written is recorded (store.RecordDocumentExport, #188) with
+// Each PDF written is recorded (docrecord.RecordExport) with
 // the markdown it was rendered from, so the home screen can tell an
 // exported draft from one still waiting to be exported.
 func exportApplicationDocuments(s *store.Store, docs *documents.Store, application pursuit.Application, dir string) tea.Cmd {
@@ -128,7 +129,7 @@ func exportApplicationDocuments(s *store.Store, docs *documents.Store, applicati
 			if err != nil {
 				return applicationExportedMsg{dir: dir, paths: paths, skipped: skipped, err: err}
 			}
-			if err := s.RecordDocumentExport(context.Background(), application.ID, documentType, content, outPath); err != nil {
+			if err := docrecord.RecordExport(context.Background(), s.DB(), application.ID, documentType, content, outPath); err != nil {
 				return applicationExportedMsg{dir: dir, paths: paths, skipped: skipped, err: err}
 			}
 			paths = append(paths, outPath)

@@ -8,9 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/store"
 )
 
 func TestDocumentReviewFormModel_New_SeedsFocusedEmptyTextarea(t *testing.T) {
@@ -173,9 +173,9 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 	if app.screen != screenDocumentReviewForm {
 		t.Fatalf("screen after saving a changed document = %v, want still the review form", app.screen)
 	}
-	reviews, err := s.LatestDocumentReviews(context.Background(), application.ID)
+	reviews, err := docrecord.LatestReviews(context.Background(), s.DB(), application.ID)
 	if err != nil {
-		t.Fatalf("LatestDocumentReviews: %v", err)
+		t.Fatalf("LatestReviews: %v", err)
 	}
 	if _, ok := reviews[documents.CoverLetter]; ok {
 		t.Fatal("a review of the old version was saved, want none")
@@ -192,9 +192,9 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 	if app.screen == screenDocumentReviewForm {
 		t.Fatal("second save left the form open, want the review saved")
 	}
-	reviews, err = s.LatestDocumentReviews(context.Background(), application.ID)
+	reviews, err = docrecord.LatestReviews(context.Background(), s.DB(), application.ID)
 	if err != nil {
-		t.Fatalf("LatestDocumentReviews: %v", err)
+		t.Fatalf("LatestReviews: %v", err)
 	}
 	review := reviews[documents.CoverLetter]
 	if review.ContentSnapshot != "Dear team,\nRewritten meanwhile\n" || review.Notes != "tighten the intro" {
@@ -231,9 +231,9 @@ func TestApp_ReviewOfADocumentDeletedMeanwhile_SavesNothingAndSaysSo(t *testing.
 	if app.err == nil || !strings.Contains(app.err.Error(), "deleted while you were reviewing") {
 		t.Errorf("err = %v, want one saying the document was deleted", app.err)
 	}
-	reviews, err := s.LatestDocumentReviews(context.Background(), application.ID)
+	reviews, err := docrecord.LatestReviews(context.Background(), s.DB(), application.ID)
 	if err != nil {
-		t.Fatalf("LatestDocumentReviews: %v", err)
+		t.Fatalf("LatestReviews: %v", err)
 	}
 	if _, ok := reviews[documents.CoverLetter]; ok {
 		t.Error("a review was saved for a deleted document, want none")
@@ -267,12 +267,12 @@ func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
 	if _, err := app.documents.Write(application.ID, documents.CoverLetter, "Rewritten by the agent\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if err := s.RecordDocumentWrite(ctx, application.ID, documents.CoverLetter, "Rewritten by the agent\n", store.DocumentWriteSourceWriteDocument); err != nil {
-		t.Fatalf("RecordDocumentWrite: %v", err)
+	if err := docrecord.RecordWrite(ctx, s.DB(), application.ID, documents.CoverLetter, "Rewritten by the agent\n", docrecord.SourceWriteDocument); err != nil {
+		t.Fatalf("RecordWrite: %v", err)
 	}
-	write, _, err := s.LatestDocumentWrite(ctx, application.ID, documents.CoverLetter)
+	write, _, err := docrecord.LatestWrite(ctx, s.DB(), application.ID, documents.CoverLetter)
 	if err != nil {
-		t.Fatalf("LatestDocumentWrite: %v", err)
+		t.Fatalf("LatestWrite: %v", err)
 	}
 	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyCtrlS})
 
@@ -306,8 +306,8 @@ func TestApp_ReviewOfADocumentChangedOutsideSwamp_DoesNotNameTheLastWriter(t *te
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if err := s.RecordDocumentWrite(ctx, application.ID, documents.CoverLetter, "The agent's draft\n", store.DocumentWriteSourceWriteDocument); err != nil {
-		t.Fatalf("RecordDocumentWrite: %v", err)
+	if err := docrecord.RecordWrite(ctx, s.DB(), application.ID, documents.CoverLetter, "The agent's draft\n", docrecord.SourceWriteDocument); err != nil {
+		t.Fatalf("RecordWrite: %v", err)
 	}
 
 	app = openPostingDetail(t, app)

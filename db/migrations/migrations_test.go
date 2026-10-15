@@ -449,8 +449,8 @@ func TestPostingsOptionalFieldsNotNull_OmittedColumnDefaultsToEmptyString(t *tes
 
 // TestDocumentReviewsCheckConstraints_RejectInvalidValues verifies the
 // 00007 migration's CHECK constraints are actually enforced at the DB
-// level -- store.CreateDocumentReview only ever passes the known
-// documents.Type/ReviewOutcome* constants, so Go-level tests never
+// level -- docrecord.CreateReview only ever passes the known
+// documents.Type/docrecord.Outcome constants, so Go-level tests never
 // exercise the rejection path; this pins it directly against the schema.
 func TestDocumentReviewsCheckConstraints_RejectInvalidValues(t *testing.T) {
 	sqlDB := migrateTo(t, 7)
@@ -488,7 +488,7 @@ func TestDocumentReviewsCheckConstraints_RejectInvalidValues(t *testing.T) {
 
 // TestDocumentReviewsUniqueConstraint_RejectsDuplicateCycle verifies the
 // UNIQUE(application_id, document_type, cycle) constraint -- the safety
-// net behind store.CreateDocumentReview's own cycle computation, in case
+// net behind docrecord.CreateReview's own cycle computation, in case
 // a future caller ever bypasses it.
 func TestDocumentReviewsUniqueConstraint_RejectsDuplicateCycle(t *testing.T) {
 	sqlDB := migrateTo(t, 7)

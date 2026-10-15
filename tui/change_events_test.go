@@ -9,6 +9,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dklassen/swamp/applicationstatus"
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -204,8 +205,8 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 	ctx := context.Background()
 	app, application := deleteTestApp(t) // resume drafted as "# Draft\n"
 	app.WithChangeLog(0, "tui:1")
-	if _, err := app.store.CreateDocumentReview(ctx, application.ID, documents.Resume, "# Draft\n", store.ReviewOutcomePassed, ""); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(ctx, app.store, application.ID, documents.Resume, "# Draft\n", docrecord.Passed, ""); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
 	app = sendKeyAndApply(t, app, runeKey('u')) // show the review the test just made

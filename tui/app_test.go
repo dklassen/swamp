@@ -18,6 +18,7 @@ import (
 
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/companyfilter"
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
@@ -1828,7 +1829,7 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 		t.Fatalf("CreateApplication: %v", err)
 	}
 	// Content must match what's on disk, or the staleness check (see
-	// store.DocumentReview.IsCurrent) treats this review
+	// docrecord.Review.IsCurrent) treats this review
 	// as not describing the current document and omits it.
 	status := app.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
@@ -1837,8 +1838,8 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("Dear hiring manager..."), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "Dear hiring manager...", store.ReviewOutcomeFlagged, "too generic, mention Go specifically"); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, application.ID, documents.CoverLetter, "Dear hiring manager...", docrecord.Flagged, "too generic, mention Go specifically"); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 
 	app = openPostingDetail(t, app)
@@ -1862,7 +1863,7 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 // should stop rendering as if it did -- posting detail should show
 // "[not reviewed]" for the revised document, not the stale "[FLAGGED]"
 // and its now-out-of-date notes (see
-// store.DocumentReview.IsCurrent).
+// docrecord.Review.IsCurrent).
 // TestApp_LoadActiveApplications_DocumentReadFails_SetsErr is a
 // regression test caught in code review: documents.Current used to
 // swallow an os.ReadFile error and silently treat the document as "not
@@ -1879,8 +1880,8 @@ func TestApp_LoadActiveApplications_DocumentReadFails_SetsErr(t *testing.T) {
 		t.Fatalf("CreateApplication: %v", err)
 	}
 	app := New(s, newTestSyncer(s, nil), documents.NewStore(t.TempDir()))
-	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, application.ID, documents.CoverLetter, "letter", docrecord.Flagged, "needs work"); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 	status := app.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
@@ -1972,8 +1973,8 @@ func TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag(t *testing.T) 
 	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("original draft"), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "original draft", store.ReviewOutcomeFlagged, "too generic"); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, application.ID, documents.CoverLetter, "original draft", docrecord.Flagged, "too generic"); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 
 	app = openPostingDetail(t, app)
@@ -2032,8 +2033,8 @@ func TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T) {
 	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("original draft"), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "original draft", store.ReviewOutcomeFlagged, "too generic"); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, application.ID, documents.CoverLetter, "original draft", docrecord.Flagged, "too generic"); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 
 	app = openPostingDetail(t, app)
@@ -2368,8 +2369,8 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_PatchesActiveApplicationR
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
-	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "# Cover Letter", store.ReviewOutcomePassed, ""); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, application.ID, documents.CoverLetter, "# Cover Letter", docrecord.Passed, ""); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
@@ -2516,8 +2517,8 @@ func TestApp_ApplicationDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T
 	if err := os.WriteFile(mustDoc(t, status, documents.CoverLetter).Path, []byte("original draft"), 0o644); err != nil {
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.CoverLetter, "original draft", store.ReviewOutcomeFlagged, "too generic"); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, application.ID, documents.CoverLetter, "original draft", docrecord.Flagged, "too generic"); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 
 	// Constructed (and Init-loaded) only after the file/review already

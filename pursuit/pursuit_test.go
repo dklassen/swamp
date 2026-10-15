@@ -7,6 +7,7 @@ import (
 	"github.com/pressly/goose/v3"
 
 	"github.com/dklassen/swamp/db/migrations"
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
@@ -76,12 +77,12 @@ func TestList_IncludesLatestDocumentReviews(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	app := newApplication(t, s)
-	if _, err := s.CreateDocumentReview(ctx, app.ID, documents.CoverLetter, "draft one", store.ReviewOutcomeFlagged, "too generic"); err != nil {
-		t.Fatalf("CreateDocumentReview (first): %v", err)
+	if _, err := createReview(ctx, s, app.ID, documents.CoverLetter, "draft one", docrecord.Flagged, "too generic"); err != nil {
+		t.Fatalf("CreateReview (first): %v", err)
 	}
-	second, err := s.CreateDocumentReview(ctx, app.ID, documents.CoverLetter, "draft two", store.ReviewOutcomePassed, "")
+	second, err := createReview(ctx, s, app.ID, documents.CoverLetter, "draft two", docrecord.Passed, "")
 	if err != nil {
-		t.Fatalf("CreateDocumentReview (second): %v", err)
+		t.Fatalf("CreateReview (second): %v", err)
 	}
 
 	got, err := pursuit.List(ctx, s)
@@ -101,4 +102,14 @@ func TestList_IncludesLatestDocumentReviews(t *testing.T) {
 	if _, ok := got[0].LatestReviews[documents.Resume]; ok {
 		t.Fatalf("LatestReviews[%q] present, want absent (no resume review recorded)", documents.Resume)
 	}
+}
+
+func createReview(ctx context.Context, s *store.Store, applicationID int64, documentType documents.Type, content string, outcome docrecord.Outcome, notes string) (docrecord.Review, error) {
+	var review docrecord.Review
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		var err error
+		review, err = docrecord.CreateReview(ctx, tx, applicationID, documentType, content, outcome, notes)
+		return err
+	})
+	return review, err
 }

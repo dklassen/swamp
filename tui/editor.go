@@ -10,6 +10,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
@@ -73,7 +74,7 @@ func recordEditorWrite(s *store.Store, docs *documents.Store, closed editorClose
 		case err != nil:
 			return documentReviewsLoadedMsg{applicationID: closed.applicationID, err: fmt.Errorf("read %s after editing: %w", path, err)}
 		case documents.ContentSHA256(string(content)) != closed.before:
-			if err := s.RecordDocumentWrite(context.Background(), closed.applicationID, closed.documentType, string(content), store.DocumentWriteSourceEditor); err != nil {
+			if err := docrecord.RecordWrite(context.Background(), s.DB(), closed.applicationID, closed.documentType, string(content), docrecord.SourceEditor); err != nil {
 				return documentReviewsLoadedMsg{applicationID: closed.applicationID, err: err}
 			}
 		}
