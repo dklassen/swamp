@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -32,7 +33,7 @@ type Candidate struct {
 	Posting           PostingSummary                  `json:"Posting"`
 	CompanyName       string                          `json:"CompanyName"`
 	ApplicationID     *int64                          `json:"ApplicationID"`
-	ApplicationStatus *store.ApplicationStatus        `json:"ApplicationStatus"`
+	ApplicationStatus *applicationstatus.Status       `json:"ApplicationStatus"`
 	ApplicationNotes  string                          `json:"ApplicationNotes"`
 	LatestReviews     map[documents.Type]LatestReview `json:"LatestReviews"`
 }
@@ -259,7 +260,7 @@ func (st *Stage) startedNotInterested(ctx context.Context, interested []store.In
 	}
 	var started []store.InterestedPosting
 	for _, a := range applications {
-		if a.Status != store.ApplicationStatusStarted || seen[a.Posting.ID] {
+		if a.Status != applicationstatus.Started || seen[a.Posting.ID] {
 			continue
 		}
 		markup, err := st.store.GetPostingMarkup(ctx, a.Posting.ID)

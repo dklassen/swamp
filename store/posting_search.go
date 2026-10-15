@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
@@ -39,7 +40,7 @@ type PostingListing struct {
 	// ApplicationID is 0 when the posting has no application; the other
 	// Application fields are meaningless then.
 	ApplicationID     int64
-	ApplicationStatus ApplicationStatus
+	ApplicationStatus applicationstatus.Status
 	ApplicationNotes  string
 }
 
@@ -54,7 +55,7 @@ type PostingSearch struct {
 	// HasApplication and Interested filter when set; nil is either.
 	HasApplication      *bool
 	Interested          *bool
-	ApplicationStatuses []ApplicationStatus
+	ApplicationStatuses []applicationstatus.Status
 	// Query is space-separated terms, each of which must appear in the
 	// posting's title, company, department or location, ignoring case.
 	// "" matches every posting.
@@ -222,7 +223,7 @@ func (s *Store) SearchPostings(ctx context.Context, search PostingSearch) (Posti
 			listing.ScoreStale = row.CurrentScoreContentSha256.String != row.ContentSha256
 		}
 		if row.ApplicationID.Valid {
-			status, err := ParseApplicationStatus(row.ApplicationStatus.String)
+			status, err := applicationstatus.Parse(row.ApplicationStatus.String)
 			if err != nil {
 				return PostingSearchPage{}, err
 			}

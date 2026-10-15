@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
@@ -19,7 +20,7 @@ import (
 // drafts documents for.
 func testExportApplication() store.ApplicationView {
 	return store.ApplicationView{
-		Application: store.Application{ID: 42, Status: store.ApplicationStatusStarted},
+		Application: store.Application{ID: 42, Status: applicationstatus.Started},
 		Posting:     store.Posting{ID: 7, IngestedFields: store.IngestedFields{Title: "Delivery Platform"}},
 		CompanyName: "Northwind",
 	}

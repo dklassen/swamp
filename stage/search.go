@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/cursor"
 	"github.com/dklassen/swamp/store"
 )
@@ -54,7 +55,7 @@ type SearchOptions struct {
 	// HasApplication and Interested filter when set; nil is either.
 	HasApplication      *bool
 	Interested          *bool
-	ApplicationStatuses []store.ApplicationStatus
+	ApplicationStatuses []applicationstatus.Status
 	// ListingStatus is "open" (the default when empty), "closed" or "any".
 	ListingStatus   string
 	IncludeArchived bool
@@ -87,14 +88,14 @@ type SearchResult struct {
 // SearchMatch is one posting Search found: list_postings' summary, its
 // company, listing status and markup, and its application, if any.
 type SearchMatch struct {
-	Posting           PostingSummary           `json:"Posting"`
-	CompanyName       string                   `json:"CompanyName"`
-	ListingStatus     string                   `json:"ListingStatus"`
-	Interested        bool                     `json:"Interested"`
-	Archived          bool                     `json:"Archived"`
-	ApplicationID     *int64                   `json:"ApplicationID"`
-	ApplicationStatus *store.ApplicationStatus `json:"ApplicationStatus"`
-	ApplicationNotes  string                   `json:"ApplicationNotes"`
+	Posting           PostingSummary            `json:"Posting"`
+	CompanyName       string                    `json:"CompanyName"`
+	ListingStatus     string                    `json:"ListingStatus"`
+	Interested        bool                      `json:"Interested"`
+	Archived          bool                      `json:"Archived"`
+	ApplicationID     *int64                    `json:"ApplicationID"`
+	ApplicationStatus *applicationstatus.Status `json:"ApplicationStatus"`
+	ApplicationNotes  string                    `json:"ApplicationNotes"`
 	// Score is the posting's current fit score, 1 to 5, with its reason; 0
 	// when it has none.
 	Score       int    `json:"Score"`

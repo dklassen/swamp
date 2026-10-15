@@ -7,6 +7,8 @@ import (
 	"time"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/dklassen/swamp/applicationstatus"
 )
 
 func TestCreateCompany_ThenGet_ReturnsSameCompany(t *testing.T) {
@@ -137,8 +139,8 @@ func TestSoftDeleteCompany_ClosesItsOpenPostings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if application.Status != ApplicationStatusStarted {
-		t.Errorf("application status = %s, want it left at %s", application.Status, ApplicationStatusStarted)
+	if application.Status != applicationstatus.Started {
+		t.Errorf("application status = %s, want it left at %s", application.Status, applicationstatus.Started)
 	}
 }
 

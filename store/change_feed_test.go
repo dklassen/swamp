@@ -8,6 +8,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 )
 
@@ -48,7 +49,7 @@ func TestChangeFeed_DeliversAnotherProcessesChange(t *testing.T) {
 	}
 	feed := mustNewChangeFeed(t, tui)
 
-	if _, err := agent.UpdateApplicationStatus(ctx, posting.ID, ApplicationStatusInterviewing); err != nil {
+	if _, err := agent.UpdateApplicationStatus(ctx, posting.ID, applicationstatus.Interviewing); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 
@@ -79,7 +80,7 @@ func TestChangeFeed_CatchesUpAfterAGap(t *testing.T) {
 	if _, err := s.CreateApplication(ctx, posting.ID); err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	for _, status := range []ApplicationStatus{ApplicationStatusSubmitted, ApplicationStatusInterviewing} {
+	for _, status := range []applicationstatus.Status{applicationstatus.Submitted, applicationstatus.Interviewing} {
 		if _, err := s.UpdateApplicationStatus(ctx, posting.ID, status); err != nil {
 			t.Fatalf("UpdateApplicationStatus: %v", err)
 		}

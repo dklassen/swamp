@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/cursor"
 	"github.com/dklassen/swamp/store"
 )
@@ -43,7 +44,7 @@ func newSearchStage(t *testing.T) searchStage {
 	if _, err := s.CreateApplication(ctx, f.submitted.ID); err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	if _, err := s.UpdateApplicationStatus(ctx, f.submitted.ID, store.ApplicationStatusSubmitted); err != nil {
+	if _, err := s.UpdateApplicationStatus(ctx, f.submitted.ID, applicationstatus.Submitted); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 	if err := s.MarkPostingClosed(ctx, f.closed.ID); err != nil {
@@ -85,7 +86,7 @@ func TestSearch_FiltersAndDefaults(t *testing.T) {
 			postingIDs(f.shortlist, f.started, f.submitted, f.betaPosting)},
 		{"company", SearchOptions{CompanyID: f.beta.ID}, postingIDs(f.betaPosting)},
 		{"with an application", SearchOptions{HasApplication: &yes}, postingIDs(f.started, f.submitted)},
-		{"application statuses", SearchOptions{ApplicationStatuses: []store.ApplicationStatus{store.ApplicationStatusSubmitted}},
+		{"application statuses", SearchOptions{ApplicationStatuses: []applicationstatus.Status{applicationstatus.Submitted}},
 			postingIDs(f.submitted)},
 		{"interested shortlist: interested, no application", SearchOptions{Interested: &yes, HasApplication: &no},
 			postingIDs(f.shortlist)},
@@ -135,7 +136,7 @@ func TestSearch_MatchCarriesItsApplication(t *testing.T) {
 		t.Errorf("match FirstSeenAt = %v, want the posting's %v", m.Posting.FirstSeenAt, f.started.FirstSeenAt)
 	}
 	if m.ApplicationID == nil || *m.ApplicationID != f.startedApp.ID ||
-		m.ApplicationStatus == nil || *m.ApplicationStatus != store.ApplicationStatusStarted {
+		m.ApplicationStatus == nil || *m.ApplicationStatus != applicationstatus.Started {
 		t.Errorf("match application = %v %v, want %d started", m.ApplicationID, m.ApplicationStatus, f.startedApp.ID)
 	}
 }
@@ -196,7 +197,7 @@ func TestSearch_CursorFromAnotherSearch(t *testing.T) {
 	t.Parallel()
 	f := newSearchStage(t)
 	ctx := context.Background()
-	statuses := []store.ApplicationStatus{store.ApplicationStatusStarted, store.ApplicationStatusSubmitted}
+	statuses := []applicationstatus.Status{applicationstatus.Started, applicationstatus.Submitted}
 
 	first, err := f.st.Search(ctx, SearchOptions{ApplicationStatuses: statuses, Limit: 1})
 	if err != nil {
@@ -210,7 +211,7 @@ func TestSearch_CursorFromAnotherSearch(t *testing.T) {
 	if _, err := f.st.Search(ctx, SearchOptions{CompanyID: f.beta.ID, ApplicationStatuses: statuses, Cursor: next}); !errors.Is(err, cursor.ErrMismatch) {
 		t.Errorf("cursor with another company: err = %v, want cursor.ErrMismatch", err)
 	}
-	reordered := []store.ApplicationStatus{store.ApplicationStatusSubmitted, store.ApplicationStatusStarted}
+	reordered := []applicationstatus.Status{applicationstatus.Submitted, applicationstatus.Started}
 	second, err := f.st.Search(ctx, SearchOptions{ApplicationStatuses: reordered, Limit: 5, Cursor: next})
 	if err != nil {
 		t.Fatalf("same filters, statuses reordered, bigger page: %v", err)

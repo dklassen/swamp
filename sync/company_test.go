@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -378,8 +379,8 @@ func closeOnlyPosting(t *testing.T, s *store.Store, applyBeforeClose func(postin
 func TestSyncCompany_PostingCloses_EarlyStageApplicationClosedToo(t *testing.T) {
 	ctx := context.Background()
 
-	for _, start := range []store.ApplicationStatus{
-		store.ApplicationStatusStarted,
+	for _, start := range []applicationstatus.Status{
+		applicationstatus.Started,
 	} {
 		t.Run(start.String(), func(t *testing.T) {
 			s := newTestStore(t)
@@ -396,8 +397,8 @@ func TestSyncCompany_PostingCloses_EarlyStageApplicationClosedToo(t *testing.T) 
 			if err != nil {
 				t.Fatalf("GetApplication: %v", err)
 			}
-			if application.Status != store.ApplicationStatusPostingClosed {
-				t.Errorf("application status = %s, want %s -- an application still at %s when its posting is taken down is over", application.Status, store.ApplicationStatusPostingClosed, start)
+			if application.Status != applicationstatus.PostingClosed {
+				t.Errorf("application status = %s, want %s -- an application still at %s when its posting is taken down is over", application.Status, applicationstatus.PostingClosed, start)
 			}
 			if result.ApplicationsClosed != 1 {
 				t.Errorf("result.ApplicationsClosed = %d, want 1", result.ApplicationsClosed)
@@ -415,11 +416,11 @@ func TestSyncCompany_PostingCloses_EarlyStageApplicationClosedToo(t *testing.T) 
 func TestSyncCompany_PostingCloses_LiveApplicationLeftAlone(t *testing.T) {
 	ctx := context.Background()
 
-	for _, start := range []store.ApplicationStatus{
-		store.ApplicationStatusSubmitted,
-		store.ApplicationStatusInterviewing,
-		store.ApplicationStatusOfferReceived,
-		store.ApplicationStatusOfferAccepted,
+	for _, start := range []applicationstatus.Status{
+		applicationstatus.Submitted,
+		applicationstatus.Interviewing,
+		applicationstatus.OfferReceived,
+		applicationstatus.OfferAccepted,
 	} {
 		t.Run(start.String(), func(t *testing.T) {
 			s := newTestStore(t)
@@ -475,7 +476,7 @@ func TestSyncCompany_PostingCloses_WithdrawnApplicationLeftAlone(t *testing.T) {
 		if _, err := s.CreateApplication(ctx, postingID); err != nil {
 			t.Fatalf("CreateApplication: %v", err)
 		}
-		if _, err := s.UpdateApplicationStatus(ctx, postingID, store.ApplicationStatusWithdrawn); err != nil {
+		if _, err := s.UpdateApplicationStatus(ctx, postingID, applicationstatus.Withdrawn); err != nil {
 			t.Fatalf("UpdateApplicationStatus: %v", err)
 		}
 	})
@@ -484,7 +485,7 @@ func TestSyncCompany_PostingCloses_WithdrawnApplicationLeftAlone(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if application.Status != store.ApplicationStatusWithdrawn {
+	if application.Status != applicationstatus.Withdrawn {
 		t.Errorf("application status = %s, want it left at withdrawn -- the user ended this one, not the company", application.Status)
 	}
 	if result.ApplicationsClosed != 0 {
@@ -528,8 +529,8 @@ func TestSyncCompany_PostingReappears_ApplicationRestored(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if application.Status != store.ApplicationStatusStarted {
-		t.Errorf("application status = %s, want %s restored", application.Status, store.ApplicationStatusStarted)
+	if application.Status != applicationstatus.Started {
+		t.Errorf("application status = %s, want %s restored", application.Status, applicationstatus.Started)
 	}
 	if result.Reopened != 1 || result.ApplicationsRestored != 1 {
 		t.Errorf("Reopened = %d, ApplicationsRestored = %d, want 1 and 1", result.Reopened, result.ApplicationsRestored)
@@ -598,8 +599,8 @@ func TestSyncCompany_PostingCloses_ApplicationUpdateFails_NothingHalfClosed(t *t
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if application.Status != store.ApplicationStatusPostingClosed {
-		t.Errorf("after the next clean sync, application status = %s, want %s", application.Status, store.ApplicationStatusPostingClosed)
+	if application.Status != applicationstatus.PostingClosed {
+		t.Errorf("after the next clean sync, application status = %s, want %s", application.Status, applicationstatus.PostingClosed)
 	}
 	if result.Closed != 1 || result.ApplicationsClosed != 1 {
 		t.Errorf("next clean sync: Closed = %d, ApplicationsClosed = %d, want 1 and 1", result.Closed, result.ApplicationsClosed)

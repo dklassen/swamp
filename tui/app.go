@@ -21,6 +21,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/cellbuf"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
@@ -756,7 +757,7 @@ type applicationStatusUpdatedMsg struct {
 	err         error
 }
 
-func updateApplicationStatus(s *store.Store, postingID int64, status store.ApplicationStatus, from screenInstance) tea.Cmd {
+func updateApplicationStatus(s *store.Store, postingID int64, status applicationstatus.Status, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
 		app, err := s.UpdateApplicationStatus(context.Background(), postingID, status)
 		return applicationStatusUpdatedMsg{application: app, from: from, err: err}
@@ -1631,7 +1632,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case cancelApplicationSubmitMsg:
 			a.screen = screenApplicationDetail
 		case confirmApplicationSubmitMsg:
-			return a, updateApplicationStatus(a.store, v.postingID, store.ApplicationStatusSubmitted, a.applicationSubmit.instance)
+			return a, updateApplicationStatus(a.store, v.postingID, applicationstatus.Submitted, a.applicationSubmit.instance)
 		}
 		return a, cmd
 	case screenApplicationDelete:

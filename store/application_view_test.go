@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 )
 
@@ -19,19 +20,19 @@ func TestListActiveApplications_ExcludesRejectedAndOfferDeclined(t *testing.T) {
 
 	interviewing := mustUpsertPosting(t, s, acme.ID, "job-interviewing", "Interviewing Role")
 	mustCreateApplication(t, s, interviewing.ID)
-	if _, err := s.UpdateApplicationStatus(ctx, interviewing.ID, ApplicationStatusInterviewing); err != nil {
+	if _, err := s.UpdateApplicationStatus(ctx, interviewing.ID, applicationstatus.Interviewing); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 
 	rejected := mustUpsertPosting(t, s, acme.ID, "job-rejected", "Rejected Role")
 	mustCreateApplication(t, s, rejected.ID)
-	if _, err := s.UpdateApplicationStatus(ctx, rejected.ID, ApplicationStatusRejected); err != nil {
+	if _, err := s.UpdateApplicationStatus(ctx, rejected.ID, applicationstatus.Rejected); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 
 	declined := mustUpsertPosting(t, s, acme.ID, "job-declined", "Declined Role")
 	mustCreateApplication(t, s, declined.ID)
-	if _, err := s.UpdateApplicationStatus(ctx, declined.ID, ApplicationStatusOfferDeclined); err != nil {
+	if _, err := s.UpdateApplicationStatus(ctx, declined.ID, applicationstatus.OfferDeclined); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 
@@ -58,24 +59,24 @@ func TestListActiveApplications_ExcludesRejectedAndOfferDeclined(t *testing.T) {
 	}
 }
 
-// TestListActiveApplications_MatchesTerminalApplicationStatuses is a
+// TestListActiveApplications_MatchesTerminalStatuses is a
 // drift-detection test, not just a regression test: it derives "which
-// statuses should be excluded" from TerminalApplicationStatuses() itself
+// statuses should be excluded" from applicationstatus.Terminal() itself
 // rather than hardcoding rejected/offer_declined a second time, so it
 // stays correct (and would catch a real mismatch) even if the set of
 // terminal statuses changes later (issue #60).
-func TestListActiveApplications_MatchesTerminalApplicationStatuses(t *testing.T) {
+func TestListActiveApplications_MatchesTerminalStatuses(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	terminal := map[ApplicationStatus]bool{}
-	for _, status := range TerminalApplicationStatuses() {
+	terminal := map[applicationstatus.Status]bool{}
+	for _, status := range applicationstatus.Terminal() {
 		terminal[status] = true
 	}
 
 	wantIncluded := map[string]bool{}
-	for _, status := range ApplicationStatuses() {
+	for _, status := range applicationstatus.All() {
 		posting := mustUpsertPosting(t, s, acme.ID, "job-"+status.String(), status.String())
 		mustCreateApplication(t, s, posting.ID)
 		if _, err := s.UpdateApplicationStatus(ctx, posting.ID, status); err != nil {
@@ -131,8 +132,8 @@ func TestListActiveApplications_IncludesCompanyNameAndApplicationFields(t *testi
 	if v.ID != app.ID {
 		t.Fatalf("ID = %d, want %d", v.ID, app.ID)
 	}
-	if v.Status != ApplicationStatusStarted {
-		t.Fatalf("Status = %s, want %s", v.Status, ApplicationStatusStarted)
+	if v.Status != applicationstatus.Started {
+		t.Fatalf("Status = %s, want %s", v.Status, applicationstatus.Started)
 	}
 	if v.Notes != app.Notes {
 		t.Fatalf("Notes = %q, want %q", v.Notes, app.Notes)
@@ -210,7 +211,7 @@ func TestListActiveApplications_StatusSince(t *testing.T) {
 
 	withHistory := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	application := mustCreateApplication(t, s, withHistory.ID)
-	if _, err := s.UpdateApplicationStatus(ctx, withHistory.ID, ApplicationStatusSubmitted); err != nil {
+	if _, err := s.UpdateApplicationStatus(ctx, withHistory.ID, applicationstatus.Submitted); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 	startedAt := time.Date(2026, 9, 1, 12, 0, 0, 0, time.UTC)

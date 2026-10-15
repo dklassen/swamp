@@ -3,6 +3,7 @@ package store
 import (
 	"context"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
@@ -17,7 +18,7 @@ type InterestedPosting struct {
 	Posting           Posting
 	CompanyName       string
 	ApplicationID     *int64
-	ApplicationStatus *ApplicationStatus
+	ApplicationStatus *applicationstatus.Status
 }
 
 // interestedPostingFromRow converts a row built by sqlc.embed(postings) --
@@ -38,7 +39,7 @@ func interestedPostingFromRow(row sqlcdb.ListInterestedPostingsRow) (InterestedP
 		p.ApplicationID = &id
 	}
 	if row.ApplicationStatus.Valid {
-		status, err := ParseApplicationStatus(row.ApplicationStatus.String)
+		status, err := applicationstatus.Parse(row.ApplicationStatus.String)
 		if err != nil {
 			return InterestedPosting{}, err
 		}
@@ -50,7 +51,7 @@ func interestedPostingFromRow(row sqlcdb.ListInterestedPostingsRow) (InterestedP
 // ListInterestedPostings returns postings with interested_at set and
 // archived_at unset, each joined with its company name and, if one
 // exists, its application's id/status. Postings whose application is at
-// a terminal status (see TerminalApplicationStatuses) are excluded.
+// a terminal status (see applicationstatus.Terminal) are excluded.
 func (s *Store) ListInterestedPostings(ctx context.Context) ([]InterestedPosting, error) {
 	rows, err := s.queries.ListInterestedPostings(ctx, terminalStatusParams())
 	if err != nil {

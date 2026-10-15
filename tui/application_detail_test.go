@@ -9,13 +9,14 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
 
 func testApplicationView() store.ApplicationView {
 	return store.ApplicationView{
-		Application: store.Application{ID: 1, Status: store.ApplicationStatusStarted},
+		Application: store.Application{ID: 1, Status: applicationstatus.Started},
 		Posting:     store.Posting{ID: 5, IngestedFields: store.IngestedFields{Title: "Engineer"}},
 		CompanyName: "Acme",
 	}
@@ -172,7 +173,7 @@ func TestApplicationDetailModel_View_ShowsStatusLabelNotEnumValue(t *testing.T) 
 	t.Parallel()
 
 	app := store.ApplicationView{
-		Application: store.Application{ID: 1, Status: store.ApplicationStatusOfferReceived},
+		Application: store.Application{ID: 1, Status: applicationstatus.OfferReceived},
 		Posting:     store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}},
 		CompanyName: "Acme",
 	}

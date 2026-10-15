@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
@@ -68,6 +69,6 @@ func (s *Syncer) closeMissing(ctx context.Context, company store.Company, fetche
 // widening of what a sync does. The policy stays
 // here; store.ClosePosting applies it in the same transaction that
 // closes the posting (#147).
-var earlyApplicationStatuses = []store.ApplicationStatus{
-	store.ApplicationStatusStarted,
+var earlyApplicationStatuses = []applicationstatus.Status{
+	applicationstatus.Started,
 }

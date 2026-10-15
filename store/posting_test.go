@@ -12,6 +12,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/contenthash"
 )
 
@@ -285,23 +286,23 @@ func TestMarkPostingClosed_SetsListingStatusClosed(t *testing.T) {
 
 func TestClosePosting(t *testing.T) {
 	t.Parallel()
-	closeFrom := []ApplicationStatus{ApplicationStatusStarted, ApplicationStatusSubmitted}
+	closeFrom := []applicationstatus.Status{applicationstatus.Started, applicationstatus.Submitted}
 
 	tests := []struct {
 		name          string
 		alreadyClosed bool
-		application   *ApplicationStatus // nil: the posting has no application
+		application   *applicationstatus.Status // nil: the posting has no application
 		want          ClosePostingResult
-		wantApp       ApplicationStatus
+		wantApp       applicationstatus.Status
 		wantHistory   int
 	}{
 		{name: "open, no application", want: ClosePostingResult{Closed: true}, wantHistory: 1},
-		{name: "open, application at a status it ends", application: ptr(ApplicationStatusStarted),
-			want: ClosePostingResult{Closed: true, ApplicationClosed: true}, wantApp: ApplicationStatusPostingClosed, wantHistory: 1},
-		{name: "open, application at a status it leaves alone", application: ptr(ApplicationStatusInterviewing),
-			want: ClosePostingResult{Closed: true}, wantApp: ApplicationStatusInterviewing, wantHistory: 1},
-		{name: "already closed: changes nothing", alreadyClosed: true, application: ptr(ApplicationStatusStarted),
-			want: ClosePostingResult{}, wantApp: ApplicationStatusStarted, wantHistory: 0},
+		{name: "open, application at a status it ends", application: ptr(applicationstatus.Started),
+			want: ClosePostingResult{Closed: true, ApplicationClosed: true}, wantApp: applicationstatus.PostingClosed, wantHistory: 1},
+		{name: "open, application at a status it leaves alone", application: ptr(applicationstatus.Interviewing),
+			want: ClosePostingResult{Closed: true}, wantApp: applicationstatus.Interviewing, wantHistory: 1},
+		{name: "already closed: changes nothing", alreadyClosed: true, application: ptr(applicationstatus.Started),
+			want: ClosePostingResult{}, wantApp: applicationstatus.Started, wantHistory: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -756,14 +757,14 @@ func TestCountOpenPostingsByCompany_CountsOpenUnarchivedPerCompany(t *testing.T)
 // left alone.
 func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 	t.Parallel()
-	closeFrom := []ApplicationStatus{ApplicationStatusStarted, ApplicationStatusSubmitted}
+	closeFrom := []applicationstatus.Status{applicationstatus.Started, applicationstatus.Submitted}
 
 	tests := []struct {
 		name string
 		// setup leaves the posting closed.
 		setup         func(t *testing.T, s *Store, postingID int64)
 		want          ReopenPostingResult
-		wantApp       ApplicationStatus
+		wantApp       applicationstatus.Status
 		wantLastBy    StatusChangedBy
 		noApplication bool
 	}{
@@ -774,37 +775,37 @@ func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 				mustClosePosting(t, s, postingID, closeFrom)
 			},
 			want:    ReopenPostingResult{Reopened: true, ApplicationRestored: true},
-			wantApp: ApplicationStatusStarted, wantLastBy: StatusChangedBySync,
+			wantApp: applicationstatus.Started, wantLastBy: StatusChangedBySync,
 		},
 		{
 			name: "sync closed it from submitted: back to submitted",
 			setup: func(t *testing.T, s *Store, postingID int64) {
 				mustCreateApplication(t, s, postingID)
-				mustUpdateApplicationStatus(t, s, postingID, ApplicationStatusSubmitted)
+				mustUpdateApplicationStatus(t, s, postingID, applicationstatus.Submitted)
 				mustClosePosting(t, s, postingID, closeFrom)
 			},
 			want:    ReopenPostingResult{Reopened: true, ApplicationRestored: true},
-			wantApp: ApplicationStatusSubmitted, wantLastBy: StatusChangedBySync,
+			wantApp: applicationstatus.Submitted, wantLastBy: StatusChangedBySync,
 		},
 		{
 			name: "user set posting_closed: left alone",
 			setup: func(t *testing.T, s *Store, postingID int64) {
 				mustCreateApplication(t, s, postingID)
 				mustClosePosting(t, s, postingID, nil)
-				mustUpdateApplicationStatus(t, s, postingID, ApplicationStatusPostingClosed)
+				mustUpdateApplicationStatus(t, s, postingID, applicationstatus.PostingClosed)
 			},
 			want:    ReopenPostingResult{Reopened: true},
-			wantApp: ApplicationStatusPostingClosed, wantLastBy: StatusChangedByUser,
+			wantApp: applicationstatus.PostingClosed, wantLastBy: StatusChangedByUser,
 		},
 		{
 			name: "user changed it after sync closed it: left alone",
 			setup: func(t *testing.T, s *Store, postingID int64) {
 				mustCreateApplication(t, s, postingID)
 				mustClosePosting(t, s, postingID, closeFrom)
-				mustUpdateApplicationStatus(t, s, postingID, ApplicationStatusWithdrawn)
+				mustUpdateApplicationStatus(t, s, postingID, applicationstatus.Withdrawn)
 			},
 			want:    ReopenPostingResult{Reopened: true},
-			wantApp: ApplicationStatusWithdrawn, wantLastBy: StatusChangedByUser,
+			wantApp: applicationstatus.Withdrawn, wantLastBy: StatusChangedByUser,
 		},
 		{
 			name: "closed before changed_by existed: left alone",
@@ -816,7 +817,7 @@ func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 				}
 			},
 			want:    ReopenPostingResult{Reopened: true},
-			wantApp: ApplicationStatusPostingClosed, wantLastBy: StatusChangedByUnknown,
+			wantApp: applicationstatus.PostingClosed, wantLastBy: StatusChangedByUnknown,
 		},
 		{
 			name: "no application",
@@ -865,14 +866,14 @@ func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 	}
 }
 
-func mustClosePosting(t *testing.T, s *Store, postingID int64, closeApplicationFrom []ApplicationStatus) {
+func mustClosePosting(t *testing.T, s *Store, postingID int64, closeApplicationFrom []applicationstatus.Status) {
 	t.Helper()
 	if _, err := s.ClosePosting(context.Background(), postingID, closeApplicationFrom); err != nil {
 		t.Fatalf("ClosePosting: %v", err)
 	}
 }
 
-func mustUpdateApplicationStatus(t *testing.T, s *Store, postingID int64, status ApplicationStatus) {
+func mustUpdateApplicationStatus(t *testing.T, s *Store, postingID int64, status applicationstatus.Status) {
 	t.Helper()
 	if _, err := s.UpdateApplicationStatus(context.Background(), postingID, status); err != nil {
 		t.Fatalf("UpdateApplicationStatus(%s): %v", status, err)
@@ -889,7 +890,7 @@ func TestReopenPosting_RestoreFails_PostingStaysClosed(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	mustCreateApplication(t, s, posting.ID)
-	mustClosePosting(t, s, posting.ID, []ApplicationStatus{ApplicationStatusStarted})
+	mustClosePosting(t, s, posting.ID, []applicationstatus.Status{applicationstatus.Started})
 	if _, err := s.sqlDB.ExecContext(ctx, `CREATE TRIGGER fail_application_update BEFORE UPDATE ON applications
 		BEGIN SELECT RAISE(ABORT, 'simulated failure'); END`); err != nil {
 		t.Fatalf("create trigger: %v", err)

@@ -8,6 +8,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -314,7 +315,7 @@ func TestApp_ApplicationStartedElsewhere_PostingDetailShowsIt(t *testing.T) {
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: events})
 
-	if view := app.View(); strings.Contains(view, "No application started") || !strings.Contains(view, applicationStatusLabel(store.ApplicationStatusStarted)) {
+	if view := app.View(); strings.Contains(view, "No application started") || !strings.Contains(view, applicationStatusLabel(applicationstatus.Started)) {
 		t.Errorf("posting detail doesn't show the application started elsewhere:\n%s", view)
 	}
 }
@@ -374,7 +375,7 @@ func TestApp_EnteringApplicationDetail_ShowsAChangeMadeBeforeIt(t *testing.T) {
 
 	app, application := deleteTestApp(t)
 	app.WithChangeLog(0, "tui:1")
-	if _, err := app.store.UpdateApplicationStatus(context.Background(), application.PostingID, store.ApplicationStatusInterviewing); err != nil {
+	if _, err := app.store.UpdateApplicationStatus(context.Background(), application.PostingID, applicationstatus.Interviewing); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 
@@ -412,7 +413,7 @@ func TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere(t *testing.T) {
 	if app.applicationDetail.application.ID == first.ID {
 		other = second
 	}
-	if _, err := s.UpdateApplicationStatus(ctx, other.PostingID, store.ApplicationStatusInterviewing); err != nil {
+	if _, err := s.UpdateApplicationStatus(ctx, other.PostingID, applicationstatus.Interviewing); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "applications", RowID: other.ID, Op: "update", Origin: "mcp:7"}}})
@@ -439,7 +440,7 @@ func TestApp_TabBackToTheHomeList_ShowsAChangeClearedOnTheCompanyList(t *testing
 	if app.screen != screenCompanyList {
 		t.Fatalf("screen = %v, want the company list", app.screen)
 	}
-	if _, err := app.store.UpdateApplicationStatus(context.Background(), application.PostingID, store.ApplicationStatusInterviewing); err != nil {
+	if _, err := app.store.UpdateApplicationStatus(context.Background(), application.PostingID, applicationstatus.Interviewing); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "applications", RowID: application.ID, Op: "update", Origin: "mcp:7"}}})

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
@@ -25,7 +26,7 @@ import (
 type Application struct {
 	ID        int64
 	PostingID int64
-	Status    ApplicationStatus
+	Status    applicationstatus.Status
 	Notes     string
 	CreatedAt time.Time
 	UpdatedAt time.Time
@@ -36,13 +37,13 @@ type Application struct {
 }
 
 // applicationFromRow converts a raw sqlc row into an Application, parsing
-// the DB's status column into the typed ApplicationStatus enum (see
+// the DB's status column into the typed applicationstatus.Status enum (see
 // application_status.go). status is nullable at the DB layer now (see
 // db/migrations/00004_..., PR #17 review -- the DB no longer invents or
 // enforces an initial value, the application does), but every write this
 // package makes always supplies a concrete status; an actual NULL here
 // means something outside this package wrote the row. The explicit Valid
-// check below is technically redundant with ParseApplicationStatus
+// check below is technically redundant with applicationstatus.Parse
 // rejecting "" (NullString's zero value) on its own, but it names the
 // failure and includes the row id, which is worth the extra line for
 // something that should never legitimately happen.
@@ -50,7 +51,7 @@ func applicationFromRow(row sqlcdb.Application) (Application, error) {
 	if !row.Status.Valid {
 		return Application{}, fmt.Errorf("store: application %d has NULL status", row.ID)
 	}
-	status, err := ParseApplicationStatus(row.Status.String)
+	status, err := applicationstatus.Parse(row.Status.String)
 	if err != nil {
 		return Application{}, err
 	}
@@ -89,12 +90,12 @@ func (s *Store) CreateApplication(ctx context.Context, postingID int64) (Applica
 	}
 	row, err := qtx.CreateApplication(ctx, sqlcdb.CreateApplicationParams{
 		PostingID: postingID,
-		Status:    sql.NullString{String: ApplicationStatusStarted.String(), Valid: true},
+		Status:    sql.NullString{String: applicationstatus.Started.String(), Valid: true},
 	})
 	if err != nil {
 		return Application{}, err
 	}
-	if err := recordApplicationStatus(ctx, qtx, row.ID, ApplicationStatusStarted, StatusChangedByUser); err != nil {
+	if err := recordApplicationStatus(ctx, qtx, row.ID, applicationstatus.Started, StatusChangedByUser); err != nil {
 		return Application{}, err
 	}
 
@@ -147,7 +148,7 @@ func (s *Store) GetApplicationByIDIncludingDeleted(ctx context.Context, id int64
 // UpdateApplicationStatus sets a posting's application status and records
 // the change in its status history in the same transaction (#162). Saving
 // the status it already has records nothing: it isn't a change.
-func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, status ApplicationStatus) (Application, error) {
+func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, status applicationstatus.Status) (Application, error) {
 	tx, err := s.sqlDB.BeginTx(ctx, nil)
 	if err != nil {
 		return Application{}, fmt.Errorf("store: begin update application status tx: %w", err)

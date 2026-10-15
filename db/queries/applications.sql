@@ -2,7 +2,7 @@
 -- Unlike posting_markup, not auto-created for every posting -- an
 -- application exists only once the user takes an explicit "start
 -- application" action. status is supplied explicitly by the caller
--- (store.CreateApplication passes store.ApplicationStatusStarted.String())
+-- (store.CreateApplication passes applicationstatus.Started.String())
 -- rather than relying on a DB default -- the initial value is the
 -- application's decision, not the schema's (see db/migrations/00004_...,
 -- PR #17 review). notes still relies on its own column default ('').
@@ -53,7 +53,7 @@ RETURNING *;
 -- engine (sqlite, sqlc v1.31.1) alongside a plain aliased column, one
 -- inner join, no collisions (see ApplicationView).
 --
--- sqlc.slice('terminal_statuses') keeps store.TerminalApplicationStatuses
+-- sqlc.slice('terminal_statuses') keeps applicationstatus.Terminal
 -- as the sole source of truth for which statuses are terminal -- no
 -- status strings are hardcoded here, they're passed in as a query
 -- parameter at call time (issue #60). Verified this

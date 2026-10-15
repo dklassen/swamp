@@ -175,7 +175,7 @@ func TestPostingMarkupInterestedArchivedFlags_MigratesInterestedStatusToTimestam
 // TestDropApplicationStatusCheckConstraint_PreservesExistingApplicationRow
 // verifies the 00004 migration's rebuild of applications (dropping its
 // status CHECK constraint -- validation moved to Go, see
-// store.ParseApplicationStatus) doesn't lose or alter
+// applicationstatus.Parse) doesn't lose or alter
 // data already in the table.
 func TestDropApplicationStatusCheckConstraint_PreservesExistingApplicationRow(t *testing.T) {
 	sqlDB := migrateTo(t, 3)
