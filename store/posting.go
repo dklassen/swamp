@@ -394,9 +394,10 @@ func (s *Store) ListDistinctLocationsForCompany(ctx context.Context, companyID i
 	return s.queries.ListDistinctLocationsForCompany(ctx, companyID)
 }
 
-// CountOpenPostingsByCompany returns, per company id, how many postings are
-// still open on the job board and not archived: what the company's posting
-// list shows by default. Companies with none are absent from the map.
+// CountOpenPostingsByCompany returns, per company id, how many postings the
+// company's posting list shows by default: still open on the job board,
+// not archived, and let through by its filters. Deleted companies count
+// nothing. Companies with none are absent from the map.
 func (s *Store) CountOpenPostingsByCompany(ctx context.Context) (map[int64]int, error) {
 	rows, err := s.queries.CountOpenPostingsByCompany(ctx)
 	if err != nil {

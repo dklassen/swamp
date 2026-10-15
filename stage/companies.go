@@ -11,8 +11,9 @@ type CompanySummary struct {
 	ID     int64  `json:"ID"`
 	Name   string `json:"Name"`
 	Source string `json:"Source"`
-	// OpenPostings counts open, unarchived postings, as the TUI's company
-	// list does.
+	// OpenPostings counts what the company's posting list shows: open,
+	// unarchived postings its filters let through, as the TUI's company list
+	// does.
 	OpenPostings int `json:"OpenPostings"`
 }
 
