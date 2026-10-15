@@ -9,8 +9,10 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
@@ -101,4 +103,19 @@ func mustDoc(t *testing.T, status documents.Status, documentType documents.Type)
 		t.Fatalf("Doc(%s): %v", documentType, err)
 	}
 	return doc
+}
+
+func addCompanyFilter(t *testing.T, s *store.Store, companyID int64, field, value string) {
+	t.Helper()
+	ctx := context.Background()
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		existing, err := companyfilter.List(ctx, tx, companyID)
+		if err != nil {
+			return err
+		}
+		return companyfilter.Replace(ctx, tx, companyID, append(existing, filter.Filter{Field: field, Value: value}))
+	})
+	if err != nil {
+		t.Fatalf("add company filter %s=%s: %v", field, value, err)
+	}
 }

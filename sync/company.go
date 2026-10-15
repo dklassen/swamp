@@ -6,22 +6,10 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/seed"
 	"github.com/dklassen/swamp/store"
 )
-
-// FilterRules converts a company's saved filter rows into the rules
-// filter.Match evaluates against a posting, for deciding which postings
-// to show.
-func FilterRules(filters []store.CompanyFilter) []filter.Filter {
-	rules := make([]filter.Filter, len(filters))
-	for i, f := range filters {
-		rules[i] = filter.Filter{Field: f.Field, Value: f.Value}
-	}
-	return rules
-}
 
 // toIngestedFields builds the fields store.Posting and
 // store.CreatePostingParams share from a fetched Posting -- the single

@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
@@ -2844,9 +2845,9 @@ func TestApp_FilterSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 		t.Fatalf("screen after esc = %v, want screenPostingList", app.screen)
 	}
 
-	saved, err := s.ListCompanyFilters(context.Background(), acme.ID)
+	saved, err := companyfilter.List(context.Background(), s.DB(), acme.ID)
 	if err != nil {
-		t.Fatalf("ListCompanyFilters: %v", err)
+		t.Fatalf("companyfilter.List: %v", err)
 	}
 	if len(saved) != 0 {
 		t.Fatalf("saved filters = %+v, want none (esc should not persist selection)", saved)
@@ -2895,9 +2896,9 @@ func TestApp_FilterSelect_Enter_SavesAndNarrows(t *testing.T) {
 
 	app, cmd = sendKey(app, cmd())
 
-	saved, err := s.ListCompanyFilters(context.Background(), acme.ID)
+	saved, err := companyfilter.List(context.Background(), s.DB(), acme.ID)
 	if err != nil {
-		t.Fatalf("ListCompanyFilters: %v", err)
+		t.Fatalf("companyfilter.List: %v", err)
 	}
 	if len(saved) != 1 || saved[0].Field != filter.FieldDepartment || saved[0].Value != wantDept {
 		t.Fatalf("saved filters = %+v, want one department=%s filter", saved, wantDept)
@@ -2947,9 +2948,9 @@ func TestApp_FilterSelect_Enter_WhileCompanySyncsElsewhere_Saves(t *testing.T) {
 	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 	app, cmd = sendKey(app, cmd())
 
-	saved, err := s.ListCompanyFilters(context.Background(), acme.ID)
+	saved, err := companyfilter.List(context.Background(), s.DB(), acme.ID)
 	if err != nil {
-		t.Fatalf("ListCompanyFilters: %v", err)
+		t.Fatalf("companyfilter.List: %v", err)
 	}
 	if len(saved) != 1 {
 		t.Errorf("saved filters = %+v, want the selection saved", saved)
@@ -3015,9 +3016,7 @@ func TestApp_CompanyRefreshed_ForDifferentCompany_DoesNotReloadPostings(t *testi
 func TestApp_OpenPostingList_WithPreExistingSavedFilters_NarrowsOnFirstLoad(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	if _, err := s.CreateCompanyFilter(context.Background(), acme.ID, filter.FieldDepartment, "Engineering"); err != nil {
-		t.Fatalf("CreateCompanyFilter: %v", err)
-	}
+	addCompanyFilter(t, s, acme.ID, filter.FieldDepartment, "Engineering")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {
 			{SourceID: "job-1", Title: "Engineer", Department: "Engineering"},
@@ -3038,12 +3037,8 @@ func TestApp_OpenPostingList_WithPreExistingSavedFilters_NarrowsOnFirstLoad(t *t
 func TestApp_OpenPostingList_TracksActiveFiltersFromExisting(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	if _, err := s.CreateCompanyFilter(context.Background(), acme.ID, filter.FieldDepartment, "Engineering"); err != nil {
-		t.Fatalf("CreateCompanyFilter: %v", err)
-	}
-	if _, err := s.CreateCompanyFilter(context.Background(), acme.ID, filter.FieldLocation, "Remote"); err != nil {
-		t.Fatalf("CreateCompanyFilter: %v", err)
-	}
+	addCompanyFilter(t, s, acme.ID, filter.FieldDepartment, "Engineering")
+	addCompanyFilter(t, s, acme.ID, filter.FieldLocation, "Remote")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"}},
 	})
@@ -3105,11 +3100,6 @@ func TestFilterSummaryLine_DepartmentsAndLocations(t *testing.T) {
 	}
 }
 
-// TestFilterPostingsByCompanyFilters_MatchSemantics pins the same
-// AND-across-fields/OR-within-field semantics SyncCompany's ingestion-time
-// gating relies on (both now share sync.FilterRules, #61),
-// via filterPostingsByCompanyFilters directly rather than through a
-// full App.
 func TestFilterPostingsByCompanyFilters_MatchSemantics(t *testing.T) {
 	t.Parallel()
 
@@ -3120,7 +3110,7 @@ func TestFilterPostingsByCompanyFilters_MatchSemantics(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		filters []store.CompanyFilter
+		filters []filter.Filter
 		want    []store.Posting
 	}{
 		{
@@ -3130,17 +3120,17 @@ func TestFilterPostingsByCompanyFilters_MatchSemantics(t *testing.T) {
 		},
 		{
 			name:    "department filter alone",
-			filters: []store.CompanyFilter{{Field: filter.FieldDepartment, Value: "Engineering"}},
+			filters: []filter.Filter{{Field: filter.FieldDepartment, Value: "Engineering"}},
 			want:    []store.Posting{eng, engNYC},
 		},
 		{
 			name:    "location filter alone",
-			filters: []store.CompanyFilter{{Field: filter.FieldLocation, Value: "Remote"}},
+			filters: []filter.Filter{{Field: filter.FieldLocation, Value: "Remote"}},
 			want:    []store.Posting{eng, sales},
 		},
 		{
 			name: "department and location AND together, OR within a field",
-			filters: []store.CompanyFilter{
+			filters: []filter.Filter{
 				{Field: filter.FieldDepartment, Value: "Engineering"},
 				{Field: filter.FieldDepartment, Value: "Sales"},
 				{Field: filter.FieldLocation, Value: "Remote"},
@@ -3162,22 +3152,13 @@ func TestFilterPostingsByCompanyFilters_MatchSemantics(t *testing.T) {
 	}
 }
 
-// TestFilterPostingsByCompanyFilters_UnsupportedField_ReturnsError guards
-// a real behavior change from the old loadPostings path: splitCompanyFilters
-// silently dropped any CompanyFilter row whose Field wasn't "department"/
-// "location" (its switch has no default case), so an unrecognized field
-// never even reached filter.Match -- that constraint was just silently
-// not applied. filterPostingsByCompanyFilters instead routes every row
-// through sync.FilterRules + filter.Match, the same path SyncCompany uses,
-// so an unsupported field name -- which should be unreachable given
-// company_filters' CHECK constraint, but this package can't assume that
-// -- now surfaces as an error, consistent with ingestion-time gating,
-// instead of silently narrowing the list as if the filter didn't exist.
+// splitCompanyFilters ignores fields it doesn't know, so without this an
+// unsupported field would be silently not applied rather than an error.
 func TestFilterPostingsByCompanyFilters_UnsupportedField_ReturnsError(t *testing.T) {
 	t.Parallel()
 
 	postings := []store.Posting{{ID: 1, IngestedFields: store.IngestedFields{Department: "Engineering"}}}
-	filters := []store.CompanyFilter{{Field: "not_a_real_field", Value: "x"}}
+	filters := []filter.Filter{{Field: "not_a_real_field", Value: "x"}}
 
 	_, err := filterPostingsByCompanyFilters(postings, filters)
 	if err == nil {

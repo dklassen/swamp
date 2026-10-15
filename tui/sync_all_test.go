@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
@@ -239,9 +240,9 @@ func TestApp_SyncAll_FilterSaveDuringRun_Saves(t *testing.T) {
 		t.Fatal("saving filters during a sync-all run returned nil Cmd, want one that saves them")
 	}
 	app = applyCmd(t, app, cmd)
-	saved, err := s.ListCompanyFilters(t.Context(), app.selectedCompany.ID)
+	saved, err := companyfilter.List(t.Context(), s.DB(), app.selectedCompany.ID)
 	if err != nil {
-		t.Fatalf("ListCompanyFilters: %v", err)
+		t.Fatalf("companyfilter.List: %v", err)
 	}
 	if len(saved) != 1 {
 		t.Errorf("saved filters = %+v, want the one selected", saved)

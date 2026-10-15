@@ -34,9 +34,9 @@ func newTestStore(t *testing.T) *store.Store {
 	return store.New(sqlDB)
 }
 
-func newCompany(t *testing.T, s *store.Store) int64 {
+func newCompany(t *testing.T, s *store.Store, name string) int64 {
 	t.Helper()
-	c, err := s.CreateCompany(context.Background(), "Acme", "ashby", "acme")
+	c, err := s.CreateCompany(context.Background(), name, "ashby", name)
 	if err != nil {
 		t.Fatalf("CreateCompany: %v", err)
 	}
@@ -62,7 +62,7 @@ func TestReplace_ThenList_ReturnsTheFiltersInOrder(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	s := newTestStore(t)
-	id := newCompany(t, s)
+	id := newCompany(t, s, "acme")
 	want := []filter.Filter{
 		{Field: filter.FieldDepartment, Value: "Engineering"},
 		{Field: filter.FieldLocation, Value: "Remote"},
@@ -80,7 +80,7 @@ func TestReplace_RemovesThePreviousFilters(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	s := newTestStore(t)
-	id := newCompany(t, s)
+	id := newCompany(t, s, "acme")
 	if err := replace(ctx, s, id, []filter.Filter{{Field: filter.FieldDepartment, Value: "Sales"}}); err != nil {
 		t.Fatalf("first Replace: %v", err)
 	}
@@ -123,7 +123,7 @@ func TestReplace_FailingInsert_KeepsTheOldFilters(t *testing.T) {
 			t.Parallel()
 			ctx := context.Background()
 			s := newTestStore(t)
-			id := newCompany(t, s)
+			id := newCompany(t, s, "acme")
 			if err := replace(ctx, s, id, old); err != nil {
 				t.Fatalf("first Replace: %v", err)
 			}
@@ -135,5 +135,41 @@ func TestReplace_FailingInsert_KeepsTheOldFilters(t *testing.T) {
 				t.Errorf("List after a failed Replace (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestList_ReturnsOnlyThatCompanysFilters(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newTestStore(t)
+	acme := newCompany(t, s, "acme")
+	globex := newCompany(t, s, "globex")
+	want := []filter.Filter{{Field: filter.FieldDepartment, Value: "Engineering"}}
+	if err := replace(ctx, s, acme, want); err != nil {
+		t.Fatalf("Replace acme: %v", err)
+	}
+	if err := replace(ctx, s, globex, []filter.Filter{{Field: filter.FieldLocation, Value: "Remote"}}); err != nil {
+		t.Fatalf("Replace globex: %v", err)
+	}
+
+	if diff := cmp.Diff(want, list(t, ctx, s, acme)); diff != "" {
+		t.Errorf("List acme (-want +got):\n%s", diff)
+	}
+}
+
+func TestReplace_EmptySet_LeavesNoFilters(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := newTestStore(t)
+	id := newCompany(t, s, "acme")
+	if err := replace(ctx, s, id, []filter.Filter{{Field: filter.FieldDepartment, Value: "Sales"}}); err != nil {
+		t.Fatalf("first Replace: %v", err)
+	}
+
+	if err := replace(ctx, s, id, nil); err != nil {
+		t.Fatalf("Replace with no filters: %v", err)
+	}
+	if got := list(t, ctx, s, id); len(got) != 0 {
+		t.Errorf("List after replacing with no filters = %+v, want none", got)
 	}
 }

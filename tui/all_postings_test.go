@@ -65,9 +65,7 @@ func TestAllPostings_ShowsOpenPostingsAcrossCompaniesNewestFirst(t *testing.T) {
 	if _, err := s.SetPostingInterested(ctx, older.ID); err != nil {
 		t.Fatalf("SetPostingInterested: %v", err)
 	}
-	if _, err := s.CreateCompanyFilter(ctx, globex.ID, filter.FieldDepartment, "Infra"); err != nil {
-		t.Fatalf("CreateCompanyFilter: %v", err)
-	}
+	addCompanyFilter(t, s, globex.ID, filter.FieldDepartment, "Infra")
 
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})

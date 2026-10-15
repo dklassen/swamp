@@ -7,7 +7,6 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dklassen/swamp/filter"
-	"github.com/dklassen/swamp/store"
 )
 
 // filterSelectModel drives the department/location filter-select screen
@@ -32,7 +31,7 @@ type filterSelectModel struct {
 // place this is constructed (filter options are loaded async, so this
 // can't be seeded synchronously the way a key-press-triggered screen
 // entry can).
-func newFilterSelectModel(companyID int64, departments, locations []string, existingFilters []store.CompanyFilter) filterSelectModel {
+func newFilterSelectModel(companyID int64, departments, locations []string, existingFilters []filter.Filter) filterSelectModel {
 	existingDepartments, existingLocations := splitCompanyFilters(existingFilters)
 	return filterSelectModel{
 		companyID:           companyID,

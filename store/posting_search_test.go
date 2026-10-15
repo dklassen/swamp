@@ -502,13 +502,13 @@ func TestSearchPostings_AppliesCompanyFiltersLikeFilterMatch(t *testing.T) {
 			s := newTestStore(t)
 			// Another company's filter must not reach this company's postings.
 			other := mustCreateCompany(t, s, "Other", "ashby", "other")
-			if _, err := s.CreateCompanyFilter(ctx, other.ID, filter.FieldDepartment, "Nothing matches this"); err != nil {
-				t.Fatalf("CreateCompanyFilter: %v", err)
+			if _, err := s.createCompanyFilter(ctx, other.ID, filter.FieldDepartment, "Nothing matches this"); err != nil {
+				t.Fatalf("createCompanyFilter: %v", err)
 			}
 			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 			for _, f := range tt.filters {
-				if _, err := s.CreateCompanyFilter(ctx, acme.ID, f.Field, f.Value); err != nil {
-					t.Fatalf("CreateCompanyFilter: %v", err)
+				if _, err := s.createCompanyFilter(ctx, acme.ID, f.Field, f.Value); err != nil {
+					t.Fatalf("createCompanyFilter: %v", err)
 				}
 			}
 			posting, err := s.UpsertPosting(ctx, CreatePostingParams{
@@ -548,8 +548,8 @@ func TestSearchPostings_IgnoreCompanyFilters(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	if _, err := s.CreateCompanyFilter(ctx, acme.ID, filter.FieldDepartment, "Engineering"); err != nil {
-		t.Fatalf("CreateCompanyFilter: %v", err)
+	if _, err := s.createCompanyFilter(ctx, acme.ID, filter.FieldDepartment, "Engineering"); err != nil {
+		t.Fatalf("createCompanyFilter: %v", err)
 	}
 	hidden := mustUpsertPosting(t, s, acme.ID, "1", "Account Executive") // no department
 

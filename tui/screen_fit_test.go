@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
@@ -124,12 +125,12 @@ func sizedScreens() []sizedScreen {
 			if _, err := app.store.UpdateCompanyDescription(ctx, acme.ID, "Acme makes everything."); err != nil {
 				t.Fatalf("UpdateCompanyDescription: %v", err)
 			}
-			var filters []store.CompanyFilter
+			var filters []filter.Filter
 			for i := 1; i <= 40; i++ {
-				filters = append(filters, store.CompanyFilter{Field: filter.FieldDepartment, Value: fmt.Sprintf("Department %02d", i)})
+				filters = append(filters, filter.Filter{Field: filter.FieldDepartment, Value: fmt.Sprintf("Department %02d", i)})
 			}
-			if err := app.store.ReplaceCompanyFilters(ctx, acme.ID, filters); err != nil {
-				t.Fatalf("ReplaceCompanyFilters: %v", err)
+			if err := store.InTx(ctx, app.store.DB(), func(tx store.Tx) error { return companyfilter.Replace(ctx, tx, acme.ID, filters) }); err != nil {
+				t.Fatalf("companyfilter.Replace: %v", err)
 			}
 			app = applyCmd(t, app, loadCompanies(app.store))
 			app = openPostingList(t, app)

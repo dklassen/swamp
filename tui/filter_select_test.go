@@ -6,14 +6,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dklassen/swamp/filter"
-	"github.com/dklassen/swamp/store"
 )
 
 func newTestFilterSelectModel() *filterSelectModel {
 	m := newFilterSelectModel(1,
 		[]string{"Engineering", "Sales"},
 		[]string{"Remote", "Onsite"},
-		[]store.CompanyFilter{{Field: filter.FieldDepartment, Value: "Sales"}},
+		[]filter.Filter{{Field: filter.FieldDepartment, Value: "Sales"}},
 	)
 	return &m
 }
