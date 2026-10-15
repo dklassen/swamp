@@ -95,7 +95,7 @@ type Querier interface {
 	// than us hand-selecting+aliasing individual columns and reconstructing
 	// them field-by-field in Go -- verified this works cleanly on this
 	// engine (sqlite, sqlc v1.31.1) alongside a plain aliased column, one
-	// inner join, no collisions (see ApplicationView).
+	// inner join, no collisions (see ActiveApplication).
 	//
 	// sqlc.slice('terminal_statuses') keeps applicationstatus.Terminal
 	// as the sole source of truth for which statuses are terminal -- no
@@ -128,7 +128,7 @@ type Querier interface {
 	//
 	// sqlc.embed(postings) for the always-present side (postings is inner-
 	// joined via posting_markup, never nullable here) -- same reasoning as
-	// ListActiveApplications (see ApplicationView). Deliberately
+	// ListActiveApplications (see ActiveApplication). Deliberately
 	// NOT sqlc.embed(applications): that side is LEFT JOINed (an application
 	// may not exist yet) and sqlc.embed has a documented bug scanning a NULL
 	// embedded struct on sqlite (sqlc-dev/sqlc#2997) -- kept as individually

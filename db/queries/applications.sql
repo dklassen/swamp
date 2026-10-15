@@ -51,7 +51,7 @@ RETURNING *;
 -- than us hand-selecting+aliasing individual columns and reconstructing
 -- them field-by-field in Go -- verified this works cleanly on this
 -- engine (sqlite, sqlc v1.31.1) alongside a plain aliased column, one
--- inner join, no collisions (see ApplicationView).
+-- inner join, no collisions (see ActiveApplication).
 --
 -- sqlc.slice('terminal_statuses') keeps applicationstatus.Terminal
 -- as the sole source of truth for which statuses are terminal -- no

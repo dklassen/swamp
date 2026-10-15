@@ -7,7 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/pursuit"
 )
 
 // applicationDetailModel drives the application-detail screen: the place
@@ -15,16 +15,16 @@ import (
 // posting, editing the cover letter/resume in $EDITOR, and reviewing
 // each of them (see the #86 follow-up reorganizing the
 // active-applications ("application view") workflow). It holds only the
-// dependencies it needs for its own commands and the ApplicationView it
+// dependencies it needs for its own commands and the pursuit.Application it
 // was constructed with -- a snapshot, not a live reference into App's
 // activeApplications slice, refreshed by App whenever the underlying
 // data changes (mirroring postingDetailModel's own convention).
 type applicationDetailModel struct {
 	documents   *documents.Store
-	application store.ApplicationView
+	application pursuit.Application
 }
 
-func newApplicationDetailModel(docs *documents.Store, application store.ApplicationView) applicationDetailModel {
+func newApplicationDetailModel(docs *documents.Store, application pursuit.Application) applicationDetailModel {
 	return applicationDetailModel{documents: docs, application: application}
 }
 

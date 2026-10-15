@@ -6,6 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -17,7 +18,7 @@ import (
 // with the status unchanged. Nothing is ever submitted to the job board:
 // Swamp only records that the user did it (RFC 0002, "out of scope").
 type applicationSubmitModel struct {
-	application store.ApplicationView
+	application pursuit.Application
 	// url is the link opened for the user, "" when the posting has none.
 	url string
 	// opened is the browser result, nil until it arrives.
@@ -39,14 +40,14 @@ func applyURL(posting store.Posting) string {
 	return posting.JobURL
 }
 
-func newApplicationSubmitModel(application store.ApplicationView, instance screenInstance) applicationSubmitModel {
+func newApplicationSubmitModel(application pursuit.Application, instance screenInstance) applicationSubmitModel {
 	return applicationSubmitModel{application: application, url: applyURL(application.Posting), instance: instance}
 }
 
 // enterApplicationSubmitMsg signals that App should open the submit
 // screen for this application.
 type enterApplicationSubmitMsg struct {
-	application store.ApplicationView
+	application pursuit.Application
 }
 
 // cancelApplicationSubmitMsg signals that App should go back to
@@ -116,7 +117,7 @@ func (m *applicationSubmitModel) View() string {
 // and starts its first two steps together: opening the apply link and
 // exporting the documents to the last-used export directory, recorded
 // like any other export (#188).
-func (a *App) startApplicationSubmit(application store.ApplicationView) tea.Cmd {
+func (a *App) startApplicationSubmit(application pursuit.Application) tea.Cmd {
 	a.applicationSubmit = newApplicationSubmitModel(application, a.newScreenInstance())
 	a.screen = screenApplicationSubmit
 	export := exportApplicationDocuments(a.store, a.documents, application, a.exportDir)

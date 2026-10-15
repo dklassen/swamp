@@ -6,7 +6,6 @@ import (
 	"time"
 
 	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/documents"
 )
 
 func TestListActiveApplications_ExcludesRejectedAndOfferDeclined(t *testing.T) {
@@ -140,62 +139,6 @@ func TestListActiveApplications_IncludesCompanyNameAndApplicationFields(t *testi
 	}
 	if v.PostingID != posting.ID {
 		t.Fatalf("PostingID = %d, want %d", v.PostingID, posting.ID)
-	}
-}
-
-func TestListActiveApplications_NoReviews_LatestReviewsEmpty(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	mustCreateApplication(t, s, posting.ID)
-
-	got, err := s.ListActiveApplications(ctx)
-	if err != nil {
-		t.Fatalf("ListActiveApplications: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("len(got) = %d, want 1", len(got))
-	}
-	if len(got[0].LatestReviews) != 0 {
-		t.Fatalf("LatestReviews = %+v, want empty (no reviews recorded)", got[0].LatestReviews)
-	}
-}
-
-func TestListActiveApplications_IncludesLatestDocumentReviews(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	app := mustCreateApplication(t, s, posting.ID)
-
-	if _, err := s.CreateDocumentReview(ctx, app.ID, documents.CoverLetter, "draft one", ReviewOutcomeFlagged, "too generic"); err != nil {
-		t.Fatalf("CreateDocumentReview (first): %v", err)
-	}
-	second, err := s.CreateDocumentReview(ctx, app.ID, documents.CoverLetter, "draft two", ReviewOutcomePassed, "")
-	if err != nil {
-		t.Fatalf("CreateDocumentReview (second): %v", err)
-	}
-
-	got, err := s.ListActiveApplications(ctx)
-	if err != nil {
-		t.Fatalf("ListActiveApplications: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("len(got) = %d, want 1", len(got))
-	}
-
-	review, ok := got[0].LatestReviews[documents.CoverLetter]
-	if !ok {
-		t.Fatalf("LatestReviews[%q] missing, want the most recent review present", documents.CoverLetter)
-	}
-	if review.ID != second.ID {
-		t.Fatalf("LatestReviews[%q].ID = %d, want %d (most recent cycle, not the first)", documents.CoverLetter, review.ID, second.ID)
-	}
-	if _, ok := got[0].LatestReviews[documents.Resume]; ok {
-		t.Fatalf("LatestReviews[%q] present, want absent (no resume review recorded)", documents.Resume)
 	}
 }
 

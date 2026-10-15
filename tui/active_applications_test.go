@@ -13,11 +13,12 @@ import (
 
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
 )
 
-func testActiveApplications() []store.ApplicationView {
-	return []store.ApplicationView{
+func testActiveApplications() []pursuit.Application {
+	return []pursuit.Application{
 		{
 			Application: store.Application{ID: 10, Status: applicationstatus.Started},
 			Posting:     store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}},
@@ -245,7 +246,7 @@ func TestNextStep(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			a := store.ApplicationView{
+			a := pursuit.Application{
 				Application:   store.Application{Status: tt.status},
 				Posting:       store.Posting{ListingStatus: tt.listing},
 				LatestReviews: tt.reviews,
@@ -281,11 +282,11 @@ func TestActiveApplicationListModel_View_ShowsAgeAndNextStep(t *testing.T) {
 func TestOrderForHome(t *testing.T) {
 	t.Parallel()
 
-	app := func(id int64, status applicationstatus.Status, since time.Time) store.ApplicationView {
-		return store.ApplicationView{Application: store.Application{ID: id, Status: status}, StatusSince: since}
+	app := func(id int64, status applicationstatus.Status, since time.Time) pursuit.Application {
+		return pursuit.Application{Application: store.Application{ID: id, Status: status}, StatusSince: since}
 	}
 	day := func(d int) time.Time { return time.Date(2026, 9, d, 0, 0, 0, 0, time.UTC) }
-	apps := []store.ApplicationView{
+	apps := []pursuit.Application{
 		app(1, applicationstatus.Interviewing, day(28)),
 		app(2, applicationstatus.Started, day(20)),
 		app(3, applicationstatus.Submitted, day(25)),
@@ -361,7 +362,7 @@ func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
-	widest := store.ApplicationView{
+	widest := pursuit.Application{
 		Application: store.Application{ID: 1, Status: applicationstatus.OfferReceived},
 		Posting: store.Posting{ListingStatus: "closed", IngestedFields: store.IngestedFields{
 			Title: strings.Repeat("Principal Engineer ", 5)}},
@@ -378,7 +379,7 @@ func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 	withdraw := widest
 	withdraw.ID = 2
 	withdraw.Status = applicationstatus.Started
-	apps := []store.ApplicationView{widest, withdraw}
+	apps := []pursuit.Application{widest, withdraw}
 
 	tests := []struct {
 		name  string
@@ -479,7 +480,7 @@ func TestActiveApplicationListModel_View_ShortRowsKeepTheTableWidth(t *testing.T
 }
 
 // typeHomeKeys sends each rune of s to m as a key press.
-func typeHomeKeys(t *testing.T, m *activeApplicationListModel, apps []store.ApplicationView, s string) {
+func typeHomeKeys(t *testing.T, m *activeApplicationListModel, apps []pursuit.Application, s string) {
 	t.Helper()
 	for _, r := range s {
 		m.Update(runeKey(r), apps)
@@ -488,7 +489,7 @@ func typeHomeKeys(t *testing.T, m *activeApplicationListModel, apps []store.Appl
 
 // openHomeHighlighted presses enter to keep the matches, then enter again
 // to open the highlighted one, returning that intent.
-func openHomeHighlighted(t *testing.T, m *activeApplicationListModel, apps []store.ApplicationView) tea.Msg {
+func openHomeHighlighted(t *testing.T, m *activeApplicationListModel, apps []pursuit.Application) tea.Msg {
 	t.Helper()
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
 	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
@@ -497,9 +498,9 @@ func openHomeHighlighted(t *testing.T, m *activeApplicationListModel, apps []sto
 
 // testSearchApplications has three applications, at Acme, Globex and
 // Initech, for the search tests.
-func testSearchApplications() []store.ApplicationView {
+func testSearchApplications() []pursuit.Application {
 	apps := testActiveApplications()
-	return append(apps, store.ApplicationView{
+	return append(apps, pursuit.Application{
 		Application: store.Application{ID: 30, Status: applicationstatus.Submitted},
 		Posting:     store.Posting{ID: 3, IngestedFields: store.IngestedFields{Title: "Staff Analyst"}},
 		CompanyName: "Initech",
@@ -811,7 +812,7 @@ func TestActiveApplicationListModel_Search_ReloadKeepsTheHighlightedMatch(t *tes
 	// The reload brings in an application ahead of it that doesn't match,
 	// so its place in the full list moves and its place among the matches
 	// doesn't.
-	reloaded := append([]store.ApplicationView{{
+	reloaded := append([]pursuit.Application{{
 		Application: store.Application{ID: 40},
 		Posting:     store.Posting{ID: 4, IngestedFields: store.IngestedFields{Title: "Engineer II"}},
 		CompanyName: "Hooli",

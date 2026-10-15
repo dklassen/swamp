@@ -96,7 +96,7 @@ ORDER BY location;
 --
 -- sqlc.embed(postings) for the always-present side (postings is inner-
 -- joined via posting_markup, never nullable here) -- same reasoning as
--- ListActiveApplications (see ApplicationView). Deliberately
+-- ListActiveApplications (see ActiveApplication). Deliberately
 -- NOT sqlc.embed(applications): that side is LEFT JOINed (an application
 -- may not exist yet) and sqlc.embed has a documented bug scanning a NULL
 -- embedded struct on sqlite (sqlc-dev/sqlc#2997) -- kept as individually
