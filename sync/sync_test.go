@@ -11,7 +11,9 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/db/migrations"
+	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
@@ -159,5 +161,20 @@ func samplePosting(sourceID, title, department, location string) jobboard.Postin
 		ApplicationURL:  "https://jobs.ashbyhq.com/acme/" + sourceID + "/application",
 		PublishedAt:     time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC),
 		RawPayload:      []byte(`{"id":"` + sourceID + `"}`),
+	}
+}
+
+func addCompanyFilter(t *testing.T, s *store.Store, companyID int64, field, value string) {
+	t.Helper()
+	ctx := context.Background()
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		existing, err := companyfilter.List(ctx, tx, companyID)
+		if err != nil {
+			return err
+		}
+		return companyfilter.Replace(ctx, tx, companyID, append(existing, filter.Filter{Field: field, Value: value}))
+	})
+	if err != nil {
+		t.Fatalf("add company filter %s=%s: %v", field, value, err)
 	}
 }

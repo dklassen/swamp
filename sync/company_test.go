@@ -51,9 +51,7 @@ func TestSyncCompany_PostingDoesNotMatchFilters_Created(t *testing.T) {
 	ctx := context.Background()
 
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	if _, err := s.CreateCompanyFilter(ctx, company.ID, "department", "Sales"); err != nil {
-		t.Fatalf("CreateCompanyFilter: %v", err)
-	}
+	addCompanyFilter(t, s, company.ID, "department", "Sales")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
@@ -84,9 +82,7 @@ func TestSyncCompany_DepartmentRenamedPastFilter_ContentUpdated(t *testing.T) {
 	ctx := context.Background()
 
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	if _, err := s.CreateCompanyFilter(ctx, company.ID, "department", "Engineering"); err != nil {
-		t.Fatalf("CreateCompanyFilter: %v", err)
-	}
+	addCompanyFilter(t, s, company.ID, "department", "Engineering")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
@@ -849,9 +845,7 @@ func TestSyncCompany_RecordsLastSeenAtForEveryListedPosting(t *testing.T) {
 	if _, err := sqlDB.ExecContext(ctx, `UPDATE postings SET last_seen_at = ?`, longAgo); err != nil {
 		t.Fatalf("backdate last_seen_at: %v", err)
 	}
-	if err := s.ReplaceCompanyFilters(ctx, company.ID, []store.CompanyFilter{{Field: filter.FieldDepartment, Value: "Engineering"}}); err != nil {
-		t.Fatalf("ReplaceCompanyFilters: %v", err)
-	}
+	addCompanyFilter(t, s, company.ID, filter.FieldDepartment, "Engineering")
 
 	fetcher.postings["acme"] = []jobboard.Posting{unchanged, filteredOut}
 	before := time.Now().Add(-2 * time.Second)

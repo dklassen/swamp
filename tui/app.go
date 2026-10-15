@@ -21,6 +21,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/cellbuf"
 
+	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/store"
@@ -820,7 +821,7 @@ func loadPostings(s *store.Store, companyID int64, hideArchived bool) tea.Cmd {
 			return postingsLoadedMsg{err: err}
 		}
 		postings = filterOutClosed(postings)
-		companyFilters, err := s.ListCompanyFilters(ctx, companyID)
+		companyFilters, err := companyfilter.List(ctx, s.DB(), companyID)
 		if err != nil {
 			return postingsLoadedMsg{err: err}
 		}
@@ -872,20 +873,14 @@ func filterOutArchived(postings []store.Posting, markup map[int64]store.PostingM
 }
 
 // filterPostingsByCompanyFilters keeps only postings matching
-// companyFilters, via sync.FilterRules + filter.Match -- the same path
-// SyncCompany uses to gate ingestion, so display-time filtering (both
-// loadPostings' authoritative DB-driven pass and narrowPostingsToFilters'
-// optimistic post-save pass below, which both call this) can't silently
-// disagree with what was actually ingested, or with each other (see
-// #61). A filter.Match error (an unsupported field name)
-// is propagated to the caller rather than swallowed here; loadPostings
-// surfaces it as a load error, while narrowPostingsToFilters treats it
-// as unreachable given the fields it always passes.
-func filterPostingsByCompanyFilters(postings []store.Posting, companyFilters []store.CompanyFilter) ([]store.Posting, error) {
-	rules := sync.FilterRules(companyFilters)
+// companyFilters. loadPostings and narrowPostingsToFilters both call it,
+// so the list after a reload and the one narrowed right after a save
+// can't disagree. An unsupported field is returned as an error rather
+// than ignored.
+func filterPostingsByCompanyFilters(postings []store.Posting, companyFilters []filter.Filter) ([]store.Posting, error) {
 	narrowed := make([]store.Posting, 0, len(postings))
 	for _, p := range postings {
-		match, err := filter.Match(filter.Posting{Department: p.Department, Location: p.Location}, rules)
+		match, err := filter.Match(filter.Posting{Department: p.Department, Location: p.Location}, companyFilters)
 		if err != nil {
 			return nil, err
 		}
@@ -897,7 +892,7 @@ func filterPostingsByCompanyFilters(postings []store.Posting, companyFilters []s
 }
 
 // splitCompanyFilters separates a company's saved filter rows by field.
-func splitCompanyFilters(filters []store.CompanyFilter) (departments, locations []string) {
+func splitCompanyFilters(filters []filter.Filter) (departments, locations []string) {
 	for _, f := range filters {
 		switch f.Field {
 		case filter.FieldDepartment:
@@ -920,7 +915,7 @@ func toSet(values []string) map[string]bool {
 type filterOptionsLoadedMsg struct {
 	departments     []string
 	locations       []string
-	existingFilters []store.CompanyFilter
+	existingFilters []filter.Filter
 	err             error
 }
 
@@ -935,7 +930,7 @@ func loadFilterOptions(s *store.Store, companyID int64) tea.Cmd {
 		if err != nil {
 			return filterOptionsLoadedMsg{err: err}
 		}
-		existing, err := s.ListCompanyFilters(ctx, companyID)
+		existing, err := companyfilter.List(ctx, s.DB(), companyID)
 		if err != nil {
 			return filterOptionsLoadedMsg{err: err}
 		}
@@ -952,32 +947,28 @@ type companyFiltersSavedMsg struct {
 
 func saveCompanyFilters(s *store.Store, companyID int64, departments, locations []string) tea.Cmd {
 	return func() tea.Msg {
-		err := s.ReplaceCompanyFilters(context.Background(), companyID, companyFiltersFrom(departments, locations))
+		ctx := context.Background()
+		err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+			return companyfilter.Replace(ctx, tx, companyID, companyFiltersFrom(departments, locations))
+		})
 		return companyFiltersSavedMsg{err: err}
 	}
 }
 
-func companyFiltersFrom(departments, locations []string) []store.CompanyFilter {
-	filters := make([]store.CompanyFilter, 0, len(departments)+len(locations))
+func companyFiltersFrom(departments, locations []string) []filter.Filter {
+	filters := make([]filter.Filter, 0, len(departments)+len(locations))
 	for _, d := range departments {
-		filters = append(filters, store.CompanyFilter{Field: filter.FieldDepartment, Value: d})
+		filters = append(filters, filter.Filter{Field: filter.FieldDepartment, Value: d})
 	}
 	for _, l := range locations {
-		filters = append(filters, store.CompanyFilter{Field: filter.FieldLocation, Value: l})
+		filters = append(filters, filter.Filter{Field: filter.FieldLocation, Value: l})
 	}
 	return filters
 }
 
-// narrowPostingsToFilters keeps only postings matching the given
-// department/location values (OR within a field, AND across fields, same
-// semantics as filter.Match), for the optimistic client-side narrowing
-// shown immediately after saving a filter selection, before the save
-// completes. Builds synthetic store.CompanyFilter
-// rows -- sync.FilterRules only reads Field/Value, so no DB round trip
-// is needed -- and delegates to filterPostingsByCompanyFilters, so this
-// shares the exact same rule-construction-and-match path as loadPostings'
-// authoritative filtering rather than a second hand-copy of it (see
-// #61).
+// narrowPostingsToFilters narrows the list as soon as a filter selection
+// is saved, before the save completes, through the same match as
+// loadPostings.
 func narrowPostingsToFilters(postings []store.Posting, departments, locations []string) []store.Posting {
 	narrowed, err := filterPostingsByCompanyFilters(postings, companyFiltersFrom(departments, locations))
 	if err != nil {

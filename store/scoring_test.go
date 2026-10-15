@@ -53,8 +53,8 @@ func TestPendingPostings(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	globex := mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	gone := mustCreateCompany(t, s, "Gone", "ashby", "gone")
-	if _, err := s.CreateCompanyFilter(ctx, globex.ID, filter.FieldDepartment, "Engineering"); err != nil {
-		t.Fatalf("CreateCompanyFilter: %v", err)
+	if _, err := s.createCompanyFilter(ctx, globex.ID, filter.FieldDepartment, "Engineering"); err != nil {
+		t.Fatalf("createCompanyFilter: %v", err)
 	}
 
 	fresh := mustUpsertPostingIn(t, s, acme.ID, "1", "Fresh", "")

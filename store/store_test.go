@@ -7,6 +7,7 @@ import (
 	"github.com/pressly/goose/v3"
 
 	"github.com/dklassen/swamp/db/migrations"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 func newTestStore(t *testing.T) *Store {
@@ -75,4 +76,10 @@ func mustUpsertPosting(t *testing.T, s *Store, companyID int64, sourceID, title 
 		t.Fatalf("UpsertPosting: %v", err)
 	}
 	return p
+}
+
+// createCompanyFilter sets up a filter for store's own tests, which can't
+// import companyfilter: it imports store.
+func (s *Store) createCompanyFilter(ctx context.Context, companyID int64, field, value string) (sqlcdb.CompanyFilter, error) {
+	return s.queries.CreateCompanyFilter(ctx, sqlcdb.CreateCompanyFilterParams{CompanyID: companyID, Field: field, Value: value})
 }

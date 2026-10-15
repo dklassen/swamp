@@ -1,6 +1,6 @@
 # RFC 0010: Areas own their queries; `store` hands out the database
 
-- **Status:** Accepted, 2026-10-15. Work items: #368 (step 1), #369 (step 2), #370 (step 3), #371 (step 4).
+- **Status:** Implemented, 2026-10-15. #368 (step 1, PR #373), #369 (step 2, PR #374), #370 (step 3, PR #375), #371 (step 4).
 - **Date:** 2026-10-14 (revised 2026-10-15)
 - **Related:** #364–#367 (the posting-visibility change, the example that motivated this RFC); RFC 0006 (the static sqlc search queries); RFC 0008 (change-origin stamping on the connection)
 
