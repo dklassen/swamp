@@ -15,24 +15,24 @@ import (
 
 var errFail = errors.New("fail")
 
-func createTag(ctx context.Context, r Runner, name string) error {
+func createCompany(ctx context.Context, r Runner, name string) error {
 	return Write(ctx, r, func(q *sqlcdb.Queries) error {
-		_, err := q.CreateTag(ctx, name)
+		_, err := q.CreateCompany(ctx, sqlcdb.CreateCompanyParams{Name: name, Source: "ashby", SourceRef: name})
 		return err
 	})
 }
 
-func tagNames(t *testing.T, ctx context.Context, r Runner) []string {
+func companyNames(t *testing.T, ctx context.Context, r Runner) []string {
 	t.Helper()
-	tags, err := Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.Tag, error) {
-		return q.ListTags(ctx)
+	companies, err := Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.Company, error) {
+		return q.ListActiveCompanies(ctx)
 	})
 	if err != nil {
-		t.Fatalf("ListTags: %v", err)
+		t.Fatalf("ListActiveCompanies: %v", err)
 	}
-	names := make([]string, len(tags))
-	for i, tag := range tags {
-		names[i] = tag.Name
+	names := make([]string, len(companies))
+	for i, c := range companies {
+		names[i] = c.Name
 	}
 	return names
 }
@@ -43,7 +43,7 @@ func TestInTx_FnFails_RollsBackItsWrites(t *testing.T) {
 	s := newTestStore(t)
 
 	err := InTx(ctx, s.DB(), func(tx Tx) error {
-		if err := createTag(ctx, tx, "a"); err != nil {
+		if err := createCompany(ctx, tx, "a"); err != nil {
 			return err
 		}
 		return errFail
@@ -51,8 +51,8 @@ func TestInTx_FnFails_RollsBackItsWrites(t *testing.T) {
 	if !errors.Is(err, errFail) {
 		t.Fatalf("InTx: err = %v, want errFail", err)
 	}
-	if got := tagNames(t, ctx, s.DB()); len(got) != 0 {
-		t.Errorf("tags after a failed InTx = %q, want none", got)
+	if got := companyNames(t, ctx, s.DB()); len(got) != 0 {
+		t.Errorf("companies after a failed InTx = %q, want none", got)
 	}
 }
 
@@ -64,11 +64,11 @@ func TestInTx_OnTx_FailingFnUndoesOnlyItsOwnWrites(t *testing.T) {
 	s := newTestStore(t)
 
 	err := InTx(ctx, s.DB(), func(tx Tx) error {
-		if err := createTag(ctx, tx, "outer"); err != nil {
+		if err := createCompany(ctx, tx, "outer"); err != nil {
 			return err
 		}
 		err := InTx(ctx, tx, func(tx Tx) error {
-			if err := createTag(ctx, tx, "inner"); err != nil {
+			if err := createCompany(ctx, tx, "inner"); err != nil {
 				return err
 			}
 			return errFail
@@ -81,8 +81,8 @@ func TestInTx_OnTx_FailingFnUndoesOnlyItsOwnWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outer InTx: %v", err)
 	}
-	if got := tagNames(t, ctx, s.DB()); len(got) != 1 || got[0] != "outer" {
-		t.Errorf("tags = %q, want [outer]", got)
+	if got := companyNames(t, ctx, s.DB()); len(got) != 1 || got[0] != "outer" {
+		t.Errorf("companies = %q, want [outer]", got)
 	}
 }
 
@@ -94,15 +94,15 @@ func TestInTx_TwoLevelsDeep_FailingInnermostUndoesOnlyItsOwnWrites(t *testing.T)
 	s := newTestStore(t)
 
 	err := InTx(ctx, s.DB(), func(tx Tx) error {
-		if err := createTag(ctx, tx, "outer"); err != nil {
+		if err := createCompany(ctx, tx, "outer"); err != nil {
 			return err
 		}
 		return InTx(ctx, tx, func(tx Tx) error {
-			if err := createTag(ctx, tx, "middle"); err != nil {
+			if err := createCompany(ctx, tx, "middle"); err != nil {
 				return err
 			}
 			err := InTx(ctx, tx, func(tx Tx) error {
-				if err := createTag(ctx, tx, "inner"); err != nil {
+				if err := createCompany(ctx, tx, "inner"); err != nil {
 					return err
 				}
 				return errFail
@@ -116,9 +116,9 @@ func TestInTx_TwoLevelsDeep_FailingInnermostUndoesOnlyItsOwnWrites(t *testing.T)
 	if err != nil {
 		t.Fatalf("outer InTx: %v", err)
 	}
-	got := tagNames(t, ctx, s.DB())
+	got := companyNames(t, ctx, s.DB())
 	if diff := cmp.Diff([]string{"middle", "outer"}, got); diff != "" {
-		t.Errorf("tags (-want +got):\n%s", diff)
+		t.Errorf("companies (-want +got):\n%s", diff)
 	}
 }
 
@@ -140,10 +140,10 @@ func TestInTx_WriteOnOuterDB_FailsWithSQLiteBusy(t *testing.T) {
 
 	var outerErr error
 	err = InTx(ctx, db, func(tx Tx) error {
-		if err := createTag(ctx, tx, "inside"); err != nil {
+		if err := createCompany(ctx, tx, "inside"); err != nil {
 			return err
 		}
-		outerErr = createTag(ctx, db, "outside")
+		outerErr = createCompany(ctx, db, "outside")
 		return nil
 	})
 	if err != nil {
@@ -160,18 +160,12 @@ func TestInTx_WritesInATransactionAndASavepoint_StampTheirOrigin(t *testing.T) {
 	path := t.TempDir() + "/test.db"
 	newTestStoreAt(t, path) // migrate
 	s := openWithOrigin(t, path, "tui:1")
-	createCompany := func(r Runner, name string) error {
-		return Write(ctx, r, func(q *sqlcdb.Queries) error {
-			_, err := q.CreateCompany(ctx, sqlcdb.CreateCompanyParams{Name: name, Source: "ashby", SourceRef: name})
-			return err
-		})
-	}
 
 	err := InTx(ctx, s.DB(), func(tx Tx) error {
-		if err := createCompany(tx, "in-tx"); err != nil {
+		if err := createCompany(ctx, tx, "in-tx"); err != nil {
 			return err
 		}
-		return InTx(ctx, tx, func(tx Tx) error { return createCompany(tx, "in-savepoint") })
+		return InTx(ctx, tx, func(tx Tx) error { return createCompany(ctx, tx, "in-savepoint") })
 	})
 	if err != nil {
 		t.Fatalf("InTx: %v", err)
@@ -187,10 +181,10 @@ func TestZeroDBAndTx_ReturnAnErrorRatherThanPanic(t *testing.T) {
 	for _, r := range []Runner{DB{}, Tx{}} {
 		calls := map[string]func() error{
 			"Read": func() error {
-				_, err := Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.Tag, error) { return q.ListTags(ctx) })
+				_, err := Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.Company, error) { return q.ListActiveCompanies(ctx) })
 				return err
 			},
-			"Write": func() error { return createTag(ctx, r, "a") },
+			"Write": func() error { return createCompany(ctx, r, "a") },
 			"InTx":  func() error { return InTx(ctx, r, func(Tx) error { return nil }) },
 		}
 		for name, call := range calls {
@@ -209,8 +203,8 @@ func TestRead_NoRows_ReturnsErrNotFound(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
 
-	_, err := Read(ctx, s.DB(), func(q *sqlcdb.Queries) (sqlcdb.Tag, error) {
-		return q.GetTagByName(ctx, "missing")
+	_, err := Read(ctx, s.DB(), func(q *sqlcdb.Queries) (sqlcdb.Company, error) {
+		return q.GetCompany(ctx, 999)
 	})
 	if !errors.Is(err, ErrNotFound) {
 		t.Errorf("Read of a missing row: err = %v, want ErrNotFound", err)
