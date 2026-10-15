@@ -805,9 +805,8 @@ type postingsLoadedMsg struct {
 }
 
 // loadPostings re-applies the company's currently-saved filters after
-// fetching, since ListPostingsByCompany itself has no notion of
-// company_filters (filters gate ingestion only, per the store/sync
-// design -- narrowing the displayed list is a TUI-side concern). Without
+// fetching, since ListPostingsByCompany returns every stored posting:
+// sync stores them all, and filters only decide what's shown. Without
 // this, any reload (including the one triggered right after saving a new
 // filter selection) would silently undo the narrowing by loading
 // everything unfiltered.

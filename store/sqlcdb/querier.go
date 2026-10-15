@@ -21,10 +21,10 @@ type Querier interface {
 	ClosePostingIfOpen(ctx context.Context, id int64) (int64, error)
 	CountDocumentReviews(ctx context.Context, arg CountDocumentReviewsParams) (int64, error)
 	// Per-company count of what a company's posting list shows by default:
-	// listings still open on the job board that the user hasn't archived.
-	// Feeds the company list's "Open" column. Doesn't apply company_filters:
-	// postings are already gated by filters at ingestion, and a filter added
-	// later only narrows the posting list's display, not this count.
+	// listings still open on the job board that the user hasn't archived, at a
+	// company the user hasn't deleted, let through by its filters (matched as
+	// the SearchPostings queries match them). Feeds the company list's "Open"
+	// column and list_companies.
 	CountOpenPostingsByCompany(ctx context.Context) ([]CountOpenPostingsByCompanyRow, error)
 	// Unlike posting_markup, not auto-created for every posting -- an
 	// application exists only once the user takes an explicit "start

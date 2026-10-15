@@ -126,15 +126,21 @@ ORDER BY posting_markup.interested_at DESC;
 
 -- name: CountOpenPostingsByCompany :many
 -- Per-company count of what a company's posting list shows by default:
--- listings still open on the job board that the user hasn't archived.
--- Feeds the company list's "Open" column. Doesn't apply company_filters:
--- postings are already gated by filters at ingestion, and a filter added
--- later only narrows the posting list's display, not this count.
+-- listings still open on the job board that the user hasn't archived, at a
+-- company the user hasn't deleted, let through by its filters (matched as
+-- the SearchPostings queries match them). Feeds the company list's "Open"
+-- column and list_companies.
 SELECT postings.company_id, COUNT(*) AS open_postings
 FROM postings
+JOIN companies ON companies.id = postings.company_id
 JOIN posting_markup ON posting_markup.posting_id = postings.id
 WHERE postings.listing_status = 'open'
   AND posting_markup.archived_at IS NULL
+  AND companies.deleted_at IS NULL
+  AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
+       OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
+  AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
+       OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))
 GROUP BY postings.company_id;
 
 -- name: ListOpenPostingIDsByCompany :many

@@ -13,6 +13,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/contenthash"
+	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
@@ -700,5 +701,33 @@ func TestIngestPosting_SetsTheContentHash(t *testing.T) {
 				t.Errorf("stored hash %q, IngestPosting returned %q", stored.ContentSHA256, updated.Posting.ContentSHA256)
 			}
 		})
+	}
+}
+
+// The count is what the company's posting list shows: its filters apply,
+// matched as filter.Match matches them, and a deleted company counts
+// nothing.
+func TestCountOpenPostingsByCompany_CountsWhatTheListShows(t *testing.T) {
+	t.Parallel()
+	s := newTestStore(t)
+	ctx := context.Background()
+	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustUpsertPostingIn(t, s, acme.ID, "job-1", "Engineer", "Engineering")
+	mustUpsertPostingIn(t, s, acme.ID, "job-2", "Seller", "Sales")
+	if _, err := s.createCompanyFilter(ctx, acme.ID, filter.FieldDepartment, "engineering"); err != nil {
+		t.Fatalf("createCompanyFilter: %v", err)
+	}
+	gone := mustCreateCompany(t, s, "Gone", "ashby", "gone")
+	mustUpsertPosting(t, s, gone.ID, "gone-1", "Engineer")
+	if err := s.SoftDeleteCompany(ctx, gone.ID); err != nil {
+		t.Fatalf("SoftDeleteCompany: %v", err)
+	}
+
+	got, err := s.CountOpenPostingsByCompany(ctx)
+	if err != nil {
+		t.Fatalf("CountOpenPostingsByCompany: %v", err)
+	}
+	if diff := cmp.Diff(map[int64]int{acme.ID: 1}, got); diff != "" {
+		t.Errorf("counts mismatch (-want +got):\n%s", diff)
 	}
 }
