@@ -16,6 +16,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
@@ -174,18 +175,18 @@ func TestList_ExcludesApplicationsInTerminalStatus(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
-		status store.ApplicationStatus
+		status applicationstatus.Status
 		want   bool
 	}{
-		{store.ApplicationStatusStarted, true},
-		{store.ApplicationStatusSubmitted, true},
-		{store.ApplicationStatusInterviewing, true},
-		{store.ApplicationStatusRejected, false},
-		{store.ApplicationStatusOfferReceived, true},
-		{store.ApplicationStatusOfferAccepted, true},
-		{store.ApplicationStatusOfferDeclined, false},
-		{store.ApplicationStatusPostingClosed, false},
-		{store.ApplicationStatusWithdrawn, false},
+		{applicationstatus.Started, true},
+		{applicationstatus.Submitted, true},
+		{applicationstatus.Interviewing, true},
+		{applicationstatus.Rejected, false},
+		{applicationstatus.OfferReceived, true},
+		{applicationstatus.OfferAccepted, true},
+		{applicationstatus.OfferDeclined, false},
+		{applicationstatus.PostingClosed, false},
+		{applicationstatus.Withdrawn, false},
 	} {
 		t.Run(tc.status.String(), func(t *testing.T) {
 			t.Parallel()
@@ -963,7 +964,7 @@ func TestList_IncludesStartedApplicationsNotMarkedInterested(t *testing.T) {
 	if _, err := s.CreateApplication(ctx, submitted.ID); err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	if _, err := s.UpdateApplicationStatus(ctx, submitted.ID, store.ApplicationStatusSubmitted); err != nil {
+	if _, err := s.UpdateApplicationStatus(ctx, submitted.ID, applicationstatus.Submitted); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 

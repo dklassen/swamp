@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
@@ -47,7 +48,7 @@ var (
 
 func longestStatusLabel() int {
 	longest := 0
-	for _, status := range store.ApplicationStatuses() {
+	for _, status := range applicationstatus.All() {
 		longest = max(longest, lipgloss.Width(applicationStatusLabel(status)))
 	}
 	return longest
@@ -302,7 +303,7 @@ type documentProgress struct {
 // documents.Current), as loadActiveApplications does.
 func nextStep(a store.ApplicationView, docs map[documents.Type]documentProgress) string {
 	closed := a.Posting.ListingStatus == "closed"
-	if a.Status != store.ApplicationStatusStarted {
+	if a.Status != applicationstatus.Started {
 		if closed {
 			return "(closed)"
 		}
@@ -350,7 +351,7 @@ func statusAge(since, now time.Time) string {
 // first).
 func orderForHome(apps []store.ApplicationView) {
 	slices.SortStableFunc(apps, func(a, b store.ApplicationView) int {
-		aStarted, bStarted := a.Status == store.ApplicationStatusStarted, b.Status == store.ApplicationStatusStarted
+		aStarted, bStarted := a.Status == applicationstatus.Started, b.Status == applicationstatus.Started
 		switch {
 		case aStarted && bStarted:
 			return a.StatusSince.Compare(b.StatusSince)

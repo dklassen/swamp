@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/store"
 )
 
 // countingFetcher returns postings and counts how often it was asked.
@@ -181,7 +181,7 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 	if _, err := seed.SyncCompany(ctx, acme.ID); err != nil { // X dropped: closed
 		t.Fatalf("closing SyncCompany: %v", err)
 	}
-	if _, err := s.UpdateApplicationStatus(ctx, xID, store.ApplicationStatusStarted); err != nil {
+	if _, err := s.UpdateApplicationStatus(ctx, xID, applicationstatus.Started); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 
@@ -203,8 +203,8 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 	}
 	if application, err := s.GetApplication(ctx, xID); err != nil {
 		t.Fatalf("GetApplication: %v", err)
-	} else if application.Status != store.ApplicationStatusStarted {
-		t.Errorf("after runs A and B: application %s, want %s untouched", application.Status, store.ApplicationStatusStarted)
+	} else if application.Status != applicationstatus.Started {
+		t.Errorf("after runs A and B: application %s, want %s untouched", application.Status, applicationstatus.Started)
 	}
 
 	setup.postings["acme"] = []jobboard.Posting{x}
@@ -219,8 +219,8 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if posting.ListingStatus != "open" || application.Status != store.ApplicationStatusStarted {
-		t.Errorf("after the next sync: posting %s, application %s; want open and %s", posting.ListingStatus, application.Status, store.ApplicationStatusStarted)
+	if posting.ListingStatus != "open" || application.Status != applicationstatus.Started {
+		t.Errorf("after the next sync: posting %s, application %s; want open and %s", posting.ListingStatus, application.Status, applicationstatus.Started)
 	}
 }
 

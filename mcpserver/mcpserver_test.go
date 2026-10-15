@@ -19,6 +19,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
@@ -988,7 +989,7 @@ func TestSearchPostings_AdvertisesEnums(t *testing.T) {
 		t.Fatalf("unmarshal schema: %v\n%s", err, raw)
 	}
 	var statuses []string
-	for _, status := range store.ApplicationStatuses() {
+	for _, status := range applicationstatus.All() {
 		statuses = append(statuses, status.String())
 	}
 	if diff := cmp.Diff(statuses, schema.Properties.ApplicationStatuses.Items.Enum); diff != "" {

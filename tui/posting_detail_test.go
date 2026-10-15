@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
@@ -114,7 +115,7 @@ func TestPostingDetailModel_A_HasApplication_NoOp(t *testing.T) {
 func TestPostingDetailModel_S_HasApplication_ReturnsEnterStatusMsg(t *testing.T) {
 	t.Parallel()
 
-	app := store.Application{PostingID: 5, Status: store.ApplicationStatusSubmitted}
+	app := store.Application{PostingID: 5, Status: applicationstatus.Submitted}
 	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, app, true, nil, true)
 	cmd, intent := m.Update(runeKey('s'))
 	if cmd != nil {
@@ -254,7 +255,7 @@ func TestPostingDetailModel_View_GroupsContentIntoSections(t *testing.T) {
 		Location:        "Ottawa, ON",
 		DescriptionText: "We build tools for practitioners.",
 	}}
-	app := store.Application{ID: 9, PostingID: 5, Status: store.ApplicationStatusStarted}
+	app := store.Application{ID: 9, PostingID: 5, Status: applicationstatus.Started}
 	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 60, p, app, true, nil, true)
 	lines := strings.Split(ansi.Strip(m.View()), "\n")
 
@@ -268,7 +269,7 @@ func TestPostingDetailModel_View_GroupsContentIntoSections(t *testing.T) {
 		{"Posting", true},
 		{"Ottawa, ON", false},
 		{"Application", true},
-		{applicationStatusLabel(store.ApplicationStatusStarted), false},
+		{applicationStatusLabel(applicationstatus.Started), false},
 		{"Cover Letter", false},
 		{"Description", true},
 		{"We build tools for practitioners.", false},
@@ -341,7 +342,7 @@ func TestPostingDetailModel_View_AlignsFieldValues(t *testing.T) {
 		Location:   "Ottawa, ON",
 		JobURL:     "https://jobs.example.com/a-very-long-path/that-needs-to-wrap/somewhere-sensible",
 	}}
-	app := store.Application{ID: 9, PostingID: 5, Status: store.ApplicationStatusStarted}
+	app := store.Application{ID: 9, PostingID: 5, Status: applicationstatus.Started}
 	reviews := map[documents.Type]store.DocumentReview{
 		documents.CoverLetter: {Outcome: store.ReviewOutcomeFlagged, Notes: "too generic"},
 	}
@@ -373,7 +374,7 @@ func TestPostingDetailModel_View_AlignsFieldValues(t *testing.T) {
 		{"Ottawa, ON", false},
 		{"https://jobs.example.com", false},
 		{"somewhere-sensible", true}, // the Job URL's wrapped continuation
-		{applicationStatusLabel(store.ApplicationStatusStarted), false},
+		{applicationStatusLabel(applicationstatus.Started), false},
 		{"not found", false},          // cover letter and resume rows
 		{"[FLAGGED]", true},           // wraps past the cover letter's long temp path
 		{"Notes: too generic", false}, // the review's notes

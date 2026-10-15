@@ -7,22 +7,23 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/store"
 )
 
 // applicationStatuses is the full fixed set of legal application statuses,
-// per store.ApplicationStatuses -- store.ApplicationStatus (a Go enum) is
+// per applicationstatus.All -- applicationstatus.Status (a Go enum) is
 // the sole source of truth for valid values now; the DB column has no
 // CHECK constraint of its own to stay in sync with. The schema encodes no transition graph -- every status is
 // reachable from every other -- so the status-select screen offers all of
 // them unconditionally rather than a hand-maintained "valid next status"
 // list.
-var applicationStatuses = store.ApplicationStatuses()
+var applicationStatuses = applicationstatus.All()
 
 // applicationStatusIndex returns status's position in applicationStatuses,
 // or 0 if not found -- used to point the status-select cursor at the
 // application's current status when the screen is opened.
-func applicationStatusIndex(status store.ApplicationStatus) int {
+func applicationStatusIndex(status applicationstatus.Status) int {
 	for i, s := range applicationStatuses {
 		if s == status {
 			return i
@@ -45,7 +46,7 @@ type applicationStatusModel struct {
 
 // newApplicationStatusModel returns a status-select screen for
 // postingID, with the cursor seeded at currentStatus's position.
-func newApplicationStatusModel(s *store.Store, postingID int64, currentStatus store.ApplicationStatus, instance screenInstance) applicationStatusModel {
+func newApplicationStatusModel(s *store.Store, postingID int64, currentStatus applicationstatus.Status, instance screenInstance) applicationStatusModel {
 	return applicationStatusModel{store: s, postingID: postingID, cursor: applicationStatusIndex(currentStatus), instance: instance}
 }
 
@@ -87,7 +88,7 @@ func (m *applicationStatusModel) View() string {
 
 // applicationStatusLabel renders an ApplicationStatus as display text.
 // ApplicationStatus.String() is the value persisted to the DB (see
-// store.ApplicationStatus), so it can't be prettified at the source
+// applicationstatus.Status), so it can't be prettified at the source
 // without changing what's written to applications.status -- the
 // presentation form lives here instead, the same way documents.Type.Label
 // handles documents.Type.
@@ -95,25 +96,25 @@ func (m *applicationStatusModel) View() string {
 // The default case falls back to String() so an unmapped status still
 // renders something rather than an empty cell; TestApplicationStatus
 // Label_CoversEveryStatus fails if a new status ever reaches it.
-func applicationStatusLabel(status store.ApplicationStatus) string {
+func applicationStatusLabel(status applicationstatus.Status) string {
 	switch status {
-	case store.ApplicationStatusStarted:
+	case applicationstatus.Started:
 		return "Started"
-	case store.ApplicationStatusSubmitted:
+	case applicationstatus.Submitted:
 		return "Submitted"
-	case store.ApplicationStatusInterviewing:
+	case applicationstatus.Interviewing:
 		return "Interviewing"
-	case store.ApplicationStatusRejected:
+	case applicationstatus.Rejected:
 		return "Rejected"
-	case store.ApplicationStatusOfferReceived:
+	case applicationstatus.OfferReceived:
 		return "Offer received"
-	case store.ApplicationStatusOfferAccepted:
+	case applicationstatus.OfferAccepted:
 		return "Offer accepted"
-	case store.ApplicationStatusOfferDeclined:
+	case applicationstatus.OfferDeclined:
 		return "Offer declined"
-	case store.ApplicationStatusPostingClosed:
+	case applicationstatus.PostingClosed:
 		return "Posting closed"
-	case store.ApplicationStatusWithdrawn:
+	case applicationstatus.Withdrawn:
 		return "Withdrawn"
 	default:
 		return status.String()
@@ -124,7 +125,7 @@ func applicationStatusLabel(status store.ApplicationStatus) string {
 // opens on, and the screen that asked for it.
 type applicationStatusLoadedMsg struct {
 	postingID int64
-	status    store.ApplicationStatus
+	status    applicationstatus.Status
 	from      screen
 	err       error
 }

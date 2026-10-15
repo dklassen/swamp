@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/filter"
 )
 
@@ -46,7 +47,7 @@ func newSearchFixture(t *testing.T, s *Store) searchFixture {
 	}
 	f.platformApp = mustCreateApplication(t, s, f.platform.ID)
 	f.dataApp = mustCreateApplication(t, s, f.data.ID)
-	mustUpdateApplicationStatus(t, s, f.data.ID, ApplicationStatusSubmitted)
+	mustUpdateApplicationStatus(t, s, f.data.ID, applicationstatus.Submitted)
 	if err := s.MarkPostingClosed(ctx, f.writer.ID); err != nil {
 		t.Fatalf("MarkPostingClosed: %v", err)
 	}
@@ -114,7 +115,7 @@ func TestSearchPostings_Filters(t *testing.T) {
 		},
 		{
 			name:   "application statuses",
-			search: PostingSearch{ApplicationStatuses: []ApplicationStatus{ApplicationStatusSubmitted, ApplicationStatusWithdrawn}},
+			search: PostingSearch{ApplicationStatuses: []applicationstatus.Status{applicationstatus.Submitted, applicationstatus.Withdrawn}},
 			want:   []Posting{f.data},
 		},
 		{
@@ -171,9 +172,9 @@ func TestSearchPostings_ListingFields(t *testing.T) {
 	}
 	want := []PostingListing{
 		{ID: f.platform.ID, FirstSeenAt: f.platform.FirstSeenAt, Title: "Platform Engineer", ListingStatus: "open", CompanyName: "Acme", Interested: true,
-			ApplicationID: f.platformApp.ID, ApplicationStatus: ApplicationStatusStarted},
+			ApplicationID: f.platformApp.ID, ApplicationStatus: applicationstatus.Started},
 		{ID: f.data.ID, FirstSeenAt: f.data.FirstSeenAt, Title: "Data Engineer", ListingStatus: "open", CompanyName: "Acme",
-			ApplicationID: f.dataApp.ID, ApplicationStatus: ApplicationStatusSubmitted, ApplicationNotes: "heard back"},
+			ApplicationID: f.dataApp.ID, ApplicationStatus: applicationstatus.Submitted, ApplicationNotes: "heard back"},
 		{ID: f.designer.ID, FirstSeenAt: f.designer.FirstSeenAt, Title: "Designer", ListingStatus: "open", CompanyName: "Acme", Interested: true},
 		{ID: f.writer.ID, FirstSeenAt: f.writer.FirstSeenAt, Title: "Writer", ListingStatus: "closed", CompanyName: "Acme"},
 		{ID: f.shelf.ID, FirstSeenAt: f.shelf.FirstSeenAt, Title: "Shelved Role", ListingStatus: "open", CompanyName: "Acme", Archived: true},
@@ -326,7 +327,7 @@ func TestSearchPostings_EveryOrderMatchesTheSameRows(t *testing.T) {
 		"everything":                 {IncludeArchived: true},
 		"defaults":                   {},
 		"company, closed":            {CompanyID: f.acme.ID, ListingStatus: "closed"},
-		"applications by status":     {ApplicationStatuses: []ApplicationStatus{ApplicationStatusStarted, ApplicationStatusSubmitted}},
+		"applications by status":     {ApplicationStatuses: []applicationstatus.Status{applicationstatus.Started, applicationstatus.Submitted}},
 		"interested, no application": {Interested: &yes, HasApplication: &no},
 	} {
 		search.Limit = 100

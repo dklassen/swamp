@@ -3,6 +3,8 @@ package store
 import (
 	"context"
 	"testing"
+
+	"github.com/dklassen/swamp/applicationstatus"
 )
 
 func TestListInterestedPostings_WithNoApplication_LeavesApplicationFieldsNil(t *testing.T) {
@@ -64,8 +66,8 @@ func TestListInterestedPostings_WithApplication_IncludesApplicationFields(t *tes
 	if p.ApplicationID == nil || *p.ApplicationID != app.ID {
 		t.Fatalf("ApplicationID = %v, want %d", p.ApplicationID, app.ID)
 	}
-	if p.ApplicationStatus == nil || *p.ApplicationStatus != ApplicationStatusStarted {
-		t.Fatalf("ApplicationStatus = %v, want %s", p.ApplicationStatus, ApplicationStatusStarted)
+	if p.ApplicationStatus == nil || *p.ApplicationStatus != applicationstatus.Started {
+		t.Fatalf("ApplicationStatus = %v, want %s", p.ApplicationStatus, applicationstatus.Started)
 	}
 }
 

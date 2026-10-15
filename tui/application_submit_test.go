@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
@@ -88,7 +89,7 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 			t.Errorf("exported %s: %v", name, err)
 		}
 	}
-	if got, err := app.store.GetApplicationByID(context.Background(), application.ID); err != nil || got.Status != store.ApplicationStatusStarted {
+	if got, err := app.store.GetApplicationByID(context.Background(), application.ID); err != nil || got.Status != applicationstatus.Started {
 		t.Fatalf("status before confirming = %v (err %v), want still started", got.Status, err)
 	}
 
@@ -99,8 +100,8 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 	if err != nil {
 		t.Fatalf("GetApplicationByID: %v", err)
 	}
-	if got.Status != store.ApplicationStatusSubmitted {
-		t.Errorf("status after confirming = %s, want %s", got.Status, store.ApplicationStatusSubmitted)
+	if got.Status != applicationstatus.Submitted {
+		t.Errorf("status after confirming = %s, want %s", got.Status, applicationstatus.Submitted)
 	}
 	if app.screen != screenActiveApplications {
 		t.Errorf("screen after confirming = %v, want the home screen", app.screen)
@@ -122,8 +123,8 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 			if err != nil {
 				t.Fatalf("GetApplicationByID: %v", err)
 			}
-			if got.Status != store.ApplicationStatusStarted {
-				t.Errorf("status = %s, want it left at %s", got.Status, store.ApplicationStatusStarted)
+			if got.Status != applicationstatus.Started {
+				t.Errorf("status = %s, want it left at %s", got.Status, applicationstatus.Started)
 			}
 			if app.screen != screenApplicationDetail {
 				t.Errorf("screen = %v, want back on application detail", app.screen)

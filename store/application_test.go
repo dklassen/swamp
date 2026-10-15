@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 )
 
@@ -31,8 +32,8 @@ func TestCreateApplication_ThenGet_ReturnsSameApplication(t *testing.T) {
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	if created.Status != ApplicationStatusStarted {
-		t.Fatalf("Status = %s, want %s", created.Status, ApplicationStatusStarted)
+	if created.Status != applicationstatus.Started {
+		t.Fatalf("Status = %s, want %s", created.Status, applicationstatus.Started)
 	}
 
 	got, err := s.GetApplication(ctx, posting.ID)
@@ -62,12 +63,12 @@ func TestUpdateApplicationStatus_UpdatesStatus(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	mustCreateApplication(t, s, posting.ID)
 
-	updated, err := s.UpdateApplicationStatus(ctx, posting.ID, ApplicationStatusInterviewing)
+	updated, err := s.UpdateApplicationStatus(ctx, posting.ID, applicationstatus.Interviewing)
 	if err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
-	if updated.Status != ApplicationStatusInterviewing {
-		t.Fatalf("Status = %s, want %s", updated.Status, ApplicationStatusInterviewing)
+	if updated.Status != applicationstatus.Interviewing {
+		t.Fatalf("Status = %s, want %s", updated.Status, applicationstatus.Interviewing)
 	}
 
 	got, err := s.GetApplication(ctx, posting.ID)
@@ -83,7 +84,7 @@ func TestUpdateApplicationStatus_NonexistentPostingID_ReturnsErrNotFound(t *test
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	_, err := s.UpdateApplicationStatus(ctx, 999, ApplicationStatusInterviewing)
+	_, err := s.UpdateApplicationStatus(ctx, 999, applicationstatus.Interviewing)
 	if !errors.Is(err, ErrNotFound) {
 		t.Fatalf("UpdateApplicationStatus error = %v, want ErrNotFound", err)
 	}
@@ -286,7 +287,7 @@ func TestUpdateApplication_AfterDeleteAndRestart_UpdatesOnlyTheLiveOne(t *testin
 		{
 			name: "status",
 			update: func(s *Store, postingID int64) (Application, error) {
-				return s.UpdateApplicationStatus(context.Background(), postingID, ApplicationStatusSubmitted)
+				return s.UpdateApplicationStatus(context.Background(), postingID, applicationstatus.Submitted)
 			},
 		},
 		{
@@ -537,7 +538,7 @@ func TestDeleteApplication_LeavesThePostingAndAllowsStartingAgain(t *testing.T) 
 	if err != nil {
 		t.Fatalf("ListApplicationStatusHistory: %v", err)
 	}
-	if len(history) != 1 || history[0].Status != ApplicationStatusStarted {
+	if len(history) != 1 || history[0].Status != applicationstatus.Started {
 		t.Errorf("history of the new application = %+v, want just its own started row", history)
 	}
 }

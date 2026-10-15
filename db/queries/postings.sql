@@ -105,7 +105,7 @@ ORDER BY location;
 --
 -- Postings whose application is at a terminal status are excluded: a
 -- dead-end application isn't drafting work (#121). Same sqlc.slice
--- approach as ListActiveApplications, so store.TerminalApplicationStatuses
+-- approach as ListActiveApplications, so applicationstatus.Terminal
 -- stays the sole source of truth for "terminal" -- including its caveat
 -- that sqlc.slice can't safely combine with other bound parameters on
 -- sqlite; this query has none. The applications.id IS NULL branch keeps

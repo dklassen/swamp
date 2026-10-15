@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
@@ -18,12 +19,12 @@ import (
 func testActiveApplications() []store.ApplicationView {
 	return []store.ApplicationView{
 		{
-			Application: store.Application{ID: 10, Status: store.ApplicationStatusStarted},
+			Application: store.Application{ID: 10, Status: applicationstatus.Started},
 			Posting:     store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}},
 			CompanyName: "Acme",
 		},
 		{
-			Application: store.Application{ID: 20, Status: store.ApplicationStatusInterviewing},
+			Application: store.Application{ID: 20, Status: applicationstatus.Interviewing},
 			Posting:     store.Posting{ID: 2, IngestedFields: store.IngestedFields{Title: "Designer"}},
 			CompanyName: "Globex",
 		},
@@ -168,8 +169,8 @@ func TestActiveApplicationListModel_View_ShowsStatusLabelNotEnumValue(t *testing
 	t.Parallel()
 
 	apps := testActiveApplications()
-	apps[0].Status = store.ApplicationStatusOfferReceived
-	apps[1].Status = store.ApplicationStatusStarted
+	apps[0].Status = applicationstatus.OfferReceived
+	apps[1].Status = applicationstatus.Started
 
 	m := newActiveApplicationListModel()
 	got := m.View(apps, nil, time.Time{}, 0, 20)
@@ -192,7 +193,7 @@ func TestActiveApplicationListModel_View_FlagsClosedPosting(t *testing.T) {
 	t.Parallel()
 
 	apps := testActiveApplications()
-	apps[0].Status = store.ApplicationStatusInterviewing
+	apps[0].Status = applicationstatus.Interviewing
 	apps[0].Posting.ListingStatus = "closed"
 	apps[1].Posting.ListingStatus = "open"
 
@@ -220,25 +221,25 @@ func TestNextStep(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		status  store.ApplicationStatus
+		status  applicationstatus.Status
 		listing string
 		reviews map[documents.Type]store.DocumentReview
 		docs    map[documents.Type]documentProgress
 		want    string
 	}{
-		{name: "not started: no next step", status: store.ApplicationStatusInterviewing, docs: both(exported, exported), want: ""},
-		{name: "posting closed", status: store.ApplicationStatusStarted, listing: "closed", docs: both(drafted, drafted), want: "withdraw?"},
-		{name: "later stage, posting closed", status: store.ApplicationStatusInterviewing, listing: "closed", docs: both(exported, exported), want: "(closed)"},
-		{name: "nothing drafted", status: store.ApplicationStatusStarted, docs: both(documentProgress{}, documentProgress{}), want: "draft"},
-		{name: "one document missing", status: store.ApplicationStatusStarted, docs: both(drafted, documentProgress{}), want: "draft"},
-		{name: "drafted, not reviewed", status: store.ApplicationStatusStarted, docs: both(drafted, drafted), want: "review"},
-		{name: "one passed, one not reviewed", status: store.ApplicationStatusStarted,
+		{name: "not started: no next step", status: applicationstatus.Interviewing, docs: both(exported, exported), want: ""},
+		{name: "posting closed", status: applicationstatus.Started, listing: "closed", docs: both(drafted, drafted), want: "withdraw?"},
+		{name: "later stage, posting closed", status: applicationstatus.Interviewing, listing: "closed", docs: both(exported, exported), want: "(closed)"},
+		{name: "nothing drafted", status: applicationstatus.Started, docs: both(documentProgress{}, documentProgress{}), want: "draft"},
+		{name: "one document missing", status: applicationstatus.Started, docs: both(drafted, documentProgress{}), want: "draft"},
+		{name: "drafted, not reviewed", status: applicationstatus.Started, docs: both(drafted, drafted), want: "review"},
+		{name: "one passed, one not reviewed", status: applicationstatus.Started,
 			reviews: map[documents.Type]store.DocumentReview{documents.CoverLetter: passed}, docs: both(drafted, drafted), want: "review"},
-		{name: "flagged beats unreviewed", status: store.ApplicationStatusStarted,
+		{name: "flagged beats unreviewed", status: applicationstatus.Started,
 			reviews: map[documents.Type]store.DocumentReview{documents.Resume: flagged}, docs: both(drafted, drafted), want: "revise"},
-		{name: "passed, not exported", status: store.ApplicationStatusStarted,
+		{name: "passed, not exported", status: applicationstatus.Started,
 			reviews: map[documents.Type]store.DocumentReview{documents.CoverLetter: passed, documents.Resume: passed}, docs: both(exported, drafted), want: "export"},
-		{name: "passed and exported", status: store.ApplicationStatusStarted,
+		{name: "passed and exported", status: applicationstatus.Started,
 			reviews: map[documents.Type]store.DocumentReview{documents.CoverLetter: passed, documents.Resume: passed}, docs: both(exported, exported), want: "submit"},
 	}
 	for _, tt := range tests {
@@ -280,15 +281,15 @@ func TestActiveApplicationListModel_View_ShowsAgeAndNextStep(t *testing.T) {
 func TestOrderForHome(t *testing.T) {
 	t.Parallel()
 
-	app := func(id int64, status store.ApplicationStatus, since time.Time) store.ApplicationView {
+	app := func(id int64, status applicationstatus.Status, since time.Time) store.ApplicationView {
 		return store.ApplicationView{Application: store.Application{ID: id, Status: status}, StatusSince: since}
 	}
 	day := func(d int) time.Time { return time.Date(2026, 9, d, 0, 0, 0, 0, time.UTC) }
 	apps := []store.ApplicationView{
-		app(1, store.ApplicationStatusInterviewing, day(28)),
-		app(2, store.ApplicationStatusStarted, day(20)),
-		app(3, store.ApplicationStatusSubmitted, day(25)),
-		app(4, store.ApplicationStatusStarted, day(1)),
+		app(1, applicationstatus.Interviewing, day(28)),
+		app(2, applicationstatus.Started, day(20)),
+		app(3, applicationstatus.Submitted, day(25)),
+		app(4, applicationstatus.Started, day(1)),
 	}
 
 	orderForHome(apps)
@@ -361,7 +362,7 @@ func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 
 	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 	widest := store.ApplicationView{
-		Application: store.Application{ID: 1, Status: store.ApplicationStatusOfferReceived},
+		Application: store.Application{ID: 1, Status: applicationstatus.OfferReceived},
 		Posting: store.Posting{ListingStatus: "closed", IngestedFields: store.IngestedFields{
 			Title: strings.Repeat("Principal Engineer ", 5)}},
 		CompanyName: strings.Repeat("Longcompanyname ", 3),
@@ -376,7 +377,7 @@ func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 	// widest cell, so the table is as wide as one row holding both.
 	withdraw := widest
 	withdraw.ID = 2
-	withdraw.Status = store.ApplicationStatusStarted
+	withdraw.Status = applicationstatus.Started
 	apps := []store.ApplicationView{widest, withdraw}
 
 	tests := []struct {
@@ -499,7 +500,7 @@ func openHomeHighlighted(t *testing.T, m *activeApplicationListModel, apps []sto
 func testSearchApplications() []store.ApplicationView {
 	apps := testActiveApplications()
 	return append(apps, store.ApplicationView{
-		Application: store.Application{ID: 30, Status: store.ApplicationStatusSubmitted},
+		Application: store.Application{ID: 30, Status: applicationstatus.Submitted},
 		Posting:     store.Posting{ID: 3, IngestedFields: store.IngestedFields{Title: "Staff Analyst"}},
 		CompanyName: "Initech",
 	})

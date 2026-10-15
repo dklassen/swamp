@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
@@ -895,8 +896,8 @@ func TestApp_PressA_OnPostingDetail_WithNoApplication_CreatesApplication(t *test
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if application.Status != store.ApplicationStatusStarted {
-		t.Fatalf("application.Status = %s, want %s", application.Status, store.ApplicationStatusStarted)
+	if application.Status != applicationstatus.Started {
+		t.Fatalf("application.Status = %s, want %s", application.Status, applicationstatus.Started)
 	}
 }
 
@@ -993,8 +994,8 @@ func TestApp_PressA_OnPostingDetail_WhenApplicationAlreadyExists_DoesNotDuplicat
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if applications.Status != store.ApplicationStatusStarted {
-		t.Fatalf("application.Status = %s, want %s (unchanged)", applications.Status, store.ApplicationStatusStarted)
+	if applications.Status != applicationstatus.Started {
+		t.Fatalf("application.Status = %s, want %s (unchanged)", applications.Status, applicationstatus.Started)
 	}
 }
 
@@ -1018,10 +1019,10 @@ func TestApp_OpenPostingDetail_WithExistingApplication_LoadsAndDisplaysStatus(t 
 	if !ok {
 		t.Fatal("app.applicationsByPosting has no entry for postingID after opening detail, want the pre-existing application loaded")
 	}
-	if application.Status != store.ApplicationStatusStarted {
-		t.Fatalf("loaded application.Status = %s, want %s", application.Status, store.ApplicationStatusStarted)
+	if application.Status != applicationstatus.Started {
+		t.Fatalf("loaded application.Status = %s, want %s", application.Status, applicationstatus.Started)
 	}
-	if !strings.Contains(app.postingDetail.viewport.View(), applicationStatusLabel(store.ApplicationStatusStarted)) {
+	if !strings.Contains(app.postingDetail.viewport.View(), applicationStatusLabel(applicationstatus.Started)) {
 		t.Fatalf("detail viewport view = %q, want it to contain the application status", app.postingDetail.viewport.View())
 	}
 }
@@ -1109,16 +1110,16 @@ func TestApp_StatusSelect_Enter_UpdatesStatusAndReturnsToDetail(t *testing.T) {
 	if app.screen != screenPostingDetail {
 		t.Fatalf("screen after saving status = %v, want screenPostingDetail", app.screen)
 	}
-	if app.applicationsByPosting[postingID].Status != store.ApplicationStatusSubmitted {
-		t.Fatalf("app.applicationsByPosting[postingID].Status = %s, want %s", app.applicationsByPosting[postingID].Status, store.ApplicationStatusSubmitted)
+	if app.applicationsByPosting[postingID].Status != applicationstatus.Submitted {
+		t.Fatalf("app.applicationsByPosting[postingID].Status = %s, want %s", app.applicationsByPosting[postingID].Status, applicationstatus.Submitted)
 	}
 
 	stored, err := s.GetApplication(context.Background(), postingID)
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if stored.Status != store.ApplicationStatusSubmitted {
-		t.Fatalf("stored application.Status = %s, want %s", stored.Status, store.ApplicationStatusSubmitted)
+	if stored.Status != applicationstatus.Submitted {
+		t.Fatalf("stored application.Status = %s, want %s", stored.Status, applicationstatus.Submitted)
 	}
 }
 
@@ -1148,8 +1149,8 @@ func TestApp_StatusSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if stored.Status != store.ApplicationStatusStarted {
-		t.Fatalf("stored application.Status = %s, want %s (esc should not persist)", stored.Status, store.ApplicationStatusStarted)
+	if stored.Status != applicationstatus.Started {
+		t.Fatalf("stored application.Status = %s, want %s (esc should not persist)", stored.Status, applicationstatus.Started)
 	}
 }
 
@@ -1372,7 +1373,7 @@ func TestApp_PressA_OnPostingDetail_CreatedApplication_ReflectedInDetailView(t *
 	}
 	app, _ = sendKey(app, cmd())
 
-	if !strings.Contains(app.postingDetail.viewport.View(), applicationStatusLabel(store.ApplicationStatusStarted)) {
+	if !strings.Contains(app.postingDetail.viewport.View(), applicationStatusLabel(applicationstatus.Started)) {
 		t.Fatalf("detail view after creating application = %q, want it to contain the new status", app.postingDetail.viewport.View())
 	}
 }
@@ -1394,7 +1395,7 @@ func TestApp_PostingDetail_NavigatingBetweenPostings_LoadsEachPostingsOwnApplica
 	if _, err := s.CreateApplication(context.Background(), designerID); err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	if _, err := s.UpdateApplicationStatus(context.Background(), designerID, store.ApplicationStatusInterviewing); err != nil {
+	if _, err := s.UpdateApplicationStatus(context.Background(), designerID, applicationstatus.Interviewing); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 	app = openPostingDetail(t, app) // opens the posting at cursor 0, no application
@@ -1405,8 +1406,8 @@ func TestApp_PostingDetail_NavigatingBetweenPostings_LoadsEachPostingsOwnApplica
 	}
 	app = applyCmd(t, app, cmd)
 
-	if !strings.Contains(app.postingDetail.viewport.View(), applicationStatusLabel(store.ApplicationStatusInterviewing)) {
-		t.Fatalf("detail view for Designer = %q, want it to contain %q", app.postingDetail.viewport.View(), applicationStatusLabel(store.ApplicationStatusInterviewing))
+	if !strings.Contains(app.postingDetail.viewport.View(), applicationStatusLabel(applicationstatus.Interviewing)) {
+		t.Fatalf("detail view for Designer = %q, want it to contain %q", app.postingDetail.viewport.View(), applicationStatusLabel(applicationstatus.Interviewing))
 	}
 	if _, ok := app.applicationsByPosting[engineerID]; ok {
 		t.Fatal("applicationsByPosting has an entry for Engineer, want none (it has no application)")
@@ -3305,7 +3306,7 @@ func TestPostingDetailContent_ShowsStatusLabelNotEnumValue(t *testing.T) {
 	t.Parallel()
 
 	posting := store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}}
-	application := store.Application{ID: 1, Status: store.ApplicationStatusOfferReceived}
+	application := store.Application{ID: 1, Status: applicationstatus.OfferReceived}
 
 	got := postingDetailContent(posting, application, true, documents.NewStore(t.TempDir()), nil, 80)
 

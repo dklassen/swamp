@@ -19,6 +19,7 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/cursor"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/stage"
@@ -167,7 +168,7 @@ func searchPostingsInputSchema() *jsonschema.Schema {
 		panic(fmt.Sprintf("mcpserver: infer search_postings input schema: %v", err))
 	}
 	var statuses []any
-	for _, status := range store.ApplicationStatuses() {
+	for _, status := range applicationstatus.All() {
 		statuses = append(statuses, status.String())
 	}
 	schema.Properties["ApplicationStatuses"].Items.Enum = statuses
@@ -183,14 +184,14 @@ func searchPostingsInputSchema() *jsonschema.Schema {
 	return schema
 }
 
-// Out is 'any': stage.SearchMatch carries store.ApplicationStatus, whose
+// Out is 'any': stage.SearchMatch carries applicationstatus.Status, whose
 // MarshalJSON writes a string where schema inference would see an
 // integer (the same problem listPostingsHandler works around).
 func searchPostingsHandler(st *stage.Stage) mcp.ToolHandlerFor[searchPostingsInput, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in searchPostingsInput) (*mcp.CallToolResult, any, error) {
-		statuses := make([]store.ApplicationStatus, len(in.ApplicationStatuses))
+		statuses := make([]applicationstatus.Status, len(in.ApplicationStatuses))
 		for i, name := range in.ApplicationStatuses {
-			status, err := store.ParseApplicationStatus(name)
+			status, err := applicationstatus.Parse(name)
 			if err != nil {
 				return nil, nil, fmt.Errorf("search_postings: %w", err)
 			}

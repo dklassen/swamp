@@ -49,7 +49,7 @@ func applicationViewFromRow(row sqlcdb.ListActiveApplicationsRow) (ApplicationVi
 }
 
 // ListActiveApplications returns applications not at a terminal
-// dead-end status (see TerminalApplicationStatuses), each viewed with
+// dead-end status (see applicationstatus.Terminal), each viewed with
 // its posting, company name, and latest document review per document
 // type resolved, most-recently-changed first.
 //

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
@@ -16,13 +17,13 @@ import (
 type ApplicationStatusChange struct {
 	ID            int64
 	ApplicationID int64
-	Status        ApplicationStatus
+	Status        applicationstatus.Status
 	ChangedBy     StatusChangedBy
 	ChangedAt     time.Time
 }
 
 // StatusChangedBy says who made an application status change (#174). Like
-// ApplicationStatus, Go is the source of truth for the values; the
+// applicationstatus.Status, Go is the source of truth for the values; the
 // changed_by column is plain TEXT.
 type StatusChangedBy int
 
@@ -65,7 +66,7 @@ func parseStatusChangedBy(s string) (StatusChangedBy, error) {
 // caller's transaction-bound queries because the row must commit or roll
 // back with the status change it records; every path that writes
 // applications.status goes through here so they can't drift apart.
-func recordApplicationStatus(ctx context.Context, qtx *sqlcdb.Queries, applicationID int64, status ApplicationStatus, changedBy StatusChangedBy) error {
+func recordApplicationStatus(ctx context.Context, qtx *sqlcdb.Queries, applicationID int64, status applicationstatus.Status, changedBy StatusChangedBy) error {
 	if err := qtx.CreateApplicationStatusHistory(ctx, sqlcdb.CreateApplicationStatusHistoryParams{
 		ApplicationID: applicationID,
 		Status:        status.String(),
@@ -95,7 +96,7 @@ func (s *Store) ListApplicationStatusHistory(ctx context.Context, applicationID 
 // parseStatusChange converts a status history row, failing on a status
 // or changed_by value it doesn't know.
 func parseStatusChange(row sqlcdb.ApplicationStatusHistory) (ApplicationStatusChange, error) {
-	status, err := ParseApplicationStatus(row.Status)
+	status, err := applicationstatus.Parse(row.Status)
 	if err != nil {
 		return ApplicationStatusChange{}, err
 	}

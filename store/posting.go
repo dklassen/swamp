@@ -11,6 +11,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/contenthash"
 	"github.com/dklassen/swamp/store/sqlcdb"
 )
@@ -321,7 +322,7 @@ type ClosePostingResult struct {
 // no second history row. Which application statuses a closing posting
 // ends is the caller's policy (sync's earlyApplicationStatuses, #105);
 // store only applies it.
-func (s *Store) ClosePosting(ctx context.Context, postingID int64, closeApplicationFrom []ApplicationStatus) (ClosePostingResult, error) {
+func (s *Store) ClosePosting(ctx context.Context, postingID int64, closeApplicationFrom []applicationstatus.Status) (ClosePostingResult, error) {
 	tx, err := s.sqlDB.BeginTx(ctx, nil)
 	if err != nil {
 		return ClosePostingResult{}, fmt.Errorf("store: begin close posting tx: %w", err)
@@ -341,7 +342,7 @@ func (s *Store) ClosePosting(ctx context.Context, postingID int64, closeApplicat
 
 // closePosting is ClosePosting inside the caller's transaction, shared
 // with SoftDeleteCompany.
-func closePosting(ctx context.Context, qtx *sqlcdb.Queries, postingID int64, closeApplicationFrom []ApplicationStatus) (ClosePostingResult, error) {
+func closePosting(ctx context.Context, qtx *sqlcdb.Queries, postingID int64, closeApplicationFrom []applicationstatus.Status) (ClosePostingResult, error) {
 	row, err := qtx.GetPosting(ctx, postingID)
 	if err != nil {
 		return ClosePostingResult{}, fmt.Errorf("store: get posting to close: %w", err)
@@ -381,11 +382,11 @@ func closePosting(ctx context.Context, qtx *sqlcdb.Queries, postingID int64, clo
 		if slices.Contains(closeApplicationFrom, application.Status) {
 			if _, err := qtx.UpdateApplicationStatus(ctx, sqlcdb.UpdateApplicationStatusParams{
 				PostingID: postingID,
-				Status:    sql.NullString{String: ApplicationStatusPostingClosed.String(), Valid: true},
+				Status:    sql.NullString{String: applicationstatus.PostingClosed.String(), Valid: true},
 			}); err != nil {
 				return ClosePostingResult{}, fmt.Errorf("store: close application for closed posting: %w", err)
 			}
-			if err := recordApplicationStatus(ctx, qtx, application.ID, ApplicationStatusPostingClosed, StatusChangedBySync); err != nil {
+			if err := recordApplicationStatus(ctx, qtx, application.ID, applicationstatus.PostingClosed, StatusChangedBySync); err != nil {
 				return ClosePostingResult{}, err
 			}
 			result.ApplicationClosed = true
@@ -488,8 +489,8 @@ func restoreSyncClosedApplication(ctx context.Context, qtx *sqlcdb.Queries, post
 	if err != nil {
 		return false, err
 	}
-	if application.Status != ApplicationStatusPostingClosed ||
-		last.Status != ApplicationStatusPostingClosed ||
+	if application.Status != applicationstatus.PostingClosed ||
+		last.Status != applicationstatus.PostingClosed ||
 		last.ChangedBy != StatusChangedBySync {
 		return false, nil
 	}

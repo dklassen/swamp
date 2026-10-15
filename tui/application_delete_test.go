@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
@@ -147,14 +148,14 @@ func TestDeleteFlow_ConfirmationShowsTheStatusAsItIsNow(t *testing.T) {
 	t.Parallel()
 
 	app, application := deleteTestApp(t)
-	if _, err := app.store.UpdateApplicationStatus(context.Background(), application.PostingID, store.ApplicationStatusInterviewing); err != nil {
+	if _, err := app.store.UpdateApplicationStatus(context.Background(), application.PostingID, applicationstatus.Interviewing); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 
 	app = startDelete(t, app)
 
 	view := app.applicationDelete.View(120)
-	if want := applicationStatusLabel(store.ApplicationStatusInterviewing); !strings.Contains(view, want) {
+	if want := applicationStatusLabel(applicationstatus.Interviewing); !strings.Contains(view, want) {
 		t.Errorf("confirmation doesn't show the stored status %q:\n%s", want, view)
 	}
 }
