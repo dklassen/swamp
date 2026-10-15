@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"github.com/dklassen/swamp/filter"
+	"github.com/google/go-cmp/cmp"
 	"testing"
 
 	"github.com/dklassen/swamp/applicationstatus"
@@ -95,5 +97,60 @@ func TestListInterestedPostings_ExcludesArchived(t *testing.T) {
 	}
 	if len(got) != 0 {
 		t.Fatalf("len(got) = %d, want 0 (archived)", len(got))
+	}
+}
+
+// Filters are the authority on what's shown and read, so an interested
+// posting the company's list hides isn't listed either.
+func TestListInterestedPostings_ExcludesWhatTheCompanyListHides(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name string
+		hide func(t *testing.T, s *Store, company Company, posting Posting)
+	}{
+		{"closed posting", func(t *testing.T, s *Store, _ Company, posting Posting) {
+			if err := s.MarkPostingClosed(context.Background(), posting.ID); err != nil {
+				t.Fatalf("MarkPostingClosed: %v", err)
+			}
+		}},
+		{"deleted company", func(t *testing.T, s *Store, company Company, _ Posting) {
+			if _, err := s.sqlDB.Exec(`UPDATE companies SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?`, company.ID); err != nil {
+				t.Fatalf("delete company: %v", err)
+			}
+		}},
+		{"filtered out", func(t *testing.T, s *Store, company Company, _ Posting) {
+			if _, err := s.createCompanyFilter(context.Background(), company.ID, filter.FieldDepartment, "Sales"); err != nil {
+				t.Fatalf("createCompanyFilter: %v", err)
+			}
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			s := newTestStore(t)
+			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			hidden := mustUpsertPostingIn(t, s, acme.ID, "job-1", "Engineer", "Engineering")
+			if _, err := s.setPostingInterested(ctx, hidden.ID); err != nil {
+				t.Fatalf("setPostingInterested: %v", err)
+			}
+			other := mustCreateCompany(t, s, "Globex", "ashby", "globex")
+			shown := mustUpsertPostingIn(t, s, other.ID, "job-2", "Engineer", "Engineering")
+			if _, err := s.setPostingInterested(ctx, shown.ID); err != nil {
+				t.Fatalf("setPostingInterested: %v", err)
+			}
+			tt.hide(t, s, acme, hidden)
+
+			got, err := s.ListInterestedPostings(ctx)
+			if err != nil {
+				t.Fatalf("ListInterestedPostings: %v", err)
+			}
+			var ids []int64
+			for _, p := range got {
+				ids = append(ids, p.Posting.ID)
+			}
+			if diff := cmp.Diff([]int64{shown.ID}, ids); diff != "" {
+				t.Errorf("listed postings (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
