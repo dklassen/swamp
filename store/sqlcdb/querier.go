@@ -14,7 +14,6 @@ type Querier interface {
 	// store.AcquireSyncLease, #150). Expiry is compared entirely in SQL, so
 	// both sides are CURRENT_TIMESTAMP-format UTC text.
 	AcquireCompanySyncLease(ctx context.Context, arg AcquireCompanySyncLeaseParams) (int64, error)
-	AddTagToPosting(ctx context.Context, arg AddTagToPostingParams) error
 	ChangeEventsAfter(ctx context.Context, id int64) ([]ChangeEvent, error)
 	// Conditional, unlike MarkPostingClosed: 0 rows affected means the
 	// posting was already closed (e.g. by an overlapping sync), so the
@@ -43,7 +42,6 @@ type Querier interface {
 	CreateDocumentExport(ctx context.Context, arg CreateDocumentExportParams) error
 	CreateDocumentReview(ctx context.Context, arg CreateDocumentReviewParams) (DocumentReview, error)
 	CreateDocumentWrite(ctx context.Context, arg CreateDocumentWriteParams) error
-	CreateInterviewStage(ctx context.Context, arg CreateInterviewStageParams) (InterviewStage, error)
 	CreatePosting(ctx context.Context, arg CreatePostingParams) (Posting, error)
 	CreatePostingHistory(ctx context.Context, arg CreatePostingHistoryParams) (PostingHistory, error)
 	// Not exposed directly on the Store API: every posting must have exactly
@@ -52,9 +50,7 @@ type Querier interface {
 	// (interested_at=NULL, archived_at=NULL, notes='').
 	CreatePostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
 	CreatePostingScore(ctx context.Context, arg CreatePostingScoreParams) error
-	CreateTag(ctx context.Context, name string) (Tag, error)
 	DeleteCompanyFilters(ctx context.Context, companyID int64) error
-	DeleteInterviewStage(ctx context.Context, id int64) error
 	GetApplication(ctx context.Context, postingID int64) (Application, error)
 	// Keyed by the application's own primary key, unlike every other query
 	// here (see store.GetApplicationByID).
@@ -74,10 +70,6 @@ type Querier interface {
 	GetPostingBySourceAndSourceID(ctx context.Context, arg GetPostingBySourceAndSourceIDParams) (Posting, error)
 	GetPostingContentSHA256(ctx context.Context, id int64) (string, error)
 	GetPostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
-	// Not filtered on deleted_at: used for existence checks (e.g. before
-	// creating) where callers need to know about a soft-deleted tag too, not
-	// just active ones.
-	GetTagByName(ctx context.Context, name string) (Tag, error)
 	// Whether the posting already has a score that a new one would only repeat:
 	// on the same content, against the same profile, from the same model.
 	HasRepeatScore(ctx context.Context, arg HasRepeatScoreParams) (bool, error)
@@ -151,7 +143,6 @@ type Querier interface {
 	// sqlite; this query has none. The applications.id IS NULL branch keeps
 	// postings with no application yet, which the LEFT JOIN yields as NULLs.
 	ListInterestedPostings(ctx context.Context, terminalStatuses []sql.NullString) ([]ListInterestedPostingsRow, error)
-	ListInterviewStagesByApplication(ctx context.Context, applicationID int64) ([]InterviewStage, error)
 	// What store.SoftDeleteCompany closes: a deleted company is never synced
 	// again, so nothing else would ever close these (#178).
 	ListOpenPostingIDsByCompany(ctx context.Context, companyID int64) ([]int64, error)
@@ -175,13 +166,6 @@ type Querier interface {
 	// CURRENT_TIMESTAMP second (sqlite has only second resolution), so
 	// first_seen_at alone leaves ties with no guaranteed order.
 	ListPostingsByCompany(ctx context.Context, companyID int64) ([]Posting, error)
-	// Active tags only: this is the pick list for tagging postings, and a
-	// soft-deleted tag shouldn't be offered for new use.
-	ListTags(ctx context.Context) ([]Tag, error)
-	// Not filtered on deleted_at: a posting's existing tag associations are
-	// historical record and should keep showing even if the tag itself was
-	// later soft-deleted (see schema comment on posting_tags).
-	ListTagsForPosting(ctx context.Context, postingID int64) ([]Tag, error)
 	// Records a successful fetch of this company's postings (see sync.SyncCompany).
 	MarkCompanyFetched(ctx context.Context, id int64) error
 	MarkPostingClosed(ctx context.Context, id int64) error
@@ -194,7 +178,6 @@ type Querier interface {
 	// Frees the lease only if token still holds it, so a sync whose lease
 	// expired and was taken over can't release the new holder's.
 	ReleaseCompanySyncLease(ctx context.Context, arg ReleaseCompanySyncLeaseParams) error
-	RemoveTagFromPosting(ctx context.Context, arg RemoveTagFromPostingParams) error
 	// Conditional, unlike MarkPostingReopened: 0 rows affected means the
 	// posting was already open again (e.g. reopened by an overlapping sync),
 	// so the caller records nothing (see store.ReopenPosting, #148).
@@ -298,7 +281,6 @@ type Querier interface {
 	SetPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error)
 	SoftDeleteApplication(ctx context.Context, id int64) (int64, error)
 	SoftDeleteCompany(ctx context.Context, id int64) error
-	SoftDeleteTag(ctx context.Context, id int64) error
 	UnarchivePosting(ctx context.Context, postingID int64) (PostingMarkup, error)
 	UnmarkPostingInterested(ctx context.Context, postingID int64) (PostingMarkup, error)
 	UpdateApplicationNotes(ctx context.Context, arg UpdateApplicationNotesParams) (Application, error)
@@ -308,8 +290,6 @@ type Querier interface {
 	// Excludes soft-deleted rows, same guard as GetCompany -- editing a
 	// deleted company isn't a supported action.
 	UpdateCompanyName(ctx context.Context, arg UpdateCompanyNameParams) (Company, error)
-	UpdateInterviewStage(ctx context.Context, arg UpdateInterviewStageParams) (InterviewStage, error)
-	UpdateInterviewStageOutcome(ctx context.Context, arg UpdateInterviewStageOutcomeParams) (InterviewStage, error)
 	// Updates ingested content fields only. Deliberately does not touch
 	// listing_status: transitions between open/closed are explicit domain
 	// decisions (see MarkPostingClosed/MarkPostingReopened), not a side effect

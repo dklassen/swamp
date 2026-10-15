@@ -116,20 +116,8 @@ func postingContentSHA256(f IngestedFields) string {
 	return contenthash.Of(contenthash.Posting{Title: f.Title, Department: f.Department, Location: f.Location, WorkplaceType: f.WorkplaceType, DescriptionText: f.DescriptionText})
 }
 
-// nullTime converts an optional *time.Time into the DB layer's nullable
-// representation -- shared with InterviewStage.StageDate, which (unlike
-// IngestedFields.PublishedAt below) is a genuinely pointer-optional field,
-// out of #67's scope.
-func nullTime(t *time.Time) sql.NullTime {
-	if t == nil {
-		return sql.NullTime{}
-	}
-	return sql.NullTime{Time: *t, Valid: true}
-}
-
-// nullPublishedAt is nullTime for IngestedFields.PublishedAt specifically:
-// the zero time means absent, since PublishedAt isn't pointer-optional
-// (#67).
+// nullPublishedAt maps the zero PublishedAt, which means the board didn't
+// say, to NULL.
 func nullPublishedAt(t OptionalTime) sql.NullTime {
 	if t.IsZero() {
 		return sql.NullTime{}

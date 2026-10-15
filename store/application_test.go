@@ -438,19 +438,21 @@ func TestDeleteApplication_KeepsWhatTheApplicationOwns(t *testing.T) {
 		},
 		{
 			name: "interview stages",
+			// No API writes interview_stages any more, but rows from before
+			// it was removed must still survive a delete.
 			seed: func(t *testing.T, s *Store, applicationID int64) {
 				t.Helper()
-				if _, err := s.CreateInterviewStage(context.Background(), applicationID, 1, "Phone screen", nil, ""); err != nil {
-					t.Fatalf("CreateInterviewStage: %v", err)
+				if _, err := s.sqlDB.Exec(`INSERT INTO interview_stages (application_id, sequence, name) VALUES (?, 1, 'Phone screen')`, applicationID); err != nil {
+					t.Fatalf("insert interview stage: %v", err)
 				}
 			},
 			count: func(t *testing.T, s *Store, applicationID int64) int {
 				t.Helper()
-				stages, err := s.ListInterviewStages(context.Background(), applicationID)
-				if err != nil {
-					t.Fatalf("ListInterviewStages: %v", err)
+				var n int
+				if err := s.sqlDB.QueryRow(`SELECT count(*) FROM interview_stages WHERE application_id = ?`, applicationID).Scan(&n); err != nil {
+					t.Fatalf("count interview stages: %v", err)
 				}
-				return len(stages)
+				return n
 			},
 		},
 	}
