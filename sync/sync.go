@@ -45,11 +45,11 @@ type Result struct {
 	Reopened int
 	// ApplicationsClosed counts applications moved to posting_closed
 	// because the posting they were for was taken down -- see
-	// store.ClosePosting and earlyApplicationStatuses (issues #105, #147).
+	// closePosting and earlyApplicationStatuses.
 	ApplicationsClosed int
 	// ApplicationsRestored counts applications sync had moved to
 	// posting_closed and moved back because their posting reappeared --
-	// see store.ReopenPosting (#174).
+	// see reopenPosting.
 	ApplicationsRestored int
 	Err                  error
 }

@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 )
 
@@ -145,9 +146,9 @@ func TestApplicationStatusModel_View_OffersWithdrawn(t *testing.T) {
 func TestStatusForm_ShowsTheStatusAsItIsNow(t *testing.T) {
 	t.Parallel()
 
-	app, application := deleteTestApp(t)
-	if _, err := app.store.UpdateApplicationStatus(context.Background(), application.PostingID, applicationstatus.Interviewing); err != nil {
-		t.Fatalf("UpdateApplicationStatus: %v", err)
+	app, target := deleteTestApp(t)
+	if _, err := updateApplicationStatusIn(context.Background(), app.store, target.PostingID, applicationstatus.Interviewing); err != nil {
+		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
 	app, cmd := sendKey(app, runeKey('s'))
@@ -164,9 +165,9 @@ func TestStatusForm_ShowsTheStatusAsItIsNow(t *testing.T) {
 func TestStatusForm_ApplicationDeletedMeanwhile_StaysAndSaysSo(t *testing.T) {
 	t.Parallel()
 
-	app, application := deleteTestApp(t)
-	if err := app.store.DeleteApplication(context.Background(), application.ID); err != nil {
-		t.Fatalf("DeleteApplication: %v", err)
+	app, target := deleteTestApp(t)
+	if err := application.Delete(context.Background(), app.store.DB(), target.ID); err != nil {
+		t.Fatalf("application.Delete: %v", err)
 	}
 
 	app = sendKeyAndApply(t, app, runeKey('s'))

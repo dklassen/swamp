@@ -81,7 +81,7 @@ func TestSoftDeleteCompany_ExcludesFromListAndGet(t *testing.T) {
 }
 
 // A deleted company is never synced again, so anything left open would
-// stay open for good and count toward open totals (#178). Its
+// stay open for good and count toward open totals. Its
 // applications are the user's, not the board's, so they're left alone.
 func TestSoftDeleteCompany_ClosesItsOpenPostings(t *testing.T) {
 	t.Parallel()
@@ -135,12 +135,12 @@ func TestSoftDeleteCompany_ClosesItsOpenPostings(t *testing.T) {
 		})
 	}
 
-	application, err := s.GetApplication(ctx, open.ID)
+	application, err := s.getApplication(ctx, open.ID)
 	if err != nil {
 		t.Fatalf("GetApplication: %v", err)
 	}
-	if application.Status != applicationstatus.Started {
-		t.Errorf("application status = %s, want it left at %s", application.Status, applicationstatus.Started)
+	if application.Status.String != applicationstatus.Started.String() {
+		t.Errorf("application status = %s, want it left at %s", application.Status.String, applicationstatus.Started)
 	}
 }
 
@@ -321,7 +321,7 @@ func TestUpdateCompanyDescription_MissingCompany_ReturnsErrNotFound(t *testing.T
 	}
 }
 
-// TestCompanySyncLease covers the per-company sync lease (#150): one
+// TestCompanySyncLease covers the per-company sync lease: one
 // holder at a time, released only by its holder, and taken over once it
 // has expired so a killed process can't hold it for ever.
 func TestCompanySyncLease(t *testing.T) {

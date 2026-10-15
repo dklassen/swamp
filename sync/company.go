@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/seed"
 	"github.com/dklassen/swamp/store"
@@ -154,14 +155,14 @@ func (s *Syncer) ingest(ctx context.Context, company store.Company, fetched []jo
 			result.Updated++
 		}
 		if ingested.Posting.ListingStatus == "closed" {
-			reopened, err := s.store.ReopenPosting(ctx, ingested.Posting.ID)
+			reopened, applicationRestored, err := reopenPosting(ctx, s.store, ingested.Posting.ID)
 			if err != nil {
 				return result, fmt.Errorf("sync: reopen posting: %w", err)
 			}
-			if reopened.Reopened {
+			if reopened {
 				result.Reopened++
 			}
-			if reopened.ApplicationRestored {
+			if applicationRestored {
 				result.ApplicationsRestored++
 			}
 		}
@@ -305,4 +306,21 @@ func (s *Syncer) AddCompany(ctx context.Context, name, source, sourceRef, descri
 		return AddCompanyResult{}, fmt.Errorf("sync: set company description: %w", err)
 	}
 	return AddCompanyResult{Outcome: AddCompanyCreated, Company: company, OpenJobs: len(postings)}, nil
+}
+
+// reopenPosting reopens a posting and, if it really reopened, restores
+// the application closing it ended, in one transaction.
+func reopenPosting(ctx context.Context, st *store.Store, postingID int64) (reopened, applicationRestored bool, err error) {
+	err = store.InTx(ctx, st.DB(), func(tx store.Tx) error {
+		var err error
+		if reopened, err = store.ReopenPosting(ctx, tx, postingID); err != nil || !reopened {
+			return err
+		}
+		applicationRestored, err = application.RestoreForPosting(ctx, tx, postingID)
+		return err
+	})
+	if err != nil {
+		return false, false, err
+	}
+	return reopened, applicationRestored, nil
 }

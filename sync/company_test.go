@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
@@ -385,17 +386,17 @@ func TestSyncCompany_PostingCloses_EarlyStageApplicationClosedToo(t *testing.T) 
 		t.Run(start.String(), func(t *testing.T) {
 			s := newTestStore(t)
 			postingID, result := closeOnlyPosting(t, s, func(postingID int64) {
-				if _, err := s.CreateApplication(ctx, postingID); err != nil {
-					t.Fatalf("CreateApplication: %v", err)
+				if _, err := createApplication(ctx, s, postingID); err != nil {
+					t.Fatalf("application.Create: %v", err)
 				}
-				if _, err := s.UpdateApplicationStatus(ctx, postingID, start); err != nil {
-					t.Fatalf("UpdateApplicationStatus: %v", err)
+				if _, err := updateApplicationStatus(ctx, s, postingID, start); err != nil {
+					t.Fatalf("application.UpdateStatus: %v", err)
 				}
 			})
 
-			application, err := s.GetApplication(ctx, postingID)
+			application, err := application.Get(ctx, s.DB(), postingID)
 			if err != nil {
-				t.Fatalf("GetApplication: %v", err)
+				t.Fatalf("application.Get: %v", err)
 			}
 			if application.Status != applicationstatus.PostingClosed {
 				t.Errorf("application status = %s, want %s -- an application still at %s when its posting is taken down is over", application.Status, applicationstatus.PostingClosed, start)
@@ -412,7 +413,7 @@ func TestSyncCompany_PostingCloses_EarlyStageApplicationClosedToo(t *testing.T) 
 // process is normal, and the syncer must not overwrite a status the user
 // set and can't get back (see #105). A submitted application is
 // live too: companies often pull a listing once they have enough
-// candidates and keep reviewing the ones who applied (#174).
+// candidates and keep reviewing the ones who applied.
 func TestSyncCompany_PostingCloses_LiveApplicationLeftAlone(t *testing.T) {
 	ctx := context.Background()
 
@@ -425,17 +426,17 @@ func TestSyncCompany_PostingCloses_LiveApplicationLeftAlone(t *testing.T) {
 		t.Run(start.String(), func(t *testing.T) {
 			s := newTestStore(t)
 			postingID, result := closeOnlyPosting(t, s, func(postingID int64) {
-				if _, err := s.CreateApplication(ctx, postingID); err != nil {
-					t.Fatalf("CreateApplication: %v", err)
+				if _, err := createApplication(ctx, s, postingID); err != nil {
+					t.Fatalf("application.Create: %v", err)
 				}
-				if _, err := s.UpdateApplicationStatus(ctx, postingID, start); err != nil {
-					t.Fatalf("UpdateApplicationStatus: %v", err)
+				if _, err := updateApplicationStatus(ctx, s, postingID, start); err != nil {
+					t.Fatalf("application.UpdateStatus: %v", err)
 				}
 			})
 
-			application, err := s.GetApplication(ctx, postingID)
+			application, err := application.Get(ctx, s.DB(), postingID)
 			if err != nil {
-				t.Fatalf("GetApplication: %v", err)
+				t.Fatalf("application.Get: %v", err)
 			}
 			if application.Status != start {
 				t.Errorf("application status = %s, want it left at %s -- a listing coming down doesn't end a process already underway", application.Status, start)
@@ -458,8 +459,8 @@ func TestSyncCompany_PostingCloses_NoApplication_IsNotAnError(t *testing.T) {
 	if result.ApplicationsClosed != 0 {
 		t.Errorf("result.ApplicationsClosed = %d, want 0 (there was no application)", result.ApplicationsClosed)
 	}
-	if _, err := s.GetApplication(context.Background(), postingID); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("GetApplication err = %v, want ErrNotFound -- closing a posting must not conjure an application", err)
+	if _, err := application.Get(context.Background(), s.DB(), postingID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("application.Get err = %v, want ErrNotFound -- closing a posting must not conjure an application", err)
 	}
 }
 
@@ -473,17 +474,17 @@ func TestSyncCompany_PostingCloses_WithdrawnApplicationLeftAlone(t *testing.T) {
 	s := newTestStore(t)
 
 	postingID, result := closeOnlyPosting(t, s, func(postingID int64) {
-		if _, err := s.CreateApplication(ctx, postingID); err != nil {
-			t.Fatalf("CreateApplication: %v", err)
+		if _, err := createApplication(ctx, s, postingID); err != nil {
+			t.Fatalf("application.Create: %v", err)
 		}
-		if _, err := s.UpdateApplicationStatus(ctx, postingID, applicationstatus.Withdrawn); err != nil {
-			t.Fatalf("UpdateApplicationStatus: %v", err)
+		if _, err := updateApplicationStatus(ctx, s, postingID, applicationstatus.Withdrawn); err != nil {
+			t.Fatalf("application.UpdateStatus: %v", err)
 		}
 	})
 
-	application, err := s.GetApplication(ctx, postingID)
+	application, err := application.Get(ctx, s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 	if application.Status != applicationstatus.Withdrawn {
 		t.Errorf("application status = %s, want it left at withdrawn -- the user ended this one, not the company", application.Status)
@@ -495,7 +496,7 @@ func TestSyncCompany_PostingCloses_WithdrawnApplicationLeftAlone(t *testing.T) {
 
 // TestSyncCompany_PostingReappears_ApplicationRestored: a board that
 // briefly drops a listing no longer ends its started application for good
-// (#174). The sync that reopens the posting puts the application back.
+// . The sync that reopens the posting puts the application back.
 func TestSyncCompany_PostingReappears_ApplicationRestored(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
@@ -511,8 +512,8 @@ func TestSyncCompany_PostingReappears_ApplicationRestored(t *testing.T) {
 		t.Fatalf("ListPostingsByCompany: %v", err)
 	}
 	postingID := postings[0].ID
-	if _, err := s.CreateApplication(ctx, postingID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplication(ctx, s, postingID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 
 	fetcher.postings["acme"] = nil
@@ -525,9 +526,9 @@ func TestSyncCompany_PostingReappears_ApplicationRestored(t *testing.T) {
 		t.Fatalf("reopening SyncCompany: %v", err)
 	}
 
-	application, err := s.GetApplication(ctx, postingID)
+	application, err := application.Get(ctx, s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 	if application.Status != applicationstatus.Started {
 		t.Errorf("application status = %s, want %s restored", application.Status, applicationstatus.Started)
@@ -539,7 +540,7 @@ func TestSyncCompany_PostingReappears_ApplicationRestored(t *testing.T) {
 
 // TestSyncCompany_PostingCloses_ApplicationUpdateFails_NothingHalfClosed
 // pins that closing a posting and closing its application are one change
-// (#147). Before, the posting was closed and committed first; if the
+// . Before, the posting was closed and committed first; if the
 // application update then failed (SQLITE_BUSY, a closed database), the
 // next sync skipped the no-longer-open posting and the application stayed
 // at application_started for good.
@@ -560,8 +561,8 @@ func TestSyncCompany_PostingCloses_ApplicationUpdateFails_NothingHalfClosed(t *t
 		t.Fatalf("ListPostingsByCompany: %v", err)
 	}
 	postingID := postings[0].ID
-	if _, err := s.CreateApplication(ctx, postingID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplication(ctx, s, postingID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 
 	if _, err := sqlDB.ExecContext(ctx, `CREATE TRIGGER fail_application_update BEFORE UPDATE ON applications
@@ -595,9 +596,9 @@ func TestSyncCompany_PostingCloses_ApplicationUpdateFails_NothingHalfClosed(t *t
 	if err != nil {
 		t.Fatalf("SyncCompany after the failure cleared: %v", err)
 	}
-	application, err := s.GetApplication(ctx, postingID)
+	application, err := application.Get(ctx, s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 	if application.Status != applicationstatus.PostingClosed {
 		t.Errorf("after the next clean sync, application status = %s, want %s", application.Status, applicationstatus.PostingClosed)
@@ -610,7 +611,7 @@ func TestSyncCompany_PostingCloses_ApplicationUpdateFails_NothingHalfClosed(t *t
 // TestSyncCompany_OverlappingSyncsClosePostings_EachCloseRecordedOnce:
 // two syncs of one company that both fetched before either wrote both
 // find the same postings gone. Only the first close of each posting may
-// count or be recorded; the second finds it already closed (#147).
+// count or be recorded; the second finds it already closed.
 func TestSyncCompany_OverlappingSyncsClosePostings_EachCloseRecordedOnce(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
@@ -652,7 +653,7 @@ func TestSyncCompany_OverlappingSyncsClosePostings_EachCloseRecordedOnce(t *test
 // TestSyncCompany_OverlappingSyncsCreatePosting_CountedOnce: two syncs
 // that both fetched before either wrote both see a posting that isn't in
 // the database yet. Only the run that actually creates it may count it
-// (#148); the other finds it already there, unchanged.
+// ; the other finds it already there, unchanged.
 func TestSyncCompany_OverlappingSyncsCreatePosting_CountedOnce(t *testing.T) {
 	s := newTestStore(t)
 	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
@@ -674,7 +675,7 @@ func TestSyncCompany_OverlappingSyncsCreatePosting_CountedOnce(t *testing.T) {
 // TestSyncCompany_OverlappingSyncsReopenChangedPosting_EachChangeRecordedOnce:
 // a closed posting comes back with new content, and two syncs that both
 // fetched before either wrote see it. Each change -- the new content and
-// the reopen -- is recorded and counted once (#148).
+// the reopen -- is recorded and counted once.
 func TestSyncCompany_OverlappingSyncsReopenChangedPosting_EachChangeRecordedOnce(t *testing.T) {
 	ctx := context.Background()
 	s := newTestStore(t)
@@ -724,7 +725,7 @@ func TestSyncCompany_OverlappingSyncsReopenChangedPosting_EachChangeRecordedOnce
 // TestSyncCompany_ContentUpdateFails_NoHistoryUntilItHappens: a
 // "content_updated" history row is written with the update it records, so
 // an update that fails leaves no history behind, and the next sync that
-// makes the change records it exactly once (#148). Before, the history
+// makes the change records it exactly once. Before, the history
 // row was committed first, and each failed attempt added another.
 func TestSyncCompany_ContentUpdateFails_NoHistoryUntilItHappens(t *testing.T) {
 	ctx := context.Background()
@@ -823,7 +824,7 @@ func TestSyncCompany_RecordsLastFetchedAtOnlyOnSuccess(t *testing.T) {
 }
 
 // TestSyncCompany_RecordsLastSeenAtForEveryListedPosting: last_seen_at
-// is the last time a sync saw the posting on its board (#176). Every
+// is the last time a sync saw the posting on its board. Every
 // stored posting the fetch returns advances -- unchanged ones, and ones
 // the company's filters now leave out but the board still lists -- with
 // no history row and no update counted. A posting the board dropped

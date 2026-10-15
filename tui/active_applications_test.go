@@ -11,6 +11,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
@@ -21,12 +22,12 @@ import (
 func testActiveApplications() []pursuit.Application {
 	return []pursuit.Application{
 		{
-			Application: store.Application{ID: 10, Status: applicationstatus.Started},
+			Application: application.Application{ID: 10, Status: applicationstatus.Started},
 			Posting:     store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}},
 			CompanyName: "Acme",
 		},
 		{
-			Application: store.Application{ID: 20, Status: applicationstatus.Interviewing},
+			Application: application.Application{ID: 20, Status: applicationstatus.Interviewing},
 			Posting:     store.Posting{ID: 2, IngestedFields: store.IngestedFields{Title: "Designer"}},
 			CompanyName: "Globex",
 		},
@@ -248,7 +249,7 @@ func TestNextStep(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			a := pursuit.Application{
-				Application:   store.Application{Status: tt.status},
+				Application:   application.Application{Status: tt.status},
 				Posting:       store.Posting{ListingStatus: tt.listing},
 				LatestReviews: tt.reviews,
 			}
@@ -279,12 +280,12 @@ func TestActiveApplicationListModel_View_ShowsAgeAndNextStep(t *testing.T) {
 
 // Started applications come first, longest at their status first, so the
 // stalest work is at the top; the rest keep the store's order
-// (most-recently-changed first) below them (#164).
+// (most-recently-changed first) below them.
 func TestOrderForHome(t *testing.T) {
 	t.Parallel()
 
 	app := func(id int64, status applicationstatus.Status, since time.Time) pursuit.Application {
-		return pursuit.Application{Application: store.Application{ID: id, Status: status}, StatusSince: since}
+		return pursuit.Application{Application: application.Application{ID: id, Status: status}, StatusSince: since}
 	}
 	day := func(d int) time.Time { return time.Date(2026, 9, d, 0, 0, 0, 0, time.UTC) }
 	apps := []pursuit.Application{
@@ -307,7 +308,7 @@ func TestOrderForHome(t *testing.T) {
 
 // loadActiveApplications works out each started application's next step
 // from what's on disk and in the store: drafts, current reviews and
-// current exports (#164, #188).
+// current exports.
 func TestLoadActiveApplications_NextSteps(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -318,7 +319,7 @@ func TestLoadActiveApplications_NextSteps(t *testing.T) {
 	undrafted := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
 	ready := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-2", "Designer").ID)
 	stale := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-3", "Manager").ID)
-	for _, application := range []store.Application{ready, stale} {
+	for _, application := range []application.Application{ready, stale} {
 		paths, err := docs.EnsureDir(application.ID)
 		if err != nil {
 			t.Fatalf("EnsureDir: %v", err)
@@ -364,7 +365,7 @@ func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 
 	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 	widest := pursuit.Application{
-		Application: store.Application{ID: 1, Status: applicationstatus.OfferReceived},
+		Application: application.Application{ID: 1, Status: applicationstatus.OfferReceived},
 		Posting: store.Posting{ListingStatus: "closed", IngestedFields: store.IngestedFields{
 			Title: strings.Repeat("Principal Engineer ", 5)}},
 		CompanyName: strings.Repeat("Longcompanyname ", 3),
@@ -502,7 +503,7 @@ func openHomeHighlighted(t *testing.T, m *activeApplicationListModel, apps []pur
 func testSearchApplications() []pursuit.Application {
 	apps := testActiveApplications()
 	return append(apps, pursuit.Application{
-		Application: store.Application{ID: 30, Status: applicationstatus.Submitted},
+		Application: application.Application{ID: 30, Status: applicationstatus.Submitted},
 		Posting:     store.Posting{ID: 3, IngestedFields: store.IngestedFields{Title: "Staff Analyst"}},
 		CompanyName: "Initech",
 	})
@@ -814,7 +815,7 @@ func TestActiveApplicationListModel_Search_ReloadKeepsTheHighlightedMatch(t *tes
 	// so its place in the full list moves and its place among the matches
 	// doesn't.
 	reloaded := append([]pursuit.Application{{
-		Application: store.Application{ID: 40},
+		Application: application.Application{ID: 40},
 		Posting:     store.Posting{ID: 4, IngestedFields: store.IngestedFields{Title: "Engineer II"}},
 		CompanyName: "Hooli",
 	}}, apps...)

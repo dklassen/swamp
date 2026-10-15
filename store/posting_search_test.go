@@ -11,6 +11,7 @@ import (
 
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/filter"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // searchFixture is two live companies' postings, plus a deleted company's,
@@ -19,7 +20,7 @@ import (
 type searchFixture struct {
 	acme, beta                                     Company
 	platform, data, designer, writer, shelf, other Posting
-	platformApp, dataApp                           Application
+	platformApp, dataApp                           sqlcdb.Application
 }
 
 func newSearchFixture(t *testing.T, s *Store) searchFixture {
@@ -162,7 +163,7 @@ func TestSearchPostings_ListingFields(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 	f := newSearchFixture(t, s)
-	if _, err := s.UpdateApplicationNotes(context.Background(), f.data.ID, "heard back"); err != nil {
+	if _, err := s.updateApplicationNotes(context.Background(), f.data.ID, "heard back"); err != nil {
 		t.Fatalf("UpdateApplicationNotes: %v", err)
 	}
 
@@ -187,7 +188,7 @@ func TestSearchPostings_ListingFields(t *testing.T) {
 // TestSearchPostings_Paging: pages read with each page's last ID as the
 // next cursor, while HasMore says there are more, never exceed the limit,
 // concatenate to the unpaged result, and report the whole result's size
-// as Total on every page (#218). The last page says HasMore is false, so
+// as Total on every page. The last page says HasMore is false, so
 // a caller never asks for an empty page past the end.
 func TestSearchPostings_Paging(t *testing.T) {
 	t.Parallel()
@@ -316,7 +317,7 @@ func TestSearchPostings_HasMore(t *testing.T) {
 // TestSearchPostings_EveryOrderMatchesTheSameRows: each sort order is its
 // own static query, repeating the filters (sqlc has no way to share
 // them). This keeps the copies from drifting: for the same search, every
-// order returns the same postings, only ordered differently (#223).
+// order returns the same postings, only ordered differently.
 func TestSearchPostings_EveryOrderMatchesTheSameRows(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
@@ -380,7 +381,7 @@ func TestSearchPostings_DescendingClosedMidPagingDoesNotShift(t *testing.T) {
 }
 
 // TestSearchPostings_IDDescIsNewestToSwampFirst: id_desc is the reverse
-// of id_asc -- the postings Swamp saw most recently first (#223).
+// of id_asc -- the postings Swamp saw most recently first.
 func TestSearchPostings_IDDescIsNewestToSwampFirst(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
@@ -396,7 +397,7 @@ func TestSearchPostings_IDDescIsNewestToSwampFirst(t *testing.T) {
 	}
 }
 
-// TestSearchPostings_PublishedDesc: newest on the board first (#224).
+// TestSearchPostings_PublishedDesc: newest on the board first.
 // Ties on published_at break by ID, descending; fractional seconds of
 // any length compare by instant, as does a time given in another zone;
 // postings with no published_at come last, newest ID first. Every page

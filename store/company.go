@@ -114,7 +114,7 @@ func (s *Store) SoftDeleteCompany(ctx context.Context, id int64) error {
 		return fmt.Errorf("store: list open postings of deleted company: %w", err)
 	}
 	for _, postingID := range postingIDs {
-		if _, err := closePosting(ctx, qtx, postingID, nil); err != nil {
+		if _, err := closePosting(ctx, qtx, postingID); err != nil {
 			return err
 		}
 	}

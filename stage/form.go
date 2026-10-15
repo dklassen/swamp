@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
@@ -40,7 +41,7 @@ const formMaxAge = 7 * 24 * time.Hour
 // A board with no fetcher (Ashby, Lever) gets the form entered by hand in
 // the TUI (#184), however old, or nil if none was.
 func (st *Stage) applicationForm(ctx context.Context, posting store.Posting, company store.Company) (form *jobboard.ApplicationForm, formErr string, err error) {
-	stored, fetchedAt, haveStored, err := st.store.GetApplicationForm(ctx, posting.ID)
+	stored, fetchedAt, haveStored, err := application.GetForm(ctx, st.store.DB(), posting.ID)
 	if err != nil {
 		return nil, "", fmt.Errorf("stage: %w", err)
 	}
@@ -71,7 +72,7 @@ func (st *Stage) applicationForm(ctx context.Context, posting store.Posting, com
 	if err != nil {
 		return nil, "", fmt.Errorf("stage: encode application form: %w", err)
 	}
-	if err := st.store.SaveApplicationForm(ctx, posting.ID, string(encoded)); err != nil {
+	if err := application.SaveForm(ctx, st.store.DB(), posting.ID, string(encoded)); err != nil {
 		return nil, "", fmt.Errorf("stage: %w", err)
 	}
 	return &fetched, "", nil

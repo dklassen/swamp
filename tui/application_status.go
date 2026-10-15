@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/store"
 )
@@ -136,7 +137,7 @@ type applicationStatusLoadedMsg struct {
 // 0007, H5).
 func loadApplicationStatus(s *store.Store, postingID int64, from screen) tea.Cmd {
 	return func() tea.Msg {
-		application, err := s.GetApplication(context.Background(), postingID)
+		application, err := application.Get(context.Background(), s.DB(), postingID)
 		if errors.Is(err, store.ErrNotFound) {
 			err = errors.New("this application was deleted in the meantime")
 		}

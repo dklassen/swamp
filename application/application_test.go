@@ -1,8 +1,13 @@
-package store
+package application_test
 
 import (
 	"context"
 	"errors"
+	"github.com/dklassen/swamp/application"
+	"github.com/dklassen/swamp/docrecord"
+	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/postingmarkup"
+	"github.com/dklassen/swamp/store"
 	"testing"
 	"time"
 
@@ -11,15 +16,6 @@ import (
 	"github.com/dklassen/swamp/applicationstatus"
 )
 
-func mustCreateApplication(t *testing.T, s *Store, postingID int64) Application {
-	t.Helper()
-	a, err := s.CreateApplication(context.Background(), postingID)
-	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
-	}
-	return a
-}
-
 func TestCreateApplication_ThenGet_ReturnsSameApplication(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -27,20 +23,20 @@ func TestCreateApplication_ThenGet_ReturnsSameApplication(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 
-	created, err := s.CreateApplication(ctx, posting.ID)
+	created, err := createApplication(ctx, s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	if created.Status != applicationstatus.Started {
 		t.Fatalf("Status = %s, want %s", created.Status, applicationstatus.Started)
 	}
 
-	got, err := s.GetApplication(ctx, posting.ID)
+	got, err := application.Get(ctx, s.DB(), posting.ID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 	if diff := cmp.Diff(created, got); diff != "" {
-		t.Fatalf("GetApplication mismatch (-created +got):\n%s", diff)
+		t.Fatalf("application.Get mismatch (-created +got):\n%s", diff)
 	}
 }
 
@@ -48,9 +44,9 @@ func TestGetApplication_NonexistentPostingID_ReturnsErrNotFound(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	_, err := s.GetApplication(ctx, 999)
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("GetApplication error = %v, want ErrNotFound", err)
+	_, err := application.Get(ctx, s.DB(), 999)
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("application.Get error = %v, want store.ErrNotFound", err)
 	}
 }
 
@@ -62,20 +58,20 @@ func TestUpdateApplicationStatus_UpdatesStatus(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	mustCreateApplication(t, s, posting.ID)
 
-	updated, err := s.UpdateApplicationStatus(ctx, posting.ID, applicationstatus.Interviewing)
+	updated, err := updateApplicationStatus(ctx, s, posting.ID, applicationstatus.Interviewing)
 	if err != nil {
-		t.Fatalf("UpdateApplicationStatus: %v", err)
+		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 	if updated.Status != applicationstatus.Interviewing {
 		t.Fatalf("Status = %s, want %s", updated.Status, applicationstatus.Interviewing)
 	}
 
-	got, err := s.GetApplication(ctx, posting.ID)
+	got, err := application.Get(ctx, s.DB(), posting.ID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 	if diff := cmp.Diff(updated, got); diff != "" {
-		t.Fatalf("GetApplication mismatch (-updated +got):\n%s", diff)
+		t.Fatalf("application.Get mismatch (-updated +got):\n%s", diff)
 	}
 }
 
@@ -83,9 +79,9 @@ func TestUpdateApplicationStatus_NonexistentPostingID_ReturnsErrNotFound(t *test
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	_, err := s.UpdateApplicationStatus(ctx, 999, applicationstatus.Interviewing)
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("UpdateApplicationStatus error = %v, want ErrNotFound", err)
+	_, err := updateApplicationStatus(ctx, s, 999, applicationstatus.Interviewing)
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("application.UpdateStatus error = %v, want store.ErrNotFound", err)
 	}
 }
 
@@ -104,8 +100,8 @@ func TestGetApplication_NullStatusInDB_FailsLoudly(t *testing.T) {
 		t.Fatalf("insert application with NULL status: %v", err)
 	}
 
-	if _, err := s.GetApplication(ctx, posting.ID); err == nil {
-		t.Fatal("GetApplication with NULL status in DB = nil error, want an error")
+	if _, err := application.Get(ctx, s.DB(), posting.ID); err == nil {
+		t.Fatal("application.Get with NULL status in DB = nil error, want an error")
 	}
 }
 
@@ -117,9 +113,9 @@ func TestUpdateApplicationNotes_UpdatesNotes(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	mustCreateApplication(t, s, posting.ID)
 
-	updated, err := s.UpdateApplicationNotes(ctx, posting.ID, "Follow up next week")
+	updated, err := application.UpdateNotes(ctx, s.DB(), posting.ID, "Follow up next week")
 	if err != nil {
-		t.Fatalf("UpdateApplicationNotes: %v", err)
+		t.Fatalf("application.UpdateNotes: %v", err)
 	}
 	if updated.Notes != "Follow up next week" {
 		t.Fatalf("Notes = %q, want %q", updated.Notes, "Follow up next week")
@@ -134,12 +130,12 @@ func TestGetApplicationByID_ReturnsTheApplication(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	created := mustCreateApplication(t, s, posting.ID)
 
-	got, err := s.GetApplicationByID(ctx, created.ID)
+	got, err := application.GetByID(ctx, s.DB(), created.ID)
 	if err != nil {
-		t.Fatalf("GetApplicationByID: %v", err)
+		t.Fatalf("application.GetByID: %v", err)
 	}
 	if diff := cmp.Diff(created, got); diff != "" {
-		t.Fatalf("GetApplicationByID mismatch (-created +got):\n%s", diff)
+		t.Fatalf("application.GetByID mismatch (-created +got):\n%s", diff)
 	}
 }
 
@@ -151,9 +147,9 @@ func TestGetApplicationByID_NonexistentID_ReturnsErrNotFound(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
 
-	_, err := s.GetApplicationByID(ctx, 999)
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("GetApplicationByID error = %v, want ErrNotFound", err)
+	_, err := application.GetByID(ctx, s.DB(), 999)
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("application.GetByID error = %v, want store.ErrNotFound", err)
 	}
 }
 
@@ -166,15 +162,15 @@ func TestGetApplicationByIDIncludingDeleted(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	live := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer").ID)
 	deleted := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-2", "Designer").ID)
-	if err := s.DeleteApplication(ctx, deleted.ID); err != nil {
-		t.Fatalf("DeleteApplication: %v", err)
+	if err := application.Delete(ctx, s.DB(), deleted.ID); err != nil {
+		t.Fatalf("application.Delete: %v", err)
 	}
 
 	t.Run("live", func(t *testing.T) {
 		t.Parallel()
-		got, err := s.GetApplicationByIDIncludingDeleted(ctx, live.ID)
+		got, err := application.GetByIDIncludingDeleted(ctx, s.DB(), live.ID)
 		if err != nil {
-			t.Fatalf("GetApplicationByIDIncludingDeleted: %v", err)
+			t.Fatalf("application.GetByIDIncludingDeleted: %v", err)
 		}
 		if diff := cmp.Diff(live, got); diff != "" {
 			t.Errorf("mismatch (-want +got):\n%s", diff)
@@ -182,9 +178,9 @@ func TestGetApplicationByIDIncludingDeleted(t *testing.T) {
 	})
 	t.Run("deleted", func(t *testing.T) {
 		t.Parallel()
-		got, err := s.GetApplicationByIDIncludingDeleted(ctx, deleted.ID)
+		got, err := application.GetByIDIncludingDeleted(ctx, s.DB(), deleted.ID)
 		if err != nil {
-			t.Fatalf("GetApplicationByIDIncludingDeleted: %v", err)
+			t.Fatalf("application.GetByIDIncludingDeleted: %v", err)
 		}
 		if got.DeletedAt.IsZero() {
 			t.Error("DeletedAt is zero, want the time it was deleted")
@@ -196,15 +192,15 @@ func TestGetApplicationByIDIncludingDeleted(t *testing.T) {
 	})
 	t.Run("never existed", func(t *testing.T) {
 		t.Parallel()
-		if _, err := s.GetApplicationByIDIncludingDeleted(ctx, 999); !errors.Is(err, ErrNotFound) {
-			t.Errorf("err = %v, want ErrNotFound", err)
+		if _, err := application.GetByIDIncludingDeleted(ctx, s.DB(), 999); !errors.Is(err, store.ErrNotFound) {
+			t.Errorf("err = %v, want store.ErrNotFound", err)
 		}
 	})
 }
 
 // TestCreateApplication_ClosedPosting_Refused: an application started on
 // a closed posting can't be submitted, and sync never ends it, because it
-// only ends applications when their posting changes to closed (#175). So
+// only ends applications when their posting changes to closed. So
 // it isn't started: nothing is written, and the error says why.
 func TestCreateApplication_ClosedPosting_Refused(t *testing.T) {
 	t.Parallel()
@@ -216,23 +212,23 @@ func TestCreateApplication_ClosedPosting_Refused(t *testing.T) {
 		t.Fatalf("MarkPostingClosed: %v", err)
 	}
 
-	if _, err := s.CreateApplication(ctx, posting.ID); !errors.Is(err, ErrPostingClosed) {
-		t.Fatalf("CreateApplication on a closed posting: err = %v, want ErrPostingClosed", err)
+	if _, err := createApplication(ctx, s, posting.ID); !errors.Is(err, application.ErrPostingClosed) {
+		t.Fatalf("application.Create on a closed posting: err = %v, want application.ErrPostingClosed", err)
 	}
-	if _, err := s.GetApplication(ctx, posting.ID); !errors.Is(err, ErrNotFound) {
-		t.Errorf("GetApplication after the refusal: err = %v, want ErrNotFound", err)
+	if _, err := application.Get(ctx, s.DB(), posting.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("application.Get after the refusal: err = %v, want store.ErrNotFound", err)
 	}
 }
 
 // TestCreateApplication_NonexistentPosting_ReturnsErrNotFound: foreign
-// keys aren't enforced, so without the posting check CreateApplication
-// would start an application for a posting that doesn't exist (#175).
+// keys aren't enforced, so without the posting check Create
+// would start an application for a posting that doesn't exist.
 func TestCreateApplication_NonexistentPosting_ReturnsErrNotFound(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 
-	if _, err := s.CreateApplication(context.Background(), 9999); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("CreateApplication(9999): err = %v, want ErrNotFound", err)
+	if _, err := createApplication(context.Background(), s, 9999); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("application.Create(9999): err = %v, want store.ErrNotFound", err)
 	}
 }
 
@@ -242,14 +238,14 @@ func TestDeleteApplication_ThenGet_ReturnsErrNotFound(t *testing.T) {
 
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	application := mustCreateApplication(t, s, posting.ID)
+	app := mustCreateApplication(t, s, posting.ID)
 
-	if err := s.DeleteApplication(ctx, application.ID); err != nil {
-		t.Fatalf("DeleteApplication: %v", err)
+	if err := application.Delete(ctx, s.DB(), app.ID); err != nil {
+		t.Fatalf("application.Delete: %v", err)
 	}
 
-	if _, err := s.GetApplication(ctx, posting.ID); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("GetApplication error = %v, want ErrNotFound", err)
+	if _, err := application.Get(ctx, s.DB(), posting.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("application.Get error = %v, want store.ErrNotFound", err)
 	}
 }
 
@@ -265,8 +261,8 @@ func TestDeleteApplication_IDNotReusedByNextApplication(t *testing.T) {
 	second := mustUpsertPosting(t, s, acme.ID, "job-2", "Staff Engineer")
 	deleted := mustCreateApplication(t, s, first.ID)
 
-	if err := s.DeleteApplication(ctx, deleted.ID); err != nil {
-		t.Fatalf("DeleteApplication: %v", err)
+	if err := application.Delete(ctx, s.DB(), deleted.ID); err != nil {
+		t.Fatalf("application.Delete: %v", err)
 	}
 	next := mustCreateApplication(t, s, second.ID)
 
@@ -281,18 +277,18 @@ func TestUpdateApplication_AfterDeleteAndRestart_UpdatesOnlyTheLiveOne(t *testin
 	t.Parallel()
 	tests := []struct {
 		name   string
-		update func(s *Store, postingID int64) (Application, error)
+		update func(s testStore, postingID int64) (application.Application, error)
 	}{
 		{
 			name: "status",
-			update: func(s *Store, postingID int64) (Application, error) {
-				return s.UpdateApplicationStatus(context.Background(), postingID, applicationstatus.Submitted)
+			update: func(s testStore, postingID int64) (application.Application, error) {
+				return updateApplicationStatus(context.Background(), s, postingID, applicationstatus.Submitted)
 			},
 		},
 		{
 			name: "notes",
-			update: func(s *Store, postingID int64) (Application, error) {
-				return s.UpdateApplicationNotes(context.Background(), postingID, "second try")
+			update: func(s testStore, postingID int64) (application.Application, error) {
+				return application.UpdateNotes(context.Background(), s.DB(), postingID, "second try")
 			},
 		},
 	}
@@ -303,8 +299,8 @@ func TestUpdateApplication_AfterDeleteAndRestart_UpdatesOnlyTheLiveOne(t *testin
 			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 			deleted := mustCreateApplication(t, s, posting.ID)
-			if err := s.DeleteApplication(context.Background(), deleted.ID); err != nil {
-				t.Fatalf("DeleteApplication: %v", err)
+			if err := application.Delete(context.Background(), s.DB(), deleted.ID); err != nil {
+				t.Fatalf("application.Delete: %v", err)
 			}
 			live := mustCreateApplication(t, s, posting.ID)
 
@@ -323,9 +319,9 @@ func TestUpdateApplication_AfterDeleteAndRestart_UpdatesOnlyTheLiveOne(t *testin
 // once, with the live application, never the deleted one.
 func TestListings_AfterDeleteAndRestart_ShowThePostingOnceWithTheLiveApplication(t *testing.T) {
 	t.Parallel()
-	search := func(order PostingOrder) func(s *Store) ([]int64, error) {
-		return func(s *Store) ([]int64, error) {
-			page, err := s.SearchPostings(context.Background(), PostingSearch{Order: order, Limit: 10})
+	search := func(order store.PostingOrder) func(s testStore) ([]int64, error) {
+		return func(s testStore) ([]int64, error) {
+			page, err := s.SearchPostings(context.Background(), store.PostingSearch{Order: order, Limit: 10})
 			var ids []int64
 			for _, l := range page.Listings {
 				ids = append(ids, l.ApplicationID)
@@ -335,11 +331,11 @@ func TestListings_AfterDeleteAndRestart_ShowThePostingOnceWithTheLiveApplication
 	}
 	tests := []struct {
 		name           string
-		applicationIDs func(s *Store) ([]int64, error)
+		applicationIDs func(s testStore) ([]int64, error)
 	}{
 		{
 			name: "interested postings",
-			applicationIDs: func(s *Store) ([]int64, error) {
+			applicationIDs: func(s testStore) ([]int64, error) {
 				postings, err := s.ListInterestedPostings(context.Background())
 				var ids []int64
 				for _, p := range postings {
@@ -350,9 +346,9 @@ func TestListings_AfterDeleteAndRestart_ShowThePostingOnceWithTheLiveApplication
 				return ids, err
 			},
 		},
-		{name: "search by id", applicationIDs: search(PostingOrderIDAsc)},
-		{name: "search by id, descending", applicationIDs: search(PostingOrderIDDesc)},
-		{name: "search by published date", applicationIDs: search(PostingOrderPublishedDesc)},
+		{name: "search by id", applicationIDs: search(store.PostingOrderIDAsc)},
+		{name: "search by id, descending", applicationIDs: search(store.PostingOrderIDDesc)},
+		{name: "search by published date", applicationIDs: search(store.PostingOrderPublishedDesc)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -361,12 +357,12 @@ func TestListings_AfterDeleteAndRestart_ShowThePostingOnceWithTheLiveApplication
 			ctx := context.Background()
 			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-			if _, err := s.setPostingInterested(ctx, posting.ID); err != nil {
+			if _, err := postingmarkup.SetInterested(ctx, s.DB(), posting.ID); err != nil {
 				t.Fatalf("SetPostingInterested: %v", err)
 			}
 			deleted := mustCreateApplication(t, s, posting.ID)
-			if err := s.DeleteApplication(ctx, deleted.ID); err != nil {
-				t.Fatalf("DeleteApplication: %v", err)
+			if err := application.Delete(ctx, s.DB(), deleted.ID); err != nil {
+				t.Fatalf("application.Delete: %v", err)
 			}
 			live := mustCreateApplication(t, s, posting.ID)
 
@@ -387,43 +383,47 @@ func TestDeleteApplication_KeepsWhatTheApplicationOwns(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name  string
-		seed  func(t *testing.T, s *Store, applicationID int64)
-		count func(t *testing.T, s *Store, applicationID int64) int
+		seed  func(t *testing.T, s testStore, applicationID int64)
+		count func(t *testing.T, s testStore, applicationID int64) int
 	}{
 		{
 			name: "status history",
-			seed: func(*testing.T, *Store, int64) {}, // CreateApplication records one
-			count: func(t *testing.T, s *Store, applicationID int64) int {
+			seed: func(*testing.T, testStore, int64) {}, // CreateApplication records one
+			count: func(t *testing.T, s testStore, applicationID int64) int {
 				t.Helper()
-				history, err := s.ListApplicationStatusHistory(context.Background(), applicationID)
+				history, err := application.ListStatusHistory(context.Background(), s.DB(), applicationID)
 				if err != nil {
-					t.Fatalf("ListApplicationStatusHistory: %v", err)
+					t.Fatalf("application.ListStatusHistory: %v", err)
 				}
 				return len(history)
 			},
 		},
 		{
 			name: "document reviews",
-			seed: func(t *testing.T, s *Store, applicationID int64) {
+			seed: func(t *testing.T, s testStore, applicationID int64) {
 				t.Helper()
-				if err := s.createDocumentReview(context.Background(), applicationID); err != nil {
-					t.Fatalf("createDocumentReview: %v", err)
+				ctx := context.Background()
+				if err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+					_, err := docrecord.CreateReview(ctx, tx, applicationID, documents.Resume, "# Resume\n", docrecord.Passed, "")
+					return err
+				}); err != nil {
+					t.Fatalf("docrecord.CreateReview: %v", err)
 				}
 			},
-			count: func(t *testing.T, s *Store, applicationID int64) int {
+			count: func(t *testing.T, s testStore, applicationID int64) int {
 				t.Helper()
 				return s.countRows(t, "document_reviews", applicationID)
 			},
 		},
 		{
 			name: "document exports",
-			seed: func(t *testing.T, s *Store, applicationID int64) {
+			seed: func(t *testing.T, s testStore, applicationID int64) {
 				t.Helper()
-				if err := s.recordDocumentExport(context.Background(), applicationID); err != nil {
-					t.Fatalf("recordDocumentExport: %v", err)
+				if err := docrecord.RecordExport(context.Background(), s.DB(), applicationID, documents.Resume, "# Resume\n", "/exports/resume.pdf"); err != nil {
+					t.Fatalf("docrecord.RecordExport: %v", err)
 				}
 			},
-			count: func(t *testing.T, s *Store, applicationID int64) int {
+			count: func(t *testing.T, s testStore, applicationID int64) int {
 				t.Helper()
 				return s.countRows(t, "document_exports", applicationID)
 			},
@@ -432,13 +432,13 @@ func TestDeleteApplication_KeepsWhatTheApplicationOwns(t *testing.T) {
 			name: "interview stages",
 			// No API writes interview_stages any more, but rows from before
 			// it was removed must still survive a delete.
-			seed: func(t *testing.T, s *Store, applicationID int64) {
+			seed: func(t *testing.T, s testStore, applicationID int64) {
 				t.Helper()
 				if _, err := s.sqlDB.Exec(`INSERT INTO interview_stages (application_id, sequence, name) VALUES (?, 1, 'Phone screen')`, applicationID); err != nil {
 					t.Fatalf("insert interview stage: %v", err)
 				}
 			},
-			count: func(t *testing.T, s *Store, applicationID int64) int {
+			count: func(t *testing.T, s testStore, applicationID int64) int {
 				t.Helper()
 				var n int
 				if err := s.sqlDB.QueryRow(`SELECT count(*) FROM interview_stages WHERE application_id = ?`, applicationID).Scan(&n); err != nil {
@@ -454,18 +454,18 @@ func TestDeleteApplication_KeepsWhatTheApplicationOwns(t *testing.T) {
 			s := newTestStore(t)
 			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-			application := mustCreateApplication(t, s, posting.ID)
-			tt.seed(t, s, application.ID)
-			before := tt.count(t, s, application.ID)
+			app := mustCreateApplication(t, s, posting.ID)
+			tt.seed(t, s, app.ID)
+			before := tt.count(t, s, app.ID)
 			if before == 0 {
 				t.Fatalf("seeded nothing to keep")
 			}
 
-			if err := s.DeleteApplication(context.Background(), application.ID); err != nil {
-				t.Fatalf("DeleteApplication: %v", err)
+			if err := application.Delete(context.Background(), s.DB(), app.ID); err != nil {
+				t.Fatalf("application.Delete: %v", err)
 			}
 
-			if got := tt.count(t, s, application.ID); got != before {
+			if got := tt.count(t, s, app.ID); got != before {
 				t.Errorf("%d rows left for the deleted application, want %d", got, before)
 			}
 		})
@@ -476,34 +476,34 @@ func TestDeleteApplication_NonexistentID_ReturnsErrNotFound(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 
-	if err := s.DeleteApplication(context.Background(), 999); !errors.Is(err, ErrNotFound) {
-		t.Fatalf("DeleteApplication error = %v, want ErrNotFound", err)
+	if err := application.Delete(context.Background(), s.DB(), 999); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("application.Delete error = %v, want store.ErrNotFound", err)
 	}
 }
 
 // Deleting an application leaves its posting exactly as it was, and the
-// posting can be applied to again from scratch (#232).
+// posting can be applied to again from scratch.
 func TestDeleteApplication_LeavesThePostingAndAllowsStartingAgain(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 	ctx := context.Background()
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	if _, err := s.setPostingInterested(ctx, posting.ID); err != nil {
+	if _, err := postingmarkup.SetInterested(ctx, s.DB(), posting.ID); err != nil {
 		t.Fatalf("SetPostingInterested: %v", err)
 	}
-	application := mustCreateApplication(t, s, posting.ID)
+	app := mustCreateApplication(t, s, posting.ID)
 	postingBefore, err := s.GetPosting(ctx, posting.ID)
 	if err != nil {
 		t.Fatalf("GetPosting: %v", err)
 	}
-	markupBefore, err := s.postingMarkup(ctx, posting.ID)
+	markupBefore, err := postingmarkup.Get(ctx, s.DB(), posting.ID)
 	if err != nil {
 		t.Fatalf("GetPostingMarkup: %v", err)
 	}
 
-	if err := s.DeleteApplication(ctx, application.ID); err != nil {
-		t.Fatalf("DeleteApplication: %v", err)
+	if err := application.Delete(ctx, s.DB(), app.ID); err != nil {
+		t.Fatalf("application.Delete: %v", err)
 	}
 
 	postingAfter, err := s.GetPosting(ctx, posting.ID)
@@ -513,7 +513,7 @@ func TestDeleteApplication_LeavesThePostingAndAllowsStartingAgain(t *testing.T) 
 	if diff := cmp.Diff(postingBefore, postingAfter); diff != "" {
 		t.Errorf("posting changed (-before +after):\n%s", diff)
 	}
-	markupAfter, err := s.postingMarkup(ctx, posting.ID)
+	markupAfter, err := postingmarkup.Get(ctx, s.DB(), posting.ID)
 	if err != nil {
 		t.Fatalf("GetPostingMarkup after delete: %v", err)
 	}
@@ -521,15 +521,15 @@ func TestDeleteApplication_LeavesThePostingAndAllowsStartingAgain(t *testing.T) 
 		t.Errorf("posting markup changed (-before +after):\n%s", diff)
 	}
 
-	again, err := s.CreateApplication(ctx, posting.ID)
+	again, err := createApplication(ctx, s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication after delete: %v", err)
+		t.Fatalf("application.Create after delete: %v", err)
 	}
-	history, err := s.ListApplicationStatusHistory(ctx, again.ID)
+	history, err := application.ListStatusHistory(ctx, s.DB(), again.ID)
 	if err != nil {
-		t.Fatalf("ListApplicationStatusHistory: %v", err)
+		t.Fatalf("application.ListStatusHistory: %v", err)
 	}
 	if len(history) != 1 || history[0].Status != applicationstatus.Started {
-		t.Errorf("history of the new application = %+v, want just its own started row", history)
+		t.Errorf("history of the new app = %+v, want just its own started row", history)
 	}
 }

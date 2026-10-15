@@ -7,6 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
 )
@@ -79,10 +80,10 @@ type applicationDeletedMsg struct {
 // deleteApplication soft-deletes application. Its documents stay on disk
 // for a later restore; with IDs never reused, nothing else can pick them
 // up.
-func deleteApplication(s *store.Store, application pursuit.Application) tea.Cmd {
+func deleteApplication(s *store.Store, app pursuit.Application) tea.Cmd {
 	return func() tea.Msg {
-		err := s.DeleteApplication(context.Background(), application.ID)
-		return applicationDeletedMsg{application: application, err: err}
+		err := application.Delete(context.Background(), s.DB(), app.ID)
+		return applicationDeletedMsg{application: app, err: err}
 	}
 }
 
@@ -100,7 +101,7 @@ type applicationReloadedForDeleteMsg struct {
 // company parts don't affect what's deleted, so they're kept as loaded.
 func reloadApplicationForDelete(s *store.Store, view pursuit.Application, from screen) tea.Cmd {
 	return func() tea.Msg {
-		application, err := s.GetApplicationByID(context.Background(), view.ID)
+		application, err := application.GetByID(context.Background(), s.DB(), view.ID)
 		if errors.Is(err, store.ErrNotFound) {
 			return applicationReloadedForDeleteMsg{from: from, err: errors.New("this application was already deleted")}
 		}

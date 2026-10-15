@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
@@ -144,7 +145,7 @@ type applicationFormLoadedMsg struct {
 // hand, to seed the form screen.
 func loadApplicationForm(s *store.Store, postingID int64) tea.Cmd {
 	return func() tea.Msg {
-		stored, _, ok, err := s.GetApplicationForm(context.Background(), postingID)
+		stored, _, ok, err := application.GetForm(context.Background(), s.DB(), postingID)
 		if err != nil || !ok {
 			return applicationFormLoadedMsg{postingID: postingID, err: err}
 		}
@@ -168,6 +169,6 @@ func saveApplicationForm(s *store.Store, postingID int64, form jobboard.Applicat
 		if err != nil {
 			return applicationFormSavedMsg{err: fmt.Errorf("tui: encode application form: %w", err)}
 		}
-		return applicationFormSavedMsg{err: s.SaveApplicationForm(context.Background(), postingID, string(encoded))}
+		return applicationFormSavedMsg{err: application.SaveForm(context.Background(), s.DB(), postingID, string(encoded))}
 	}
 }

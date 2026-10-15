@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
@@ -19,7 +20,7 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 
 	posting := store.Posting{ID: 5, IngestedFields: store.IngestedFields{Title: "Staff Engineer"}}
 	application := pursuit.Application{
-		Application: store.Application{ID: 1},
+		Application: application.Application{ID: 1},
 		Posting:     store.Posting{ID: 9, IngestedFields: store.IngestedFields{Title: "Engineering Manager"}},
 		CompanyName: "Initech",
 	}

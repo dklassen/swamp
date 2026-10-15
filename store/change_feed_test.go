@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/dklassen/swamp/applicationstatus"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 func mustNewChangeFeed(t *testing.T, s *Store) *ChangeFeed {
@@ -42,13 +43,13 @@ func TestChangeFeed_DeliversAnotherProcessesChange(t *testing.T) {
 	agent := openWithOrigin(t, path, "mcp:7")
 	acme := mustCreateCompany(t, agent, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, agent, acme.ID, "job-1", "Engineer")
-	application, err := agent.CreateApplication(ctx, posting.ID)
+	application, err := agent.createApplication(ctx, posting.ID)
 	if err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
 	feed := mustNewChangeFeed(t, tui)
 
-	if _, err := agent.UpdateApplicationStatus(ctx, posting.ID, applicationstatus.Interviewing); err != nil {
+	if _, err := agent.updateApplicationStatus(ctx, posting.ID, applicationstatus.Interviewing); err != nil {
 		t.Fatalf("UpdateApplicationStatus: %v", err)
 	}
 
@@ -76,11 +77,11 @@ func TestChangeFeed_CatchesUpAfterAGap(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	feed := mustNewChangeFeed(t, s)
 
-	if _, err := s.CreateApplication(ctx, posting.ID); err != nil {
+	if _, err := s.createApplication(ctx, posting.ID); err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
 	for _, status := range []applicationstatus.Status{applicationstatus.Submitted, applicationstatus.Interviewing} {
-		if _, err := s.UpdateApplicationStatus(ctx, posting.ID, status); err != nil {
+		if _, err := s.updateApplicationStatus(ctx, posting.ID, status); err != nil {
 			t.Fatalf("UpdateApplicationStatus: %v", err)
 		}
 	}
@@ -107,7 +108,7 @@ func TestChangeFeed_ACheckpointIsNotAChange(t *testing.T) {
 	other := newTestStoreAt(t, path)
 	acme := mustCreateCompany(t, other, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, other, acme.ID, "job-1", "Engineer")
-	if _, err := other.CreateApplication(context.Background(), posting.ID); err != nil {
+	if _, err := other.createApplication(context.Background(), posting.ID); err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
 	feed := mustNewChangeFeed(t, tui)
@@ -130,7 +131,7 @@ func TestChangeFeed_EachLoggedTable(t *testing.T) {
 		s           *Store
 		company     Company
 		posting     Posting
-		application Application
+		application sqlcdb.Application
 	}
 	tests := []struct {
 		name   string
@@ -154,8 +155,10 @@ func TestChangeFeed_EachLoggedTable(t *testing.T) {
 			return err
 		}, "postings", "insert"},
 		{"posting closed", func(ctx context.Context, f fixture) error {
-			_, err := f.s.ClosePosting(ctx, f.posting.ID, nil)
-			return err
+			return InTx(ctx, f.s.DB(), func(tx Tx) error {
+				_, err := ClosePosting(ctx, tx, f.posting.ID)
+				return err
+			})
 		}, "postings", "update"},
 		{"document written", func(ctx context.Context, f fixture) error {
 			return f.s.recordDocumentWrite(ctx, f.application.ID)
@@ -177,7 +180,7 @@ func TestChangeFeed_EachLoggedTable(t *testing.T) {
 			s := openWithOrigin(t, path, "mcp:7")
 			f := fixture{s: s, company: mustCreateCompany(t, s, "Acme", "ashby", "acme")}
 			f.posting = mustUpsertPosting(t, s, f.company.ID, "job-1", "Engineer")
-			application, err := s.CreateApplication(ctx, f.posting.ID)
+			application, err := s.createApplication(ctx, f.posting.ID)
 			if err != nil {
 				t.Fatalf("CreateApplication: %v", err)
 			}
@@ -215,7 +218,7 @@ func TestChangeFeed_AnApplicationEventNamesItsPosting(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	feed := mustNewChangeFeed(t, s)
 
-	if _, err := s.CreateApplication(ctx, posting.ID); err != nil {
+	if _, err := s.createApplication(ctx, posting.ID); err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
 

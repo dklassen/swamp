@@ -11,6 +11,8 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/dklassen/swamp/application"
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/filter"
@@ -101,10 +103,10 @@ func (f *barrierFetcher) FetchPostings(ctx context.Context, boardSlug string) ([
 // all held at a barrierFetcher until every one has fetched postings, and
 // returns their results in no particular order.
 //
-// It calls syncHeld, underneath SyncCompany's sync lease (#150): the lease
+// It calls syncHeld, underneath SyncCompany's sync lease: the lease
 // stops overlapping syncs, but the writes must stay safe if they overlap
 // anyway -- e.g. a lease that expired while its sync was still running
-// and was taken over (#147, #148).
+// and was taken over.
 func syncOverlapping(t *testing.T, s *store.Store, companyID int64, runs int, postings []jobboard.Posting) []Result {
 	t.Helper()
 	fetcher := newBarrierFetcher(runs, postings)
@@ -177,4 +179,24 @@ func addCompanyFilter(t *testing.T, s *store.Store, companyID int64, field, valu
 	if err != nil {
 		t.Fatalf("add company filter %s=%s: %v", field, value, err)
 	}
+}
+
+func createApplication(ctx context.Context, s *store.Store, postingID int64) (application.Application, error) {
+	var app application.Application
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		var err error
+		app, err = application.Create(ctx, tx, postingID)
+		return err
+	})
+	return app, err
+}
+
+func updateApplicationStatus(ctx context.Context, s *store.Store, postingID int64, status applicationstatus.Status) (application.Application, error) {
+	var app application.Application
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		var err error
+		app, err = application.UpdateStatus(ctx, tx, postingID, status)
+		return err
+	})
+	return app, err
 }

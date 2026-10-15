@@ -6,6 +6,7 @@ import (
 
 	"github.com/pressly/goose/v3"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
@@ -54,11 +55,11 @@ func mustUpsertPosting(t *testing.T, s *store.Store, companyID int64, sourceID, 
 	return p
 }
 
-func mustCreateApplication(t *testing.T, s *store.Store, postingID int64) store.Application {
+func mustCreateApplication(t *testing.T, s *store.Store, postingID int64) application.Application {
 	t.Helper()
-	a, err := s.CreateApplication(context.Background(), postingID)
+	a, err := createApplication(context.Background(), s, postingID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	return a
 }
@@ -72,4 +73,14 @@ func createReview(ctx context.Context, s *store.Store, applicationID int64, docu
 		return err
 	})
 	return review, err
+}
+
+func createApplication(ctx context.Context, s *store.Store, postingID int64) (application.Application, error) {
+	var app application.Application
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		var err error
+		app, err = application.Create(ctx, tx, postingID)
+		return err
+	})
+	return app, err
 }

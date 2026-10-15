@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
@@ -20,7 +21,7 @@ import (
 // application whose cover letter and resume are drafted, a fake browser
 // opener recording the URLs it's asked to open, and a temporary export
 // directory.
-func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, store.Application, *[]string) {
+func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, application.Application, *[]string) {
 	t.Helper()
 	ctx := context.Background()
 	s := newTestStore(t)
@@ -38,10 +39,10 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, store.App
 	if err != nil {
 		t.Fatalf("UpsertPosting: %v", err)
 	}
-	application := mustCreateApplication(t, s, posting.ID)
+	target := mustCreateApplication(t, s, posting.ID)
 
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	paths, err := app.documents.EnsureDir(application.ID)
+	paths, err := app.documents.EnsureDir(target.ID)
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
@@ -56,7 +57,7 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, store.App
 		return func() tea.Msg { return browserOpenedMsg{} }
 	}
 	app.exportDir = t.TempDir()
-	return app, application, &opened
+	return app, target, &opened
 }
 
 // startSubmit goes from the home screen to the application's detail and
@@ -77,7 +78,7 @@ func startSubmit(t *testing.T, app *App) *App {
 
 func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T) {
 	t.Parallel()
-	app, application, opened := submitTestApp(t, "https://boards.example/job-1/apply", "https://boards.example/job-1")
+	app, target, opened := submitTestApp(t, "https://boards.example/job-1/apply", "https://boards.example/job-1")
 
 	app = startSubmit(t, app)
 
@@ -89,16 +90,16 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 			t.Errorf("exported %s: %v", name, err)
 		}
 	}
-	if got, err := app.store.GetApplicationByID(context.Background(), application.ID); err != nil || got.Status != applicationstatus.Started {
+	if got, err := application.GetByID(context.Background(), app.store.DB(), target.ID); err != nil || got.Status != applicationstatus.Started {
 		t.Fatalf("status before confirming = %v (err %v), want still started", got.Status, err)
 	}
 
 	app, cmd := sendKey(app, runeKey('y'))
 	app = applyCmd(t, app, cmd)
 
-	got, err := app.store.GetApplicationByID(context.Background(), application.ID)
+	got, err := application.GetByID(context.Background(), app.store.DB(), target.ID)
 	if err != nil {
-		t.Fatalf("GetApplicationByID: %v", err)
+		t.Fatalf("application.GetByID: %v", err)
 	}
 	if got.Status != applicationstatus.Submitted {
 		t.Errorf("status after confirming = %s, want %s", got.Status, applicationstatus.Submitted)
@@ -113,15 +114,15 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 	for _, key := range []tea.KeyMsg{runeKey('n'), {Type: tea.KeyEsc}} {
 		t.Run(key.String(), func(t *testing.T) {
 			t.Parallel()
-			app, application, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+			app, target, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 			app = startSubmit(t, app)
 
 			app, cmd := sendKey(app, key)
 			app = applyCmd(t, app, cmd)
 
-			got, err := app.store.GetApplicationByID(context.Background(), application.ID)
+			got, err := application.GetByID(context.Background(), app.store.DB(), target.ID)
 			if err != nil {
-				t.Fatalf("GetApplicationByID: %v", err)
+				t.Fatalf("application.GetByID: %v", err)
 			}
 			if got.Status != applicationstatus.Started {
 				t.Errorf("status = %s, want it left at %s", got.Status, applicationstatus.Started)
@@ -134,7 +135,7 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 }
 
 // The submit screen's y saves through the same status message, so it
-// needs the same protection (#115).
+// needs the same protection.
 func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
 	t.Parallel()
 	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")

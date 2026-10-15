@@ -11,6 +11,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
@@ -22,7 +23,7 @@ import (
 // drafts documents for.
 func testExportApplication() pursuit.Application {
 	return pursuit.Application{
-		Application: store.Application{ID: 42, Status: applicationstatus.Started},
+		Application: application.Application{ID: 42, Status: applicationstatus.Started},
 		Posting:     store.Posting{ID: 7, IngestedFields: store.IngestedFields{Title: "Delivery Platform"}},
 		CompanyName: "Northwind",
 	}
@@ -164,7 +165,7 @@ func TestApplicationExportModel_ExpandsTildeInDestination(t *testing.T) {
 }
 
 // Each exported document is recorded with the content it was exported
-// from (#188), which is what tells "passed, not exported" apart from
+// from, which is what tells "passed, not exported" apart from
 // "exported, ready to submit".
 func TestApplicationExportModel_RecordsEachExport(t *testing.T) {
 	t.Parallel()

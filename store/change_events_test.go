@@ -58,10 +58,10 @@ func TestChangeEvents_SwampConnectionsStampTheirOrigin(t *testing.T) {
 	first := mustUpsertPosting(t, outsider, acme.ID, "job-1", "Engineer")
 	second := mustUpsertPosting(t, outsider, acme.ID, "job-2", "Designer")
 
-	if _, err := tui.CreateApplication(ctx, first.ID); err != nil {
+	if _, err := tui.createApplication(ctx, first.ID); err != nil {
 		t.Fatalf("CreateApplication through the stamped store: %v", err)
 	}
-	if _, err := outsider.CreateApplication(ctx, second.ID); err != nil {
+	if _, err := outsider.createApplication(ctx, second.ID); err != nil {
 		t.Fatalf("CreateApplication through the outsider: %v", err)
 	}
 

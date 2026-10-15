@@ -12,11 +12,13 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/postingmarkup"
+	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -256,7 +258,7 @@ func (st *Stage) startedNotInterested(ctx context.Context, interested []store.In
 	for _, p := range interested {
 		seen[p.Posting.ID] = true
 	}
-	applications, err := st.store.ListActiveApplications(ctx)
+	applications, err := pursuit.List(ctx, st.store.DB())
 	if err != nil {
 		return nil, fmt.Errorf("stage: list active applications: %w", err)
 	}
@@ -302,7 +304,7 @@ func (st *Stage) candidate(ctx context.Context, p store.InterestedPosting) (Cand
 		if allDrafted(status) && !needsRework(reviews) {
 			return Candidate{}, false, nil
 		}
-		application, err := st.store.GetApplication(ctx, p.Posting.ID)
+		application, err := application.Get(ctx, st.store.DB(), p.Posting.ID)
 		if err != nil {
 			return Candidate{}, false, fmt.Errorf("stage: get application: %w", err)
 		}
@@ -335,25 +337,29 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 		return nil, fmt.Errorf("stage: get company: %w", err)
 	}
 
-	application, err := st.store.GetApplication(ctx, postingID)
+	app, err := application.Get(ctx, st.store.DB(), postingID)
 	if errors.Is(err, store.ErrNotFound) {
-		application, err = st.store.CreateApplication(ctx, postingID)
+		err = store.InTx(ctx, st.store.DB(), func(tx store.Tx) error {
+			var err error
+			app, err = application.Create(ctx, tx, postingID)
+			return err
+		})
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stage: get or create application: %w", err)
 	}
 
-	if _, err := st.documents.EnsureDir(application.ID); err != nil {
+	if _, err := st.documents.EnsureDir(app.ID); err != nil {
 		return nil, fmt.Errorf("stage: ensure document directory: %w", err)
 	}
-	status := st.documents.Status(application.ID)
+	status := st.documents.Status(app.ID)
 
 	form, formErr, err := st.applicationForm(ctx, posting, company)
 	if err != nil {
 		return nil, err
 	}
 
-	reviews, err := docrecord.LatestReviews(ctx, st.store.DB(), application.ID)
+	reviews, err := docrecord.LatestReviews(ctx, st.store.DB(), app.ID)
 	if err != nil {
 		return nil, fmt.Errorf("stage: latest document reviews: %w", err)
 	}
@@ -368,7 +374,7 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 		if err != nil {
 			return nil, fmt.Errorf("stage: %w", err)
 		}
-		sha, err := st.documents.SHA256(application.ID, documentType)
+		sha, err := st.documents.SHA256(app.ID, documentType)
 		if err != nil {
 			return nil, fmt.Errorf("stage: hash %s: %w", documentType, err)
 		}
@@ -381,9 +387,9 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 	return &Prepared{
 		Posting:              preparedPosting(posting),
 		CompanyName:          company.Name,
-		ApplicationID:        application.ID,
+		ApplicationID:        app.ID,
 		Documents:            preparedDocuments,
-		ApplicationNotes:     application.Notes,
+		ApplicationNotes:     app.Notes,
 		LatestReviews:        latestReviewsForJSON(reviews),
 		ApplicationForm:      form,
 		ApplicationFormError: formErr,
