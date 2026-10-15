@@ -1,4 +1,6 @@
-package store
+// Package scoring records how well postings fit, and finds the ones still
+// waiting for a score.
+package scoring
 
 import (
 	"context"
@@ -7,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
@@ -45,7 +48,7 @@ func ParsePendingReason(s string) (PendingReason, error) {
 			return PendingReason(i), nil
 		}
 	}
-	return 0, fmt.Errorf("store: unknown pending reason %q", s)
+	return 0, fmt.Errorf("scoring: unknown pending reason %q", s)
 }
 
 // MarshalText encodes r as its name, so JSON readers never see the const
@@ -89,15 +92,15 @@ type PendingPostingsPage struct {
 	Total int
 }
 
-// PendingPostings returns one page of the postings with no score on their
-// current content, newest first, before beforeID (0 for the first page). For a
+// Pending returns one page of the postings with no score on their current
+// content, newest first, before beforeID (0 for the first page). For a
 // rescore, rescoreProfileSHA256 names the profile, and a score against
 // another one doesn't count; "" is no rescore. Eligible postings are open,
 // not archived, not interested, without an application, at a company the
 // user hasn't deleted, and let through by its filters.
-func (s *Store) PendingPostings(ctx context.Context, rescoreProfileSHA256 string, beforeID int64, limit int) (PendingPostingsPage, error) {
+func Pending(ctx context.Context, r store.Runner, rescoreProfileSHA256 string, beforeID int64, limit int) (PendingPostingsPage, error) {
 	if limit <= 0 {
-		return PendingPostingsPage{}, fmt.Errorf("store: pending postings: limit %d, want at least 1", limit)
+		return PendingPostingsPage{}, fmt.Errorf("scoring: pending postings: limit %d, want at least 1", limit)
 	}
 	params := sqlcdb.ListPendingPostingsParams{
 		// One more than asked for, to learn whether another page follows.
@@ -109,9 +112,11 @@ func (s *Store) PendingPostings(ctx context.Context, rescoreProfileSHA256 string
 	if beforeID != 0 {
 		params.BeforeID = beforeID
 	}
-	rows, err := s.queries.ListPendingPostings(ctx, params)
+	rows, err := store.Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.ListPendingPostingsRow, error) {
+		return q.ListPendingPostings(ctx, params)
+	})
 	if err != nil {
-		return PendingPostingsPage{}, fmt.Errorf("store: pending postings: %w", err)
+		return PendingPostingsPage{}, fmt.Errorf("scoring: pending postings: %w", err)
 	}
 	page := PendingPostingsPage{}
 	if len(rows) > limit {
@@ -151,17 +156,17 @@ const (
 	maxScore = 5
 )
 
-// ScoreProvenance is what produced a batch of scores. The client's name
+// Provenance is what produced a batch of scores. The client's name
 // and version may be empty: MCP client info is optional.
-type ScoreProvenance struct {
+type Provenance struct {
 	Model         string
 	ClientName    string
 	ClientVersion string
 	ProfileSHA256 string
 }
 
-// ScoreEntry is one posting's score, as the agent gives it.
-type ScoreEntry struct {
+// Entry is one posting's score, as the agent gives it.
+type Entry struct {
 	PostingID int64
 	// Score is 1 to 5.
 	Score int
@@ -172,69 +177,69 @@ type ScoreEntry struct {
 	ContentSHA256 string
 }
 
-// ScoreRefusal is why RecordScores didn't record an entry.
-type ScoreRefusal int
+// Refusal is why Record didn't record an entry.
+type Refusal int
 
 const (
-	// ScoreNoSuchPosting: no posting has the entry's ID.
-	ScoreNoSuchPosting ScoreRefusal = iota
-	// ScoreOutOfRange: the score isn't between 1 and 5.
-	ScoreOutOfRange
-	// ScoreNoReason: the reason is empty.
-	ScoreNoReason
-	// ScoreContentChanged: the posting's content changed since the agent
+	// NoSuchPosting: no posting has the entry's ID.
+	NoSuchPosting Refusal = iota
+	// OutOfRange: the score isn't between 1 and 5.
+	OutOfRange
+	// NoReason: the reason is empty.
+	NoReason
+	// ContentChanged: the posting's content changed since the agent
 	// read it; it stays pending.
-	ScoreContentChanged
-	// ScoreRepeat: the posting already has a score on this content,
+	ContentChanged
+	// Repeat: the posting already has a score on this content,
 	// against this profile, from this model.
-	ScoreRepeat
+	Repeat
 )
 
-// scoreRefusalNames is the single name table for ScoreRefusal, indexed by
+// refusalNames is the single name table for Refusal, indexed by
 // its value.
-var scoreRefusalNames = [...]string{
-	ScoreNoSuchPosting:  "no_such_posting",
-	ScoreOutOfRange:     "score_out_of_range",
-	ScoreNoReason:       "no_reason",
-	ScoreContentChanged: "content_changed",
-	ScoreRepeat:         "already_scored",
+var refusalNames = [...]string{
+	NoSuchPosting:  "no_such_posting",
+	OutOfRange:     "score_out_of_range",
+	NoReason:       "no_reason",
+	ContentChanged: "content_changed",
+	Repeat:         "already_scored",
 }
 
-func (r ScoreRefusal) String() string {
-	if r < 0 || int(r) >= len(scoreRefusalNames) {
-		return fmt.Sprintf("ScoreRefusal(%d)", int(r))
+func (r Refusal) String() string {
+	if r < 0 || int(r) >= len(refusalNames) {
+		return fmt.Sprintf("Refusal(%d)", int(r))
 	}
-	return scoreRefusalNames[r]
+	return refusalNames[r]
 }
 
-// ScoreRefusals returns every refusal, in const order.
-func ScoreRefusals() []ScoreRefusal {
-	refusals := make([]ScoreRefusal, len(scoreRefusalNames))
-	for i := range scoreRefusalNames {
-		refusals[i] = ScoreRefusal(i)
+// Refusals returns every refusal, in const order.
+func Refusals() []Refusal {
+	refusals := make([]Refusal, len(refusalNames))
+	for i := range refusalNames {
+		refusals[i] = Refusal(i)
 	}
 	return refusals
 }
 
-// ParseScoreRefusal is the refusal named s, or an error for any other name.
-func ParseScoreRefusal(s string) (ScoreRefusal, error) {
-	for i, name := range scoreRefusalNames {
+// ParseRefusal is the refusal named s, or an error for any other name.
+func ParseRefusal(s string) (Refusal, error) {
+	for i, name := range refusalNames {
 		if name == s {
-			return ScoreRefusal(i), nil
+			return Refusal(i), nil
 		}
 	}
-	return 0, fmt.Errorf("store: unknown score refusal %q", s)
+	return 0, fmt.Errorf("scoring: unknown score refusal %q", s)
 }
 
 // MarshalText encodes r as its name, so JSON readers never see the const
 // order.
-func (r ScoreRefusal) MarshalText() ([]byte, error) {
+func (r Refusal) MarshalText() ([]byte, error) {
 	return []byte(r.String()), nil
 }
 
 // UnmarshalText is MarshalText's inverse.
-func (r *ScoreRefusal) UnmarshalText(text []byte) error {
-	parsed, err := ParseScoreRefusal(string(text))
+func (r *Refusal) UnmarshalText(text []byte) error {
+	parsed, err := ParseRefusal(string(text))
 	if err != nil {
 		return err
 	}
@@ -242,85 +247,84 @@ func (r *ScoreRefusal) UnmarshalText(text []byte) error {
 	return nil
 }
 
-// RefusedScore is an entry RecordScores didn't record, and why.
-type RefusedScore struct {
+// Refused is an entry Record didn't record, and why.
+type Refused struct {
 	PostingID int64
-	Why       ScoreRefusal
+	Why       Refusal
 }
 
-// RecordScoresResult is what RecordScores did with each entry.
-type RecordScoresResult struct {
+// RecordResult is what Record did with each entry.
+type RecordResult struct {
 	// Recorded is the posting IDs scored, in the entries' order.
 	Recorded []int64
 	// Refused is the entries not recorded, in the entries' order.
-	Refused []RefusedScore
+	Refused []Refused
 }
 
-// RecordScores records entries as scores from provenance, in one
-// transaction: every valid entry is committed together, or none is if the
-// write fails. An entry that can't be recorded is refused, and the result
-// says why. A call with no model or profile hash records nothing.
-func (s *Store) RecordScores(ctx context.Context, provenance ScoreProvenance, entries []ScoreEntry) (RecordScoresResult, error) {
+// Record records entries as scores from provenance, all together or not
+// at all: a failing write undoes the whole batch, even when the caller
+// ignores the error and commits. An entry that can't be recorded is
+// refused, and the result says why. A call with no model or profile hash
+// records nothing.
+func Record(ctx context.Context, tx store.Tx, provenance Provenance, entries []Entry) (RecordResult, error) {
 	switch {
 	case provenance.Model == "":
-		return RecordScoresResult{}, errors.New("store: record scores: model is required")
+		return RecordResult{}, errors.New("scoring: record scores: model is required")
 	case provenance.ProfileSHA256 == "":
-		return RecordScoresResult{}, errors.New("store: record scores: profile hash is required")
+		return RecordResult{}, errors.New("scoring: record scores: profile hash is required")
 	}
-	tx, err := s.sqlDB.BeginTx(ctx, nil)
+	var result RecordResult
+	err := store.InTx(ctx, tx, func(tx store.Tx) error {
+		return store.Write(ctx, tx, func(q *sqlcdb.Queries) error {
+			for _, e := range entries {
+				why, ok, err := checkScoreEntry(ctx, q, provenance, e)
+				if err != nil {
+					return err
+				}
+				if !ok {
+					result.Refused = append(result.Refused, Refused{PostingID: e.PostingID, Why: why})
+					continue
+				}
+				if err := q.CreatePostingScore(ctx, sqlcdb.CreatePostingScoreParams{
+					PostingID:     e.PostingID,
+					Score:         int64(e.Score),
+					Reason:        e.Reason,
+					ContentSha256: e.ContentSHA256,
+					ProfileSha256: provenance.ProfileSHA256,
+					Model:         provenance.Model,
+					ClientName:    provenance.ClientName,
+					ClientVersion: provenance.ClientVersion,
+				}); err != nil {
+					return fmt.Errorf("scoring: record score for posting %d: %w", e.PostingID, err)
+				}
+				result.Recorded = append(result.Recorded, e.PostingID)
+			}
+			return nil
+		})
+	})
 	if err != nil {
-		return RecordScoresResult{}, fmt.Errorf("store: begin record scores tx: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	qtx := s.queries.WithTx(tx)
-
-	var result RecordScoresResult
-	for _, e := range entries {
-		why, ok, err := checkScoreEntry(ctx, qtx, provenance, e)
-		if err != nil {
-			return RecordScoresResult{}, err
-		}
-		if !ok {
-			result.Refused = append(result.Refused, RefusedScore{PostingID: e.PostingID, Why: why})
-			continue
-		}
-		if err := qtx.CreatePostingScore(ctx, sqlcdb.CreatePostingScoreParams{
-			PostingID:     e.PostingID,
-			Score:         int64(e.Score),
-			Reason:        e.Reason,
-			ContentSha256: e.ContentSHA256,
-			ProfileSha256: provenance.ProfileSHA256,
-			Model:         provenance.Model,
-			ClientName:    provenance.ClientName,
-			ClientVersion: provenance.ClientVersion,
-		}); err != nil {
-			return RecordScoresResult{}, fmt.Errorf("store: record score for posting %d: %w", e.PostingID, err)
-		}
-		result.Recorded = append(result.Recorded, e.PostingID)
-	}
-	if err := tx.Commit(); err != nil {
-		return RecordScoresResult{}, fmt.Errorf("store: commit record scores tx: %w", err)
+		return RecordResult{}, err
 	}
 	return result, nil
 }
 
 // checkScoreEntry says whether e can be recorded, and if not, why. It reads
 // inside the transaction, so an entry earlier in the same batch counts.
-func checkScoreEntry(ctx context.Context, qtx *sqlcdb.Queries, provenance ScoreProvenance, e ScoreEntry) (ScoreRefusal, bool, error) {
+func checkScoreEntry(ctx context.Context, qtx *sqlcdb.Queries, provenance Provenance, e Entry) (Refusal, bool, error) {
 	switch {
 	case e.Score < minScore || e.Score > maxScore:
-		return ScoreOutOfRange, false, nil
+		return OutOfRange, false, nil
 	case e.Reason == "":
-		return ScoreNoReason, false, nil
+		return NoReason, false, nil
 	}
 	current, err := qtx.GetPostingContentSHA256(ctx, e.PostingID)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return ScoreNoSuchPosting, false, nil
+		return NoSuchPosting, false, nil
 	case err != nil:
-		return 0, false, fmt.Errorf("store: posting %d: %w", e.PostingID, err)
+		return 0, false, fmt.Errorf("scoring: posting %d: %w", e.PostingID, err)
 	case current != e.ContentSHA256:
-		return ScoreContentChanged, false, nil
+		return ContentChanged, false, nil
 	}
 	repeat, err := qtx.HasRepeatScore(ctx, sqlcdb.HasRepeatScoreParams{
 		PostingID:     e.PostingID,
@@ -329,36 +333,38 @@ func checkScoreEntry(ctx context.Context, qtx *sqlcdb.Queries, provenance ScoreP
 		Model:         provenance.Model,
 	})
 	if err != nil {
-		return 0, false, fmt.Errorf("store: posting %d: %w", e.PostingID, err)
+		return 0, false, fmt.Errorf("scoring: posting %d: %w", e.PostingID, err)
 	}
 	if repeat {
-		return ScoreRepeat, false, nil
+		return Repeat, false, nil
 	}
 	return 0, true, nil
 }
 
-// PostingScore is one score a posting was given, and what produced it.
-type PostingScore struct {
+// Score is one score a posting was given, and what produced it.
+type Score struct {
 	ID int64
-	ScoreProvenance
+	Provenance
 	Score         int
 	Reason        string
 	ContentSHA256 string
 	ScoredAt      time.Time
 }
 
-// PostingScores returns every score postingID was given, newest, its
-// current one, first.
-func (s *Store) PostingScores(ctx context.Context, postingID int64) ([]PostingScore, error) {
-	rows, err := s.queries.ListPostingScores(ctx, postingID)
+// ForPosting returns every score postingID was given, newest, its current
+// one, first.
+func ForPosting(ctx context.Context, r store.Runner, postingID int64) ([]Score, error) {
+	rows, err := store.Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.PostingScore, error) {
+		return q.ListPostingScores(ctx, postingID)
+	})
 	if err != nil {
-		return nil, fmt.Errorf("store: scores of posting %d: %w", postingID, err)
+		return nil, fmt.Errorf("scoring: scores of posting %d: %w", postingID, err)
 	}
-	scores := make([]PostingScore, len(rows))
+	scores := make([]Score, len(rows))
 	for i, row := range rows {
-		scores[i] = PostingScore{
+		scores[i] = Score{
 			ID: row.ID,
-			ScoreProvenance: ScoreProvenance{
+			Provenance: Provenance{
 				Model:         row.Model,
 				ClientName:    row.ClientName,
 				ClientVersion: row.ClientVersion,

@@ -22,8 +22,8 @@ import (
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/cursor"
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/stage"
-	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
 
@@ -276,14 +276,14 @@ type recordScoresInput struct {
 }
 
 // recordScoresOutputSchema advertises a refusal's Why as its name, one of
-// the store's refusals: inferred, it would be ScoreRefusal's int.
+// scoring's refusals: inferred, it would be scoring.Refusal's int.
 func recordScoresOutputSchema() *jsonschema.Schema {
 	schema, err := jsonschema.For[stage.RecordResult](nil)
 	if err != nil {
 		panic(fmt.Sprintf("mcpserver: infer record_scores output schema: %v", err))
 	}
 	var names []any
-	for _, refusal := range store.ScoreRefusals() {
+	for _, refusal := range scoring.Refusals() {
 		names = append(names, refusal.String())
 	}
 	schema.Properties["Refused"].Items.Properties["Why"] = &jsonschema.Schema{Type: "string", Enum: names}

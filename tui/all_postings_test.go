@@ -11,6 +11,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/filter"
+	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -659,10 +660,10 @@ func TestAllPostings_NoMatches_SaysWhatWasSearched(t *testing.T) {
 // mustScore records score for p against a fixed profile.
 func mustScore(t *testing.T, s *store.Store, p store.Posting, score int, profile string) {
 	t.Helper()
-	if _, err := s.RecordScores(context.Background(), store.ScoreProvenance{Model: "claude-opus-5-5", ProfileSHA256: profile}, []store.ScoreEntry{
+	if _, err := recordScores(context.Background(), s, scoring.Provenance{Model: "claude-opus-5-5", ProfileSHA256: profile}, []scoring.Entry{
 		{PostingID: p.ID, Score: score, Reason: "reason", ContentSHA256: p.ContentSHA256},
 	}); err != nil {
-		t.Fatalf("RecordScores: %v", err)
+		t.Fatalf("recordScores: %v", err)
 	}
 }
 
@@ -768,15 +769,15 @@ func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	p := mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
-	if _, err := s.RecordScores(context.Background(), store.ScoreProvenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: "p"}, []store.ScoreEntry{
+	if _, err := recordScores(context.Background(), s, scoring.Provenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: "p"}, []scoring.Entry{
 		{PostingID: p.ID, Score: 2, Reason: "first look", ContentSHA256: p.ContentSHA256},
 	}); err != nil {
-		t.Fatalf("RecordScores: %v", err)
+		t.Fatalf("recordScores: %v", err)
 	}
-	if _, err := s.RecordScores(context.Background(), store.ScoreProvenance{Model: "claude-opus-5-5", ClientName: "claude-code", ClientVersion: "2.4.1", ProfileSHA256: "edited p"}, []store.ScoreEntry{
+	if _, err := recordScores(context.Background(), s, scoring.Provenance{Model: "claude-opus-5-5", ClientName: "claude-code", ClientVersion: "2.4.1", ProfileSHA256: "edited p"}, []scoring.Entry{
 		{PostingID: p.ID, Score: 4, Reason: "Go and Kafka, remote", ContentSHA256: p.ContentSHA256},
 	}); err != nil {
-		t.Fatalf("RecordScores: %v", err)
+		t.Fatalf("recordScores: %v", err)
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 140, Height: 60})
@@ -793,10 +794,10 @@ func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
 		t.Errorf("the current score isn't above the earlier one:\n%s", view)
 	}
 
-	if _, err := s.RecordScores(context.Background(), store.ScoreProvenance{Model: "claude-opus-5-5", ProfileSHA256: "rewritten p"}, []store.ScoreEntry{
+	if _, err := recordScores(context.Background(), s, scoring.Provenance{Model: "claude-opus-5-5", ProfileSHA256: "rewritten p"}, []scoring.Entry{
 		{PostingID: p.ID, Score: 5, Reason: "after the rewrite", ContentSHA256: p.ContentSHA256},
 	}); err != nil {
-		t.Fatalf("RecordScores: %v", err)
+		t.Fatalf("recordScores: %v", err)
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "posting_scores", RowID: 3, Op: "insert", New: fmt.Sprintf(`{"posting_id":%d,"score":5}`, p.ID), Origin: "mcp:7"}}})
 

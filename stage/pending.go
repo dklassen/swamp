@@ -9,6 +9,7 @@ import (
 
 	"github.com/dklassen/swamp/cursor"
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -44,15 +45,15 @@ type PendingResult struct {
 // PendingMatch is a posting still to score: enough to judge it from, the
 // content hash its score must name, and why it's pending.
 type PendingMatch struct {
-	ID            int64               `json:"ID"`
-	Title         string              `json:"Title"`
-	CompanyName   string              `json:"CompanyName"`
-	Department    string              `json:"Department"`
-	Location      string              `json:"Location"`
-	WorkplaceType string              `json:"WorkplaceType"`
-	PublishedAt   store.OptionalTime  `json:"PublishedAt"`
-	Version       string              `json:"Version"`
-	Reason        store.PendingReason `json:"Reason"`
+	ID            int64                 `json:"ID"`
+	Title         string                `json:"Title"`
+	CompanyName   string                `json:"CompanyName"`
+	Department    string                `json:"Department"`
+	Location      string                `json:"Location"`
+	WorkplaceType string                `json:"WorkplaceType"`
+	PublishedAt   store.OptionalTime    `json:"PublishedAt"`
+	Version       string                `json:"Version"`
+	Reason        scoring.PendingReason `json:"Reason"`
 }
 
 // pendingFilters is what a list_pending_postings cursor is bound to.
@@ -87,7 +88,7 @@ func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (Pend
 		beforeID = key.ID
 	}
 
-	page, err := st.store.PendingPostings(ctx, rescoreProfile, beforeID, limit)
+	page, err := scoring.Pending(ctx, st.store.DB(), rescoreProfile, beforeID, limit)
 	if err != nil {
 		return PendingResult{}, fmt.Errorf("stage: %w", err)
 	}

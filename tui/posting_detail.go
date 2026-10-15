@@ -9,6 +9,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -47,7 +48,7 @@ type postingDetailModel struct {
 
 	// scores is every score the posting was given, newest first; loaded
 	// async, and empty until then or when it has none.
-	scores []store.PostingScore
+	scores []scoring.Score
 }
 
 // newPostingDetailModel returns a detail screen for p, sized to
@@ -75,14 +76,14 @@ func (m *postingDetailModel) setContent() {
 }
 
 // setScores shows scores, newest first, keeping the scroll.
-func (m *postingDetailModel) setScores(scores []store.PostingScore) {
+func (m *postingDetailModel) setScores(scores []scoring.Score) {
 	m.scores = scores
 	m.setContent()
 }
 
 // postingScoresSection is the posting's fit: its current score with its
 // reason and what gave it, then the earlier ones. Empty when it has none.
-func postingScoresSection(p store.Posting, scores []store.PostingScore, width int) string {
+func postingScoresSection(p store.Posting, scores []scoring.Score, width int) string {
 	if len(scores) == 0 {
 		return ""
 	}
@@ -104,7 +105,7 @@ func postingScoresSection(p store.Posting, scores []store.PostingScore, width in
 }
 
 // scoredBy says when a score was given and by what.
-func scoredBy(s store.PostingScore) string {
+func scoredBy(s scoring.Score) string {
 	by := s.ScoredAt.Local().Format("Jan 2") + " by " + s.Model
 	if s.ClientName != "" {
 		by += " (" + strings.TrimSpace(s.ClientName+" "+s.ClientVersion) + ")"

@@ -14,6 +14,7 @@ import (
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
@@ -118,4 +119,14 @@ func addCompanyFilter(t *testing.T, s *store.Store, companyID int64, field, valu
 	if err != nil {
 		t.Fatalf("add company filter %s=%s: %v", field, value, err)
 	}
+}
+
+func recordScores(ctx context.Context, s *store.Store, provenance scoring.Provenance, entries []scoring.Entry) (scoring.RecordResult, error) {
+	var result scoring.RecordResult
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		var err error
+		result, err = scoring.Record(ctx, tx, provenance, entries)
+		return err
+	})
+	return result, err
 }

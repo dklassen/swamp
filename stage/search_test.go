@@ -10,6 +10,7 @@ import (
 
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/cursor"
+	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -389,11 +390,11 @@ func TestSearch_ScoreDescPagesBestFitFirst(t *testing.T) {
 	low := mustUpsertPosting(t, s, acme.ID, "1", "Low")
 	high := mustUpsertPosting(t, s, acme.ID, "2", "High")
 	unscored := mustUpsertPosting(t, s, acme.ID, "3", "Unscored")
-	if _, err := s.RecordScores(ctx, store.ScoreProvenance{Model: "m", ProfileSHA256: "p"}, []store.ScoreEntry{
+	if _, err := recordScores(ctx, s, scoring.Provenance{Model: "m", ProfileSHA256: "p"}, []scoring.Entry{
 		{PostingID: low.ID, Score: 2, Reason: "weak", ContentSHA256: low.ContentSHA256},
 		{PostingID: high.ID, Score: 5, Reason: "strong", ContentSHA256: high.ContentSHA256},
 	}); err != nil {
-		t.Fatalf("RecordScores: %v", err)
+		t.Fatalf("recordScores: %v", err)
 	}
 
 	var got []int64
@@ -419,4 +420,14 @@ func TestSearch_ScoreDescPagesBestFitFirst(t *testing.T) {
 	if diff := cmp.Diff([]int{5, 2, 0}, scores); diff != "" {
 		t.Errorf("scores (-want +got):\n%s", diff)
 	}
+}
+
+func recordScores(ctx context.Context, s *store.Store, provenance scoring.Provenance, entries []scoring.Entry) (scoring.RecordResult, error) {
+	var result scoring.RecordResult
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		var err error
+		result, err = scoring.Record(ctx, tx, provenance, entries)
+		return err
+	})
+	return result, err
 }
