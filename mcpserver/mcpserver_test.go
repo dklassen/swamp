@@ -23,6 +23,7 @@ import (
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
 	swampsync "github.com/dklassen/swamp/sync"
@@ -1300,7 +1301,7 @@ func TestListPendingPostings_PagesToTheLastPage(t *testing.T) {
 	if second.NextCursor != nil {
 		t.Errorf("last page's NextCursor = %q, want null", *second.NextCursor)
 	}
-	if first.Postings[0].Reason != store.PendingNew || first.Postings[0].Version == "" {
+	if first.Postings[0].Reason != scoring.PendingNew || first.Postings[0].Version == "" {
 		t.Errorf("first posting = %+v, want new, with its content hash", first.Postings[0])
 	}
 }
@@ -1314,25 +1315,25 @@ func TestListPendingPostings_SaysWhyEachIsPending(t *testing.T) {
 	fresh := mustUpsertPosting(t, s, acme.ID, "job-1", "Fresh")
 	scored := mustUpsertPosting(t, s, acme.ID, "job-2", "Scored before the profile changed")
 	oldProfile := documents.ContentSHA256("# Me")
-	if _, err := s.RecordScores(ctx, store.ScoreProvenance{Model: "claude-opus-5-5", ProfileSHA256: oldProfile}, []store.ScoreEntry{
+	if _, err := recordScores(ctx, s, scoring.Provenance{Model: "claude-opus-5-5", ProfileSHA256: oldProfile}, []scoring.Entry{
 		{PostingID: scored.ID, Score: 3, Reason: "ok", ContentSHA256: scored.ContentSHA256},
 	}); err != nil {
-		t.Fatalf("RecordScores: %v", err)
+		t.Fatalf("recordScores: %v", err)
 	}
 	profile := mustWriteProfile(t, d, "# Me, edited")
 	cs := connectClient(t, srv)
 
-	reasons := func(args map[string]any) map[int64]store.PendingReason {
-		got := map[int64]store.PendingReason{}
+	reasons := func(args map[string]any) map[int64]scoring.PendingReason {
+		got := map[int64]scoring.PendingReason{}
 		for _, p := range callTool[stage.PendingResult](t, cs, "list_pending_postings", args).Postings {
 			got[p.ID] = p.Reason
 		}
 		return got
 	}
-	if diff := cmp.Diff(map[int64]store.PendingReason{fresh.ID: store.PendingNew}, reasons(map[string]any{"ProfileVersion": profile})); diff != "" {
+	if diff := cmp.Diff(map[int64]scoring.PendingReason{fresh.ID: scoring.PendingNew}, reasons(map[string]any{"ProfileVersion": profile})); diff != "" {
 		t.Errorf("by default, an edited profile queues nothing (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff(map[int64]store.PendingReason{fresh.ID: store.PendingNew, scored.ID: store.PendingRescore}, reasons(map[string]any{"ProfileVersion": profile, "Rescore": true})); diff != "" {
+	if diff := cmp.Diff(map[int64]scoring.PendingReason{fresh.ID: scoring.PendingNew, scored.ID: scoring.PendingRescore}, reasons(map[string]any{"ProfileVersion": profile, "Rescore": true})); diff != "" {
 		t.Errorf("rescore (-want +got):\n%s", diff)
 	}
 }
@@ -1395,17 +1396,17 @@ func TestRecordScores_StoresValidEntriesAndReportsTheRest(t *testing.T) {
 
 	want := stage.RecordResult{
 		Recorded: []int64{good.ID},
-		Refused:  []stage.RefusedEntry{{PostingID: other.ID, Why: store.ScoreOutOfRange}, {PostingID: 999, Why: store.ScoreNoSuchPosting}},
+		Refused:  []stage.RefusedEntry{{PostingID: other.ID, Why: scoring.OutOfRange}, {PostingID: 999, Why: scoring.NoSuchPosting}},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("record_scores (-want +got):\n%s", diff)
 	}
-	scores, err := s.PostingScores(context.Background(), good.ID)
+	scores, err := scoring.ForPosting(context.Background(), s.DB(), good.ID)
 	if err != nil {
-		t.Fatalf("PostingScores: %v", err)
+		t.Fatalf("scoring.ForPosting: %v", err)
 	}
-	wantProvenance := store.ScoreProvenance{Model: "claude-opus-5-5", ClientName: "mcpserver-test", ClientVersion: "test", ProfileSHA256: profile}
-	if len(scores) != 1 || scores[0].Score != 4 || scores[0].ScoreProvenance != wantProvenance {
+	wantProvenance := scoring.Provenance{Model: "claude-opus-5-5", ClientName: "mcpserver-test", ClientVersion: "test", ProfileSHA256: profile}
+	if len(scores) != 1 || scores[0].Score != 4 || scores[0].Provenance != wantProvenance {
 		t.Errorf("stored scores = %+v, want one 4 with %+v", scores, wantProvenance)
 	}
 }
@@ -1428,7 +1429,7 @@ func TestRecordScores_RefusesAProfileItDidntReadAndRecordsNothing(t *testing.T) 
 	if !strings.Contains(text, "read_profile") {
 		t.Errorf("tool error %q, want it to say to call read_profile again", text)
 	}
-	if scores, err := s.PostingScores(context.Background(), p.ID); err != nil || len(scores) != 0 {
+	if scores, err := scoring.ForPosting(context.Background(), s.DB(), p.ID); err != nil || len(scores) != 0 {
 		t.Errorf("scores after a refused call = %+v, %v; want none", scores, err)
 	}
 }
@@ -1470,7 +1471,7 @@ func TestRecordScores_AdvertisesTheRefusalNames(t *testing.T) {
 		t.Fatalf("unmarshal schema %s: %v", raw, err)
 	}
 	var want []string
-	for _, r := range store.ScoreRefusals() {
+	for _, r := range scoring.Refusals() {
 		want = append(want, r.String())
 	}
 	why := schema.Properties.Refused.Items.Properties.Why
@@ -1514,4 +1515,14 @@ func TestOldVersionArgumentNames_AreRefused(t *testing.T) {
 	if _, err := os.Stat(prepared.Documents[documents.CoverLetter].Path); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("cover letter on disk after a refused write: Stat error %v, want not exist", err)
 	}
+}
+
+func recordScores(ctx context.Context, s *store.Store, provenance scoring.Provenance, entries []scoring.Entry) (scoring.RecordResult, error) {
+	var result scoring.RecordResult
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		var err error
+		result, err = scoring.Record(ctx, tx, provenance, entries)
+		return err
+	})
+	return result, err
 }

@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -298,13 +299,13 @@ func (a *App) handlePostingReloaded(msg postingReloadedMsg) tea.Cmd {
 
 type postingScoresLoadedMsg struct {
 	postingID int64
-	scores    []store.PostingScore
+	scores    []scoring.Score
 	err       error
 }
 
 func loadPostingScores(s *store.Store, postingID int64) tea.Cmd {
 	return func() tea.Msg {
-		scores, err := s.PostingScores(context.Background(), postingID)
+		scores, err := scoring.ForPosting(context.Background(), s.DB(), postingID)
 		return postingScoresLoadedMsg{postingID: postingID, scores: scores, err: err}
 	}
 }
