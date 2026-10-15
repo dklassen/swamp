@@ -74,3 +74,21 @@ func mustUpsertPosting(t *testing.T, s *Store, companyID int64, sourceID, title 
 func (s *Store) createCompanyFilter(ctx context.Context, companyID int64, field, value string) (sqlcdb.CompanyFilter, error) {
 	return s.queries.CreateCompanyFilter(ctx, sqlcdb.CreateCompanyFilterParams{CompanyID: companyID, Field: field, Value: value})
 }
+
+// Markup set-up for store's own tests, which can't import postingmarkup:
+// it imports store.
+func (s *Store) postingMarkup(ctx context.Context, postingID int64) (sqlcdb.PostingMarkup, error) {
+	return s.queries.GetPostingMarkup(ctx, postingID)
+}
+
+func (s *Store) setPostingInterested(ctx context.Context, postingID int64) (sqlcdb.PostingMarkup, error) {
+	return s.queries.SetPostingInterested(ctx, postingID)
+}
+
+func (s *Store) setPostingArchived(ctx context.Context, postingID int64) (sqlcdb.PostingMarkup, error) {
+	return s.queries.SetPostingArchived(ctx, postingID)
+}
+
+func (s *Store) updatePostingMarkupNotes(ctx context.Context, postingID int64, notes string) (sqlcdb.PostingMarkup, error) {
+	return s.queries.UpdatePostingMarkupNotes(ctx, sqlcdb.UpdatePostingMarkupNotesParams{PostingID: postingID, Notes: notes})
+}

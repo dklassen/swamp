@@ -11,6 +11,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/filter"
+	"github.com/dklassen/swamp/postingmarkup"
 	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/store"
 )
@@ -60,11 +61,11 @@ func TestAllPostings_ShowsOpenPostingsAcrossCompaniesNewestFirst(t *testing.T) {
 	shelved := mustUpsertPostingAt(t, s, acme.ID, "2", "Shelved Role", "Platform", "Toronto", "")
 	mustUpsertPostingAt(t, s, globex.ID, "3", "Account Executive", "Sales", "Remote", "")
 	newer := mustUpsertPostingAt(t, s, globex.ID, "4", "Platform Engineer", "Infra", "New York", "")
-	if _, err := s.SetPostingArchived(ctx, shelved.ID); err != nil {
-		t.Fatalf("SetPostingArchived: %v", err)
+	if _, err := postingmarkup.SetArchived(ctx, s.DB(), shelved.ID); err != nil {
+		t.Fatalf("postingmarkup.SetArchived: %v", err)
 	}
-	if _, err := s.SetPostingInterested(ctx, older.ID); err != nil {
-		t.Fatalf("SetPostingInterested: %v", err)
+	if _, err := postingmarkup.SetInterested(ctx, s.DB(), older.ID); err != nil {
+		t.Fatalf("postingmarkup.SetInterested: %v", err)
 	}
 	addCompanyFilter(t, s, globex.ID, filter.FieldDepartment, "Infra")
 
@@ -248,9 +249,9 @@ func TestAllPostings_IMarksAndUnmarksInterested(t *testing.T) {
 
 	for _, want := range []bool{true, false} {
 		app = sendKeyAndApply(t, app, runeKey('i'))
-		markup, err := s.GetPostingMarkup(context.Background(), posting.ID)
+		markup, err := postingmarkup.Get(context.Background(), s.DB(), posting.ID)
 		if err != nil {
-			t.Fatalf("GetPostingMarkup: %v", err)
+			t.Fatalf("postingmarkup.Get: %v", err)
 		}
 		if got := markup.InterestedAt != nil; got != want {
 			t.Errorf("after i: interested = %v, want %v", got, want)
@@ -280,9 +281,9 @@ func TestAllPostings_XArchivesAndThePostingLeavesThePage(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, runeKey('x'))
 
-	markup, err := s.GetPostingMarkup(context.Background(), archived.ID)
+	markup, err := postingmarkup.Get(context.Background(), s.DB(), archived.ID)
 	if err != nil {
-		t.Fatalf("GetPostingMarkup: %v", err)
+		t.Fatalf("postingmarkup.Get: %v", err)
 	}
 	if markup.ArchivedAt == nil {
 		t.Fatalf("%q isn't archived after x", archived.Title)
@@ -390,8 +391,8 @@ func TestAllPostings_MarkedInterestedElsewhere_ShowsTheStar(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app = openAllPostings(t, app)
 
-	if _, err := s.SetPostingInterested(context.Background(), posting.ID); err != nil {
-		t.Fatalf("SetPostingInterested: %v", err)
+	if _, err := postingmarkup.SetInterested(context.Background(), s.DB(), posting.ID); err != nil {
+		t.Fatalf("postingmarkup.SetInterested: %v", err)
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "posting_markup", RowID: posting.ID, Op: "update", Origin: "tui:2"}}})
 
@@ -517,9 +518,9 @@ func TestAllPostings_EnterKeepsTheResultsAndKeysActOnThem(t *testing.T) {
 	if app.screen != screenAllPostings || app.allPostings.searching || app.allPostings.query != "design" {
 		t.Errorf("after enter, i: screen %v, searching %v, query %q; want the view, not typing, query \"design\"", app.screen, app.allPostings.searching, app.allPostings.query)
 	}
-	markup, err := s.GetPostingMarkup(context.Background(), designer.ID)
+	markup, err := postingmarkup.Get(context.Background(), s.DB(), designer.ID)
 	if err != nil {
-		t.Fatalf("GetPostingMarkup: %v", err)
+		t.Fatalf("postingmarkup.Get: %v", err)
 	}
 	if markup.InterestedAt == nil {
 		t.Error("i didn't mark the highlighted match interested")

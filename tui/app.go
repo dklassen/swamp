@@ -25,6 +25,7 @@ import (
 	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
+	"github.com/dklassen/swamp/postingmarkup"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
@@ -99,7 +100,7 @@ type App struct {
 	refreshSpinner  spinner.Model
 	selectedCompany store.Company
 	postings        []store.Posting
-	postingMarkup   map[int64]store.PostingMarkup
+	postingMarkup   map[int64]postingmarkup.Markup
 	postingList     postingListModel
 	postingDetail   postingDetailModel
 	// postingDetailFrom is the screen that opened posting detail.
@@ -107,7 +108,7 @@ type App struct {
 	// applicationsByPosting holds the application for each posting_id that
 	// has one (fetched async on entering posting detail -- see
 	// loadApplication). A posting with no entry has no application yet
-	// (Application is created lazily, unlike PostingMarkup).
+	// (Application is created lazily, unlike postingmarkup.Markup).
 	applicationsByPosting map[int64]store.Application
 	applicationStatus     applicationStatusModel
 	applicationNotes      applicationNotesModel
@@ -635,7 +636,7 @@ func (a *App) startRefresh(company store.Company) tea.Cmd {
 }
 
 type postingMarkupUpdatedMsg struct {
-	markup store.PostingMarkup
+	markup postingmarkup.Markup
 	err    error
 }
 
@@ -643,13 +644,13 @@ func toggleInterested(s *store.Store, postingID int64, currentlyInterested bool)
 	return func() tea.Msg {
 		ctx := context.Background()
 		var (
-			m   store.PostingMarkup
+			m   postingmarkup.Markup
 			err error
 		)
 		if currentlyInterested {
-			m, err = s.UnmarkPostingInterested(ctx, postingID)
+			m, err = postingmarkup.UnmarkInterested(ctx, s.DB(), postingID)
 		} else {
-			m, err = s.SetPostingInterested(ctx, postingID)
+			m, err = postingmarkup.SetInterested(ctx, s.DB(), postingID)
 		}
 		return postingMarkupUpdatedMsg{markup: m, err: err}
 	}
@@ -659,13 +660,13 @@ func toggleArchived(s *store.Store, postingID int64, currentlyArchived bool) tea
 	return func() tea.Msg {
 		ctx := context.Background()
 		var (
-			m   store.PostingMarkup
+			m   postingmarkup.Markup
 			err error
 		)
 		if currentlyArchived {
-			m, err = s.UnarchivePosting(ctx, postingID)
+			m, err = postingmarkup.Unarchive(ctx, s.DB(), postingID)
 		} else {
-			m, err = s.SetPostingArchived(ctx, postingID)
+			m, err = postingmarkup.SetArchived(ctx, s.DB(), postingID)
 		}
 		return postingMarkupUpdatedMsg{markup: m, err: err}
 	}
@@ -779,7 +780,7 @@ func updateApplicationNotes(s *store.Store, postingID int64, notes string, from 
 
 type postingsLoadedMsg struct {
 	postings    []store.Posting
-	markup      map[int64]store.PostingMarkup
+	markup      map[int64]postingmarkup.Markup
 	departments []string
 	locations   []string
 	err         error
@@ -797,7 +798,7 @@ type postingsLoadedMsg struct {
 // everything unfiltered.
 //
 // Also loads each visible posting's markup (interested/archived) so the
-// list can render it inline -- one GetPostingMarkup call per posting.
+// list can render it inline -- one postingmarkup.Get call per posting.
 // Every posting always has exactly one markup row (created alongside it
 // in UpsertPosting), so N+1 here is N cheap local sqlite reads, not N
 // round trips to a remote service.
@@ -832,9 +833,9 @@ func loadPostings(s *store.Store, companyID int64, hideArchived bool) tea.Cmd {
 			return postingsLoadedMsg{err: err}
 		}
 
-		markup := make(map[int64]store.PostingMarkup, len(postings))
+		markup := make(map[int64]postingmarkup.Markup, len(postings))
 		for _, p := range postings {
-			m, err := s.GetPostingMarkup(ctx, p.ID)
+			m, err := postingmarkup.Get(ctx, s.DB(), p.ID)
 			if err != nil {
 				return postingsLoadedMsg{err: err}
 			}
@@ -862,7 +863,7 @@ func filterOutClosed(postings []store.Posting) []store.Posting {
 }
 
 // filterOutArchived drops postings whose markup has ArchivedAt set.
-func filterOutArchived(postings []store.Posting, markup map[int64]store.PostingMarkup) []store.Posting {
+func filterOutArchived(postings []store.Posting, markup map[int64]postingmarkup.Markup) []store.Posting {
 	visible := make([]store.Posting, 0, len(postings))
 	for _, p := range postings {
 		if markup[p.ID].ArchivedAt != nil {
@@ -1103,7 +1104,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		if msg.err == nil {
 			if a.postingMarkup == nil {
-				a.postingMarkup = make(map[int64]store.PostingMarkup)
+				a.postingMarkup = make(map[int64]postingmarkup.Markup)
 			}
 			a.postingMarkup[msg.markup.PostingID] = msg.markup
 			// Archiving a posting while hideArchived is on should remove

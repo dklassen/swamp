@@ -362,7 +362,7 @@ func TestListings_AfterDeleteAndRestart_ShowThePostingOnceWithTheLiveApplication
 			ctx := context.Background()
 			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-			if _, err := s.SetPostingInterested(ctx, posting.ID); err != nil {
+			if _, err := s.setPostingInterested(ctx, posting.ID); err != nil {
 				t.Fatalf("SetPostingInterested: %v", err)
 			}
 			deleted := mustCreateApplication(t, s, posting.ID)
@@ -498,7 +498,7 @@ func TestDeleteApplication_LeavesThePostingAndAllowsStartingAgain(t *testing.T) 
 	ctx := context.Background()
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	if _, err := s.SetPostingInterested(ctx, posting.ID); err != nil {
+	if _, err := s.setPostingInterested(ctx, posting.ID); err != nil {
 		t.Fatalf("SetPostingInterested: %v", err)
 	}
 	application := mustCreateApplication(t, s, posting.ID)
@@ -506,7 +506,7 @@ func TestDeleteApplication_LeavesThePostingAndAllowsStartingAgain(t *testing.T) 
 	if err != nil {
 		t.Fatalf("GetPosting: %v", err)
 	}
-	markupBefore, err := s.GetPostingMarkup(ctx, posting.ID)
+	markupBefore, err := s.postingMarkup(ctx, posting.ID)
 	if err != nil {
 		t.Fatalf("GetPostingMarkup: %v", err)
 	}
@@ -522,7 +522,7 @@ func TestDeleteApplication_LeavesThePostingAndAllowsStartingAgain(t *testing.T) 
 	if diff := cmp.Diff(postingBefore, postingAfter); diff != "" {
 		t.Errorf("posting changed (-before +after):\n%s", diff)
 	}
-	markupAfter, err := s.GetPostingMarkup(ctx, posting.ID)
+	markupAfter, err := s.postingMarkup(ctx, posting.ID)
 	if err != nil {
 		t.Fatalf("GetPostingMarkup after delete: %v", err)
 	}

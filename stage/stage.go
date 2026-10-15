@@ -15,6 +15,7 @@ import (
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/postingmarkup"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -263,7 +264,7 @@ func (st *Stage) startedNotInterested(ctx context.Context, interested []store.In
 		if a.Status != applicationstatus.Started || seen[a.Posting.ID] {
 			continue
 		}
-		markup, err := st.store.GetPostingMarkup(ctx, a.Posting.ID)
+		markup, err := postingmarkup.Get(ctx, st.store.DB(), a.Posting.ID)
 		if err != nil {
 			return nil, fmt.Errorf("stage: get posting markup: %w", err)
 		}

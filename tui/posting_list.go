@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/dklassen/swamp/postingmarkup"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -55,7 +56,7 @@ func truncateCol(s string, max int) string {
 // column for the posting list. Archived takes precedence over interested
 // when both are set, matching the same precedence the 00003 migration's
 // Down path uses when collapsing both flags back into one enum value.
-func postingMarker(m store.PostingMarkup) string {
+func postingMarker(m postingmarkup.Markup) string {
 	switch {
 	case m.ArchivedAt != nil:
 		return "✕"
@@ -103,7 +104,7 @@ func newPostingListModel(s *store.Store) postingListModel {
 type postingListSnapshot struct {
 	companyDescription      string
 	postings                []store.Posting
-	markup                  map[int64]store.PostingMarkup
+	markup                  map[int64]postingmarkup.Markup
 	hideArchived            bool
 	activeFilterDepartments []string
 	activeFilterLocations   []string

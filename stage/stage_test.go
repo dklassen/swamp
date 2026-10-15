@@ -19,6 +19,7 @@ import (
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/postingmarkup"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -76,8 +77,8 @@ func mustUpsertPosting(t *testing.T, s *store.Store, companyID int64, sourceID, 
 
 func mustMarkInterested(t *testing.T, s *store.Store, postingID int64) {
 	t.Helper()
-	if _, err := s.SetPostingInterested(context.Background(), postingID); err != nil {
-		t.Fatalf("SetPostingInterested: %v", err)
+	if _, err := postingmarkup.SetInterested(context.Background(), s.DB(), postingID); err != nil {
+		t.Fatalf("postingmarkup.SetInterested: %v", err)
 	}
 }
 
@@ -104,8 +105,8 @@ func TestList_ExcludesArchivedPostingEvenIfOnceInterested(t *testing.T) {
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
-	if _, err := s.SetPostingArchived(context.Background(), posting.ID); err != nil {
-		t.Fatalf("SetPostingArchived: %v", err)
+	if _, err := postingmarkup.SetArchived(context.Background(), s.DB(), posting.ID); err != nil {
+		t.Fatalf("postingmarkup.SetArchived: %v", err)
 	}
 
 	got, err := st.List(context.Background())
@@ -956,8 +957,8 @@ func TestList_IncludesStartedApplicationsNotMarkedInterested(t *testing.T) {
 	if _, err := s.CreateApplication(ctx, archived.ID); err != nil {
 		t.Fatalf("CreateApplication: %v", err)
 	}
-	if _, err := s.SetPostingArchived(ctx, archived.ID); err != nil {
-		t.Fatalf("SetPostingArchived: %v", err)
+	if _, err := postingmarkup.SetArchived(ctx, s.DB(), archived.ID); err != nil {
+		t.Fatalf("postingmarkup.SetArchived: %v", err)
 	}
 
 	submitted := mustUpsertPosting(t, s, company.ID, "job-5", "Submitted")

@@ -21,6 +21,7 @@ import (
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/postingmarkup"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
@@ -547,9 +548,9 @@ func TestApp_PressI_OnPostingList_TogglesInterestedOnSelectedPosting(t *testing.
 	}
 	app, _ = sendKey(app, cmd())
 
-	markup, err := s.GetPostingMarkup(context.Background(), postingID)
+	markup, err := postingmarkup.Get(context.Background(), s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetPostingMarkup: %v", err)
+		t.Fatalf("postingmarkup.Get: %v", err)
 	}
 	if markup.InterestedAt == nil {
 		t.Fatal("InterestedAt is nil after pressing 'i', want non-nil")
@@ -564,9 +565,9 @@ func TestApp_PressI_OnPostingList_TogglesInterestedOnSelectedPosting(t *testing.
 	}
 	_, _ = sendKey(app, cmd())
 
-	markup, err = s.GetPostingMarkup(context.Background(), postingID)
+	markup, err = postingmarkup.Get(context.Background(), s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetPostingMarkup: %v", err)
+		t.Fatalf("postingmarkup.Get: %v", err)
 	}
 	if markup.InterestedAt != nil {
 		t.Fatal("InterestedAt is non-nil after second 'i', want nil (toggled off)")
@@ -589,9 +590,9 @@ func TestApp_PressX_OnPostingList_TogglesArchivedOnSelectedPosting(t *testing.T)
 	}
 	app, _ = sendKey(app, cmd())
 
-	markup, err := s.GetPostingMarkup(context.Background(), postingID)
+	markup, err := postingmarkup.Get(context.Background(), s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetPostingMarkup: %v", err)
+		t.Fatalf("postingmarkup.Get: %v", err)
 	}
 	if markup.ArchivedAt == nil {
 		t.Fatal("ArchivedAt is nil after pressing 'x', want non-nil")
@@ -615,9 +616,9 @@ func TestApp_PressX_OnPostingList_TogglesArchivedOnSelectedPosting(t *testing.T)
 	}
 	_, _ = sendKey(app, cmd())
 
-	markup, err = s.GetPostingMarkup(context.Background(), postingID)
+	markup, err = postingmarkup.Get(context.Background(), s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetPostingMarkup: %v", err)
+		t.Fatalf("postingmarkup.Get: %v", err)
 	}
 	if markup.ArchivedAt != nil {
 		t.Fatal("ArchivedAt is non-nil after second 'x', want nil (toggled off)")
@@ -655,9 +656,9 @@ func TestApp_PressI_WhileArchived_SwitchesToInterestedAndClearsArchived(t *testi
 	}
 	app, _ = sendKey(app, cmd())
 
-	markup, err := s.GetPostingMarkup(context.Background(), postingID)
+	markup, err := postingmarkup.Get(context.Background(), s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetPostingMarkup: %v", err)
+		t.Fatalf("postingmarkup.Get: %v", err)
 	}
 	if markup.ArchivedAt != nil {
 		t.Fatal("ArchivedAt is non-nil after pressing 'i' while archived, want nil (overridden)")
@@ -692,9 +693,9 @@ func TestApp_PressX_WhileInterested_SwitchesToArchivedAndClearsInterested(t *tes
 	}
 	app, _ = sendKey(app, cmd())
 
-	markup, err := s.GetPostingMarkup(context.Background(), postingID)
+	markup, err := postingmarkup.Get(context.Background(), s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetPostingMarkup: %v", err)
+		t.Fatalf("postingmarkup.Get: %v", err)
 	}
 	if markup.InterestedAt != nil {
 		t.Fatal("InterestedAt is non-nil after pressing 'x' while interested, want nil (overridden)")
@@ -738,8 +739,8 @@ func TestApp_OpenPostingList_HidesArchivedPostingsByDefault(t *testing.T) {
 	if archivedID == 0 {
 		t.Fatal("could not find Designer posting to archive")
 	}
-	if _, err := s.SetPostingArchived(context.Background(), archivedID); err != nil {
-		t.Fatalf("SetPostingArchived: %v", err)
+	if _, err := postingmarkup.SetArchived(context.Background(), s.DB(), archivedID); err != nil {
+		t.Fatalf("postingmarkup.SetArchived: %v", err)
 	}
 
 	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
@@ -777,8 +778,8 @@ func TestApp_PressA_OnPostingList_TogglesArchivedPostingsBackIntoView(t *testing
 	if archivedID == 0 {
 		t.Fatal("could not find Designer posting to archive")
 	}
-	if _, err := s.SetPostingArchived(context.Background(), archivedID); err != nil {
-		t.Fatalf("SetPostingArchived: %v", err)
+	if _, err := postingmarkup.SetArchived(context.Background(), s.DB(), archivedID); err != nil {
+		t.Fatalf("postingmarkup.SetArchived: %v", err)
 	}
 
 	app, cmd := sendKey(app, runeKey('A'))
