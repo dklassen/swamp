@@ -302,6 +302,12 @@ JOIN companies ON companies.id = postings.company_id
 LEFT JOIN applications ON applications.posting_id = postings.id AND applications.deleted_at IS NULL
 WHERE posting_markup.interested_at IS NOT NULL
   AND posting_markup.archived_at IS NULL
+  AND postings.listing_status = 'open'
+  AND companies.deleted_at IS NULL
+  AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department')
+       OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'department' AND equal_fold(cf.value, postings.department)))
+  AND (NOT EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location')
+       OR EXISTS (SELECT 1 FROM company_filters cf WHERE cf.company_id = postings.company_id AND cf.field = 'location' AND equal_fold(cf.value, postings.location)))
   AND (applications.id IS NULL OR applications.status NOT IN (/*SLICE:terminal_statuses*/?))
 ORDER BY posting_markup.interested_at DESC
 `
@@ -313,7 +319,9 @@ type ListInterestedPostingsRow struct {
 	ApplicationStatus sql.NullString `json:"application_status"`
 }
 
-// Postings the user has flagged interested and not archived, joined with
+// Postings the user has flagged interested and not archived, that the
+// company's posting list shows (open, company not deleted, let through by
+// its filters, matched as the SearchPostings queries match them), joined with
 // their company name and -- if one has been started -- their
 // application's id and status. Feeds the stage package's discovery of
 // work for the external-agent hand-off mechanism (see stage.List).

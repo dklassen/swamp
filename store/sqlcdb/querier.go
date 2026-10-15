@@ -121,7 +121,9 @@ type Querier interface {
 	// cycle DESC: most recent review first, matching how a human would want
 	// to read review history (latest verdict up top).
 	ListDocumentReviews(ctx context.Context, arg ListDocumentReviewsParams) ([]DocumentReview, error)
-	// Postings the user has flagged interested and not archived, joined with
+	// Postings the user has flagged interested and not archived, that the
+	// company's posting list shows (open, company not deleted, let through by
+	// its filters, matched as the SearchPostings queries match them), joined with
 	// their company name and -- if one has been started -- their
 	// application's id and status. Feeds the stage package's discovery of
 	// work for the external-agent hand-off mechanism (see stage.List).

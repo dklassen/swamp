@@ -18,9 +18,11 @@ import (
 
 	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
+	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/postingmarkup"
 	"github.com/dklassen/swamp/store"
 )
@@ -1031,4 +1033,45 @@ func createReview(ctx context.Context, s *store.Store, applicationID int64, docu
 		return err
 	})
 	return review, err
+}
+
+// Filters are the authority on what the agent reads: an interested posting
+// the company's list hides isn't offered.
+func TestList_ExcludesInterestedPostingTheCompanyListHides(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name string
+		hide func(t *testing.T, s *store.Store, companyID, postingID int64)
+	}{
+		{"closed", func(t *testing.T, s *store.Store, _, postingID int64) {
+			if err := s.MarkPostingClosed(context.Background(), postingID); err != nil {
+				t.Fatalf("MarkPostingClosed: %v", err)
+			}
+		}},
+		{"filtered out", func(t *testing.T, s *store.Store, companyID, _ int64) {
+			ctx := context.Background()
+			if err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+				return companyfilter.Replace(ctx, tx, companyID, []filter.Filter{{Field: filter.FieldLocation, Value: "Nowhere"}})
+			}); err != nil {
+				t.Fatalf("companyfilter.Replace: %v", err)
+			}
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			st, s, _ := newTestStage(t)
+			company := mustCreateCompany(t, s, "Acme")
+			posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+			mustMarkInterested(t, s, posting.ID)
+			tt.hide(t, s, company.ID, posting.ID)
+
+			got, err := st.List(context.Background())
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if len(got) != 0 {
+				t.Fatalf("got %d candidates, want 0: the company's list hides the posting", len(got))
+			}
+		})
+	}
 }
