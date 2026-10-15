@@ -8,6 +8,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -17,7 +18,7 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 	t.Parallel()
 
 	posting := store.Posting{ID: 5, IngestedFields: store.IngestedFields{Title: "Staff Engineer"}}
-	application := store.ApplicationView{
+	application := pursuit.Application{
 		Application: store.Application{ID: 1},
 		Posting:     store.Posting{ID: 9, IngestedFields: store.IngestedFields{Title: "Engineering Manager"}},
 		CompanyName: "Initech",
@@ -154,7 +155,7 @@ func unsizedScreens() []sizedScreen {
 func TestApp_Header_LongBreadcrumbLosesItsMiddleFirst(t *testing.T) {
 	t.Parallel()
 
-	application := store.ApplicationView{
+	application := pursuit.Application{
 		Posting:     store.Posting{IngestedFields: store.IngestedFields{Title: "Engineering Manager, Payments Reliability"}},
 		CompanyName: "Initech Global Holdings",
 	}

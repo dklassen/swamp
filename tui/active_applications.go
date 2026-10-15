@@ -14,6 +14,7 @@ import (
 
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -69,21 +70,21 @@ func newActiveApplicationListModel() activeApplicationListModel {
 // enterApplicationDetailMsg signals that App should switch to the
 // application-detail screen for this application.
 type enterApplicationDetailMsg struct {
-	application store.ApplicationView
+	application pursuit.Application
 }
 
 // enterApplicationExportMsg signals that App should switch to the
 // export screen for this application, where the user picks the
 // destination folder for its generated PDFs.
 type enterApplicationExportMsg struct {
-	application store.ApplicationView
+	application pursuit.Application
 }
 
 // Update handles one key press. The returned tea.Cmd (if non-nil) is a
 // real async command for App to run through bubbletea as usual. The
 // returned tea.Msg (if non-nil) is an intent for App to apply
 // synchronously -- see companyListModel.Update for the same convention.
-func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.ApplicationView) (tea.Cmd, tea.Msg) {
+func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []pursuit.Application) (tea.Cmd, tea.Msg) {
 	if m.searching {
 		return m.updateSearch(msg, apps)
 	}
@@ -128,7 +129,7 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []store.Applica
 // updateSearch handles a key while the '/' prompt is open. Every edit
 // to the query re-filters straight away and puts the cursor back on the
 // first match.
-func (m *activeApplicationListModel) updateSearch(msg tea.KeyMsg, apps []store.ApplicationView) (tea.Cmd, tea.Msg) {
+func (m *activeApplicationListModel) updateSearch(msg tea.KeyMsg, apps []pursuit.Application) (tea.Cmd, tea.Msg) {
 	switch msg.Type {
 	case tea.KeyRunes, tea.KeySpace:
 		m.query += string(msg.Runes)
@@ -160,11 +161,11 @@ func (m *activeApplicationListModel) updateSearch(msg tea.KeyMsg, apps []store.A
 
 // clearSearch drops the query, keeping the highlighted application
 // highlighted in the full list.
-func (m *activeApplicationListModel) clearSearch(apps []store.ApplicationView) {
+func (m *activeApplicationListModel) clearSearch(apps []pursuit.Application) {
 	cursor := 0
 	if visible := m.visible(apps); m.cursor < len(visible) {
 		id := visible[m.cursor].ID
-		cursor = max(slices.IndexFunc(apps, func(a store.ApplicationView) bool { return a.ID == id }), 0)
+		cursor = max(slices.IndexFunc(apps, func(a pursuit.Application) bool { return a.ID == id }), 0)
 	}
 	m.query = ""
 	m.cursor = cursor
@@ -173,12 +174,12 @@ func (m *activeApplicationListModel) clearSearch(apps []store.ApplicationView) {
 // visible is the part of apps the query matches: a case-insensitive
 // substring of the company or the posting title, in the order given.
 // With no query, it's all of them.
-func (m *activeApplicationListModel) visible(apps []store.ApplicationView) []store.ApplicationView {
+func (m *activeApplicationListModel) visible(apps []pursuit.Application) []pursuit.Application {
 	if m.query == "" {
 		return apps
 	}
 	q := strings.ToLower(m.query)
-	var matches []store.ApplicationView
+	var matches []pursuit.Application
 	for _, a := range apps {
 		if strings.Contains(strings.ToLower(a.CompanyName), q) || strings.Contains(strings.ToLower(a.Posting.Title), q) {
 			matches = append(matches, a)
@@ -191,7 +192,7 @@ func (m *activeApplicationListModel) visible(apps []store.ApplicationView) []sto
 // progress holds each application's document progress by application ID,
 // from which, with its LatestReviews, each row's next step is derived
 // (see nextStep), and now is what each row's Age counts up to.
-func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress map[int64]map[documents.Type]documentProgress, now time.Time, width, height int) string {
+func (m *activeApplicationListModel) View(apps []pursuit.Application, progress map[int64]map[documents.Type]documentProgress, now time.Time, width, height int) string {
 	var b strings.Builder
 	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: search  s: status  e: export PDFs  d: delete  tab: companies  q: quit")
 	switch {
@@ -247,7 +248,7 @@ func (m *activeApplicationListModel) View(apps []store.ApplicationView, progress
 // selected is the ID of the application under the cursor, or 0. The
 // cursor indexes what the search shows, which is all of apps when there's
 // no query.
-func (m *activeApplicationListModel) selected(apps []store.ApplicationView) int64 {
+func (m *activeApplicationListModel) selected(apps []pursuit.Application) int64 {
 	if visible := m.visible(apps); m.cursor < len(visible) {
 		return visible[m.cursor].ID
 	}
@@ -257,9 +258,9 @@ func (m *activeApplicationListModel) selected(apps []store.ApplicationView) int6
 // keepCursorOn moves the cursor to application id after a reload, since
 // rows above it may have come or gone; if it's gone, the cursor stays in
 // range.
-func (m *activeApplicationListModel) keepCursorOn(id int64, apps []store.ApplicationView) {
+func (m *activeApplicationListModel) keepCursorOn(id int64, apps []pursuit.Application) {
 	visible := m.visible(apps)
-	if i := slices.IndexFunc(visible, func(a store.ApplicationView) bool { return a.ID == id }); i >= 0 {
+	if i := slices.IndexFunc(visible, func(a pursuit.Application) bool { return a.ID == id }); i >= 0 {
 		m.cursor = i
 		return
 	}
@@ -301,7 +302,7 @@ type documentProgress struct {
 //
 // a.LatestReviews must already be filtered to current reviews (see
 // documents.Current), as loadActiveApplications does.
-func nextStep(a store.ApplicationView, docs map[documents.Type]documentProgress) string {
+func nextStep(a pursuit.Application, docs map[documents.Type]documentProgress) string {
 	closed := a.Posting.ListingStatus == "closed"
 	if a.Status != applicationstatus.Started {
 		if closed {
@@ -349,8 +350,8 @@ func statusAge(since, now time.Time) string {
 // applications first, longest at their status first, then everything
 // else in the order it came in (the store's most-recently-changed
 // first).
-func orderForHome(apps []store.ApplicationView) {
-	slices.SortStableFunc(apps, func(a, b store.ApplicationView) int {
+func orderForHome(apps []pursuit.Application) {
+	slices.SortStableFunc(apps, func(a, b pursuit.Application) int {
 		aStarted, bStarted := a.Status == applicationstatus.Started, b.Status == applicationstatus.Started
 		switch {
 		case aStarted && bStarted:

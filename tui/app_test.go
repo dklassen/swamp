@@ -2136,7 +2136,7 @@ func TestApp_ApplicationDetail_P_EntersPostingDetail(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // active-applications -> application detail
-	// No Cmd expected: applicationDetail's ApplicationView already has the
+	// No Cmd expected: applicationDetail's pursuit.Application already has the
 	// full posting/application/reviews loaded (from active-applications),
 	// so entering posting detail from here renders synchronously rather
 	// than round-tripping through a.postings-dependent lookupPosting (see
@@ -2439,7 +2439,7 @@ func runCmd(t *testing.T, cmd tea.Cmd) []tea.Msg {
 // is a regression test: application detail's 'p' enters posting detail via
 // the fast path (#87 follow-up), which never populates
 // a.applicationsByPosting since it renders directly from the already-loaded
-// ApplicationView instead of going through loadApplication. Submitting a
+// pursuit.Application instead of going through loadApplication. Submitting a
 // document review from that posting-detail screen returns to
 // screenPostingDetail, and
 // documentReviewCreatedMsg's handler for that case calls

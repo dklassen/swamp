@@ -12,6 +12,7 @@ import (
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/export"
+	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -29,14 +30,14 @@ import (
 type applicationExportModel struct {
 	store       *store.Store
 	documents   *documents.Store
-	application store.ApplicationView
+	application pursuit.Application
 	textinput   textinput.Model
 }
 
 // newApplicationExportModel returns an export screen for application,
 // with the destination prefilled to defaultDir (see App.exportDir) so
 // the common case is enter with no typing at all.
-func newApplicationExportModel(s *store.Store, docs *documents.Store, application store.ApplicationView, defaultDir string, width int) applicationExportModel {
+func newApplicationExportModel(s *store.Store, docs *documents.Store, application pursuit.Application, defaultDir string, width int) applicationExportModel {
 	ti := textinput.New()
 	ti.SetValue(defaultDir)
 	ti.Width = width
@@ -100,7 +101,7 @@ type applicationExportedMsg struct {
 // Each PDF written is recorded (store.RecordDocumentExport, #188) with
 // the markdown it was rendered from, so the home screen can tell an
 // exported draft from one still waiting to be exported.
-func exportApplicationDocuments(s *store.Store, docs *documents.Store, application store.ApplicationView, dir string) tea.Cmd {
+func exportApplicationDocuments(s *store.Store, docs *documents.Store, application pursuit.Application, dir string) tea.Cmd {
 	return func() tea.Msg {
 		dir, err := expandPath(dir)
 		if err != nil {

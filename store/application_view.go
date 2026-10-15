@@ -7,70 +7,49 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
-// ApplicationView is Application together with its posting and company
-// name resolved -- a read-only view for screens that need that context
-// without already having the posting in scope. Every GetApplication/
-// CreateApplication/etc. caller already has the posting loaded (they're
-// invoked from a screen that got there via a specific posting); this
-// exists for cross-cutting screens (see ListActiveApplications) that
-// don't. Embeds Application rather than duplicating its fields under a
-// different name, so it's honestly the same entity with more resolved,
-// not a second, partial representation of it.
-type ApplicationView struct {
+// ActiveApplication is an application that isn't at a dead end, with its
+// posting and company name. pursuit adds its document reviews.
+type ActiveApplication struct {
 	Application
-	Posting       Posting
-	CompanyName   string
-	LatestReviews map[documents.Type]DocumentReview
+	Posting     Posting
+	CompanyName string
 	// StatusSince is when the application entered its current status, from
-	// its newest status history row (#162), or CreatedAt if it has none.
+	// its newest status history row, or CreatedAt if it has none.
 	StatusSince time.Time
 }
 
-// applicationViewFromRow converts a row built by sqlc.embed(applications)/
+// activeApplicationFromRow converts a row built by sqlc.embed(applications)/
 // sqlc.embed(postings) -- row.Application and row.Posting are already the
 // exact nested db types those macros generate, so this just runs them
 // through the same conversion every other Application/Posting goes
 // through, rather than hand-reconstructing them field-by-field from a
 // flat row.
-func applicationViewFromRow(row sqlcdb.ListActiveApplicationsRow) (ApplicationView, error) {
+func activeApplicationFromRow(row sqlcdb.ListActiveApplicationsRow) (ActiveApplication, error) {
 	app, err := applicationFromRow(row.Application)
 	if err != nil {
-		return ApplicationView{}, err
+		return ActiveApplication{}, err
 	}
-	return ApplicationView{
+	return ActiveApplication{
 		Application: app,
 		Posting:     postingFromRow(row.Posting),
 		CompanyName: row.CompanyName,
 	}, nil
 }
 
-// ListActiveApplications returns applications not at a terminal
-// dead-end status (see applicationstatus.Terminal), each viewed with
-// its posting, company name, and latest document review per document
-// type resolved, most-recently-changed first.
-//
-// LatestReviews is filled in with one extra query pair (cover letter,
-// resume) per application rather than a single windowed join -- active
-// applications are a personal-scale list (a handful to a few dozen, not
-// thousands), so the extra local sqlite round trips are negligible, and
-// reusing LatestDocumentReview keeps this in step with its own
-// single-review semantics rather than duplicating that logic in SQL.
-func (s *Store) ListActiveApplications(ctx context.Context) ([]ApplicationView, error) {
+// ListActiveApplications returns the applications not at a terminal status
+// (see applicationstatus.Terminal), each with its posting and company
+// name, most-recently-changed first.
+func (s *Store) ListActiveApplications(ctx context.Context) ([]ActiveApplication, error) {
 	rows, err := s.queries.ListActiveApplications(ctx, terminalStatusParams())
 	if err != nil {
 		return nil, err
 	}
-	views := make([]ApplicationView, len(rows))
+	views := make([]ActiveApplication, len(rows))
 	for i, row := range rows {
-		v, err := applicationViewFromRow(row)
-		if err != nil {
-			return nil, err
-		}
-		v.LatestReviews, err = s.LatestDocumentReviews(ctx, v.ID)
+		v, err := activeApplicationFromRow(row)
 		if err != nil {
 			return nil, err
 		}

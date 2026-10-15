@@ -26,6 +26,7 @@ import (
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/postingmarkup"
+	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
@@ -129,7 +130,7 @@ type App struct {
 	// activeApplications backs the home screen: every application not at
 	// a terminal dead-end status, across every company (see
 	// store.ListActiveApplications, #43).
-	activeApplications []store.ApplicationView
+	activeApplications []pursuit.Application
 	// activeApplicationProgress is each active application's document
 	// progress, by application ID, loaded with activeApplications. The
 	// home screen derives each row's next step from it and the row's
@@ -474,7 +475,7 @@ func indexOfPosting(postings []store.Posting, id int64) int {
 }
 
 // indexOfApplication returns id's index in apps, or -1 if not present.
-func indexOfApplication(apps []store.ApplicationView, id int64) int {
+func indexOfApplication(apps []pursuit.Application, id int64) int {
 	for i, app := range apps {
 		if app.ID == id {
 			return i
@@ -530,7 +531,7 @@ func (a *App) Init() tea.Cmd {
 }
 
 type activeApplicationsLoadedMsg struct {
-	applications []store.ApplicationView
+	applications []pursuit.Application
 	progress     map[int64]map[documents.Type]documentProgress
 	err          error
 }
@@ -546,7 +547,7 @@ type activeApplicationsLoadedMsg struct {
 // document.
 func loadActiveApplications(s *store.Store, docs *documents.Store) tea.Cmd {
 	return func() tea.Msg {
-		apps, err := s.ListActiveApplications(context.Background())
+		apps, err := pursuit.List(context.Background(), s)
 		if err != nil {
 			return activeApplicationsLoadedMsg{err: err}
 		}
@@ -1489,7 +1490,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// this can't use lookupPosting -- a.postings is only populated
 			// by browsing that list, which application detail (reached via
 			// active-applications) may never have done. applicationDetail's
-			// own ApplicationView already carries the full posting,
+			// own pursuit.Application already carries the full posting,
 			// application, and latest reviews (freshly loaded for the
 			// active-applications screen), so render from that directly
 			// rather than triggering loadApplication's own rebuild, which
