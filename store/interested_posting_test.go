@@ -13,7 +13,7 @@ func TestListInterestedPostings_WithNoApplication_LeavesApplicationFieldsNil(t *
 
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	if _, err := s.SetPostingInterested(ctx, posting.ID); err != nil {
+	if _, err := s.setPostingInterested(ctx, posting.ID); err != nil {
 		t.Fatalf("SetPostingInterested: %v", err)
 	}
 
@@ -49,7 +49,7 @@ func TestListInterestedPostings_WithApplication_IncludesApplicationFields(t *tes
 
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	if _, err := s.SetPostingInterested(ctx, posting.ID); err != nil {
+	if _, err := s.setPostingInterested(ctx, posting.ID); err != nil {
 		t.Fatalf("SetPostingInterested: %v", err)
 	}
 	app := mustCreateApplication(t, s, posting.ID)
@@ -77,10 +77,10 @@ func TestListInterestedPostings_ExcludesArchived(t *testing.T) {
 
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	if _, err := s.SetPostingInterested(ctx, posting.ID); err != nil {
+	if _, err := s.setPostingInterested(ctx, posting.ID); err != nil {
 		t.Fatalf("SetPostingInterested: %v", err)
 	}
-	// Sets archived_at directly, bypassing SetPostingArchived (which would
+	// Sets archived_at directly, bypassing postingmarkup.SetArchived (which would
 	// also clear interested_at): this guards ListInterestedPostings' WHERE
 	// clause itself, which must exclude archived rows regardless of
 	// interested_at, not just the specific way the TUI reaches "archived"

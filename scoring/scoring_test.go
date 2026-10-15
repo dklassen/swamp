@@ -13,6 +13,7 @@ import (
 	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/filter"
+	"github.com/dklassen/swamp/postingmarkup"
 	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/store"
 )
@@ -126,11 +127,11 @@ func TestPending(t *testing.T) {
 	if err := s.MarkPostingClosed(ctx, closed.ID); err != nil {
 		t.Fatalf("MarkPostingClosed: %v", err)
 	}
-	if _, err := s.SetPostingArchived(ctx, archived.ID); err != nil {
-		t.Fatalf("SetPostingArchived: %v", err)
+	if _, err := postingmarkup.SetArchived(ctx, s.DB(), archived.ID); err != nil {
+		t.Fatalf("postingmarkup.SetArchived: %v", err)
 	}
-	if _, err := s.SetPostingInterested(ctx, interested.ID); err != nil {
-		t.Fatalf("SetPostingInterested: %v", err)
+	if _, err := postingmarkup.SetInterested(ctx, s.DB(), interested.ID); err != nil {
+		t.Fatalf("postingmarkup.SetInterested: %v", err)
 	}
 	if _, err := s.CreateApplication(ctx, applied.ID); err != nil {
 		t.Fatalf("CreateApplication: %v", err)

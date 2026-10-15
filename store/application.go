@@ -12,15 +12,15 @@ import (
 )
 
 // Application is the user's own pursuit of a posting: status, free-text
-// notes. Separate from PostingMarkup (posting-level triage) because a
+// notes. Separate from posting markup (posting-level triage) because a
 // posting and an application have independent lifecycles -- a posting can
 // be open/closed regardless of whether anyone applied. Unlike
-// PostingMarkup, not every posting has one; it's created only once the
+// posting markup, not every posting has one; it's created only once the
 // user starts applying. One row per posting (see CreateApplication).
 //
 // Has its own surrogate ID (not PostingID reused as the identity, unlike
-// PostingMarkup) because, unlike PostingMarkup, Application is itself
-// referenced by InterviewStage -- reusing PostingID as the identity would
+// posting markup) because, unlike posting markup, Application is itself
+// referenced by interview_stages -- reusing PostingID as the identity would
 // make InterviewStage.ApplicationID hold posting IDs under an
 // application-ID name.
 type Application struct {

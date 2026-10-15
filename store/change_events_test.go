@@ -165,10 +165,10 @@ func TestChangeEvents_PostingMarkupLogsItsMarks(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
-	if _, err := s.SetPostingInterested(ctx, posting.ID); err != nil {
+	if _, err := s.setPostingInterested(ctx, posting.ID); err != nil {
 		t.Fatalf("SetPostingInterested: %v", err)
 	}
-	if _, err := s.UpdatePostingMarkupNotes(ctx, posting.ID, "ask about on-call"); err != nil {
+	if _, err := s.updatePostingMarkupNotes(ctx, posting.ID, "ask about on-call"); err != nil {
 		t.Fatalf("UpdatePostingMarkupNotes: %v", err)
 	}
 

@@ -14,6 +14,7 @@ import (
 
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/contenthash"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 func TestUpsertPosting_NewPosting_ThenGet_ReturnsSamePosting(t *testing.T) {
@@ -112,12 +113,12 @@ func TestUpsertPosting_NewPosting_AutoCreatesMarkupRow(t *testing.T) {
 		t.Fatalf("UpsertPosting: %v", err)
 	}
 
-	markup, err := s.GetPostingMarkup(ctx, created.ID)
+	markup, err := s.postingMarkup(ctx, created.ID)
 	if err != nil {
 		t.Fatalf("GetPostingMarkup: %v", err)
 	}
 
-	want := PostingMarkup{
+	want := sqlcdb.PostingMarkup{
 		PostingID: created.ID,
 		Notes:     "",
 		CreatedAt: markup.CreatedAt,
@@ -510,72 +511,6 @@ func TestMarkPostingReopened_SetsListingStatusOpen(t *testing.T) {
 	}
 }
 
-func TestGetPostingMarkup_NonexistentPostingID_ReturnsErrNotFound(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-
-	_, err := s.GetPostingMarkup(ctx, 999)
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("GetPostingMarkup error = %v, want ErrNotFound", err)
-	}
-}
-
-func TestUnmarkPostingInterested_ClearsInterestedAt(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-
-	if _, err := s.SetPostingInterested(ctx, posting.ID); err != nil {
-		t.Fatalf("SetPostingInterested: %v", err)
-	}
-
-	updated, err := s.UnmarkPostingInterested(ctx, posting.ID)
-	if err != nil {
-		t.Fatalf("UnmarkPostingInterested: %v", err)
-	}
-	if updated.InterestedAt != nil {
-		t.Fatalf("InterestedAt = %v, want nil", updated.InterestedAt)
-	}
-}
-
-func TestUnarchivePosting_ClearsArchivedAt(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-
-	if _, err := s.SetPostingArchived(ctx, posting.ID); err != nil {
-		t.Fatalf("SetPostingArchived: %v", err)
-	}
-
-	updated, err := s.UnarchivePosting(ctx, posting.ID)
-	if err != nil {
-		t.Fatalf("UnarchivePosting: %v", err)
-	}
-	if updated.ArchivedAt != nil {
-		t.Fatalf("ArchivedAt = %v, want nil", updated.ArchivedAt)
-	}
-}
-
-func TestUpdatePostingMarkupNotes_UpdatesNotes(t *testing.T) {
-	s := newTestStore(t)
-	ctx := context.Background()
-
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-
-	updated, err := s.UpdatePostingMarkupNotes(ctx, posting.ID, "Looks like a great fit")
-	if err != nil {
-		t.Fatalf("UpdatePostingMarkupNotes: %v", err)
-	}
-	if updated.Notes != "Looks like a great fit" {
-		t.Fatalf("Notes = %q, want %q", updated.Notes, "Looks like a great fit")
-	}
-}
-
 func TestListDistinctDepartmentsForCompany_ReturnsSortedUniqueValues(t *testing.T) {
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -726,7 +661,7 @@ func TestCountOpenPostingsByCompany_CountsOpenUnarchivedPerCompany(t *testing.T)
 		t.Fatalf("MarkPostingClosed: %v", err)
 	}
 	archived := mustUpsertPosting(t, s, acme.ID, "job-4", "Archived role")
-	if _, err := s.SetPostingArchived(ctx, archived.ID); err != nil {
+	if _, err := s.setPostingArchived(ctx, archived.ID); err != nil {
 		t.Fatalf("SetPostingArchived: %v", err)
 	}
 

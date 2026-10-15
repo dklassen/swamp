@@ -10,6 +10,7 @@ import (
 
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/cursor"
+	"github.com/dklassen/swamp/postingmarkup"
 	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/store"
 )
@@ -51,8 +52,8 @@ func newSearchStage(t *testing.T) searchStage {
 	if err := s.MarkPostingClosed(ctx, f.closed.ID); err != nil {
 		t.Fatalf("MarkPostingClosed: %v", err)
 	}
-	if _, err := s.SetPostingArchived(ctx, f.archived.ID); err != nil {
-		t.Fatalf("SetPostingArchived: %v", err)
+	if _, err := postingmarkup.SetArchived(ctx, s.DB(), f.archived.ID); err != nil {
+		t.Fatalf("postingmarkup.SetArchived: %v", err)
 	}
 	return f
 }

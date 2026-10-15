@@ -23,6 +23,7 @@ import (
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/postingmarkup"
 	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
@@ -163,8 +164,8 @@ func mustUpsertPosting(t *testing.T, s *store.Store, companyID int64, sourceID, 
 
 func mustMarkInterested(t *testing.T, s *store.Store, postingID int64) {
 	t.Helper()
-	if _, err := s.SetPostingInterested(context.Background(), postingID); err != nil {
-		t.Fatalf("SetPostingInterested: %v", err)
+	if _, err := postingmarkup.SetInterested(context.Background(), s.DB(), postingID); err != nil {
+		t.Fatalf("postingmarkup.SetInterested: %v", err)
 	}
 }
 

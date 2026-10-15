@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/dklassen/swamp/postingmarkup"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -16,7 +17,7 @@ func testPostingListSnapshot() postingListSnapshot {
 			{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}},
 			{ID: 2, IngestedFields: store.IngestedFields{Title: "Designer"}},
 		},
-		markup: map[int64]store.PostingMarkup{},
+		markup: map[int64]postingmarkup.Markup{},
 	}
 }
 

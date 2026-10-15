@@ -39,10 +39,10 @@ func newSearchFixture(t *testing.T, s *Store) searchFixture {
 	f.other = mustUpsertPosting(t, s, f.beta.ID, "6", "Engineer")
 	mustUpsertPosting(t, s, gone.ID, "7", "Deleted company's posting")
 
-	if _, err := s.SetPostingInterested(ctx, f.platform.ID); err != nil {
+	if _, err := s.setPostingInterested(ctx, f.platform.ID); err != nil {
 		t.Fatalf("SetPostingInterested: %v", err)
 	}
-	if _, err := s.SetPostingInterested(ctx, f.designer.ID); err != nil {
+	if _, err := s.setPostingInterested(ctx, f.designer.ID); err != nil {
 		t.Fatalf("SetPostingInterested: %v", err)
 	}
 	f.platformApp = mustCreateApplication(t, s, f.platform.ID)
@@ -51,7 +51,7 @@ func newSearchFixture(t *testing.T, s *Store) searchFixture {
 	if err := s.MarkPostingClosed(ctx, f.writer.ID); err != nil {
 		t.Fatalf("MarkPostingClosed: %v", err)
 	}
-	if _, err := s.SetPostingArchived(ctx, f.shelf.ID); err != nil {
+	if _, err := s.setPostingArchived(ctx, f.shelf.ID); err != nil {
 		t.Fatalf("SetPostingArchived: %v", err)
 	}
 	if err := s.SoftDeleteCompany(ctx, gone.ID); err != nil {
