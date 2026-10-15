@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 type Company struct {
@@ -24,7 +24,7 @@ type Company struct {
 	UpdatedAt     time.Time
 }
 
-func companyFromRow(row db.Company) Company {
+func companyFromRow(row sqlcdb.Company) Company {
 	c := Company{
 		ID:          row.ID,
 		Name:        row.Name,
@@ -58,15 +58,15 @@ func (s *Store) CreateCompany(ctx context.Context, name, source, sourceRef strin
 
 	qtx := s.queries.WithTx(tx)
 
-	existing, err := qtx.GetCompanyBySourceAndSourceRef(ctx, db.GetCompanyBySourceAndSourceRefParams{
+	existing, err := qtx.GetCompanyBySourceAndSourceRef(ctx, sqlcdb.GetCompanyBySourceAndSourceRefParams{
 		Source:    source,
 		SourceRef: sourceRef,
 	})
 
-	var row db.Company
+	var row sqlcdb.Company
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		row, err = qtx.CreateCompany(ctx, db.CreateCompanyParams{
+		row, err = qtx.CreateCompany(ctx, sqlcdb.CreateCompanyParams{
 			Name:      name,
 			Source:    source,
 			SourceRef: sourceRef,
@@ -77,7 +77,7 @@ func (s *Store) CreateCompany(ctx context.Context, name, source, sourceRef strin
 	case err != nil:
 		return Company{}, fmt.Errorf("store: get company by source: %w", err)
 	default:
-		row, err = qtx.RestoreCompanyWithName(ctx, db.RestoreCompanyWithNameParams{
+		row, err = qtx.RestoreCompanyWithName(ctx, sqlcdb.RestoreCompanyWithNameParams{
 			Name: name,
 			ID:   existing.ID,
 		})
@@ -146,7 +146,7 @@ func (s *Store) ListActiveCompanies(ctx context.Context) ([]Company, error) {
 // either really means "this is a different board," not "edit this
 // company".
 func (s *Store) UpdateCompanyName(ctx context.Context, id int64, name string) (Company, error) {
-	row, err := s.queries.UpdateCompanyName(ctx, db.UpdateCompanyNameParams{ID: id, Name: name})
+	row, err := s.queries.UpdateCompanyName(ctx, sqlcdb.UpdateCompanyNameParams{ID: id, Name: name})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Company{}, ErrNotFound
@@ -167,7 +167,7 @@ func (s *Store) MarkCompanyFetched(ctx context.Context, id int64) error {
 // mid-sync), and reports whether it did. At most one holder at a time,
 // across every process sharing the database (#150).
 func (s *Store) AcquireSyncLease(ctx context.Context, companyID int64, token string, expiry time.Duration) (bool, error) {
-	taken, err := s.queries.AcquireCompanySyncLease(ctx, db.AcquireCompanySyncLeaseParams{
+	taken, err := s.queries.AcquireCompanySyncLease(ctx, sqlcdb.AcquireCompanySyncLeaseParams{
 		ID:            companyID,
 		Token:         sql.NullString{String: token, Valid: true},
 		ExpirySeconds: int64(expiry / time.Second),
@@ -182,7 +182,7 @@ func (s *Store) AcquireSyncLease(ctx context.Context, companyID int64, token str
 // Releasing a lease token doesn't hold -- because it expired and was
 // taken over -- changes nothing and isn't an error.
 func (s *Store) ReleaseSyncLease(ctx context.Context, companyID int64, token string) error {
-	if err := s.queries.ReleaseCompanySyncLease(ctx, db.ReleaseCompanySyncLeaseParams{
+	if err := s.queries.ReleaseCompanySyncLease(ctx, sqlcdb.ReleaseCompanySyncLeaseParams{
 		ID:    companyID,
 		Token: sql.NullString{String: token, Valid: true},
 	}); err != nil {
@@ -194,7 +194,7 @@ func (s *Store) ReleaseSyncLease(ctx context.Context, companyID int64, token str
 // GetCompanyBySourceRef finds the company for a job board slug, including a
 // soft-deleted one (check DeletedAt), or returns ErrNotFound.
 func (s *Store) GetCompanyBySourceRef(ctx context.Context, source, sourceRef string) (Company, error) {
-	row, err := s.queries.GetCompanyBySourceAndSourceRef(ctx, db.GetCompanyBySourceAndSourceRefParams{
+	row, err := s.queries.GetCompanyBySourceAndSourceRef(ctx, sqlcdb.GetCompanyBySourceAndSourceRefParams{
 		Source:    source,
 		SourceRef: sourceRef,
 	})
@@ -223,7 +223,7 @@ func (s *Store) GetCompanyIncludingDeleted(ctx context.Context, id int64) (Compa
 // UpdateCompanyDescription sets who the company is (what it builds, stage,
 // domain). Like UpdateCompanyName it excludes soft-deleted companies.
 func (s *Store) UpdateCompanyDescription(ctx context.Context, id int64, description string) (Company, error) {
-	row, err := s.queries.UpdateCompanyDescription(ctx, db.UpdateCompanyDescriptionParams{ID: id, Description: description})
+	row, err := s.queries.UpdateCompanyDescription(ctx, sqlcdb.UpdateCompanyDescriptionParams{ID: id, Description: description})
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return Company{}, ErrNotFound

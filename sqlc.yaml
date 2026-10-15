@@ -5,8 +5,8 @@ sql:
     schema: "db/migrations"
     gen:
       go:
-        package: "db"
-        out: "store/db"
+        package: "sqlcdb"
+        out: "store/sqlcdb"
         emit_json_tags: true
         emit_interface: true
         emit_exact_table_names: false

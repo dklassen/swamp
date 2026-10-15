@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // DocumentWriteSource is who wrote a document, as far as Swamp saw.
@@ -62,7 +62,7 @@ type DocumentWrite struct {
 // applicationID's documentType. Callers record only after the file was
 // written.
 func (s *Store) RecordDocumentWrite(ctx context.Context, applicationID int64, documentType documents.Type, content string, source DocumentWriteSource) error {
-	if err := s.queries.CreateDocumentWrite(ctx, db.CreateDocumentWriteParams{
+	if err := s.queries.CreateDocumentWrite(ctx, sqlcdb.CreateDocumentWriteParams{
 		ApplicationID: applicationID,
 		DocumentType:  documentType.String(),
 		ContentSha256: contentSHA256(content),
@@ -76,7 +76,7 @@ func (s *Store) RecordDocumentWrite(ctx context.Context, applicationID int64, do
 // LatestDocumentWrite returns the newest recorded write of
 // applicationID's documentType, and false if none was recorded.
 func (s *Store) LatestDocumentWrite(ctx context.Context, applicationID int64, documentType documents.Type) (DocumentWrite, bool, error) {
-	row, err := s.queries.LatestDocumentWrite(ctx, db.LatestDocumentWriteParams{
+	row, err := s.queries.LatestDocumentWrite(ctx, sqlcdb.LatestDocumentWriteParams{
 		ApplicationID: applicationID,
 		DocumentType:  documentType.String(),
 	})

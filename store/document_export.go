@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // DocumentExport is one PDF exported from a drafted document (#188).
@@ -34,7 +34,7 @@ func (e DocumentExport) IsCurrent(content string) bool {
 // documentType, was exported as a PDF to path. Callers record only after
 // the PDF was written.
 func (s *Store) RecordDocumentExport(ctx context.Context, applicationID int64, documentType documents.Type, content, path string) error {
-	if err := s.queries.CreateDocumentExport(ctx, db.CreateDocumentExportParams{
+	if err := s.queries.CreateDocumentExport(ctx, sqlcdb.CreateDocumentExportParams{
 		ApplicationID: applicationID,
 		DocumentType:  documentType.String(),
 		ContentSha256: contentSHA256(content),
@@ -50,7 +50,7 @@ func (s *Store) RecordDocumentExport(ctx context.Context, applicationID int64, d
 func (s *Store) LatestDocumentExports(ctx context.Context, applicationID int64) (map[documents.Type]DocumentExport, error) {
 	exports := make(map[documents.Type]DocumentExport)
 	for _, documentType := range documents.Types() {
-		row, err := s.queries.LatestDocumentExport(ctx, db.LatestDocumentExportParams{
+		row, err := s.queries.LatestDocumentExport(ctx, sqlcdb.LatestDocumentExportParams{
 			ApplicationID: applicationID,
 			DocumentType:  documentType.String(),
 		})

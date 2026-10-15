@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // Application is the user's own pursuit of a posting: status, free-text
@@ -46,7 +46,7 @@ type Application struct {
 // rejecting "" (NullString's zero value) on its own, but it names the
 // failure and includes the row id, which is worth the extra line for
 // something that should never legitimately happen.
-func applicationFromRow(row db.Application) (Application, error) {
+func applicationFromRow(row sqlcdb.Application) (Application, error) {
 	if !row.Status.Valid {
 		return Application{}, fmt.Errorf("store: application %d has NULL status", row.ID)
 	}
@@ -87,7 +87,7 @@ func (s *Store) CreateApplication(ctx context.Context, postingID int64) (Applica
 	if posting.ListingStatus == "closed" {
 		return Application{}, ErrPostingClosed
 	}
-	row, err := qtx.CreateApplication(ctx, db.CreateApplicationParams{
+	row, err := qtx.CreateApplication(ctx, sqlcdb.CreateApplicationParams{
 		PostingID: postingID,
 		Status:    sql.NullString{String: ApplicationStatusStarted.String(), Valid: true},
 	})
@@ -162,7 +162,7 @@ func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, st
 		}
 		return Application{}, err
 	}
-	row, err := qtx.UpdateApplicationStatus(ctx, db.UpdateApplicationStatusParams{
+	row, err := qtx.UpdateApplicationStatus(ctx, sqlcdb.UpdateApplicationStatusParams{
 		PostingID: postingID,
 		Status:    sql.NullString{String: status.String(), Valid: true},
 	})
@@ -185,7 +185,7 @@ func (s *Store) UpdateApplicationStatus(ctx context.Context, postingID int64, st
 }
 
 func (s *Store) UpdateApplicationNotes(ctx context.Context, postingID int64, notes string) (Application, error) {
-	row, err := s.queries.UpdateApplicationNotes(ctx, db.UpdateApplicationNotesParams{
+	row, err := s.queries.UpdateApplicationNotes(ctx, sqlcdb.UpdateApplicationNotesParams{
 		PostingID: postingID,
 		Notes:     notes,
 	})

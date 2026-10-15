@@ -12,7 +12,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/contenthash"
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // IngestedFields is a posting's content as ingested from its source --
@@ -82,7 +82,7 @@ type CreatePostingParams struct {
 	IngestedFields
 }
 
-func postingFromRow(row db.Posting) Posting {
+func postingFromRow(row sqlcdb.Posting) Posting {
 	return Posting{
 		ID:            row.ID,
 		CompanyID:     row.CompanyID,
@@ -176,17 +176,17 @@ func (s *Store) IngestPosting(ctx context.Context, params CreatePostingParams) (
 
 	qtx := s.queries.WithTx(tx)
 
-	existing, err := qtx.GetPostingBySourceAndSourceID(ctx, db.GetPostingBySourceAndSourceIDParams{
+	existing, err := qtx.GetPostingBySourceAndSourceID(ctx, sqlcdb.GetPostingBySourceAndSourceIDParams{
 		Source:   params.Source,
 		SourceID: params.SourceID,
 	})
 
 	var result IngestResult
-	var row db.Posting
+	var row sqlcdb.Posting
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
 		result.Created = true
-		row, err = qtx.CreatePosting(ctx, db.CreatePostingParams{
+		row, err = qtx.CreatePosting(ctx, sqlcdb.CreatePostingParams{
 			CompanyID:       params.CompanyID,
 			Source:          params.Source,
 			SourceID:        params.SourceID,
@@ -221,7 +221,7 @@ func (s *Store) IngestPosting(ctx context.Context, params CreatePostingParams) (
 		if err != nil {
 			return IngestResult{}, fmt.Errorf("store: marshal posting snapshot: %w", err)
 		}
-		if _, err := qtx.CreatePostingHistory(ctx, db.CreatePostingHistoryParams{
+		if _, err := qtx.CreatePostingHistory(ctx, sqlcdb.CreatePostingHistoryParams{
 			PostingID:  existing.ID,
 			ChangeType: "content_updated",
 			Snapshot:   string(snapshot),
@@ -229,7 +229,7 @@ func (s *Store) IngestPosting(ctx context.Context, params CreatePostingParams) (
 			return IngestResult{}, fmt.Errorf("store: record posting content updated: %w", err)
 		}
 		result.Updated = true
-		row, err = qtx.UpdatePosting(ctx, db.UpdatePostingParams{
+		row, err = qtx.UpdatePosting(ctx, sqlcdb.UpdatePostingParams{
 			ID:              existing.ID,
 			Title:           params.Title,
 			Department:      params.Department,
@@ -269,7 +269,7 @@ func (s *Store) GetPosting(ctx context.Context, id int64) (Posting, error) {
 }
 
 func (s *Store) GetPostingBySourceAndSourceID(ctx context.Context, source, sourceID string) (Posting, error) {
-	row, err := s.queries.GetPostingBySourceAndSourceID(ctx, db.GetPostingBySourceAndSourceIDParams{
+	row, err := s.queries.GetPostingBySourceAndSourceID(ctx, sqlcdb.GetPostingBySourceAndSourceIDParams{
 		Source:   source,
 		SourceID: sourceID,
 	})
@@ -353,7 +353,7 @@ func (s *Store) ClosePosting(ctx context.Context, postingID int64, closeApplicat
 
 // closePosting is ClosePosting inside the caller's transaction, shared
 // with SoftDeleteCompany.
-func closePosting(ctx context.Context, qtx *db.Queries, postingID int64, closeApplicationFrom []ApplicationStatus) (ClosePostingResult, error) {
+func closePosting(ctx context.Context, qtx *sqlcdb.Queries, postingID int64, closeApplicationFrom []ApplicationStatus) (ClosePostingResult, error) {
 	row, err := qtx.GetPosting(ctx, postingID)
 	if err != nil {
 		return ClosePostingResult{}, fmt.Errorf("store: get posting to close: %w", err)
@@ -370,7 +370,7 @@ func closePosting(ctx context.Context, qtx *db.Queries, postingID int64, closeAp
 	if err != nil {
 		return ClosePostingResult{}, fmt.Errorf("store: marshal posting snapshot: %w", err)
 	}
-	if _, err := qtx.CreatePostingHistory(ctx, db.CreatePostingHistoryParams{
+	if _, err := qtx.CreatePostingHistory(ctx, sqlcdb.CreatePostingHistoryParams{
 		PostingID:  postingID,
 		ChangeType: "closed",
 		Snapshot:   string(snapshot),
@@ -391,7 +391,7 @@ func closePosting(ctx context.Context, qtx *db.Queries, postingID int64, closeAp
 			return ClosePostingResult{}, err
 		}
 		if slices.Contains(closeApplicationFrom, application.Status) {
-			if _, err := qtx.UpdateApplicationStatus(ctx, db.UpdateApplicationStatusParams{
+			if _, err := qtx.UpdateApplicationStatus(ctx, sqlcdb.UpdateApplicationStatusParams{
 				PostingID: postingID,
 				Status:    sql.NullString{String: ApplicationStatusPostingClosed.String(), Valid: true},
 			}); err != nil {
@@ -454,7 +454,7 @@ func (s *Store) ReopenPosting(ctx context.Context, postingID int64) (ReopenPosti
 	if err != nil {
 		return ReopenPostingResult{}, fmt.Errorf("store: marshal posting snapshot: %w", err)
 	}
-	if _, err := qtx.CreatePostingHistory(ctx, db.CreatePostingHistoryParams{
+	if _, err := qtx.CreatePostingHistory(ctx, sqlcdb.CreatePostingHistoryParams{
 		PostingID:  postingID,
 		ChangeType: "reopened",
 		Snapshot:   string(snapshot),
@@ -477,7 +477,7 @@ func (s *Store) ReopenPosting(ctx context.Context, postingID int64) (ReopenPosti
 // its transaction: if the posting's application is at posting_closed
 // because sync put it there, and nothing has changed it since, put it
 // back to the status before that.
-func restoreSyncClosedApplication(ctx context.Context, qtx *db.Queries, postingID int64) (bool, error) {
+func restoreSyncClosedApplication(ctx context.Context, qtx *sqlcdb.Queries, postingID int64) (bool, error) {
 	appRow, err := qtx.GetApplication(ctx, postingID)
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
@@ -510,7 +510,7 @@ func restoreSyncClosedApplication(ctx context.Context, qtx *db.Queries, postingI
 		return false, err
 	}
 	restore := previous.Status
-	if _, err := qtx.UpdateApplicationStatus(ctx, db.UpdateApplicationStatusParams{
+	if _, err := qtx.UpdateApplicationStatus(ctx, sqlcdb.UpdateApplicationStatusParams{
 		PostingID: postingID,
 		Status:    sql.NullString{String: restore.String(), Valid: true},
 	}); err != nil {

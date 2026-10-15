@@ -9,7 +9,7 @@ import (
 	"time"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // ReviewOutcome is a typed enum for DocumentReview.Outcome -- same
@@ -123,7 +123,7 @@ func contentSHA256(content string) string {
 // enforces either with a CHECK constraint (migration 00008), so this is
 // where an unknown value is caught, the same way applicationFromRow does
 // for status.
-func documentReviewFromRow(row db.DocumentReview) (DocumentReview, error) {
+func documentReviewFromRow(row sqlcdb.DocumentReview) (DocumentReview, error) {
 	documentType, err := documents.ParseType(row.DocumentType)
 	if err != nil {
 		return DocumentReview{}, err
@@ -152,7 +152,7 @@ func documentReviewFromRow(row db.DocumentReview) (DocumentReview, error) {
 // application+documentType, plus one -- rather than supplied by the
 // caller, so it can't drift out of sequence.
 func (s *Store) CreateDocumentReview(ctx context.Context, applicationID int64, documentType documents.Type, content string, outcome ReviewOutcome, notes string) (DocumentReview, error) {
-	count, err := s.queries.CountDocumentReviews(ctx, db.CountDocumentReviewsParams{
+	count, err := s.queries.CountDocumentReviews(ctx, sqlcdb.CountDocumentReviewsParams{
 		ApplicationID: applicationID,
 		DocumentType:  documentType.String(),
 	})
@@ -160,7 +160,7 @@ func (s *Store) CreateDocumentReview(ctx context.Context, applicationID int64, d
 		return DocumentReview{}, fmt.Errorf("store: count document reviews: %w", err)
 	}
 
-	row, err := s.queries.CreateDocumentReview(ctx, db.CreateDocumentReviewParams{
+	row, err := s.queries.CreateDocumentReview(ctx, sqlcdb.CreateDocumentReviewParams{
 		ApplicationID:   applicationID,
 		DocumentType:    documentType.String(),
 		Cycle:           count + 1,
@@ -214,7 +214,7 @@ func (s *Store) LatestDocumentReviews(ctx context.Context, applicationID int64) 
 // ListDocumentReviews returns applicationID's reviews for documentType,
 // most recent cycle first.
 func (s *Store) ListDocumentReviews(ctx context.Context, applicationID int64, documentType documents.Type) ([]DocumentReview, error) {
-	rows, err := s.queries.ListDocumentReviews(ctx, db.ListDocumentReviewsParams{
+	rows, err := s.queries.ListDocumentReviews(ctx, sqlcdb.ListDocumentReviewsParams{
 		ApplicationID: applicationID,
 		DocumentType:  documentType.String(),
 	})

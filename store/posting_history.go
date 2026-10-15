@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // PostingHistory is a snapshot of a posting's prior ingested state,
@@ -18,7 +18,7 @@ type PostingHistory struct {
 	RecordedAt time.Time
 }
 
-func postingHistoryFromRow(row db.PostingHistory) PostingHistory {
+func postingHistoryFromRow(row sqlcdb.PostingHistory) PostingHistory {
 	return PostingHistory{
 		ID:         row.ID,
 		PostingID:  row.PostingID,
@@ -29,7 +29,7 @@ func postingHistoryFromRow(row db.PostingHistory) PostingHistory {
 }
 
 func (s *Store) CreatePostingHistory(ctx context.Context, postingID int64, changeType, snapshot string) (PostingHistory, error) {
-	row, err := s.queries.CreatePostingHistory(ctx, db.CreatePostingHistoryParams{
+	row, err := s.queries.CreatePostingHistory(ctx, sqlcdb.CreatePostingHistoryParams{
 		PostingID:  postingID,
 		ChangeType: changeType,
 		Snapshot:   snapshot,

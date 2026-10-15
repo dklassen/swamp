@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: scoring.sql
 
-package db
+package sqlcdb
 
 import (
 	"context"

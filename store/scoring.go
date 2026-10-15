@@ -7,7 +7,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // PendingReason is why a posting is pending.
@@ -99,7 +99,7 @@ func (s *Store) PendingPostings(ctx context.Context, rescoreProfileSHA256 string
 	if limit <= 0 {
 		return PendingPostingsPage{}, fmt.Errorf("store: pending postings: limit %d, want at least 1", limit)
 	}
-	params := db.ListPendingPostingsParams{
+	params := sqlcdb.ListPendingPostingsParams{
 		// One more than asked for, to learn whether another page follows.
 		MaxRows: int64(limit) + 1,
 	}
@@ -284,7 +284,7 @@ func (s *Store) RecordScores(ctx context.Context, provenance ScoreProvenance, en
 			result.Refused = append(result.Refused, RefusedScore{PostingID: e.PostingID, Why: why})
 			continue
 		}
-		if err := qtx.CreatePostingScore(ctx, db.CreatePostingScoreParams{
+		if err := qtx.CreatePostingScore(ctx, sqlcdb.CreatePostingScoreParams{
 			PostingID:     e.PostingID,
 			Score:         int64(e.Score),
 			Reason:        e.Reason,
@@ -306,7 +306,7 @@ func (s *Store) RecordScores(ctx context.Context, provenance ScoreProvenance, en
 
 // checkScoreEntry says whether e can be recorded, and if not, why. It reads
 // inside the transaction, so an entry earlier in the same batch counts.
-func checkScoreEntry(ctx context.Context, qtx *db.Queries, provenance ScoreProvenance, e ScoreEntry) (ScoreRefusal, bool, error) {
+func checkScoreEntry(ctx context.Context, qtx *sqlcdb.Queries, provenance ScoreProvenance, e ScoreEntry) (ScoreRefusal, bool, error) {
 	switch {
 	case e.Score < minScore || e.Score > maxScore:
 		return ScoreOutOfRange, false, nil
@@ -322,7 +322,7 @@ func checkScoreEntry(ctx context.Context, qtx *db.Queries, provenance ScoreProve
 	case current != e.ContentSHA256:
 		return ScoreContentChanged, false, nil
 	}
-	repeat, err := qtx.HasRepeatScore(ctx, db.HasRepeatScoreParams{
+	repeat, err := qtx.HasRepeatScore(ctx, sqlcdb.HasRepeatScoreParams{
 		PostingID:     e.PostingID,
 		ContentSha256: e.ContentSHA256,
 		ProfileSha256: provenance.ProfileSHA256,

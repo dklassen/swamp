@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: interview_stages.sql
 
-package db
+package sqlcdb
 
 import (
 	"context"

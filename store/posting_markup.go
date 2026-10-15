@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // PostingMarkup is the user's lightweight triage on a posting itself
@@ -24,7 +24,7 @@ type PostingMarkup struct {
 	UpdatedAt    time.Time
 }
 
-func postingMarkupFromRow(row db.PostingMarkup) PostingMarkup {
+func postingMarkupFromRow(row sqlcdb.PostingMarkup) PostingMarkup {
 	m := PostingMarkup{
 		PostingID: row.PostingID,
 		Notes:     row.Notes,
@@ -100,7 +100,7 @@ func (s *Store) SetPostingArchived(ctx context.Context, postingID int64) (Postin
 }
 
 func (s *Store) UpdatePostingMarkupNotes(ctx context.Context, postingID int64, notes string) (PostingMarkup, error) {
-	row, err := s.queries.UpdatePostingMarkupNotes(ctx, db.UpdatePostingMarkupNotesParams{
+	row, err := s.queries.UpdatePostingMarkupNotes(ctx, sqlcdb.UpdatePostingMarkupNotesParams{
 		PostingID: postingID,
 		Notes:     notes,
 	})

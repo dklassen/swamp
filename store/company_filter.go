@@ -4,7 +4,7 @@ import (
 	"context"
 	"time"
 
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // CompanyFilter is one field/value constraint on a company's postings.
@@ -19,7 +19,7 @@ type CompanyFilter struct {
 	CreatedAt time.Time
 }
 
-func companyFilterFromRow(row db.CompanyFilter) CompanyFilter {
+func companyFilterFromRow(row sqlcdb.CompanyFilter) CompanyFilter {
 	return CompanyFilter{
 		ID:        row.ID,
 		CompanyID: row.CompanyID,
@@ -30,7 +30,7 @@ func companyFilterFromRow(row db.CompanyFilter) CompanyFilter {
 }
 
 func (s *Store) CreateCompanyFilter(ctx context.Context, companyID int64, field, value string) (CompanyFilter, error) {
-	row, err := s.queries.CreateCompanyFilter(ctx, db.CreateCompanyFilterParams{
+	row, err := s.queries.CreateCompanyFilter(ctx, sqlcdb.CreateCompanyFilterParams{
 		CompanyID: companyID,
 		Field:     field,
 		Value:     value,
