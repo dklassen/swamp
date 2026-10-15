@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/applicationstatus"
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
@@ -55,9 +56,9 @@ func TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication(t *test
 	t.Parallel()
 
 	apps := testActiveApplications()
-	apps[0].LatestReviews = map[documents.Type]store.DocumentReview{
-		documents.CoverLetter: {Outcome: store.ReviewOutcomeFlagged},
-		documents.Resume:      {Outcome: store.ReviewOutcomePassed},
+	apps[0].LatestReviews = map[documents.Type]docrecord.Review{
+		documents.CoverLetter: {Outcome: docrecord.Flagged},
+		documents.Resume:      {Outcome: docrecord.Passed},
 	}
 	// apps[1] is left with no LatestReviews -- neither document reviewed yet.
 
@@ -212,8 +213,8 @@ func TestActiveApplicationListModel_View_FlagsClosedPosting(t *testing.T) {
 func TestNextStep(t *testing.T) {
 	t.Parallel()
 
-	passed := store.DocumentReview{Outcome: store.ReviewOutcomePassed}
-	flagged := store.DocumentReview{Outcome: store.ReviewOutcomeFlagged}
+	passed := docrecord.Review{Outcome: docrecord.Passed}
+	flagged := docrecord.Review{Outcome: docrecord.Flagged}
 	both := func(cl, r documentProgress) map[documents.Type]documentProgress {
 		return map[documents.Type]documentProgress{documents.CoverLetter: cl, documents.Resume: r}
 	}
@@ -224,7 +225,7 @@ func TestNextStep(t *testing.T) {
 		name    string
 		status  applicationstatus.Status
 		listing string
-		reviews map[documents.Type]store.DocumentReview
+		reviews map[documents.Type]docrecord.Review
 		docs    map[documents.Type]documentProgress
 		want    string
 	}{
@@ -235,13 +236,13 @@ func TestNextStep(t *testing.T) {
 		{name: "one document missing", status: applicationstatus.Started, docs: both(drafted, documentProgress{}), want: "draft"},
 		{name: "drafted, not reviewed", status: applicationstatus.Started, docs: both(drafted, drafted), want: "review"},
 		{name: "one passed, one not reviewed", status: applicationstatus.Started,
-			reviews: map[documents.Type]store.DocumentReview{documents.CoverLetter: passed}, docs: both(drafted, drafted), want: "review"},
+			reviews: map[documents.Type]docrecord.Review{documents.CoverLetter: passed}, docs: both(drafted, drafted), want: "review"},
 		{name: "flagged beats unreviewed", status: applicationstatus.Started,
-			reviews: map[documents.Type]store.DocumentReview{documents.Resume: flagged}, docs: both(drafted, drafted), want: "revise"},
+			reviews: map[documents.Type]docrecord.Review{documents.Resume: flagged}, docs: both(drafted, drafted), want: "revise"},
 		{name: "passed, not exported", status: applicationstatus.Started,
-			reviews: map[documents.Type]store.DocumentReview{documents.CoverLetter: passed, documents.Resume: passed}, docs: both(exported, drafted), want: "export"},
+			reviews: map[documents.Type]docrecord.Review{documents.CoverLetter: passed, documents.Resume: passed}, docs: both(exported, drafted), want: "export"},
 		{name: "passed and exported", status: applicationstatus.Started,
-			reviews: map[documents.Type]store.DocumentReview{documents.CoverLetter: passed, documents.Resume: passed}, docs: both(exported, exported), want: "submit"},
+			reviews: map[documents.Type]docrecord.Review{documents.CoverLetter: passed, documents.Resume: passed}, docs: both(exported, exported), want: "submit"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -326,15 +327,15 @@ func TestLoadActiveApplications_NextSteps(t *testing.T) {
 			if err := os.WriteFile(path, []byte("# Draft"), 0o644); err != nil {
 				t.Fatalf("WriteFile: %v", err)
 			}
-			if _, err := s.CreateDocumentReview(ctx, application.ID, documentType, "# Draft", store.ReviewOutcomePassed, ""); err != nil {
-				t.Fatalf("CreateDocumentReview: %v", err)
+			if _, err := createReview(ctx, s, application.ID, documentType, "# Draft", docrecord.Passed, ""); err != nil {
+				t.Fatalf("CreateReview: %v", err)
 			}
 			exported := "# Draft"
 			if application.ID == stale.ID && documentType == documents.Resume {
 				exported = "# An earlier draft"
 			}
-			if err := s.RecordDocumentExport(ctx, application.ID, documentType, exported, "/out/x.pdf"); err != nil {
-				t.Fatalf("RecordDocumentExport: %v", err)
+			if err := docrecord.RecordExport(ctx, s.DB(), application.ID, documentType, exported, "/out/x.pdf"); err != nil {
+				t.Fatalf("RecordExport: %v", err)
 			}
 		}
 	}
@@ -368,9 +369,9 @@ func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 			Title: strings.Repeat("Principal Engineer ", 5)}},
 		CompanyName: strings.Repeat("Longcompanyname ", 3),
 		StatusSince: now.Add(-400 * 24 * time.Hour),
-		LatestReviews: map[documents.Type]store.DocumentReview{
-			documents.CoverLetter: {Outcome: store.ReviewOutcomeFlagged},
-			documents.Resume:      {Outcome: store.ReviewOutcomePassed},
+		LatestReviews: map[documents.Type]docrecord.Review{
+			documents.CoverLetter: {Outcome: docrecord.Flagged},
+			documents.Resume:      {Outcome: docrecord.Passed},
 		},
 	}
 	// The widest next step, "withdraw?", is only ever a started
@@ -425,18 +426,18 @@ func TestReviewGlyphSummary_HasEveryDocumentType(t *testing.T) {
 func TestReviewBadgeAndGlyph_Text(t *testing.T) {
 	t.Parallel()
 
-	unknown := store.ReviewOutcome(99)
+	unknown := docrecord.Outcome(99)
 	for _, tc := range []struct {
 		name      string
-		review    store.DocumentReview
+		review    docrecord.Review
 		hasReview bool
 		badge     string
 		glyph     string
 	}{
-		{"no review", store.DocumentReview{}, false, "[not reviewed]", "-"},
-		{"passed", store.DocumentReview{Outcome: store.ReviewOutcomePassed}, true, "[PASSED]", "✓"},
-		{"flagged", store.DocumentReview{Outcome: store.ReviewOutcomeFlagged}, true, "[FLAGGED]", "✗"},
-		{"unknown outcome", store.DocumentReview{Outcome: unknown}, true, "[" + unknown.String() + "]", "?"},
+		{"no review", docrecord.Review{}, false, "[not reviewed]", "-"},
+		{"passed", docrecord.Review{Outcome: docrecord.Passed}, true, "[PASSED]", "✓"},
+		{"flagged", docrecord.Review{Outcome: docrecord.Flagged}, true, "[FLAGGED]", "✗"},
+		{"unknown outcome", docrecord.Review{Outcome: unknown}, true, "[" + unknown.String() + "]", "?"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -450,14 +451,14 @@ func TestReviewBadgeAndGlyph_Text(t *testing.T) {
 	}
 }
 
-// A new store.ReviewOutcome needs a display of its own, or it renders as
+// A new docrecord.Outcome needs a display of its own, or it renders as
 // the unknown-outcome fallback ("?").
 func TestReviewGlyph_EveryOutcomeHasItsOwn(t *testing.T) {
 	t.Parallel()
 
-	seen := make(map[string]store.ReviewOutcome)
-	for _, outcome := range store.ReviewOutcomes() {
-		glyph := ansi.Strip(reviewGlyph(store.DocumentReview{Outcome: outcome}, true))
+	seen := make(map[string]docrecord.Outcome)
+	for _, outcome := range docrecord.Outcomes() {
+		glyph := ansi.Strip(reviewGlyph(docrecord.Review{Outcome: outcome}, true))
 		if glyph == "?" {
 			t.Errorf("%s renders as the unknown-outcome glyph %q; give it a display", outcome, glyph)
 		}

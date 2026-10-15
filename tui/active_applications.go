@@ -13,6 +13,7 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 
 	"github.com/dklassen/swamp/applicationstatus"
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
@@ -279,7 +280,7 @@ func (m *activeApplicationListModel) resetCursorIfOutOfBounds(n int) {
 
 // documentProgress is one document's state on disk, for nextStep: whether
 // it's drafted, and whether its current content has been exported as a
-// PDF (store.DocumentExport.IsCurrent, #188).
+// PDF (docrecord.Export.IsCurrent).
 type documentProgress struct {
 	drafted  bool
 	exported bool
@@ -320,7 +321,7 @@ func nextStep(a pursuit.Application, docs map[documents.Type]documentProgress) s
 		}
 	}
 	for _, documentType := range documentTypes {
-		if review, ok := a.LatestReviews[documentType]; ok && review.Outcome == store.ReviewOutcomeFlagged {
+		if review, ok := a.LatestReviews[documentType]; ok && review.Outcome == docrecord.Flagged {
 			return "revise"
 		}
 	}
@@ -370,12 +371,12 @@ func orderForHome(apps []pursuit.Application) {
 // (#188). A read failure is an error rather than "not exported" (see
 // documents.Current).
 func documentProgressOf(s *store.Store, docs *documents.Store, applicationID int64) (map[documents.Type]documentProgress, error) {
-	exports, err := s.LatestDocumentExports(context.Background(), applicationID)
+	exports, err := docrecord.LatestExports(context.Background(), s.DB(), applicationID)
 	if err != nil {
 		return nil, err
 	}
 	status := docs.Status(applicationID)
-	currentExports, err := documents.Current(status, exports, store.DocumentExport.IsCurrent)
+	currentExports, err := documents.Current(status, exports, docrecord.Export.IsCurrent)
 	if err != nil {
 		return nil, err
 	}

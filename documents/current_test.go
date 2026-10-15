@@ -7,7 +7,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 )
 
-// record stands in for store.DocumentReview or store.DocumentExport:
+// record stands in for docrecord.Review or docrecord.Export:
 // anything recorded against a document's content at the time.
 type record struct{ content string }
 

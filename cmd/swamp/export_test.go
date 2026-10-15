@@ -10,6 +10,7 @@ import (
 	"github.com/pressly/goose/v3"
 
 	"github.com/dklassen/swamp/db/migrations"
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
@@ -53,9 +54,9 @@ func TestExportDocumentPDF_RecordsTheExport(t *testing.T) {
 		t.Fatalf("exportDocumentPDF: %v", err)
 	}
 
-	exports, err := s.LatestDocumentExports(ctx, 7)
+	exports, err := docrecord.LatestExports(ctx, s.DB(), 7)
 	if err != nil {
-		t.Fatalf("LatestDocumentExports: %v", err)
+		t.Fatalf("LatestExports: %v", err)
 	}
 	resume, ok := exports[documents.Resume]
 	if !ok {
@@ -75,9 +76,9 @@ func TestExportDocumentPDF_FailedExportRecordsNothing(t *testing.T) {
 		t.Fatal("exportDocumentPDF succeeded for a missing document, want an error")
 	}
 
-	exports, err := s.LatestDocumentExports(ctx, 7)
+	exports, err := docrecord.LatestExports(ctx, s.DB(), 7)
 	if err != nil {
-		t.Fatalf("LatestDocumentExports: %v", err)
+		t.Fatalf("LatestExports: %v", err)
 	}
 	if len(exports) != 0 {
 		t.Errorf("exports = %+v, want none recorded for a failed export", exports)
@@ -90,17 +91,17 @@ func TestReviewSummary(t *testing.T) {
 	reviewedAt := time.Date(2026, 10, 1, 12, 0, 0, 0, time.UTC)
 	for _, tc := range []struct {
 		name      string
-		review    store.DocumentReview
+		review    docrecord.Review
 		hasReview bool
 		want      string
 	}{
 		// Presence comes from the map lookup, never the review's fields:
 		// these two would flip if CreatedAt were still the check.
-		{"no review, despite a timestamp", store.DocumentReview{CreatedAt: reviewedAt}, false, "not yet reviewed"},
-		{"passed, without a timestamp", store.DocumentReview{Outcome: store.ReviewOutcomePassed}, true, "passed"},
-		{"no review", store.DocumentReview{}, false, "not yet reviewed"},
-		{"flagged", store.DocumentReview{Outcome: store.ReviewOutcomeFlagged, Notes: "too long", CreatedAt: reviewedAt}, true, "flagged: too long"},
-		{"passed", store.DocumentReview{Outcome: store.ReviewOutcomePassed, CreatedAt: reviewedAt}, true, "passed"},
+		{"no review, despite a timestamp", docrecord.Review{CreatedAt: reviewedAt}, false, "not yet reviewed"},
+		{"passed, without a timestamp", docrecord.Review{Outcome: docrecord.Passed}, true, "passed"},
+		{"no review", docrecord.Review{}, false, "not yet reviewed"},
+		{"flagged", docrecord.Review{Outcome: docrecord.Flagged, Notes: "too long", CreatedAt: reviewedAt}, true, "flagged: too long"},
+		{"passed", docrecord.Review{Outcome: docrecord.Passed, CreatedAt: reviewedAt}, true, "passed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()

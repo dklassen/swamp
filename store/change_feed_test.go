@@ -9,7 +9,6 @@ import (
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/documents"
 )
 
 func mustNewChangeFeed(t *testing.T, s *Store) *ChangeFeed {
@@ -159,14 +158,13 @@ func TestChangeFeed_EachLoggedTable(t *testing.T) {
 			return err
 		}, "postings", "update"},
 		{"document written", func(ctx context.Context, f fixture) error {
-			return f.s.RecordDocumentWrite(ctx, f.application.ID, documents.CoverLetter, "a draft", DocumentWriteSourceWriteDocument)
+			return f.s.recordDocumentWrite(ctx, f.application.ID)
 		}, "document_writes", "insert"},
 		{"document reviewed", func(ctx context.Context, f fixture) error {
-			_, err := f.s.CreateDocumentReview(ctx, f.application.ID, documents.CoverLetter, "a draft", ReviewOutcomeFlagged, "tighten it")
-			return err
+			return f.s.createDocumentReview(ctx, f.application.ID)
 		}, "document_reviews", "insert"},
 		{"document exported", func(ctx context.Context, f fixture) error {
-			return f.s.RecordDocumentExport(ctx, f.application.ID, documents.CoverLetter, "a draft", "/tmp/cover.pdf")
+			return f.s.recordDocumentExport(ctx, f.application.ID)
 		}, "document_exports", "insert"},
 	}
 	for _, tt := range tests {

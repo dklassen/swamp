@@ -25,7 +25,7 @@ import (
 // upload field).
 //
 // It returns the markdown it rendered, so the caller can record exactly
-// what was exported (store.RecordDocumentExport, #188) without a second
+// what was exported (docrecord.RecordExport) without a second
 // read that could see a later edit.
 func Document(mdPath, outPath string) (string, error) {
 	content, err := os.ReadFile(mdPath)

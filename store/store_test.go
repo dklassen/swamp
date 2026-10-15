@@ -92,3 +92,27 @@ func (s *Store) setPostingArchived(ctx context.Context, postingID int64) (sqlcdb
 func (s *Store) updatePostingMarkupNotes(ctx context.Context, postingID int64, notes string) (sqlcdb.PostingMarkup, error) {
 	return s.queries.UpdatePostingMarkupNotes(ctx, sqlcdb.UpdatePostingMarkupNotesParams{PostingID: postingID, Notes: notes})
 }
+
+// Document-record set-up for store's own tests, which can't import
+// docrecord: it imports store. One cover-letter row each.
+func (s *Store) recordDocumentWrite(ctx context.Context, applicationID int64) error {
+	return s.queries.CreateDocumentWrite(ctx, sqlcdb.CreateDocumentWriteParams{ApplicationID: applicationID, DocumentType: "cover_letter", ContentSha256: "hash", Source: "write_document"})
+}
+
+func (s *Store) createDocumentReview(ctx context.Context, applicationID int64) error {
+	_, err := s.queries.CreateDocumentReview(ctx, sqlcdb.CreateDocumentReviewParams{ApplicationID: applicationID, DocumentType: "cover_letter", Cycle: 1, ContentSnapshot: "a draft", ContentSha256: "hash", Outcome: "flagged", Notes: "tighten it"})
+	return err
+}
+
+func (s *Store) recordDocumentExport(ctx context.Context, applicationID int64) error {
+	return s.queries.CreateDocumentExport(ctx, sqlcdb.CreateDocumentExportParams{ApplicationID: applicationID, DocumentType: "cover_letter", ContentSha256: "hash", Path: "/tmp/cover.pdf"})
+}
+
+func (s *Store) countRows(t *testing.T, table string, applicationID int64) int {
+	t.Helper()
+	var n int
+	if err := s.sqlDB.QueryRow(`SELECT count(*) FROM `+table+` WHERE application_id = ?`, applicationID).Scan(&n); err != nil {
+		t.Fatalf("count %s: %v", table, err)
+	}
+	return n
+}

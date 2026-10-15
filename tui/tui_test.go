@@ -11,6 +11,7 @@ import (
 
 	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/db/migrations"
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/jobboard"
@@ -129,4 +130,14 @@ func recordScores(ctx context.Context, s *store.Store, provenance scoring.Proven
 		return err
 	})
 	return result, err
+}
+
+func createReview(ctx context.Context, s *store.Store, applicationID int64, documentType documents.Type, content string, outcome docrecord.Outcome, notes string) (docrecord.Review, error) {
+	var review docrecord.Review
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		var err error
+		review, err = docrecord.CreateReview(ctx, tx, applicationID, documentType, content, outcome, notes)
+		return err
+	})
+	return review, err
 }

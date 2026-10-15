@@ -18,6 +18,7 @@ import (
 
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/db/migrations"
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/postingmarkup"
 	"github.com/dklassen/swamp/store"
@@ -320,8 +321,8 @@ func TestList_IncludesLatestDocumentReviews(t *testing.T) {
 	if err := os.WriteFile(mustDoc(t, paths, documents.CoverLetter).Path, []byte("draft"), 0o644); err != nil {
 		t.Fatalf("write cover letter: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), app.ID, documents.CoverLetter, "draft", store.ReviewOutcomeFlagged, "too generic, mention Go specifically"); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, app.ID, documents.CoverLetter, "draft", docrecord.Flagged, "too generic, mention Go specifically"); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 
 	got, err := st.List(context.Background())
@@ -335,8 +336,8 @@ func TestList_IncludesLatestDocumentReviews(t *testing.T) {
 	if !ok {
 		t.Fatalf("LatestReviews[cover letter] missing, want the flagged review present")
 	}
-	if review.Outcome != store.ReviewOutcomeFlagged {
-		t.Errorf("Outcome = %v, want %v", review.Outcome, store.ReviewOutcomeFlagged)
+	if review.Outcome != docrecord.Flagged {
+		t.Errorf("Outcome = %v, want %v", review.Outcome, docrecord.Flagged)
 	}
 	if review.Notes != "too generic, mention Go specifically" {
 		t.Errorf("Notes = %q, want %q", review.Notes, "too generic, mention Go specifically")
@@ -374,8 +375,8 @@ func TestList_KeepsPostingWithBothDocumentsWhenLatestReviewIsFlagged(t *testing.
 	if err := os.WriteFile(mustDoc(t, paths, documents.Resume).Path, []byte("resume"), 0o644); err != nil {
 		t.Fatalf("write resume: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), app.ID, documents.CoverLetter, "letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, app.ID, documents.CoverLetter, "letter", docrecord.Flagged, "needs work"); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 
 	got, err := st.List(context.Background())
@@ -412,8 +413,8 @@ func TestList_ExcludesPostingWithBothDocumentsWhenLatestReviewsAllPass(t *testin
 	if err := os.WriteFile(mustDoc(t, paths, documents.Resume).Path, []byte("resume"), 0o644); err != nil {
 		t.Fatalf("write resume: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), app.ID, documents.CoverLetter, "letter", store.ReviewOutcomePassed, ""); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, app.ID, documents.CoverLetter, "letter", docrecord.Passed, ""); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 
 	got, err := st.List(context.Background())
@@ -456,8 +457,8 @@ func TestList_ReturnsErrorWhenDocumentReadFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), app.ID, documents.CoverLetter, "letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, app.ID, documents.CoverLetter, "letter", docrecord.Flagged, "needs work"); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 	// A directory at the cover letter's path: os.Stat succeeds (so
 	// Status reports Exists=true, same as a real file) but os.ReadFile
@@ -485,8 +486,8 @@ func TestPrepare_ReturnsErrorWhenDocumentReadFails(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Prepare: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), first.ApplicationID, documents.Resume, "draft", store.ReviewOutcomeFlagged, "add metrics"); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, first.ApplicationID, documents.Resume, "draft", docrecord.Flagged, "add metrics"); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 	if err := os.Mkdir(first.Documents[documents.Resume].Path, 0o755); err != nil {
 		t.Fatalf("Mkdir: %v", err)
@@ -518,8 +519,8 @@ func TestList_ExcludesPostingWhenFlaggedReviewIsStaleAfterRevision(t *testing.T)
 	if err := os.WriteFile(mustDoc(t, paths, documents.Resume).Path, []byte("resume"), 0o644); err != nil {
 		t.Fatalf("write resume: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), app.ID, documents.CoverLetter, "original letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, app.ID, documents.CoverLetter, "original letter", docrecord.Flagged, "needs work"); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 	// The document gets revised in response to the flag -- content no
 	// longer matches what was reviewed, and no new review has been
@@ -563,8 +564,8 @@ func TestList_LatestReviewsOmitsStaleReview(t *testing.T) {
 	// Resume deliberately not written -- keeps this candidate in the
 	// queue regardless of the cover letter's review state, isolating
 	// what's under test (LatestReviews' content).
-	if _, err := s.CreateDocumentReview(context.Background(), app.ID, documents.CoverLetter, "original letter", store.ReviewOutcomeFlagged, "needs work"); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, app.ID, documents.CoverLetter, "original letter", docrecord.Flagged, "needs work"); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 	if err := os.WriteFile(mustDoc(t, paths, documents.CoverLetter).Path, []byte("revised letter"), 0o644); err != nil {
 		t.Fatalf("rewrite cover letter: %v", err)
@@ -597,8 +598,8 @@ func TestPrepare_LatestReviewsOmitsStaleReview(t *testing.T) {
 	if err := os.WriteFile(first.Documents[documents.Resume].Path, []byte("original resume"), 0o644); err != nil {
 		t.Fatalf("write resume: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), first.ApplicationID, documents.Resume, "original resume", store.ReviewOutcomeFlagged, "add metrics"); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, first.ApplicationID, documents.Resume, "original resume", docrecord.Flagged, "add metrics"); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 	if err := os.WriteFile(first.Documents[documents.Resume].Path, []byte("revised resume with metrics"), 0o644); err != nil {
 		t.Fatalf("rewrite resume: %v", err)
@@ -634,8 +635,8 @@ func TestPrepare_IncludesApplicationNotesAndLatestReviews(t *testing.T) {
 	if err := os.WriteFile(first.Documents[documents.Resume].Path, []byte("draft"), 0o644); err != nil {
 		t.Fatalf("write resume: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), first.ApplicationID, documents.Resume, "draft", store.ReviewOutcomeFlagged, "add metrics"); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, first.ApplicationID, documents.Resume, "draft", docrecord.Flagged, "add metrics"); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 
 	got, err := st.Prepare(context.Background(), posting.ID)
@@ -649,7 +650,7 @@ func TestPrepare_IncludesApplicationNotesAndLatestReviews(t *testing.T) {
 	if !ok {
 		t.Fatalf("LatestReviews[resume] missing, want the flagged review present")
 	}
-	if review.Outcome != store.ReviewOutcomeFlagged || review.Notes != "add metrics" {
+	if review.Outcome != docrecord.Flagged || review.Notes != "add metrics" {
 		t.Errorf("LatestReviews[resume] = %+v, want Outcome=flagged Notes=%q", review, "add metrics")
 	}
 }
@@ -942,8 +943,8 @@ func TestList_IncludesStartedApplicationsNotMarkedInterested(t *testing.T) {
 		t.Fatalf("CreateApplication: %v", err)
 	}
 	write(flaggedApp.ID)
-	if _, err := s.CreateDocumentReview(ctx, flaggedApp.ID, documents.Resume, "# Draft", store.ReviewOutcomeFlagged, "too long"); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(ctx, s, flaggedApp.ID, documents.Resume, "# Draft", docrecord.Flagged, "too long"); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 
 	drafted := mustUpsertPosting(t, s, company.ID, "job-3", "Drafted")
@@ -1019,4 +1020,14 @@ func TestPrepare_ClosedPostingWithoutApplication_Refused(t *testing.T) {
 	if _, err := s.GetApplication(context.Background(), posting.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("GetApplication: err = %v, want ErrNotFound", err)
 	}
+}
+
+func createReview(ctx context.Context, s *store.Store, applicationID int64, documentType documents.Type, content string, outcome docrecord.Outcome, notes string) (docrecord.Review, error) {
+	var review docrecord.Review
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		var err error
+		review, err = docrecord.CreateReview(ctx, tx, applicationID, documentType, content, outcome, notes)
+		return err
+	})
+	return review, err
 }

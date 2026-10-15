@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/dklassen/swamp/applicationstatus"
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/postingmarkup"
@@ -129,7 +130,7 @@ type Document struct {
 	Version string `json:"Version"`
 }
 
-// LatestReview is the parts of a store.DocumentReview an external agent
+// LatestReview is the parts of a docrecord.Review an external agent
 // needs to decide whether/how to revise a document: the last verdict,
 // any notes on what to fix, how many review cycles it's already been
 // through, and when that verdict was recorded. ContentSnapshot/
@@ -137,16 +138,16 @@ type Document struct {
 // document's current content on disk (see Prepared.Documents),
 // not a historical snapshot.
 type LatestReview struct {
-	Outcome   store.ReviewOutcome `json:"Outcome"`
-	Notes     string              `json:"Notes"`
-	Cycle     int64               `json:"Cycle"`
-	CreatedAt time.Time           `json:"CreatedAt"`
+	Outcome   docrecord.Outcome `json:"Outcome"`
+	Notes     string            `json:"Notes"`
+	Cycle     int64             `json:"Cycle"`
+	CreatedAt time.Time         `json:"CreatedAt"`
 }
 
-// latestReviewsForJSON converts a store.DocumentReview map (as returned
-// by store.LatestDocumentReviews) into the leaner LatestReview shape
+// latestReviewsForJSON converts a docrecord.Review map (as returned
+// by docrecord.LatestReviews) into the leaner LatestReview shape
 // this package exposes over JSON.
-func latestReviewsForJSON(reviews map[documents.Type]store.DocumentReview) map[documents.Type]LatestReview {
+func latestReviewsForJSON(reviews map[documents.Type]docrecord.Review) map[documents.Type]LatestReview {
 	out := make(map[documents.Type]LatestReview, len(reviews))
 	for documentType, r := range reviews {
 		out[documentType] = LatestReview{Outcome: r.Outcome, Notes: r.Notes, Cycle: r.Cycle, CreatedAt: r.CreatedAt}
@@ -155,12 +156,12 @@ func latestReviewsForJSON(reviews map[documents.Type]store.DocumentReview) map[d
 }
 
 // needsRework reports whether any of reviews' latest outcomes is
-// ReviewOutcomeFlagged -- a flagged document needs another drafting
+// docrecord.Flagged -- a flagged document needs another drafting
 // pass even once its file exists on disk, so List keeps surfacing it
 // rather than treating "both files exist" as "done".
-func needsRework(reviews map[documents.Type]store.DocumentReview) bool {
+func needsRework(reviews map[documents.Type]docrecord.Review) bool {
 	for _, r := range reviews {
-		if r.Outcome == store.ReviewOutcomeFlagged {
+		if r.Outcome == docrecord.Flagged {
 			return true
 		}
 	}
@@ -287,14 +288,14 @@ func (st *Stage) startedNotInterested(ctx context.Context, interested []store.In
 // flagged.
 func (st *Stage) candidate(ctx context.Context, p store.InterestedPosting) (Candidate, bool, error) {
 	var notes string
-	var reviews map[documents.Type]store.DocumentReview
+	var reviews map[documents.Type]docrecord.Review
 	if p.ApplicationID != nil {
-		latest, err := st.store.LatestDocumentReviews(ctx, *p.ApplicationID)
+		latest, err := docrecord.LatestReviews(ctx, st.store.DB(), *p.ApplicationID)
 		if err != nil {
 			return Candidate{}, false, fmt.Errorf("stage: latest document reviews: %w", err)
 		}
 		status := st.documents.Status(*p.ApplicationID)
-		reviews, err = documents.Current(status, latest, store.DocumentReview.IsCurrent)
+		reviews, err = documents.Current(status, latest, docrecord.Review.IsCurrent)
 		if err != nil {
 			return Candidate{}, false, fmt.Errorf("stage: check review currency: %w", err)
 		}
@@ -352,11 +353,11 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 		return nil, err
 	}
 
-	reviews, err := st.store.LatestDocumentReviews(ctx, application.ID)
+	reviews, err := docrecord.LatestReviews(ctx, st.store.DB(), application.ID)
 	if err != nil {
 		return nil, fmt.Errorf("stage: latest document reviews: %w", err)
 	}
-	reviews, err = documents.Current(status, reviews, store.DocumentReview.IsCurrent)
+	reviews, err = documents.Current(status, reviews, docrecord.Review.IsCurrent)
 	if err != nil {
 		return nil, fmt.Errorf("stage: check review currency: %w", err)
 	}

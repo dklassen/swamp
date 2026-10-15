@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/store"
@@ -44,7 +45,7 @@ type postingDetailModel struct {
 	// loaded async via loadDocumentReviews the same way application
 	// itself is (#83) -- absent when not yet loaded,
 	// or nil when this posting has no application.
-	latestReviews map[documents.Type]store.DocumentReview
+	latestReviews map[documents.Type]docrecord.Review
 
 	// scores is every score the posting was given, newest first; loaded
 	// async, and empty until then or when it has none.
@@ -57,7 +58,7 @@ type postingDetailModel struct {
 // data changes (navigating to a different posting, an application being
 // created/updated, or a window resize), matching the pre-extraction
 // showPostingDetail's "always rebuild, always reset scroll" behavior.
-func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool, latestReviews map[documents.Type]store.DocumentReview, canNavigateSiblings bool) postingDetailModel {
+func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app store.Application, hasApp bool, latestReviews map[documents.Type]docrecord.Review, canNavigateSiblings bool) postingDetailModel {
 	inner := detailInnerWidth(width)
 	help := indentLines(wrapToWidth(postingDetailHelp(canNavigateSiblings), inner), detailPadding)
 	vp := viewport.New(width, 0)

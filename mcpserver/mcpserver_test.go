@@ -21,6 +21,7 @@ import (
 
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/db/migrations"
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/postingmarkup"
@@ -1159,11 +1160,11 @@ func TestWriteDocument_IsRecordedAndReachesTheChangeFeed(t *testing.T) {
 		"Content":       "a draft",
 	})
 
-	write, ok, err := s.LatestDocumentWrite(ctx, prepared.ApplicationID, documents.CoverLetter)
+	write, ok, err := docrecord.LatestWrite(ctx, s.DB(), prepared.ApplicationID, documents.CoverLetter)
 	if err != nil || !ok {
-		t.Fatalf("LatestDocumentWrite = ok %v, err %v; want the write", ok, err)
+		t.Fatalf("LatestWrite = ok %v, err %v; want the write", ok, err)
 	}
-	if write.Source != store.DocumentWriteSourceWriteDocument || write.ContentSHA256 != documents.ContentSHA256("a draft") {
+	if write.Source != docrecord.SourceWriteDocument || write.ContentSHA256 != documents.ContentSHA256("a draft") {
 		t.Errorf("recorded write = source %v, hash %q; want write_document and the draft's hash", write.Source, write.ContentSHA256)
 	}
 

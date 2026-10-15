@@ -23,6 +23,7 @@ import (
 
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/companyfilter"
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
 	"github.com/dklassen/swamp/postingmarkup"
@@ -236,7 +237,7 @@ func (a *App) WithStatus(status string) *App {
 // the review left notes, an indented "Notes:" line -- the reviewer's
 // record of what specifically to fix before the next cycle (see
 // #83).
-func documentStatusLine(label string, exists bool, path string, review store.DocumentReview, hasReview bool) string {
+func documentStatusLine(label string, exists bool, path string, review docrecord.Review, hasReview bool) string {
 	status := "not found"
 	if exists {
 		status = "found"
@@ -251,20 +252,20 @@ func documentStatusLine(label string, exists bool, path string, review store.Doc
 // outcomeDisplay is how each review outcome looks: its style, shared by
 // reviewBadge and reviewGlyph, and its glyph. An outcome missing here
 // renders dim, as "[<outcome>]" and "?"; a test checks every
-// store.ReviewOutcomes() has an entry (RFC 0005).
-var outcomeDisplay = map[store.ReviewOutcome]struct {
+// docrecord.Outcomes() has an entry.
+var outcomeDisplay = map[docrecord.Outcome]struct {
 	style lipgloss.Style
 	glyph string
 }{
-	store.ReviewOutcomePassed:  {passStyle, "✓"},
-	store.ReviewOutcomeFlagged: {errStyle, "✗"},
+	docrecord.Passed:  {passStyle, "✓"},
+	docrecord.Flagged: {errStyle, "✗"},
 }
 
 // reviewBadge renders a document's latest review outcome as a short
 // styled tag: dim "[not reviewed]" when hasReview is false (no review
 // recorded yet), otherwise the outcome's name in capitals, styled per
 // outcomeDisplay: green "[PASSED]", red "[FLAGGED]".
-func reviewBadge(review store.DocumentReview, hasReview bool) string {
+func reviewBadge(review docrecord.Review, hasReview bool) string {
 	if !hasReview {
 		return dimStyle.Render("[not reviewed]")
 	}
@@ -281,7 +282,7 @@ func reviewBadge(review store.DocumentReview, hasReview bool) string {
 // reviewBadge's full "[FLAGGED]"/notes rendering (#83).
 // A document with no entry in reviews (no review recorded yet)
 // renders as a dim "-".
-func reviewGlyphSummary(reviews map[documents.Type]store.DocumentReview) string {
+func reviewGlyphSummary(reviews map[documents.Type]docrecord.Review) string {
 	entries := make([]string, 0, len(documents.Types()))
 	for _, documentType := range documents.Types() {
 		review, ok := reviews[documentType]
@@ -302,7 +303,7 @@ func documentAbbreviation(documentType documents.Type) string {
 
 // reviewGlyph is reviewBadge's one-character form, for list rows: dim "-"
 // with no review, otherwise the outcome's glyph from outcomeDisplay.
-func reviewGlyph(review store.DocumentReview, hasReview bool) string {
+func reviewGlyph(review docrecord.Review, hasReview bool) string {
 	if !hasReview {
 		return dimStyle.Render("-")
 	}
@@ -335,7 +336,7 @@ func reviewGlyph(review store.DocumentReview, hasReview bool) string {
 // tea.Cmd/tea.Msg convention as the rest of this file's store-backed
 // state (#83). A document with no entry in the map
 // renders as "not reviewed".
-func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store, latestReviews map[documents.Type]store.DocumentReview, width int) string {
+func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store, latestReviews map[documents.Type]docrecord.Review, width int) string {
 	var b strings.Builder
 	b.WriteString(sectionHeading("Posting", width) + "\n")
 	fields := []struct{ label, value string }{
@@ -553,7 +554,7 @@ func loadActiveApplications(s *store.Store, docs *documents.Store) tea.Cmd {
 		}
 		progress := make(map[int64]map[documents.Type]documentProgress, len(apps))
 		for i, app := range apps {
-			reviews, err := documents.Current(docs.Status(app.ID), app.LatestReviews, store.DocumentReview.IsCurrent)
+			reviews, err := documents.Current(docs.Status(app.ID), app.LatestReviews, docrecord.Review.IsCurrent)
 			if err != nil {
 				return activeApplicationsLoadedMsg{err: err}
 			}
@@ -712,7 +713,7 @@ func loadApplication(s *store.Store, postingID int64) tea.Cmd {
 
 type documentReviewsLoadedMsg struct {
 	applicationID int64
-	reviews       map[documents.Type]store.DocumentReview
+	reviews       map[documents.Type]docrecord.Review
 	err           error
 }
 
@@ -725,14 +726,14 @@ type documentReviewsLoadedMsg struct {
 // direct response to that review or independently) are filtered out by
 // documents.Current -- a stale review shouldn't render as if it
 // still described the current draft (see
-// store.DocumentReview.IsCurrent).
+// docrecord.Review.IsCurrent).
 func loadDocumentReviews(s *store.Store, docs *documents.Store, applicationID int64) tea.Cmd {
 	return func() tea.Msg {
-		reviews, err := s.LatestDocumentReviews(context.Background(), applicationID)
+		reviews, err := docrecord.LatestReviews(context.Background(), s.DB(), applicationID)
 		if err != nil {
 			return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
 		}
-		reviews, err = documents.Current(docs.Status(applicationID), reviews, store.DocumentReview.IsCurrent)
+		reviews, err = documents.Current(docs.Status(applicationID), reviews, docrecord.Review.IsCurrent)
 		if err != nil {
 			return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
 		}
@@ -1896,7 +1897,7 @@ func detailRow(label string, lines []string) string {
 // and path, the latest review's badge, and the review's notes on their
 // own line under the value column -- the aligned counterpart of
 // documentStatusLine, which application detail still uses.
-func detailDocumentField(label string, exists bool, path string, review store.DocumentReview, hasReview bool, width int) string {
+func detailDocumentField(label string, exists bool, path string, review docrecord.Review, hasReview bool, width int) string {
 	status := "not found"
 	if exists {
 		status = "found"

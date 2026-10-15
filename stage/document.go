@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
 )
@@ -85,7 +86,7 @@ func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documen
 	}
 	// A file write is invisible to the database; recording it is how other
 	// processes learn of it, and that the agent made it.
-	if err := st.store.RecordDocumentWrite(ctx, applicationID, documentType, content, store.DocumentWriteSourceWriteDocument); err != nil {
+	if err := docrecord.RecordWrite(ctx, st.store.DB(), applicationID, documentType, content, docrecord.SourceWriteDocument); err != nil {
 		return "", fmt.Errorf("stage: %s was written to %s, but recording the write failed: %w", documentType, path, err)
 	}
 	return path, nil

@@ -10,6 +10,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dklassen/swamp/applicationstatus"
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
@@ -158,9 +159,9 @@ func TestApplicationDetailModel_View_ShowsOutcomeAndNotes(t *testing.T) {
 	t.Parallel()
 
 	application := testApplicationView()
-	application.LatestReviews = map[documents.Type]store.DocumentReview{
-		documents.CoverLetter: {Outcome: store.ReviewOutcomeFlagged, Notes: "too generic"},
-		documents.Resume:      {Outcome: store.ReviewOutcomePassed},
+	application.LatestReviews = map[documents.Type]docrecord.Review{
+		documents.CoverLetter: {Outcome: docrecord.Flagged, Notes: "too generic"},
+		documents.Resume:      {Outcome: docrecord.Passed},
 	}
 	m := newApplicationDetailModel(documents.NewStore(t.TempDir()), application)
 

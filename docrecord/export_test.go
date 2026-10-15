@@ -1,13 +1,14 @@
-package store
+package docrecord_test
 
 import (
 	"context"
+	"github.com/dklassen/swamp/docrecord"
 	"testing"
 
 	"github.com/dklassen/swamp/documents"
 )
 
-func TestRecordDocumentExport_LatestPerTypeIsCurrentUntilContentChanges(t *testing.T) {
+func TestRecordExport_LatestPerTypeIsCurrentUntilContentChanges(t *testing.T) {
 	t.Parallel()
 	s := newTestStore(t)
 	ctx := context.Background()
@@ -23,21 +24,21 @@ func TestRecordDocumentExport_LatestPerTypeIsCurrentUntilContentChanges(t *testi
 		{documents.CoverLetter, "# Cover letter v1", "/out/v1-cover_letter.pdf"},
 		{documents.CoverLetter, "# Cover letter v2", "/out/v2-cover_letter.pdf"},
 	} {
-		if err := s.RecordDocumentExport(ctx, application.ID, export.documentType, export.content, export.path); err != nil {
-			t.Fatalf("RecordDocumentExport: %v", err)
+		if err := docrecord.RecordExport(ctx, s.DB(), application.ID, export.documentType, export.content, export.path); err != nil {
+			t.Fatalf("RecordExport: %v", err)
 		}
 	}
 
-	exports, err := s.LatestDocumentExports(ctx, application.ID)
+	exports, err := docrecord.LatestExports(ctx, s.DB(), application.ID)
 	if err != nil {
-		t.Fatalf("LatestDocumentExports: %v", err)
+		t.Fatalf("LatestExports: %v", err)
 	}
 	if _, ok := exports[documents.Resume]; ok {
-		t.Errorf("LatestDocumentExports has a resume export, want none: the resume was never exported")
+		t.Errorf("LatestExports has a resume export, want none: the resume was never exported")
 	}
 	coverLetter, ok := exports[documents.CoverLetter]
 	if !ok {
-		t.Fatal("LatestDocumentExports has no cover letter export")
+		t.Fatal("LatestExports has no cover letter export")
 	}
 	if coverLetter.Path != "/out/v2-cover_letter.pdf" || coverLetter.ExportedAt.IsZero() {
 		t.Errorf("latest cover letter export = %+v, want the v2 export with an ExportedAt", coverLetter)

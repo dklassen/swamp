@@ -8,8 +8,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/store"
 )
 
 func TestEditorCommand_EditorSet_ReturnsEditorAndPath(t *testing.T) {
@@ -47,8 +47,8 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	if _, err := docs.Write(application.ID, documents.Resume, "# Draft\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if _, err := s.CreateDocumentReview(context.Background(), application.ID, documents.Resume, "# Draft\n", store.ReviewOutcomePassed, ""); err != nil {
-		t.Fatalf("CreateDocumentReview: %v", err)
+	if _, err := createReview(context.Background(), s, application.ID, documents.Resume, "# Draft\n", docrecord.Passed, ""); err != nil {
+		t.Fatalf("CreateReview: %v", err)
 	}
 	app := New(s, newTestSyncer(s, nil), docs)
 	app = applyCmd(t, app, app.Init())
@@ -104,11 +104,11 @@ func TestApp_EditorClosedAfterAChange_RecordsTheWrite(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: application.ID, documentType: documents.Resume, before: documents.ContentSHA256("# Draft\n")})
 
-	write, ok, err := app.store.LatestDocumentWrite(ctx, application.ID, documents.Resume)
+	write, ok, err := docrecord.LatestWrite(ctx, app.store.DB(), application.ID, documents.Resume)
 	if err != nil || !ok {
-		t.Fatalf("LatestDocumentWrite = ok %v, err %v; want the edit recorded", ok, err)
+		t.Fatalf("LatestWrite = ok %v, err %v; want the edit recorded", ok, err)
 	}
-	if write.Source != store.DocumentWriteSourceEditor || write.ContentSHA256 != documents.ContentSHA256("# Edited\n") {
+	if write.Source != docrecord.SourceEditor || write.ContentSHA256 != documents.ContentSHA256("# Edited\n") {
 		t.Errorf("recorded write = source %v, hash %q; want editor and the edited content's hash", write.Source, write.ContentSHA256)
 	}
 }
@@ -121,7 +121,7 @@ func TestApp_EditorClosedWithoutAChange_RecordsNothing(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: application.ID, documentType: documents.Resume, before: documents.ContentSHA256("# Draft\n")})
 
-	if _, ok, err := app.store.LatestDocumentWrite(context.Background(), application.ID, documents.Resume); err != nil || ok {
-		t.Errorf("LatestDocumentWrite = ok %v, err %v; want nothing recorded for an unchanged document", ok, err)
+	if _, ok, err := docrecord.LatestWrite(context.Background(), app.store.DB(), application.ID, documents.Resume); err != nil || ok {
+		t.Errorf("LatestWrite = ok %v, err %v; want nothing recorded for an unchanged document", ok, err)
 	}
 }

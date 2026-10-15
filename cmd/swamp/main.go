@@ -30,6 +30,7 @@ import (
 
 	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/db/migrations"
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/export"
 	"github.com/dklassen/swamp/greenhouse"
@@ -354,13 +355,13 @@ func runExport(s *store.Store, d *documents.Store, applicationID int64) {
 		log.Fatalf("export: look up application %d: %v", applicationID, err)
 	}
 
-	reviews, err := s.LatestDocumentReviews(ctx, applicationID)
+	reviews, err := docrecord.LatestReviews(ctx, s.DB(), applicationID)
 	if err != nil {
 		log.Fatalf("export: latest document reviews: %v", err)
 	}
 
 	status := d.Status(applicationID)
-	reviews, err = documents.Current(status, reviews, store.DocumentReview.IsCurrent)
+	reviews, err = documents.Current(status, reviews, docrecord.Review.IsCurrent)
 	if err != nil {
 		log.Fatalf("export: current document reviews: %v", err)
 	}
@@ -391,14 +392,14 @@ func runExport(s *store.Store, d *documents.Store, applicationID int64) {
 // returns its path -- the CLI's fixed destination convention, unlike the
 // TUI's export screen, where the user picks the directory. The export is
 // recorded against applicationID with the content it was rendered from
-// (store.RecordDocumentExport, #188), as the TUI's are.
+// (docrecord.RecordExport), as the TUI's are.
 func exportDocumentPDF(ctx context.Context, s *store.Store, applicationID int64, documentType documents.Type, mdPath string) (string, error) {
 	outPath := strings.TrimSuffix(mdPath, filepath.Ext(mdPath)) + ".pdf"
 	content, err := export.Document(mdPath, outPath)
 	if err != nil {
 		return "", err
 	}
-	if err := s.RecordDocumentExport(ctx, applicationID, documentType, content, outPath); err != nil {
+	if err := docrecord.RecordExport(ctx, s.DB(), applicationID, documentType, content, outPath); err != nil {
 		return "", err
 	}
 	return outPath, nil
@@ -409,11 +410,11 @@ func exportDocumentPDF(ctx context.Context, s *store.Store, applicationID int64,
 // current review is a real, distinct state from either outcome and worth
 // saying so explicitly rather than defaulting to one. It's never inferred
 // from review's fields (RFC 0005).
-func reviewSummary(review store.DocumentReview, hasReview bool) string {
+func reviewSummary(review docrecord.Review, hasReview bool) string {
 	if !hasReview {
 		return "not yet reviewed"
 	}
-	if review.Outcome == store.ReviewOutcomeFlagged {
+	if review.Outcome == docrecord.Flagged {
 		return "flagged: " + review.Notes
 	}
 	return "passed"

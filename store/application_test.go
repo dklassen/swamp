@@ -9,7 +9,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/documents"
 )
 
 func mustCreateApplication(t *testing.T, s *Store, postingID int64) Application {
@@ -407,34 +406,26 @@ func TestDeleteApplication_KeepsWhatTheApplicationOwns(t *testing.T) {
 			name: "document reviews",
 			seed: func(t *testing.T, s *Store, applicationID int64) {
 				t.Helper()
-				if _, err := s.CreateDocumentReview(context.Background(), applicationID, documents.Resume, "# Resume\n", ReviewOutcomePassed, ""); err != nil {
-					t.Fatalf("CreateDocumentReview: %v", err)
+				if err := s.createDocumentReview(context.Background(), applicationID); err != nil {
+					t.Fatalf("createDocumentReview: %v", err)
 				}
 			},
 			count: func(t *testing.T, s *Store, applicationID int64) int {
 				t.Helper()
-				reviews, err := s.LatestDocumentReviews(context.Background(), applicationID)
-				if err != nil {
-					t.Fatalf("LatestDocumentReviews: %v", err)
-				}
-				return len(reviews)
+				return s.countRows(t, "document_reviews", applicationID)
 			},
 		},
 		{
 			name: "document exports",
 			seed: func(t *testing.T, s *Store, applicationID int64) {
 				t.Helper()
-				if err := s.RecordDocumentExport(context.Background(), applicationID, documents.Resume, "# Resume\n", "/exports/resume.pdf"); err != nil {
-					t.Fatalf("RecordDocumentExport: %v", err)
+				if err := s.recordDocumentExport(context.Background(), applicationID); err != nil {
+					t.Fatalf("recordDocumentExport: %v", err)
 				}
 			},
 			count: func(t *testing.T, s *Store, applicationID int64) int {
 				t.Helper()
-				exports, err := s.LatestDocumentExports(context.Background(), applicationID)
-				if err != nil {
-					t.Fatalf("LatestDocumentExports: %v", err)
-				}
-				return len(exports)
+				return s.countRows(t, "document_exports", applicationID)
 			},
 		},
 		{

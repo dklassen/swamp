@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/applicationstatus"
+	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
@@ -178,9 +179,9 @@ func TestApplicationExportModel_RecordsEachExport(t *testing.T) {
 		t.Fatalf("export err = %v, want nil", got.err)
 	}
 
-	exports, err := s.LatestDocumentExports(context.Background(), 42)
+	exports, err := docrecord.LatestExports(context.Background(), s.DB(), 42)
 	if err != nil {
-		t.Fatalf("LatestDocumentExports: %v", err)
+		t.Fatalf("LatestExports: %v", err)
 	}
 	coverLetter, ok := exports[documents.CoverLetter]
 	if !ok {
