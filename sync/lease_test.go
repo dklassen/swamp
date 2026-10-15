@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/jobboard"
 )
@@ -28,7 +29,7 @@ func (f *countingFetcher) FetchPostings(ctx context.Context, boardSlug string) (
 // TestSyncCompany_LeaseHeldElsewhere_SkipsWithoutFetching: while another
 // sync -- in this process or another -- holds the company's lease, a
 // second sync returns ErrSyncInProgress without fetching or writing
-// anything (#150).
+// anything.
 func TestSyncCompany_LeaseHeldElsewhere_SkipsWithoutFetching(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -156,7 +157,7 @@ func (f *staleFirstFetcher) FetchPostings(ctx context.Context, boardSlug string)
 // on its older fetch -- closed it again and moved the application to
 // posting_closed. With it, B is skipped while A holds the company, and
 // the application is never touched -- checked straight after the two
-// runs, before a later sync could restore it (#174).
+// runs, before a later sync could restore it.
 func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
@@ -174,15 +175,15 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 		t.Fatalf("ListPostingsByCompany: %v", err)
 	}
 	xID := postings[0].ID
-	if _, err := s.CreateApplication(ctx, xID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplication(ctx, s, xID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 	setup.postings["acme"] = nil
 	if _, err := seed.SyncCompany(ctx, acme.ID); err != nil { // X dropped: closed
 		t.Fatalf("closing SyncCompany: %v", err)
 	}
-	if _, err := s.UpdateApplicationStatus(ctx, xID, applicationstatus.Started); err != nil {
-		t.Fatalf("UpdateApplicationStatus: %v", err)
+	if _, err := updateApplicationStatus(ctx, s, xID, applicationstatus.Started); err != nil {
+		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
 	fetcher := &staleFirstFetcher{started: make(chan struct{}), release: make(chan struct{}), old: nil, current: []jobboard.Posting{x}}
@@ -201,8 +202,8 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 	if !errors.Is(errB, ErrSyncInProgress) {
 		t.Errorf("run B while A holds the company: err = %v, want ErrSyncInProgress", errB)
 	}
-	if application, err := s.GetApplication(ctx, xID); err != nil {
-		t.Fatalf("GetApplication: %v", err)
+	if application, err := application.Get(ctx, s.DB(), xID); err != nil {
+		t.Fatalf("application.Get: %v", err)
 	} else if application.Status != applicationstatus.Started {
 		t.Errorf("after runs A and B: application %s, want %s untouched", application.Status, applicationstatus.Started)
 	}
@@ -215,9 +216,9 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 	if err != nil {
 		t.Fatalf("GetPosting: %v", err)
 	}
-	application, err := s.GetApplication(ctx, xID)
+	application, err := application.Get(ctx, s.DB(), xID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 	if posting.ListingStatus != "open" || application.Status != applicationstatus.Started {
 		t.Errorf("after the next sync: posting %s, application %s; want open and %s", posting.ListingStatus, application.Status, applicationstatus.Started)
@@ -228,7 +229,7 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 // exits with a sync still in flight -- the TUI quitting mid-refresh or
 // mid-sync-all abandons its running command, then closes the database --
 // releases the leases it holds on the way out, so the next sync of that
-// company isn't refused until the lease expires (#153).
+// company isn't refused until the lease expires.
 func TestSyncer_ReleaseHeldLeases_FreesInFlightSyncsLeases(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()

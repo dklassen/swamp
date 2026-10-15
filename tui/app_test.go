@@ -16,6 +16,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/docrecord"
@@ -112,7 +113,7 @@ func openPostingList(t *testing.T, app *App) *App {
 // app.applicationsByPosting reflects DB state immediately. Uses applyCmd
 // rather than a raw sendKey(app, cmd()) since entry now dispatches a
 // tea.Batch of both loads whenever the posting already has an
-// application (#83).
+// application.
 func openPostingDetail(t *testing.T, app *App) *App {
 	t.Helper()
 	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
@@ -894,9 +895,9 @@ func TestApp_PressA_OnPostingDetail_WithNoApplication_CreatesApplication(t *test
 	}
 	_, _ = sendKey(app, cmd())
 
-	application, err := s.GetApplication(context.Background(), postingID)
+	application, err := application.Get(context.Background(), s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 	if application.Status != applicationstatus.Started {
 		t.Fatalf("application.Status = %s, want %s", application.Status, applicationstatus.Started)
@@ -937,7 +938,7 @@ func TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications(t
 }
 
 // TestApp_PressA_OnPostingDetail_ClosedPosting_ExplainsInStatus: starting
-// an application on a closed posting is refused (#175). That's an
+// an application on a closed posting is refused. That's an
 // expected outcome, not a failure, so it reads as status, not an error.
 func TestApp_PressA_OnPostingDetail_ClosedPosting_ExplainsInStatus(t *testing.T) {
 	s := newTestStore(t)
@@ -965,8 +966,8 @@ func TestApp_PressA_OnPostingDetail_ClosedPosting_ExplainsInStatus(t *testing.T)
 	if !strings.Contains(app.status, "closed") {
 		t.Errorf("app.status = %q, want it to say the posting is closed", app.status)
 	}
-	if _, err := s.GetApplication(context.Background(), postingID); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("GetApplication: err = %v, want ErrNotFound", err)
+	if _, err := application.Get(context.Background(), s.DB(), postingID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("application.Get: err = %v, want ErrNotFound", err)
 	}
 }
 
@@ -992,9 +993,9 @@ func TestApp_PressA_OnPostingDetail_WhenApplicationAlreadyExists_DoesNotDuplicat
 		t.Fatal("Update on second 'a' (application already exists) returned non-nil Cmd, want nil (no-op)")
 	}
 
-	applications, err := s.GetApplication(context.Background(), postingID)
+	applications, err := application.Get(context.Background(), s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 	if applications.Status != applicationstatus.Started {
 		t.Fatalf("application.Status = %s, want %s (unchanged)", applications.Status, applicationstatus.Started)
@@ -1011,8 +1012,8 @@ func TestApp_OpenPostingDetail_WithExistingApplication_LoadsAndDisplaysStatus(t 
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
 	postingID := app.postings[0].ID
-	if _, err := s.CreateApplication(context.Background(), postingID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplicationIn(context.Background(), s, postingID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 
 	app = openPostingDetail(t, app)
@@ -1054,8 +1055,8 @@ func TestApp_PressS_OnPostingDetail_WithApplication_OpensStatusSelect(t *testing
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
 	postingID := app.postings[0].ID
-	if _, err := s.CreateApplication(context.Background(), postingID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplicationIn(context.Background(), s, postingID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 	app = openPostingDetail(t, app)
 
@@ -1094,8 +1095,8 @@ func TestApp_StatusSelect_Enter_UpdatesStatusAndReturnsToDetail(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
 	postingID := app.postings[0].ID
-	if _, err := s.CreateApplication(context.Background(), postingID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplicationIn(context.Background(), s, postingID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 	app = openPostingDetail(t, app)
 	app = sendKeyAndApply(t, app, runeKey('s'))
@@ -1116,9 +1117,9 @@ func TestApp_StatusSelect_Enter_UpdatesStatusAndReturnsToDetail(t *testing.T) {
 		t.Fatalf("app.applicationsByPosting[postingID].Status = %s, want %s", app.applicationsByPosting[postingID].Status, applicationstatus.Submitted)
 	}
 
-	stored, err := s.GetApplication(context.Background(), postingID)
+	stored, err := application.Get(context.Background(), s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 	if stored.Status != applicationstatus.Submitted {
 		t.Fatalf("stored application.Status = %s, want %s", stored.Status, applicationstatus.Submitted)
@@ -1135,8 +1136,8 @@ func TestApp_StatusSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
 	postingID := app.postings[0].ID
-	if _, err := s.CreateApplication(context.Background(), postingID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplicationIn(context.Background(), s, postingID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 	app = openPostingDetail(t, app)
 	app = sendKeyAndApply(t, app, runeKey('s'))
@@ -1147,9 +1148,9 @@ func TestApp_StatusSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 	if app.screen != screenPostingDetail {
 		t.Fatalf("screen after esc = %v, want screenPostingDetail", app.screen)
 	}
-	stored, err := s.GetApplication(context.Background(), postingID)
+	stored, err := application.Get(context.Background(), s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 	if stored.Status != applicationstatus.Started {
 		t.Fatalf("stored application.Status = %s, want %s (esc should not persist)", stored.Status, applicationstatus.Started)
@@ -1248,11 +1249,11 @@ func TestApp_PressN_OnPostingDetail_WithApplication_OpensNotesEditorPrepopulated
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
 	postingID := app.postings[0].ID
-	if _, err := s.CreateApplication(context.Background(), postingID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplicationIn(context.Background(), s, postingID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := s.UpdateApplicationNotes(context.Background(), postingID, "Referred by Alice"); err != nil {
-		t.Fatalf("UpdateApplicationNotes: %v", err)
+	if _, err := application.UpdateNotes(context.Background(), s.DB(), postingID, "Referred by Alice"); err != nil {
+		t.Fatalf("application.UpdateNotes: %v", err)
 	}
 	app = openPostingDetail(t, app)
 
@@ -1276,8 +1277,8 @@ func TestApp_NotesEdit_CtrlS_SavesNotesAndReturnsToDetail(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
 	postingID := app.postings[0].ID
-	if _, err := s.CreateApplication(context.Background(), postingID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplicationIn(context.Background(), s, postingID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 	app = openPostingDetail(t, app)
 	app, _ = sendKey(app, runeKey('n'))
@@ -1296,9 +1297,9 @@ func TestApp_NotesEdit_CtrlS_SavesNotesAndReturnsToDetail(t *testing.T) {
 		t.Fatalf("app.applicationsByPosting[postingID].Notes = %q, want %q", app.applicationsByPosting[postingID].Notes, "Hi")
 	}
 
-	stored, err := s.GetApplication(context.Background(), postingID)
+	stored, err := application.Get(context.Background(), s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 	if stored.Notes != "Hi" {
 		t.Fatalf("stored application.Notes = %q, want %q", stored.Notes, "Hi")
@@ -1315,8 +1316,8 @@ func TestApp_NotesEdit_Esc_CancelsWithoutSaving(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
 	postingID := app.postings[0].ID
-	if _, err := s.CreateApplication(context.Background(), postingID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplicationIn(context.Background(), s, postingID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 	app = openPostingDetail(t, app)
 	app, _ = sendKey(app, runeKey('n'))
@@ -1328,9 +1329,9 @@ func TestApp_NotesEdit_Esc_CancelsWithoutSaving(t *testing.T) {
 	if app.screen != screenPostingDetail {
 		t.Fatalf("screen after esc and discarding = %v, want screenPostingDetail", app.screen)
 	}
-	stored, err := s.GetApplication(context.Background(), postingID)
+	stored, err := application.Get(context.Background(), s.DB(), postingID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 	if stored.Notes != "" {
 		t.Fatalf("stored application.Notes = %q, want empty (esc should not persist)", stored.Notes)
@@ -1394,11 +1395,11 @@ func TestApp_PostingDetail_NavigatingBetweenPostings_LoadsEachPostingsOwnApplica
 	app = openPostingList(t, app)
 	engineerID := app.postings[0].ID
 	designerID := app.postings[1].ID
-	if _, err := s.CreateApplication(context.Background(), designerID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplicationIn(context.Background(), s, designerID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := s.UpdateApplicationStatus(context.Background(), designerID, applicationstatus.Interviewing); err != nil {
-		t.Fatalf("UpdateApplicationStatus: %v", err)
+	if _, err := updateApplicationStatusIn(context.Background(), s, designerID, applicationstatus.Interviewing); err != nil {
+		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 	app = openPostingDetail(t, app) // opens the posting at cursor 0, no application
 
@@ -1504,7 +1505,7 @@ func TestApp_PressR_RefreshesSelectedCompanyAndShowsStatus(t *testing.T) {
 // TestApp_PressR_WhileCompanySyncsElsewhere_ShowsStatusNotError: when
 // another sync -- e.g. a scheduled `swamp fetch` -- holds the company's
 // sync lease, 'r' says so plainly instead of showing a generic error
-// (#150).
+// .
 func TestApp_PressR_WhileCompanySyncsElsewhere_ShowsStatusNotError(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
@@ -1787,9 +1788,9 @@ func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testin
 	app = openPostingList(t, app)
 
 	posting := app.postings[0]
-	application, err := s.CreateApplication(context.Background(), posting.ID)
+	application, err := createApplicationIn(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	status := app.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
@@ -1824,9 +1825,9 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 	app = openPostingList(t, app)
 
 	posting := app.postings[0]
-	application, err := s.CreateApplication(context.Background(), posting.ID)
+	application, err := createApplicationIn(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	// Content must match what's on disk, or the staleness check (see
 	// docrecord.Review.IsCurrent) treats this review
@@ -1875,9 +1876,9 @@ func TestApp_LoadActiveApplications_DocumentReadFails_SetsErr(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
-	application, err := s.CreateApplication(context.Background(), posting.ID)
+	application, err := createApplicationIn(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	app := New(s, newTestSyncer(s, nil), documents.NewStore(t.TempDir()))
 	if _, err := createReview(context.Background(), s, application.ID, documents.CoverLetter, "letter", docrecord.Flagged, "needs work"); err != nil {
@@ -1962,9 +1963,9 @@ func TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag(t *testing.T) 
 	app = openPostingList(t, app)
 
 	posting := app.postings[0]
-	application, err := s.CreateApplication(context.Background(), posting.ID)
+	application, err := createApplicationIn(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	status := app.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
@@ -2022,9 +2023,9 @@ func TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T) {
 	app = openPostingList(t, app)
 
 	posting := app.postings[0]
-	application, err := s.CreateApplication(context.Background(), posting.ID)
+	application, err := createApplicationIn(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	status := app.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
@@ -2074,9 +2075,9 @@ func TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail(t *testing.T) 
 	app = openPostingList(t, app)
 
 	posting := app.postings[0]
-	application, err := s.CreateApplication(context.Background(), posting.ID)
+	application, err := createApplicationIn(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	status := app.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, documents.CoverLetter).Path), 0o755); err != nil {
@@ -2314,7 +2315,7 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately(t
 // screenActiveApplications afterward shows the compact glyph column
 // (reviewGlyphSummary, e.g. "R:✓") reflecting the same change --
 // which documentReviewsLoadedMsg now patches into that application's
-// row (#91), with no test to catch a regression if that were ever
+// row, with no test to catch a regression if that were ever
 // dropped.
 func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplicationsGlyph(t *testing.T) {
 	s := newTestStore(t)
@@ -2568,9 +2569,9 @@ func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testi
 	app = openPostingList(t, app)
 
 	posting := app.postings[0]
-	application, err := s.CreateApplication(context.Background(), posting.ID)
+	application, err := createApplicationIn(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	// Deliberately no files written -- the application row exists, but
 	// the documents don't yet.
@@ -2596,7 +2597,7 @@ func TestApp_PostingDetail_NoApplication_ShowsNoDocumentsSection(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 	app = openPostingList(t, app)
-	// No CreateApplication call -- store.GetApplication will return
+	// No application.Create call -- application.Get will return
 	// store.ErrNotFound, per the "no application -> show nothing"
 	// decision.
 
@@ -3308,7 +3309,7 @@ func TestPostingDetailContent_ShowsStatusLabelNotEnumValue(t *testing.T) {
 	t.Parallel()
 
 	posting := store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}}
-	application := store.Application{ID: 1, Status: applicationstatus.OfferReceived}
+	application := application.Application{ID: 1, Status: applicationstatus.OfferReceived}
 
 	got := postingDetailContent(posting, application, true, documents.NewStore(t.TempDir()), nil, 80)
 
@@ -3572,8 +3573,8 @@ func TestApp_NotesEsc_WhileSaving_WaitsForTheSave(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	if _, err := s.CreateApplication(context.Background(), app.postings[0].ID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplicationIn(context.Background(), s, app.postings[0].ID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 	app = openPostingDetail(t, app)
 	app, _ = sendKey(app, runeKey('n'))
@@ -3603,8 +3604,8 @@ func TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	if _, err := s.CreateApplication(context.Background(), app.postings[0].ID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplicationIn(context.Background(), s, app.postings[0].ID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 	app = openPostingDetail(t, app)
 	app, _ = sendKey(app, runeKey('n'))
@@ -3614,9 +3615,9 @@ func TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T
 	if app.screen != screenApplicationNotesEdit {
 		t.Fatalf("screen after re-entering = %v, want screenApplicationNotesEdit", app.screen)
 	}
-	stored, err := s.GetApplication(context.Background(), app.postings[0].ID)
+	stored, err := application.Get(context.Background(), s.DB(), app.postings[0].ID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 
 	app, _ = sendKey(app, applicationNotesUpdatedMsg{application: stored, from: earlier})
@@ -3713,7 +3714,7 @@ func TestApp_BackToCompanyList_AfterArchiving_ShowsUpdatedOpenCount(t *testing.T
 }
 
 // TestApp_ApplicationDetail_EnterApplicationFormByHand: 'f' on
-// application detail opens the posting's application form as text (#184),
+// application detail opens the posting's application form as text,
 // seeded with a line per document type; ctrl+s stores what was typed the
 // same way a fetched Greenhouse form is stored, and returns to detail.
 func TestApp_ApplicationDetail_EnterApplicationFormByHand(t *testing.T) {
@@ -3753,9 +3754,9 @@ func TestApp_ApplicationDetail_EnterApplicationFormByHand(t *testing.T) {
 	if app.screen != screenApplicationDetail {
 		t.Errorf("screen after saving = %v, want screenApplicationDetail", app.screen)
 	}
-	stored, _, ok, err := s.GetApplicationForm(context.Background(), posting.ID)
+	stored, _, ok, err := application.GetForm(context.Background(), s.DB(), posting.ID)
 	if err != nil || !ok {
-		t.Fatalf("GetApplicationForm: ok %v, err %v", ok, err)
+		t.Fatalf("application.GetForm: ok %v, err %v", ok, err)
 	}
 	var got jobboard.ApplicationForm
 	if err := json.Unmarshal([]byte(stored), &got); err != nil {
@@ -3861,8 +3862,8 @@ func TestApp_NotesSaveFails_UnblocksEditing(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	if _, err := s.CreateApplication(context.Background(), app.postings[0].ID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplicationIn(context.Background(), s, app.postings[0].ID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 	app = openPostingDetail(t, app)
 	app, _ = sendKey(app, runeKey('n'))
@@ -3941,8 +3942,8 @@ func TestApp_NotesEscWithEdits_DrawsDiscardBox(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	if _, err := s.CreateApplication(context.Background(), app.postings[0].ID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplicationIn(context.Background(), s, app.postings[0].ID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 	app = openPostingDetail(t, app)
 	app, _ = sendKey(app, runeKey('n'))

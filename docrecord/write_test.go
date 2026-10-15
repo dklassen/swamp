@@ -15,9 +15,9 @@ func TestWrites_LatestIsTheNewestOfThatDocument(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
-	application, err := s.CreateApplication(ctx, posting.ID)
+	application, err := createApplication(ctx, s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 
 	if _, ok, err := docrecord.LatestWrite(ctx, s.DB(), application.ID, documents.CoverLetter); err != nil || ok {

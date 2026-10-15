@@ -23,7 +23,7 @@ type InterestedPosting struct {
 
 // interestedPostingFromRow converts a row built by sqlc.embed(postings) --
 // row.Posting is already the exact nested sqlcdb.Posting that macro
-// generates, so this runs it through the same postingFromRow every other
+// generates, so this runs it through the same PostingFromRow every other
 // Posting goes through, rather than hand-reconstructing it field-by-field
 // from a flat row (see ActiveApplication). The application
 // side stays hand-checked (sql.NullInt64/sql.NullString .Valid) since
@@ -31,7 +31,7 @@ type InterestedPosting struct {
 // isn't used here (see the query comment).
 func interestedPostingFromRow(row sqlcdb.ListInterestedPostingsRow) (InterestedPosting, error) {
 	p := InterestedPosting{
-		Posting:     postingFromRow(row.Posting),
+		Posting:     PostingFromRow(row.Posting),
 		CompanyName: row.CompanyName,
 	}
 	if row.ApplicationID.Valid {

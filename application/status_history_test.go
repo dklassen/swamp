@@ -1,8 +1,10 @@
-package store
+package application_test
 
 import (
 	"context"
 	"errors"
+	"github.com/dklassen/swamp/application"
+	"github.com/dklassen/swamp/store"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -11,11 +13,11 @@ import (
 )
 
 // historyStatuses lists an application's recorded statuses, oldest first.
-func historyStatuses(t *testing.T, s *Store, applicationID int64) []applicationstatus.Status {
+func historyStatuses(t *testing.T, s testStore, applicationID int64) []applicationstatus.Status {
 	t.Helper()
-	history, err := s.ListApplicationStatusHistory(context.Background(), applicationID)
+	history, err := application.ListStatusHistory(context.Background(), s.DB(), applicationID)
 	if err != nil {
-		t.Fatalf("ListApplicationStatusHistory: %v", err)
+		t.Fatalf("application.ListStatusHistory: %v", err)
 	}
 	statuses := make([]applicationstatus.Status, len(history))
 	for i, change := range history {
@@ -36,10 +38,10 @@ func TestCreateApplication_RecordsStartedInHistory(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 
-	application := mustCreateApplication(t, s, posting.ID)
+	app := mustCreateApplication(t, s, posting.ID)
 
 	want := []applicationstatus.Status{applicationstatus.Started}
-	if diff := cmp.Diff(want, historyStatuses(t, s, application.ID)); diff != "" {
+	if diff := cmp.Diff(want, historyStatuses(t, s, app.ID)); diff != "" {
 		t.Errorf("history mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -49,14 +51,14 @@ func TestUpdateApplicationStatus_RecordsChangeInHistory(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	application := mustCreateApplication(t, s, posting.ID)
+	app := mustCreateApplication(t, s, posting.ID)
 
-	if _, err := s.UpdateApplicationStatus(context.Background(), posting.ID, applicationstatus.Submitted); err != nil {
-		t.Fatalf("UpdateApplicationStatus: %v", err)
+	if _, err := updateApplicationStatus(context.Background(), s, posting.ID, applicationstatus.Submitted); err != nil {
+		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
 	want := []applicationstatus.Status{applicationstatus.Started, applicationstatus.Submitted}
-	if diff := cmp.Diff(want, historyStatuses(t, s, application.ID)); diff != "" {
+	if diff := cmp.Diff(want, historyStatuses(t, s, app.ID)); diff != "" {
 		t.Errorf("history mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -64,7 +66,7 @@ func TestUpdateApplicationStatus_RecordsChangeInHistory(t *testing.T) {
 // failHistoryInserts makes every later application_status_history insert
 // fail, so a test can check that a status write whose history row fails
 // commits neither.
-func failHistoryInserts(t *testing.T, s *Store) {
+func failHistoryInserts(t *testing.T, s testStore) {
 	t.Helper()
 	if _, err := s.sqlDB.Exec(`CREATE TRIGGER fail_history BEFORE INSERT ON application_status_history
 		BEGIN SELECT RAISE(ABORT, 'injected history failure'); END`); err != nil {
@@ -78,22 +80,22 @@ func TestUpdateApplicationStatus_HistoryFailure_LeavesStatusUnchanged(t *testing
 	ctx := context.Background()
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	application := mustCreateApplication(t, s, posting.ID)
+	app := mustCreateApplication(t, s, posting.ID)
 	failHistoryInserts(t, s)
 
-	if _, err := s.UpdateApplicationStatus(ctx, posting.ID, applicationstatus.Submitted); err == nil {
-		t.Fatal("UpdateApplicationStatus succeeded, want the injected history failure")
+	if _, err := updateApplicationStatus(ctx, s, posting.ID, applicationstatus.Submitted); err == nil {
+		t.Fatal("application.UpdateStatus succeeded, want the injected history failure")
 	}
 
-	got, err := s.GetApplication(ctx, posting.ID)
+	got, err := application.Get(ctx, s.DB(), posting.ID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
-	if diff := cmp.Diff(application, got); diff != "" {
+	if diff := cmp.Diff(app, got); diff != "" {
 		t.Errorf("application changed despite the failed history write (-before +after):\n%s", diff)
 	}
 	want := []applicationstatus.Status{applicationstatus.Started}
-	if diff := cmp.Diff(want, historyStatuses(t, s, application.ID)); diff != "" {
+	if diff := cmp.Diff(want, historyStatuses(t, s, app.ID)); diff != "" {
 		t.Errorf("history mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -106,12 +108,12 @@ func TestCreateApplication_HistoryFailure_CreatesNoApplication(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 	failHistoryInserts(t, s)
 
-	if _, err := s.CreateApplication(ctx, posting.ID); err == nil {
-		t.Fatal("CreateApplication succeeded, want the injected history failure")
+	if _, err := createApplication(ctx, s, posting.ID); err == nil {
+		t.Fatal("application.Create succeeded, want the injected history failure")
 	}
 
-	if _, err := s.GetApplication(ctx, posting.ID); !errors.Is(err, ErrNotFound) {
-		t.Errorf("GetApplication error = %v, want ErrNotFound: the application should not exist", err)
+	if _, err := application.Get(ctx, s.DB(), posting.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("application.Get error = %v, want store.ErrNotFound: the application should not exist", err)
 	}
 }
 
@@ -123,14 +125,14 @@ func TestUpdateApplicationStatus_SameStatus_RecordsNothing(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	application := mustCreateApplication(t, s, posting.ID)
+	app := mustCreateApplication(t, s, posting.ID)
 
-	if _, err := s.UpdateApplicationStatus(context.Background(), posting.ID, applicationstatus.Started); err != nil {
-		t.Fatalf("UpdateApplicationStatus: %v", err)
+	if _, err := updateApplicationStatus(context.Background(), s, posting.ID, applicationstatus.Started); err != nil {
+		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
 	want := []applicationstatus.Status{applicationstatus.Started}
-	if diff := cmp.Diff(want, historyStatuses(t, s, application.ID)); diff != "" {
+	if diff := cmp.Diff(want, historyStatuses(t, s, app.ID)); diff != "" {
 		t.Errorf("history mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -143,21 +145,21 @@ func TestClosePosting_KeepsSubmittedThenClosedInHistory(t *testing.T) {
 	ctx := context.Background()
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	application := mustCreateApplication(t, s, posting.ID)
-	if _, err := s.UpdateApplicationStatus(ctx, posting.ID, applicationstatus.Submitted); err != nil {
-		t.Fatalf("UpdateApplicationStatus: %v", err)
+	app := mustCreateApplication(t, s, posting.ID)
+	if _, err := updateApplicationStatus(ctx, s, posting.ID, applicationstatus.Submitted); err != nil {
+		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
-	result, err := s.ClosePosting(ctx, posting.ID, []applicationstatus.Status{applicationstatus.Started, applicationstatus.Submitted})
+	_, ended, err := closePosting(ctx, s, posting.ID, []applicationstatus.Status{applicationstatus.Started, applicationstatus.Submitted})
 	if err != nil {
 		t.Fatalf("ClosePosting: %v", err)
 	}
-	if !result.ApplicationClosed {
+	if !ended {
 		t.Fatal("ClosePosting did not close the application")
 	}
 
 	want := []applicationstatus.Status{applicationstatus.Started, applicationstatus.Submitted, applicationstatus.PostingClosed}
-	if diff := cmp.Diff(want, historyStatuses(t, s, application.ID)); diff != "" {
+	if diff := cmp.Diff(want, historyStatuses(t, s, app.ID)); diff != "" {
 		t.Errorf("history mismatch (-want +got):\n%s", diff)
 	}
 }
@@ -168,10 +170,10 @@ func TestClosePosting_HistoryFailure_LeavesPostingAndApplicationOpen(t *testing.
 	ctx := context.Background()
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	application := mustCreateApplication(t, s, posting.ID)
+	app := mustCreateApplication(t, s, posting.ID)
 	failHistoryInserts(t, s)
 
-	if _, err := s.ClosePosting(ctx, posting.ID, []applicationstatus.Status{applicationstatus.Started}); err == nil {
+	if _, _, err := closePosting(ctx, s, posting.ID, []applicationstatus.Status{applicationstatus.Started}); err == nil {
 		t.Fatal("ClosePosting succeeded, want the injected history failure")
 	}
 
@@ -182,18 +184,18 @@ func TestClosePosting_HistoryFailure_LeavesPostingAndApplicationOpen(t *testing.
 	if after.ListingStatus != "open" {
 		t.Errorf("ListingStatus = %q, want open", after.ListingStatus)
 	}
-	got, err := s.GetApplication(ctx, posting.ID)
+	got, err := application.Get(ctx, s.DB(), posting.ID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
-	if diff := cmp.Diff(application, got); diff != "" {
+	if diff := cmp.Diff(app, got); diff != "" {
 		t.Errorf("application changed despite the failed history write (-before +after):\n%s", diff)
 	}
 }
 
 // TestApplicationStatusHistory_RecordsWhoChangedIt: starting an
 // application and setting its status are the user's changes; closing its
-// posting is sync's (#174), which is what lets a reopened posting undo
+// posting is sync's, which is what lets a reopened posting undo
 // only what sync did.
 func TestApplicationStatusHistory_RecordsWhoChangedIt(t *testing.T) {
 	t.Parallel()
@@ -201,34 +203,34 @@ func TestApplicationStatusHistory_RecordsWhoChangedIt(t *testing.T) {
 	ctx := context.Background()
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	application := mustCreateApplication(t, s, posting.ID)
-	if _, err := s.UpdateApplicationStatus(ctx, posting.ID, applicationstatus.Submitted); err != nil {
-		t.Fatalf("UpdateApplicationStatus: %v", err)
+	app := mustCreateApplication(t, s, posting.ID)
+	if _, err := updateApplicationStatus(ctx, s, posting.ID, applicationstatus.Submitted); err != nil {
+		t.Fatalf("application.UpdateStatus: %v", err)
 	}
-	if _, err := s.UpdateApplicationStatus(ctx, posting.ID, applicationstatus.Started); err != nil {
-		t.Fatalf("UpdateApplicationStatus: %v", err)
+	if _, err := updateApplicationStatus(ctx, s, posting.ID, applicationstatus.Started); err != nil {
+		t.Fatalf("application.UpdateStatus: %v", err)
 	}
-	if _, err := s.ClosePosting(ctx, posting.ID, []applicationstatus.Status{applicationstatus.Started}); err != nil {
+	if _, _, err := closePosting(ctx, s, posting.ID, []applicationstatus.Status{applicationstatus.Started}); err != nil {
 		t.Fatalf("ClosePosting: %v", err)
 	}
 
-	history, err := s.ListApplicationStatusHistory(ctx, application.ID)
+	history, err := application.ListStatusHistory(ctx, s.DB(), app.ID)
 	if err != nil {
-		t.Fatalf("ListApplicationStatusHistory: %v", err)
+		t.Fatalf("application.ListStatusHistory: %v", err)
 	}
 	type change struct {
 		Status    applicationstatus.Status
-		ChangedBy StatusChangedBy
+		ChangedBy application.ChangedBy
 	}
 	got := make([]change, len(history))
 	for i, h := range history {
 		got[i] = change{h.Status, h.ChangedBy}
 	}
 	want := []change{
-		{applicationstatus.Started, StatusChangedByUser},
-		{applicationstatus.Submitted, StatusChangedByUser},
-		{applicationstatus.Started, StatusChangedByUser},
-		{applicationstatus.PostingClosed, StatusChangedBySync},
+		{applicationstatus.Started, application.ChangedByUser},
+		{applicationstatus.Submitted, application.ChangedByUser},
+		{applicationstatus.Started, application.ChangedByUser},
+		{applicationstatus.PostingClosed, application.ChangedBySync},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("history mismatch (-want +got):\n%s", diff)
@@ -241,12 +243,12 @@ func TestListApplicationStatusHistory_UnknownChangedBy_ReturnsError(t *testing.T
 	ctx := context.Background()
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	application := mustCreateApplication(t, s, posting.ID)
+	app := mustCreateApplication(t, s, posting.ID)
 	if _, err := s.sqlDB.ExecContext(ctx, `UPDATE application_status_history SET changed_by = 'robot'`); err != nil {
 		t.Fatalf("set changed_by: %v", err)
 	}
 
-	if _, err := s.ListApplicationStatusHistory(ctx, application.ID); err == nil {
-		t.Error("ListApplicationStatusHistory with changed_by 'robot': want an error, got nil")
+	if _, err := application.ListStatusHistory(ctx, s.DB(), app.ID); err == nil {
+		t.Error("application.ListStatusHistory with changed_by 'robot': want an error, got nil")
 	}
 }

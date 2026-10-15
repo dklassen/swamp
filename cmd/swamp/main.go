@@ -28,6 +28,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/docrecord"
@@ -348,7 +349,7 @@ func runExport(s *store.Store, d *documents.Store, applicationID int64) {
 	// with Exists false for both documents -- and prints the identical
 	// "no document on disk, skipped" lines while exiting 0 (see
 	// issue #102).
-	if _, err := s.GetApplicationByID(ctx, applicationID); err != nil {
+	if _, err := application.GetByID(ctx, s.DB(), applicationID); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			log.Fatalf("export: no application with id %d", applicationID)
 		}

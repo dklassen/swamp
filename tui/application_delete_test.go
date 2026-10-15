@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
@@ -19,22 +20,22 @@ import (
 
 // deleteTestApp is an App on the home screen with one started
 // application whose resume is drafted.
-func deleteTestApp(t *testing.T) (*App, store.Application) {
+func deleteTestApp(t *testing.T) (*App, application.Application) {
 	t.Helper()
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
-	application := mustCreateApplication(t, s, posting.ID)
+	target := mustCreateApplication(t, s, posting.ID)
 
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	status, err := app.documents.EnsureDir(application.ID)
+	status, err := app.documents.EnsureDir(target.ID)
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
 	if err := os.WriteFile(mustDoc(t, status, documents.Resume).Path, []byte("# Draft\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	return app, application
+	return app, target
 }
 
 // startDelete goes from the home screen to the application's detail,
@@ -72,16 +73,16 @@ func resumeDir(t *testing.T, app *App, applicationID int64) string {
 
 func TestDeleteFlow_ConfirmingDeletesTheApplicationAndKeepsItsDocuments(t *testing.T) {
 	t.Parallel()
-	app, application := deleteTestApp(t)
+	app, target := deleteTestApp(t)
 	app = startDelete(t, app)
 
 	app, cmd := sendKey(app, runeKey('y'))
 	app = applyCmd(t, app, cmd)
 
-	if _, err := app.store.GetApplicationByID(context.Background(), application.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("GetApplicationByID after confirming: err = %v, want ErrNotFound", err)
+	if _, err := application.GetByID(context.Background(), app.store.DB(), target.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("application.GetByID after confirming: err = %v, want ErrNotFound", err)
 	}
-	if _, err := os.Stat(resumeDir(t, app, application.ID)); err != nil {
+	if _, err := os.Stat(resumeDir(t, app, target.ID)); err != nil {
 		t.Errorf("document directory after confirming: Stat err = %v, want it kept", err)
 	}
 	if app.screen != screenActiveApplications {
@@ -90,7 +91,7 @@ func TestDeleteFlow_ConfirmingDeletesTheApplicationAndKeepsItsDocuments(t *testi
 	if len(app.activeApplications) != 0 {
 		t.Errorf("active applications = %d, want the deleted one gone from the list", len(app.activeApplications))
 	}
-	if _, ok := app.applicationsByPosting[application.PostingID]; ok {
+	if _, ok := app.applicationsByPosting[target.PostingID]; ok {
 		t.Error("applicationsByPosting still has the deleted application")
 	}
 }
@@ -100,16 +101,16 @@ func TestDeleteFlow_DecliningKeepsTheApplication(t *testing.T) {
 	for _, key := range []tea.KeyMsg{runeKey('n'), {Type: tea.KeyEsc}, {Type: tea.KeyEnter}} {
 		t.Run(key.String(), func(t *testing.T) {
 			t.Parallel()
-			app, application := deleteTestApp(t)
+			app, target := deleteTestApp(t)
 			app = startDelete(t, app)
 
 			app, cmd := sendKey(app, key)
 			app = applyCmd(t, app, cmd)
 
-			if _, err := app.store.GetApplicationByID(context.Background(), application.ID); err != nil {
-				t.Errorf("GetApplicationByID after declining: %v, want the application kept", err)
+			if _, err := application.GetByID(context.Background(), app.store.DB(), target.ID); err != nil {
+				t.Errorf("application.GetByID after declining: %v, want the application kept", err)
 			}
-			if !mustDoc(t, app.documents.Status(application.ID), documents.Resume).Exists {
+			if !mustDoc(t, app.documents.Status(target.ID), documents.Resume).Exists {
 				t.Error("resume gone after declining, want it kept")
 			}
 			if app.screen != screenApplicationDetail {
@@ -123,7 +124,7 @@ func TestDeleteFlow_DecliningKeepsTheApplication(t *testing.T) {
 // rather than staying on a confirmation whose y is already spent.
 func TestDeleteFlow_FailureReturnsToDetailWithTheError(t *testing.T) {
 	t.Parallel()
-	app, application := deleteTestApp(t)
+	app, target := deleteTestApp(t)
 	app = startDelete(t, app)
 	app, _ = sendKey(app, runeKey('y'))
 
@@ -136,7 +137,7 @@ func TestDeleteFlow_FailureReturnsToDetailWithTheError(t *testing.T) {
 	if !errors.Is(app.err, failure) {
 		t.Errorf("err = %v, want %v shown", app.err, failure)
 	}
-	if _, ok := app.applicationsByPosting[application.PostingID]; !ok {
+	if _, ok := app.applicationsByPosting[target.PostingID]; !ok {
 		t.Error("applicationsByPosting dropped an application that wasn't deleted")
 	}
 }
@@ -147,9 +148,9 @@ func TestDeleteFlow_FailureReturnsToDetailWithTheError(t *testing.T) {
 func TestDeleteFlow_ConfirmationShowsTheStatusAsItIsNow(t *testing.T) {
 	t.Parallel()
 
-	app, application := deleteTestApp(t)
-	if _, err := app.store.UpdateApplicationStatus(context.Background(), application.PostingID, applicationstatus.Interviewing); err != nil {
-		t.Fatalf("UpdateApplicationStatus: %v", err)
+	app, target := deleteTestApp(t)
+	if _, err := updateApplicationStatusIn(context.Background(), app.store, target.PostingID, applicationstatus.Interviewing); err != nil {
+		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
 	app = startDelete(t, app)
@@ -163,10 +164,10 @@ func TestDeleteFlow_ConfirmationShowsTheStatusAsItIsNow(t *testing.T) {
 func TestDeleteFlow_AlreadyDeletedElsewhere_StaysOnDetailAndSaysSo(t *testing.T) {
 	t.Parallel()
 
-	app, application := deleteTestApp(t)
+	app, target := deleteTestApp(t)
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
-	if err := app.store.DeleteApplication(context.Background(), application.ID); err != nil {
-		t.Fatalf("DeleteApplication: %v", err)
+	if err := application.Delete(context.Background(), app.store.DB(), target.ID); err != nil {
+		t.Fatalf("application.Delete: %v", err)
 	}
 
 	app = sendKeyAndApply(t, app, runeKey('D'))
@@ -208,7 +209,7 @@ func TestDeleteFlow_ConfirmationIsDrawnOverDetail(t *testing.T) {
 func TestDeleteFlow_FromTheHomeList(t *testing.T) {
 	t.Parallel()
 
-	app, application := deleteTestApp(t)
+	app, target := deleteTestApp(t)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
 	before := strings.SplitN(ansi.Strip(app.View()), "\n", 3)[:2]
 
@@ -230,7 +231,7 @@ func TestDeleteFlow_FromTheHomeList(t *testing.T) {
 	if app.screen != screenActiveApplications {
 		t.Errorf("screen after n = %v, want the home list", app.screen)
 	}
-	if _, err := app.store.GetApplicationByID(context.Background(), application.ID); err != nil {
-		t.Errorf("GetApplicationByID after n: %v, want the application kept", err)
+	if _, err := application.GetByID(context.Background(), app.store.DB(), target.ID); err != nil {
+		t.Errorf("application.GetByID after n: %v, want the application kept", err)
 	}
 }

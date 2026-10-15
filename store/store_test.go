@@ -2,10 +2,12 @@ package store
 
 import (
 	"context"
+	"database/sql"
 	"testing"
 
 	"github.com/pressly/goose/v3"
 
+	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/store/sqlcdb"
 )
@@ -108,11 +110,45 @@ func (s *Store) recordDocumentExport(ctx context.Context, applicationID int64) e
 	return s.queries.CreateDocumentExport(ctx, sqlcdb.CreateDocumentExportParams{ApplicationID: applicationID, DocumentType: "cover_letter", ContentSha256: "hash", Path: "/tmp/cover.pdf"})
 }
 
-func (s *Store) countRows(t *testing.T, table string, applicationID int64) int {
-	t.Helper()
-	var n int
-	if err := s.sqlDB.QueryRow(`SELECT count(*) FROM `+table+` WHERE application_id = ?`, applicationID).Scan(&n); err != nil {
-		t.Fatalf("count %s: %v", table, err)
+// Application set-up for store's own tests, which can't import
+// application: it imports store. Each writes what application's own
+// functions would, through the generated queries.
+func (s *Store) createApplication(ctx context.Context, postingID int64) (sqlcdb.Application, error) {
+	row, err := s.queries.CreateApplication(ctx, sqlcdb.CreateApplicationParams{PostingID: postingID, Status: sql.NullString{String: applicationstatus.Started.String(), Valid: true}})
+	if err != nil {
+		return sqlcdb.Application{}, err
 	}
-	return n
+	return row, s.queries.CreateApplicationStatusHistory(ctx, sqlcdb.CreateApplicationStatusHistoryParams{ApplicationID: row.ID, Status: applicationstatus.Started.String(), ChangedBy: "user"})
+}
+
+func (s *Store) updateApplicationStatus(ctx context.Context, postingID int64, status applicationstatus.Status) (sqlcdb.Application, error) {
+	row, err := s.queries.UpdateApplicationStatus(ctx, sqlcdb.UpdateApplicationStatusParams{PostingID: postingID, Status: sql.NullString{String: status.String(), Valid: true}})
+	if err != nil {
+		return sqlcdb.Application{}, err
+	}
+	return row, s.queries.CreateApplicationStatusHistory(ctx, sqlcdb.CreateApplicationStatusHistoryParams{ApplicationID: row.ID, Status: status.String(), ChangedBy: "user"})
+}
+
+func (s *Store) getApplication(ctx context.Context, postingID int64) (sqlcdb.Application, error) {
+	return s.queries.GetApplication(ctx, postingID)
+}
+
+func (s *Store) updateApplicationNotes(ctx context.Context, postingID int64, notes string) (sqlcdb.Application, error) {
+	return s.queries.UpdateApplicationNotes(ctx, sqlcdb.UpdateApplicationNotesParams{PostingID: postingID, Notes: notes})
+}
+
+func mustCreateApplication(t *testing.T, s *Store, postingID int64) sqlcdb.Application {
+	t.Helper()
+	a, err := s.createApplication(context.Background(), postingID)
+	if err != nil {
+		t.Fatalf("createApplication: %v", err)
+	}
+	return a
+}
+
+func mustUpdateApplicationStatus(t *testing.T, s *Store, postingID int64, status applicationstatus.Status) {
+	t.Helper()
+	if _, err := s.updateApplicationStatus(context.Background(), postingID, status); err != nil {
+		t.Fatalf("updateApplicationStatus: %v", err)
+	}
 }

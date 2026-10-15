@@ -81,7 +81,7 @@ func TestTerminal_EveryValueIsAKnownStatus(t *testing.T) {
 // TestPostingClosed_IsTerminal covers an application ended because its
 // posting was taken down, as distinct from being rejected (nobody rejected anything) or declining
 // an offer. Being terminal is what drops it out of
-// ListActiveApplications.
+// pursuit.List.
 func TestPostingClosed_IsTerminal(t *testing.T) {
 	if got := PostingClosed.String(); got != "posting_closed" {
 		t.Errorf("PostingClosed.String() = %q, want %q", got, "posting_closed")

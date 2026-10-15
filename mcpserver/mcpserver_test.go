@@ -19,6 +19,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/docrecord"
@@ -218,9 +219,9 @@ func TestStagePrepare_CreatesApplicationAndReturnsDocumentPaths(t *testing.T) {
 		t.Error("CoverLetter.Exists = true, want false (nothing drafted yet)")
 	}
 
-	application, err := s.GetApplication(context.Background(), posting.ID)
+	application, err := application.Get(context.Background(), s.DB(), posting.ID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 	if application.ID != got.ApplicationID {
 		t.Errorf("persisted application id = %d, want %d", application.ID, got.ApplicationID)
@@ -359,8 +360,8 @@ func TestWriteDocument_DeletedApplication_WritesNothing(t *testing.T) {
 	mustMarkInterested(t, s, posting.ID)
 	cs := connectClient(t, srv)
 	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
-	if err := s.DeleteApplication(context.Background(), prepared.ApplicationID); err != nil {
-		t.Fatalf("DeleteApplication: %v", err)
+	if err := application.Delete(context.Background(), s.DB(), prepared.ApplicationID); err != nil {
+		t.Fatalf("application.Delete: %v", err)
 	}
 
 	got := callToolError(t, cs, "write_document", map[string]any{
@@ -583,8 +584,8 @@ func TestReadDocument_DeletedApplication_SaysSo(t *testing.T) {
 		"DocumentType":  "cover_letter",
 		"Content":       "a draft",
 	})
-	if err := s.DeleteApplication(context.Background(), prepared.ApplicationID); err != nil {
-		t.Fatalf("DeleteApplication: %v", err)
+	if err := application.Delete(context.Background(), s.DB(), prepared.ApplicationID); err != nil {
+		t.Fatalf("application.Delete: %v", err)
 	}
 
 	got := callToolError(t, cs, "read_document", map[string]any{
@@ -816,7 +817,7 @@ func searchIDs(r searchPostingsResult) []int64 {
 // TestSearchPostings_FindsADraftedApplicationByCompany is #215's case: an
 // application with both documents drafted and none flagged isn't in
 // list_postings, so the agent couldn't find it when the user named it.
-// search_postings finds it by company and "has an application" (#221).
+// search_postings finds it by company and "has an application".
 func TestSearchPostings_FindsADraftedApplicationByCompany(t *testing.T) {
 	t.Parallel()
 
@@ -826,9 +827,9 @@ func TestSearchPostings_FindsADraftedApplicationByCompany(t *testing.T) {
 	drafted := mustUpsertPosting(t, s, acme.ID, "job-1", "Staff Software Developer, Product")
 	mustUpsertPosting(t, s, acme.ID, "job-2", "Staff Software Developer, Risk")
 	mustMarkInterested(t, s, drafted.ID)
-	application, err := s.CreateApplication(ctx, drafted.ID)
+	application, err := createApplication(ctx, s, drafted.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	if _, err := d.EnsureDir(application.ID); err != nil {
 		t.Fatalf("EnsureDir: %v", err)
@@ -870,8 +871,8 @@ func TestSearchPostings_InterestedShortlist(t *testing.T) {
 	mustUpsertPosting(t, s, acme.ID, "job-3", "Writer")
 	mustMarkInterested(t, s, shortlisted.ID)
 	mustMarkInterested(t, s, started.ID)
-	if _, err := s.CreateApplication(context.Background(), started.ID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplication(context.Background(), s, started.ID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 	cs := connectClient(t, srv)
 
@@ -1527,4 +1528,14 @@ func recordScores(ctx context.Context, s *store.Store, provenance scoring.Proven
 		return err
 	})
 	return result, err
+}
+
+func createApplication(ctx context.Context, s *store.Store, postingID int64) (application.Application, error) {
+	var app application.Application
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		var err error
+		app, err = application.Create(ctx, tx, postingID)
+		return err
+	})
+	return app, err
 }

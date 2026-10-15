@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -39,18 +40,38 @@ func (s *Syncer) closeMissing(ctx context.Context, company store.Company, fetche
 		if existing.ListingStatus != "open" || seenSourceIDs[existing.SourceID] {
 			continue
 		}
-		closed, err := s.store.ClosePosting(ctx, existing.ID, earlyApplicationStatuses)
+		closed, applicationEnded, err := closePosting(ctx, s.store, existing.ID, earlyApplicationStatuses)
 		if err != nil {
 			return result, fmt.Errorf("sync: close posting: %w", err)
 		}
-		if closed.Closed {
+		if closed {
 			result.Closed++
 		}
-		if closed.ApplicationClosed {
+		if applicationEnded {
 			result.ApplicationsClosed++
 		}
 	}
 	return result, nil
+}
+
+// closePosting closes a posting and, if it really closed, ends its
+// application when that is at one of endFrom (sync passes
+// earlyApplicationStatuses), in one transaction: an interruption between
+// the two would leave the application open for good, since the next sync
+// only looks at open postings.
+func closePosting(ctx context.Context, st *store.Store, postingID int64, endFrom []applicationstatus.Status) (closed, applicationEnded bool, err error) {
+	err = store.InTx(ctx, st.DB(), func(tx store.Tx) error {
+		var err error
+		if closed, err = store.ClosePosting(ctx, tx, postingID); err != nil || !closed {
+			return err
+		}
+		applicationEnded, err = application.EndForPosting(ctx, tx, postingID, endFrom)
+		return err
+	})
+	if err != nil {
+		return false, false, err
+	}
+	return closed, applicationEnded, nil
 }
 
 // earlyApplicationStatuses are the statuses from which a posting being
@@ -64,11 +85,11 @@ func (s *Syncer) closeMissing(ctx context.Context, company store.Company, fetche
 // being reviewed. Only an application never sent can no longer be.
 //
 // Closing a posting's application, and undoing that when the posting
-// reappears (store.ReopenPosting, #174), are the only places sync reaches
+// reappears (reopenPosting), are the only places sync reaches
 // past postings and posting history into application state, a deliberate
 // widening of what a sync does. The policy stays
-// here; store.ClosePosting applies it in the same transaction that
-// closes the posting (#147).
+// here; closePosting applies it in the same transaction that closes the
+// posting.
 var earlyApplicationStatuses = []applicationstatus.Status{
 	applicationstatus.Started,
 }

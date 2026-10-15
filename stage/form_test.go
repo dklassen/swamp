@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -68,7 +69,7 @@ func TestPrepare_FetchesAndStoresTheApplicationForm(t *testing.T) {
 	if !fetcher.deadline {
 		t.Error("the fetch had no deadline, want it bounded by the fetch timeout")
 	}
-	if _, _, ok, err := s.GetApplicationForm(context.Background(), posting.ID); err != nil || !ok {
+	if _, _, ok, err := application.GetForm(context.Background(), s.DB(), posting.ID); err != nil || !ok {
 		t.Errorf("stored form: ok %v, err %v; want it stored", ok, err)
 	}
 }
@@ -137,7 +138,7 @@ func TestPrepare_NoFormForBoardsWithoutAFetcher(t *testing.T) {
 }
 
 // TestPrepare_HandEnteredFormForBoardsWithoutAFetcher: Ashby and Lever
-// forms can't be fetched, so one entered by hand in the TUI (#184) is
+// forms can't be fetched, so one entered by hand in the TUI is
 // returned as stored, however old -- there's nothing to refresh it from.
 func TestPrepare_HandEnteredFormForBoardsWithoutAFetcher(t *testing.T) {
 	t.Parallel()
@@ -155,8 +156,8 @@ func TestPrepare_HandEnteredFormForBoardsWithoutAFetcher(t *testing.T) {
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
-	if err := s.SaveApplicationForm(context.Background(), posting.ID, string(encoded)); err != nil {
-		t.Fatalf("SaveApplicationForm: %v", err)
+	if err := application.SaveForm(context.Background(), s.DB(), posting.ID, string(encoded)); err != nil {
+		t.Fatalf("application.SaveForm: %v", err)
 	}
 
 	got, err := st.Prepare(context.Background(), posting.ID)

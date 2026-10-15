@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/cursor"
 	"github.com/dklassen/swamp/postingmarkup"
@@ -23,7 +24,7 @@ type searchStage struct {
 	acme, beta                    store.Company
 	shortlist, started, submitted store.Posting
 	closed, archived, betaPosting store.Posting
-	startedApp                    store.Application
+	startedApp                    application.Application
 }
 
 func newSearchStage(t *testing.T) searchStage {
@@ -40,14 +41,14 @@ func newSearchStage(t *testing.T) searchStage {
 
 	mustMarkInterested(t, s, f.shortlist.ID)
 	var err error
-	if f.startedApp, err = s.CreateApplication(ctx, f.started.ID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if f.startedApp, err = createApplication(ctx, s, f.started.ID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := s.CreateApplication(ctx, f.submitted.ID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplication(ctx, s, f.submitted.ID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := s.UpdateApplicationStatus(ctx, f.submitted.ID, applicationstatus.Submitted); err != nil {
-		t.Fatalf("UpdateApplicationStatus: %v", err)
+	if _, err := updateApplicationStatus(ctx, s, f.submitted.ID, applicationstatus.Submitted); err != nil {
+		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 	if err := s.MarkPostingClosed(ctx, f.closed.ID); err != nil {
 		t.Fatalf("MarkPostingClosed: %v", err)
@@ -145,7 +146,7 @@ func TestSearch_MatchCarriesItsApplication(t *testing.T) {
 
 // TestSearch_PagesWithOpaqueCursors: following NextCursor walks the whole
 // result a page at a time, with the same Total on every page, and ends
-// with a nil NextCursor (#221).
+// with a nil NextCursor.
 func TestSearch_PagesWithOpaqueCursors(t *testing.T) {
 	t.Parallel()
 	f := newSearchStage(t)
@@ -259,7 +260,7 @@ func TestSearch_LimitDefaultsAndCap(t *testing.T) {
 }
 
 // TestSortOrders_EveryStoreOrderIsRegistered: a store order can't reach
-// the agent without a name and a note on how stable it is to page (#223).
+// the agent without a name and a note on how stable it is to page.
 func TestSortOrders_EveryStoreOrderIsRegistered(t *testing.T) {
 	t.Parallel()
 	registered := map[store.PostingOrder]bool{}
@@ -303,7 +304,7 @@ func TestSearch_IDDescIsNewestToSwampFirst(t *testing.T) {
 
 // TestSearch_PublishedDescPagesNewestOnTheBoardFirst: through opaque
 // cursors, dated postings newest first, undated last; each match shows
-// its publish date (#224).
+// its publish date.
 func TestSearch_PublishedDescPagesNewestOnTheBoardFirst(t *testing.T) {
 	t.Parallel()
 	st, s, _ := newTestStage(t)
@@ -431,4 +432,24 @@ func recordScores(ctx context.Context, s *store.Store, provenance scoring.Proven
 		return err
 	})
 	return result, err
+}
+
+func createApplication(ctx context.Context, s *store.Store, postingID int64) (application.Application, error) {
+	var app application.Application
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		var err error
+		app, err = application.Create(ctx, tx, postingID)
+		return err
+	})
+	return app, err
+}
+
+func updateApplicationStatus(ctx context.Context, s *store.Store, postingID int64, status applicationstatus.Status) (application.Application, error) {
+	var app application.Application
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		var err error
+		app, err = application.UpdateStatus(ctx, tx, postingID, status)
+		return err
+	})
+	return app, err
 }

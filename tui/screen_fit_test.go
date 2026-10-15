@@ -12,6 +12,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/filter"
@@ -35,7 +36,7 @@ func newFullTestApp(t *testing.T) *App {
 	}
 
 	var board []jobboard.Posting
-	var applications []store.Application
+	var applications []application.Application
 	for i := 1; i <= 40; i++ {
 		p := jobboard.Posting{
 			SourceID:   fmt.Sprintf("job-%02d", i),
@@ -205,7 +206,7 @@ func sizedScreens() []sizedScreen {
 // Only posting detail used to leave room for the banner; the rest were
 // sized as if it weren't there, so the renderer dropped the top rows --
 // the banner itself -- and a sync's result or a failure never showed
-// (issue #138).
+// .
 func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 	const width, height = 100, 24
 

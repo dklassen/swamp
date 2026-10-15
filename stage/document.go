@@ -7,6 +7,7 @@ import (
 	"io/fs"
 	"os"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/store"
@@ -44,18 +45,18 @@ func (e *ApplicationDeletedError) Error() string {
 // its documents can't be touched. Documents folders are keyed by ID alone,
 // so writing for an ID with no application would leave a draft for
 // whichever application gets that ID next.
-func (st *Stage) application(ctx context.Context, applicationID int64) (store.Application, error) {
-	application, err := st.store.GetApplicationByIDIncludingDeleted(ctx, applicationID)
+func (st *Stage) application(ctx context.Context, applicationID int64) (application.Application, error) {
+	app, err := application.GetByIDIncludingDeleted(ctx, st.store.DB(), applicationID)
 	if errors.Is(err, store.ErrNotFound) {
-		return store.Application{}, fmt.Errorf("%w: %d", ErrApplicationNotFound, applicationID)
+		return application.Application{}, fmt.Errorf("%w: %d", ErrApplicationNotFound, applicationID)
 	}
 	if err != nil {
-		return store.Application{}, fmt.Errorf("stage: get application %d: %w", applicationID, err)
+		return application.Application{}, fmt.Errorf("stage: get application %d: %w", applicationID, err)
 	}
-	if !application.DeletedAt.IsZero() {
-		return store.Application{}, &ApplicationDeletedError{ApplicationID: applicationID, PostingID: application.PostingID}
+	if !app.DeletedAt.IsZero() {
+		return application.Application{}, &ApplicationDeletedError{ApplicationID: applicationID, PostingID: app.PostingID}
 	}
-	return application, nil
+	return app, nil
 }
 
 // WriteDocument replaces applicationID's documentType document with

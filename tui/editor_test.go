@@ -42,12 +42,12 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	s := newTestStore(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
-	application := mustCreateApplication(t, s, posting.ID)
+	target := mustCreateApplication(t, s, posting.ID)
 	docs := documents.NewStore(t.TempDir())
-	if _, err := docs.Write(application.ID, documents.Resume, "# Draft\n"); err != nil {
+	if _, err := docs.Write(target.ID, documents.Resume, "# Draft\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if _, err := createReview(context.Background(), s, application.ID, documents.Resume, "# Draft\n", docrecord.Passed, ""); err != nil {
+	if _, err := createReview(context.Background(), s, target.ID, documents.Resume, "# Draft\n", docrecord.Passed, ""); err != nil {
 		t.Fatalf("CreateReview: %v", err)
 	}
 	app := New(s, newTestSyncer(s, nil), docs)
@@ -57,10 +57,10 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 		t.Fatalf("application detail before the edit doesn't show [PASSED]:\n%s", view)
 	}
 
-	if _, err := docs.Write(application.ID, documents.Resume, "# Edited in $EDITOR\n"); err != nil {
+	if _, err := docs.Write(target.ID, documents.Resume, "# Edited in $EDITOR\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: application.ID, documentType: documents.Resume, before: documents.ContentSHA256("# Draft\n")})
+	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: documents.Resume, before: documents.ContentSHA256("# Draft\n")})
 
 	if view := app.View(); strings.Contains(view, "[PASSED]") {
 		t.Errorf("application detail still shows the review of the old version as [PASSED]:\n%s", view)
@@ -96,15 +96,15 @@ func TestApp_EditorClosedAfterAChange_RecordsTheWrite(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	app, application := deleteTestApp(t) // resume drafted as "# Draft\n"
+	app, target := deleteTestApp(t) // resume drafted as "# Draft\n"
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
-	if _, err := app.documents.Write(application.ID, documents.Resume, "# Edited\n"); err != nil {
+	if _, err := app.documents.Write(target.ID, documents.Resume, "# Edited\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
-	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: application.ID, documentType: documents.Resume, before: documents.ContentSHA256("# Draft\n")})
+	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: documents.Resume, before: documents.ContentSHA256("# Draft\n")})
 
-	write, ok, err := docrecord.LatestWrite(ctx, app.store.DB(), application.ID, documents.Resume)
+	write, ok, err := docrecord.LatestWrite(ctx, app.store.DB(), target.ID, documents.Resume)
 	if err != nil || !ok {
 		t.Fatalf("LatestWrite = ok %v, err %v; want the edit recorded", ok, err)
 	}
@@ -116,12 +116,12 @@ func TestApp_EditorClosedAfterAChange_RecordsTheWrite(t *testing.T) {
 func TestApp_EditorClosedWithoutAChange_RecordsNothing(t *testing.T) {
 	t.Parallel()
 
-	app, application := deleteTestApp(t) // resume drafted as "# Draft\n"
+	app, target := deleteTestApp(t) // resume drafted as "# Draft\n"
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 
-	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: application.ID, documentType: documents.Resume, before: documents.ContentSHA256("# Draft\n")})
+	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: documents.Resume, before: documents.ContentSHA256("# Draft\n")})
 
-	if _, ok, err := docrecord.LatestWrite(context.Background(), app.store.DB(), application.ID, documents.Resume); err != nil || ok {
+	if _, ok, err := docrecord.LatestWrite(context.Background(), app.store.DB(), target.ID, documents.Resume); err != nil || ok {
 		t.Errorf("LatestWrite = ok %v, err %v; want nothing recorded for an unchanged document", ok, err)
 	}
 }

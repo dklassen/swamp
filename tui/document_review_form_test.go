@@ -119,9 +119,9 @@ func TestApp_ReviewSavedOfAnUnchangedDocument_DoesNotWarn(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 	app = openPostingList(t, app)
-	application, err := s.CreateApplication(context.Background(), app.postings[0].ID)
+	application, err := createApplicationIn(context.Background(), s, app.postings[0].ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	if _, err := app.documents.Write(application.ID, documents.CoverLetter, "# What you reviewed"); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -152,9 +152,9 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 40})
 	app = openPostingList(t, app)
-	application, err := s.CreateApplication(context.Background(), app.postings[0].ID)
+	application, err := createApplicationIn(context.Background(), s, app.postings[0].ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	path, err := app.documents.Write(application.ID, documents.CoverLetter, "Dear team,\nWhat you reviewed\n")
 	if err != nil {
@@ -211,9 +211,9 @@ func TestApp_ReviewOfADocumentDeletedMeanwhile_SavesNothingAndSaysSo(t *testing.
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 40})
 	app = openPostingList(t, app)
-	application, err := s.CreateApplication(context.Background(), app.postings[0].ID)
+	application, err := createApplicationIn(context.Background(), s, app.postings[0].ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	path, err := app.documents.Write(application.ID, documents.CoverLetter, "a draft")
 	if err != nil {
@@ -253,9 +253,9 @@ func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 40})
 	app = openPostingList(t, app)
-	application, err := s.CreateApplication(ctx, app.postings[0].ID)
+	application, err := createApplicationIn(ctx, s, app.postings[0].ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	if _, err := app.documents.Write(application.ID, documents.CoverLetter, "What you reviewed\n"); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -298,9 +298,9 @@ func TestApp_ReviewOfADocumentChangedOutsideSwamp_DoesNotNameTheLastWriter(t *te
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 40})
 	app = openPostingList(t, app)
-	application, err := s.CreateApplication(ctx, app.postings[0].ID)
+	application, err := createApplicationIn(ctx, s, app.postings[0].ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	path, err := app.documents.Write(application.ID, documents.CoverLetter, "The agent's draft\n")
 	if err != nil {

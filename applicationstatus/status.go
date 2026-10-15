@@ -10,7 +10,7 @@ import (
 // TEXT with no CHECK constraint, so nothing below the store package
 // boundary can enforce this; Parse is where that
 // enforcement happens, at the point a raw DB row is turned into a
-// store.Application.
+// application.Application.
 type Status int
 
 const (
@@ -42,7 +42,7 @@ var names = [...]string{
 }
 
 // String implements fmt.Stringer, and is also the value persisted to the
-// applications.status DB column (see UpdateApplicationStatus).
+// applications.status DB column (see application.UpdateStatus).
 func (s Status) String() string {
 	if s < 0 || int(s) >= len(names) {
 		return fmt.Sprintf("Status(%d)", int(s))
@@ -83,7 +83,7 @@ func All() []Status {
 	return out
 }
 
-// terminal holds the statuses ListActiveApplications
+// terminal holds the statuses pursuit.List
 // excludes -- dead ends the user isn't still pursuing. This is the sole
 // source of truth for "terminal": the query passes this list to sqlc's
 // slice macro at call time rather than hardcoding status strings in SQL,

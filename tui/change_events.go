@@ -9,6 +9,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/store"
 )
@@ -227,14 +228,14 @@ func eventPostingID(e store.ChangeEvent) int64 {
 
 type applicationDetailReloadedMsg struct {
 	id          int64
-	application store.Application
+	application application.Application
 	deleted     bool
 	err         error
 }
 
 func reloadApplicationDetail(s *store.Store, id int64) tea.Cmd {
 	return func() tea.Msg {
-		application, err := s.GetApplicationByID(context.Background(), id)
+		application, err := application.GetByID(context.Background(), s.DB(), id)
 		if errors.Is(err, store.ErrNotFound) {
 			return applicationDetailReloadedMsg{id: id, deleted: true}
 		}

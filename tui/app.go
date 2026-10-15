@@ -21,6 +21,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/cellbuf"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/docrecord"
@@ -111,7 +112,7 @@ type App struct {
 	// has one (fetched async on entering posting detail -- see
 	// loadApplication). A posting with no entry has no application yet
 	// (Application is created lazily, unlike postingmarkup.Markup).
-	applicationsByPosting map[int64]store.Application
+	applicationsByPosting map[int64]application.Application
 	applicationStatus     applicationStatusModel
 	applicationNotes      applicationNotesModel
 	applicationForm       applicationFormModel
@@ -130,7 +131,7 @@ type App struct {
 	lastScreenInstance screenInstance
 	// activeApplications backs the home screen: every application not at
 	// a terminal dead-end status, across every company (see
-	// store.ListActiveApplications, #43).
+	// pursuit.List).
 	activeApplications []pursuit.Application
 	// activeApplicationProgress is each active application's document
 	// progress, by application ID, loaded with activeApplications. The
@@ -336,7 +337,7 @@ func reviewGlyph(review docrecord.Review, hasReview bool) string {
 // tea.Cmd/tea.Msg convention as the rest of this file's store-backed
 // state (#83). A document with no entry in the map
 // renders as "not reviewed".
-func postingDetailContent(p store.Posting, application store.Application, hasApplication bool, docs *documents.Store, latestReviews map[documents.Type]docrecord.Review, width int) string {
+func postingDetailContent(p store.Posting, application application.Application, hasApplication bool, docs *documents.Store, latestReviews map[documents.Type]docrecord.Review, width int) string {
 	var b strings.Builder
 	b.WriteString(sectionHeading("Posting", width) + "\n")
 	fields := []struct{ label, value string }{
@@ -453,7 +454,7 @@ func (a *App) rebuildPostingDetailApplication() tea.Cmd {
 // application (if any) from a.applicationsByPosting -- used to seed a
 // fresh postingDetailModel by ID, since that model doesn't hold a
 // reference to either collection itself.
-func (a *App) lookupPosting(id int64) (store.Posting, store.Application, bool) {
+func (a *App) lookupPosting(id int64) (store.Posting, application.Application, bool) {
 	var p store.Posting
 	for _, candidate := range a.postings {
 		if candidate.ID == id {
@@ -540,7 +541,7 @@ type activeApplicationsLoadedMsg struct {
 // loadActiveApplications fetches every active application, filtering
 // each one's LatestReviews through documents.Current -- store has
 // no filesystem access (see documents.go's own doc comment) so
-// ListActiveApplications itself can't do this, and every screen this
+// pursuit.List itself can't do this, and every screen this
 // list feeds (the active-applications glyph column, application detail,
 // and posting detail reached via application detail's 'p' fast path,
 // which skips its own separate load) would
@@ -548,7 +549,7 @@ type activeApplicationsLoadedMsg struct {
 // document.
 func loadActiveApplications(s *store.Store, docs *documents.Store) tea.Cmd {
 	return func() tea.Msg {
-		apps, err := pursuit.List(context.Background(), s)
+		apps, err := pursuit.List(context.Background(), s.DB())
 		if err != nil {
 			return activeApplicationsLoadedMsg{err: err}
 		}
@@ -675,32 +676,38 @@ func toggleArchived(s *store.Store, postingID int64, currentlyArchived bool) tea
 }
 
 type applicationCreatedMsg struct {
-	application store.Application
+	application application.Application
 	err         error
 }
 
 func createApplication(s *store.Store, postingID int64) tea.Cmd {
 	return func() tea.Msg {
-		app, err := s.CreateApplication(context.Background(), postingID)
+		ctx := context.Background()
+		var app application.Application
+		err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+			var err error
+			app, err = application.Create(ctx, tx, postingID)
+			return err
+		})
 		return applicationCreatedMsg{application: app, err: err}
 	}
 }
 
 type applicationLoadedMsg struct {
 	postingID   int64
-	application store.Application
+	application application.Application
 	found       bool
 	err         error
 }
 
 // loadApplication fetches the application for a posting, if one exists.
-// GetApplication returns ErrNotFound when the posting has no application
+// application.Get returns store.ErrNotFound when the posting has no application
 // yet (the common case, since Application is created lazily via 'a' on the
 // detail screen rather than alongside every posting) -- that's translated
 // to found=false here rather than surfaced as an error.
 func loadApplication(s *store.Store, postingID int64) tea.Cmd {
 	return func() tea.Msg {
-		app, err := s.GetApplication(context.Background(), postingID)
+		app, err := application.Get(context.Background(), s.DB(), postingID)
 		if errors.Is(err, store.ErrNotFound) {
 			return applicationLoadedMsg{postingID: postingID, found: false}
 		}
@@ -755,27 +762,33 @@ func maybeLoadDocumentReviews(s *store.Store, docs *documents.Store, hasApp bool
 }
 
 type applicationStatusUpdatedMsg struct {
-	application store.Application
+	application application.Application
 	from        screenInstance
 	err         error
 }
 
 func updateApplicationStatus(s *store.Store, postingID int64, status applicationstatus.Status, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
-		app, err := s.UpdateApplicationStatus(context.Background(), postingID, status)
+		ctx := context.Background()
+		var app application.Application
+		err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+			var err error
+			app, err = application.UpdateStatus(ctx, tx, postingID, status)
+			return err
+		})
 		return applicationStatusUpdatedMsg{application: app, from: from, err: err}
 	}
 }
 
 type applicationNotesUpdatedMsg struct {
-	application store.Application
+	application application.Application
 	from        screenInstance
 	err         error
 }
 
 func updateApplicationNotes(s *store.Store, postingID int64, notes string, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
-		app, err := s.UpdateApplicationNotes(context.Background(), postingID, notes)
+		app, err := application.UpdateNotes(context.Background(), s.DB(), postingID, notes)
 		return applicationNotesUpdatedMsg{application: app, from: from, err: err}
 	}
 }
@@ -1128,7 +1141,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.setLoadErr(msg.err)
 		if msg.err == nil {
 			if a.applicationsByPosting == nil {
-				a.applicationsByPosting = make(map[int64]store.Application)
+				a.applicationsByPosting = make(map[int64]application.Application)
 			}
 			if msg.found {
 				a.applicationsByPosting[msg.postingID] = msg.application
@@ -1145,7 +1158,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 		}
 	case applicationCreatedMsg:
-		if errors.Is(msg.err, store.ErrPostingClosed) {
+		if errors.Is(msg.err, application.ErrPostingClosed) {
 			// Refused, not failed (#175): the posting is no longer listed,
 			// so there's no form left to submit.
 			a.err = nil
@@ -1155,7 +1168,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		if msg.err == nil {
 			if a.applicationsByPosting == nil {
-				a.applicationsByPosting = make(map[int64]store.Application)
+				a.applicationsByPosting = make(map[int64]application.Application)
 			}
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			var reviewsCmd tea.Cmd
@@ -1191,7 +1204,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		if msg.err == nil {
 			if a.applicationsByPosting == nil {
-				a.applicationsByPosting = make(map[int64]store.Application)
+				a.applicationsByPosting = make(map[int64]application.Application)
 			}
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			// Nothing blocks esc while the save is in flight, so the user
@@ -1295,7 +1308,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err == nil {
 			if a.applicationsByPosting == nil {
-				a.applicationsByPosting = make(map[int64]store.Application)
+				a.applicationsByPosting = make(map[int64]application.Application)
 			}
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			// Same late-save guard as applicationStatusUpdatedMsg: yanking
@@ -1510,7 +1523,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.postingDetailFrom = screenApplicationDetail
 			appView := a.applicationDetail.application
 			if a.applicationsByPosting == nil {
-				a.applicationsByPosting = make(map[int64]store.Application)
+				a.applicationsByPosting = make(map[int64]application.Application)
 			}
 			a.applicationsByPosting[appView.Posting.ID] = appView.Application
 			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), appView.Posting, appView.Application, true, appView.LatestReviews, a.canNavigateSiblings(appView.Posting.ID))

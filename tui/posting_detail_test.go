@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
@@ -18,7 +19,7 @@ func TestPostingDetailModel_New_RendersContent(t *testing.T) {
 	t.Parallel()
 
 	p := store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}}
-	m := newPostingDetailModel(nil, nil, 80, 20, p, store.Application{}, false, nil, true)
+	m := newPostingDetailModel(nil, nil, 80, 20, p, application.Application{}, false, nil, true)
 	if !strings.Contains(m.View(), "No application started") {
 		t.Fatalf("View() = %q, want it to contain the no-application message", m.View())
 	}
@@ -27,7 +28,7 @@ func TestPostingDetailModel_New_RendersContent(t *testing.T) {
 func TestPostingDetailModel_New_NoReviewsYet_ShowsNotReviewedBadge(t *testing.T) {
 	t.Parallel()
 
-	app := store.Application{ID: 9, PostingID: 5}
+	app := application.Application{ID: 9, PostingID: 5}
 	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, app, true, nil, true)
 	if !containsAll(m.View(), "Cover Letter", "[not reviewed]", "Resume") {
 		t.Fatalf("View() = %q, want both documents marked [not reviewed]", m.View())
@@ -37,7 +38,7 @@ func TestPostingDetailModel_New_NoReviewsYet_ShowsNotReviewedBadge(t *testing.T)
 func TestPostingDetailModel_New_WithReviews_ShowsOutcomeAndNotes(t *testing.T) {
 	t.Parallel()
 
-	app := store.Application{ID: 9, PostingID: 5}
+	app := application.Application{ID: 9, PostingID: 5}
 	reviews := map[documents.Type]docrecord.Review{
 		documents.CoverLetter: {Outcome: docrecord.Flagged, Notes: "too generic, mention Go specifically"},
 		documents.Resume:      {Outcome: docrecord.Passed},
@@ -52,7 +53,7 @@ func TestPostingDetailModel_New_WithReviews_ShowsOutcomeAndNotes(t *testing.T) {
 func TestPostingDetailModel_L_ReturnsNavigateForward(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 5}, store.Application{}, false, nil, true)
+	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 5}, application.Application{}, false, nil, true)
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyRight})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
@@ -69,7 +70,7 @@ func TestPostingDetailModel_L_ReturnsNavigateForward(t *testing.T) {
 func TestPostingDetailModel_H_ReturnsNavigateBackward(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 5}, store.Application{}, false, nil, true)
+	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 5}, application.Application{}, false, nil, true)
 	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyLeft})
 	got, ok := intent.(navigatePostingMsg)
 	if !ok || got.direction != -1 {
@@ -80,7 +81,7 @@ func TestPostingDetailModel_H_ReturnsNavigateBackward(t *testing.T) {
 func TestPostingDetailModel_Esc_ReturnsBackToPostingListMsg(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 5}, store.Application{}, false, nil, true)
+	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 5}, application.Application{}, false, nil, true)
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
@@ -93,7 +94,7 @@ func TestPostingDetailModel_Esc_ReturnsBackToPostingListMsg(t *testing.T) {
 func TestPostingDetailModel_A_NoApplication_ReturnsCreateCmd(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 5}, store.Application{}, false, nil, true)
+	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 5}, application.Application{}, false, nil, true)
 	cmd, intent := m.Update(runeKey('a'))
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that creates the application")
@@ -106,7 +107,7 @@ func TestPostingDetailModel_A_NoApplication_ReturnsCreateCmd(t *testing.T) {
 func TestPostingDetailModel_A_HasApplication_NoOp(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, store.Application{}, true, nil, true)
+	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, application.Application{}, true, nil, true)
 	cmd, intent := m.Update(runeKey('a'))
 	if cmd != nil || intent != nil {
 		t.Fatalf("cmd, intent = %v, %v, want nil, nil (application already exists)", cmd, intent)
@@ -116,7 +117,7 @@ func TestPostingDetailModel_A_HasApplication_NoOp(t *testing.T) {
 func TestPostingDetailModel_S_HasApplication_ReturnsEnterStatusMsg(t *testing.T) {
 	t.Parallel()
 
-	app := store.Application{PostingID: 5, Status: applicationstatus.Submitted}
+	app := application.Application{PostingID: 5, Status: applicationstatus.Submitted}
 	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, app, true, nil, true)
 	cmd, intent := m.Update(runeKey('s'))
 	if cmd != nil {
@@ -134,7 +135,7 @@ func TestPostingDetailModel_S_HasApplication_ReturnsEnterStatusMsg(t *testing.T)
 func TestPostingDetailModel_S_NoApplication_NoOp(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 5}, store.Application{}, false, nil, true)
+	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 5}, application.Application{}, false, nil, true)
 	cmd, intent := m.Update(runeKey('s'))
 	if cmd != nil || intent != nil {
 		t.Fatalf("cmd, intent = %v, %v, want nil, nil (no application yet)", cmd, intent)
@@ -144,7 +145,7 @@ func TestPostingDetailModel_S_NoApplication_NoOp(t *testing.T) {
 func TestPostingDetailModel_N_HasApplication_ReturnsEnterNotesMsg(t *testing.T) {
 	t.Parallel()
 
-	app := store.Application{PostingID: 5, Notes: "existing notes"}
+	app := application.Application{PostingID: 5, Notes: "existing notes"}
 	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, app, true, nil, true)
 	cmd, intent := m.Update(runeKey('n'))
 	if cmd != nil {
@@ -162,7 +163,7 @@ func TestPostingDetailModel_N_HasApplication_ReturnsEnterNotesMsg(t *testing.T) 
 func TestPostingDetailModel_R_HasApplication_ReturnsEnterDocumentReviewSelectMsg(t *testing.T) {
 	t.Parallel()
 
-	app := store.Application{ID: 9, PostingID: 5}
+	app := application.Application{ID: 9, PostingID: 5}
 	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, store.Posting{ID: 5}, app, true, nil, true)
 	cmd, intent := m.Update(runeKey('r'))
 	if cmd != nil {
@@ -180,7 +181,7 @@ func TestPostingDetailModel_R_HasApplication_ReturnsEnterDocumentReviewSelectMsg
 func TestPostingDetailModel_R_NoApplication_NoOp(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 5}, store.Application{}, false, nil, true)
+	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 5}, application.Application{}, false, nil, true)
 	cmd, intent := m.Update(runeKey('r'))
 	if cmd != nil || intent != nil {
 		t.Fatalf("cmd, intent = %v, %v, want nil, nil (no application yet)", cmd, intent)
@@ -190,7 +191,7 @@ func TestPostingDetailModel_R_NoApplication_NoOp(t *testing.T) {
 func TestPostingDetailModel_Resize_RebuildsViewportAtNewDimensions(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}}, store.Application{}, false, nil, true)
+	m := newPostingDetailModel(nil, nil, 80, 20, store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}}, application.Application{}, false, nil, true)
 	m.resize(40, 10)
 	if m.viewport.Width != 40 {
 		t.Fatalf("viewport width = %d, want 40", m.viewport.Width)
@@ -226,12 +227,12 @@ func TestPostingDetailModel_View_HelpAdvertisesNavigationOnlyWhenAvailable(t *te
 	posting := store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}}
 	docs := documents.NewStore(t.TempDir())
 
-	withSiblings := newPostingDetailModel(nil, docs, 80, 20, posting, store.Application{}, false, nil, true)
+	withSiblings := newPostingDetailModel(nil, docs, 80, 20, posting, application.Application{}, false, nil, true)
 	if !strings.Contains(withSiblings.View(), "prev/next posting") {
 		t.Errorf("View() with siblings available = %q, want the h/l hint present", withSiblings.View())
 	}
 
-	withoutSiblings := newPostingDetailModel(nil, docs, 80, 20, posting, store.Application{}, false, nil, false)
+	withoutSiblings := newPostingDetailModel(nil, docs, 80, 20, posting, application.Application{}, false, nil, false)
 	if strings.Contains(withoutSiblings.View(), "prev/next posting") {
 		t.Errorf("View() with no siblings = %q, want the h/l hint omitted -- pressing it does nothing", withoutSiblings.View())
 	}
@@ -256,7 +257,7 @@ func TestPostingDetailModel_View_GroupsContentIntoSections(t *testing.T) {
 		Location:        "Ottawa, ON",
 		DescriptionText: "We build tools for practitioners.",
 	}}
-	app := store.Application{ID: 9, PostingID: 5, Status: applicationstatus.Started}
+	app := application.Application{ID: 9, PostingID: 5, Status: applicationstatus.Started}
 	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 60, p, app, true, nil, true)
 	lines := strings.Split(ansi.Strip(m.View()), "\n")
 
@@ -310,7 +311,7 @@ func TestPostingDetailModel_View_PadsTitleAndBody(t *testing.T) {
 		JobURL:          "https://jobs.example.com/a-very-long-path/that-needs-to-wrap/somewhere-sensible",
 		DescriptionText: strings.Repeat("We build tools for practitioners. ", 8),
 	}}
-	app := store.Application{ID: 9, PostingID: 5}
+	app := application.Application{ID: 9, PostingID: 5}
 	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), width, 60, p, app, true, nil, true)
 
 	title := strings.Split(ansi.Strip(m.View()), "\n")[0]
@@ -343,7 +344,7 @@ func TestPostingDetailModel_View_AlignsFieldValues(t *testing.T) {
 		Location:   "Ottawa, ON",
 		JobURL:     "https://jobs.example.com/a-very-long-path/that-needs-to-wrap/somewhere-sensible",
 	}}
-	app := store.Application{ID: 9, PostingID: 5, Status: applicationstatus.Started}
+	app := application.Application{ID: 9, PostingID: 5, Status: applicationstatus.Started}
 	reviews := map[documents.Type]docrecord.Review{
 		documents.CoverLetter: {Outcome: docrecord.Flagged, Notes: "too generic"},
 	}
@@ -397,7 +398,7 @@ func TestPostingDetailModel_View_NeverSplitsAReviewBadge(t *testing.T) {
 	t.Parallel()
 
 	docs := documents.NewStore(t.TempDir())
-	app := store.Application{ID: 9, PostingID: 5}
+	app := application.Application{ID: 9, PostingID: 5}
 	minWidth := len("[not reviewed]") + 2*detailPadding
 	for width := minWidth; width <= 140; width++ {
 		// Tall enough to show the whole body: at the narrowest widths the
@@ -427,7 +428,7 @@ func TestPostingDetailModel_View_FitsTheTerminal(t *testing.T) {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
 			t.Parallel()
 
-			m := newPostingDetailModel(nil, nil, width, termHeight, p, store.Application{}, false, nil, true)
+			m := newPostingDetailModel(nil, nil, width, termHeight, p, application.Application{}, false, nil, true)
 			lines := strings.Split(ansi.Strip(m.View()), "\n")
 			if len(lines) > termHeight {
 				t.Errorf("view is %d lines, want at most %d (the terminal height)", len(lines), termHeight)

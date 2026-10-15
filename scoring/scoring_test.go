@@ -10,6 +10,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/pressly/goose/v3"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/companyfilter"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/filter"
@@ -133,8 +134,8 @@ func TestPending(t *testing.T) {
 	if _, err := postingmarkup.SetInterested(ctx, s.DB(), interested.ID); err != nil {
 		t.Fatalf("postingmarkup.SetInterested: %v", err)
 	}
-	if _, err := s.CreateApplication(ctx, applied.ID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplication(ctx, s, applied.ID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 	if err := s.SoftDeleteCompany(ctx, gone.ID); err != nil {
 		t.Fatalf("SoftDeleteCompany: %v", err)
@@ -426,4 +427,14 @@ func TestVocabularies_RoundTripThroughJSONByName(t *testing.T) {
 	if err := json.Unmarshal([]byte(`"too_high"`), &refusal); err == nil {
 		t.Error(`decoding the refusal "too_high" succeeded, want it refused`)
 	}
+}
+
+func createApplication(ctx context.Context, s *store.Store, postingID int64) (application.Application, error) {
+	var app application.Application
+	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
+		var err error
+		app, err = application.Create(ctx, tx, postingID)
+		return err
+	})
+	return app, err
 }

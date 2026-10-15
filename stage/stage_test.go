@@ -16,6 +16,7 @@ import (
 
 	_ "modernc.org/sqlite"
 
+	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/docrecord"
@@ -153,9 +154,9 @@ func TestList_IncludesInterestedPostingWithApplicationButNoDocuments(t *testing.
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
-	app, err := s.CreateApplication(context.Background(), posting.ID)
+	app, err := createApplication(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 
 	got, err := st.List(context.Background())
@@ -197,11 +198,11 @@ func TestList_ExcludesApplicationsInTerminalStatus(t *testing.T) {
 			company := mustCreateCompany(t, s, "Acme")
 			posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 			mustMarkInterested(t, s, posting.ID)
-			if _, err := s.CreateApplication(context.Background(), posting.ID); err != nil {
-				t.Fatalf("CreateApplication: %v", err)
+			if _, err := createApplication(context.Background(), s, posting.ID); err != nil {
+				t.Fatalf("application.Create: %v", err)
 			}
-			if _, err := s.UpdateApplicationStatus(context.Background(), posting.ID, tc.status); err != nil {
-				t.Fatalf("UpdateApplicationStatus: %v", err)
+			if _, err := updateApplicationStatus(context.Background(), s, posting.ID, tc.status); err != nil {
+				t.Fatalf("application.UpdateStatus: %v", err)
 			}
 
 			got, err := st.List(context.Background())
@@ -222,9 +223,9 @@ func TestList_ExcludesPostingWithBothDocumentsAlreadyGenerated(t *testing.T) {
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
-	app, err := s.CreateApplication(context.Background(), posting.ID)
+	app, err := createApplication(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	paths, err := d.EnsureDir(app.ID)
 	if err != nil {
@@ -253,9 +254,9 @@ func TestList_IncludesPostingWithOnlyOneDocumentGenerated(t *testing.T) {
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
-	app, err := s.CreateApplication(context.Background(), posting.ID)
+	app, err := createApplication(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	paths, err := d.EnsureDir(app.ID)
 	if err != nil {
@@ -281,11 +282,11 @@ func TestList_IncludesApplicationNotes(t *testing.T) {
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
-	if _, err := s.CreateApplication(context.Background(), posting.ID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplication(context.Background(), s, posting.ID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := s.UpdateApplicationNotes(context.Background(), posting.ID, "recruiter reached out directly"); err != nil {
-		t.Fatalf("UpdateApplicationNotes: %v", err)
+	if _, err := application.UpdateNotes(context.Background(), s.DB(), posting.ID, "recruiter reached out directly"); err != nil {
+		t.Fatalf("application.UpdateNotes: %v", err)
 	}
 
 	got, err := st.List(context.Background())
@@ -307,9 +308,9 @@ func TestList_IncludesLatestDocumentReviews(t *testing.T) {
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
-	app, err := s.CreateApplication(context.Background(), posting.ID)
+	app, err := createApplication(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	paths, err := d.EnsureDir(app.ID)
 	if err != nil {
@@ -361,9 +362,9 @@ func TestList_KeepsPostingWithBothDocumentsWhenLatestReviewIsFlagged(t *testing.
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
-	app, err := s.CreateApplication(context.Background(), posting.ID)
+	app, err := createApplication(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	paths, err := d.EnsureDir(app.ID)
 	if err != nil {
@@ -399,9 +400,9 @@ func TestList_ExcludesPostingWithBothDocumentsWhenLatestReviewsAllPass(t *testin
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
-	app, err := s.CreateApplication(context.Background(), posting.ID)
+	app, err := createApplication(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	paths, err := d.EnsureDir(app.ID)
 	if err != nil {
@@ -449,9 +450,9 @@ func TestList_ReturnsErrorWhenDocumentReadFails(t *testing.T) {
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
-	app, err := s.CreateApplication(context.Background(), posting.ID)
+	app, err := createApplication(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	paths, err := d.EnsureDir(app.ID)
 	if err != nil {
@@ -505,9 +506,9 @@ func TestList_ExcludesPostingWhenFlaggedReviewIsStaleAfterRevision(t *testing.T)
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
-	app, err := s.CreateApplication(context.Background(), posting.ID)
+	app, err := createApplication(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	paths, err := d.EnsureDir(app.ID)
 	if err != nil {
@@ -550,9 +551,9 @@ func TestList_LatestReviewsOmitsStaleReview(t *testing.T) {
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
-	app, err := s.CreateApplication(context.Background(), posting.ID)
+	app, err := createApplication(context.Background(), s, posting.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	paths, err := d.EnsureDir(app.ID)
 	if err != nil {
@@ -626,8 +627,8 @@ func TestPrepare_IncludesApplicationNotesAndLatestReviews(t *testing.T) {
 	if err != nil {
 		t.Fatalf("first Prepare: %v", err)
 	}
-	if _, err := s.UpdateApplicationNotes(context.Background(), posting.ID, "referred by a friend"); err != nil {
-		t.Fatalf("UpdateApplicationNotes: %v", err)
+	if _, err := application.UpdateNotes(context.Background(), s.DB(), posting.ID, "referred by a friend"); err != nil {
+		t.Fatalf("application.UpdateNotes: %v", err)
 	}
 	// The review's content must match what's on disk, or the new
 	// staleness check treats it as not describing
@@ -671,9 +672,9 @@ func TestPrepare_CreatesApplicationWhenNoneExists(t *testing.T) {
 		t.Error("ApplicationID = 0, want a created application id")
 	}
 
-	app, err := s.GetApplication(context.Background(), posting.ID)
+	app, err := application.Get(context.Background(), s.DB(), posting.ID)
 	if err != nil {
-		t.Fatalf("GetApplication: %v", err)
+		t.Fatalf("application.Get: %v", err)
 	}
 	if app.ID != prepared.ApplicationID {
 		t.Errorf("stored application id = %d, want %d", app.ID, prepared.ApplicationID)
@@ -720,8 +721,8 @@ func TestPrepare_AfterDelete_StartsFreshApplicationWithoutOldDrafts(t *testing.T
 	if err := os.WriteFile(draft.Path, []byte("Dear Acme,\n"), 0o644); err != nil {
 		t.Fatalf("write draft: %v", err)
 	}
-	if err := s.DeleteApplication(context.Background(), first.ApplicationID); err != nil {
-		t.Fatalf("DeleteApplication: %v", err)
+	if err := application.Delete(context.Background(), s.DB(), first.ApplicationID); err != nil {
+		t.Fatalf("application.Delete: %v", err)
 	}
 
 	second, err := st.Prepare(context.Background(), posting.ID)
@@ -769,7 +770,7 @@ func TestPrepare_CreatesDocumentDirectory(t *testing.T) {
 
 // jsonKeys marshals v and returns its top-level JSON object's keys,
 // sorted -- used to pin the field-name set stage.Candidate/Prepared
-// serialize to for the external agent hand-off (#59)
+// serialize to for the external agent hand-off
 // without being fragile to dynamic values like timestamps, which
 // a literal golden-string comparison would be.
 func jsonKeys(t *testing.T, v any) []string {
@@ -819,7 +820,7 @@ func TestCandidate_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 	}
 
 	// A summary, enough to pick a posting: no description or raw payload,
-	// which made the list too large for agent clients (#117).
+	// which made the list too large for agent clients.
 	wantPosting := []string{"ID", "Title", "Department", "Location", "WorkplaceType", "ApplicationURL", "PublishedAt", "FirstSeenAt"}
 	sort.Strings(wantPosting)
 	if diff := cmp.Diff(wantPosting, jsonKeys(t, got[0].Posting)); diff != "" {
@@ -867,7 +868,7 @@ func TestPrepared_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 
 	// Everything needed to draft, but not RawPayload or DescriptionHTML:
 	// drafting reads DescriptionText, and the other two were most of the
-	// response (#117).
+	// response.
 	wantPosting := []string{
 		"ID", "CompanyID", "Source", "SourceID", "Title", "Department", "Team",
 		"Location", "EmploymentType", "WorkplaceType", "DescriptionText",
@@ -911,7 +912,7 @@ func TestPrepare_ReflectsDocumentsWrittenBetweenCalls(t *testing.T) {
 // A posting the user started an application for without marking it
 // interested (e.g. from the TUI's posting detail) is still drafting work,
 // so it's listed when its application is started and needs a draft or a
-// revision (#165). Archived postings and later-stage applications stay
+// revision. Archived postings and later-stage applications stay
 // out.
 func TestList_IncludesStartedApplicationsNotMarkedInterested(t *testing.T) {
 	t.Parallel()
@@ -933,14 +934,14 @@ func TestList_IncludesStartedApplicationsNotMarkedInterested(t *testing.T) {
 	}
 
 	undrafted := mustUpsertPosting(t, s, company.ID, "job-1", "Undrafted")
-	if _, err := s.CreateApplication(ctx, undrafted.ID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplication(ctx, s, undrafted.ID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 
 	flagged := mustUpsertPosting(t, s, company.ID, "job-2", "Flagged")
-	flaggedApp, err := s.CreateApplication(ctx, flagged.ID)
+	flaggedApp, err := createApplication(ctx, s, flagged.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	write(flaggedApp.ID)
 	if _, err := createReview(ctx, s, flaggedApp.ID, documents.Resume, "# Draft", docrecord.Flagged, "too long"); err != nil {
@@ -948,32 +949,32 @@ func TestList_IncludesStartedApplicationsNotMarkedInterested(t *testing.T) {
 	}
 
 	drafted := mustUpsertPosting(t, s, company.ID, "job-3", "Drafted")
-	draftedApp, err := s.CreateApplication(ctx, drafted.ID)
+	draftedApp, err := createApplication(ctx, s, drafted.ID)
 	if err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+		t.Fatalf("application.Create: %v", err)
 	}
 	write(draftedApp.ID)
 
 	archived := mustUpsertPosting(t, s, company.ID, "job-4", "Archived")
-	if _, err := s.CreateApplication(ctx, archived.ID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplication(ctx, s, archived.ID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 	if _, err := postingmarkup.SetArchived(ctx, s.DB(), archived.ID); err != nil {
 		t.Fatalf("postingmarkup.SetArchived: %v", err)
 	}
 
 	submitted := mustUpsertPosting(t, s, company.ID, "job-5", "Submitted")
-	if _, err := s.CreateApplication(ctx, submitted.ID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplication(ctx, s, submitted.ID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := s.UpdateApplicationStatus(ctx, submitted.ID, applicationstatus.Submitted); err != nil {
-		t.Fatalf("UpdateApplicationStatus: %v", err)
+	if _, err := updateApplicationStatus(ctx, s, submitted.ID, applicationstatus.Submitted); err != nil {
+		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
 	interested := mustUpsertPosting(t, s, company.ID, "job-6", "Interested and started")
 	mustMarkInterested(t, s, interested.ID)
-	if _, err := s.CreateApplication(ctx, interested.ID); err != nil {
-		t.Fatalf("CreateApplication: %v", err)
+	if _, err := createApplication(ctx, s, interested.ID); err != nil {
+		t.Fatalf("application.Create: %v", err)
 	}
 
 	got, err := st.List(ctx)
@@ -1002,7 +1003,7 @@ func mustDoc(t *testing.T, status documents.Status, documentType documents.Type)
 }
 
 // TestPrepare_ClosedPostingWithoutApplication_Refused: committing to a
-// posting that's no longer listed is refused (#175), before anything is
+// posting that's no longer listed is refused, before anything is
 // created, so the skill can tell the user why.
 func TestPrepare_ClosedPostingWithoutApplication_Refused(t *testing.T) {
 	t.Parallel()
@@ -1014,11 +1015,11 @@ func TestPrepare_ClosedPostingWithoutApplication_Refused(t *testing.T) {
 		t.Fatalf("MarkPostingClosed: %v", err)
 	}
 
-	if _, err := st.Prepare(context.Background(), posting.ID); !errors.Is(err, store.ErrPostingClosed) {
+	if _, err := st.Prepare(context.Background(), posting.ID); !errors.Is(err, application.ErrPostingClosed) {
 		t.Fatalf("Prepare on a closed posting: err = %v, want ErrPostingClosed", err)
 	}
-	if _, err := s.GetApplication(context.Background(), posting.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("GetApplication: err = %v, want ErrNotFound", err)
+	if _, err := application.Get(context.Background(), s.DB(), posting.ID); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("application.Get: err = %v, want ErrNotFound", err)
 	}
 }
 
