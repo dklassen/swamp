@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // ApplicationStatusChange is one status an application entered, and when
@@ -65,8 +65,8 @@ func parseStatusChangedBy(s string) (StatusChangedBy, error) {
 // caller's transaction-bound queries because the row must commit or roll
 // back with the status change it records; every path that writes
 // applications.status goes through here so they can't drift apart.
-func recordApplicationStatus(ctx context.Context, qtx *db.Queries, applicationID int64, status ApplicationStatus, changedBy StatusChangedBy) error {
-	if err := qtx.CreateApplicationStatusHistory(ctx, db.CreateApplicationStatusHistoryParams{
+func recordApplicationStatus(ctx context.Context, qtx *sqlcdb.Queries, applicationID int64, status ApplicationStatus, changedBy StatusChangedBy) error {
+	if err := qtx.CreateApplicationStatusHistory(ctx, sqlcdb.CreateApplicationStatusHistoryParams{
 		ApplicationID: applicationID,
 		Status:        status.String(),
 		ChangedBy:     changedBy.String(),
@@ -94,7 +94,7 @@ func (s *Store) ListApplicationStatusHistory(ctx context.Context, applicationID 
 
 // parseStatusChange converts a status history row, failing on a status
 // or changed_by value it doesn't know.
-func parseStatusChange(row db.ApplicationStatusHistory) (ApplicationStatusChange, error) {
+func parseStatusChange(row sqlcdb.ApplicationStatusHistory) (ApplicationStatusChange, error) {
 	status, err := ParseApplicationStatus(row.Status)
 	if err != nil {
 		return ApplicationStatusChange{}, err

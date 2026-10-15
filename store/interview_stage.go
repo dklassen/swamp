@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // InterviewStage is one round in an application's interview process (e.g.
@@ -24,7 +24,7 @@ type InterviewStage struct {
 	UpdatedAt     time.Time
 }
 
-func interviewStageFromRow(row db.InterviewStage) InterviewStage {
+func interviewStageFromRow(row sqlcdb.InterviewStage) InterviewStage {
 	s := InterviewStage{
 		ID:            row.ID,
 		ApplicationID: row.ApplicationID,
@@ -42,7 +42,7 @@ func interviewStageFromRow(row db.InterviewStage) InterviewStage {
 }
 
 func (s *Store) CreateInterviewStage(ctx context.Context, applicationID int64, sequence int64, name string, stageDate *time.Time, notes string) (InterviewStage, error) {
-	row, err := s.queries.CreateInterviewStage(ctx, db.CreateInterviewStageParams{
+	row, err := s.queries.CreateInterviewStage(ctx, sqlcdb.CreateInterviewStageParams{
 		ApplicationID: applicationID,
 		Sequence:      sequence,
 		Name:          name,
@@ -68,7 +68,7 @@ func (s *Store) ListInterviewStages(ctx context.Context, applicationID int64) ([
 }
 
 func (s *Store) UpdateInterviewStageOutcome(ctx context.Context, id int64, outcome string) (InterviewStage, error) {
-	row, err := s.queries.UpdateInterviewStageOutcome(ctx, db.UpdateInterviewStageOutcomeParams{
+	row, err := s.queries.UpdateInterviewStageOutcome(ctx, sqlcdb.UpdateInterviewStageOutcomeParams{
 		ID:      id,
 		Outcome: outcome,
 	})
@@ -84,7 +84,7 @@ func (s *Store) UpdateInterviewStageOutcome(ctx context.Context, id int64, outco
 // UpdateInterviewStage replaces every editable field on a stage (a full
 // edit, as opposed to UpdateInterviewStageOutcome's single-field update).
 func (s *Store) UpdateInterviewStage(ctx context.Context, id int64, sequence int64, name string, stageDate *time.Time, outcome, notes string) (InterviewStage, error) {
-	row, err := s.queries.UpdateInterviewStage(ctx, db.UpdateInterviewStageParams{
+	row, err := s.queries.UpdateInterviewStage(ctx, sqlcdb.UpdateInterviewStageParams{
 		ID:        id,
 		Sequence:  sequence,
 		Name:      name,

@@ -7,7 +7,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // PostingListing is one posting in a search's results: its summary
@@ -145,7 +145,7 @@ func (s *Store) SearchPostings(ctx context.Context, search PostingSearch) (Posti
 	if search.Limit <= 0 {
 		return PostingSearchPage{}, fmt.Errorf("store: search postings: limit %d, want at least 1", search.Limit)
 	}
-	params := db.SearchPostingsByIDParams{
+	params := sqlcdb.SearchPostingsByIDParams{
 		IncludeArchived:      search.IncludeArchived,
 		IgnoreCompanyFilters: search.IgnoreCompanyFilters,
 		// One more than asked for, to learn whether another page follows.
@@ -239,12 +239,12 @@ func (s *Store) SearchPostings(ctx context.Context, search PostingSearch) (Posti
 // same filters and returns the same columns; the generated param and row
 // types differ only in name (and the cursor parameter's), so they convert
 // directly.
-func (s *Store) searchPostingsInOrder(ctx context.Context, search PostingSearch, params db.SearchPostingsByIDParams) ([]db.SearchPostingsByIDRow, error) {
+func (s *Store) searchPostingsInOrder(ctx context.Context, search PostingSearch, params sqlcdb.SearchPostingsByIDParams) ([]sqlcdb.SearchPostingsByIDRow, error) {
 	switch search.Order {
 	case PostingOrderIDAsc:
 		return s.queries.SearchPostingsByID(ctx, params)
 	case PostingOrderIDDesc:
-		rows, err := s.queries.SearchPostingsByIDDesc(ctx, db.SearchPostingsByIDDescParams{
+		rows, err := s.queries.SearchPostingsByIDDesc(ctx, sqlcdb.SearchPostingsByIDDescParams{
 			CompanyID:            params.CompanyID,
 			ListingStatus:        params.ListingStatus,
 			IncludeArchived:      params.IncludeArchived,
@@ -256,13 +256,13 @@ func (s *Store) searchPostingsInOrder(ctx context.Context, search PostingSearch,
 			BeforeID:             params.AfterID,
 			MaxRows:              params.MaxRows,
 		})
-		converted := make([]db.SearchPostingsByIDRow, len(rows))
+		converted := make([]sqlcdb.SearchPostingsByIDRow, len(rows))
 		for i, row := range rows {
-			converted[i] = db.SearchPostingsByIDRow(row)
+			converted[i] = sqlcdb.SearchPostingsByIDRow(row)
 		}
 		return converted, err
 	case PostingOrderPublishedDesc:
-		values := db.SearchPostingsByPublishedDescParams{
+		values := sqlcdb.SearchPostingsByPublishedDescParams{
 			CompanyID:            params.CompanyID,
 			ListingStatus:        params.ListingStatus,
 			IncludeArchived:      params.IncludeArchived,
@@ -278,13 +278,13 @@ func (s *Store) searchPostingsInOrder(ctx context.Context, search PostingSearch,
 			values.CursorPublished = search.AfterPublishedAt
 		}
 		rows, err := s.queries.SearchPostingsByPublishedDesc(ctx, values)
-		converted := make([]db.SearchPostingsByIDRow, len(rows))
+		converted := make([]sqlcdb.SearchPostingsByIDRow, len(rows))
 		for i, row := range rows {
-			converted[i] = db.SearchPostingsByIDRow(row)
+			converted[i] = sqlcdb.SearchPostingsByIDRow(row)
 		}
 		return converted, err
 	case PostingOrderScoreDesc:
-		values := db.SearchPostingsByScoreDescParams{
+		values := sqlcdb.SearchPostingsByScoreDescParams{
 			CompanyID:            params.CompanyID,
 			ListingStatus:        params.ListingStatus,
 			IncludeArchived:      params.IncludeArchived,
@@ -300,9 +300,9 @@ func (s *Store) searchPostingsInOrder(ctx context.Context, search PostingSearch,
 			values.CursorScore = search.AfterScore
 		}
 		rows, err := s.queries.SearchPostingsByScoreDesc(ctx, values)
-		converted := make([]db.SearchPostingsByIDRow, len(rows))
+		converted := make([]sqlcdb.SearchPostingsByIDRow, len(rows))
 		for i, row := range rows {
-			converted[i] = db.SearchPostingsByIDRow(row)
+			converted[i] = sqlcdb.SearchPostingsByIDRow(row)
 		}
 		return converted, err
 	default:

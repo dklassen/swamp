@@ -8,7 +8,7 @@ import (
 	"time"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // ApplicationView is Application together with its posting and company
@@ -36,7 +36,7 @@ type ApplicationView struct {
 // through the same conversion every other Application/Posting goes
 // through, rather than hand-reconstructing them field-by-field from a
 // flat row.
-func applicationViewFromRow(row db.ListActiveApplicationsRow) (ApplicationView, error) {
+func applicationViewFromRow(row sqlcdb.ListActiveApplicationsRow) (ApplicationView, error) {
 	app, err := applicationFromRow(row.Application)
 	if err != nil {
 		return ApplicationView{}, err

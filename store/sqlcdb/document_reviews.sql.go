@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: document_reviews.sql
 
-package db
+package sqlcdb
 
 import (
 	"context"

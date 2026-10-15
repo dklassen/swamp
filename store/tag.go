@@ -6,7 +6,7 @@ import (
 	"errors"
 	"time"
 
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // Tag is a user-defined label, reusable across postings. Soft-deleted via
@@ -20,7 +20,7 @@ type Tag struct {
 	UpdatedAt time.Time
 }
 
-func tagFromRow(row db.Tag) Tag {
+func tagFromRow(row sqlcdb.Tag) Tag {
 	t := Tag{
 		ID:        row.ID,
 		Name:      row.Name,
@@ -71,14 +71,14 @@ func (s *Store) SoftDeleteTag(ctx context.Context, id int64) error {
 }
 
 func (s *Store) AddTagToPosting(ctx context.Context, postingID, tagID int64) error {
-	return s.queries.AddTagToPosting(ctx, db.AddTagToPostingParams{
+	return s.queries.AddTagToPosting(ctx, sqlcdb.AddTagToPostingParams{
 		PostingID: postingID,
 		TagID:     tagID,
 	})
 }
 
 func (s *Store) RemoveTagFromPosting(ctx context.Context, postingID, tagID int64) error {
-	return s.queries.RemoveTagFromPosting(ctx, db.RemoveTagFromPostingParams{
+	return s.queries.RemoveTagFromPosting(ctx, sqlcdb.RemoveTagFromPostingParams{
 		PostingID: postingID,
 		TagID:     tagID,
 	})

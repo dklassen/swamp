@@ -3,7 +3,7 @@
 //   sqlc v1.31.1
 // source: change_events.sql
 
-package db
+package sqlcdb
 
 import (
 	"context"

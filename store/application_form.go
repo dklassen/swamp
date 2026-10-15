@@ -7,14 +7,14 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // SaveApplicationForm stores what postingID's application form asks for
 // (#168), as JSON (stage marshals jobboard.ApplicationForm), replacing
 // any earlier fetch and stamping it fetched now.
 func (s *Store) SaveApplicationForm(ctx context.Context, postingID int64, formJSON string) error {
-	if err := s.queries.SavePostingApplicationForm(ctx, db.SavePostingApplicationFormParams{
+	if err := s.queries.SavePostingApplicationForm(ctx, sqlcdb.SavePostingApplicationFormParams{
 		PostingID: postingID,
 		Form:      formJSON,
 	}); err != nil {

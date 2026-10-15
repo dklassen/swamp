@@ -3,7 +3,7 @@ package store
 import (
 	"context"
 
-	"github.com/dklassen/swamp/store/db"
+	"github.com/dklassen/swamp/store/sqlcdb"
 )
 
 // InterestedPosting is a posting the user has flagged interested and not
@@ -21,14 +21,14 @@ type InterestedPosting struct {
 }
 
 // interestedPostingFromRow converts a row built by sqlc.embed(postings) --
-// row.Posting is already the exact nested db.Posting that macro
+// row.Posting is already the exact nested sqlcdb.Posting that macro
 // generates, so this runs it through the same postingFromRow every other
 // Posting goes through, rather than hand-reconstructing it field-by-field
 // from a flat row (see ApplicationView). The application
 // side stays hand-checked (sql.NullInt64/sql.NullString .Valid) since
 // it's LEFT JOINed and genuinely optional -- sqlc.embed(applications)
 // isn't used here (see the query comment).
-func interestedPostingFromRow(row db.ListInterestedPostingsRow) (InterestedPosting, error) {
+func interestedPostingFromRow(row sqlcdb.ListInterestedPostingsRow) (InterestedPosting, error) {
 	p := InterestedPosting{
 		Posting:     postingFromRow(row.Posting),
 		CompanyName: row.CompanyName,
