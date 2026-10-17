@@ -134,7 +134,7 @@ func TestChangeLog_EachLoggedTable(t *testing.T) {
 			return err
 		}, "postings", "insert"},
 		{"posting closed", func(ctx context.Context, f fixture) error {
-			_, _, err := service.NewPostingService(f.db).Close(ctx, f.postingID, nil)
+			err := service.NewPostingService(f.db).Close(ctx, f.postingID, nil)
 			return err
 		}, "postings", "update"},
 		{"document written", func(ctx context.Context, f fixture) error {

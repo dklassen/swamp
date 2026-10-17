@@ -991,7 +991,7 @@ func TestPrepare_ClosedPostingWithoutApplication_Refused(t *testing.T) {
 	st, s, _ := newTestStage(t)
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	if _, _, err := s.Postings.Close(context.Background(), posting.ID, nil); err != nil {
+	if err := s.Postings.Close(context.Background(), posting.ID, nil); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 
@@ -1016,7 +1016,7 @@ func TestList_ExcludesInterestedPostingTheCompanyListHides(t *testing.T) {
 		hide func(t *testing.T, s testutil.TestApp, companyID, postingID int64)
 	}{
 		{"closed", func(t *testing.T, s testutil.TestApp, _, postingID int64) {
-			if _, _, err := s.Postings.Close(context.Background(), postingID, nil); err != nil {
+			if err := s.Postings.Close(context.Background(), postingID, nil); err != nil {
 				t.Fatalf("Close: %v", err)
 			}
 		}},

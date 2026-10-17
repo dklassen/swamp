@@ -51,7 +51,7 @@ func newSearchStage(t *testing.T) searchStage {
 	if _, err := updateApplicationStatus(ctx, s, f.submitted.ID, application.Submitted); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
-	if _, _, err := s.Postings.Close(ctx, f.closed.ID, nil); err != nil {
+	if err := s.Postings.Close(ctx, f.closed.ID, nil); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	if _, err := s.Postings.SetArchived(ctx, f.archived.ID); err != nil {

@@ -828,7 +828,7 @@ func TestApp_PostingList_NeverShowsClosedPostings(t *testing.T) {
 	if closedID == 0 {
 		t.Fatal("could not find Designer posting to close")
 	}
-	if _, _, err := s.Postings.Close(context.Background(), closedID, nil); err != nil {
+	if err := s.Postings.Close(context.Background(), closedID, nil); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 
@@ -949,7 +949,7 @@ func TestApp_PressA_OnPostingDetail_ClosedPosting_ExplainsInStatus(t *testing.T)
 	app = openPostingList(t, app)
 	postingID := app.postings[0].ID
 	app = openPostingDetail(t, app)
-	if _, _, err := s.Postings.Close(context.Background(), postingID, nil); err != nil {
+	if err := s.Postings.Close(context.Background(), postingID, nil); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 

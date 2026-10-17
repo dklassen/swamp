@@ -105,7 +105,7 @@ func TestCompanyService_Delete_ClosesItsOpenPostings(t *testing.T) {
 	globex := testutil.MustAddCompany(t, s, "Globex")
 	open := testutil.MustIngestPostingFor(t, s, acme.ID, "job-1", "Software Engineer")
 	alreadyClosed := testutil.MustIngestPostingFor(t, s, acme.ID, "job-2", "Designer")
-	if _, _, err := postings.Close(ctx, alreadyClosed.ID, nil); err != nil {
+	if err := postings.Close(ctx, alreadyClosed.ID, nil); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	otherCompany := testutil.MustIngestPostingFor(t, s, globex.ID, "job-3", "Engineer")

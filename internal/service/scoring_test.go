@@ -172,7 +172,7 @@ func TestScoringService_Pending(t *testing.T) {
 	interested := ingestIn(acme.ID, "8", "Interested", "")
 	applied := ingestIn(acme.ID, "9", "Applied", "")
 	ingestIn(gone.ID, "10", "At a deleted company", "")
-	if _, _, err := postings.Close(ctx, closed.ID, nil); err != nil {
+	if err := postings.Close(ctx, closed.ID, nil); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	if _, err := postings.SetArchived(ctx, archived.ID); err != nil {

@@ -692,7 +692,7 @@ func TestStagePrepare_ClosedPosting_ReturnsToolErrorSayingSo(t *testing.T) {
 	srv, s, _ := newTestServer(t)
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
-	if _, _, err := s.Postings.Close(context.Background(), posting.ID, nil); err != nil {
+	if err := s.Postings.Close(context.Background(), posting.ID, nil); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	cs := connectClient(t, srv)
@@ -736,7 +736,7 @@ func TestListCompanies_LiveCompaniesByNameWithOpenCounts(t *testing.T) {
 	mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
 	closed := mustUpsertPosting(t, s, acme.ID, "job-3", "Writer")
-	if _, _, err := s.Postings.Close(ctx, closed.ID, nil); err != nil {
+	if err := s.Postings.Close(ctx, closed.ID, nil); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	if err := s.Companies.Delete(ctx, gone.ID); err != nil {

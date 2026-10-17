@@ -86,7 +86,7 @@ func TestApplicationService_History_RecordsWhoChangedIt(t *testing.T) {
 	if _, err := applications.SetStatus(ctx, app.ID, application.Started); err != nil {
 		t.Fatalf("SetStatus: %v", err)
 	}
-	if _, _, err := s.Postings.Close(ctx, p.ID, []application.Status{application.Started}); err != nil {
+	if err := s.Postings.Close(ctx, p.ID, []application.Status{application.Started}); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 

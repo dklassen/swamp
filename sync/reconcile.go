@@ -39,16 +39,10 @@ func (s *Syncer) closeMissing(ctx context.Context, company company.Company, fetc
 		if existing.ListingStatus != "open" || seenSourceIDs[existing.SourceID] {
 			continue
 		}
-		closed, applicationEnded, err := s.postings.Close(ctx, existing.ID, earlyApplicationStatuses)
-		if err != nil {
+		if err := s.postings.Close(ctx, existing.ID, earlyApplicationStatuses); err != nil {
 			return result, fmt.Errorf("sync: close posting: %w", err)
 		}
-		if closed {
-			result.Closed++
-		}
-		if applicationEnded {
-			result.ApplicationsClosed++
-		}
+		result.Closed++
 	}
 	return result, nil
 }

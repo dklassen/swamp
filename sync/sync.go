@@ -46,15 +46,7 @@ type Result struct {
 	Updated  int
 	Closed   int
 	Reopened int
-	// ApplicationsClosed counts applications moved to posting_closed
-	// because the posting they were for was taken down -- see
-	// closePosting and earlyApplicationStatuses.
-	ApplicationsClosed int
-	// ApplicationsRestored counts applications sync had moved to
-	// posting_closed and moved back because their posting reappeared --
-	// see reopenPosting.
-	ApplicationsRestored int
-	Err                  error
+	Err      error
 }
 
 // ErrSyncInProgress is SyncCompany's error when another sync of the same
@@ -97,8 +89,8 @@ type postingService interface {
 	Ingest(ctx context.Context, companyID int64, source, sourceID string, fields posting.IngestedFields) (service.IngestResult, error)
 	ListByCompany(ctx context.Context, companyID int64) ([]posting.Posting, error)
 	MarkSeen(ctx context.Context, ids []int64) error
-	Close(ctx context.Context, postingID int64, endFrom []application.Status) (closed, applicationEnded bool, err error)
-	Reopen(ctx context.Context, postingID int64) (reopened, applicationRestored bool, err error)
+	Close(ctx context.Context, postingID int64, endFrom []application.Status) error
+	Reopen(ctx context.Context, postingID int64) error
 }
 
 // Syncer routes each company to the PostingFetcher for its source
