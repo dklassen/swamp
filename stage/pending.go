@@ -63,9 +63,9 @@ type pendingFilters struct {
 }
 
 // PendingPostings returns one page of the postings still to score.
-func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (PendingResult, error) {
+func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (*PendingResult, error) {
 	if err := st.checkProfile(opts.ProfileVersion); err != nil {
-		return PendingResult{}, err
+		return nil, err
 	}
 	limit := opts.Limit
 	if limit <= 0 {
@@ -83,14 +83,14 @@ func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (Pend
 	if opts.Cursor != "" {
 		key, err := cursor.Decode(opts.Cursor, pendingSort, fingerprint)
 		if err != nil {
-			return PendingResult{}, fmt.Errorf("stage: %w", err)
+			return nil, fmt.Errorf("stage: %w", err)
 		}
 		beforeID = key.ID
 	}
 
 	page, err := st.scores.Pending(ctx, rescoreProfile, beforeID, limit)
 	if err != nil {
-		return PendingResult{}, fmt.Errorf("stage: %w", err)
+		return nil, fmt.Errorf("stage: %w", err)
 	}
 	result := PendingResult{Postings: make([]PendingMatch, len(page.Postings)), Total: page.Total}
 	for i, p := range page.Postings {
@@ -110,7 +110,7 @@ func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (Pend
 		next := cursor.Encode(cursor.Key{Sort: pendingSort, Filters: fingerprint, ID: page.Postings[len(page.Postings)-1].ID})
 		result.NextCursor = &next
 	}
-	return result, nil
+	return &result, nil
 }
 
 // checkProfile refuses a profile hash that isn't profile.md's now, so a

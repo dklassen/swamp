@@ -40,9 +40,9 @@ type RefusedEntry struct {
 
 // RecordScores records the agent's scores against the profile it read, in
 // one transaction. A stale profile hash records nothing.
-func (st *Stage) RecordScores(ctx context.Context, opts RecordOptions) (RecordResult, error) {
+func (st *Stage) RecordScores(ctx context.Context, opts RecordOptions) (*RecordResult, error) {
 	if err := st.checkProfile(opts.ProfileVersion); err != nil {
-		return RecordResult{}, err
+		return nil, err
 	}
 	entries := make([]score.Entry, len(opts.Scores))
 	for i, s := range opts.Scores {
@@ -56,11 +56,11 @@ func (st *Stage) RecordScores(ctx context.Context, opts RecordOptions) (RecordRe
 	}
 	recorded, err := st.scores.Record(ctx, provenance, entries)
 	if err != nil {
-		return RecordResult{}, fmt.Errorf("stage: %w", err)
+		return nil, fmt.Errorf("stage: %w", err)
 	}
 	result := RecordResult{Recorded: append([]int64{}, recorded.Recorded...), Refused: make([]RefusedEntry, len(recorded.Refused))}
 	for i, r := range recorded.Refused {
 		result.Refused[i] = RefusedEntry{PostingID: r.PostingID, Why: r.Why}
 	}
-	return result, nil
+	return &result, nil
 }

@@ -123,14 +123,14 @@ type searchFilters struct {
 // application the user names, which list_postings' drafting queue often
 // leaves out. Pages are keyset pages behind opaque cursors, so they stay
 // stable while other postings change.
-func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, error) {
+func (st *Stage) Search(ctx context.Context, opts SearchOptions) (*SearchResult, error) {
 	listingStatus := opts.ListingStatus
 	switch listingStatus {
 	case "":
 		listingStatus = "open"
 	case "open", "closed", "any":
 	default:
-		return SearchResult{}, fmt.Errorf("stage: unknown listing status %q: want open, closed or any", opts.ListingStatus)
+		return nil, fmt.Errorf("stage: unknown listing status %q: want open, closed or any", opts.ListingStatus)
 	}
 	sort := opts.Sort
 	if sort == "" {
@@ -138,7 +138,7 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 	}
 	index := slices.IndexFunc(sortOrders, func(o SortOrder) bool { return o.Name() == sort })
 	if index < 0 {
-		return SearchResult{}, fmt.Errorf("stage: unknown sort %q", opts.Sort)
+		return nil, fmt.Errorf("stage: unknown sort %q", opts.Sort)
 	}
 	order := sortOrders[index].Order
 	limit := opts.Limit
@@ -179,7 +179,7 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 	if opts.Cursor != "" {
 		key, err := cursor.Decode(opts.Cursor, sort, fingerprint)
 		if err != nil {
-			return SearchResult{}, fmt.Errorf("stage: %w", err)
+			return nil, fmt.Errorf("stage: %w", err)
 		}
 		search.AfterID = key.ID
 		search.AfterPublishedAt = key.PublishedAt
@@ -188,7 +188,7 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 
 	page, err := st.postings.Search(ctx, search)
 	if err != nil {
-		return SearchResult{}, fmt.Errorf("stage: %w", err)
+		return nil, fmt.Errorf("stage: %w", err)
 	}
 	result := SearchResult{Postings: make([]SearchMatch, len(page.Listings)), Total: page.Total}
 	for i, l := range page.Listings {
@@ -199,7 +199,7 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 		next := cursor.Encode(cursor.Key{Sort: sort, Filters: fingerprint, ID: last.ID, PublishedAt: last.PublishedAt, Score: last.Score})
 		result.NextCursor = &next
 	}
-	return result, nil
+	return &result, nil
 }
 
 func searchMatch(l posting.Listing) SearchMatch {

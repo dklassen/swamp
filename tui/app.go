@@ -607,7 +607,10 @@ func createCompany(syncer *sync.Syncer, name, source, sourceRef string) tea.Cmd 
 		ctx, cancel := context.WithTimeout(context.Background(), boardCheckTimeout)
 		defer cancel()
 		company, err := syncer.CreateCompany(ctx, name, source, sourceRef)
-		return companyCreatedMsg{company: company, err: err}
+		if err != nil {
+			return companyCreatedMsg{err: err}
+		}
+		return companyCreatedMsg{company: *company}
 	}
 }
 
