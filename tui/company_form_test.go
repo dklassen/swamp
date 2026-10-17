@@ -8,6 +8,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/sync"
 )
 
@@ -18,8 +19,8 @@ func TestCompanyFormModel_New_FocusesSourceFieldFirst(t *testing.T) {
 	if m.focus != formFieldSource {
 		t.Fatalf("focus = %d, want formFieldSource", m.focus)
 	}
-	if companySources[m.sourceIndex] != "ashby" {
-		t.Fatalf("default source = %q, want %q", companySources[m.sourceIndex], "ashby")
+	if companySources[m.sourceIndex] != jobboard.Ashby {
+		t.Fatalf("default source = %q, want %q", companySources[m.sourceIndex], jobboard.Ashby)
 	}
 }
 
@@ -60,23 +61,23 @@ func TestCompanyFormModel_RightArrow_OnSourceField_CyclesSource(t *testing.T) {
 	t.Parallel()
 
 	m := newCompanyFormModel(nil)
-	if companySources[m.sourceIndex] != "ashby" {
+	if companySources[m.sourceIndex] != jobboard.Ashby {
 		t.Fatalf("starting source = %q, want ashby", companySources[m.sourceIndex])
 	}
 
 	m.Update(tea.KeyMsg{Type: tea.KeyRight})
-	if companySources[m.sourceIndex] != "greenhouse" {
+	if companySources[m.sourceIndex] != jobboard.Greenhouse {
 		t.Fatalf("source after right = %q, want greenhouse", companySources[m.sourceIndex])
 	}
 
 	m.Update(tea.KeyMsg{Type: tea.KeyRight})
-	if companySources[m.sourceIndex] != "lever" {
+	if companySources[m.sourceIndex] != jobboard.Lever {
 		t.Fatalf("source after second right = %q, want lever", companySources[m.sourceIndex])
 	}
 
 	// Wraps back around rather than clamping.
 	m.Update(tea.KeyMsg{Type: tea.KeyRight})
-	if companySources[m.sourceIndex] != "ashby" {
+	if companySources[m.sourceIndex] != jobboard.Ashby {
 		t.Fatalf("source after third right = %q, want ashby (wrapped)", companySources[m.sourceIndex])
 	}
 }
@@ -86,7 +87,7 @@ func TestCompanyFormModel_LeftArrow_OnSourceField_CyclesSourceBackward(t *testin
 
 	m := newCompanyFormModel(nil)
 	m.Update(tea.KeyMsg{Type: tea.KeyLeft})
-	if companySources[m.sourceIndex] != "lever" {
+	if companySources[m.sourceIndex] != jobboard.Lever {
 		t.Fatalf("source after left = %q, want lever (wrapped backward to the last source)", companySources[m.sourceIndex])
 	}
 }
@@ -98,7 +99,7 @@ func TestCompanyFormModel_LeftRightArrow_OffSourceField_DoesNotChangeSource(t *t
 	m.Update(tea.KeyMsg{Type: tea.KeyTab}) // move focus to name field
 	m.Update(tea.KeyMsg{Type: tea.KeyRight})
 
-	if companySources[m.sourceIndex] != "ashby" {
+	if companySources[m.sourceIndex] != jobboard.Ashby {
 		t.Fatalf("source = %q, want ashby unchanged (arrow keys should edit the name field's cursor position, not the source)", companySources[m.sourceIndex])
 	}
 }
@@ -164,15 +165,15 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithSelectedSource(t *testing.T) {
 	if created.err != nil {
 		t.Fatalf("companyCreatedMsg.err = %v, want nil", created.err)
 	}
-	if created.company.Source != "greenhouse" {
-		t.Fatalf("created company Source = %q, want %q", created.company.Source, "greenhouse")
+	if created.company.Source != jobboard.Greenhouse {
+		t.Fatalf("created company Source = %q, want %q", created.company.Source, jobboard.Greenhouse)
 	}
 
 	stored, err := s.Companies.Get(context.Background(), created.company.ID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
 	}
-	if stored.Source != "greenhouse" || stored.SourceRef != "acme-token" {
+	if stored.Source != jobboard.Greenhouse || stored.SourceRef != "acme-token" {
 		t.Fatalf("stored company = %+v, want Source=greenhouse SourceRef=acme-token", stored)
 	}
 }
@@ -183,7 +184,7 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithLeverSource(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	m := newCompanyFormModel(newFormTestSyncer(s))
 	m.Update(tea.KeyMsg{Type: tea.KeyLeft}) // wraps backward to lever, the last source
-	if companySources[m.sourceIndex] != "lever" {
+	if companySources[m.sourceIndex] != jobboard.Lever {
 		t.Fatalf("source after left = %q, want lever", companySources[m.sourceIndex])
 	}
 	m.inputs[formFieldName].SetValue("Acme")
@@ -202,15 +203,15 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithLeverSource(t *testing.T) {
 	if created.err != nil {
 		t.Fatalf("companyCreatedMsg.err = %v, want nil", created.err)
 	}
-	if created.company.Source != "lever" {
-		t.Fatalf("created company Source = %q, want %q", created.company.Source, "lever")
+	if created.company.Source != jobboard.Lever {
+		t.Fatalf("created company Source = %q, want %q", created.company.Source, jobboard.Lever)
 	}
 
 	stored, err := s.Companies.Get(context.Background(), created.company.ID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
 	}
-	if stored.Source != "lever" || stored.SourceRef != "acme" {
+	if stored.Source != jobboard.Lever || stored.SourceRef != "acme" {
 		t.Fatalf("stored company = %+v, want Source=lever SourceRef=acme", stored)
 	}
 }
@@ -258,7 +259,7 @@ func TestCompanyFormModel_Enter_BoardRejectsSourceRef_NoCompanyCreated(t *testin
 
 	s := testutil.NewTestApp(t)
 	syncer := sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{
-		"ashby": &fakeFetcher{errBoards: map[string]error{"acmee": errors.New("404 not found")}},
+		jobboard.Ashby: &fakeFetcher{errBoards: map[string]error{"acmee": errors.New("404 not found")}},
 	}, sync.DefaultConfig())
 	m := newCompanyFormModel(syncer)
 	m.inputs[formFieldName].SetValue("Acme")

@@ -12,6 +12,7 @@ import (
 
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/store/sqlcdb"
 )
@@ -20,7 +21,7 @@ var errFail = errors.New("fail")
 
 func createCompany(ctx context.Context, r store.Runner, name string) error {
 	return store.Write(ctx, r, func(q *sqlcdb.Queries) error {
-		_, err := q.CreateCompany(ctx, sqlcdb.CreateCompanyParams{Name: name, Source: "ashby", SourceRef: name})
+		_, err := q.CreateCompany(ctx, sqlcdb.CreateCompanyParams{Name: name, Source: jobboard.Ashby, SourceRef: name})
 		return err
 	})
 }

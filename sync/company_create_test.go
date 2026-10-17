@@ -24,8 +24,8 @@ func TestCreateCompany(t *testing.T) {
 		wantErr     bool
 		wantCreated bool
 	}{
-		{name: "board resolves", source: "ashby", sourceRef: "acme", wantCreated: true},
-		{name: "board rejects ref", source: "ashby", sourceRef: "typo", wantErr: true},
+		{name: "board resolves", source: jobboard.Ashby, sourceRef: "acme", wantCreated: true},
+		{name: "board rejects ref", source: jobboard.Ashby, sourceRef: "typo", wantErr: true},
 		{name: "unsupported source", source: "workday", sourceRef: "acme", wantErr: true},
 	}
 	for _, tt := range tests {
@@ -33,7 +33,7 @@ func TestCreateCompany(t *testing.T) {
 			t.Parallel()
 			s := testutil.NewTestApp(t)
 			ctx := context.Background()
-			syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+			syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
 			company, err := syncer.CreateCompany(ctx, "Acme", tt.source, tt.sourceRef)
 			if (err != nil) != tt.wantErr {

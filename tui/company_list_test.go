@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/jobboard"
 )
 
 func TestCompanyListModel_CursorMovement(t *testing.T) {
@@ -169,8 +170,8 @@ func TestCompanyListModel_View_ShowsOpenPostingsAndLastFetched(t *testing.T) {
 
 	fetched := time.Date(2026, 9, 24, 0, 52, 0, 0, time.UTC)
 	companies := []company.Company{
-		{ID: 1, Name: "Contoso", Source: "greenhouse", SourceRef: "contoso", LastFetchedAt: fetched},
-		{ID: 2, Name: "Cyberdyne", Source: "ashby", SourceRef: "cyberdyne-ai"},
+		{ID: 1, Name: "Contoso", Source: jobboard.Greenhouse, SourceRef: "contoso", LastFetchedAt: fetched},
+		{ID: 2, Name: "Cyberdyne", Source: jobboard.Ashby, SourceRef: "cyberdyne-ai"},
 	}
 	openPostings := map[int64]int{1: 14}
 
@@ -187,7 +188,7 @@ func TestCompanyListModel_View_ShowsOpenPostingsAndLastFetched(t *testing.T) {
 	}
 	// Board and slug are left out of the list on purpose: they don't help
 	// decide where to look next.
-	for _, notWant := range []string{"greenhouse", "cyberdyne-ai", "Board", "Slug"} {
+	for _, notWant := range []string{jobboard.Greenhouse, "cyberdyne-ai", "Board", "Slug"} {
 		if strings.Contains(got, notWant) {
 			t.Errorf("View unexpectedly contains %q:\n%s", notWant, got)
 		}
@@ -277,7 +278,7 @@ func TestCompanyListModel_I_TogglesInfoBoxWithFullDescription(t *testing.T) {
 
 	long := strings.Repeat("Open-core collaboration and workflow automation. ", 3)
 	companies := []company.Company{
-		{ID: 1, Name: "Contoso", Source: "greenhouse", SourceRef: "contoso", Description: long},
+		{ID: 1, Name: "Contoso", Source: jobboard.Greenhouse, SourceRef: "contoso", Description: long},
 	}
 	// The box wraps the description, so compare with whitespace squashed.
 	squash := func(s string) string {

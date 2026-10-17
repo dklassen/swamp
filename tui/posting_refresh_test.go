@@ -13,7 +13,7 @@ import (
 func newPostingRefreshTestApp(t *testing.T) (*App, map[string][]jobboard.Posting) {
 	t.Helper()
 	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	board := map[string][]jobboard.Posting{"acme": {
 		{SourceID: "job-1", Title: "Engineer"},
 		{SourceID: "job-2", Title: "Designer"},

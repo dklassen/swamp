@@ -18,7 +18,7 @@ type FormFetcher interface {
 }
 
 // WithFormFetchers lets Prepare read application forms (#168), with a
-// fetcher per company source ("greenhouse") and each fetch bounded by
+// fetcher per company source (jobboard.Greenhouse) and each fetch bounded by
 // timeout (sync.Config.FetchTimeout).
 func WithFormFetchers(fetchers map[string]FormFetcher, timeout time.Duration) Option {
 	return func(st *Stage) {

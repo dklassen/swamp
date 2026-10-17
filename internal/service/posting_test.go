@@ -14,6 +14,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -133,20 +134,20 @@ func TestPostingService_Ingest(t *testing.T) {
 			s := testutil.NewTestApp(t)
 			ctx := context.Background()
 			postings := s.Postings
-			acme, err := s.Companies.Add(ctx, "Acme", "ashby", "acme")
+			acme, err := s.Companies.Add(ctx, "Acme", jobboard.Ashby, "acme")
 			if err != nil {
 				t.Fatalf("Add: %v", err)
 			}
 			var before posting.Posting
 			if tt.stored != "" {
-				stored, err := postings.Ingest(ctx, acme.ID, "ashby", "job-1", posting.IngestedFields{Title: tt.stored, RawPayload: "{}"})
+				stored, err := postings.Ingest(ctx, acme.ID, jobboard.Ashby, "job-1", posting.IngestedFields{Title: tt.stored, RawPayload: "{}"})
 				if err != nil {
 					t.Fatalf("Ingest the stored version: %v", err)
 				}
 				before = stored.Posting
 			}
 
-			got, err := postings.Ingest(ctx, acme.ID, "ashby", "job-1", posting.IngestedFields{Title: tt.ingest, RawPayload: "{}"})
+			got, err := postings.Ingest(ctx, acme.ID, jobboard.Ashby, "job-1", posting.IngestedFields{Title: tt.ingest, RawPayload: "{}"})
 			if err != nil {
 				t.Fatalf("Ingest: %v", err)
 			}
@@ -274,12 +275,12 @@ func TestPostingService_Ingest_ContentHashFollowsTheDescribedRole(t *testing.T) 
 			ctx := context.Background()
 			s := testutil.NewTestApp(t)
 			postings := s.Postings
-			acme, err := s.Companies.Add(ctx, "Acme", "ashby", "acme")
+			acme, err := s.Companies.Add(ctx, "Acme", jobboard.Ashby, "acme")
 			if err != nil {
 				t.Fatalf("Add: %v", err)
 			}
 
-			created, err := postings.Ingest(ctx, acme.ID, "ashby", "1", fields)
+			created, err := postings.Ingest(ctx, acme.ID, jobboard.Ashby, "1", fields)
 			if err != nil {
 				t.Fatalf("Ingest: %v", err)
 			}
@@ -288,7 +289,7 @@ func TestPostingService_Ingest_ContentHashFollowsTheDescribedRole(t *testing.T) 
 			}
 			changed := fields
 			tt.change(&changed)
-			updated, err := postings.Ingest(ctx, acme.ID, "ashby", "1", changed)
+			updated, err := postings.Ingest(ctx, acme.ID, jobboard.Ashby, "1", changed)
 			if err != nil {
 				t.Fatalf("Ingest: %v", err)
 			}
@@ -475,11 +476,11 @@ func TestPostingService_Interested_ExcludesClosedDeletedAndFilteredOut(t *testin
 			companies := s.Companies
 			postings := s.Postings
 			ingestInterested := func(name, sourceID string) (companyID, postingID int64) {
-				c, err := companies.Add(ctx, name, "ashby", name)
+				c, err := companies.Add(ctx, name, jobboard.Ashby, name)
 				if err != nil {
 					t.Fatalf("Add: %v", err)
 				}
-				ingested, err := postings.Ingest(ctx, c.ID, "ashby", sourceID, posting.IngestedFields{Title: "Engineer", Department: "Engineering", RawPayload: "{}"})
+				ingested, err := postings.Ingest(ctx, c.ID, jobboard.Ashby, sourceID, posting.IngestedFields{Title: "Engineer", Department: "Engineering", RawPayload: "{}"})
 				if err != nil {
 					t.Fatalf("Ingest: %v", err)
 				}

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/google/go-cmp/cmp"
 )
 
@@ -24,8 +25,8 @@ companies:
 	}
 
 	want := []Entry{
-		{Name: "Initech", Source: "greenhouse", SourceRef: "initech"},
-		{Name: "Hooli", Source: "ashby", SourceRef: "hooli"},
+		{Name: "Initech", Source: jobboard.Greenhouse, SourceRef: "initech"},
+		{Name: "Hooli", Source: jobboard.Ashby, SourceRef: "hooli"},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Parse() mismatch (-want +got):\n%s", diff)
@@ -102,8 +103,8 @@ companies:
 	}
 
 	want := []Entry{
-		{Name: "Initech", Source: "greenhouse", SourceRef: "initech", Description: "Payments infrastructure for the internet."},
-		{Name: "Hooli", Source: "ashby", SourceRef: "hooli"},
+		{Name: "Initech", Source: jobboard.Greenhouse, SourceRef: "initech", Description: "Payments infrastructure for the internet."},
+		{Name: "Hooli", Source: jobboard.Ashby, SourceRef: "hooli"},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("Parse() mismatch (-want +got):\n%s", diff)

@@ -11,6 +11,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/repository"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 )
 
 type closeResult struct{ Closed, ApplicationClosed bool }
@@ -29,7 +30,7 @@ func reopenWith(ctx context.Context, s testutil.TestApp, postingID int64) (reope
 
 func mustUpsertPosting(t *testing.T, s testutil.TestApp, companyID int64, sourceID, title string) posting.Posting {
 	t.Helper()
-	ingested, err := s.Postings.Ingest(context.Background(), companyID, "ashby", sourceID, posting.IngestedFields{Title: title, RawPayload: "{}"})
+	ingested, err := s.Postings.Ingest(context.Background(), companyID, jobboard.Ashby, sourceID, posting.IngestedFields{Title: title, RawPayload: "{}"})
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -90,7 +91,7 @@ func TestClosePosting(t *testing.T) {
 			t.Parallel()
 			s := testutil.NewTestApp(t)
 			ctx := context.Background()
-			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 			if tt.application != nil {
 				if _, err := createApplication(ctx, s, posting.ID); err != nil {
@@ -221,7 +222,7 @@ func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 
 			s := testutil.NewTestApp(t)
 			ctx := context.Background()
-			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 			tt.setup(t, s, posting.ID)
 

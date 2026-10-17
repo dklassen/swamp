@@ -11,6 +11,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 )
 
 func TestScoringService_Record_RecordsValidEntriesAndRefusesTheRest(t *testing.T) {
@@ -154,7 +155,7 @@ func TestScoringService_Pending(t *testing.T) {
 	}
 	ingestIn := func(companyID int64, sourceID, title, department string) posting.Posting {
 		t.Helper()
-		ingested, err := postings.Ingest(ctx, companyID, "ashby", sourceID, posting.IngestedFields{Title: title, Department: department, RawPayload: "{}"})
+		ingested, err := postings.Ingest(ctx, companyID, jobboard.Ashby, sourceID, posting.IngestedFields{Title: title, Department: department, RawPayload: "{}"})
 		if err != nil {
 			t.Fatalf("Ingest: %v", err)
 		}

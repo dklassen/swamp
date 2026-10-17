@@ -44,11 +44,11 @@ func TestSyncer_FetchesTimeOut(t *testing.T) {
 			return err
 		}},
 		{name: "create", fetch: func(ctx context.Context, syncer *Syncer, _ int64) error {
-			_, err := syncer.CreateCompany(ctx, "Globex", "ashby", "globex")
+			_, err := syncer.CreateCompany(ctx, "Globex", jobboard.Ashby, "globex")
 			return err
 		}},
 		{name: "add", fetch: func(ctx context.Context, syncer *Syncer, _ int64) error {
-			_, err := syncer.AddCompany(ctx, "Globex", "ashby", "globex", "")
+			_, err := syncer.AddCompany(ctx, "Globex", jobboard.Ashby, "globex", "")
 			return err
 		}},
 	}
@@ -57,8 +57,8 @@ func TestSyncer_FetchesTimeOut(t *testing.T) {
 			t.Parallel()
 
 			s := testutil.NewTestApp(t)
-			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-			syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": hangingFetcher{}}, Config{FetchTimeout: timeout})
+			acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+			syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: hangingFetcher{}}, Config{FetchTimeout: timeout})
 
 			start := time.Now()
 			err := tt.fetch(context.Background(), syncer, acme.ID)
@@ -82,11 +82,11 @@ func TestSyncAll_HungBoardFailsOnlyItsOwnCompany(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	hung := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	healthy := mustCreateCompany(t, s, "Globex", "lever", "globex")
+	hung := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	healthy := mustCreateCompany(t, s, "Globex", jobboard.Lever, "globex")
 	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{
-		"ashby": hangingFetcher{},
-		"lever": &fakeFetcher{postings: map[string][]jobboard.Posting{
+		jobboard.Ashby: hangingFetcher{},
+		jobboard.Lever: &fakeFetcher{postings: map[string][]jobboard.Posting{
 			"globex": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 		}},
 	}, Config{FetchTimeout: 50 * time.Millisecond})
@@ -128,7 +128,7 @@ func (f cancelAfterFetchFetcher) FetchPostings(ctx context.Context, boardSlug st
 func TestSyncCompany_CancelledAfterFetch_WritesComplete(t *testing.T) {
 	t.Parallel()
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -136,7 +136,7 @@ func TestSyncCompany_CancelledAfterFetch_WritesComplete(t *testing.T) {
 		samplePosting("job-1", "Engineer", "Engineering", "Remote"),
 		samplePosting("job-2", "Designer", "Design", "Remote"),
 	}}
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
 	result, err := syncer.SyncCompany(ctx, acme.ID)
 	if err != nil {
@@ -160,8 +160,8 @@ func TestSyncCompany_CancelledAfterFetch_WritesComplete(t *testing.T) {
 func TestSyncCompany_CancelledDuringFetch_AbortsWithoutWriting(t *testing.T) {
 	t.Parallel()
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": hangingFetcher{}}, DefaultConfig())
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: hangingFetcher{}}, DefaultConfig())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(20*time.Millisecond, cancel)

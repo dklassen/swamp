@@ -15,12 +15,12 @@ func TestSyncCompany_NewPostingNoFilters_Created(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
-	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	company := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
 
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 	result, err := syncer.SyncCompany(ctx, company.ID)
 	if err != nil {
 		t.Fatalf("SyncCompany: %v", err)
@@ -48,13 +48,13 @@ func TestSyncCompany_PostingDoesNotMatchFilters_Created(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
-	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	company := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	addCompanyFilter(t, s, company.ID, "department", "Sales")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
 
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 	result, err := syncer.SyncCompany(ctx, company.ID)
 	if err != nil {
 		t.Fatalf("SyncCompany: %v", err)
@@ -79,12 +79,12 @@ func TestSyncCompany_DepartmentRenamedPastFilter_ContentUpdated(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
-	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	company := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	addCompanyFilter(t, s, company.ID, "department", "Engineering")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
 	}
@@ -118,11 +118,11 @@ func TestSyncCompany_ExistingPostingContentChanged_UpdatedWithHistory(t *testing
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
-	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	company := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
@@ -170,11 +170,11 @@ func TestSyncCompany_ExistingPostingUnchanged_NoUpdateNoHistory(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
-	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	company := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
@@ -208,11 +208,11 @@ func TestSyncCompany_PostingDisappearsFromFetch_ClosedWithHistory(t *testing.T) 
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
-	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	company := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{
 		"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 	}}
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
@@ -252,10 +252,10 @@ func TestSyncCompany_ClosedPostingReappears_ReopenedWithHistory(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
-	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	company := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := samplePosting("job-1", "Engineer", "Engineering", "Remote")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": {posting}}}
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
@@ -295,9 +295,9 @@ func TestSyncCompany_UnsupportedSource_ReturnsError(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
-	company := mustCreateCompany(t, s, "Acme", "lever", "acme")
+	company := mustCreateCompany(t, s, "Acme", jobboard.Lever, "acme")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{}}
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
 	_, err := syncer.SyncCompany(ctx, company.ID)
 	if err == nil {
@@ -309,11 +309,11 @@ func TestSyncCompany_FetchedPostingHasWhitespace_SavedTrimmed(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
-	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	company := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	padded := samplePosting("job-1", " Engineer ", " Engineering", "Dublin, Ireland ")
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": {padded}}}
 
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("SyncCompany: %v", err)
 	}
@@ -342,10 +342,10 @@ func TestSyncCompany_FetchedPostingHasWhitespace_SavedTrimmed(t *testing.T) {
 func TestSyncCompany_PostingReappears_ApplicationRestored(t *testing.T) {
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
-	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	company := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	listed := []jobboard.Posting{samplePosting("job-1", "Engineer", "Engineering", "Remote")}
 	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": listed}}
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
 	}
@@ -386,7 +386,7 @@ func TestSyncCompany_PostingReappears_ApplicationRestored(t *testing.T) {
 // ; the other finds it already there, unchanged.
 func TestSyncCompany_OverlappingSyncsCreatePosting_CountedOnce(t *testing.T) {
 	s := testutil.NewTestApp(t)
-	company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	company := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 
 	results := syncOverlapping(t, s, company.ID, 2, []jobboard.Posting{
 		samplePosting("job-1", "Engineer", "Engineering", "Remote"),
@@ -421,12 +421,12 @@ func TestSyncCompany_RecordsLastFetchedAtOnlyOnSuccess(t *testing.T) {
 			s := testutil.NewTestApp(t)
 			ctx := context.Background()
 
-			company := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			company := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 			fetcher := &fakeFetcher{
 				postings: map[string][]jobboard.Posting{"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")}},
 				err:      tc.fetchErr,
 			}
-			syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+			syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
 			before := time.Now().Add(-2 * time.Second)
 			_, err := syncer.SyncCompany(ctx, company.ID)

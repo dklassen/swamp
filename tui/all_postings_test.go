@@ -15,13 +15,14 @@ import (
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 )
 
 // mustUpsertPostingAt is mustUpsertPosting with a department, location and
 // workplace type.
 func mustUpsertPostingAt(t *testing.T, s testutil.TestApp, companyID int64, sourceID, title, department, location, workplaceType string) posting.Posting {
 	t.Helper()
-	ingested, err := s.Postings.Ingest(context.Background(), companyID, "ashby", sourceID, posting.IngestedFields{
+	ingested, err := s.Postings.Ingest(context.Background(), companyID, jobboard.Ashby, sourceID, posting.IngestedFields{
 		Title:         title,
 		Department:    department,
 		Location:      location,
@@ -51,8 +52,8 @@ func TestAllPostings_ShowsOpenPostingsAcrossCompaniesNewestFirst(t *testing.T) {
 
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	globex := mustCreateCompany(t, s, "Globex", "ashby", "globex")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	globex := mustCreateCompany(t, s, "Globex", jobboard.Ashby, "globex")
 	older := mustUpsertPostingAt(t, s, acme.ID, "1", "Backend Engineer", "Platform", "Toronto", "Hybrid")
 	shelved := mustUpsertPostingAt(t, s, acme.ID, "2", "Shelved Role", "Platform", "Toronto", "")
 	mustUpsertPostingAt(t, s, globex.ID, "3", "Account Executive", "Sales", "Remote", "")
@@ -102,7 +103,7 @@ func TestAllPostings_PagesForwardAndBack(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i <= 7; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
 	}
@@ -159,7 +160,7 @@ func TestAllPostings_ResizingReadsThePageAtTheNewSize(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i <= 30; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
 	}
@@ -179,7 +180,7 @@ func TestAllPostings_EnterOpensTheDetailAndEscComesBack(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i <= 7; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
 	}
@@ -208,7 +209,7 @@ func TestAllPostings_DetailDoesNotStepThroughACompanyListBrowsedEarlier(t *testi
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i <= 3; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
 	}
@@ -236,7 +237,7 @@ func TestAllPostings_IMarksAndUnmarksInterested(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Role 1")
 	posting := mustUpsertPosting(t, s, acme.ID, "2", "Role 2")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -265,7 +266,7 @@ func TestAllPostings_XArchivesAndThePostingLeavesThePage(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i <= 3; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
 	}
@@ -296,7 +297,7 @@ func TestAllPostings_ArchivingTheLastPagesOnlyPostingStepsBack(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
 	size := app.allPostings.pageSize(app.screenRows())
@@ -321,8 +322,8 @@ func TestAllPostings_OOpensTheJobURL(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	if _, err := s.Postings.Ingest(context.Background(), acme.ID, "ashby", "1", posting.IngestedFields{Title: "Engineer", JobURL: "https://jobs.example.com/acme/1"}); err != nil {
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	if _, err := s.Postings.Ingest(context.Background(), acme.ID, jobboard.Ashby, "1", posting.IngestedFields{Title: "Engineer", JobURL: "https://jobs.example.com/acme/1"}); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -347,7 +348,7 @@ func TestAllPostings_ANewPostingElsewhere_KeepsThePageAndCountsIt(t *testing.T) 
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i <= 7; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
 	}
@@ -378,7 +379,7 @@ func TestAllPostings_MarkedInterestedElsewhere_ShowsTheStar(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "1", "Role 1")
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
@@ -398,7 +399,7 @@ func TestAllPostings_SlashOpensTheSearchLine(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Role 1")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
@@ -420,8 +421,8 @@ func TestAllPostings_TypingSearchesAfterAPause(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	globex := mustCreateCompany(t, s, "Globex", "ashby", "globex")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	globex := mustCreateCompany(t, s, "Globex", jobboard.Ashby, "globex")
 	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
 	mustUpsertPosting(t, s, acme.ID, "2", "Designer")
 	mustUpsertPosting(t, s, globex.ID, "3", "Platform Lead")
@@ -469,7 +470,7 @@ func TestAllPostings_EscClearsTheSearch(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
 	mustUpsertPosting(t, s, acme.ID, "2", "Designer")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -497,7 +498,7 @@ func TestAllPostings_EnterKeepsTheResultsAndKeysActOnThem(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
 	designer := mustUpsertPosting(t, s, acme.ID, "2", "Designer")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -527,7 +528,7 @@ func TestAllPostings_View_KeptResults(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
 	mustUpsertPosting(t, s, acme.ID, "2", "Designer")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -555,7 +556,7 @@ func TestAllPostings_SlashEditsKeptResultsQuery(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Designer")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
@@ -575,7 +576,7 @@ func TestAllPostings_EscClearsKeptResults(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
 	mustUpsertPosting(t, s, acme.ID, "2", "Designer")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -598,7 +599,7 @@ func TestAllPostings_PagesThroughSearchResults(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i <= 7; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprintf("p%d", i), fmt.Sprintf("Platform %d", i))
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprintf("d%d", i), fmt.Sprintf("Designer %d", i))
@@ -638,7 +639,7 @@ func TestAllPostings_NoMatches_SaysWhatWasSearched(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
@@ -665,13 +666,13 @@ func TestAllPostings_ShowsEachPostingsFit(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	scored := mustUpsertPosting(t, s, acme.ID, "1", "Scored")
 	stale := mustUpsertPosting(t, s, acme.ID, "2", "Rewritten since")
 	mustUpsertPosting(t, s, acme.ID, "3", "Unscored")
 	mustScore(t, s, scored, 4, "p")
 	mustScore(t, s, stale, 2, "p")
-	if _, err := s.Postings.Ingest(context.Background(), acme.ID, "ashby", "2", posting.IngestedFields{Title: "Rewritten since", DescriptionText: "New text."}); err != nil {
+	if _, err := s.Postings.Ingest(context.Background(), acme.ID, jobboard.Ashby, "2", posting.IngestedFields{Title: "Rewritten since", DescriptionText: "New text."}); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -699,7 +700,7 @@ func TestAllPostings_SSortsByFitAndBack(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	var postings []posting.Posting
 	for i := 1; i <= 6; i++ {
 		postings = append(postings, mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i)))
@@ -742,7 +743,7 @@ func TestAllPostings_AScoreRecordedElsewhere_Shows(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	p := mustUpsertPosting(t, s, acme.ID, "1", "Role 1")
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 140, Height: 30})
@@ -760,7 +761,7 @@ func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	p := mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
 	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: "p"}, []score.Entry{
 		{PostingID: p.ID, Score: 2, Reason: "first look", ContentSHA256: p.ContentSHA256},

@@ -15,6 +15,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/repository"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 )
 
 // searchStage is a Stage over two companies' postings: three open at
@@ -313,7 +314,7 @@ func TestSearch_PublishedDescPagesNewestOnTheBoardFirst(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme")
 	posting := func(sourceID string, published time.Time) posting.Posting {
 		t.Helper()
-		ingested, err := s.Postings.Ingest(ctx, acme.ID, "ashby", sourceID, posting.IngestedFields{Title: "Role " + sourceID, PublishedAt: posting.OptionalTime{Time: published}, RawPayload: "{}"})
+		ingested, err := s.Postings.Ingest(ctx, acme.ID, jobboard.Ashby, sourceID, posting.IngestedFields{Title: "Role " + sourceID, PublishedAt: posting.OptionalTime{Time: published}, RawPayload: "{}"})
 		if err != nil {
 			t.Fatalf("Ingest: %v", err)
 		}

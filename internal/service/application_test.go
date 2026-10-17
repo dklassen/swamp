@@ -13,6 +13,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -163,13 +164,13 @@ func TestApplicationService_Active_LeavesOutTerminalStatusesAndPostingsWithoutAn
 	ctx := context.Background()
 	postings := s.Postings
 	applications := s.Applications
-	acme, err := s.Companies.Add(ctx, "Acme", "ashby", "acme")
+	acme, err := s.Companies.Add(ctx, "Acme", jobboard.Ashby, "acme")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
 	ingest := func(title string) posting.Posting {
 		t.Helper()
-		ingested, err := postings.Ingest(ctx, acme.ID, "ashby", "job-"+title, posting.IngestedFields{Title: title, RawPayload: "{}"})
+		ingested, err := postings.Ingest(ctx, acme.ID, jobboard.Ashby, "job-"+title, posting.IngestedFields{Title: title, RawPayload: "{}"})
 		if err != nil {
 			t.Fatalf("Ingest: %v", err)
 		}

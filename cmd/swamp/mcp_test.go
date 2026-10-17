@@ -20,6 +20,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 )
 
 // TestStartMCP_TheAgentsWritesReachTheTUIAsAnotherProcesses: the TUI skips
@@ -32,11 +33,11 @@ func TestStartMCP_TheAgentsWritesReachTheTUIAsAnotherProcesses(t *testing.T) {
 	path := testutil.MigratedDBPath(t)
 	tuiOrigin := fmt.Sprintf("tui:%d", os.Getpid())
 	tui := testutil.OpenStore(t, path, tuiOrigin)
-	acme, err := service.NewCompanyService(tui).Add(ctx, "Acme", "ashby", "acme")
+	acme, err := service.NewCompanyService(tui).Add(ctx, "Acme", jobboard.Ashby, "acme")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	ingested, err := service.NewPostingService(tui).Ingest(ctx, acme.ID, "ashby", "job-1", posting.IngestedFields{Title: "Engineer", RawPayload: "{}"})
+	ingested, err := service.NewPostingService(tui).Ingest(ctx, acme.ID, jobboard.Ashby, "job-1", posting.IngestedFields{Title: "Engineer", RawPayload: "{}"})
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}

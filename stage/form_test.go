@@ -43,8 +43,8 @@ var testForm = jobboard.ApplicationForm{
 func formTestStage(t *testing.T, fetcher *fakeFormFetcher) (*Stage, testutil.TestApp, posting.Posting) {
 	t.Helper()
 	_, s, d := newTestStage(t)
-	st := stageOn(s, d, WithFormFetchers(map[string]FormFetcher{"greenhouse": fetcher}, time.Second))
-	company, err := s.Companies.Add(context.Background(), "Acme", "greenhouse", "acme")
+	st := stageOn(s, d, WithFormFetchers(map[string]FormFetcher{jobboard.Greenhouse: fetcher}, time.Second))
+	company, err := s.Companies.Add(context.Background(), "Acme", jobboard.Greenhouse, "acme")
 	if err != nil {
 		t.Fatalf("CreateCompany: %v", err)
 	}
@@ -124,7 +124,7 @@ func TestPrepare_NoFormForBoardsWithoutAFetcher(t *testing.T) {
 	t.Parallel()
 	fetcher := &fakeFormFetcher{form: testForm}
 	_, s, d := newTestStage(t)
-	st := stageOn(s, d, WithFormFetchers(map[string]FormFetcher{"greenhouse": fetcher}, time.Second))
+	st := stageOn(s, d, WithFormFetchers(map[string]FormFetcher{jobboard.Greenhouse: fetcher}, time.Second))
 	company := mustCreateCompany(t, s, "Ashby Co")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 
@@ -144,7 +144,7 @@ func TestPrepare_HandEnteredFormForBoardsWithoutAFetcher(t *testing.T) {
 	t.Parallel()
 	fetcher := &fakeFormFetcher{form: testForm}
 	_, s, d := newTestStage(t)
-	st := stageOn(s, d, WithFormFetchers(map[string]FormFetcher{"greenhouse": fetcher}, time.Second))
+	st := stageOn(s, d, WithFormFetchers(map[string]FormFetcher{jobboard.Greenhouse: fetcher}, time.Second))
 	st.now = func() time.Time { return time.Now().Add(365 * 24 * time.Hour) }
 	company := mustCreateCompany(t, s, "Ashby Co")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
