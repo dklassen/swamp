@@ -48,7 +48,7 @@ func (st *Stage) applicationForm(ctx context.Context, posting posting.Posting, c
 		return nil, "", fmt.Errorf("stage: %w", err)
 	}
 	var storedForm *jobboard.ApplicationForm
-	if err == nil {
+	if stored != nil {
 		var f jobboard.ApplicationForm
 		if err := json.Unmarshal([]byte(stored.JSON), &f); err != nil {
 			return nil, "", fmt.Errorf("stage: decode stored application form: %w", err)

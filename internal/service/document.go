@@ -89,15 +89,15 @@ func (service *DocumentService) Reviews(ctx context.Context, applicationID int64
 
 // LatestReview returns applicationID's most recent review of
 // documentType, or store.ErrNotFound when none has been recorded yet.
-func (service *DocumentService) LatestReview(ctx context.Context, applicationID int64, documentType document.Type) (document.Review, error) {
+func (service *DocumentService) LatestReview(ctx context.Context, applicationID int64, documentType document.Type) (*document.Review, error) {
 	reviews, err := service.reviewViewer.List(ctx, service.db, applicationID, documentType)
 	if err != nil {
-		return document.Review{}, err
+		return nil, err
 	}
 	if len(reviews) == 0 {
-		return document.Review{}, store.ErrNotFound
+		return nil, store.ErrNotFound
 	}
-	return reviews[0], nil
+	return &reviews[0], nil
 }
 
 // LatestReviews resolves applicationID's latest review of each document
@@ -113,7 +113,7 @@ func (service *DocumentService) LatestReviews(ctx context.Context, applicationID
 		if err != nil {
 			return nil, err
 		}
-		reviews[documentType] = review
+		reviews[documentType] = *review
 	}
 	return reviews, nil
 }
@@ -150,10 +150,10 @@ func (service *DocumentService) RecordWrite(ctx context.Context, applicationID i
 
 // LatestWrite returns the newest recorded write of applicationID's
 // documentType, or store.ErrNotFound if none was recorded.
-func (service *DocumentService) LatestWrite(ctx context.Context, applicationID int64, documentType document.Type) (document.Write, error) {
+func (service *DocumentService) LatestWrite(ctx context.Context, applicationID int64, documentType document.Type) (*document.Write, error) {
 	write, err := service.writeViewer.Latest(ctx, service.db, applicationID, documentType)
 	if err != nil {
-		return document.Write{}, fmt.Errorf("document: latest write: %w", err)
+		return nil, fmt.Errorf("document: latest write: %w", err)
 	}
-	return write, nil
+	return &write, nil
 }

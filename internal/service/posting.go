@@ -65,7 +65,7 @@ type markupWriter interface {
 }
 
 type formViewer interface {
-	Get(ctx context.Context, r store.Runner, postingID int64) (posting.Form, error)
+	Get(ctx context.Context, r store.Runner, postingID int64) (*posting.Form, error)
 }
 
 type formWriter interface {
@@ -281,7 +281,7 @@ func (service *PostingService) SaveForm(ctx context.Context, postingID int64, fo
 
 // Form returns the posting's stored application form, or
 // store.ErrNotFound when it was never fetched.
-func (service *PostingService) Form(ctx context.Context, postingID int64) (posting.Form, error) {
+func (service *PostingService) Form(ctx context.Context, postingID int64) (*posting.Form, error) {
 	return service.formViewer.Get(ctx, service.db, postingID)
 }
 

@@ -112,8 +112,12 @@ func TestDocumentService_LatestReview_NoReviews_ReturnsErrNotFound(t *testing.T)
 	s := testutil.NewTestApp(t)
 	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
 
-	if _, err := s.Documents.LatestReview(context.Background(), app.ID, document.CoverLetter); !errors.Is(err, store.ErrNotFound) {
+	got, err := s.Documents.LatestReview(context.Background(), app.ID, document.CoverLetter)
+	if !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("LatestReview with no reviews: err = %v, want store.ErrNotFound", err)
+	}
+	if got != nil {
+		t.Errorf("LatestReview with no reviews = %+v, want nil", got)
 	}
 }
 
@@ -135,7 +139,7 @@ func TestDocumentService_LatestReview_ReturnsTheMostRecentCycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LatestReview: %v", err)
 	}
-	if diff := cmp.Diff(second, got); diff != "" {
+	if diff := cmp.Diff(&second, got); diff != "" {
 		t.Errorf("LatestReview (-want +got):\n%s", diff)
 	}
 }
@@ -183,8 +187,12 @@ func TestDocumentService_LatestWrite_IsTheNewestOfThatDocument(t *testing.T) {
 	documents := s.Documents
 	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
 
-	if _, err := documents.LatestWrite(ctx, app.ID, document.CoverLetter); !errors.Is(err, store.ErrNotFound) {
+	none, err := documents.LatestWrite(ctx, app.ID, document.CoverLetter)
+	if !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("LatestWrite before any write: err = %v, want store.ErrNotFound", err)
+	}
+	if none != nil {
+		t.Errorf("LatestWrite before any write = %+v, want nil", none)
 	}
 	for _, w := range []struct {
 		documentType document.Type

@@ -27,12 +27,12 @@ func (PostingForms) Save(ctx context.Context, r store.Runner, postingID int64, f
 
 // Get returns postingID's stored application form, or store.ErrNotFound
 // when it was never fetched.
-func (PostingForms) Get(ctx context.Context, r store.Runner, postingID int64) (domain.Form, error) {
+func (PostingForms) Get(ctx context.Context, r store.Runner, postingID int64) (*domain.Form, error) {
 	row, err := store.Read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.PostingApplicationForm, error) {
 		return q.GetPostingApplicationForm(ctx, postingID)
 	})
 	if err != nil {
-		return domain.Form{}, fmt.Errorf("application: get form: %w", err)
+		return nil, fmt.Errorf("application: get form: %w", err)
 	}
-	return domain.Form{PostingID: row.PostingID, JSON: row.Form, FetchedAt: row.FetchedAt}, nil
+	return &domain.Form{PostingID: row.PostingID, JSON: row.Form, FetchedAt: row.FetchedAt}, nil
 }
