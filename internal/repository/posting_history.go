@@ -25,10 +25,10 @@ type PostingHistoryRepository struct{}
 
 // Insert records posting as it was before a changeType change, as a JSON
 // snapshot.
-func (repository *PostingHistoryRepository) Insert(ctx context.Context, r store.Runner, posting domain.Posting, changeType string) (domain.History, error) {
+func (repository *PostingHistoryRepository) Insert(ctx context.Context, r store.Runner, posting domain.Posting, changeType string) (*domain.History, error) {
 	snapshot, err := json.Marshal(posting)
 	if err != nil {
-		return domain.History{}, fmt.Errorf("posting: marshal snapshot: %w", err)
+		return nil, fmt.Errorf("posting: marshal snapshot: %w", err)
 	}
 	row, err := store.Read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.PostingHistory, error) {
 		return q.CreatePostingHistory(ctx, sqlcdb.CreatePostingHistoryParams{
@@ -38,9 +38,10 @@ func (repository *PostingHistoryRepository) Insert(ctx context.Context, r store.
 		})
 	})
 	if err != nil {
-		return domain.History{}, fmt.Errorf("posting: record %s: %w", changeType, err)
+		return nil, fmt.Errorf("posting: record %s: %w", changeType, err)
 	}
-	return FromPostingHistoryRow(row), nil
+	history := FromPostingHistoryRow(row)
+	return &history, nil
 }
 
 // List returns a posting's history, oldest first.

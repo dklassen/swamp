@@ -42,12 +42,13 @@ func FromPostingRow(row sqlcdb.Posting) domain.Posting {
 	}
 }
 
-func readPosting(ctx context.Context, r store.Runner, fn func(*sqlcdb.Queries) (sqlcdb.Posting, error)) (domain.Posting, error) {
+func readPosting(ctx context.Context, r store.Runner, fn func(*sqlcdb.Queries) (sqlcdb.Posting, error)) (*domain.Posting, error) {
 	row, err := store.Read(ctx, r, fn)
 	if err != nil {
-		return domain.Posting{}, err
+		return nil, err
 	}
-	return FromPostingRow(row), nil
+	p := FromPostingRow(row)
+	return &p, nil
 }
 
 // nullPublishedAt maps the zero PublishedAt, which means the board didn't
@@ -60,7 +61,7 @@ func nullPublishedAt(t domain.OptionalTime) sql.NullTime {
 }
 
 // Insert adds a posting fetched from source.
-func (repository *PostingRepository) Insert(ctx context.Context, r store.Runner, companyID int64, source, sourceID string, fields domain.IngestedFields) (domain.Posting, error) {
+func (repository *PostingRepository) Insert(ctx context.Context, r store.Runner, companyID int64, source, sourceID string, fields domain.IngestedFields) (*domain.Posting, error) {
 	return readPosting(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Posting, error) {
 		return q.CreatePosting(ctx, sqlcdb.CreatePostingParams{
 			CompanyID:       companyID,
@@ -85,7 +86,7 @@ func (repository *PostingRepository) Insert(ctx context.Context, r store.Runner,
 
 // Update replaces a posting's content. Its listing_status is left alone
 // (see the UpdatePosting query).
-func (repository *PostingRepository) Update(ctx context.Context, r store.Runner, id int64, fields domain.IngestedFields) (domain.Posting, error) {
+func (repository *PostingRepository) Update(ctx context.Context, r store.Runner, id int64, fields domain.IngestedFields) (*domain.Posting, error) {
 	return readPosting(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Posting, error) {
 		return q.UpdatePosting(ctx, sqlcdb.UpdatePostingParams{
 			ID:              id,
@@ -107,7 +108,7 @@ func (repository *PostingRepository) Update(ctx context.Context, r store.Runner,
 }
 
 // Get returns a posting by ID, or store.ErrNotFound.
-func (repository *PostingRepository) Get(ctx context.Context, r store.Runner, id int64) (domain.Posting, error) {
+func (repository *PostingRepository) Get(ctx context.Context, r store.Runner, id int64) (*domain.Posting, error) {
 	return readPosting(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Posting, error) {
 		return q.GetPosting(ctx, id)
 	})
@@ -115,7 +116,7 @@ func (repository *PostingRepository) Get(ctx context.Context, r store.Runner, id
 
 // GetBySource returns the posting source knows as sourceID, or
 // store.ErrNotFound.
-func (repository *PostingRepository) GetBySource(ctx context.Context, r store.Runner, source, sourceID string) (domain.Posting, error) {
+func (repository *PostingRepository) GetBySource(ctx context.Context, r store.Runner, source, sourceID string) (*domain.Posting, error) {
 	return readPosting(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Posting, error) {
 		return q.GetPostingBySourceAndSourceID(ctx, sqlcdb.GetPostingBySourceAndSourceIDParams{Source: source, SourceID: sourceID})
 	})
