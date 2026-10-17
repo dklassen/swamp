@@ -7,8 +7,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/pursuit"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -18,7 +18,7 @@ import (
 // every list and the posting can start a fresh one, while its history,
 // reviews and drafts are kept.
 type applicationDeleteModel struct {
-	application pursuit.Application
+	application posting.ActiveApplication
 	// from is the screen the box is drawn over, and where n goes back to.
 	from screen
 	// confirmed is set once y is pressed, so a second y while the delete
@@ -26,14 +26,14 @@ type applicationDeleteModel struct {
 	confirmed bool
 }
 
-func newApplicationDeleteModel(application pursuit.Application, from screen) applicationDeleteModel {
+func newApplicationDeleteModel(application posting.ActiveApplication, from screen) applicationDeleteModel {
 	return applicationDeleteModel{application: application, from: from}
 }
 
 // enterApplicationDeleteMsg signals that App should open the delete
 // confirmation for this application.
 type enterApplicationDeleteMsg struct {
-	application pursuit.Application
+	application posting.ActiveApplication
 }
 
 // cancelApplicationDeleteMsg signals that App should go back to where the
@@ -43,7 +43,7 @@ type cancelApplicationDeleteMsg struct{}
 // confirmApplicationDeleteMsg signals that App should delete the
 // application.
 type confirmApplicationDeleteMsg struct {
-	application pursuit.Application
+	application posting.ActiveApplication
 }
 
 func (m *applicationDeleteModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
@@ -73,16 +73,16 @@ func (m *applicationDeleteModel) View(width int) string {
 
 // applicationDeletedMsg reports the result of deleteApplication.
 type applicationDeletedMsg struct {
-	application pursuit.Application
+	application posting.ActiveApplication
 	err         error
 }
 
 // deleteApplication soft-deletes application. Its documents stay on disk
 // for a later restore; with IDs never reused, nothing else can pick them
 // up.
-func deleteApplication(s *store.Store, app pursuit.Application) tea.Cmd {
+func deleteApplication(applications *service.ApplicationService, app posting.ActiveApplication) tea.Cmd {
 	return func() tea.Msg {
-		err := application.Delete(context.Background(), s.DB(), app.ID)
+		err := applications.Delete(context.Background(), app.ID)
 		return applicationDeletedMsg{application: app, err: err}
 	}
 }
@@ -90,7 +90,7 @@ func deleteApplication(s *store.Store, app pursuit.Application) tea.Cmd {
 // applicationReloadedForDeleteMsg carries the application the delete
 // confirmation describes, as stored when delete was pressed on from.
 type applicationReloadedForDeleteMsg struct {
-	application pursuit.Application
+	application posting.ActiveApplication
 	from        screen
 	err         error
 }
@@ -99,13 +99,13 @@ type applicationReloadedForDeleteMsg struct {
 // confirmation shows it: sync or an agent may have changed its status, or
 // deleted it, since the list loaded. The posting and
 // company parts don't affect what's deleted, so they're kept as loaded.
-func reloadApplicationForDelete(s *store.Store, view pursuit.Application, from screen) tea.Cmd {
+func reloadApplicationForDelete(applications *service.ApplicationService, view posting.ActiveApplication, from screen) tea.Cmd {
 	return func() tea.Msg {
-		application, err := application.GetByID(context.Background(), s.DB(), view.ID)
+		app, err := applications.Get(context.Background(), view.ID)
 		if errors.Is(err, store.ErrNotFound) {
 			return applicationReloadedForDeleteMsg{from: from, err: errors.New("this application was already deleted")}
 		}
-		view.Application = application
+		view.Application = app
 		return applicationReloadedForDeleteMsg{application: view, from: from, err: err}
 	}
 }

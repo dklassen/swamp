@@ -3,6 +3,8 @@ package documents
 import (
 	"fmt"
 	"os"
+
+	"github.com/dklassen/swamp/internal/domain/document"
 )
 
 // Current keeps the records (document reviews, exports) that still
@@ -19,8 +21,8 @@ import (
 // 0004). A read failure is an error rather than "changed": treating it
 // as changed could hide a flagged review with no sign anything went
 // wrong.
-func Current[R any](status Status, records map[Type]R, isCurrent func(R, string) bool) (map[Type]R, error) {
-	current := make(map[Type]R, len(records))
+func Current[R any](status Status, records map[document.Type]R, isCurrent func(R, string) bool) (map[document.Type]R, error) {
+	current := make(map[document.Type]R, len(records))
 	for documentType, record := range records {
 		doc, err := status.Doc(documentType)
 		if err != nil {

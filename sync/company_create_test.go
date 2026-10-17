@@ -5,6 +5,7 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 )
 
@@ -30,16 +31,16 @@ func TestCreateCompany(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			s := newTestStore(t)
+			s := testutil.NewTestApp(t)
 			ctx := context.Background()
-			syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+			syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 			company, err := syncer.CreateCompany(ctx, "Acme", tt.source, tt.sourceRef)
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("CreateCompany err = %v, wantErr %v", err, tt.wantErr)
 			}
 
-			companies, err := s.ListActiveCompanies(ctx)
+			companies, err := s.Companies.ListActive(ctx)
 			if err != nil {
 				t.Fatalf("ListActiveCompanies: %v", err)
 			}

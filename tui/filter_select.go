@@ -6,7 +6,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/dklassen/swamp/filter"
+	"github.com/dklassen/swamp/internal/domain/filter"
 )
 
 // filterSelectModel drives the department/location filter-select screen

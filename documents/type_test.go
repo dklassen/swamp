@@ -5,6 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dklassen/swamp/internal/domain/document"
 )
 
 // Adding a document type is one entry in the types table. This fails if
@@ -13,11 +15,11 @@ func TestTypes_EachHasANameLabelAndDocument(t *testing.T) {
 	t.Parallel()
 	store := NewStore(t.TempDir())
 	status := store.Status(7)
-	if len(Types()) == 0 {
+	if len(document.Types()) == 0 {
 		t.Fatal("Types() is empty")
 	}
 	seen := map[string]bool{}
-	for _, documentType := range Types() {
+	for _, documentType := range document.Types() {
 		name := documentType.String()
 		if name == "" || strings.HasPrefix(name, "Type(") {
 			t.Errorf("type %d has no name", int(documentType))
@@ -40,7 +42,7 @@ func TestTypes_EachHasANameLabelAndDocument(t *testing.T) {
 		if p, err := store.Path(7, documentType); err != nil || p != doc.Path {
 			t.Errorf("%s: Path = %q, %v; want %q", name, p, err, doc.Path)
 		}
-		parsed, err := ParseType(name)
+		parsed, err := document.ParseType(name)
 		if err != nil || parsed != documentType {
 			t.Errorf("ParseType(%q) = %v, %v; want %v", name, parsed, err, documentType)
 		}
@@ -50,13 +52,13 @@ func TestTypes_EachHasANameLabelAndDocument(t *testing.T) {
 // An unknown type is an error, never a fallback to another document.
 func TestUnknownType_IsAnError(t *testing.T) {
 	t.Parallel()
-	if _, err := ParseType("answers"); err == nil {
+	if _, err := document.ParseType("answers"); err == nil {
 		t.Error(`ParseType("answers") succeeded, want an error`)
 	}
-	if _, err := NewStore(t.TempDir()).Status(7).Doc(Type(len(Types()))); err == nil {
+	if _, err := NewStore(t.TempDir()).Status(7).Doc(document.Type(len(document.Types()))); err == nil {
 		t.Error("Doc of an out-of-range Type succeeded, want an error")
 	}
-	if _, err := NewStore(t.TempDir()).Path(7, Type(len(Types()))); err == nil {
+	if _, err := NewStore(t.TempDir()).Path(7, document.Type(len(document.Types()))); err == nil {
 		t.Error("Path of an out-of-range Type succeeded, want an error")
 	}
 }
@@ -66,7 +68,7 @@ func TestUnknownType_IsAnError(t *testing.T) {
 // keys, not MarshalJSON).
 func TestType_JSONMapKeysAreNames(t *testing.T) {
 	t.Parallel()
-	got, err := json.Marshal(map[Type]bool{CoverLetter: true, Resume: false})
+	got, err := json.Marshal(map[document.Type]bool{document.CoverLetter: true, document.Resume: false})
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
 	}
@@ -79,8 +81,8 @@ func TestType_JSONMapKeysAreNames(t *testing.T) {
 // review), so keys must be distinct lowercase letters.
 func TestTypes_KeysAreDistinctLowercaseLetters(t *testing.T) {
 	t.Parallel()
-	seen := map[rune]Type{}
-	for _, documentType := range Types() {
+	seen := map[rune]document.Type{}
+	for _, documentType := range document.Types() {
 		key := documentType.Key()
 		if key < 'a' || key > 'z' {
 			t.Errorf("%s: key %q isn't a lowercase letter", documentType, key)

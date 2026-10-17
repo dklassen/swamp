@@ -2,63 +2,20 @@ package sync
 
 import (
 	"context"
-	"database/sql"
 	gosync "sync"
 	"testing"
 	"time"
 
-	"github.com/pressly/goose/v3"
-
-	_ "modernc.org/sqlite"
-
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/companyfilter"
-	"github.com/dklassen/swamp/db/migrations"
-	"github.com/dklassen/swamp/filter"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/domain/filter"
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/store"
 )
 
-func newTestStore(t *testing.T) *store.Store {
+func mustCreateCompany(t *testing.T, s testutil.TestApp, name, source, sourceRef string) company.Company {
 	t.Helper()
-	s, _ := newTestStoreDB(t)
-	return s
-}
-
-// newTestStoreDB is newTestStore that also returns the underlying
-// *sql.DB, for tests that need to reach past store -- e.g. to install a
-// trigger that makes one write fail.
-func newTestStoreDB(t *testing.T) (*store.Store, *sql.DB) {
-	t.Helper()
-
-	// store.Open, not sql.Open, so tests run with the same connection
-	// settings as swamp -- overlapping-sync tests depend on its busy
-	// timeout and immediate transactions.
-	sqlDB, err := store.Open(t.TempDir()+"/test.db", store.DefaultConfig())
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := sqlDB.Close(); err != nil {
-			t.Errorf("close db: %v", err)
-		}
-	})
-
-	goose.SetBaseFS(migrations.FS)
-	if err := goose.SetDialect("sqlite3"); err != nil {
-		t.Fatalf("set dialect: %v", err)
-	}
-	if err := goose.Up(sqlDB, "."); err != nil {
-		t.Fatalf("apply migrations: %v", err)
-	}
-
-	return store.New(sqlDB), sqlDB
-}
-
-func mustCreateCompany(t *testing.T, s *store.Store, name, source, sourceRef string) store.Company {
-	t.Helper()
-	c, err := s.CreateCompany(context.Background(), name, source, sourceRef)
+	c, err := s.Companies.Add(context.Background(), name, source, sourceRef)
 	if err != nil {
 		t.Fatalf("CreateCompany: %v", err)
 	}
@@ -107,11 +64,11 @@ func (f *barrierFetcher) FetchPostings(ctx context.Context, boardSlug string) ([
 // stops overlapping syncs, but the writes must stay safe if they overlap
 // anyway -- e.g. a lease that expired while its sync was still running
 // and was taken over.
-func syncOverlapping(t *testing.T, s *store.Store, companyID int64, runs int, postings []jobboard.Posting) []Result {
+func syncOverlapping(t *testing.T, s testutil.TestApp, companyID int64, runs int, postings []jobboard.Posting) []Result {
 	t.Helper()
 	fetcher := newBarrierFetcher(runs, postings)
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
-	company, err := s.GetCompany(context.Background(), companyID)
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	company, err := s.Companies.Get(context.Background(), companyID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
 	}
@@ -166,37 +123,28 @@ func samplePosting(sourceID, title, department, location string) jobboard.Postin
 	}
 }
 
-func addCompanyFilter(t *testing.T, s *store.Store, companyID int64, field, value string) {
+func addCompanyFilter(t *testing.T, s testutil.TestApp, companyID int64, field, value string) {
 	t.Helper()
 	ctx := context.Background()
-	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-		existing, err := companyfilter.List(ctx, tx, companyID)
-		if err != nil {
-			return err
-		}
-		return companyfilter.Replace(ctx, tx, companyID, append(existing, filter.Filter{Field: field, Value: value}))
-	})
+	existing, err := s.Companies.Filters(ctx, companyID)
+	if err == nil {
+		err = s.Companies.SetFilters(ctx, companyID, append(existing, filter.Filter{Field: field, Value: value}))
+	}
 	if err != nil {
 		t.Fatalf("add company filter %s=%s: %v", field, value, err)
 	}
 }
 
-func createApplication(ctx context.Context, s *store.Store, postingID int64) (application.Application, error) {
-	var app application.Application
-	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-		var err error
-		app, err = application.Create(ctx, tx, postingID)
-		return err
-	})
-	return app, err
+func createApplication(ctx context.Context, s testutil.TestApp, postingID int64) (application.Application, error) {
+	return s.Postings.ApplyTo(ctx, postingID)
 }
 
-func updateApplicationStatus(ctx context.Context, s *store.Store, postingID int64, status applicationstatus.Status) (application.Application, error) {
-	var app application.Application
-	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-		var err error
-		app, err = application.UpdateStatus(ctx, tx, postingID, status)
-		return err
-	})
-	return app, err
+// updateApplicationStatus sets postingID's application to status, as the
+// user would.
+func updateApplicationStatus(ctx context.Context, s testutil.TestApp, postingID int64, status application.Status) (application.Application, error) {
+	app, err := s.Postings.Application(ctx, postingID)
+	if err != nil {
+		return application.Application{}, err
+	}
+	return s.Applications.SetStatus(ctx, app.ID, status)
 }

@@ -6,6 +6,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 )
 
@@ -55,9 +56,9 @@ func TestSyncer_FetchesTimeOut(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			s := newTestStore(t)
+			s := testutil.NewTestApp(t)
 			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-			syncer := New(s, map[string]PostingFetcher{"ashby": hangingFetcher{}}, Config{FetchTimeout: timeout})
+			syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": hangingFetcher{}}, Config{FetchTimeout: timeout})
 
 			start := time.Now()
 			err := tt.fetch(context.Background(), syncer, acme.ID)
@@ -80,10 +81,10 @@ func TestSyncer_FetchesTimeOut(t *testing.T) {
 func TestSyncAll_HungBoardFailsOnlyItsOwnCompany(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	hung := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	healthy := mustCreateCompany(t, s, "Globex", "lever", "globex")
-	syncer := New(s, map[string]PostingFetcher{
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{
 		"ashby": hangingFetcher{},
 		"lever": &fakeFetcher{postings: map[string][]jobboard.Posting{
 			"globex": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
@@ -126,7 +127,7 @@ func (f cancelAfterFetchFetcher) FetchPostings(ctx context.Context, boardSlug st
 // company half-synced with a stale last_fetched_at.
 func TestSyncCompany_CancelledAfterFetch_WritesComplete(t *testing.T) {
 	t.Parallel()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 
 	ctx, cancel := context.WithCancel(context.Background())
@@ -135,7 +136,7 @@ func TestSyncCompany_CancelledAfterFetch_WritesComplete(t *testing.T) {
 		samplePosting("job-1", "Engineer", "Engineering", "Remote"),
 		samplePosting("job-2", "Designer", "Design", "Remote"),
 	}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	result, err := syncer.SyncCompany(ctx, acme.ID)
 	if err != nil {
@@ -144,7 +145,7 @@ func TestSyncCompany_CancelledAfterFetch_WritesComplete(t *testing.T) {
 	if result.Created != 2 {
 		t.Errorf("result.Created = %d, want 2", result.Created)
 	}
-	company, err := s.GetCompany(context.Background(), acme.ID)
+	company, err := s.Companies.Get(context.Background(), acme.ID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
 	}
@@ -158,9 +159,9 @@ func TestSyncCompany_CancelledAfterFetch_WritesComplete(t *testing.T) {
 // still abandons that company, and nothing is written.
 func TestSyncCompany_CancelledDuringFetch_AbortsWithoutWriting(t *testing.T) {
 	t.Parallel()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	syncer := New(s, map[string]PostingFetcher{"ashby": hangingFetcher{}}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": hangingFetcher{}}, DefaultConfig())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(20*time.Millisecond, cancel)
@@ -169,11 +170,11 @@ func TestSyncCompany_CancelledDuringFetch_AbortsWithoutWriting(t *testing.T) {
 		t.Fatalf("SyncCompany cancelled during its fetch: err = %v, want context.Canceled", err)
 	}
 
-	postings, err := s.ListPostingsByCompany(context.Background(), acme.ID)
+	postings, err := s.Postings.ListByCompany(context.Background(), acme.ID)
 	if err != nil {
 		t.Fatalf("ListPostingsByCompany: %v", err)
 	}
-	company, err := s.GetCompany(context.Background(), acme.ID)
+	company, err := s.Companies.Get(context.Background(), acme.ID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
 	}

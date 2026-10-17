@@ -6,9 +6,9 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/cursor"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/posting"
 )
 
 // Search's page sizes: what it returns when the caller doesn't say, and
@@ -20,13 +20,13 @@ const (
 
 // SortIDAsc orders matches by posting ID, oldest to Swamp first: the
 // default order (#221).
-var SortIDAsc = store.PostingOrderIDAsc.String()
+var SortIDAsc = posting.OrderIDAsc.String()
 
 // SortOrder is one way search_postings can order its matches: a store
 // order, and what the agent is told about it -- including how stable it
 // is to page through (RFC 0006, "Adding sort orders later").
 type SortOrder struct {
-	Order       store.PostingOrder
+	Order       posting.Order
 	Description string
 }
 
@@ -37,10 +37,10 @@ func (o SortOrder) Name() string { return o.Order.String() }
 // an entry here plus its store query; TestSortOrders_EveryStoreOrderIsRegistered
 // fails if a store order is missing.
 var sortOrders = []SortOrder{
-	{store.PostingOrderIDAsc, "the order Swamp first saw the postings in (the default). Stable while paging: postings added meanwhile land on later pages."},
-	{store.PostingOrderIDDesc, "newest to Swamp first. Stable while paging; postings added meanwhile sort ahead of the first page, so they aren't seen until you start again."},
-	{store.PostingOrderPublishedDesc, "newest on the board first (by PublishedAt; postings with no publish date last). Stable while paging, unless a board changes a posting's publish date meanwhile: that one posting may then be missed or seen twice."},
-	{store.PostingOrderScoreDesc, "best fit first (by Score, the current fit score; among equal scores, newest to Swamp first; unscored postings last). Stable while paging, unless a posting is scored meanwhile: that one posting may then be missed or seen twice."},
+	{posting.OrderIDAsc, "the order Swamp first saw the postings in (the default). Stable while paging: postings added meanwhile land on later pages."},
+	{posting.OrderIDDesc, "newest to Swamp first. Stable while paging; postings added meanwhile sort ahead of the first page, so they aren't seen until you start again."},
+	{posting.OrderPublishedDesc, "newest on the board first (by PublishedAt; postings with no publish date last). Stable while paging, unless a board changes a posting's publish date meanwhile: that one posting may then be missed or seen twice."},
+	{posting.OrderScoreDesc, "best fit first (by Score, the current fit score; among equal scores, newest to Swamp first; unscored postings last). Stable while paging, unless a posting is scored meanwhile: that one posting may then be missed or seen twice."},
 }
 
 // SortOrders returns the registered sort orders, default first.
@@ -55,7 +55,7 @@ type SearchOptions struct {
 	// HasApplication and Interested filter when set; nil is either.
 	HasApplication      *bool
 	Interested          *bool
-	ApplicationStatuses []applicationstatus.Status
+	ApplicationStatuses []application.Status
 	// ListingStatus is "open" (the default when empty), "closed" or "any".
 	ListingStatus   string
 	IncludeArchived bool
@@ -88,14 +88,14 @@ type SearchResult struct {
 // SearchMatch is one posting Search found: list_postings' summary, its
 // company, listing status and markup, and its application, if any.
 type SearchMatch struct {
-	Posting           PostingSummary            `json:"Posting"`
-	CompanyName       string                    `json:"CompanyName"`
-	ListingStatus     string                    `json:"ListingStatus"`
-	Interested        bool                      `json:"Interested"`
-	Archived          bool                      `json:"Archived"`
-	ApplicationID     *int64                    `json:"ApplicationID"`
-	ApplicationStatus *applicationstatus.Status `json:"ApplicationStatus"`
-	ApplicationNotes  string                    `json:"ApplicationNotes"`
+	Posting           PostingSummary      `json:"Posting"`
+	CompanyName       string              `json:"CompanyName"`
+	ListingStatus     string              `json:"ListingStatus"`
+	Interested        bool                `json:"Interested"`
+	Archived          bool                `json:"Archived"`
+	ApplicationID     *int64              `json:"ApplicationID"`
+	ApplicationStatus *application.Status `json:"ApplicationStatus"`
+	ApplicationNotes  string              `json:"ApplicationNotes"`
 	// Score is the posting's current fit score, 1 to 5, with its reason; 0
 	// when it has none.
 	Score       int    `json:"Score"`
@@ -163,7 +163,7 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 	slices.Sort(filters.ApplicationStatuses)
 	fingerprint := cursor.Fingerprint(filters)
 
-	search := store.PostingSearch{
+	search := posting.Search{
 		Order:               order,
 		CompanyID:           opts.CompanyID,
 		IncludeArchived:     opts.IncludeArchived,
@@ -186,7 +186,7 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 		search.AfterScore = key.Score
 	}
 
-	page, err := st.store.SearchPostings(ctx, search)
+	page, err := st.postings.Search(ctx, search)
 	if err != nil {
 		return SearchResult{}, fmt.Errorf("stage: %w", err)
 	}
@@ -202,7 +202,7 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (SearchResult, 
 	return result, nil
 }
 
-func searchMatch(l store.PostingListing) SearchMatch {
+func searchMatch(l posting.Listing) SearchMatch {
 	match := SearchMatch{
 		Posting: PostingSummary{
 			ID:             l.ID,
@@ -211,7 +211,7 @@ func searchMatch(l store.PostingListing) SearchMatch {
 			Location:       l.Location,
 			WorkplaceType:  l.WorkplaceType,
 			ApplicationURL: l.ApplicationURL,
-			PublishedAt:    store.OptionalTime{Time: l.PublishedAt},
+			PublishedAt:    posting.OptionalTime{Time: l.PublishedAt},
 			FirstSeenAt:    l.FirstSeenAt,
 		},
 		CompanyName:   l.CompanyName,

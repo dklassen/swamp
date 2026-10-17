@@ -9,18 +9,16 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/pursuit"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/posting"
 )
 
-func testApplicationView() pursuit.Application {
-	return pursuit.Application{
-		Application: application.Application{ID: 1, Status: applicationstatus.Started},
-		Posting:     store.Posting{ID: 5, IngestedFields: store.IngestedFields{Title: "Engineer"}},
+func testApplicationView() posting.ActiveApplication {
+	return posting.ActiveApplication{
+		Application: application.Application{ID: 1, Status: application.Started},
+		Posting:     posting.Posting{ID: 5, IngestedFields: posting.IngestedFields{Title: "Engineer"}},
 		CompanyName: "Acme",
 	}
 }
@@ -101,21 +99,21 @@ func TestApplicationDetailModel_EnterReview_OnExistingDocument_ReturnsEnterDocum
 		key          rune
 		filename     string
 		content      string
-		documentType documents.Type
+		documentType document.Type
 	}{
 		{
 			name:         "shift+L reviews cover letter",
 			key:          'L',
 			filename:     "cover_letter.md",
 			content:      "Dear hiring manager, I am excited to apply.",
-			documentType: documents.CoverLetter,
+			documentType: document.CoverLetter,
 		},
 		{
 			name:         "shift+R reviews resume",
 			key:          'R',
 			filename:     "resume.md",
 			content:      "# Resume",
-			documentType: documents.Resume,
+			documentType: document.Resume,
 		},
 	}
 	for _, tt := range tests {
@@ -159,12 +157,12 @@ func TestApplicationDetailModel_EnterReview_OnExistingDocument_ReturnsEnterDocum
 func TestApplicationDetailModel_View_ShowsOutcomeAndNotes(t *testing.T) {
 	t.Parallel()
 
-	application := testApplicationView()
-	application.LatestReviews = map[documents.Type]docrecord.Review{
-		documents.CoverLetter: {Outcome: docrecord.Flagged, Notes: "too generic"},
-		documents.Resume:      {Outcome: docrecord.Passed},
+	view := testApplicationView()
+	view.LatestReviews = map[document.Type]document.Review{
+		document.CoverLetter: {Outcome: document.Flagged, Notes: "too generic"},
+		document.Resume:      {Outcome: document.Passed},
 	}
-	m := newApplicationDetailModel(documents.NewStore(t.TempDir()), application)
+	m := newApplicationDetailModel(documents.NewStore(t.TempDir()), view)
 
 	got := m.View()
 	if !containsAll(got, "Acme", "[FLAGGED]", "too generic", "[PASSED]") {
@@ -175,9 +173,9 @@ func TestApplicationDetailModel_View_ShowsOutcomeAndNotes(t *testing.T) {
 func TestApplicationDetailModel_View_ShowsStatusLabelNotEnumValue(t *testing.T) {
 	t.Parallel()
 
-	app := pursuit.Application{
-		Application: application.Application{ID: 1, Status: applicationstatus.OfferReceived},
-		Posting:     store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}},
+	app := posting.ActiveApplication{
+		Application: application.Application{ID: 1, Status: application.OfferReceived},
+		Posting:     posting.Posting{ID: 1, IngestedFields: posting.IngestedFields{Title: "Engineer"}},
 		CompanyName: "Acme",
 	}
 	m := newApplicationDetailModel(documents.NewStore(t.TempDir()), app)
@@ -200,7 +198,7 @@ func TestApplicationDetailModel_EveryDocumentType(t *testing.T) {
 	// Keys application detail uses for itself; S is submit, f the form.
 	reserved := map[rune]bool{'p': true, 'b': true, 'u': true, 's': true, 'f': true}
 	docs := documents.NewStore(t.TempDir())
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		p, err := docs.Path(1, documentType)
 		if err != nil {
 			t.Fatalf("Path: %v", err)
@@ -215,7 +213,7 @@ func TestApplicationDetailModel_EveryDocumentType(t *testing.T) {
 	m := newApplicationDetailModel(docs, testApplicationView())
 	view := m.View()
 
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		key := documentType.Key()
 		if reserved[key] {
 			t.Errorf("%s's key %q is already used by application detail", documentType, key)

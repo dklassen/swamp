@@ -11,8 +11,11 @@ import (
 	gosync "sync"
 	"time"
 
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/store"
 )
 
 // PostingFetcher is sync's own minimal view of a job board client, one
@@ -25,7 +28,7 @@ import (
 // left empty (see jobboard's doc comment, and #57).
 // boardSlug is whatever that source's client needs to identify the board
 // (an Ashby slug, a Greenhouse board token, etc.) -- it's passed through
-// from store.Company.SourceRef untouched.
+// from company.Company.SourceRef untouched.
 type PostingFetcher interface {
 	FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error)
 }
@@ -77,12 +80,34 @@ func DefaultConfig() Config {
 	return Config{FetchTimeout: 30 * time.Second, LeaseTimeout: 5 * time.Minute}
 }
 
+// companyService is what a sync reads and writes about the companies it syncs.
+type companyService interface {
+	Get(ctx context.Context, id int64) (company.Company, error)
+	GetBySource(ctx context.Context, source, sourceRef string) (company.Company, error)
+	ListActive(ctx context.Context) ([]company.Company, error)
+	Add(ctx context.Context, name, source, sourceRef string) (company.Company, error)
+	SetDescription(ctx context.Context, id int64, description string) (company.Company, error)
+	MarkFetched(ctx context.Context, id int64) error
+	AcquireSyncLease(ctx context.Context, id int64, token string, expiry time.Duration) (bool, error)
+	ReleaseSyncLease(ctx context.Context, id int64, token string) error
+}
+
+// postingService is what a sync reads and writes about a company's postings.
+type postingService interface {
+	Ingest(ctx context.Context, companyID int64, source, sourceID string, fields posting.IngestedFields) (service.IngestResult, error)
+	ListByCompany(ctx context.Context, companyID int64) ([]posting.Posting, error)
+	MarkSeen(ctx context.Context, ids []int64) error
+	Close(ctx context.Context, postingID int64, endFrom []application.Status) (closed, applicationEnded bool, err error)
+	Reopen(ctx context.Context, postingID int64) (reopened, applicationRestored bool, err error)
+}
+
 // Syncer routes each company to the PostingFetcher for its source
 // (company.Source, e.g. "ashby" or "greenhouse") -- see SyncCompany.
 type Syncer struct {
-	store    *store.Store
-	fetchers map[string]PostingFetcher
-	cfg      Config
+	companies companyService
+	postings  postingService
+	fetchers  map[string]PostingFetcher
+	cfg       Config
 
 	// held is the sync leases this Syncer currently holds, token -> company
 	// ID, so ReleaseHeldLeases can free them when the process exits with a
@@ -94,11 +119,11 @@ type Syncer struct {
 // New returns a Syncer. A zero cfg.LeaseTimeout takes DefaultConfig's:
 // unlike a zero FetchTimeout, which fails every fetch loudly, a zero lease
 // timeout would silently let a second sync take over a live one's lease.
-func New(s *store.Store, fetchers map[string]PostingFetcher, cfg Config) *Syncer {
+func New(companies companyService, postings postingService, fetchers map[string]PostingFetcher, cfg Config) *Syncer {
 	if cfg.LeaseTimeout <= 0 {
 		cfg.LeaseTimeout = DefaultConfig().LeaseTimeout
 	}
-	return &Syncer{store: s, fetchers: fetchers, cfg: cfg}
+	return &Syncer{companies: companies, postings: postings, fetchers: fetchers, cfg: cfg}
 }
 
 // fetch is the one place Syncer calls a board: it gives up after
@@ -117,7 +142,7 @@ func (s *Syncer) fetch(ctx context.Context, fetcher PostingFetcher, boardSlug st
 // (e.g. its board fetch errors) is captured in that company's Result and
 // does not stop the rest of the batch from being processed.
 func (s *Syncer) SyncAll(ctx context.Context) ([]Result, error) {
-	companies, err := s.store.ListActiveCompanies(ctx)
+	companies, err := s.companies.ListActive(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("sync: list active companies: %w", err)
 	}
@@ -150,7 +175,7 @@ func (s *Syncer) ReleaseHeldLeases(ctx context.Context) error {
 
 	var errs []error
 	for token, companyID := range held {
-		if err := s.store.ReleaseSyncLease(ctx, companyID, token); err != nil {
+		if err := s.companies.ReleaseSyncLease(ctx, companyID, token); err != nil {
 			errs = append(errs, fmt.Errorf("sync: %w", err))
 		}
 	}

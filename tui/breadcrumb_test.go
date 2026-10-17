@@ -7,10 +7,11 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/pursuit"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/posting"
 )
 
 // Below the tabs, the header names the way back to one: what esc steps
@@ -18,10 +19,10 @@ import (
 func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 	t.Parallel()
 
-	posting := store.Posting{ID: 5, IngestedFields: store.IngestedFields{Title: "Staff Engineer"}}
-	application := pursuit.Application{
+	p := posting.Posting{ID: 5, IngestedFields: posting.IngestedFields{Title: "Staff Engineer"}}
+	view := posting.ActiveApplication{
 		Application: application.Application{ID: 1},
-		Posting:     store.Posting{ID: 9, IngestedFields: store.IngestedFields{Title: "Engineering Manager"}},
+		Posting:     posting.Posting{ID: 9, IngestedFields: posting.IngestedFields{Title: "Engineering Manager"}},
 		CompanyName: "Initech",
 	}
 	tests := []struct {
@@ -38,7 +39,7 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 		{"posting detail from an application", screenPostingDetail, []screen{screenApplicationDetail}, "Applications › Initech › Engineering Manager › Posting"},
 		{"notes, under posting detail from the list", screenApplicationNotesEdit, []screen{screenPostingList}, "Companies › Globex › Staff Engineer › Edit notes"},
 		{"status from the home list", screenApplicationStatusSelect, []screen{screenActiveApplications}, "Applications › Set status"},
-		{"review form, picked under posting detail", screenDocumentReviewForm, []screen{screenPostingList, screenPostingDetail}, "Companies › Globex › Staff Engineer › Review " + documents.CoverLetter.Label()},
+		{"review form, picked under posting detail", screenDocumentReviewForm, []screen{screenPostingList, screenPostingDetail}, "Companies › Globex › Staff Engineer › Review " + document.CoverLetter.Label()},
 		{"add company", screenCompanyForm, nil, "Companies › Add company"},
 		{"filters", screenFilterSelect, nil, "Companies › Globex › Filters"},
 		{"export", screenApplicationExport, nil, "Applications › Export PDFs"},
@@ -48,12 +49,12 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			app := New(nil, nil, documents.NewStore(t.TempDir()))
+			app := New(nil, nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
 			app.width = 120
-			app.selectedCompany = store.Company{Name: "Globex"}
-			app.postingDetail.posting = posting
-			app.applicationDetail.application = application
-			app.documentReviewForm.documentType = documents.CoverLetter
+			app.selectedCompany = company.Company{Name: "Globex"}
+			app.postingDetail.posting = p
+			app.applicationDetail.application = view
+			app.documentReviewForm.documentType = document.CoverLetter
 			app.screen, app.returnStack = tt.screen, tt.stack
 
 			if got := strings.TrimSpace(strings.Split(ansi.Strip(app.header()), "\n")[0]); got != tt.want {
@@ -156,8 +157,8 @@ func unsizedScreens() []sizedScreen {
 func TestApp_Header_LongBreadcrumbLosesItsMiddleFirst(t *testing.T) {
 	t.Parallel()
 
-	application := pursuit.Application{
-		Posting:     store.Posting{IngestedFields: store.IngestedFields{Title: "Engineering Manager, Payments Reliability"}},
+	view := posting.ActiveApplication{
+		Posting:     posting.Posting{IngestedFields: posting.IngestedFields{Title: "Engineering Manager, Payments Reliability"}},
 		CompanyName: "Initech Global Holdings",
 	}
 	tests := []struct {
@@ -174,9 +175,9 @@ func TestApp_Header_LongBreadcrumbLosesItsMiddleFirst(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			app := New(nil, nil, documents.NewStore(t.TempDir()))
+			app := New(nil, nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
 			app.width = tt.width
-			app.applicationDetail.application = application
+			app.applicationDetail.application = view
 			app.screen, app.returnStack = screenPostingDetail, []screen{screenApplicationDetail}
 
 			line := strings.Split(ansi.Strip(app.header()), "\n")[0]

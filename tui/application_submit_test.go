@@ -11,10 +11,10 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/testutil"
 )
 
 // submitTestApp is an App on the home screen with one started
@@ -24,29 +24,24 @@ import (
 func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, application.Application, *[]string) {
 	t.Helper()
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	posting, err := s.UpsertPosting(ctx, store.CreatePostingParams{
-		CompanyID: acme.ID,
-		Source:    "ashby",
-		SourceID:  "job-1",
-		IngestedFields: store.IngestedFields{
-			Title:          "Engineer",
-			ApplicationURL: applicationURL,
-			JobURL:         jobURL,
-		},
+	ingested, err := s.Postings.Ingest(ctx, acme.ID, "ashby", "job-1", posting.IngestedFields{
+		Title:          "Engineer",
+		ApplicationURL: applicationURL,
+		JobURL:         jobURL,
 	})
 	if err != nil {
-		t.Fatalf("UpsertPosting: %v", err)
+		t.Fatalf("Ingest: %v", err)
 	}
-	target := mustCreateApplication(t, s, posting.ID)
+	target := mustCreateApplication(t, s, ingested.Posting.ID)
 
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	paths, err := app.documents.EnsureDir(target.ID)
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
-	for _, path := range []string{mustDoc(t, paths, documents.CoverLetter).Path, mustDoc(t, paths, documents.Resume).Path} {
+	for _, path := range []string{mustDoc(t, paths, document.CoverLetter).Path, mustDoc(t, paths, document.Resume).Path} {
 		if err := os.WriteFile(path, []byte("# Draft\n"), 0o644); err != nil {
 			t.Fatalf("WriteFile: %v", err)
 		}
@@ -90,19 +85,19 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 			t.Errorf("exported %s: %v", name, err)
 		}
 	}
-	if got, err := application.GetByID(context.Background(), app.store.DB(), target.ID); err != nil || got.Status != applicationstatus.Started {
+	if got, err := storeOf(app).Applications.Get(context.Background(), target.ID); err != nil || got.Status != application.Started {
 		t.Fatalf("status before confirming = %v (err %v), want still started", got.Status, err)
 	}
 
 	app, cmd := sendKey(app, runeKey('y'))
 	app = applyCmd(t, app, cmd)
 
-	got, err := application.GetByID(context.Background(), app.store.DB(), target.ID)
+	got, err := storeOf(app).Applications.Get(context.Background(), target.ID)
 	if err != nil {
 		t.Fatalf("application.GetByID: %v", err)
 	}
-	if got.Status != applicationstatus.Submitted {
-		t.Errorf("status after confirming = %s, want %s", got.Status, applicationstatus.Submitted)
+	if got.Status != application.Submitted {
+		t.Errorf("status after confirming = %s, want %s", got.Status, application.Submitted)
 	}
 	if app.screen != screenActiveApplications {
 		t.Errorf("screen after confirming = %v, want the home screen", app.screen)
@@ -120,12 +115,12 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 			app, cmd := sendKey(app, key)
 			app = applyCmd(t, app, cmd)
 
-			got, err := application.GetByID(context.Background(), app.store.DB(), target.ID)
+			got, err := storeOf(app).Applications.Get(context.Background(), target.ID)
 			if err != nil {
 				t.Fatalf("application.GetByID: %v", err)
 			}
-			if got.Status != applicationstatus.Started {
-				t.Errorf("status = %s, want it left at %s", got.Status, applicationstatus.Started)
+			if got.Status != application.Started {
+				t.Errorf("status = %s, want it left at %s", got.Status, application.Started)
 			}
 			if app.screen != screenApplicationDetail {
 				t.Errorf("screen = %v, want back on application detail", app.screen)

@@ -3,8 +3,6 @@ package migrations
 import (
 	"testing"
 
-	"github.com/pressly/goose/v3"
-
 	"github.com/dklassen/swamp/contenthash"
 )
 
@@ -29,7 +27,7 @@ func TestPostingContentSHA256_BackfillsExistingPostings(t *testing.T) {
 		}
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 27); err != nil {
+	if err := upTo(sqlDB, 27); err != nil {
 		t.Fatalf("migrate to 27: %v", err)
 	}
 

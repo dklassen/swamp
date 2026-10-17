@@ -10,9 +10,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/service"
 )
 
 // editorCommand picks the command/args to open path in $EDITOR, given its
@@ -36,7 +36,7 @@ func editorCommand(editorEnv, path string) (string, []string, error) {
 // change can be recorded as the user's.
 type editorClosedMsg struct {
 	applicationID int64
-	documentType  documents.Type
+	documentType  document.Type
 	before        string
 	err           error
 }
@@ -61,7 +61,7 @@ func openInEditor(path string, closed editorClosedMsg) tea.Cmd {
 // recordEditorWrite records the user's edit if the document changed while
 // the editor was open, then reloads the application's reviews, which the
 // edit may have made stale.
-func recordEditorWrite(s *store.Store, docs *documents.Store, closed editorClosedMsg) tea.Cmd {
+func recordEditorWrite(documentService *service.DocumentService, docs *documents.Store, closed editorClosedMsg) tea.Cmd {
 	return func() tea.Msg {
 		path, err := docs.Path(closed.applicationID, closed.documentType)
 		if err != nil {
@@ -74,10 +74,10 @@ func recordEditorWrite(s *store.Store, docs *documents.Store, closed editorClose
 		case err != nil:
 			return documentReviewsLoadedMsg{applicationID: closed.applicationID, err: fmt.Errorf("read %s after editing: %w", path, err)}
 		case documents.ContentSHA256(string(content)) != closed.before:
-			if err := docrecord.RecordWrite(context.Background(), s.DB(), closed.applicationID, closed.documentType, string(content), docrecord.SourceEditor); err != nil {
+			if err := documentService.RecordWrite(context.Background(), closed.applicationID, closed.documentType, string(content), document.SourceEditor); err != nil {
 				return documentReviewsLoadedMsg{applicationID: closed.applicationID, err: err}
 			}
 		}
-		return loadDocumentReviews(s, docs, closed.applicationID)()
+		return loadDocumentReviews(documentService, docs, closed.applicationID)()
 	}
 }

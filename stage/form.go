@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dklassen/swamp/application"
+	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/store"
 )
 
 // FormFetcher reads a posting's application form from its board:
@@ -40,8 +40,8 @@ const formMaxAge = 7 * 24 * time.Hour
 //
 // A board with no fetcher (Ashby, Lever) gets the form entered by hand in
 // the TUI (#184), however old, or nil if none was.
-func (st *Stage) applicationForm(ctx context.Context, posting store.Posting, company store.Company) (form *jobboard.ApplicationForm, formErr string, err error) {
-	stored, fetchedAt, haveStored, err := application.GetForm(ctx, st.store.DB(), posting.ID)
+func (st *Stage) applicationForm(ctx context.Context, posting posting.Posting, company company.Company) (form *jobboard.ApplicationForm, formErr string, err error) {
+	stored, fetchedAt, haveStored, err := st.postings.Form(ctx, posting.ID)
 	if err != nil {
 		return nil, "", fmt.Errorf("stage: %w", err)
 	}
@@ -72,7 +72,7 @@ func (st *Stage) applicationForm(ctx context.Context, posting store.Posting, com
 	if err != nil {
 		return nil, "", fmt.Errorf("stage: encode application form: %w", err)
 	}
-	if err := application.SaveForm(ctx, st.store.DB(), posting.ID, string(encoded)); err != nil {
+	if err := st.postings.SaveForm(ctx, posting.ID, string(encoded)); err != nil {
 		return nil, "", fmt.Errorf("stage: %w", err)
 	}
 	return &fetched, "", nil

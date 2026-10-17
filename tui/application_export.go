@@ -10,11 +10,11 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/export"
-	"github.com/dklassen/swamp/pursuit"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/service"
 )
 
 // applicationExportModel drives the application-export screen: pick a
@@ -29,16 +29,16 @@ import (
 // the destination is deliberately theirs to choose rather than fixed at
 // the assets directory the way the `swamp export` CLI's is.
 type applicationExportModel struct {
-	store       *store.Store
-	documents   *documents.Store
-	application pursuit.Application
-	textinput   textinput.Model
+	documentService *service.DocumentService
+	documents       *documents.Store
+	application     posting.ActiveApplication
+	textinput       textinput.Model
 }
 
 // newApplicationExportModel returns an export screen for application,
 // with the destination prefilled to defaultDir (see App.exportDir) so
 // the common case is enter with no typing at all.
-func newApplicationExportModel(s *store.Store, docs *documents.Store, application pursuit.Application, defaultDir string, width int) applicationExportModel {
+func newApplicationExportModel(documentService *service.DocumentService, docs *documents.Store, application posting.ActiveApplication, defaultDir string, width int) applicationExportModel {
 	ti := textinput.New()
 	ti.SetValue(defaultDir)
 	ti.Width = width
@@ -46,7 +46,7 @@ func newApplicationExportModel(s *store.Store, docs *documents.Store, applicatio
 	// subdirectory extends it instead of landing in front of it.
 	ti.CursorEnd()
 	ti.Focus()
-	return applicationExportModel{store: s, documents: docs, application: application, textinput: ti}
+	return applicationExportModel{documentService: documentService, documents: docs, application: application, textinput: ti}
 }
 
 // cancelApplicationExportMsg signals that App should switch back to the
@@ -58,7 +58,7 @@ func (m *applicationExportModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	case tea.KeyEsc:
 		return nil, cancelApplicationExportMsg{}
 	case tea.KeyEnter:
-		return exportApplicationDocuments(m.store, m.documents, m.application, m.textinput.Value()), nil
+		return exportApplicationDocuments(m.documentService, m.documents, m.application, m.textinput.Value()), nil
 	}
 	var cmd tea.Cmd
 	m.textinput, cmd = m.textinput.Update(msg)
@@ -83,7 +83,7 @@ func (m *applicationExportModel) View() string {
 type applicationExportedMsg struct {
 	dir     string
 	paths   []string
-	skipped []documents.Type
+	skipped []document.Type
 	err     error
 }
 
@@ -99,10 +99,10 @@ type applicationExportedMsg struct {
 // application, so gating here would hide work without telling the user
 // why (same reasoning as the CLI's -- see cmd/swamp/main.go's runExport).
 //
-// Each PDF written is recorded (docrecord.RecordExport) with
+// Each PDF written is recorded (DocumentService.RecordExport) with
 // the markdown it was rendered from, so the home screen can tell an
 // exported draft from one still waiting to be exported.
-func exportApplicationDocuments(s *store.Store, docs *documents.Store, application pursuit.Application, dir string) tea.Cmd {
+func exportApplicationDocuments(documentService *service.DocumentService, docs *documents.Store, application posting.ActiveApplication, dir string) tea.Cmd {
 	return func() tea.Msg {
 		dir, err := expandPath(dir)
 		if err != nil {
@@ -114,8 +114,8 @@ func exportApplicationDocuments(s *store.Store, docs *documents.Store, applicati
 
 		status := docs.Status(application.ID)
 		var paths []string
-		var skipped []documents.Type
-		for _, documentType := range documents.Types() {
+		var skipped []document.Type
+		for _, documentType := range document.Types() {
 			doc, err := status.Doc(documentType)
 			if err != nil {
 				return applicationExportedMsg{dir: dir, paths: paths, skipped: skipped, err: err}
@@ -129,7 +129,7 @@ func exportApplicationDocuments(s *store.Store, docs *documents.Store, applicati
 			if err != nil {
 				return applicationExportedMsg{dir: dir, paths: paths, skipped: skipped, err: err}
 			}
-			if err := docrecord.RecordExport(context.Background(), s.DB(), application.ID, documentType, content, outPath); err != nil {
+			if err := documentService.RecordExport(context.Background(), application.ID, documentType, content, outPath); err != nil {
 				return applicationExportedMsg{dir: dir, paths: paths, skipped: skipped, err: err}
 			}
 			paths = append(paths, outPath)

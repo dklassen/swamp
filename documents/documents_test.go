@@ -6,10 +6,12 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/dklassen/swamp/internal/domain/document"
 )
 
 // mustDoc is status.Doc(documentType), failing the test on an error.
-func mustDoc(t *testing.T, status Status, documentType Type) Doc {
+func mustDoc(t *testing.T, status Status, documentType document.Type) Doc {
 	t.Helper()
 	doc, err := status.Doc(documentType)
 	if err != nil {
@@ -22,7 +24,7 @@ func TestStore_Path_IsTheTypeNameUnderTheApplicationDir(t *testing.T) {
 	t.Parallel()
 
 	s := NewStore("/base")
-	for _, documentType := range Types() {
+	for _, documentType := range document.Types() {
 		got, err := s.Path(42, documentType)
 		if err != nil {
 			t.Fatalf("Path(%s): %v", documentType, err)
@@ -37,7 +39,7 @@ func TestStore_Status_FalseWhenFileAbsent(t *testing.T) {
 	t.Parallel()
 
 	status := NewStore(t.TempDir()).Status(1)
-	for _, documentType := range Types() {
+	for _, documentType := range document.Types() {
 		if mustDoc(t, status, documentType).Exists {
 			t.Errorf("%s: Exists = true, want false (file was never written)", documentType)
 		}
@@ -53,7 +55,7 @@ func TestStore_EnsureDir_CreatesDirWhenAbsent(t *testing.T) {
 		t.Fatalf("EnsureDir: %v", err)
 	}
 
-	for _, documentType := range Types() {
+	for _, documentType := range document.Types() {
 		want, err := s.Path(3, documentType)
 		if err != nil {
 			t.Fatalf("Path: %v", err)
@@ -62,7 +64,7 @@ func TestStore_EnsureDir_CreatesDirWhenAbsent(t *testing.T) {
 			t.Errorf("%s: path = %q, want %q", documentType, got, want)
 		}
 	}
-	info, err := os.Stat(filepath.Dir(mustDoc(t, status, CoverLetter).Path))
+	info, err := os.Stat(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path))
 	if err != nil {
 		t.Fatalf("Stat dir: %v", err)
 	}
@@ -90,7 +92,7 @@ func TestStore_Status_TrueWhenFilePresent(t *testing.T) {
 	if _, err := s.EnsureDir(7); err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
-	for _, documentType := range Types() {
+	for _, documentType := range document.Types() {
 		p, err := s.Path(7, documentType)
 		if err != nil {
 			t.Fatalf("Path: %v", err)
@@ -101,7 +103,7 @@ func TestStore_Status_TrueWhenFilePresent(t *testing.T) {
 	}
 
 	status := s.Status(7)
-	for _, documentType := range Types() {
+	for _, documentType := range document.Types() {
 		if !mustDoc(t, status, documentType).Exists {
 			t.Errorf("%s: Exists = false, want true (file was written)", documentType)
 		}
@@ -128,7 +130,7 @@ func TestStore_Write_CreatesTheDocumentAndItsDir(t *testing.T) {
 	t.Parallel()
 
 	s := NewStore(t.TempDir())
-	for _, documentType := range Types() {
+	for _, documentType := range document.Types() {
 		got, err := s.Write(5, documentType, "# Draft\n")
 		if err != nil {
 			t.Fatalf("Write(%s): %v", documentType, err)
@@ -165,7 +167,7 @@ func TestStore_Write_ReaderNeverSeesAPartialDocument(t *testing.T) {
 
 	s := NewStore(t.TempDir())
 	versions := []string{strings.Repeat("a", 1<<20), strings.Repeat("b", 1<<20)}
-	p, err := s.Write(1, CoverLetter, versions[0])
+	p, err := s.Write(1, document.CoverLetter, versions[0])
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -175,7 +177,7 @@ func TestStore_Write_ReaderNeverSeesAPartialDocument(t *testing.T) {
 	go func() {
 		defer close(done)
 		for i := range 200 {
-			if _, err := s.Write(1, CoverLetter, versions[i%2]); err != nil {
+			if _, err := s.Write(1, document.CoverLetter, versions[i%2]); err != nil {
 				writeErr <- err
 				return
 			}
@@ -207,7 +209,7 @@ func TestStore_Write_FailedWriteLeavesNoTemporaryFile(t *testing.T) {
 	t.Parallel()
 
 	s := NewStore(t.TempDir())
-	p, err := s.Path(1, CoverLetter)
+	p, err := s.Path(1, document.CoverLetter)
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
@@ -217,7 +219,7 @@ func TestStore_Write_FailedWriteLeavesNoTemporaryFile(t *testing.T) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 
-	if _, err := s.Write(1, CoverLetter, "# Draft\n"); err == nil {
+	if _, err := s.Write(1, document.CoverLetter, "# Draft\n"); err == nil {
 		t.Fatal("Write succeeded, want an error (a directory is in the document's place)")
 	}
 
@@ -236,7 +238,7 @@ func TestStore_SHA256(t *testing.T) {
 	t.Parallel()
 
 	s := NewStore(t.TempDir())
-	got, err := s.SHA256(1, CoverLetter)
+	got, err := s.SHA256(1, document.CoverLetter)
 	if err != nil {
 		t.Fatalf("SHA256 with no document: %v", err)
 	}
@@ -244,10 +246,10 @@ func TestStore_SHA256(t *testing.T) {
 		t.Errorf("SHA256 with no document = %q, want empty", got)
 	}
 
-	if _, err := s.Write(1, CoverLetter, "# Draft\n"); err != nil {
+	if _, err := s.Write(1, document.CoverLetter, "# Draft\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	got, err = s.SHA256(1, CoverLetter)
+	got, err = s.SHA256(1, document.CoverLetter)
 	if err != nil {
 		t.Fatalf("SHA256: %v", err)
 	}
@@ -278,12 +280,12 @@ func TestStore_WriteIfUnchanged(t *testing.T) {
 
 			s := NewStore(t.TempDir())
 			if tt.onDisk != "" {
-				if _, err := s.Write(1, CoverLetter, tt.onDisk); err != nil {
+				if _, err := s.Write(1, document.CoverLetter, tt.onDisk); err != nil {
 					t.Fatalf("Write: %v", err)
 				}
 			}
 
-			p, err := s.WriteIfUnchanged(1, CoverLetter, "# New draft\n", tt.expected)
+			p, err := s.WriteIfUnchanged(1, document.CoverLetter, "# New draft\n", tt.expected)
 
 			want := "# New draft\n"
 			if tt.wantErr {
@@ -291,7 +293,7 @@ func TestStore_WriteIfUnchanged(t *testing.T) {
 					t.Fatalf("WriteIfUnchanged error = %v, want ErrChanged", err)
 				}
 				want = tt.onDisk
-				if p, err = s.Path(1, CoverLetter); err != nil {
+				if p, err = s.Path(1, document.CoverLetter); err != nil {
 					t.Fatalf("Path: %v", err)
 				}
 			} else if err != nil {

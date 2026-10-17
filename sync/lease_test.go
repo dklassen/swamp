@@ -7,8 +7,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 )
 
@@ -33,14 +33,14 @@ func (f *countingFetcher) FetchPostings(ctx context.Context, boardSlug string) (
 func TestSyncCompany_LeaseHeldElsewhere_SkipsWithoutFetching(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	if taken, err := s.AcquireSyncLease(ctx, acme.ID, "another-sync", time.Minute); err != nil || !taken {
+	if taken, err := s.Companies.AcquireSyncLease(ctx, acme.ID, "another-sync", time.Minute); err != nil || !taken {
 		t.Fatalf("AcquireSyncLease = %v, %v", taken, err)
 	}
 
 	fetcher := &countingFetcher{postings: []jobboard.Posting{samplePosting("job-1", "Engineer", "Engineering", "Remote")}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 	_, err := syncer.SyncCompany(ctx, acme.ID)
 	if !errors.Is(err, ErrSyncInProgress) {
 		t.Fatalf("SyncCompany while the lease is held: err = %v, want ErrSyncInProgress", err)
@@ -48,7 +48,7 @@ func TestSyncCompany_LeaseHeldElsewhere_SkipsWithoutFetching(t *testing.T) {
 	if fetcher.calls != 0 {
 		t.Errorf("board fetched %d times, want 0", fetcher.calls)
 	}
-	postings, err := s.ListPostingsByCompany(ctx, acme.ID)
+	postings, err := s.Postings.ListByCompany(ctx, acme.ID)
 	if err != nil {
 		t.Fatalf("ListPostingsByCompany: %v", err)
 	}
@@ -77,11 +77,13 @@ func (f *gatedFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]j
 func TestSyncCompany_WhileAnotherSyncRuns_Skipped(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	gated := &gatedFetcher{started: make(chan struct{}, 1), release: make(chan struct{}),
-		postings: []jobboard.Posting{samplePosting("job-1", "Engineer", "Engineering", "Remote")}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": gated}, DefaultConfig())
+	gated := &gatedFetcher{
+		started: make(chan struct{}, 1), release: make(chan struct{}),
+		postings: []jobboard.Posting{samplePosting("job-1", "Engineer", "Engineering", "Remote")},
+	}
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": gated}, DefaultConfig())
 
 	first := make(chan error, 1)
 	go func() {
@@ -98,7 +100,7 @@ func TestSyncCompany_WhileAnotherSyncRuns_Skipped(t *testing.T) {
 		t.Fatalf("first SyncCompany: %v", err)
 	}
 
-	next := New(s, map[string]PostingFetcher{"ashby": &countingFetcher{}}, DefaultConfig())
+	next := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": &countingFetcher{}}, DefaultConfig())
 	if _, err := next.SyncCompany(ctx, acme.ID); err != nil {
 		t.Errorf("SyncCompany after the first finished: %v, want the lease free again", err)
 	}
@@ -109,15 +111,15 @@ func TestSyncCompany_WhileAnotherSyncRuns_Skipped(t *testing.T) {
 func TestSyncCompany_AfterFailedSync_LeaseReleased(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 
-	failing := New(s, map[string]PostingFetcher{"ashby": &fakeFetcher{err: errors.New("board down")}}, DefaultConfig())
+	failing := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": &fakeFetcher{err: errors.New("board down")}}, DefaultConfig())
 	if _, err := failing.SyncCompany(ctx, acme.ID); err == nil || errors.Is(err, ErrSyncInProgress) {
 		t.Fatalf("failing SyncCompany: err = %v, want the fetch error", err)
 	}
 
-	next := New(s, map[string]PostingFetcher{"ashby": &countingFetcher{}}, DefaultConfig())
+	next := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": &countingFetcher{}}, DefaultConfig())
 	if _, err := next.SyncCompany(ctx, acme.ID); err != nil {
 		t.Errorf("SyncCompany after a failed sync: %v, want the lease released", err)
 	}
@@ -161,16 +163,16 @@ func (f *staleFirstFetcher) FetchPostings(ctx context.Context, boardSlug string)
 func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	x := samplePosting("job-x", "Engineer", "Engineering", "Remote")
 
 	setup := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": {x}}}
-	seed := New(s, map[string]PostingFetcher{"ashby": setup}, DefaultConfig())
+	seed := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": setup}, DefaultConfig())
 	if _, err := seed.SyncCompany(ctx, acme.ID); err != nil {
 		t.Fatalf("initial SyncCompany: %v", err)
 	}
-	postings, err := s.ListPostingsByCompany(ctx, acme.ID)
+	postings, err := s.Postings.ListByCompany(ctx, acme.ID)
 	if err != nil {
 		t.Fatalf("ListPostingsByCompany: %v", err)
 	}
@@ -182,12 +184,12 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 	if _, err := seed.SyncCompany(ctx, acme.ID); err != nil { // X dropped: closed
 		t.Fatalf("closing SyncCompany: %v", err)
 	}
-	if _, err := updateApplicationStatus(ctx, s, xID, applicationstatus.Started); err != nil {
+	if _, err := updateApplicationStatus(ctx, s, xID, application.Started); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
 	fetcher := &staleFirstFetcher{started: make(chan struct{}), release: make(chan struct{}), old: nil, current: []jobboard.Posting{x}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 	runA := make(chan error, 1)
 	go func() {
 		_, err := syncer.SyncCompany(ctx, acme.ID)
@@ -202,26 +204,26 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 	if !errors.Is(errB, ErrSyncInProgress) {
 		t.Errorf("run B while A holds the company: err = %v, want ErrSyncInProgress", errB)
 	}
-	if application, err := application.Get(ctx, s.DB(), xID); err != nil {
+	if app, err := s.Postings.Application(ctx, xID); err != nil {
 		t.Fatalf("application.Get: %v", err)
-	} else if application.Status != applicationstatus.Started {
-		t.Errorf("after runs A and B: application %s, want %s untouched", application.Status, applicationstatus.Started)
+	} else if app.Status != application.Started {
+		t.Errorf("after runs A and B: application %s, want %s untouched", app.Status, application.Started)
 	}
 
 	setup.postings["acme"] = []jobboard.Posting{x}
 	if _, err := seed.SyncCompany(ctx, acme.ID); err != nil {
 		t.Fatalf("next SyncCompany: %v", err)
 	}
-	posting, err := s.GetPosting(ctx, xID)
+	posting, err := s.Postings.Get(ctx, xID)
 	if err != nil {
 		t.Fatalf("GetPosting: %v", err)
 	}
-	application, err := application.Get(ctx, s.DB(), xID)
+	app, err := s.Postings.Application(ctx, xID)
 	if err != nil {
 		t.Fatalf("application.Get: %v", err)
 	}
-	if posting.ListingStatus != "open" || application.Status != applicationstatus.Started {
-		t.Errorf("after the next sync: posting %s, application %s; want open and %s", posting.ListingStatus, application.Status, applicationstatus.Started)
+	if posting.ListingStatus != "open" || app.Status != application.Started {
+		t.Errorf("after the next sync: posting %s, application %s; want open and %s", posting.ListingStatus, app.Status, application.Started)
 	}
 }
 
@@ -233,10 +235,10 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 func TestSyncer_ReleaseHeldLeases_FreesInFlightSyncsLeases(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	gated := &gatedFetcher{started: make(chan struct{}, 1), release: make(chan struct{})}
-	exiting := New(s, map[string]PostingFetcher{"ashby": gated}, DefaultConfig())
+	exiting := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": gated}, DefaultConfig())
 
 	inFlight := make(chan error, 1)
 	go func() {
@@ -248,7 +250,7 @@ func TestSyncer_ReleaseHeldLeases_FreesInFlightSyncsLeases(t *testing.T) {
 		t.Fatalf("ReleaseHeldLeases: %v", err)
 	}
 
-	next := New(s, map[string]PostingFetcher{"ashby": &countingFetcher{}}, DefaultConfig())
+	next := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": &countingFetcher{}}, DefaultConfig())
 	if _, err := next.SyncCompany(ctx, acme.ID); err != nil {
 		t.Errorf("SyncCompany after the exiting process released its leases: %v, want the lease free", err)
 	}

@@ -5,7 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/filter"
+	"github.com/dklassen/swamp/internal/domain/filter"
 )
 
 func newTestFilterSelectModel() *filterSelectModel {

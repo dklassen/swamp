@@ -109,6 +109,11 @@ tasks:
     cmds:
       - go test ./...
 
+  test:race:
+    desc: Run the Go test suite under the race detector (needs cgo)
+    cmds:
+      - go test -race ./...
+
   build:
     desc: Build the swamp binary to ./bin/swamp
     cmds:

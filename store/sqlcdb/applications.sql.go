@@ -227,17 +227,17 @@ func (q *Queries) SoftDeleteApplication(ctx context.Context, id int64) (int64, e
 const updateApplicationNotes = `-- name: UpdateApplicationNotes :one
 UPDATE applications
 SET notes = ?, updated_at = CURRENT_TIMESTAMP
-WHERE posting_id = ? AND deleted_at IS NULL
+WHERE id = ? AND deleted_at IS NULL
 RETURNING id, posting_id, status, notes, created_at, updated_at, deleted_at
 `
 
 type UpdateApplicationNotesParams struct {
-	Notes     string `json:"notes"`
-	PostingID int64  `json:"posting_id"`
+	Notes string `json:"notes"`
+	ID    int64  `json:"id"`
 }
 
 func (q *Queries) UpdateApplicationNotes(ctx context.Context, arg UpdateApplicationNotesParams) (Application, error) {
-	row := q.db.QueryRowContext(ctx, updateApplicationNotes, arg.Notes, arg.PostingID)
+	row := q.db.QueryRowContext(ctx, updateApplicationNotes, arg.Notes, arg.ID)
 	var i Application
 	err := row.Scan(
 		&i.ID,
@@ -254,17 +254,17 @@ func (q *Queries) UpdateApplicationNotes(ctx context.Context, arg UpdateApplicat
 const updateApplicationStatus = `-- name: UpdateApplicationStatus :one
 UPDATE applications
 SET status = ?, updated_at = CURRENT_TIMESTAMP
-WHERE posting_id = ? AND deleted_at IS NULL
+WHERE id = ? AND deleted_at IS NULL
 RETURNING id, posting_id, status, notes, created_at, updated_at, deleted_at
 `
 
 type UpdateApplicationStatusParams struct {
-	Status    sql.NullString `json:"status"`
-	PostingID int64          `json:"posting_id"`
+	Status sql.NullString `json:"status"`
+	ID     int64          `json:"id"`
 }
 
 func (q *Queries) UpdateApplicationStatus(ctx context.Context, arg UpdateApplicationStatusParams) (Application, error) {
-	row := q.db.QueryRowContext(ctx, updateApplicationStatus, arg.Status, arg.PostingID)
+	row := q.db.QueryRowContext(ctx, updateApplicationStatus, arg.Status, arg.ID)
 	var i Application
 	err := row.Scan(
 		&i.ID,

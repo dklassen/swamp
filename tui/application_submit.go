@@ -5,9 +5,8 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/pursuit"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/posting"
 )
 
 // applicationSubmitModel drives the submit screen (#166), reached with S
@@ -18,7 +17,7 @@ import (
 // with the status unchanged. Nothing is ever submitted to the job board:
 // Swamp only records that the user did it (RFC 0002, "out of scope").
 type applicationSubmitModel struct {
-	application pursuit.Application
+	application posting.ActiveApplication
 	// url is the link opened for the user, "" when the posting has none.
 	url string
 	// opened is the browser result, nil until it arrives.
@@ -33,21 +32,21 @@ type applicationSubmitModel struct {
 
 // applyURL is where a posting's application form is: ApplicationURL,
 // falling back to JobURL when the board didn't give one.
-func applyURL(posting store.Posting) string {
+func applyURL(posting posting.Posting) string {
 	if posting.ApplicationURL != "" {
 		return posting.ApplicationURL
 	}
 	return posting.JobURL
 }
 
-func newApplicationSubmitModel(application pursuit.Application, instance screenInstance) applicationSubmitModel {
+func newApplicationSubmitModel(application posting.ActiveApplication, instance screenInstance) applicationSubmitModel {
 	return applicationSubmitModel{application: application, url: applyURL(application.Posting), instance: instance}
 }
 
 // enterApplicationSubmitMsg signals that App should open the submit
 // screen for this application.
 type enterApplicationSubmitMsg struct {
-	application pursuit.Application
+	application posting.ActiveApplication
 }
 
 // cancelApplicationSubmitMsg signals that App should go back to
@@ -60,7 +59,7 @@ func (m *applicationSubmitModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		return nil, cancelApplicationSubmitMsg{}
 	case msg.String() == "y" && !m.confirmed:
 		m.confirmed = true
-		return nil, confirmApplicationSubmitMsg{postingID: m.application.Posting.ID}
+		return nil, confirmApplicationSubmitMsg{applicationID: m.application.ID}
 	}
 	return nil, nil
 }
@@ -68,7 +67,7 @@ func (m *applicationSubmitModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 // confirmApplicationSubmitMsg signals that App should mark the
 // application submitted.
 type confirmApplicationSubmitMsg struct {
-	postingID int64
+	applicationID int64
 }
 
 func (m *applicationSubmitModel) View() string {
@@ -99,7 +98,7 @@ func (m *applicationSubmitModel) View() string {
 			b.WriteString("  " + path + "\n")
 		}
 	}
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		review, ok := m.application.LatestReviews[documentType]
 		b.WriteString("  " + documentType.Label() + ": " + reviewBadge(review, ok) + "\n")
 	}
@@ -117,10 +116,10 @@ func (m *applicationSubmitModel) View() string {
 // and starts its first two steps together: opening the apply link and
 // exporting the documents to the last-used export directory, recorded
 // like any other export (#188).
-func (a *App) startApplicationSubmit(application pursuit.Application) tea.Cmd {
+func (a *App) startApplicationSubmit(application posting.ActiveApplication) tea.Cmd {
 	a.applicationSubmit = newApplicationSubmitModel(application, a.newScreenInstance())
 	a.screen = screenApplicationSubmit
-	export := exportApplicationDocuments(a.store, a.documents, application, a.exportDir)
+	export := exportApplicationDocuments(a.documentService, a.documents, application, a.exportDir)
 	if a.applicationSubmit.url == "" {
 		return export
 	}

@@ -7,24 +7,24 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
 )
 
 // applicationStatuses is the full fixed set of legal application statuses,
-// per applicationstatus.All -- applicationstatus.Status (a Go enum) is
+// per application.All -- application.Status (a Go enum) is
 // the sole source of truth for valid values now; the DB column has no
 // CHECK constraint of its own to stay in sync with. The schema encodes no transition graph -- every status is
 // reachable from every other -- so the status-select screen offers all of
 // them unconditionally rather than a hand-maintained "valid next status"
 // list.
-var applicationStatuses = applicationstatus.All()
+var applicationStatuses = application.All()
 
 // applicationStatusIndex returns status's position in applicationStatuses,
 // or 0 if not found -- used to point the status-select cursor at the
 // application's current status when the screen is opened.
-func applicationStatusIndex(status applicationstatus.Status) int {
+func applicationStatusIndex(status application.Status) int {
 	for i, s := range applicationStatuses {
 		if s == status {
 			return i
@@ -34,21 +34,21 @@ func applicationStatusIndex(status applicationstatus.Status) int {
 }
 
 // applicationStatusModel drives the application-status-select screen for
-// a single posting's application. It holds the store it needs to save the
-// new status, the posting it's editing (fixed for this screen's
+// a single application. It holds the service it needs to save the new
+// status, the application it's editing (fixed for this screen's
 // lifetime), and its own private cursor -- no other screen reads or
 // writes this state.
 type applicationStatusModel struct {
-	store     *store.Store
-	postingID int64
-	cursor    int
-	instance  screenInstance
+	applications  *service.ApplicationService
+	applicationID int64
+	cursor        int
+	instance      screenInstance
 }
 
 // newApplicationStatusModel returns a status-select screen for
-// postingID, with the cursor seeded at currentStatus's position.
-func newApplicationStatusModel(s *store.Store, postingID int64, currentStatus applicationstatus.Status, instance screenInstance) applicationStatusModel {
-	return applicationStatusModel{store: s, postingID: postingID, cursor: applicationStatusIndex(currentStatus), instance: instance}
+// applicationID, with the cursor seeded at currentStatus's position.
+func newApplicationStatusModel(applications *service.ApplicationService, applicationID int64, currentStatus application.Status, instance screenInstance) applicationStatusModel {
+	return applicationStatusModel{applications: applications, applicationID: applicationID, cursor: applicationStatusIndex(currentStatus), instance: instance}
 }
 
 // cancelApplicationStatusMsg signals that App should switch back to the
@@ -69,7 +69,7 @@ func (m *applicationStatusModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		return nil, cancelApplicationStatusMsg{}
 	case msg.Type == tea.KeyEnter:
 		status := applicationStatuses[m.cursor]
-		return updateApplicationStatus(m.store, m.postingID, status, m.instance), nil
+		return updateApplicationStatus(m.applications, m.applicationID, status, m.instance), nil
 	}
 	return nil, nil
 }
@@ -89,33 +89,33 @@ func (m *applicationStatusModel) View() string {
 
 // applicationStatusLabel renders an ApplicationStatus as display text.
 // ApplicationStatus.String() is the value persisted to the DB (see
-// applicationstatus.Status), so it can't be prettified at the source
+// application.Status), so it can't be prettified at the source
 // without changing what's written to applications.status -- the
-// presentation form lives here instead, the same way documents.Type.Label
-// handles documents.Type.
+// presentation form lives here instead, the same way document.Type.Label
+// handles document.Type.
 //
 // The default case falls back to String() so an unmapped status still
 // renders something rather than an empty cell; TestApplicationStatus
 // Label_CoversEveryStatus fails if a new status ever reaches it.
-func applicationStatusLabel(status applicationstatus.Status) string {
+func applicationStatusLabel(status application.Status) string {
 	switch status {
-	case applicationstatus.Started:
+	case application.Started:
 		return "Started"
-	case applicationstatus.Submitted:
+	case application.Submitted:
 		return "Submitted"
-	case applicationstatus.Interviewing:
+	case application.Interviewing:
 		return "Interviewing"
-	case applicationstatus.Rejected:
+	case application.Rejected:
 		return "Rejected"
-	case applicationstatus.OfferReceived:
+	case application.OfferReceived:
 		return "Offer received"
-	case applicationstatus.OfferAccepted:
+	case application.OfferAccepted:
 		return "Offer accepted"
-	case applicationstatus.OfferDeclined:
+	case application.OfferDeclined:
 		return "Offer declined"
-	case applicationstatus.PostingClosed:
+	case application.PostingClosed:
 		return "Posting closed"
-	case applicationstatus.Withdrawn:
+	case application.Withdrawn:
 		return "Withdrawn"
 	default:
 		return status.String()
@@ -125,22 +125,21 @@ func applicationStatusLabel(status applicationstatus.Status) string {
 // applicationStatusLoadedMsg carries the stored status the status form
 // opens on, and the screen that asked for it.
 type applicationStatusLoadedMsg struct {
-	postingID int64
-	status    applicationstatus.Status
-	from      screen
-	err       error
+	applicationID int64
+	status        application.Status
+	from          screen
+	err           error
 }
 
-// loadApplicationStatus reads postingID's application status as it is
-// now, not as the screen that opens the form loaded it: sync or an agent
-// may have changed it since, and the form would undo that on save (RFC
-// 0007, H5).
-func loadApplicationStatus(s *store.Store, postingID int64, from screen) tea.Cmd {
+// loadApplicationStatus reads the application's status as it is now, not
+// as the screen that opens the form loaded it: sync or an agent may have
+// changed it since, and the form would undo that on save.
+func loadApplicationStatus(applications *service.ApplicationService, applicationID int64, from screen) tea.Cmd {
 	return func() tea.Msg {
-		application, err := application.Get(context.Background(), s.DB(), postingID)
+		app, err := applications.Get(context.Background(), applicationID)
 		if errors.Is(err, store.ErrNotFound) {
 			err = errors.New("this application was deleted in the meantime")
 		}
-		return applicationStatusLoadedMsg{postingID: postingID, status: application.Status, from: from, err: err}
+		return applicationStatusLoadedMsg{applicationID: applicationID, status: app.Status, from: from, err: err}
 	}
 }

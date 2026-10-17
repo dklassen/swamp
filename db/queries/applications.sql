@@ -29,13 +29,13 @@ WHERE id = ?;
 -- name: UpdateApplicationStatus :one
 UPDATE applications
 SET status = ?, updated_at = CURRENT_TIMESTAMP
-WHERE posting_id = ? AND deleted_at IS NULL
+WHERE id = ? AND deleted_at IS NULL
 RETURNING *;
 
 -- name: UpdateApplicationNotes :one
 UPDATE applications
 SET notes = ?, updated_at = CURRENT_TIMESTAMP
-WHERE posting_id = ? AND deleted_at IS NULL
+WHERE id = ? AND deleted_at IS NULL
 RETURNING *;
 
 -- name: ListActiveApplications :many

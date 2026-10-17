@@ -7,11 +7,12 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 )
 
 func TestSyncAll_OneCompanyFailsFetch_OthersStillProcessed(t *testing.T) {
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
 	good := mustCreateCompany(t, s, "Acme", "ashby", "acme")
@@ -26,7 +27,7 @@ func TestSyncAll_OneCompanyFailsFetch_OthersStillProcessed(t *testing.T) {
 		},
 	}
 
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 	results, err := syncer.SyncAll(ctx)
 	if err != nil {
 		t.Fatalf("SyncAll: %v", err)
@@ -59,14 +60,14 @@ func TestSyncAll_OneCompanyFailsFetch_OthersStillProcessed(t *testing.T) {
 func TestSyncResults_CarryCompanyName(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	fetcher := &perBoardFetcher{
 		postings:  map[string][]jobboard.Posting{"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")}},
 		errBoards: map[string]error{"globex": errors.New("connection refused")},
 	}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	one, err := syncer.SyncCompany(ctx, acme.ID)
 	if err != nil {

@@ -3,8 +3,6 @@ package migrations
 import (
 	"database/sql"
 	"testing"
-
-	"github.com/pressly/goose/v3"
 )
 
 // insertPosting adds a company and one posting, ID 1.
@@ -62,7 +60,7 @@ func TestPostingScores_ScoresKeepTheirRunsProvenance(t *testing.T) {
 		}
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 29); err != nil {
+	if err := upTo(sqlDB, 29); err != nil {
 		t.Fatalf("migrate to 29: %v", err)
 	}
 

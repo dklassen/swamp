@@ -2,77 +2,42 @@ package tui
 
 import (
 	"context"
-	"database/sql"
 	"testing"
 
-	"github.com/pressly/goose/v3"
-
-	_ "modernc.org/sqlite"
-
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/companyfilter"
-	"github.com/dklassen/swamp/db/migrations"
-	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/filter"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/filter"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/domain/score"
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/scoring"
-	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
 
-func newTestStore(t *testing.T) *store.Store {
+func mustCreateCompany(t *testing.T, s testutil.TestApp, name, source, sourceRef string) company.Company {
 	t.Helper()
-
-	sqlDB, err := sql.Open("sqlite", "file:"+t.TempDir()+"/test.db")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := sqlDB.Close(); err != nil {
-			t.Errorf("close db: %v", err)
-		}
-	})
-
-	goose.SetBaseFS(migrations.FS)
-	if err := goose.SetDialect("sqlite3"); err != nil {
-		t.Fatalf("set dialect: %v", err)
-	}
-	if err := goose.Up(sqlDB, "."); err != nil {
-		t.Fatalf("apply migrations: %v", err)
-	}
-
-	return store.New(sqlDB)
-}
-
-func mustCreateCompany(t *testing.T, s *store.Store, name, source, sourceRef string) store.Company {
-	t.Helper()
-	c, err := s.CreateCompany(context.Background(), name, source, sourceRef)
+	c, err := s.Companies.Add(context.Background(), name, source, sourceRef)
 	if err != nil {
 		t.Fatalf("CreateCompany: %v", err)
 	}
 	return c
 }
 
-// mustUpsertPosting creates a posting directly via the store, bypassing
-// the syncer -- for tests that need a posting/application to exist
-// without driving a full sync.
-func mustUpsertPosting(t *testing.T, s *store.Store, companyID int64, sourceID, title string) store.Posting {
+// mustUpsertPosting creates a posting directly via the posting service,
+// bypassing the syncer -- for tests that need a posting/application to
+// exist without driving a full sync.
+func mustUpsertPosting(t *testing.T, s testutil.TestApp, companyID int64, sourceID, title string) posting.Posting {
 	t.Helper()
-	p, err := s.UpsertPosting(context.Background(), store.CreatePostingParams{
-		CompanyID:      companyID,
-		Source:         "ashby",
-		SourceID:       sourceID,
-		IngestedFields: store.IngestedFields{Title: title},
-	})
+	ingested, err := s.Postings.Ingest(context.Background(), companyID, "ashby", sourceID, posting.IngestedFields{Title: title})
 	if err != nil {
-		t.Fatalf("UpsertPosting: %v", err)
+		t.Fatalf("Ingest: %v", err)
 	}
-	return p
+	return ingested.Posting
 }
 
-func mustCreateApplication(t *testing.T, s *store.Store, postingID int64) application.Application {
+func mustCreateApplication(t *testing.T, s testutil.TestApp, postingID int64) application.Application {
 	t.Helper()
 	a, err := createApplicationIn(context.Background(), s, postingID)
 	if err != nil {
@@ -95,12 +60,30 @@ func (f *fakeFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jo
 	return f.postings[boardSlug], nil
 }
 
-func newTestSyncer(s *store.Store, postings map[string][]jobboard.Posting) *sync.Syncer {
-	return sync.New(s, map[string]sync.PostingFetcher{"ashby": &fakeFetcher{postings: postings}}, sync.DefaultConfig())
+// newAppOn is an App on s's services, syncer and docs.
+func newAppOn(s testutil.TestApp, syncer *sync.Syncer, docs *documents.Store) *App {
+	return New(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, syncer, docs)
+}
+
+// storeOf is app's services, for tests that get only an App from their
+// setup. Its Store and Path are empty.
+func storeOf(app *App) testutil.TestApp {
+	return testutil.TestApp{
+		Companies:    app.companyService,
+		Postings:     app.postingService,
+		Applications: app.applicationService,
+		Documents:    app.documentService,
+		Scores:       app.scoringService,
+		Changes:      app.changeLogService,
+	}
+}
+
+func newTestSyncer(s testutil.TestApp, postings map[string][]jobboard.Posting) *sync.Syncer {
+	return sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{"ashby": &fakeFetcher{postings: postings}}, sync.DefaultConfig())
 }
 
 // mustDoc is status.Doc(documentType), failing the test on an error.
-func mustDoc(t *testing.T, status documents.Status, documentType documents.Type) documents.Doc {
+func mustDoc(t *testing.T, status documents.Status, documentType document.Type) documents.Doc {
 	t.Helper()
 	doc, err := status.Doc(documentType)
 	if err != nil {
@@ -109,57 +92,35 @@ func mustDoc(t *testing.T, status documents.Status, documentType documents.Type)
 	return doc
 }
 
-func addCompanyFilter(t *testing.T, s *store.Store, companyID int64, field, value string) {
+func addCompanyFilter(t *testing.T, s testutil.TestApp, companyID int64, field, value string) {
 	t.Helper()
 	ctx := context.Background()
-	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-		existing, err := companyfilter.List(ctx, tx, companyID)
-		if err != nil {
-			return err
-		}
-		return companyfilter.Replace(ctx, tx, companyID, append(existing, filter.Filter{Field: field, Value: value}))
-	})
+	existing, err := s.Companies.Filters(ctx, companyID)
 	if err != nil {
+		t.Fatalf("add company filter %s=%s: %v", field, value, err)
+	}
+	if err := s.Companies.SetFilters(ctx, companyID, append(existing, filter.Filter{Field: field, Value: value})); err != nil {
 		t.Fatalf("add company filter %s=%s: %v", field, value, err)
 	}
 }
 
-func recordScores(ctx context.Context, s *store.Store, provenance scoring.Provenance, entries []scoring.Entry) (scoring.RecordResult, error) {
-	var result scoring.RecordResult
-	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-		var err error
-		result, err = scoring.Record(ctx, tx, provenance, entries)
-		return err
-	})
-	return result, err
+func recordScores(ctx context.Context, s testutil.TestApp, provenance score.Provenance, entries []score.Entry) (score.RecordResult, error) {
+	return s.Scores.Record(ctx, provenance, entries)
 }
 
-func createReview(ctx context.Context, s *store.Store, applicationID int64, documentType documents.Type, content string, outcome docrecord.Outcome, notes string) (docrecord.Review, error) {
-	var review docrecord.Review
-	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-		var err error
-		review, err = docrecord.CreateReview(ctx, tx, applicationID, documentType, content, outcome, notes)
-		return err
-	})
-	return review, err
+func createReview(ctx context.Context, s testutil.TestApp, applicationID int64, documentType document.Type, content string, outcome document.Outcome, notes string) (document.Review, error) {
+	return s.Documents.Review(ctx, applicationID, documentType, content, outcome, notes)
 }
 
-func createApplicationIn(ctx context.Context, s *store.Store, postingID int64) (application.Application, error) {
-	var app application.Application
-	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-		var err error
-		app, err = application.Create(ctx, tx, postingID)
-		return err
-	})
-	return app, err
+func createApplicationIn(ctx context.Context, s testutil.TestApp, postingID int64) (application.Application, error) {
+	return s.Postings.ApplyTo(ctx, postingID)
 }
 
-func updateApplicationStatusIn(ctx context.Context, s *store.Store, postingID int64, status applicationstatus.Status) (application.Application, error) {
-	var app application.Application
-	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-		var err error
-		app, err = application.UpdateStatus(ctx, tx, postingID, status)
-		return err
-	})
-	return app, err
+// updateApplicationStatusIn sets the status of postingID's application.
+func updateApplicationStatusIn(ctx context.Context, s testutil.TestApp, postingID int64, status application.Status) (application.Application, error) {
+	app, err := s.Postings.Application(ctx, postingID)
+	if err != nil {
+		return application.Application{}, err
+	}
+	return s.Applications.SetStatus(ctx, app.ID, status)
 }

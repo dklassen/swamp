@@ -12,11 +12,11 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 
-	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/pursuit"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/service"
 )
 
 // activeApplicationListModel drives the active-applications screen -- the
@@ -50,7 +50,7 @@ var (
 
 func longestStatusLabel() int {
 	longest := 0
-	for _, status := range applicationstatus.All() {
+	for _, status := range application.All() {
 		longest = max(longest, lipgloss.Width(applicationStatusLabel(status)))
 	}
 	return longest
@@ -71,21 +71,21 @@ func newActiveApplicationListModel() activeApplicationListModel {
 // enterApplicationDetailMsg signals that App should switch to the
 // application-detail screen for this application.
 type enterApplicationDetailMsg struct {
-	application pursuit.Application
+	application posting.ActiveApplication
 }
 
 // enterApplicationExportMsg signals that App should switch to the
 // export screen for this application, where the user picks the
 // destination folder for its generated PDFs.
 type enterApplicationExportMsg struct {
-	application pursuit.Application
+	application posting.ActiveApplication
 }
 
 // Update handles one key press. The returned tea.Cmd (if non-nil) is a
 // real async command for App to run through bubbletea as usual. The
 // returned tea.Msg (if non-nil) is an intent for App to apply
 // synchronously -- see companyListModel.Update for the same convention.
-func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []pursuit.Application) (tea.Cmd, tea.Msg) {
+func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []posting.ActiveApplication) (tea.Cmd, tea.Msg) {
 	if m.searching {
 		return m.updateSearch(msg, apps)
 	}
@@ -109,7 +109,7 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []pursuit.Appli
 	case msg.String() == "s":
 		if m.cursor < len(visible) {
 			a := visible[m.cursor]
-			return nil, enterApplicationStatusMsg{postingID: a.Posting.ID}
+			return nil, enterApplicationStatusMsg{applicationID: a.ID}
 		}
 	case msg.String() == "e":
 		if m.cursor < len(visible) {
@@ -130,7 +130,7 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []pursuit.Appli
 // updateSearch handles a key while the '/' prompt is open. Every edit
 // to the query re-filters straight away and puts the cursor back on the
 // first match.
-func (m *activeApplicationListModel) updateSearch(msg tea.KeyMsg, apps []pursuit.Application) (tea.Cmd, tea.Msg) {
+func (m *activeApplicationListModel) updateSearch(msg tea.KeyMsg, apps []posting.ActiveApplication) (tea.Cmd, tea.Msg) {
 	switch msg.Type {
 	case tea.KeyRunes, tea.KeySpace:
 		m.query += string(msg.Runes)
@@ -162,11 +162,11 @@ func (m *activeApplicationListModel) updateSearch(msg tea.KeyMsg, apps []pursuit
 
 // clearSearch drops the query, keeping the highlighted application
 // highlighted in the full list.
-func (m *activeApplicationListModel) clearSearch(apps []pursuit.Application) {
+func (m *activeApplicationListModel) clearSearch(apps []posting.ActiveApplication) {
 	cursor := 0
 	if visible := m.visible(apps); m.cursor < len(visible) {
 		id := visible[m.cursor].ID
-		cursor = max(slices.IndexFunc(apps, func(a pursuit.Application) bool { return a.ID == id }), 0)
+		cursor = max(slices.IndexFunc(apps, func(a posting.ActiveApplication) bool { return a.ID == id }), 0)
 	}
 	m.query = ""
 	m.cursor = cursor
@@ -175,12 +175,12 @@ func (m *activeApplicationListModel) clearSearch(apps []pursuit.Application) {
 // visible is the part of apps the query matches: a case-insensitive
 // substring of the company or the posting title, in the order given.
 // With no query, it's all of them.
-func (m *activeApplicationListModel) visible(apps []pursuit.Application) []pursuit.Application {
+func (m *activeApplicationListModel) visible(apps []posting.ActiveApplication) []posting.ActiveApplication {
 	if m.query == "" {
 		return apps
 	}
 	q := strings.ToLower(m.query)
-	var matches []pursuit.Application
+	var matches []posting.ActiveApplication
 	for _, a := range apps {
 		if strings.Contains(strings.ToLower(a.CompanyName), q) || strings.Contains(strings.ToLower(a.Posting.Title), q) {
 			matches = append(matches, a)
@@ -193,7 +193,7 @@ func (m *activeApplicationListModel) visible(apps []pursuit.Application) []pursu
 // progress holds each application's document progress by application ID,
 // from which, with its LatestReviews, each row's next step is derived
 // (see nextStep), and now is what each row's Age counts up to.
-func (m *activeApplicationListModel) View(apps []pursuit.Application, progress map[int64]map[documents.Type]documentProgress, now time.Time, width, height int) string {
+func (m *activeApplicationListModel) View(apps []posting.ActiveApplication, progress map[int64]map[document.Type]documentProgress, now time.Time, width, height int) string {
 	var b strings.Builder
 	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: search  s: status  e: export PDFs  d: delete  tab: companies  q: quit")
 	switch {
@@ -249,7 +249,7 @@ func (m *activeApplicationListModel) View(apps []pursuit.Application, progress m
 // selected is the ID of the application under the cursor, or 0. The
 // cursor indexes what the search shows, which is all of apps when there's
 // no query.
-func (m *activeApplicationListModel) selected(apps []pursuit.Application) int64 {
+func (m *activeApplicationListModel) selected(apps []posting.ActiveApplication) int64 {
 	if visible := m.visible(apps); m.cursor < len(visible) {
 		return visible[m.cursor].ID
 	}
@@ -259,9 +259,9 @@ func (m *activeApplicationListModel) selected(apps []pursuit.Application) int64 
 // keepCursorOn moves the cursor to application id after a reload, since
 // rows above it may have come or gone; if it's gone, the cursor stays in
 // range.
-func (m *activeApplicationListModel) keepCursorOn(id int64, apps []pursuit.Application) {
+func (m *activeApplicationListModel) keepCursorOn(id int64, apps []posting.ActiveApplication) {
 	visible := m.visible(apps)
-	if i := slices.IndexFunc(visible, func(a pursuit.Application) bool { return a.ID == id }); i >= 0 {
+	if i := slices.IndexFunc(visible, func(a posting.ActiveApplication) bool { return a.ID == id }); i >= 0 {
 		m.cursor = i
 		return
 	}
@@ -280,7 +280,7 @@ func (m *activeApplicationListModel) resetCursorIfOutOfBounds(n int) {
 
 // documentProgress is one document's state on disk, for nextStep: whether
 // it's drafted, and whether its current content has been exported as a
-// PDF (docrecord.Export.IsCurrent).
+// PDF (document.Export.IsCurrent).
 type documentProgress struct {
 	drafted  bool
 	exported bool
@@ -303,9 +303,9 @@ type documentProgress struct {
 //
 // a.LatestReviews must already be filtered to current reviews (see
 // documents.Current), as loadActiveApplications does.
-func nextStep(a pursuit.Application, docs map[documents.Type]documentProgress) string {
+func nextStep(a posting.ActiveApplication, docs map[document.Type]documentProgress) string {
 	closed := a.Posting.ListingStatus == "closed"
-	if a.Status != applicationstatus.Started {
+	if a.Status != application.Started {
 		if closed {
 			return "(closed)"
 		}
@@ -314,14 +314,14 @@ func nextStep(a pursuit.Application, docs map[documents.Type]documentProgress) s
 	if closed {
 		return "withdraw?"
 	}
-	documentTypes := documents.Types()
+	documentTypes := document.Types()
 	for _, documentType := range documentTypes {
 		if !docs[documentType].drafted {
 			return "draft"
 		}
 	}
 	for _, documentType := range documentTypes {
-		if review, ok := a.LatestReviews[documentType]; ok && review.Outcome == docrecord.Flagged {
+		if review, ok := a.LatestReviews[documentType]; ok && review.Outcome == document.Flagged {
 			return "revise"
 		}
 	}
@@ -351,9 +351,9 @@ func statusAge(since, now time.Time) string {
 // applications first, longest at their status first, then everything
 // else in the order it came in (the store's most-recently-changed
 // first).
-func orderForHome(apps []pursuit.Application) {
-	slices.SortStableFunc(apps, func(a, b pursuit.Application) int {
-		aStarted, bStarted := a.Status == applicationstatus.Started, b.Status == applicationstatus.Started
+func orderForHome(apps []posting.ActiveApplication) {
+	slices.SortStableFunc(apps, func(a, b posting.ActiveApplication) int {
+		aStarted, bStarted := a.Status == application.Started, b.Status == application.Started
 		switch {
 		case aStarted && bStarted:
 			return a.StatusSince.Compare(b.StatusSince)
@@ -370,18 +370,18 @@ func orderForHome(apps []pursuit.Application) {
 // documents is drafted, and whether its current content was exported
 // (#188). A read failure is an error rather than "not exported" (see
 // documents.Current).
-func documentProgressOf(s *store.Store, docs *documents.Store, applicationID int64) (map[documents.Type]documentProgress, error) {
-	exports, err := docrecord.LatestExports(context.Background(), s.DB(), applicationID)
+func documentProgressOf(documentService *service.DocumentService, docs *documents.Store, applicationID int64) (map[document.Type]documentProgress, error) {
+	exports, err := documentService.LatestExports(context.Background(), applicationID)
 	if err != nil {
 		return nil, err
 	}
 	status := docs.Status(applicationID)
-	currentExports, err := documents.Current(status, exports, docrecord.Export.IsCurrent)
+	currentExports, err := documents.Current(status, exports, document.Export.IsCurrent)
 	if err != nil {
 		return nil, err
 	}
-	progress := make(map[documents.Type]documentProgress, len(documents.Types()))
-	for _, documentType := range documents.Types() {
+	progress := make(map[document.Type]documentProgress, len(document.Types()))
+	for _, documentType := range document.Types() {
 		doc, err := status.Doc(documentType)
 		if err != nil {
 			return nil, err

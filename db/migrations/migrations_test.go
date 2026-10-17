@@ -1,22 +1,21 @@
 package migrations
 
 import (
+	"context"
 	"database/sql"
 	"fmt"
 	"regexp"
 	"strings"
 	"testing"
 
+	"github.com/dklassen/swamp/store"
 	"github.com/google/go-cmp/cmp"
-	"github.com/pressly/goose/v3"
-
-	_ "modernc.org/sqlite"
 )
 
 func migrateTo(t *testing.T, version int64) *sql.DB {
 	t.Helper()
 
-	sqlDB, err := sql.Open("sqlite", "file:"+t.TempDir()+"/test.db")
+	sqlDB, err := store.Open(t.TempDir()+"/test.db", store.DefaultConfig())
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
@@ -26,14 +25,38 @@ func migrateTo(t *testing.T, version int64) *sql.DB {
 		}
 	})
 
-	goose.SetBaseFS(FS)
-	if err := goose.SetDialect("sqlite3"); err != nil {
-		t.Fatalf("set dialect: %v", err)
-	}
-	if err := goose.UpTo(sqlDB, ".", version); err != nil {
+	if err := upTo(sqlDB, version); err != nil {
 		t.Fatalf("migrate to version %d: %v", version, err)
 	}
 	return sqlDB
+}
+
+// upTo, downTo and dbVersion go through a goose provider, not goose's
+// package functions, whose global state parallel tests race on.
+func upTo(db *sql.DB, version int64) error {
+	p, err := provider(db)
+	if err != nil {
+		return err
+	}
+	_, err = p.UpTo(context.Background(), version)
+	return err
+}
+
+func downTo(db *sql.DB, version int64) error {
+	p, err := provider(db)
+	if err != nil {
+		return err
+	}
+	_, err = p.DownTo(context.Background(), version)
+	return err
+}
+
+func dbVersion(db *sql.DB) (int64, error) {
+	p, err := provider(db)
+	if err != nil {
+		return 0, err
+	}
+	return p.GetDBVersion(context.Background())
 }
 
 // TestSplitApplicationFromPosting_MigratesAppliedMarkupIntoApplication
@@ -62,7 +85,7 @@ func TestSplitApplicationFromPosting_MigratesAppliedMarkupIntoApplication(t *tes
 		t.Fatalf("insert posting_markup: %v", err)
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 2); err != nil {
+	if err := upTo(sqlDB, 2); err != nil {
 		t.Fatalf("migrate to version 2: %v", err)
 	}
 
@@ -111,7 +134,7 @@ func TestSplitApplicationFromPosting_RepointsInterviewStagesToApplication(t *tes
 		t.Fatalf("insert interview_stage: %v", err)
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 2); err != nil {
+	if err := upTo(sqlDB, 2); err != nil {
 		t.Fatalf("migrate to version 2: %v", err)
 	}
 
@@ -153,7 +176,7 @@ func TestPostingMarkupInterestedArchivedFlags_MigratesInterestedStatusToTimestam
 		t.Fatalf("insert posting_markup: %v", err)
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 3); err != nil {
+	if err := upTo(sqlDB, 3); err != nil {
 		t.Fatalf("migrate to version 3: %v", err)
 	}
 
@@ -197,10 +220,10 @@ func TestDropApplicationStatusCheckConstraint_PreservesExistingApplicationRow(t 
 		t.Fatalf("insert application: %v", err)
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 4); err != nil {
+	if err := upTo(sqlDB, 4); err != nil {
 		t.Fatalf("migrate to version 4: %v", err)
 	}
-	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+	if gotVersion, err := dbVersion(sqlDB); err != nil {
 		t.Fatalf("GetDBVersion: %v", err)
 	} else if gotVersion != 4 {
 		t.Fatalf("DB version after UpTo(4) = %d, want 4 (migration 00004 not found?)", gotVersion)
@@ -304,7 +327,7 @@ func TestTrimExistingPostingWhitespace_TrimsPaddedFields(t *testing.T) {
 		t.Fatalf("insert posting: %v", err)
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 5); err != nil {
+	if err := upTo(sqlDB, 5); err != nil {
 		t.Fatalf("migrate to version 5: %v", err)
 	}
 
@@ -371,7 +394,7 @@ func TestPostingsOptionalFieldsNotNull_BackfillsExistingNullsToEmptyString(t *te
 		t.Fatalf("insert posting with every optional column omitted (NULL): %v", err)
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 6); err != nil {
+	if err := upTo(sqlDB, 6); err != nil {
 		t.Fatalf("migrate to version 6: %v", err)
 	}
 
@@ -554,10 +577,10 @@ func TestDropDocumentReviewsCheckConstraints_PreservesExistingRow(t *testing.T) 
 		t.Fatalf("insert document_review: %v", err)
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 8); err != nil {
+	if err := upTo(sqlDB, 8); err != nil {
 		t.Fatalf("migrate to version 8: %v", err)
 	}
-	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+	if gotVersion, err := dbVersion(sqlDB); err != nil {
 		t.Fatalf("GetDBVersion: %v", err)
 	} else if gotVersion != 8 {
 		t.Fatalf("DB version after UpTo(8) = %d, want 8 (migration 00008 not found?)", gotVersion)
@@ -689,7 +712,7 @@ func TestCloseApplicationsForClosedPostings_BacksFillsEarlyStagesOnly(t *testing
 		}
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 9); err != nil {
+	if err := upTo(sqlDB, 9); err != nil {
 		t.Fatalf("migrate to version 9: %v", err)
 	}
 
@@ -724,10 +747,10 @@ func TestCompanyDescription_ExistingCompaniesGetEmptyDescription(t *testing.T) {
 		t.Fatalf("insert company: %v", err)
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 10); err != nil {
+	if err := upTo(sqlDB, 10); err != nil {
 		t.Fatalf("migrate to version 10: %v", err)
 	}
-	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+	if gotVersion, err := dbVersion(sqlDB); err != nil {
 		t.Fatalf("GetDBVersion: %v", err)
 	} else if gotVersion != 10 {
 		t.Fatalf("DB version after UpTo(10) = %d, want 10 (migration 00010 not found?)", gotVersion)
@@ -758,10 +781,10 @@ func TestCompanyLastFetchedAt_ExistingCompaniesStartNeverFetched(t *testing.T) {
 		t.Fatalf("insert company: %v", err)
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 11); err != nil {
+	if err := upTo(sqlDB, 11); err != nil {
 		t.Fatalf("migrate to version 11: %v", err)
 	}
-	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+	if gotVersion, err := dbVersion(sqlDB); err != nil {
 		t.Fatalf("GetDBVersion: %v", err)
 	} else if gotVersion != 11 {
 		t.Fatalf("DB version after UpTo(11) = %d, want 11 (migration 00011 not found?)", gotVersion)
@@ -817,10 +840,10 @@ func TestPublishedAtUTC_ConvertsStoredTimesToUTC(t *testing.T) {
 		}
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 12); err != nil {
+	if err := upTo(sqlDB, 12); err != nil {
 		t.Fatalf("migrate to version 12: %v", err)
 	}
-	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+	if gotVersion, err := dbVersion(sqlDB); err != nil {
 		t.Fatalf("GetDBVersion: %v", err)
 	} else if gotVersion != 12 {
 		t.Fatalf("DB version after UpTo(12) = %d, want 12 (migration 00012 not found?)", gotVersion)
@@ -877,10 +900,10 @@ func TestApplicationStatusHistory_BackfillsExistingApplications(t *testing.T) {
 		}
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 14); err != nil {
+	if err := upTo(sqlDB, 14); err != nil {
 		t.Fatalf("migrate to version 14: %v", err)
 	}
-	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+	if gotVersion, err := dbVersion(sqlDB); err != nil {
 		t.Fatalf("GetDBVersion: %v", err)
 	} else if gotVersion != 14 {
 		t.Fatalf("DB version after UpTo(14) = %d, want 14 (migration 00014 not found?)", gotVersion)
@@ -943,7 +966,7 @@ func TestApplicationStatusHistory_DownDropsTable(t *testing.T) {
 		t.Fatalf("insert history: %v", err)
 	}
 
-	if err := goose.DownTo(sqlDB, ".", 13); err != nil {
+	if err := downTo(sqlDB, 13); err != nil {
 		t.Fatalf("migrate down to version 13: %v", err)
 	}
 
@@ -1002,10 +1025,10 @@ func TestCloseDeletedCompaniesPostings_ClosesOnlyDeletedCompaniesOpenPostings(t 
 		t.Fatalf("insert application: %v", err)
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 15); err != nil {
+	if err := upTo(sqlDB, 15); err != nil {
 		t.Fatalf("migrate to version 15: %v", err)
 	}
-	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+	if gotVersion, err := dbVersion(sqlDB); err != nil {
 		t.Fatalf("GetDBVersion: %v", err)
 	} else if gotVersion != 15 {
 		t.Fatalf("DB version after UpTo(15) = %d, want 15 (migration 00015 not found?)", gotVersion)
@@ -1083,10 +1106,10 @@ func TestApplicationStatusChangedBy_ExistingRowsUnknown(t *testing.T) {
 		}
 	}
 
-	if err := goose.UpTo(sqlDB, ".", 18); err != nil {
+	if err := upTo(sqlDB, 18); err != nil {
 		t.Fatalf("migrate to version 18: %v", err)
 	}
-	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+	if gotVersion, err := dbVersion(sqlDB); err != nil {
 		t.Fatalf("GetDBVersion: %v", err)
 	} else if gotVersion != 18 {
 		t.Fatalf("DB version after UpTo(18) = %d, want 18 (migration 00018 not found?)", gotVersion)
@@ -1157,10 +1180,10 @@ func TestApplicationsAutoincrement_KeepsRowsAndContinuesFromMaxID(t *testing.T) 
 	}
 	before := read()
 
-	if err := goose.UpTo(sqlDB, ".", 19); err != nil {
+	if err := upTo(sqlDB, 19); err != nil {
 		t.Fatalf("migrate to version 19: %v", err)
 	}
-	if gotVersion, err := goose.GetDBVersion(sqlDB); err != nil {
+	if gotVersion, err := dbVersion(sqlDB); err != nil {
 		t.Fatalf("GetDBVersion: %v", err)
 	} else if gotVersion != 19 {
 		t.Fatalf("DB version after UpTo(19) = %d, want 19 (migration 00019 not found?)", gotVersion)
@@ -1199,7 +1222,7 @@ func TestApplicationsAutoincrement_DownKeepsLiveRowsAndDropsDeleted(t *testing.T
 		}
 	}
 
-	if err := goose.DownTo(sqlDB, ".", 18); err != nil {
+	if err := downTo(sqlDB, 18); err != nil {
 		t.Fatalf("migrate down to version 18: %v", err)
 	}
 
@@ -1268,7 +1291,7 @@ func TestDocumentWrites_NeverReusesAnIDAndDownDropsTheTable(t *testing.T) {
 		t.Errorf("id after deleting the maximum = %d, want 3 (never reused)", id)
 	}
 
-	if err := goose.DownTo(sqlDB, ".", 19); err != nil {
+	if err := downTo(sqlDB, 19); err != nil {
 		t.Fatalf("migrate down to version 19: %v", err)
 	}
 	var tables int
@@ -1325,7 +1348,7 @@ func TestChangeEvents_ApplicationTriggersLogOldAndNew(t *testing.T) {
 		t.Errorf("change events (-want +got):\n%s", diff)
 	}
 
-	if err := goose.DownTo(sqlDB, ".", 20); err != nil {
+	if err := downTo(sqlDB, 20); err != nil {
 		t.Fatalf("migrate down to version 20: %v", err)
 	}
 	var objects int
@@ -1363,10 +1386,10 @@ func TestPostingsCompaniesAutoincrement_DeletedMaxIDIsNotReused(t *testing.T) {
 					t.Fatalf("%s: %v", stmt, err)
 				}
 			}
-			if err := goose.UpTo(sqlDB, ".", 24); err != nil {
+			if err := upTo(sqlDB, 24); err != nil {
 				t.Fatalf("migrate to version 24: %v", err)
 			}
-			if version, err := goose.GetDBVersion(sqlDB); err != nil || version != 24 {
+			if version, err := dbVersion(sqlDB); err != nil || version != 24 {
 				t.Fatalf("DB version = %d (%v), want 24 (migration 00024 not found?)", version, err)
 			}
 
@@ -1415,7 +1438,7 @@ func TestPostingsCompaniesAutoincrement_SchemaUnchangedButForAutoincrement(t *te
 	sqlDB := migrateTo(t, 23)
 	before := schema(sqlDB)
 
-	if err := goose.UpTo(sqlDB, ".", 24); err != nil {
+	if err := upTo(sqlDB, 24); err != nil {
 		t.Fatalf("migrate to version 24: %v", err)
 	}
 
@@ -1423,7 +1446,7 @@ func TestPostingsCompaniesAutoincrement_SchemaUnchangedButForAutoincrement(t *te
 		t.Errorf("schema changed beyond AUTOINCREMENT (-before +after):\n%s", diff)
 	}
 
-	if err := goose.DownTo(sqlDB, ".", 23); err != nil {
+	if err := downTo(sqlDB, 23); err != nil {
 		t.Fatalf("migrate down to version 23: %v", err)
 	}
 	var autoincrement int
@@ -1497,7 +1520,7 @@ func TestPostingsCompaniesAutoincrement_KeepsEveryValueAndLogsNothing(t *testing
 	}
 	companies, postings, eventsBefore := rows("companies"), rows("postings"), events()
 
-	if err := goose.UpTo(sqlDB, ".", 24); err != nil {
+	if err := upTo(sqlDB, 24); err != nil {
 		t.Fatalf("migrate to version 24: %v", err)
 	}
 

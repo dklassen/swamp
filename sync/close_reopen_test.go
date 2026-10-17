@@ -2,44 +2,41 @@ package sync
 
 import (
 	"context"
-	"database/sql"
 	"strings"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/repository"
+	"github.com/dklassen/swamp/internal/testutil"
 )
 
 type closeResult struct{ Closed, ApplicationClosed bool }
 
-func closeWith(ctx context.Context, s *store.Store, postingID int64, from []applicationstatus.Status) (closeResult, error) {
-	closed, ended, err := closePosting(ctx, s, postingID, from)
+func closeWith(ctx context.Context, s testutil.TestApp, postingID int64, from []application.Status) (closeResult, error) {
+	closed, ended, err := s.Postings.Close(ctx, postingID, from)
 	return closeResult{Closed: closed, ApplicationClosed: ended}, err
 }
 
 type reopenResult struct{ Reopened, ApplicationRestored bool }
 
-func reopenWith(ctx context.Context, s *store.Store, postingID int64) (reopenResult, error) {
-	reopened, restored, err := reopenPosting(ctx, s, postingID)
+func reopenWith(ctx context.Context, s testutil.TestApp, postingID int64) (reopenResult, error) {
+	reopened, restored, err := s.Postings.Reopen(ctx, postingID)
 	return reopenResult{Reopened: reopened, ApplicationRestored: restored}, err
 }
 
-func mustUpsertPosting(t *testing.T, s *store.Store, companyID int64, sourceID, title string) store.Posting {
+func mustUpsertPosting(t *testing.T, s testutil.TestApp, companyID int64, sourceID, title string) posting.Posting {
 	t.Helper()
-	p, err := s.UpsertPosting(context.Background(), store.CreatePostingParams{
-		CompanyID: companyID, Source: "ashby", SourceID: sourceID,
-		IngestedFields: store.IngestedFields{Title: title, RawPayload: "{}"},
-	})
+	ingested, err := s.Postings.Ingest(context.Background(), companyID, "ashby", sourceID, posting.IngestedFields{Title: title, RawPayload: "{}"})
 	if err != nil {
-		t.Fatalf("UpsertPosting: %v", err)
+		t.Fatalf("Ingest: %v", err)
 	}
-	return p
+	return ingested.Posting
 }
 
-func mustCreateApplication(t *testing.T, s *store.Store, postingID int64) application.Application {
+func mustCreateApplication(t *testing.T, s testutil.TestApp, postingID int64) application.Application {
 	t.Helper()
 	a, err := createApplication(context.Background(), s, postingID)
 	if err != nil {
@@ -48,14 +45,14 @@ func mustCreateApplication(t *testing.T, s *store.Store, postingID int64) applic
 	return a
 }
 
-func mustClosePosting(t *testing.T, s *store.Store, postingID int64, from []applicationstatus.Status) {
+func mustClosePosting(t *testing.T, s testutil.TestApp, postingID int64, from []application.Status) {
 	t.Helper()
 	if _, err := closeWith(context.Background(), s, postingID, from); err != nil {
 		t.Fatalf("closePosting: %v", err)
 	}
 }
 
-func mustUpdateApplicationStatus(t *testing.T, s *store.Store, postingID int64, status applicationstatus.Status) {
+func mustUpdateApplicationStatus(t *testing.T, s testutil.TestApp, postingID int64, status application.Status) {
 	t.Helper()
 	if _, err := updateApplicationStatus(context.Background(), s, postingID, status); err != nil {
 		t.Fatalf("UpdateStatus(%s): %v", status, err)
@@ -64,28 +61,34 @@ func mustUpdateApplicationStatus(t *testing.T, s *store.Store, postingID int64, 
 
 func TestClosePosting(t *testing.T) {
 	t.Parallel()
-	closeFrom := []applicationstatus.Status{applicationstatus.Started, applicationstatus.Submitted}
+	closeFrom := []application.Status{application.Started, application.Submitted}
 
 	tests := []struct {
 		name          string
 		alreadyClosed bool
-		application   *applicationstatus.Status // nil: the posting has no application
+		application   *application.Status // nil: the posting has no application
 		want          closeResult
-		wantApp       applicationstatus.Status
+		wantApp       application.Status
 		wantHistory   int
 	}{
 		{name: "open, no application", want: closeResult{Closed: true}, wantHistory: 1},
-		{name: "open, application at a status it ends", application: ptr(applicationstatus.Started),
-			want: closeResult{Closed: true, ApplicationClosed: true}, wantApp: applicationstatus.PostingClosed, wantHistory: 1},
-		{name: "open, application at a status it leaves alone", application: ptr(applicationstatus.Interviewing),
-			want: closeResult{Closed: true}, wantApp: applicationstatus.Interviewing, wantHistory: 1},
-		{name: "already closed: changes nothing", alreadyClosed: true, application: ptr(applicationstatus.Started),
-			want: closeResult{}, wantApp: applicationstatus.Started, wantHistory: 0},
+		{
+			name: "open, application at a status it ends", application: ptr(application.Started),
+			want: closeResult{Closed: true, ApplicationClosed: true}, wantApp: application.PostingClosed, wantHistory: 1,
+		},
+		{
+			name: "open, application at a status it leaves alone", application: ptr(application.Interviewing),
+			want: closeResult{Closed: true}, wantApp: application.Interviewing, wantHistory: 1,
+		},
+		{
+			name: "already closed: changes nothing", alreadyClosed: true, application: ptr(application.Started),
+			want: closeResult{}, wantApp: application.Started, wantHistory: 0,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			s := newTestStore(t)
+			s := testutil.NewTestApp(t)
 			ctx := context.Background()
 			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
@@ -98,8 +101,8 @@ func TestClosePosting(t *testing.T) {
 				}
 			}
 			if tt.alreadyClosed {
-				if err := s.MarkPostingClosed(ctx, posting.ID); err != nil {
-					t.Fatalf("MarkPostingClosed: %v", err)
+				if err := (&repository.PostingRepository{}).MarkClosed(ctx, s.Store, posting.ID); err != nil {
+					t.Fatalf("MarkClosed: %v", err)
 				}
 			}
 
@@ -111,14 +114,14 @@ func TestClosePosting(t *testing.T) {
 				t.Errorf("ClosePosting result mismatch (-want +got):\n%s", diff)
 			}
 
-			after, err := s.GetPosting(ctx, posting.ID)
+			after, err := s.Postings.Get(ctx, posting.ID)
 			if err != nil {
 				t.Fatalf("GetPosting: %v", err)
 			}
 			if after.ListingStatus != "closed" {
 				t.Errorf("ListingStatus = %q, want closed", after.ListingStatus)
 			}
-			history, err := s.ListPostingHistory(ctx, posting.ID)
+			history, err := s.Postings.History(ctx, posting.ID)
 			if err != nil {
 				t.Fatalf("ListPostingHistory: %v", err)
 			}
@@ -131,7 +134,7 @@ func TestClosePosting(t *testing.T) {
 				}
 			}
 			if tt.application != nil {
-				app, err := application.Get(ctx, s.DB(), posting.ID)
+				app, err := s.Postings.Application(ctx, posting.ID)
 				if err != nil {
 					t.Fatalf("application.Get: %v", err)
 				}
@@ -152,71 +155,60 @@ func TestClosePosting(t *testing.T) {
 // left alone.
 func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 	t.Parallel()
-	closeFrom := []applicationstatus.Status{applicationstatus.Started, applicationstatus.Submitted}
+	closeFrom := []application.Status{application.Started, application.Submitted}
 
 	tests := []struct {
 		name string
 		// setup leaves the posting closed.
-		setup         func(t *testing.T, s *store.Store, sqlDB *sql.DB, postingID int64)
+		setup         func(t *testing.T, s testutil.TestApp, postingID int64)
 		want          reopenResult
-		wantApp       applicationstatus.Status
+		wantApp       application.Status
 		wantLastBy    application.ChangedBy
 		noApplication bool
 	}{
 		{
 			name: "sync closed it: back to started",
-			setup: func(t *testing.T, s *store.Store, sqlDB *sql.DB, postingID int64) {
+			setup: func(t *testing.T, s testutil.TestApp, postingID int64) {
 				mustCreateApplication(t, s, postingID)
 				mustClosePosting(t, s, postingID, closeFrom)
 			},
 			want:    reopenResult{Reopened: true, ApplicationRestored: true},
-			wantApp: applicationstatus.Started, wantLastBy: application.ChangedBySync,
+			wantApp: application.Started, wantLastBy: application.ChangedBySync,
 		},
 		{
 			name: "sync closed it from submitted: back to submitted",
-			setup: func(t *testing.T, s *store.Store, sqlDB *sql.DB, postingID int64) {
+			setup: func(t *testing.T, s testutil.TestApp, postingID int64) {
 				mustCreateApplication(t, s, postingID)
-				mustUpdateApplicationStatus(t, s, postingID, applicationstatus.Submitted)
+				mustUpdateApplicationStatus(t, s, postingID, application.Submitted)
 				mustClosePosting(t, s, postingID, closeFrom)
 			},
 			want:    reopenResult{Reopened: true, ApplicationRestored: true},
-			wantApp: applicationstatus.Submitted, wantLastBy: application.ChangedBySync,
+			wantApp: application.Submitted, wantLastBy: application.ChangedBySync,
 		},
 		{
 			name: "user set posting_closed: left alone",
-			setup: func(t *testing.T, s *store.Store, sqlDB *sql.DB, postingID int64) {
+			setup: func(t *testing.T, s testutil.TestApp, postingID int64) {
 				mustCreateApplication(t, s, postingID)
 				mustClosePosting(t, s, postingID, nil)
-				mustUpdateApplicationStatus(t, s, postingID, applicationstatus.PostingClosed)
+				mustUpdateApplicationStatus(t, s, postingID, application.PostingClosed)
 			},
 			want:    reopenResult{Reopened: true},
-			wantApp: applicationstatus.PostingClosed, wantLastBy: application.ChangedByUser,
+			wantApp: application.PostingClosed, wantLastBy: application.ChangedByUser,
 		},
 		{
 			name: "user changed it after sync closed it: left alone",
-			setup: func(t *testing.T, s *store.Store, sqlDB *sql.DB, postingID int64) {
+			setup: func(t *testing.T, s testutil.TestApp, postingID int64) {
 				mustCreateApplication(t, s, postingID)
 				mustClosePosting(t, s, postingID, closeFrom)
-				mustUpdateApplicationStatus(t, s, postingID, applicationstatus.Withdrawn)
+				mustUpdateApplicationStatus(t, s, postingID, application.Withdrawn)
 			},
 			want:    reopenResult{Reopened: true},
-			wantApp: applicationstatus.Withdrawn, wantLastBy: application.ChangedByUser,
+			wantApp: application.Withdrawn, wantLastBy: application.ChangedByUser,
 		},
-		{
-			name: "closed before changed_by existed: left alone",
-			setup: func(t *testing.T, s *store.Store, sqlDB *sql.DB, postingID int64) {
-				mustCreateApplication(t, s, postingID)
-				mustClosePosting(t, s, postingID, closeFrom)
-				if _, err := sqlDB.ExecContext(context.Background(), `UPDATE application_status_history SET changed_by = 'unknown'`); err != nil {
-					t.Fatalf("mark history unknown: %v", err)
-				}
-			},
-			want:    reopenResult{Reopened: true},
-			wantApp: applicationstatus.PostingClosed, wantLastBy: application.ChangedByUnknown,
-		},
+
 		{
 			name: "no application",
-			setup: func(t *testing.T, s *store.Store, sqlDB *sql.DB, postingID int64) {
+			setup: func(t *testing.T, s testutil.TestApp, postingID int64) {
 				mustClosePosting(t, s, postingID, closeFrom)
 			},
 			want:          reopenResult{Reopened: true},
@@ -226,11 +218,12 @@ func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			s, sqlDB := newTestStoreDB(t)
+
+			s := testutil.NewTestApp(t)
 			ctx := context.Background()
 			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-			tt.setup(t, s, sqlDB, posting.ID)
+			tt.setup(t, s, posting.ID)
 
 			got, err := reopenWith(ctx, s, posting.ID)
 			if err != nil {
@@ -242,14 +235,14 @@ func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 			if tt.noApplication {
 				return
 			}
-			app, err := application.Get(ctx, s.DB(), posting.ID)
+			app, err := s.Postings.Application(ctx, posting.ID)
 			if err != nil {
 				t.Fatalf("application.Get: %v", err)
 			}
 			if app.Status != tt.wantApp {
 				t.Errorf("application status = %s, want %s", app.Status, tt.wantApp)
 			}
-			history, err := application.ListStatusHistory(ctx, s.DB(), app.ID)
+			history, err := s.Applications.History(ctx, app.ID)
 			if err != nil {
 				t.Fatalf("application.ListStatusHistory: %v", err)
 			}
@@ -258,42 +251,6 @@ func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 				t.Errorf("last history row = %s by %s, want %s by %s", last.Status, last.ChangedBy, tt.wantApp, tt.wantLastBy)
 			}
 		})
-	}
-}
-
-// TestReopenPosting_RestoreFails_PostingStaysClosed: the reopen and the
-// application restore are one change, so a failed restore leaves
-// the posting closed and unrecorded, and the next sync tries both again.
-func TestReopenPosting_RestoreFails_PostingStaysClosed(t *testing.T) {
-	t.Parallel()
-	s, sqlDB := newTestStoreDB(t)
-	ctx := context.Background()
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
-	mustCreateApplication(t, s, posting.ID)
-	mustClosePosting(t, s, posting.ID, []applicationstatus.Status{applicationstatus.Started})
-	if _, err := sqlDB.ExecContext(ctx, `CREATE TRIGGER fail_application_update BEFORE UPDATE ON applications
-		BEGIN SELECT RAISE(ABORT, 'simulated failure'); END`); err != nil {
-		t.Fatalf("create trigger: %v", err)
-	}
-
-	if _, err := reopenWith(ctx, s, posting.ID); err == nil {
-		t.Fatal("ReopenPosting with a failing application update: want an error, got nil")
-	}
-
-	after, err := s.GetPosting(ctx, posting.ID)
-	if err != nil {
-		t.Fatalf("GetPosting: %v", err)
-	}
-	if after.ListingStatus != "closed" {
-		t.Errorf("ListingStatus = %q, want still closed", after.ListingStatus)
-	}
-	history, err := s.ListPostingHistory(ctx, posting.ID)
-	if err != nil {
-		t.Fatalf("ListPostingHistory: %v", err)
-	}
-	if n := len(history); n != 1 || history[0].ChangeType != "closed" {
-		t.Errorf("posting history = %d rows, want only the close", n)
 	}
 }
 

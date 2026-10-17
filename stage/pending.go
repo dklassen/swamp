@@ -9,8 +9,8 @@ import (
 
 	"github.com/dklassen/swamp/cursor"
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/scoring"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/domain/score"
 )
 
 // pendingSort names list_pending_postings' one order in its cursors, so a
@@ -45,15 +45,15 @@ type PendingResult struct {
 // PendingMatch is a posting still to score: enough to judge it from, the
 // content hash its score must name, and why it's pending.
 type PendingMatch struct {
-	ID            int64                 `json:"ID"`
-	Title         string                `json:"Title"`
-	CompanyName   string                `json:"CompanyName"`
-	Department    string                `json:"Department"`
-	Location      string                `json:"Location"`
-	WorkplaceType string                `json:"WorkplaceType"`
-	PublishedAt   store.OptionalTime    `json:"PublishedAt"`
-	Version       string                `json:"Version"`
-	Reason        scoring.PendingReason `json:"Reason"`
+	ID            int64                `json:"ID"`
+	Title         string               `json:"Title"`
+	CompanyName   string               `json:"CompanyName"`
+	Department    string               `json:"Department"`
+	Location      string               `json:"Location"`
+	WorkplaceType string               `json:"WorkplaceType"`
+	PublishedAt   posting.OptionalTime `json:"PublishedAt"`
+	Version       string               `json:"Version"`
+	Reason        score.PendingReason  `json:"Reason"`
 }
 
 // pendingFilters is what a list_pending_postings cursor is bound to.
@@ -88,7 +88,7 @@ func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (Pend
 		beforeID = key.ID
 	}
 
-	page, err := scoring.Pending(ctx, st.store.DB(), rescoreProfile, beforeID, limit)
+	page, err := st.scores.Pending(ctx, rescoreProfile, beforeID, limit)
 	if err != nil {
 		return PendingResult{}, fmt.Errorf("stage: %w", err)
 	}
@@ -101,7 +101,7 @@ func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (Pend
 			Department:    p.Department,
 			Location:      p.Location,
 			WorkplaceType: p.WorkplaceType,
-			PublishedAt:   store.OptionalTime{Time: p.PublishedAt},
+			PublishedAt:   posting.OptionalTime{Time: p.PublishedAt},
 			Version:       p.ContentSHA256,
 			Reason:        p.Reason,
 		}

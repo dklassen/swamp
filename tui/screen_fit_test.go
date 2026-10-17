@@ -12,12 +12,12 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/companyfilter"
-	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/filter"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/filter"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
 
@@ -29,7 +29,7 @@ func newFullTestApp(t *testing.T) *App {
 	t.Helper()
 	ctx := context.Background()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	for i := 1; i < 40; i++ {
 		mustCreateCompany(t, s, fmt.Sprintf("Company %02d", i), "ashby", fmt.Sprintf("company-%02d", i))
@@ -45,26 +45,21 @@ func newFullTestApp(t *testing.T) *App {
 			Location:   fmt.Sprintf("City %02d", i),
 		}
 		board = append(board, p)
-		posting, err := s.UpsertPosting(ctx, store.CreatePostingParams{
-			CompanyID: acme.ID,
-			Source:    "ashby",
-			SourceID:  p.SourceID,
-			IngestedFields: store.IngestedFields{
-				Title:      p.Title,
-				Department: p.Department,
-				Location:   p.Location,
-			},
+		ingested, err := s.Postings.Ingest(ctx, acme.ID, "ashby", p.SourceID, posting.IngestedFields{
+			Title:      p.Title,
+			Department: p.Department,
+			Location:   p.Location,
 		})
 		if err != nil {
-			t.Fatalf("UpsertPosting: %v", err)
+			t.Fatalf("Ingest: %v", err)
 		}
-		applications = append(applications, mustCreateApplication(t, s, posting.ID))
+		applications = append(applications, mustCreateApplication(t, s, ingested.Posting.ID))
 	}
 
 	app := newTestApp(t, s, newTestSyncer(s, map[string][]jobboard.Posting{"acme": board}))
 	for _, a := range applications {
 		status := app.documents.Status(a.ID)
-		for _, path := range []string{mustDoc(t, status, documents.CoverLetter).Path, mustDoc(t, status, documents.Resume).Path} {
+		for _, path := range []string{mustDoc(t, status, document.CoverLetter).Path, mustDoc(t, status, document.Resume).Path} {
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 				t.Fatalf("MkdirAll: %v", err)
 			}
@@ -123,17 +118,17 @@ func sizedScreens() []sizedScreen {
 			// keeps all 40 postings.
 			ctx := context.Background()
 			acme := app.companies[0]
-			if _, err := app.store.UpdateCompanyDescription(ctx, acme.ID, "Acme makes everything."); err != nil {
-				t.Fatalf("UpdateCompanyDescription: %v", err)
+			if _, err := app.companyService.SetDescription(ctx, acme.ID, "Acme makes everything."); err != nil {
+				t.Fatalf("SetDescription: %v", err)
 			}
 			var filters []filter.Filter
 			for i := 1; i <= 40; i++ {
 				filters = append(filters, filter.Filter{Field: filter.FieldDepartment, Value: fmt.Sprintf("Department %02d", i)})
 			}
-			if err := store.InTx(ctx, app.store.DB(), func(tx store.Tx) error { return companyfilter.Replace(ctx, tx, acme.ID, filters) }); err != nil {
-				t.Fatalf("companyfilter.Replace: %v", err)
+			if err := app.companyService.SetFilters(ctx, acme.ID, filters); err != nil {
+				t.Fatalf("SetFilters: %v", err)
 			}
-			app = applyCmd(t, app, loadCompanies(app.store))
+			app = applyCmd(t, app, loadCompanies(app.companyService, app.postingService))
 			app = openPostingList(t, app)
 			if app.selectedCompany.Description == "" || len(app.activeFilterDepartments) == 0 {
 				t.Fatalf("posting list isn't showing the description and filters (description %q, %d department filters)", app.selectedCompany.Description, len(app.activeFilterDepartments))

@@ -6,7 +6,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/document"
 )
 
 func TestParseFormText(t *testing.T) {
@@ -23,7 +23,7 @@ func TestParseFormText(t *testing.T) {
 			name: "documents and questions, * marks required",
 			text: "cover_letter: optional\nresume: required\n\nWhy do you want to work here? *\nLinkedIn profile\n",
 			want: ApplicationForm{
-				Documents: map[documents.Type]Requirement{documents.CoverLetter: Optional, documents.Resume: Required},
+				Documents: map[document.Type]Requirement{document.CoverLetter: Optional, document.Resume: Required},
 				Questions: []Question{
 					{Label: "Why do you want to work here?", Required: true},
 					{Label: "LinkedIn profile"},
@@ -34,21 +34,21 @@ func TestParseFormText(t *testing.T) {
 			name: "a document with no line is absent; comments and blank lines are skipped",
 			text: "# Documents\nresume: required\n\n  # Questions\n\n",
 			want: ApplicationForm{
-				Documents: map[documents.Type]Requirement{documents.Resume: Required},
+				Documents: map[document.Type]Requirement{document.Resume: Required},
 			},
 		},
 		{
 			name: "a line naming no document type is a question, colon or not",
 			text: "Salary expectations: CAD*\n",
 			want: ApplicationForm{
-				Documents: map[documents.Type]Requirement{},
+				Documents: map[document.Type]Requirement{},
 				Questions: []Question{{Label: "Salary expectations: CAD", Required: true}},
 			},
 		},
 		{
 			name: "an absent document is left out of the map",
 			text: "cover_letter: absent\n",
-			want: ApplicationForm{Documents: map[documents.Type]Requirement{}},
+			want: ApplicationForm{Documents: map[document.Type]Requirement{}},
 		},
 		{
 			name:    "an unknown requirement is an error",
@@ -67,7 +67,7 @@ func TestParseFormText(t *testing.T) {
 				{Label: "Are you authorized to work in Canada?", Required: true, Type: "single_select", Options: []string{"Yes", "No"}},
 			}},
 			want: ApplicationForm{
-				Documents: map[documents.Type]Requirement{},
+				Documents: map[document.Type]Requirement{},
 				Questions: []Question{
 					{Label: "Are you authorized to work in Canada?", Required: true, Type: "single_select", Options: []string{"Yes", "No"}},
 					{Label: "A new question"},
@@ -98,9 +98,9 @@ func TestFormText_RoundTrips(t *testing.T) {
 	t.Parallel()
 
 	for _, form := range []ApplicationForm{
-		{Documents: map[documents.Type]Requirement{}},
+		{Documents: map[document.Type]Requirement{}},
 		{
-			Documents: map[documents.Type]Requirement{documents.CoverLetter: Optional, documents.Resume: Required},
+			Documents: map[document.Type]Requirement{document.CoverLetter: Optional, document.Resume: Required},
 			Questions: []Question{
 				{Label: "Why us?", Required: true, Type: "long_text"},
 				{Label: "Pronouns", Type: "single_select", Options: []string{"she/her", "he/him", "they/them"}},
@@ -125,7 +125,7 @@ func TestFormText_ListsEveryDocumentType(t *testing.T) {
 	t.Parallel()
 
 	text := FormText(ApplicationForm{})
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		if !strings.Contains(text, documentType.String()+": absent") {
 			t.Errorf("FormText of an empty form has no %q line:\n%s", documentType.String()+": absent", text)
 		}

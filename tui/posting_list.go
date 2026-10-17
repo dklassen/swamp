@@ -8,8 +8,8 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/dklassen/swamp/postingmarkup"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/service"
 )
 
 // Column widths for the posting table; Title takes what's left. Values
@@ -56,7 +56,7 @@ func truncateCol(s string, max int) string {
 // column for the posting list. Archived takes precedence over interested
 // when both are set, matching the same precedence the 00003 migration's
 // Down path uses when collapsing both flags back into one enum value.
-func postingMarker(m postingmarkup.Markup) string {
+func postingMarker(m posting.Markup) string {
 	switch {
 	case m.ArchivedAt != nil:
 		return "✕"
@@ -86,25 +86,25 @@ func filterSummaryLine(departments, locations []string) string {
 }
 
 // postingListModel drives the posting-list screen. It holds only the
-// dependency it needs to dispatch its own commands (store) and its own
+// dependency it needs to dispatch its own commands (postings) and its own
 // private cursor -- postings/markup/hideArchived/active filters are
 // domain data owned by App, passed in as a postingListSnapshot on every
 // call, never cached here.
 type postingListModel struct {
-	store  *store.Store
-	cursor int
+	postings *service.PostingService
+	cursor   int
 }
 
-func newPostingListModel(s *store.Store) postingListModel {
-	return postingListModel{store: s}
+func newPostingListModel(postings *service.PostingService) postingListModel {
+	return postingListModel{postings: postings}
 }
 
 // postingListSnapshot is the read-only domain data App hands in on every
 // call.
 type postingListSnapshot struct {
 	companyDescription      string
-	postings                []store.Posting
-	markup                  map[int64]postingmarkup.Markup
+	postings                []posting.Posting
+	markup                  map[int64]posting.Markup
 	hideArchived            bool
 	activeFilterDepartments []string
 	activeFilterLocations   []string
@@ -161,12 +161,12 @@ func (m *postingListModel) Update(msg tea.KeyMsg, snap postingListSnapshot) (tea
 	case msg.String() == "i":
 		if m.cursor < len(snap.postings) {
 			p := snap.postings[m.cursor]
-			return toggleInterested(m.store, p.ID, snap.markup[p.ID].InterestedAt != nil), nil
+			return toggleInterested(m.postings, p.ID, snap.markup[p.ID].InterestedAt != nil), nil
 		}
 	case msg.String() == "x":
 		if m.cursor < len(snap.postings) {
 			p := snap.postings[m.cursor]
-			return toggleArchived(m.store, p.ID, snap.markup[p.ID].ArchivedAt != nil), nil
+			return toggleArchived(m.postings, p.ID, snap.markup[p.ID].ArchivedAt != nil), nil
 		}
 	case msg.String() == "A":
 		return nil, toggleHideArchivedMsg{}
@@ -269,7 +269,7 @@ func (m *postingListModel) setCursor(i int) {
 }
 
 // selected is the ID of the posting under the cursor, or 0.
-func (m *postingListModel) selected(postings []store.Posting) int64 {
+func (m *postingListModel) selected(postings []posting.Posting) int64 {
 	if m.cursor < len(postings) {
 		return postings[m.cursor].ID
 	}
@@ -278,7 +278,7 @@ func (m *postingListModel) selected(postings []store.Posting) int64 {
 
 // keepCursorOn moves the cursor to posting id after a reload in place; if
 // it's gone, the cursor stays in range.
-func (m *postingListModel) keepCursorOn(id int64, postings []store.Posting) {
+func (m *postingListModel) keepCursorOn(id int64, postings []posting.Posting) {
 	if i := indexOfPosting(postings, id); i >= 0 {
 		m.cursor = i
 		return

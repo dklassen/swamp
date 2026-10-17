@@ -28,13 +28,13 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/application"
 	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/db/migrations"
-	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/export"
 	"github.com/dklassen/swamp/greenhouse"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/lever"
 	"github.com/dklassen/swamp/seed"
 	"github.com/dklassen/swamp/stage"
@@ -89,12 +89,12 @@ func main() {
 		}
 	}()
 
-	s := store.New(sqlDB)
+	db := store.New(sqlDB)
 	documentsStore := documents.NewStore(documentsPath)
 
 	switch rf.command {
 	case cmdFetch:
-		if runFetch(s) > 0 {
+		if runFetch(db) > 0 {
 			// os.Exit skips the deferred Close, so close first to
 			// leave the database checkpointed.
 			if err := sqlDB.Close(); err != nil {
@@ -104,16 +104,16 @@ func main() {
 		}
 		return
 	case cmdStage:
-		runStage(s, documentsStore, rf.stage, rf.postingID)
+		runStage(db, documentsStore, rf.stage, rf.postingID)
 		return
 	case cmdExport:
-		runExport(s, documentsStore, rf.applicationID)
+		runExport(db, documentsStore, rf.applicationID)
 		return
 	case cmdImport:
-		runImport(s, rf.seedFile)
+		runImport(db, rf.seedFile)
 		return
 	case cmdMCPServe:
-		runMCPServe(s, documentsStore)
+		runMCPServe(db, documentsStore)
 		return
 	}
 
@@ -127,13 +127,23 @@ func main() {
 	}
 	defer func() { _ = closeLog() }()
 
-	syncer := newSyncer(s)
+	syncer := newSyncer(db)
 	// Read before the TUI's first loads, which already show anything older.
-	since, err := s.LatestChangeEventID(context.Background())
+	changes := service.NewChangeLog(db)
+	since, err := changes.Latest(context.Background())
 	if err != nil {
 		log.Fatalf("read the change log: %v", err)
 	}
-	app := tui.New(s, syncer, documentsStore).WithChangeLog(since, cfg.Origin)
+	app := tui.New(
+		service.NewCompanyService(db),
+		service.NewPostingService(db),
+		service.NewApplicationService(db),
+		service.NewDocumentService(db),
+		service.NewScoringService(db),
+		changes,
+		syncer,
+		documentsStore,
+	).WithChangeLog(since, cfg.Origin)
 	program := tea.NewProgram(app, tea.WithAltScreen())
 	stopMCP := func(context.Context) error { return nil }
 	if rf.mcp {
@@ -173,12 +183,12 @@ func main() {
 }
 
 // newSyncer builds a Syncer configured with every supported job board
-// source, keyed by the store.Company.Source value each one handles. Each
+// source, keyed by the company.Company.Source value each one handles. Each
 // client satisfies sync.PostingFetcher directly -- no adapter type is
 // needed, since ashby, greenhouse, and lever all return jobboard.Posting
 // directly rather than a client-local type (#57).
-func newSyncer(s *store.Store) *sync.Syncer {
-	return sync.New(s, map[string]sync.PostingFetcher{
+func newSyncer(db store.Store) *sync.Syncer {
+	return sync.New(service.NewCompanyService(db), service.NewPostingService(db), map[string]sync.PostingFetcher{
 		"ashby":      ashby.NewClient(),
 		"greenhouse": greenhouse.NewClient(),
 		"lever":      lever.NewClient(),
@@ -188,8 +198,8 @@ func newSyncer(s *store.Store) *sync.Syncer {
 // newStage builds the agent hand-off Stage, able to read application
 // forms from every board that supports it (Greenhouse; see #167 for Ashby
 // and Lever) under the same fetch timeout as a sync.
-func newStage(s *store.Store, d *documents.Store) *stage.Stage {
-	return stage.New(s, d, stage.WithFormFetchers(map[string]stage.FormFetcher{
+func newStage(db store.Store, d *documents.Store) *stage.Stage {
+	return stage.New(service.NewCompanyService(db), service.NewPostingService(db), service.NewApplicationService(db), service.NewDocumentService(db), service.NewScoringService(db), d, stage.WithFormFetchers(map[string]stage.FormFetcher{
 		"greenhouse": greenhouse.NewClient(),
 	}, sync.DefaultConfig().FetchTimeout))
 }
@@ -198,8 +208,8 @@ func newStage(s *store.Store, d *documents.Store) *stage.Stage {
 // package for its shape). Each entry is validated against its source's
 // real API before being saved, so a bad row is reported and skipped
 // rather than silently creating a dead company; re-running the same file
-// is always safe (store.CreateCompany is idempotent on source+source_ref).
-func runImport(s *store.Store, seedFile string) {
+// is always safe (CompanyService.Add is idempotent on source+source_ref).
+func runImport(db store.Store, seedFile string) {
 	f, err := os.Open(seedFile)
 	if err != nil {
 		log.Fatalf("open seed file: %v", err)
@@ -215,7 +225,7 @@ func runImport(s *store.Store, seedFile string) {
 		log.Fatalf("parse seed file: %v", err)
 	}
 
-	syncer := newSyncer(s)
+	syncer := newSyncer(db)
 	results := syncer.ImportCompanies(context.Background(), entries)
 
 	for _, r := range results {
@@ -230,8 +240,8 @@ func runImport(s *store.Store, seedFile string) {
 // runFetch syncs every active company and reports how many failed, so main
 // can exit non-zero when something scheduled it and nobody is watching
 // (issue #145).
-func runFetch(s *store.Store) int {
-	syncer := newSyncer(s)
+func runFetch(db store.Store) int {
+	syncer := newSyncer(db)
 	results, err := syncer.SyncAll(context.Background())
 	if err != nil {
 		log.Fatalf("sync: %v", err)
@@ -268,8 +278,8 @@ func reportFetch(stdout, stderr io.Writer, results []sync.Result) int {
 // eligible postings as a JSON array, `stage prepare <posting-id>` commits
 // to one and prints the result as a JSON object. See the stage package
 // for what each does.
-func runStage(s *store.Store, d *documents.Store, action stageAction, postingID int64) {
-	st := newStage(s, d)
+func runStage(db store.Store, d *documents.Store, action stageAction, postingID int64) {
+	st := newStage(db, d)
 	ctx := context.Background()
 
 	switch action {
@@ -320,9 +330,9 @@ func runStage(s *store.Store, d *documents.Store, action stageAction, postingID 
 // same reason auth is skipped: single-user local dev machine, deliberately
 // reached by a known local container over a known DNS name, not the
 // untrusted-browser threat this protection exists for.
-func runMCPServe(s *store.Store, d *documents.Store) {
+func runMCPServe(db store.Store, d *documents.Store) {
 	addr := mcpAddr()
-	handler := mcpHandler(s, d, newSyncer(s))
+	handler := mcpHandler(db, d, newSyncer(db))
 
 	log.Printf("swamp mcp-serve: listening on %s", addr)
 	if err := http.ListenAndServe(addr, handler); err != nil {
@@ -341,7 +351,7 @@ func runMCPServe(s *store.Store, d *documents.Store) {
 // useful to preview as a PDF -- but each line reports the latest review
 // outcome so the caller can tell a ready-to-submit document from one that
 // still needs work.
-func runExport(s *store.Store, d *documents.Store, applicationID int64) {
+func runExport(db store.Store, d *documents.Store, applicationID int64) {
 	ctx := context.Background()
 	// Validate the ID against a real row before anything else. Without
 	// this, a typo'd or stale ID walks the same path as a real
@@ -349,25 +359,26 @@ func runExport(s *store.Store, d *documents.Store, applicationID int64) {
 	// with Exists false for both documents -- and prints the identical
 	// "no document on disk, skipped" lines while exiting 0 (see
 	// issue #102).
-	if _, err := application.GetByID(ctx, s.DB(), applicationID); err != nil {
+	if _, err := service.NewApplicationService(db).Get(ctx, applicationID); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			log.Fatalf("export: no application with id %d", applicationID)
 		}
 		log.Fatalf("export: look up application %d: %v", applicationID, err)
 	}
 
-	reviews, err := docrecord.LatestReviews(ctx, s.DB(), applicationID)
+	documentService := service.NewDocumentService(db)
+	reviews, err := documentService.LatestReviews(ctx, applicationID)
 	if err != nil {
 		log.Fatalf("export: latest document reviews: %v", err)
 	}
 
 	status := d.Status(applicationID)
-	reviews, err = documents.Current(status, reviews, docrecord.Review.IsCurrent)
+	reviews, err = documents.Current(status, reviews, document.Review.IsCurrent)
 	if err != nil {
 		log.Fatalf("export: current document reviews: %v", err)
 	}
 
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		doc, err := status.Doc(documentType)
 		if err != nil {
 			fmt.Printf("%s: error: %v\n", documentType, err)
@@ -378,7 +389,7 @@ func runExport(s *store.Store, d *documents.Store, applicationID int64) {
 			continue
 		}
 
-		outPath, err := exportDocumentPDF(ctx, s, applicationID, documentType, doc.Path)
+		outPath, err := exportDocumentPDF(ctx, documentService, applicationID, documentType, doc.Path)
 		if err != nil {
 			fmt.Printf("%s: error: %v\n", documentType, err)
 			continue
@@ -393,14 +404,14 @@ func runExport(s *store.Store, d *documents.Store, applicationID int64) {
 // returns its path -- the CLI's fixed destination convention, unlike the
 // TUI's export screen, where the user picks the directory. The export is
 // recorded against applicationID with the content it was rendered from
-// (docrecord.RecordExport), as the TUI's are.
-func exportDocumentPDF(ctx context.Context, s *store.Store, applicationID int64, documentType documents.Type, mdPath string) (string, error) {
+// (DocumentService.RecordExport), as the TUI's are.
+func exportDocumentPDF(ctx context.Context, documentService *service.DocumentService, applicationID int64, documentType document.Type, mdPath string) (string, error) {
 	outPath := strings.TrimSuffix(mdPath, filepath.Ext(mdPath)) + ".pdf"
 	content, err := export.Document(mdPath, outPath)
 	if err != nil {
 		return "", err
 	}
-	if err := docrecord.RecordExport(ctx, s.DB(), applicationID, documentType, content, outPath); err != nil {
+	if err := documentService.RecordExport(ctx, applicationID, documentType, content, outPath); err != nil {
 		return "", err
 	}
 	return outPath, nil
@@ -411,11 +422,11 @@ func exportDocumentPDF(ctx context.Context, s *store.Store, applicationID int64,
 // current review is a real, distinct state from either outcome and worth
 // saying so explicitly rather than defaulting to one. It's never inferred
 // from review's fields (RFC 0005).
-func reviewSummary(review docrecord.Review, hasReview bool) string {
+func reviewSummary(review document.Review, hasReview bool) string {
 	if !hasReview {
 		return "not yet reviewed"
 	}
-	if review.Outcome == docrecord.Flagged {
+	if review.Outcome == document.Flagged {
 		return "flagged: " + review.Notes
 	}
 	return "passed"

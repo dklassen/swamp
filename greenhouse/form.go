@@ -7,15 +7,15 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/jobboard"
 )
 
 // formDocuments maps the field names Greenhouse uses for its document
 // uploads to Swamp's document types.
-var formDocuments = map[string]documents.Type{
-	"resume":       documents.Resume,
-	"cover_letter": documents.CoverLetter,
+var formDocuments = map[string]document.Type{
+	"resume":       document.Resume,
+	"cover_letter": document.CoverLetter,
 }
 
 // customQuestionPrefix starts the field name of every question the
@@ -73,7 +73,7 @@ func (c *Client) FetchApplicationForm(ctx context.Context, boardToken, jobID str
 		return jobboard.ApplicationForm{}, fmt.Errorf("greenhouse: decode application form: %w", err)
 	}
 
-	form := jobboard.ApplicationForm{Documents: map[documents.Type]jobboard.Requirement{}}
+	form := jobboard.ApplicationForm{Documents: map[document.Type]jobboard.Requirement{}}
 	for _, q := range body.Questions {
 		if len(q.Fields) == 0 {
 			continue

@@ -7,19 +7,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/service"
 )
 
 // applicationNotesModel drives the application-notes-edit screen for a
-// single posting's application. It holds the store it needs to save
-// notes, the posting it's editing (fixed for this screen's lifetime),
-// and its own private textarea -- no other screen reads or writes this
-// state.
+// single application. It holds the service it needs to save notes, the
+// application it's editing (fixed for this screen's lifetime), and its
+// own private textarea -- no other screen reads or writes this state.
 type applicationNotesModel struct {
-	store     *store.Store
-	postingID int64
-	textarea  textarea.Model
-	instance  screenInstance
+	applications  *service.ApplicationService
+	applicationID int64
+	textarea      textarea.Model
+	instance      screenInstance
 	// seed is the notes the screen opened with, to tell whether esc would
 	// lose edits.
 	seed              string
@@ -29,17 +28,17 @@ type applicationNotesModel struct {
 	saving bool
 }
 
-// newApplicationNotesModel returns a notes-edit screen for postingID,
+// newApplicationNotesModel returns a notes-edit screen for applicationID,
 // seeded with notes and sized to width and height, the rows App leaves
 // under its status/error banner (App.screenRows). App refits the height
 // with setHeight whenever that changes; the width is fixed at
 // construction.
-func newApplicationNotesModel(s *store.Store, postingID int64, notes string, width, height int, instance screenInstance) applicationNotesModel {
+func newApplicationNotesModel(applications *service.ApplicationService, applicationID int64, notes string, width, height int, instance screenInstance) applicationNotesModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	ta.SetValue(notes)
 	ta.Focus()
-	m := applicationNotesModel{store: s, postingID: postingID, textarea: ta, instance: instance, seed: ta.Value()}
+	m := applicationNotesModel{applications: applications, applicationID: applicationID, textarea: ta, instance: instance, seed: ta.Value()}
 	m.setHeight(height)
 	return m
 }
@@ -92,7 +91,7 @@ func (m *applicationNotesModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		return nil, cancelApplicationNotesMsg{}
 	case tea.KeyCtrlS:
 		m.saving = true
-		return updateApplicationNotes(m.store, m.postingID, m.textarea.Value(), m.instance), nil
+		return updateApplicationNotes(m.applications, m.applicationID, m.textarea.Value(), m.instance), nil
 	}
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)

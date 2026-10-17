@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/document"
 )
 
 // ParseFormText reads an application form entered by hand (#184), for
@@ -30,14 +30,14 @@ func ParseFormText(text string, previous *ApplicationForm) (ApplicationForm, err
 		}
 	}
 
-	form := ApplicationForm{Documents: map[documents.Type]Requirement{}}
+	form := ApplicationForm{Documents: map[document.Type]Requirement{}}
 	for n, line := range strings.Split(text, "\n") {
 		line = strings.TrimSpace(line)
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
 		if name, value, ok := strings.Cut(line, ":"); ok {
-			if documentType, err := documents.ParseType(strings.TrimSpace(name)); err == nil {
+			if documentType, err := document.ParseType(strings.TrimSpace(name)); err == nil {
 				requirement, err := parseRequirement(strings.TrimSpace(value))
 				if err != nil {
 					return ApplicationForm{}, fmt.Errorf("jobboard: line %d: %w", n+1, err)
@@ -74,7 +74,7 @@ var errEmptyQuestion = errors.New("a question needs a label")
 func FormText(form ApplicationForm) string {
 	var b strings.Builder
 	b.WriteString("# Documents: required, optional or absent\n")
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		fmt.Fprintf(&b, "%s: %s\n", documentType, form.Documents[documentType])
 	}
 	b.WriteString("\n# Questions, one per line. End a line with * if it's required.\n")

@@ -10,31 +10,27 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/filter"
-	"github.com/dklassen/swamp/postingmarkup"
-	"github.com/dklassen/swamp/scoring"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/change"
+	"github.com/dklassen/swamp/internal/domain/filter"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/domain/score"
+	"github.com/dklassen/swamp/internal/testutil"
 )
 
 // mustUpsertPostingAt is mustUpsertPosting with a department, location and
 // workplace type.
-func mustUpsertPostingAt(t *testing.T, s *store.Store, companyID int64, sourceID, title, department, location, workplaceType string) store.Posting {
+func mustUpsertPostingAt(t *testing.T, s testutil.TestApp, companyID int64, sourceID, title, department, location, workplaceType string) posting.Posting {
 	t.Helper()
-	p, err := s.UpsertPosting(context.Background(), store.CreatePostingParams{
-		CompanyID: companyID,
-		Source:    "ashby",
-		SourceID:  sourceID,
-		IngestedFields: store.IngestedFields{
-			Title:         title,
-			Department:    department,
-			Location:      location,
-			WorkplaceType: workplaceType,
-		},
+	ingested, err := s.Postings.Ingest(context.Background(), companyID, "ashby", sourceID, posting.IngestedFields{
+		Title:         title,
+		Department:    department,
+		Location:      location,
+		WorkplaceType: workplaceType,
 	})
 	if err != nil {
-		t.Fatalf("UpsertPosting: %v", err)
+		t.Fatalf("Ingest: %v", err)
 	}
-	return p
+	return ingested.Posting
 }
 
 // openAllPostings tabs from the home list to the all-postings view,
@@ -54,18 +50,18 @@ func TestAllPostings_ShowsOpenPostingsAcrossCompaniesNewestFirst(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	globex := mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	older := mustUpsertPostingAt(t, s, acme.ID, "1", "Backend Engineer", "Platform", "Toronto", "Hybrid")
 	shelved := mustUpsertPostingAt(t, s, acme.ID, "2", "Shelved Role", "Platform", "Toronto", "")
 	mustUpsertPostingAt(t, s, globex.ID, "3", "Account Executive", "Sales", "Remote", "")
 	newer := mustUpsertPostingAt(t, s, globex.ID, "4", "Platform Engineer", "Infra", "New York", "")
-	if _, err := postingmarkup.SetArchived(ctx, s.DB(), shelved.ID); err != nil {
-		t.Fatalf("postingmarkup.SetArchived: %v", err)
+	if _, err := s.Postings.SetArchived(ctx, shelved.ID); err != nil {
+		t.Fatalf("SetArchived: %v", err)
 	}
-	if _, err := postingmarkup.SetInterested(ctx, s.DB(), older.ID); err != nil {
-		t.Fatalf("postingmarkup.SetInterested: %v", err)
+	if _, err := s.Postings.SetInterested(ctx, older.ID); err != nil {
+		t.Fatalf("SetInterested: %v", err)
 	}
 	addCompanyFilter(t, s, globex.ID, filter.FieldDepartment, "Infra")
 
@@ -105,7 +101,7 @@ func pageTitles(app *App) []string {
 func TestAllPostings_PagesForwardAndBack(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	for i := 1; i <= 7; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
@@ -162,7 +158,7 @@ func TestAllPostings_PagesForwardAndBack(t *testing.T) {
 func TestAllPostings_ResizingReadsThePageAtTheNewSize(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	for i := 1; i <= 30; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
@@ -182,7 +178,7 @@ func TestAllPostings_ResizingReadsThePageAtTheNewSize(t *testing.T) {
 func TestAllPostings_EnterOpensTheDetailAndEscComesBack(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	for i := 1; i <= 7; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
@@ -211,7 +207,7 @@ func TestAllPostings_EnterOpensTheDetailAndEscComesBack(t *testing.T) {
 func TestAllPostings_DetailDoesNotStepThroughACompanyListBrowsedEarlier(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	for i := 1; i <= 3; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
@@ -239,7 +235,7 @@ func TestAllPostings_DetailDoesNotStepThroughACompanyListBrowsedEarlier(t *testi
 func TestAllPostings_IMarksAndUnmarksInterested(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Role 1")
 	posting := mustUpsertPosting(t, s, acme.ID, "2", "Role 2")
@@ -249,9 +245,9 @@ func TestAllPostings_IMarksAndUnmarksInterested(t *testing.T) {
 
 	for _, want := range []bool{true, false} {
 		app = sendKeyAndApply(t, app, runeKey('i'))
-		markup, err := postingmarkup.Get(context.Background(), s.DB(), posting.ID)
+		markup, err := s.Postings.Markup(context.Background(), posting.ID)
 		if err != nil {
-			t.Fatalf("postingmarkup.Get: %v", err)
+			t.Fatalf("Markup: %v", err)
 		}
 		if got := markup.InterestedAt != nil; got != want {
 			t.Errorf("after i: interested = %v, want %v", got, want)
@@ -268,7 +264,7 @@ func TestAllPostings_IMarksAndUnmarksInterested(t *testing.T) {
 func TestAllPostings_XArchivesAndThePostingLeavesThePage(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	for i := 1; i <= 3; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
@@ -281,9 +277,9 @@ func TestAllPostings_XArchivesAndThePostingLeavesThePage(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, runeKey('x'))
 
-	markup, err := postingmarkup.Get(context.Background(), s.DB(), archived.ID)
+	markup, err := s.Postings.Markup(context.Background(), archived.ID)
 	if err != nil {
-		t.Fatalf("postingmarkup.Get: %v", err)
+		t.Fatalf("Markup: %v", err)
 	}
 	if markup.ArchivedAt == nil {
 		t.Fatalf("%q isn't archived after x", archived.Title)
@@ -299,7 +295,7 @@ func TestAllPostings_XArchivesAndThePostingLeavesThePage(t *testing.T) {
 func TestAllPostings_ArchivingTheLastPagesOnlyPostingStepsBack(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
@@ -324,13 +320,10 @@ func TestAllPostings_ArchivingTheLastPagesOnlyPostingStepsBack(t *testing.T) {
 func TestAllPostings_OOpensTheJobURL(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	if _, err := s.UpsertPosting(context.Background(), store.CreatePostingParams{
-		CompanyID: acme.ID, Source: "ashby", SourceID: "1",
-		IngestedFields: store.IngestedFields{Title: "Engineer", JobURL: "https://jobs.example.com/acme/1"},
-	}); err != nil {
-		t.Fatalf("UpsertPosting: %v", err)
+	if _, err := s.Postings.Ingest(context.Background(), acme.ID, "ashby", "1", posting.IngestedFields{Title: "Engineer", JobURL: "https://jobs.example.com/acme/1"}); err != nil {
+		t.Fatalf("Ingest: %v", err)
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	var opened []string
@@ -353,7 +346,7 @@ func TestAllPostings_OOpensTheJobURL(t *testing.T) {
 func TestAllPostings_ANewPostingElsewhere_KeepsThePageAndCountsIt(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	for i := 1; i <= 7; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
@@ -367,7 +360,7 @@ func TestAllPostings_ANewPostingElsewhere_KeepsThePageAndCountsIt(t *testing.T) 
 	page2 := pageTitles(app)
 
 	added := mustUpsertPosting(t, s, acme.ID, "8", "Role 8")
-	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "postings", RowID: added.ID, Op: "insert", Origin: "fetch:9"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "postings", RowID: added.ID, Op: "insert", Origin: "fetch:9"}}})
 
 	if diff := cmp.Diff(page2, pageTitles(app)); diff != "" {
 		t.Errorf("page 2 changed under the user (-before +after):\n%s", diff)
@@ -384,17 +377,17 @@ func TestAllPostings_ANewPostingElsewhere_KeepsThePageAndCountsIt(t *testing.T) 
 func TestAllPostings_MarkedInterestedElsewhere_ShowsTheStar(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "1", "Role 1")
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app = openAllPostings(t, app)
 
-	if _, err := postingmarkup.SetInterested(context.Background(), s.DB(), posting.ID); err != nil {
-		t.Fatalf("postingmarkup.SetInterested: %v", err)
+	if _, err := s.Postings.SetInterested(context.Background(), posting.ID); err != nil {
+		t.Fatalf("SetInterested: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "posting_markup", RowID: posting.ID, Op: "update", Origin: "tui:2"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "posting_markup", RowID: posting.ID, Op: "update", Origin: "tui:2"}}})
 
 	if !strings.Contains(app.View(), "★") {
 		t.Errorf("view doesn't star the posting another window marked interested:\n%s", app.View())
@@ -404,7 +397,7 @@ func TestAllPostings_MarkedInterestedElsewhere_ShowsTheStar(t *testing.T) {
 func TestAllPostings_SlashOpensTheSearchLine(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Role 1")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -426,7 +419,7 @@ func TestAllPostings_SlashOpensTheSearchLine(t *testing.T) {
 func TestAllPostings_TypingSearchesAfterAPause(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	globex := mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
@@ -475,7 +468,7 @@ func searchAllPostings(t *testing.T, app *App, query string) *App {
 func TestAllPostings_EscClearsTheSearch(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
 	mustUpsertPosting(t, s, acme.ID, "2", "Designer")
@@ -503,7 +496,7 @@ func TestAllPostings_EscClearsTheSearch(t *testing.T) {
 func TestAllPostings_EnterKeepsTheResultsAndKeysActOnThem(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
 	designer := mustUpsertPosting(t, s, acme.ID, "2", "Designer")
@@ -518,9 +511,9 @@ func TestAllPostings_EnterKeepsTheResultsAndKeysActOnThem(t *testing.T) {
 	if app.screen != screenAllPostings || app.allPostings.searching || app.allPostings.query != "design" {
 		t.Errorf("after enter, i: screen %v, searching %v, query %q; want the view, not typing, query \"design\"", app.screen, app.allPostings.searching, app.allPostings.query)
 	}
-	markup, err := postingmarkup.Get(context.Background(), s.DB(), designer.ID)
+	markup, err := s.Postings.Markup(context.Background(), designer.ID)
 	if err != nil {
-		t.Fatalf("postingmarkup.Get: %v", err)
+		t.Fatalf("Markup: %v", err)
 	}
 	if markup.InterestedAt == nil {
 		t.Error("i didn't mark the highlighted match interested")
@@ -533,7 +526,7 @@ func TestAllPostings_EnterKeepsTheResultsAndKeysActOnThem(t *testing.T) {
 func TestAllPostings_View_KeptResults(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
 	mustUpsertPosting(t, s, acme.ID, "2", "Designer")
@@ -561,7 +554,7 @@ func TestAllPostings_View_KeptResults(t *testing.T) {
 func TestAllPostings_SlashEditsKeptResultsQuery(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Designer")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -581,7 +574,7 @@ func TestAllPostings_SlashEditsKeptResultsQuery(t *testing.T) {
 func TestAllPostings_EscClearsKeptResults(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
 	mustUpsertPosting(t, s, acme.ID, "2", "Designer")
@@ -604,7 +597,7 @@ func TestAllPostings_EscClearsKeptResults(t *testing.T) {
 func TestAllPostings_PagesThroughSearchResults(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	for i := 1; i <= 7; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprintf("p%d", i), fmt.Sprintf("Platform %d", i))
@@ -644,7 +637,7 @@ func TestAllPostings_PagesThroughSearchResults(t *testing.T) {
 func TestAllPostings_NoMatches_SaysWhatWasSearched(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -658,11 +651,11 @@ func TestAllPostings_NoMatches_SaysWhatWasSearched(t *testing.T) {
 	}
 }
 
-// mustScore records score for p against a fixed profile.
-func mustScore(t *testing.T, s *store.Store, p store.Posting, score int, profile string) {
+// mustScore records fit for p against a fixed profile.
+func mustScore(t *testing.T, s testutil.TestApp, p posting.Posting, fit int, profile string) {
 	t.Helper()
-	if _, err := recordScores(context.Background(), s, scoring.Provenance{Model: "claude-opus-5-5", ProfileSHA256: profile}, []scoring.Entry{
-		{PostingID: p.ID, Score: score, Reason: "reason", ContentSHA256: p.ContentSHA256},
+	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-opus-5-5", ProfileSHA256: profile}, []score.Entry{
+		{PostingID: p.ID, Score: fit, Reason: "reason", ContentSHA256: p.ContentSHA256},
 	}); err != nil {
 		t.Fatalf("recordScores: %v", err)
 	}
@@ -671,16 +664,15 @@ func mustScore(t *testing.T, s *store.Store, p store.Posting, score int, profile
 func TestAllPostings_ShowsEachPostingsFit(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	scored := mustUpsertPosting(t, s, acme.ID, "1", "Scored")
 	stale := mustUpsertPosting(t, s, acme.ID, "2", "Rewritten since")
 	mustUpsertPosting(t, s, acme.ID, "3", "Unscored")
 	mustScore(t, s, scored, 4, "p")
 	mustScore(t, s, stale, 2, "p")
-	if _, err := s.UpsertPosting(context.Background(), store.CreatePostingParams{CompanyID: acme.ID, Source: "ashby", SourceID: "2",
-		IngestedFields: store.IngestedFields{Title: "Rewritten since", DescriptionText: "New text."}}); err != nil {
-		t.Fatalf("UpsertPosting: %v", err)
+	if _, err := s.Postings.Ingest(context.Background(), acme.ID, "ashby", "2", posting.IngestedFields{Title: "Rewritten since", DescriptionText: "New text."}); err != nil {
+		t.Fatalf("Ingest: %v", err)
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 140, Height: 30})
@@ -706,9 +698,9 @@ func TestAllPostings_ShowsEachPostingsFit(t *testing.T) {
 func TestAllPostings_SSortsByFitAndBack(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	var postings []store.Posting
+	var postings []posting.Posting
 	for i := 1; i <= 6; i++ {
 		postings = append(postings, mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i)))
 	}
@@ -749,7 +741,7 @@ func TestAllPostings_SSortsByFitAndBack(t *testing.T) {
 func TestAllPostings_AScoreRecordedElsewhere_Shows(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	p := mustUpsertPosting(t, s, acme.ID, "1", "Role 1")
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
@@ -757,7 +749,7 @@ func TestAllPostings_AScoreRecordedElsewhere_Shows(t *testing.T) {
 	app = openAllPostings(t, app)
 
 	mustScore(t, s, p, 4, "p")
-	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "posting_scores", RowID: 1, Op: "insert", Origin: "mcp:7"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "posting_scores", RowID: 1, Op: "insert", Origin: "mcp:7"}}})
 
 	if got := app.allPostings.page.Listings[0].Score; got != 4 {
 		t.Errorf("score after the agent recorded one = %d, want 4", got)
@@ -767,15 +759,15 @@ func TestAllPostings_AScoreRecordedElsewhere_Shows(t *testing.T) {
 func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	p := mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
-	if _, err := recordScores(context.Background(), s, scoring.Provenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: "p"}, []scoring.Entry{
+	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: "p"}, []score.Entry{
 		{PostingID: p.ID, Score: 2, Reason: "first look", ContentSHA256: p.ContentSHA256},
 	}); err != nil {
 		t.Fatalf("recordScores: %v", err)
 	}
-	if _, err := recordScores(context.Background(), s, scoring.Provenance{Model: "claude-opus-5-5", ClientName: "claude-code", ClientVersion: "2.4.1", ProfileSHA256: "edited p"}, []scoring.Entry{
+	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-opus-5-5", ClientName: "claude-code", ClientVersion: "2.4.1", ProfileSHA256: "edited p"}, []score.Entry{
 		{PostingID: p.ID, Score: 4, Reason: "Go and Kafka, remote", ContentSHA256: p.ContentSHA256},
 	}); err != nil {
 		t.Fatalf("recordScores: %v", err)
@@ -795,12 +787,12 @@ func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
 		t.Errorf("the current score isn't above the earlier one:\n%s", view)
 	}
 
-	if _, err := recordScores(context.Background(), s, scoring.Provenance{Model: "claude-opus-5-5", ProfileSHA256: "rewritten p"}, []scoring.Entry{
+	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-opus-5-5", ProfileSHA256: "rewritten p"}, []score.Entry{
 		{PostingID: p.ID, Score: 5, Reason: "after the rewrite", ContentSHA256: p.ContentSHA256},
 	}); err != nil {
 		t.Fatalf("recordScores: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []store.ChangeEvent{{Table: "posting_scores", RowID: 3, Op: "insert", New: fmt.Sprintf(`{"posting_id":%d,"score":5}`, p.ID), Origin: "mcp:7"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "posting_scores", RowID: 3, Op: "insert", New: fmt.Sprintf(`{"posting_id":%d,"score":5}`, p.ID), Origin: "mcp:7"}}})
 
 	if view := ansi.Strip(app.View()); !strings.Contains(view, "5 · after the rewrite") {
 		t.Errorf("detail doesn't show the score the agent just recorded:\n%s", view)

@@ -12,13 +12,13 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/postingmarkup"
-	"github.com/dklassen/swamp/pursuit"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -34,12 +34,12 @@ import (
 // silently break that hand-off with no compiler or test catching it
 // (#59).
 type Candidate struct {
-	Posting           PostingSummary                  `json:"Posting"`
-	CompanyName       string                          `json:"CompanyName"`
-	ApplicationID     *int64                          `json:"ApplicationID"`
-	ApplicationStatus *applicationstatus.Status       `json:"ApplicationStatus"`
-	ApplicationNotes  string                          `json:"ApplicationNotes"`
-	LatestReviews     map[documents.Type]LatestReview `json:"LatestReviews"`
+	Posting           PostingSummary                 `json:"Posting"`
+	CompanyName       string                         `json:"CompanyName"`
+	ApplicationID     *int64                         `json:"ApplicationID"`
+	ApplicationStatus *application.Status            `json:"ApplicationStatus"`
+	ApplicationNotes  string                         `json:"ApplicationNotes"`
+	LatestReviews     map[document.Type]LatestReview `json:"LatestReviews"`
 }
 
 // PostingSummary is the posting part of a Candidate: enough for the user
@@ -55,12 +55,12 @@ type PostingSummary struct {
 	ApplicationURL string `json:"ApplicationURL"`
 	// PublishedAt is when the board says it was published; null when it
 	// didn't say. Shown so newest-first search results say why (#224).
-	PublishedAt store.OptionalTime `json:"PublishedAt"`
+	PublishedAt posting.OptionalTime `json:"PublishedAt"`
 	// FirstSeenAt is when Swamp first stored the posting.
 	FirstSeenAt time.Time `json:"FirstSeenAt"`
 }
 
-func postingSummary(p store.Posting) PostingSummary {
+func postingSummary(p posting.Posting) PostingSummary {
 	return PostingSummary{
 		ID:             p.ID,
 		Title:          p.Title,
@@ -77,28 +77,28 @@ func postingSummary(p store.Posting) PostingSummary {
 // draft, without RawPayload and DescriptionHTML. Drafting reads
 // DescriptionText, and those two were most of the response (#117).
 type PreparedPosting struct {
-	ID              int64              `json:"ID"`
-	CompanyID       int64              `json:"CompanyID"`
-	Source          string             `json:"Source"`
-	SourceID        string             `json:"SourceID"`
-	Title           string             `json:"Title"`
-	Department      string             `json:"Department"`
-	Team            string             `json:"Team"`
-	Location        string             `json:"Location"`
-	EmploymentType  string             `json:"EmploymentType"`
-	WorkplaceType   string             `json:"WorkplaceType"`
-	DescriptionText string             `json:"DescriptionText"`
-	JobURL          string             `json:"JobURL"`
-	ApplicationURL  string             `json:"ApplicationURL"`
-	PublishedAt     store.OptionalTime `json:"PublishedAt"`
-	ListingStatus   string             `json:"ListingStatus"`
-	FirstSeenAt     time.Time          `json:"FirstSeenAt"`
-	LastSeenAt      time.Time          `json:"LastSeenAt"`
-	CreatedAt       time.Time          `json:"CreatedAt"`
-	UpdatedAt       time.Time          `json:"UpdatedAt"`
+	ID              int64                `json:"ID"`
+	CompanyID       int64                `json:"CompanyID"`
+	Source          string               `json:"Source"`
+	SourceID        string               `json:"SourceID"`
+	Title           string               `json:"Title"`
+	Department      string               `json:"Department"`
+	Team            string               `json:"Team"`
+	Location        string               `json:"Location"`
+	EmploymentType  string               `json:"EmploymentType"`
+	WorkplaceType   string               `json:"WorkplaceType"`
+	DescriptionText string               `json:"DescriptionText"`
+	JobURL          string               `json:"JobURL"`
+	ApplicationURL  string               `json:"ApplicationURL"`
+	PublishedAt     posting.OptionalTime `json:"PublishedAt"`
+	ListingStatus   string               `json:"ListingStatus"`
+	FirstSeenAt     time.Time            `json:"FirstSeenAt"`
+	LastSeenAt      time.Time            `json:"LastSeenAt"`
+	CreatedAt       time.Time            `json:"CreatedAt"`
+	UpdatedAt       time.Time            `json:"UpdatedAt"`
 }
 
-func preparedPosting(p store.Posting) PreparedPosting {
+func preparedPosting(p posting.Posting) PreparedPosting {
 	return PreparedPosting{
 		ID:              p.ID,
 		CompanyID:       p.CompanyID,
@@ -132,7 +132,7 @@ type Document struct {
 	Version string `json:"Version"`
 }
 
-// LatestReview is the parts of a docrecord.Review an external agent
+// LatestReview is the parts of a document.Review an external agent
 // needs to decide whether/how to revise a document: the last verdict,
 // any notes on what to fix, how many review cycles it's already been
 // through, and when that verdict was recorded. ContentSnapshot/
@@ -140,17 +140,17 @@ type Document struct {
 // document's current content on disk (see Prepared.Documents),
 // not a historical snapshot.
 type LatestReview struct {
-	Outcome   docrecord.Outcome `json:"Outcome"`
-	Notes     string            `json:"Notes"`
-	Cycle     int64             `json:"Cycle"`
-	CreatedAt time.Time         `json:"CreatedAt"`
+	Outcome   document.Outcome `json:"Outcome"`
+	Notes     string           `json:"Notes"`
+	Cycle     int64            `json:"Cycle"`
+	CreatedAt time.Time        `json:"CreatedAt"`
 }
 
-// latestReviewsForJSON converts a docrecord.Review map (as returned
-// by docrecord.LatestReviews) into the leaner LatestReview shape
+// latestReviewsForJSON converts a document.Review map (as returned
+// by DocumentService.LatestReviews) into the leaner LatestReview shape
 // this package exposes over JSON.
-func latestReviewsForJSON(reviews map[documents.Type]docrecord.Review) map[documents.Type]LatestReview {
-	out := make(map[documents.Type]LatestReview, len(reviews))
+func latestReviewsForJSON(reviews map[document.Type]document.Review) map[document.Type]LatestReview {
+	out := make(map[document.Type]LatestReview, len(reviews))
 	for documentType, r := range reviews {
 		out[documentType] = LatestReview{Outcome: r.Outcome, Notes: r.Notes, Cycle: r.Cycle, CreatedAt: r.CreatedAt}
 	}
@@ -158,12 +158,12 @@ func latestReviewsForJSON(reviews map[documents.Type]docrecord.Review) map[docum
 }
 
 // needsRework reports whether any of reviews' latest outcomes is
-// docrecord.Flagged -- a flagged document needs another drafting
+// document.Flagged -- a flagged document needs another drafting
 // pass even once its file exists on disk, so List keeps surfacing it
 // rather than treating "both files exist" as "done".
-func needsRework(reviews map[documents.Type]docrecord.Review) bool {
+func needsRework(reviews map[document.Type]document.Review) bool {
 	for _, r := range reviews {
-		if r.Outcome == docrecord.Flagged {
+		if r.Outcome == document.Flagged {
 			return true
 		}
 	}
@@ -176,12 +176,12 @@ func needsRework(reviews map[documents.Type]docrecord.Review) bool {
 // "resume"), so a new type reaches the agent without a new field (RFC
 // 0004).
 type Prepared struct {
-	Posting          PreparedPosting                 `json:"Posting"`
-	CompanyName      string                          `json:"CompanyName"`
-	ApplicationID    int64                           `json:"ApplicationID"`
-	Documents        map[documents.Type]Document     `json:"Documents"`
-	ApplicationNotes string                          `json:"ApplicationNotes"`
-	LatestReviews    map[documents.Type]LatestReview `json:"LatestReviews"`
+	Posting          PreparedPosting                `json:"Posting"`
+	CompanyName      string                         `json:"CompanyName"`
+	ApplicationID    int64                          `json:"ApplicationID"`
+	Documents        map[document.Type]Document     `json:"Documents"`
+	ApplicationNotes string                         `json:"ApplicationNotes"`
+	LatestReviews    map[document.Type]LatestReview `json:"LatestReviews"`
 	// ApplicationForm is what the posting's form asks for (#168), or null
 	// when it isn't known: the board has no supported way to read it
 	// (Ashby, Lever: #167), or the fetch failed. Draft both documents then,
@@ -192,12 +192,49 @@ type Prepared struct {
 	ApplicationFormError string `json:"ApplicationFormError,omitempty"`
 }
 
+type companyService interface {
+	Get(ctx context.Context, id int64) (company.Company, error)
+	GetIncludingDeleted(ctx context.Context, id int64) (company.Company, error)
+	ListActive(ctx context.Context) ([]company.Company, error)
+}
+
+type postingService interface {
+	Get(ctx context.Context, postingID int64) (posting.Posting, error)
+	Search(ctx context.Context, search posting.Search) (posting.SearchPage, error)
+	Interested(ctx context.Context) ([]posting.Interested, error)
+	CountOpenByCompany(ctx context.Context) (map[int64]int, error)
+	Markup(ctx context.Context, postingID int64) (posting.Markup, error)
+	Form(ctx context.Context, postingID int64) (formJSON string, fetchedAt time.Time, ok bool, err error)
+	SaveForm(ctx context.Context, postingID int64, formJSON string) error
+	Application(ctx context.Context, postingID int64) (application.Application, error)
+	ApplyTo(ctx context.Context, postingID int64) (application.Application, error)
+}
+
+type applicationService interface {
+	GetIncludingDeleted(ctx context.Context, applicationID int64) (application.Application, error)
+	Active(ctx context.Context) ([]posting.ActiveApplication, error)
+}
+
+type documentService interface {
+	LatestReviews(ctx context.Context, applicationID int64) (map[document.Type]document.Review, error)
+	RecordWrite(ctx context.Context, applicationID int64, documentType document.Type, content string, source document.Source) error
+}
+
+type scoringService interface {
+	Pending(ctx context.Context, rescoreProfileSHA256 string, beforeID int64, limit int) (score.PendingPostingsPage, error)
+	Record(ctx context.Context, provenance score.Provenance, entries []score.Entry) (score.RecordResult, error)
+}
+
 // Stage is the single entry point for the agent hand-off mechanism,
 // mirroring how sync.Syncer composes ashby and store: List and Prepare
 // are its whole exported API.
 type Stage struct {
-	store     *store.Store
-	documents *documents.Store
+	companies    companyService
+	postings     postingService
+	applications applicationService
+	docs         documentService
+	scores       scoringService
+	documents    *documents.Store
 	// forms reads application forms, by company source (#168).
 	forms        map[string]FormFetcher
 	fetchTimeout time.Duration
@@ -209,8 +246,16 @@ type Stage struct {
 // Option configures a Stage.
 type Option func(*Stage)
 
-func New(s *store.Store, d *documents.Store, opts ...Option) *Stage {
-	st := &Stage{store: s, documents: d, now: time.Now}
+func New(companies companyService, postings postingService, applications applicationService, docs documentService, scores scoringService, d *documents.Store, opts ...Option) *Stage {
+	st := &Stage{
+		companies:    companies,
+		postings:     postings,
+		applications: applications,
+		docs:         docs,
+		scores:       scores,
+		documents:    d,
+		now:          time.Now,
+	}
 	for _, opt := range opts {
 		opt(st)
 	}
@@ -228,7 +273,7 @@ func New(s *store.Store, d *documents.Store, opts ...Option) *Stage {
 // touches the filesystem, so it's safe to call as often as needed to
 // check on outstanding work.
 func (st *Stage) List(ctx context.Context) ([]Candidate, error) {
-	postings, err := st.store.ListInterestedPostings(ctx)
+	postings, err := st.postings.Interested(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("stage: list interested postings: %w", err)
 	}
@@ -253,21 +298,21 @@ func (st *Stage) List(ctx context.Context) ([]Candidate, error) {
 // startedNotInterested returns the postings with a started application
 // that aren't among interested (so weren't marked interested) and aren't
 // archived, in the shape ListInterestedPostings returns.
-func (st *Stage) startedNotInterested(ctx context.Context, interested []store.InterestedPosting) ([]store.InterestedPosting, error) {
+func (st *Stage) startedNotInterested(ctx context.Context, interested []posting.Interested) ([]posting.Interested, error) {
 	seen := make(map[int64]bool, len(interested))
 	for _, p := range interested {
 		seen[p.Posting.ID] = true
 	}
-	applications, err := pursuit.List(ctx, st.store.DB())
+	applications, err := st.applications.Active(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("stage: list active applications: %w", err)
 	}
-	var started []store.InterestedPosting
+	var started []posting.Interested
 	for _, a := range applications {
-		if a.Status != applicationstatus.Started || seen[a.Posting.ID] {
+		if a.Status != application.Started || seen[a.Posting.ID] {
 			continue
 		}
-		markup, err := postingmarkup.Get(ctx, st.store.DB(), a.Posting.ID)
+		markup, err := st.postings.Markup(ctx, a.Posting.ID)
 		if err != nil {
 			return nil, fmt.Errorf("stage: get posting markup: %w", err)
 		}
@@ -275,7 +320,7 @@ func (st *Stage) startedNotInterested(ctx context.Context, interested []store.In
 			continue
 		}
 		id, status := a.ID, a.Status
-		started = append(started, store.InterestedPosting{
+		started = append(started, posting.Interested{
 			Posting:           a.Posting,
 			CompanyName:       a.CompanyName,
 			ApplicationID:     &id,
@@ -288,27 +333,27 @@ func (st *Stage) startedNotInterested(ctx context.Context, interested []store.In
 // candidate builds p's Candidate, or reports false when there's nothing
 // left to draft: both documents are on disk and no current review is
 // flagged.
-func (st *Stage) candidate(ctx context.Context, p store.InterestedPosting) (Candidate, bool, error) {
+func (st *Stage) candidate(ctx context.Context, p posting.Interested) (Candidate, bool, error) {
 	var notes string
-	var reviews map[documents.Type]docrecord.Review
+	var reviews map[document.Type]document.Review
 	if p.ApplicationID != nil {
-		latest, err := docrecord.LatestReviews(ctx, st.store.DB(), *p.ApplicationID)
+		latest, err := st.docs.LatestReviews(ctx, *p.ApplicationID)
 		if err != nil {
 			return Candidate{}, false, fmt.Errorf("stage: latest document reviews: %w", err)
 		}
 		status := st.documents.Status(*p.ApplicationID)
-		reviews, err = documents.Current(status, latest, docrecord.Review.IsCurrent)
+		reviews, err = documents.Current(status, latest, document.Review.IsCurrent)
 		if err != nil {
 			return Candidate{}, false, fmt.Errorf("stage: check review currency: %w", err)
 		}
 		if allDrafted(status) && !needsRework(reviews) {
 			return Candidate{}, false, nil
 		}
-		application, err := application.Get(ctx, st.store.DB(), p.Posting.ID)
+		app, err := st.postings.Application(ctx, p.Posting.ID)
 		if err != nil {
 			return Candidate{}, false, fmt.Errorf("stage: get application: %w", err)
 		}
-		notes = application.Notes
+		notes = app.Notes
 	}
 	return Candidate{
 		Posting:           postingSummary(p.Posting),
@@ -327,23 +372,19 @@ func (st *Stage) candidate(ctx context.Context, p store.InterestedPosting) (Cand
 // posting reuses the existing application and directory rather than
 // erroring or duplicating.
 func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error) {
-	posting, err := st.store.GetPosting(ctx, postingID)
+	posting, err := st.postings.Get(ctx, postingID)
 	if err != nil {
 		return nil, fmt.Errorf("stage: get posting: %w", err)
 	}
 
-	company, err := st.store.GetCompany(ctx, posting.CompanyID)
+	company, err := st.companies.Get(ctx, posting.CompanyID)
 	if err != nil {
 		return nil, fmt.Errorf("stage: get company: %w", err)
 	}
 
-	app, err := application.Get(ctx, st.store.DB(), postingID)
+	app, err := st.postings.Application(ctx, postingID)
 	if errors.Is(err, store.ErrNotFound) {
-		err = store.InTx(ctx, st.store.DB(), func(tx store.Tx) error {
-			var err error
-			app, err = application.Create(ctx, tx, postingID)
-			return err
-		})
+		app, err = st.postings.ApplyTo(ctx, postingID)
 	}
 	if err != nil {
 		return nil, fmt.Errorf("stage: get or create application: %w", err)
@@ -359,17 +400,17 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 		return nil, err
 	}
 
-	reviews, err := docrecord.LatestReviews(ctx, st.store.DB(), app.ID)
+	reviews, err := st.docs.LatestReviews(ctx, app.ID)
 	if err != nil {
 		return nil, fmt.Errorf("stage: latest document reviews: %w", err)
 	}
-	reviews, err = documents.Current(status, reviews, docrecord.Review.IsCurrent)
+	reviews, err = documents.Current(status, reviews, document.Review.IsCurrent)
 	if err != nil {
 		return nil, fmt.Errorf("stage: check review currency: %w", err)
 	}
 
-	preparedDocuments := make(map[documents.Type]Document, len(documents.Types()))
-	for _, documentType := range documents.Types() {
+	preparedDocuments := make(map[document.Type]Document, len(document.Types()))
+	for _, documentType := range document.Types() {
 		doc, err := status.Doc(documentType)
 		if err != nil {
 			return nil, fmt.Errorf("stage: %w", err)
@@ -401,7 +442,7 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 // documents a posting's form asks for (#168, #169), every type is
 // required (RFC 0004, decided 2026-10-01).
 func allDrafted(status documents.Status) bool {
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		doc, err := status.Doc(documentType)
 		if err != nil || !doc.Exists {
 			return false

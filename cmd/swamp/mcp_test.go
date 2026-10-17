@@ -10,7 +10,6 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -18,16 +17,10 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/internal/testutil"
 )
-
-// migratedDBPath is a fresh database at the latest schema.
-func migratedDBPath(t *testing.T) string {
-	t.Helper()
-	path := filepath.Join(t.TempDir(), "test.db")
-	newExportTestStoreAt(t, path)
-	return path
-}
 
 // TestStartMCP_TheAgentsWritesReachTheTUIAsAnotherProcesses: the TUI skips
 // events with its own origin, so a server sharing its database handle would
@@ -36,27 +29,21 @@ func TestStartMCP_TheAgentsWritesReachTheTUIAsAnotherProcesses(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	path := migratedDBPath(t)
+	path := testutil.MigratedDBPath(t)
 	tuiOrigin := fmt.Sprintf("tui:%d", os.Getpid())
-	cfg := store.DefaultConfig()
-	cfg.Origin = tuiOrigin
-	tuiDB, err := store.Open(path, cfg)
+	tui := testutil.OpenStore(t, path, tuiOrigin)
+	acme, err := service.NewCompanyService(tui).Add(ctx, "Acme", "ashby", "acme")
 	if err != nil {
-		t.Fatalf("open the TUI's handle: %v", err)
+		t.Fatalf("Add: %v", err)
 	}
-	t.Cleanup(func() { _ = tuiDB.Close() })
-	tui := store.New(tuiDB)
-	company, err := tui.CreateCompany(ctx, "Acme", "ashby", "acme")
+	ingested, err := service.NewPostingService(tui).Ingest(ctx, acme.ID, "ashby", "job-1", posting.IngestedFields{Title: "Engineer", RawPayload: "{}"})
 	if err != nil {
-		t.Fatalf("CreateCompany: %v", err)
+		t.Fatalf("Ingest: %v", err)
 	}
-	posting, err := tui.UpsertPosting(ctx, store.CreatePostingParams{CompanyID: company.ID, Source: "ashby", SourceID: "job-1", IngestedFields: store.IngestedFields{Title: "Engineer", RawPayload: "{}"}})
+	changes := service.NewChangeLog(tui)
+	since, err := changes.Latest(ctx)
 	if err != nil {
-		t.Fatalf("UpsertPosting: %v", err)
-	}
-	feed, err := tui.NewChangeFeed(ctx)
-	if err != nil {
-		t.Fatalf("NewChangeFeed: %v", err)
+		t.Fatalf("Latest: %v", err)
 	}
 
 	ln, err := net.Listen("tcp", "127.0.0.1:0")
@@ -75,14 +62,14 @@ func TestStartMCP_TheAgentsWritesReachTheTUIAsAnotherProcesses(t *testing.T) {
 		t.Fatalf("connect: %v", err)
 	}
 	t.Cleanup(func() { _ = cs.Close() })
-	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "stage_prepare", Arguments: map[string]any{"PostingID": posting.ID}})
+	res, err := cs.CallTool(ctx, &mcp.CallToolParams{Name: "stage_prepare", Arguments: map[string]any{"PostingID": ingested.Posting.ID}})
 	if err != nil || res.IsError {
 		t.Fatalf("stage_prepare: err %v, result %+v", err, res)
 	}
 
-	events, err := feed.Next(ctx)
+	events, err := changes.After(ctx, since)
 	if err != nil {
-		t.Fatalf("Next: %v", err)
+		t.Fatalf("After: %v", err)
 	}
 	want := fmt.Sprintf("mcp:%d", os.Getpid())
 	var found bool
@@ -112,7 +99,7 @@ func TestMCPForTUI_PortInUse_Fails(t *testing.T) {
 	t.Cleanup(func() { _ = taken.Close() })
 	addr := taken.Addr().String()
 
-	_, err = mcpForTUI(addr, migratedDBPath(t), documents.NewStore(t.TempDir()), slog.New(slog.NewTextHandler(io.Discard, nil)), func() {})
+	_, err = mcpForTUI(addr, testutil.MigratedDBPath(t), documents.NewStore(t.TempDir()), slog.New(slog.NewTextHandler(io.Discard, nil)), func() {})
 
 	if err == nil || !strings.Contains(err.Error(), addr) {
 		t.Errorf("mcpForTUI on a taken address = %v, want an error naming %s", err, addr)
@@ -130,7 +117,7 @@ func TestStartMCP_StopWithAnAgentConnected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	stop, err := startMCP(migratedDBPath(t), documents.NewStore(t.TempDir()), ln, slog.New(slog.NewTextHandler(io.Discard, nil)), func() {})
+	stop, err := startMCP(testutil.MigratedDBPath(t), documents.NewStore(t.TempDir()), ln, slog.New(slog.NewTextHandler(io.Discard, nil)), func() {})
 	if err != nil {
 		t.Fatalf("startMCP: %v", err)
 	}
@@ -227,7 +214,7 @@ func TestStartMCP_ServePanicCrashesAfterReleasing(t *testing.T) {
 			t.Fatalf("listen: %v", err)
 		}
 		release := func() { fmt.Fprintln(os.Stderr, "terminal released") }
-		if _, err := startMCP(migratedDBPath(t), documents.NewStore(t.TempDir()), panickingListener{ln}, slog.New(slog.NewTextHandler(io.Discard, nil)), release); err != nil {
+		if _, err := startMCP(testutil.MigratedDBPath(t), documents.NewStore(t.TempDir()), panickingListener{ln}, slog.New(slog.NewTextHandler(io.Discard, nil)), release); err != nil {
 			t.Fatalf("startMCP: %v", err)
 		}
 		time.Sleep(5 * time.Second)

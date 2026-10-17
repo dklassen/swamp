@@ -6,6 +6,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/dklassen/swamp/internal/testutil"
 )
 
 func TestApp_Tab_SwitchesBetweenTheLists(t *testing.T) {
@@ -24,7 +25,7 @@ func TestApp_Tab_SwitchesBetweenTheLists(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			s := newTestStore(t)
+			s := testutil.NewTestApp(t)
 			app := newTestApp(t, s, newTestSyncer(s, nil))
 			app.screen = tt.from
 			app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
@@ -40,7 +41,7 @@ func TestApp_Tab_SwitchesBetweenTheLists(t *testing.T) {
 func TestApp_Tab_KeepsTheCompanySearch(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app.screen = screenCompanyList
 	for _, key := range []tea.KeyMsg{runeKey('/'), runeKey('g'), {Type: tea.KeyTab}} {
@@ -60,7 +61,7 @@ func TestApp_Tab_KeepsTheCompanySearch(t *testing.T) {
 // newTabsTestApp has two companies and no applications, sized to width.
 func newTabsTestApp(t *testing.T, width int) *App {
 	t.Helper()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -78,7 +79,7 @@ func TestApp_TabBar_ShowsEveryTabWithItsCount(t *testing.T) {
 
 	// The all-postings count is right before that tab has been opened.
 	for _, sc := range []screen{screenActiveApplications, screenCompanyList, screenAllPostings} {
-		s := newTestStore(t)
+		s := testutil.NewTestApp(t)
 		acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 		mustCreateCompany(t, s, "Globex", "ashby", "globex")
 		mustUpsertPosting(t, s, acme.ID, "1", "Engineer")

@@ -8,8 +8,9 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/testutil"
 )
 
 func TestEditorCommand_EditorSet_ReturnsEditorAndPath(t *testing.T) {
@@ -39,28 +40,28 @@ func TestEditorCommand_EditorUnset_ReturnsError(t *testing.T) {
 func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	target := mustCreateApplication(t, s, posting.ID)
 	docs := documents.NewStore(t.TempDir())
-	if _, err := docs.Write(target.ID, documents.Resume, "# Draft\n"); err != nil {
+	if _, err := docs.Write(target.ID, document.Resume, "# Draft\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if _, err := createReview(context.Background(), s, target.ID, documents.Resume, "# Draft\n", docrecord.Passed, ""); err != nil {
+	if _, err := createReview(context.Background(), s, target.ID, document.Resume, "# Draft\n", document.Passed, ""); err != nil {
 		t.Fatalf("CreateReview: %v", err)
 	}
-	app := New(s, newTestSyncer(s, nil), docs)
+	app := newAppOn(s, newTestSyncer(s, nil), docs)
 	app = applyCmd(t, app, app.Init())
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 	if view := app.View(); !strings.Contains(view, "[PASSED]") {
 		t.Fatalf("application detail before the edit doesn't show [PASSED]:\n%s", view)
 	}
 
-	if _, err := docs.Write(target.ID, documents.Resume, "# Edited in $EDITOR\n"); err != nil {
+	if _, err := docs.Write(target.ID, document.Resume, "# Edited in $EDITOR\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: documents.Resume, before: documents.ContentSHA256("# Draft\n")})
+	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: document.Resume, before: documents.ContentSHA256("# Draft\n")})
 
 	if view := app.View(); strings.Contains(view, "[PASSED]") {
 		t.Errorf("application detail still shows the review of the old version as [PASSED]:\n%s", view)
@@ -98,17 +99,17 @@ func TestApp_EditorClosedAfterAChange_RecordsTheWrite(t *testing.T) {
 	ctx := context.Background()
 	app, target := deleteTestApp(t) // resume drafted as "# Draft\n"
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
-	if _, err := app.documents.Write(target.ID, documents.Resume, "# Edited\n"); err != nil {
+	if _, err := app.documents.Write(target.ID, document.Resume, "# Edited\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
-	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: documents.Resume, before: documents.ContentSHA256("# Draft\n")})
+	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: document.Resume, before: documents.ContentSHA256("# Draft\n")})
 
-	write, ok, err := docrecord.LatestWrite(ctx, app.store.DB(), target.ID, documents.Resume)
+	write, ok, err := storeOf(app).Documents.LatestWrite(ctx, target.ID, document.Resume)
 	if err != nil || !ok {
 		t.Fatalf("LatestWrite = ok %v, err %v; want the edit recorded", ok, err)
 	}
-	if write.Source != docrecord.SourceEditor || write.ContentSHA256 != documents.ContentSHA256("# Edited\n") {
+	if write.Source != document.SourceEditor || write.ContentSHA256 != documents.ContentSHA256("# Edited\n") {
 		t.Errorf("recorded write = source %v, hash %q; want editor and the edited content's hash", write.Source, write.ContentSHA256)
 	}
 }
@@ -119,9 +120,9 @@ func TestApp_EditorClosedWithoutAChange_RecordsNothing(t *testing.T) {
 	app, target := deleteTestApp(t) // resume drafted as "# Draft\n"
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
 
-	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: documents.Resume, before: documents.ContentSHA256("# Draft\n")})
+	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: document.Resume, before: documents.ContentSHA256("# Draft\n")})
 
-	if _, ok, err := docrecord.LatestWrite(context.Background(), app.store.DB(), target.ID, documents.Resume); err != nil || ok {
+	if _, ok, err := storeOf(app).Documents.LatestWrite(context.Background(), target.ID, document.Resume); err != nil || ok {
 		t.Errorf("LatestWrite = ok %v, err %v; want nothing recorded for an unchanged document", ok, err)
 	}
 }

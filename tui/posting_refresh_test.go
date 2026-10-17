@@ -4,6 +4,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 )
 
@@ -11,7 +12,7 @@ import (
 // job board: add to board["acme"] for the next refresh to find.
 func newPostingRefreshTestApp(t *testing.T) (*App, map[string][]jobboard.Posting) {
 	t.Helper()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	board := map[string][]jobboard.Posting{"acme": {
 		{SourceID: "job-1", Title: "Engineer"},

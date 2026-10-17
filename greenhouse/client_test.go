@@ -12,7 +12,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
-	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/jobboard"
 )
 
@@ -151,9 +151,9 @@ func TestFetchApplicationForm_ParsesDocumentsAndCustomQuestions(t *testing.T) {
 	}
 
 	want := jobboard.ApplicationForm{
-		Documents: map[documents.Type]jobboard.Requirement{
-			documents.Resume:      jobboard.Required,
-			documents.CoverLetter: jobboard.Optional,
+		Documents: map[document.Type]jobboard.Requirement{
+			document.Resume:      jobboard.Required,
+			document.CoverLetter: jobboard.Optional,
 		},
 		Questions: []jobboard.Question{
 			{Label: "LinkedIn Profile", Required: true, Type: "text"},
@@ -179,7 +179,7 @@ func TestFetchApplicationForm_MissingDocumentIsAbsent(t *testing.T) {
 	if err != nil {
 		t.Fatalf("FetchApplicationForm: %v", err)
 	}
-	if got.Documents[documents.CoverLetter] != jobboard.Absent {
-		t.Errorf("cover letter = %v, want absent", got.Documents[documents.CoverLetter])
+	if got.Documents[document.CoverLetter] != jobboard.Absent {
+		t.Errorf("cover letter = %v, want absent", got.Documents[document.CoverLetter])
 	}
 }

@@ -2,7 +2,6 @@ package mcpserver
 
 import (
 	"context"
-	"database/sql"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -13,22 +12,19 @@ import (
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
-	"github.com/pressly/goose/v3"
 
 	"github.com/google/go-cmp/cmp"
 
-	_ "modernc.org/sqlite"
-
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/db/migrations"
-	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/domain/score"
+	"github.com/dklassen/swamp/internal/repository"
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/postingmarkup"
-	"github.com/dklassen/swamp/scoring"
 	"github.com/dklassen/swamp/stage"
-	"github.com/dklassen/swamp/store"
 	swampsync "github.com/dklassen/swamp/sync"
 )
 
@@ -46,34 +42,15 @@ func (f fakeFetcher) FetchPostings(_ context.Context, slug string) ([]jobboard.P
 	return postings, nil
 }
 
-func newTestServer(t *testing.T) (*mcp.Server, *store.Store, *documents.Store) {
+func newTestServer(t *testing.T) (*mcp.Server, testutil.TestApp, *documents.Store) {
 	t.Helper()
-
-	sqlDB, err := sql.Open("sqlite", "file:"+t.TempDir()+"/test.db")
-	if err != nil {
-		t.Fatalf("open db: %v", err)
-	}
-	t.Cleanup(func() {
-		if err := sqlDB.Close(); err != nil {
-			t.Errorf("close db: %v", err)
-		}
-	})
-
-	goose.SetBaseFS(migrations.FS)
-	if err := goose.SetDialect("sqlite3"); err != nil {
-		t.Fatalf("set dialect: %v", err)
-	}
-	if err := goose.Up(sqlDB, "."); err != nil {
-		t.Fatalf("apply migrations: %v", err)
-	}
-
-	s := store.New(sqlDB)
+	s := testutil.NewTestApp(t)
 	d := documents.NewStore(t.TempDir())
 	fetcher := fakeFetcher{boards: map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}, {SourceID: "job-2", Title: "Designer"}},
 	}}
-	syncer := swampsync.New(s, map[string]swampsync.PostingFetcher{"ashby": fetcher}, swampsync.DefaultConfig())
-	return New(stage.New(s, d), d, syncer), s, d
+	syncer := swampsync.New(s.Companies, s.Postings, map[string]swampsync.PostingFetcher{"ashby": fetcher}, swampsync.DefaultConfig())
+	return New(stage.New(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, d), d, syncer), s, d
 }
 
 // connectClient wires an in-process MCP client to srv over an in-memory
@@ -138,35 +115,30 @@ func callTool[Out any](t *testing.T, cs *mcp.ClientSession, name string, args an
 	return out
 }
 
-func mustCreateCompany(t *testing.T, s *store.Store, name string) store.Company {
+func mustCreateCompany(t *testing.T, s testutil.TestApp, name string) company.Company {
 	t.Helper()
-	c, err := s.CreateCompany(context.Background(), name, "ashby", name)
+	c, err := s.Companies.Add(context.Background(), name, "ashby", name)
 	if err != nil {
 		t.Fatalf("CreateCompany: %v", err)
 	}
 	return c
 }
 
-func mustUpsertPosting(t *testing.T, s *store.Store, companyID int64, sourceID, title string) store.Posting {
+func mustUpsertPosting(t *testing.T, s testutil.TestApp, companyID int64, sourceID, title string) posting.Posting {
 	t.Helper()
-	p, err := s.UpsertPosting(context.Background(), store.CreatePostingParams{
-		CompanyID: companyID,
-		Source:    "ashby",
-		SourceID:  sourceID,
-		IngestedFields: store.IngestedFields{
-			Title:      title,
-			RawPayload: `{"id":"` + sourceID + `"}`,
-		},
+	ingested, err := s.Postings.Ingest(context.Background(), companyID, "ashby", sourceID, posting.IngestedFields{
+		Title:      title,
+		RawPayload: `{"id":"` + sourceID + `"}`,
 	})
 	if err != nil {
-		t.Fatalf("UpsertPosting: %v", err)
+		t.Fatalf("Ingest: %v", err)
 	}
-	return p
+	return ingested.Posting
 }
 
-func mustMarkInterested(t *testing.T, s *store.Store, postingID int64) {
+func mustMarkInterested(t *testing.T, s testutil.TestApp, postingID int64) {
 	t.Helper()
-	if _, err := postingmarkup.SetInterested(context.Background(), s.DB(), postingID); err != nil {
+	if _, err := s.Postings.SetInterested(context.Background(), postingID); err != nil {
 		t.Fatalf("postingmarkup.SetInterested: %v", err)
 	}
 }
@@ -212,19 +184,19 @@ func TestStagePrepare_CreatesApplicationAndReturnsDocumentPaths(t *testing.T) {
 	if diff := cmp.Diff("Acme", got.CompanyName); diff != "" {
 		t.Errorf("CompanyName mismatch (-want +got):\n%s", diff)
 	}
-	if got.Documents[documents.CoverLetter].Path == "" {
+	if got.Documents[document.CoverLetter].Path == "" {
 		t.Error("CoverLetter.Path is empty, want a resolved path")
 	}
-	if got.Documents[documents.CoverLetter].Exists {
+	if got.Documents[document.CoverLetter].Exists {
 		t.Error("CoverLetter.Exists = true, want false (nothing drafted yet)")
 	}
 
-	application, err := application.Get(context.Background(), s.DB(), posting.ID)
+	app, err := s.Postings.Application(context.Background(), posting.ID)
 	if err != nil {
 		t.Fatalf("application.Get: %v", err)
 	}
-	if application.ID != got.ApplicationID {
-		t.Errorf("persisted application id = %d, want %d", application.ID, got.ApplicationID)
+	if app.ID != got.ApplicationID {
+		t.Errorf("persisted application id = %d, want %d", app.ID, got.ApplicationID)
 	}
 }
 
@@ -243,8 +215,8 @@ func TestWriteDocument_WritesContentToTheResolvedPath(t *testing.T) {
 		documentType string
 		wantPath     string
 	}{
-		{"cover_letter", prepared.Documents[documents.CoverLetter].Path},
-		{"resume", prepared.Documents[documents.Resume].Path},
+		{"cover_letter", prepared.Documents[document.CoverLetter].Path},
+		{"resume", prepared.Documents[document.Resume].Path},
 	} {
 		t.Run(tc.documentType, func(t *testing.T) {
 			content := "content for " + tc.documentType
@@ -338,7 +310,7 @@ func TestWriteDocument_UnknownApplication_WritesNothing(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("tool error mismatch (-want +got):\n%s", diff)
 	}
-	path, err := d.Path(999, documents.CoverLetter)
+	path, err := d.Path(999, document.CoverLetter)
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
@@ -360,7 +332,7 @@ func TestWriteDocument_DeletedApplication_WritesNothing(t *testing.T) {
 	mustMarkInterested(t, s, posting.ID)
 	cs := connectClient(t, srv)
 	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
-	if err := application.Delete(context.Background(), s.DB(), prepared.ApplicationID); err != nil {
+	if err := s.Applications.Delete(context.Background(), prepared.ApplicationID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
 
@@ -374,7 +346,7 @@ func TestWriteDocument_DeletedApplication_WritesNothing(t *testing.T) {
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("tool error mismatch (-want +got):\n%s", diff)
 	}
-	path := prepared.Documents[documents.CoverLetter].Path
+	path := prepared.Documents[document.CoverLetter].Path
 	if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
 		t.Errorf("Stat(%s): err = %v, want no draft written", path, err)
 	}
@@ -399,7 +371,7 @@ func TestAddCompany_NewBoard_CreatesCompanyWithDescription(t *testing.T) {
 		t.Errorf("add_company result mismatch (-want +got):\n%s", diff)
 	}
 
-	stored, err := s.GetCompany(context.Background(), got.CompanyID)
+	stored, err := s.Companies.Get(context.Background(), got.CompanyID)
 	if err != nil {
 		t.Fatalf("GetCompany(%d): %v", got.CompanyID, err)
 	}
@@ -423,12 +395,12 @@ func TestAddCompany_ExistingCompany_ReportsOutcome(t *testing.T) {
 			t.Parallel()
 
 			srv, s, _ := newTestServer(t)
-			acme, err := s.CreateCompany(context.Background(), "Acme", "ashby", "acme")
+			acme, err := s.Companies.Add(context.Background(), "Acme", "ashby", "acme")
 			if err != nil {
 				t.Fatalf("CreateCompany: %v", err)
 			}
 			if tc.softDelete {
-				if err := s.SoftDeleteCompany(context.Background(), acme.ID); err != nil {
+				if err := s.Companies.Delete(context.Background(), acme.ID); err != nil {
 					t.Fatalf("SoftDeleteCompany: %v", err)
 				}
 			}
@@ -467,7 +439,7 @@ func TestAddCompany_BoardRejectsSlug_ReturnsToolErrorAndCreatesNothing(t *testin
 		t.Fatal("IsError = false, want true for a slug the board rejects")
 	}
 
-	companies, err := s.ListActiveCompanies(context.Background())
+	companies, err := s.Companies.ListActive(context.Background())
 	if err != nil {
 		t.Fatalf("ListActiveCompanies: %v", err)
 	}
@@ -491,8 +463,8 @@ func TestReadDocument_ReturnsWrittenContent(t *testing.T) {
 		documentType string
 		wantPath     string
 	}{
-		{"cover_letter", prepared.Documents[documents.CoverLetter].Path},
-		{"resume", prepared.Documents[documents.Resume].Path},
+		{"cover_letter", prepared.Documents[document.CoverLetter].Path},
+		{"resume", prepared.Documents[document.Resume].Path},
 	} {
 		t.Run(tc.documentType, func(t *testing.T) {
 			content := "draft of " + tc.documentType
@@ -584,7 +556,7 @@ func TestReadDocument_DeletedApplication_SaysSo(t *testing.T) {
 		"DocumentType":  "cover_letter",
 		"Content":       "a draft",
 	})
-	if err := application.Delete(context.Background(), s.DB(), prepared.ApplicationID); err != nil {
+	if err := s.Applications.Delete(context.Background(), prepared.ApplicationID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
 
@@ -721,7 +693,7 @@ func TestStagePrepare_ClosedPosting_ReturnsToolErrorSayingSo(t *testing.T) {
 	srv, s, _ := newTestServer(t)
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
-	if err := s.MarkPostingClosed(context.Background(), posting.ID); err != nil {
+	if err := (&repository.PostingRepository{}).MarkClosed(context.Background(), s.Store, posting.ID); err != nil {
 		t.Fatalf("MarkPostingClosed: %v", err)
 	}
 	cs := connectClient(t, srv)
@@ -765,10 +737,10 @@ func TestListCompanies_LiveCompaniesByNameWithOpenCounts(t *testing.T) {
 	mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
 	closed := mustUpsertPosting(t, s, acme.ID, "job-3", "Writer")
-	if err := s.MarkPostingClosed(ctx, closed.ID); err != nil {
+	if err := (&repository.PostingRepository{}).MarkClosed(ctx, s.Store, closed.ID); err != nil {
 		t.Fatalf("MarkPostingClosed: %v", err)
 	}
-	if err := s.SoftDeleteCompany(ctx, gone.ID); err != nil {
+	if err := s.Companies.Delete(ctx, gone.ID); err != nil {
 		t.Fatalf("SoftDeleteCompany: %v", err)
 	}
 	cs := connectClient(t, srv)
@@ -834,7 +806,7 @@ func TestSearchPostings_FindsADraftedApplicationByCompany(t *testing.T) {
 	if _, err := d.EnsureDir(application.ID); err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		path, err := d.Path(application.ID, documentType)
 		if err != nil {
 			t.Fatalf("Path: %v", err)
@@ -993,7 +965,7 @@ func TestSearchPostings_AdvertisesEnums(t *testing.T) {
 		t.Fatalf("unmarshal schema: %v\n%s", err, raw)
 	}
 	var statuses []string
-	for _, status := range applicationstatus.All() {
+	for _, status := range application.All() {
 		statuses = append(statuses, status.String())
 	}
 	if diff := cmp.Diff(statuses, schema.Properties.ApplicationStatuses.Items.Enum); diff != "" {
@@ -1041,7 +1013,7 @@ func TestWriteDocument_ReplacesVersion(t *testing.T) {
 			mustMarkInterested(t, s, posting.ID)
 			cs := connectClient(t, srv)
 			prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
-			path := prepared.Documents[documents.CoverLetter].Path
+			path := prepared.Documents[document.CoverLetter].Path
 			if tt.onDisk != "" {
 				if err := os.WriteFile(path, []byte(tt.onDisk), 0o644); err != nil {
 					t.Fatalf("WriteFile: %v", err)
@@ -1105,7 +1077,7 @@ func TestWriteDocument_EmptyReplacesVersion_IsRefused(t *testing.T) {
 			t.Errorf("error %q doesn't contain %q", msg, part)
 		}
 	}
-	if _, err := os.Stat(prepared.Documents[documents.CoverLetter].Path); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(prepared.Documents[document.CoverLetter].Path); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("cover letter on disk after a refused write: Stat error %v, want not exist", err)
 	}
 }
@@ -1130,18 +1102,18 @@ func TestStagePrepare_DocumentsCarryVersion(t *testing.T) {
 
 	got := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 
-	if want := documents.ContentSHA256("a draft"); got.Documents[documents.CoverLetter].Version != want {
-		t.Errorf("cover letter Version = %q, want %q", got.Documents[documents.CoverLetter].Version, want)
+	if want := documents.ContentSHA256("a draft"); got.Documents[document.CoverLetter].Version != want {
+		t.Errorf("cover letter Version = %q, want %q", got.Documents[document.CoverLetter].Version, want)
 	}
-	if got := got.Documents[documents.Resume].Version; got != stage.NoDocumentYet {
+	if got := got.Documents[document.Resume].Version; got != stage.NoDocumentYet {
 		t.Errorf("resume Version = %q, want %q (never written)", got, stage.NoDocumentYet)
 	}
 }
 
-// TestWriteDocument_IsRecordedAndReachesTheChangeFeed: a file write is
+// TestWriteDocument_IsRecordedAndReachesTheChangeLog: a file write is
 // invisible to the database, so write_document records it; that record is
-// how a TUI watching the change feed learns the agent revised a draft.
-func TestWriteDocument_IsRecordedAndReachesTheChangeFeed(t *testing.T) {
+// how a TUI watching the change log learns the agent revised a draft.
+func TestWriteDocument_IsRecordedAndReachesTheChangeLog(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -1151,9 +1123,9 @@ func TestWriteDocument_IsRecordedAndReachesTheChangeFeed(t *testing.T) {
 	mustMarkInterested(t, s, posting.ID)
 	cs := connectClient(t, srv)
 	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
-	feed, err := s.NewChangeFeed(ctx)
+	since, err := s.Changes.Latest(ctx)
 	if err != nil {
-		t.Fatalf("NewChangeFeed: %v", err)
+		t.Fatalf("Latest: %v", err)
 	}
 	callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
 		"ApplicationID": prepared.ApplicationID,
@@ -1161,17 +1133,17 @@ func TestWriteDocument_IsRecordedAndReachesTheChangeFeed(t *testing.T) {
 		"Content":       "a draft",
 	})
 
-	write, ok, err := docrecord.LatestWrite(ctx, s.DB(), prepared.ApplicationID, documents.CoverLetter)
+	write, ok, err := s.Documents.LatestWrite(ctx, prepared.ApplicationID, document.CoverLetter)
 	if err != nil || !ok {
 		t.Fatalf("LatestWrite = ok %v, err %v; want the write", ok, err)
 	}
-	if write.Source != docrecord.SourceWriteDocument || write.ContentSHA256 != documents.ContentSHA256("a draft") {
+	if write.Source != document.SourceWriteDocument || write.ContentSHA256 != documents.ContentSHA256("a draft") {
 		t.Errorf("recorded write = source %v, hash %q; want write_document and the draft's hash", write.Source, write.ContentSHA256)
 	}
 
-	events, err := feed.Next(ctx)
+	events, err := s.Changes.After(ctx, since)
 	if err != nil {
-		t.Fatalf("Next: %v", err)
+		t.Fatalf("After: %v", err)
 	}
 	if len(events) != 1 || events[0].Table != "document_writes" || events[0].RowID != write.ID {
 		t.Errorf("change events after write_document = %+v, want one document_writes insert for write %d", events, write.ID)
@@ -1184,20 +1156,18 @@ func TestReadPosting_ReturnsThePostingInFull(t *testing.T) {
 	srv, s, _ := newTestServer(t)
 	ctx := context.Background()
 	acme := mustCreateCompany(t, s, "Acme")
-	if _, err := s.UpdateCompanyDescription(ctx, acme.ID, "Builds rockets."); err != nil {
+	if _, err := s.Companies.SetDescription(ctx, acme.ID, "Builds rockets."); err != nil {
 		t.Fatalf("UpdateCompanyDescription: %v", err)
 	}
-	posting, err := s.UpsertPosting(ctx, store.CreatePostingParams{
-		CompanyID: acme.ID, Source: "ashby", SourceID: "job-1",
-		IngestedFields: store.IngestedFields{
-			Title: "Platform Engineer", Department: "Infra", Location: "Dublin", WorkplaceType: "Hybrid",
-			DescriptionText: "Run the platform.", DescriptionHTML: "<p>Run the platform.</p>",
-			JobURL: "https://jobs.example.com/acme/1", ApplicationURL: "https://jobs.example.com/acme/1/apply", RawPayload: "{}",
-		},
+	ingested, err := s.Postings.Ingest(ctx, acme.ID, "ashby", "job-1", posting.IngestedFields{
+		Title: "Platform Engineer", Department: "Infra", Location: "Dublin", WorkplaceType: "Hybrid",
+		DescriptionText: "Run the platform.", DescriptionHTML: "<p>Run the platform.</p>",
+		JobURL: "https://jobs.example.com/acme/1", ApplicationURL: "https://jobs.example.com/acme/1/apply", RawPayload: "{}",
 	})
 	if err != nil {
-		t.Fatalf("UpsertPosting: %v", err)
+		t.Fatalf("Ingest: %v", err)
 	}
+	posting := ingested.Posting
 	cs := connectClient(t, srv)
 
 	got := callTool[stage.FullPosting](t, cs, "read_posting", map[string]any{"PostingID": posting.ID})
@@ -1222,7 +1192,7 @@ func TestReadPosting_RefusesWhatItCantShow(t *testing.T) {
 	srv, s, _ := newTestServer(t)
 	gone := mustCreateCompany(t, s, "Gone")
 	atGone := mustUpsertPosting(t, s, gone.ID, "job-1", "Engineer")
-	if err := s.SoftDeleteCompany(context.Background(), gone.ID); err != nil {
+	if err := s.Companies.Delete(context.Background(), gone.ID); err != nil {
 		t.Fatalf("SoftDeleteCompany: %v", err)
 	}
 	cs := connectClient(t, srv)
@@ -1304,7 +1274,7 @@ func TestListPendingPostings_PagesToTheLastPage(t *testing.T) {
 	if second.NextCursor != nil {
 		t.Errorf("last page's NextCursor = %q, want null", *second.NextCursor)
 	}
-	if first.Postings[0].Reason != scoring.PendingNew || first.Postings[0].Version == "" {
+	if first.Postings[0].Reason != score.PendingNew || first.Postings[0].Version == "" {
 		t.Errorf("first posting = %+v, want new, with its content hash", first.Postings[0])
 	}
 }
@@ -1318,7 +1288,7 @@ func TestListPendingPostings_SaysWhyEachIsPending(t *testing.T) {
 	fresh := mustUpsertPosting(t, s, acme.ID, "job-1", "Fresh")
 	scored := mustUpsertPosting(t, s, acme.ID, "job-2", "Scored before the profile changed")
 	oldProfile := documents.ContentSHA256("# Me")
-	if _, err := recordScores(ctx, s, scoring.Provenance{Model: "claude-opus-5-5", ProfileSHA256: oldProfile}, []scoring.Entry{
+	if _, err := recordScores(ctx, s, score.Provenance{Model: "claude-opus-5-5", ProfileSHA256: oldProfile}, []score.Entry{
 		{PostingID: scored.ID, Score: 3, Reason: "ok", ContentSHA256: scored.ContentSHA256},
 	}); err != nil {
 		t.Fatalf("recordScores: %v", err)
@@ -1326,17 +1296,17 @@ func TestListPendingPostings_SaysWhyEachIsPending(t *testing.T) {
 	profile := mustWriteProfile(t, d, "# Me, edited")
 	cs := connectClient(t, srv)
 
-	reasons := func(args map[string]any) map[int64]scoring.PendingReason {
-		got := map[int64]scoring.PendingReason{}
+	reasons := func(args map[string]any) map[int64]score.PendingReason {
+		got := map[int64]score.PendingReason{}
 		for _, p := range callTool[stage.PendingResult](t, cs, "list_pending_postings", args).Postings {
 			got[p.ID] = p.Reason
 		}
 		return got
 	}
-	if diff := cmp.Diff(map[int64]scoring.PendingReason{fresh.ID: scoring.PendingNew}, reasons(map[string]any{"ProfileVersion": profile})); diff != "" {
+	if diff := cmp.Diff(map[int64]score.PendingReason{fresh.ID: score.PendingNew}, reasons(map[string]any{"ProfileVersion": profile})); diff != "" {
 		t.Errorf("by default, an edited profile queues nothing (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff(map[int64]scoring.PendingReason{fresh.ID: scoring.PendingNew, scored.ID: scoring.PendingRescore}, reasons(map[string]any{"ProfileVersion": profile, "Rescore": true})); diff != "" {
+	if diff := cmp.Diff(map[int64]score.PendingReason{fresh.ID: score.PendingNew, scored.ID: score.PendingRescore}, reasons(map[string]any{"ProfileVersion": profile, "Rescore": true})); diff != "" {
 		t.Errorf("rescore (-want +got):\n%s", diff)
 	}
 }
@@ -1399,16 +1369,16 @@ func TestRecordScores_StoresValidEntriesAndReportsTheRest(t *testing.T) {
 
 	want := stage.RecordResult{
 		Recorded: []int64{good.ID},
-		Refused:  []stage.RefusedEntry{{PostingID: other.ID, Why: scoring.OutOfRange}, {PostingID: 999, Why: scoring.NoSuchPosting}},
+		Refused:  []stage.RefusedEntry{{PostingID: other.ID, Why: score.OutOfRange}, {PostingID: 999, Why: score.NoSuchPosting}},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("record_scores (-want +got):\n%s", diff)
 	}
-	scores, err := scoring.ForPosting(context.Background(), s.DB(), good.ID)
+	scores, err := s.Scores.ForPosting(context.Background(), good.ID)
 	if err != nil {
 		t.Fatalf("scoring.ForPosting: %v", err)
 	}
-	wantProvenance := scoring.Provenance{Model: "claude-opus-5-5", ClientName: "mcpserver-test", ClientVersion: "test", ProfileSHA256: profile}
+	wantProvenance := score.Provenance{Model: "claude-opus-5-5", ClientName: "mcpserver-test", ClientVersion: "test", ProfileSHA256: profile}
 	if len(scores) != 1 || scores[0].Score != 4 || scores[0].Provenance != wantProvenance {
 		t.Errorf("stored scores = %+v, want one 4 with %+v", scores, wantProvenance)
 	}
@@ -1432,7 +1402,7 @@ func TestRecordScores_RefusesAProfileItDidntReadAndRecordsNothing(t *testing.T) 
 	if !strings.Contains(text, "read_profile") {
 		t.Errorf("tool error %q, want it to say to call read_profile again", text)
 	}
-	if scores, err := scoring.ForPosting(context.Background(), s.DB(), p.ID); err != nil || len(scores) != 0 {
+	if scores, err := s.Scores.ForPosting(context.Background(), p.ID); err != nil || len(scores) != 0 {
 		t.Errorf("scores after a refused call = %+v, %v; want none", scores, err)
 	}
 }
@@ -1474,7 +1444,7 @@ func TestRecordScores_AdvertisesTheRefusalNames(t *testing.T) {
 		t.Fatalf("unmarshal schema %s: %v", raw, err)
 	}
 	var want []string
-	for _, r := range scoring.Refusals() {
+	for _, r := range score.Refusals() {
 		want = append(want, r.String())
 	}
 	why := schema.Properties.Refused.Items.Properties.Why
@@ -1515,27 +1485,15 @@ func TestOldVersionArgumentNames_AreRefused(t *testing.T) {
 			t.Errorf("%s with an old argument name succeeded, want it refused", c.tool)
 		}
 	}
-	if _, err := os.Stat(prepared.Documents[documents.CoverLetter].Path); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Stat(prepared.Documents[document.CoverLetter].Path); !errors.Is(err, os.ErrNotExist) {
 		t.Errorf("cover letter on disk after a refused write: Stat error %v, want not exist", err)
 	}
 }
 
-func recordScores(ctx context.Context, s *store.Store, provenance scoring.Provenance, entries []scoring.Entry) (scoring.RecordResult, error) {
-	var result scoring.RecordResult
-	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-		var err error
-		result, err = scoring.Record(ctx, tx, provenance, entries)
-		return err
-	})
-	return result, err
+func recordScores(ctx context.Context, s testutil.TestApp, provenance score.Provenance, entries []score.Entry) (score.RecordResult, error) {
+	return s.Scores.Record(ctx, provenance, entries)
 }
 
-func createApplication(ctx context.Context, s *store.Store, postingID int64) (application.Application, error) {
-	var app application.Application
-	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-		var err error
-		app, err = application.Create(ctx, tx, postingID)
-		return err
-	})
-	return app, err
+func createApplication(ctx context.Context, s testutil.TestApp, postingID int64) (application.Application, error) {
+	return s.Postings.ApplyTo(ctx, postingID)
 }

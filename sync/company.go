@@ -6,17 +6,17 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/dklassen/swamp/application"
+	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/seed"
 	"github.com/dklassen/swamp/store"
 )
 
-// toIngestedFields builds the fields store.Posting and
-// store.CreatePostingParams share from a fetched Posting -- the single
+// toIngestedFields builds a posting.IngestedFields from a fetched Posting -- the single
 // place that conversion happens (#57 and #67).
-func toIngestedFields(p jobboard.Posting) store.IngestedFields {
-	return store.IngestedFields{
+func toIngestedFields(p jobboard.Posting) posting.IngestedFields {
+	return posting.IngestedFields{
 		Title:           p.Title,
 		Department:      p.Department,
 		Team:            p.Team,
@@ -27,17 +27,8 @@ func toIngestedFields(p jobboard.Posting) store.IngestedFields {
 		DescriptionText: p.DescriptionText,
 		JobURL:          p.JobURL,
 		ApplicationURL:  p.ApplicationURL,
-		PublishedAt:     store.OptionalTime{Time: p.PublishedAt},
+		PublishedAt:     posting.OptionalTime{Time: p.PublishedAt},
 		RawPayload:      string(p.RawPayload),
-	}
-}
-
-func toCreatePostingParams(companyID int64, source string, p jobboard.Posting) store.CreatePostingParams {
-	return store.CreatePostingParams{
-		CompanyID:      companyID,
-		Source:         source,
-		SourceID:       p.SourceID,
-		IngestedFields: toIngestedFields(p),
 	}
 }
 
@@ -63,7 +54,7 @@ func toCreatePostingParams(companyID int64, source string, p jobboard.Posting) s
 //   - every posting change already made committed, each in its own
 //     transaction (#147, #148), and postings not yet reached untouched.
 //     The one change made in two transactions is a closed posting whose
-//     content changed (IngestPosting, then ReopenPosting): stopped
+//     content changed (Ingest, then Reopen): stopped
 //     between them it's left updated but still closed, a valid state;
 //   - the close pass not run, so no posting is closed;
 //   - the company not marked fetched, so "last fetched" stays stale;
@@ -75,7 +66,7 @@ func toCreatePostingParams(companyID int64, source string, p jobboard.Posting) s
 func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result Result, err error) {
 	result = Result{CompanyID: companyID}
 
-	company, err := s.store.GetCompany(ctx, companyID)
+	company, err := s.companies.Get(ctx, companyID)
 	if err != nil {
 		return result, fmt.Errorf("sync: get company: %w", err)
 	}
@@ -86,7 +77,7 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result Resul
 	}
 
 	token := rand.Text()
-	taken, err := s.store.AcquireSyncLease(ctx, companyID, token, s.cfg.LeaseTimeout)
+	taken, err := s.companies.AcquireSyncLease(ctx, companyID, token, s.cfg.LeaseTimeout)
 	if err != nil {
 		return result, fmt.Errorf("sync: %w", err)
 	}
@@ -99,7 +90,7 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result Resul
 		// Released whether the sync succeeded or not, and even if ctx was
 		// cancelled. If this fails the lease stays held until it expires,
 		// which is worth reporting.
-		if releaseErr := s.store.ReleaseSyncLease(context.WithoutCancel(ctx), companyID, token); releaseErr != nil {
+		if releaseErr := s.companies.ReleaseSyncLease(context.WithoutCancel(ctx), companyID, token); releaseErr != nil {
 			err = errors.Join(err, fmt.Errorf("sync: %w", releaseErr))
 		}
 	}()
@@ -110,16 +101,18 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result Resul
 // syncHeld is SyncCompany's work once it holds the company's lease: fetch,
 // save every posting (ingest), close what's gone (closeMissing,
 // reconcile.go).
-func (s *Syncer) syncHeld(ctx context.Context, company store.Company, fetcher PostingFetcher, result Result) (Result, error) {
+func (s *Syncer) syncHeld(ctx context.Context, company company.Company, fetcher PostingFetcher, result Result) (Result, error) {
 	companyID := company.ID
-	fetched, err := s.fetch(ctx, fetcher, company.SourceRef)
+	raw, err := s.fetch(ctx, fetcher, company.SourceRef)
 	if err != nil {
 		return result, fmt.Errorf("sync: fetch postings: %w", err)
 	}
 	ctx = context.WithoutCancel(ctx)
-	result.Fetched = len(fetched)
-	for i := range fetched {
-		fetched[i] = sanitizePosting(fetched[i])
+	result.Fetched = len(raw)
+	// A copy, not in place: the fetcher may hand the same slice to other syncs.
+	fetched := make([]jobboard.Posting, len(raw))
+	for i, p := range raw {
+		fetched[i] = sanitizePosting(p)
 	}
 
 	result, err = s.ingest(ctx, company, fetched, result)
@@ -133,7 +126,7 @@ func (s *Syncer) syncHeld(ctx context.Context, company store.Company, fetcher Po
 		return result, err
 	}
 
-	if err := s.store.MarkCompanyFetched(ctx, companyID); err != nil {
+	if err := s.companies.MarkFetched(ctx, companyID); err != nil {
 		return result, fmt.Errorf("sync: mark company fetched: %w", err)
 	}
 	return result, nil
@@ -142,9 +135,9 @@ func (s *Syncer) syncHeld(ctx context.Context, company store.Company, fetcher Po
 // ingest saves every fetched posting, whatever the company's filters say
 // (they only decide what's shown): creating it, updating its content, or
 // reopening it if it was closed. It stops at the first error.
-func (s *Syncer) ingest(ctx context.Context, company store.Company, fetched []jobboard.Posting, result Result) (Result, error) {
+func (s *Syncer) ingest(ctx context.Context, company company.Company, fetched []jobboard.Posting, result Result) (Result, error) {
 	for _, p := range fetched {
-		ingested, err := s.store.IngestPosting(ctx, toCreatePostingParams(company.ID, company.Source, p))
+		ingested, err := s.postings.Ingest(ctx, company.ID, company.Source, p.SourceID, toIngestedFields(p))
 		if err != nil {
 			return result, fmt.Errorf("sync: save posting: %w", err)
 		}
@@ -155,7 +148,7 @@ func (s *Syncer) ingest(ctx context.Context, company store.Company, fetched []jo
 			result.Updated++
 		}
 		if ingested.Posting.ListingStatus == "closed" {
-			reopened, applicationRestored, err := reopenPosting(ctx, s.store, ingested.Posting.ID)
+			reopened, applicationRestored, err := s.postings.Reopen(ctx, ingested.Posting.ID)
 			if err != nil {
 				return result, fmt.Errorf("sync: reopen posting: %w", err)
 			}
@@ -177,19 +170,19 @@ func (s *Syncer) ingest(ctx context.Context, company store.Company, fetched []jo
 // blocks the create. The fetched postings are discarded; ingestion waits
 // for the next sync.
 // Shared by the TUI's add-company form and ImportCompanies.
-func (s *Syncer) CreateCompany(ctx context.Context, name, source, sourceRef string) (store.Company, error) {
+func (s *Syncer) CreateCompany(ctx context.Context, name, source, sourceRef string) (company.Company, error) {
 	fetcher, ok := s.fetchers[source]
 	if !ok {
-		return store.Company{}, fmt.Errorf("sync: unsupported source %q", source)
+		return company.Company{}, fmt.Errorf("sync: unsupported source %q", source)
 	}
 	if _, err := s.fetch(ctx, fetcher, sourceRef); err != nil {
-		return store.Company{}, fmt.Errorf("sync: %s/%s does not resolve to a real board: %w", source, sourceRef, err)
+		return company.Company{}, fmt.Errorf("sync: %s/%s does not resolve to a real board: %w", source, sourceRef, err)
 	}
-	company, err := s.store.CreateCompany(ctx, name, source, sourceRef)
+	created, err := s.companies.Add(ctx, name, source, sourceRef)
 	if err != nil {
-		return store.Company{}, fmt.Errorf("sync: create company: %w", err)
+		return company.Company{}, fmt.Errorf("sync: create company: %w", err)
 	}
-	return company, nil
+	return created, nil
 }
 
 // ImportResult reports the outcome of importing one seed.Entry.
@@ -198,7 +191,7 @@ type ImportResult struct {
 	Name      string
 	Source    string
 	SourceRef string
-	Company   store.Company
+	Company   company.Company
 	Err       error
 }
 
@@ -210,7 +203,7 @@ type ImportResult struct {
 // per-item isolation as SyncAll. A successfully-fetched entry's postings
 // are discarded, not ingested -- exactly like adding a company through
 // the TUI, ingestion happens on the next fetch, not at creation time.
-// store.CreateCompany is already idempotent on (source, source_ref), so
+// CompanyService.Add is already idempotent on (source, source_ref), so
 // re-running the same seed file is always safe.
 // An entry's optional Description is applied only when the company has none,
 // so re-importing never overwrites a description written since.
@@ -227,7 +220,7 @@ func (s *Syncer) ImportCompanies(ctx context.Context, entries []seed.Entry) []Im
 		// Fill in the description only if the company has none, so re-importing
 		// never overwrites one written since (same rule as AddCompany).
 		if company.Description == "" && e.Description != "" {
-			company, err = s.store.UpdateCompanyDescription(ctx, company.ID, e.Description)
+			company, err = s.companies.SetDescription(ctx, company.ID, e.Description)
 			if err != nil {
 				results[i].Err = fmt.Errorf("sync: set company description: %w", err)
 				continue
@@ -256,7 +249,7 @@ const (
 // postings the board listed when it was checked.
 type AddCompanyResult struct {
 	Outcome  AddCompanyOutcome
-	Company  store.Company
+	Company  company.Company
 	OpenJobs int
 }
 
@@ -270,7 +263,7 @@ type AddCompanyResult struct {
 // adding a company, ingestion waits for the next sync, after the user has
 // had a chance to set filters.
 func (s *Syncer) AddCompany(ctx context.Context, name, source, sourceRef, description string) (AddCompanyResult, error) {
-	existing, err := s.store.GetCompanyBySourceRef(ctx, source, sourceRef)
+	existing, err := s.companies.GetBySource(ctx, source, sourceRef)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		// New company: fall through to the board check and create.
@@ -280,7 +273,7 @@ func (s *Syncer) AddCompany(ctx context.Context, name, source, sourceRef, descri
 		return AddCompanyResult{Outcome: AddCompanySkippedDeleted, Company: existing}, nil
 	default:
 		if existing.Description == "" && description != "" {
-			existing, err = s.store.UpdateCompanyDescription(ctx, existing.ID, description)
+			existing, err = s.companies.SetDescription(ctx, existing.ID, description)
 			if err != nil {
 				return AddCompanyResult{}, fmt.Errorf("sync: set company description: %w", err)
 			}
@@ -297,30 +290,13 @@ func (s *Syncer) AddCompany(ctx context.Context, name, source, sourceRef, descri
 		return AddCompanyResult{}, fmt.Errorf("sync: %s/%s does not resolve to a real board: %w", source, sourceRef, err)
 	}
 
-	company, err := s.store.CreateCompany(ctx, name, source, sourceRef)
+	company, err := s.companies.Add(ctx, name, source, sourceRef)
 	if err != nil {
 		return AddCompanyResult{}, fmt.Errorf("sync: create company: %w", err)
 	}
-	company, err = s.store.UpdateCompanyDescription(ctx, company.ID, description)
+	company, err = s.companies.SetDescription(ctx, company.ID, description)
 	if err != nil {
 		return AddCompanyResult{}, fmt.Errorf("sync: set company description: %w", err)
 	}
 	return AddCompanyResult{Outcome: AddCompanyCreated, Company: company, OpenJobs: len(postings)}, nil
-}
-
-// reopenPosting reopens a posting and, if it really reopened, restores
-// the application closing it ended, in one transaction.
-func reopenPosting(ctx context.Context, st *store.Store, postingID int64) (reopened, applicationRestored bool, err error) {
-	err = store.InTx(ctx, st.DB(), func(tx store.Tx) error {
-		var err error
-		if reopened, err = store.ReopenPosting(ctx, tx, postingID); err != nil || !reopened {
-			return err
-		}
-		applicationRestored, err = application.RestoreForPosting(ctx, tx, postingID)
-		return err
-	})
-	if err != nil {
-		return false, false, err
-	}
-	return reopened, applicationRestored, nil
 }

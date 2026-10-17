@@ -9,13 +9,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/company"
 )
 
 func TestCompanyListModel_CursorMovement(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
 	m := &companyListModel{}
 
 	m.Update(tea.KeyMsg{Type: tea.KeyDown}, companies)
@@ -37,7 +37,7 @@ func TestCompanyListModel_CursorMovement(t *testing.T) {
 func TestCompanyListModel_Enter_ReturnsSelectCompanyMsg(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}}
 	m := &companyListModel{}
 
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
@@ -67,7 +67,7 @@ func TestCompanyListModel_Enter_NoCompanies_ReturnsNothing(t *testing.T) {
 func TestCompanyListModel_E_ReturnsEnterCompanyEditMsg(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}}
 	m := &companyListModel{}
 
 	cmd, intent := m.Update(runeKey('e'), companies)
@@ -89,7 +89,7 @@ func TestCompanyListModel_E_ReturnsEnterCompanyEditMsg(t *testing.T) {
 func TestCompanyListModel_R_ReturnsRefreshCompanyMsg(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
 	m := &companyListModel{cursor: 1}
 
 	cmd, intent := m.Update(runeKey('r'), companies)
@@ -168,13 +168,13 @@ func TestCompanyListModel_View_ShowsOpenPostingsAndLastFetched(t *testing.T) {
 	t.Parallel()
 
 	fetched := time.Date(2026, 9, 24, 0, 52, 0, 0, time.UTC)
-	companies := []store.Company{
+	companies := []company.Company{
 		{ID: 1, Name: "Contoso", Source: "greenhouse", SourceRef: "contoso", LastFetchedAt: fetched},
 		{ID: 2, Name: "Cyberdyne", Source: "ashby", SourceRef: "cyberdyne-ai"},
 	}
 	openPostings := map[int64]int{1: 14}
 
-	m := newCompanyListModel(nil)
+	m := newCompanyListModel()
 	got := m.View(companies, openPostings, 0, 40)
 
 	for _, want := range []string{
@@ -198,9 +198,9 @@ func TestCompanyListModel_View_ShowsOpenPostingsAndLastFetched(t *testing.T) {
 func TestCompanyListModel_View_TableHasNoDescription(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Contoso", Description: "Open-core collaboration platform."}}
+	companies := []company.Company{{ID: 1, Name: "Contoso", Description: "Open-core collaboration platform."}}
 
-	m := newCompanyListModel(nil)
+	m := newCompanyListModel()
 	got := m.View(companies, nil, 120, 40)
 	for _, notWant := range []string{"Description", "Open-core collaboration platform."} {
 		if strings.Contains(got, notWant) {
@@ -214,14 +214,14 @@ func TestCompanyListModel_View_TableHasNoDescription(t *testing.T) {
 func TestCompanyListModel_View_SameHeightWhateverTheSelectedDescription(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{
+	companies := []company.Company{
 		{ID: 1, Name: "Blank"},
 		{ID: 2, Name: "Short", Description: "Makes widgets."},
 		{ID: 3, Name: "Long", Description: strings.Repeat("A company with a very long description that goes on and on. ", 20)},
 	}
 
 	for _, infoOpen := range []bool{false, true} {
-		m := newCompanyListModel(nil)
+		m := newCompanyListModel()
 		if infoOpen {
 			m.Update(runeKey('i'), companies)
 		}
@@ -243,13 +243,13 @@ func TestCompanyListModel_View_SameHeightWhateverTheSelectedDescription(t *testi
 func TestCompanyListModel_View_SameWidthWhateverIsScrolledIntoView(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{
+	companies := []company.Company{
 		{ID: 1, Name: "Wonka Industries Ltd", LastFetchedAt: time.Date(2026, 9, 24, 1, 9, 0, 0, time.UTC)},
 		{ID: 2, Name: "Soylent"},
 		{ID: 3, Name: "Stark"},
 	}
 
-	m := newCompanyListModel(nil)
+	m := newCompanyListModel()
 	// A height with room for one company at a time, so each cursor
 	// position scrolls a different name into view: the table's own chrome
 	// plus one row, the help line with its margin, and the search line.
@@ -276,7 +276,7 @@ func TestCompanyListModel_I_TogglesInfoBoxWithFullDescription(t *testing.T) {
 	t.Parallel()
 
 	long := strings.Repeat("Open-core collaboration and workflow automation. ", 3)
-	companies := []store.Company{
+	companies := []company.Company{
 		{ID: 1, Name: "Contoso", Source: "greenhouse", SourceRef: "contoso", Description: long},
 	}
 	// The box wraps the description, so compare with whitespace squashed.
@@ -284,7 +284,7 @@ func TestCompanyListModel_I_TogglesInfoBoxWithFullDescription(t *testing.T) {
 		return strings.Join(strings.Fields(strings.NewReplacer("│", " ", "╭", " ", "╮", " ", "─", " ").Replace(s)), " ")
 	}
 
-	m := newCompanyListModel(nil)
+	m := newCompanyListModel()
 	if got := m.View(companies, nil, 120, 40); strings.Contains(got, "greenhouse/contoso") {
 		t.Fatalf("info box should start closed:\n%s", got)
 	}
@@ -311,12 +311,12 @@ func TestCompanyListModel_I_TogglesInfoBoxWithFullDescription(t *testing.T) {
 func TestCompanyListModel_View_InfoBoxTakesItsSpaceFromTheTable(t *testing.T) {
 	t.Parallel()
 
-	var companies []store.Company
+	var companies []company.Company
 	for i := range 30 {
-		companies = append(companies, store.Company{ID: int64(i + 1), Name: fmt.Sprintf("Company %02d", i), Description: "Makes widgets."})
+		companies = append(companies, company.Company{ID: int64(i + 1), Name: fmt.Sprintf("Company %02d", i), Description: "Makes widgets."})
 	}
 
-	m := newCompanyListModel(nil)
+	m := newCompanyListModel()
 	closed := strings.Count(m.View(companies, nil, 120, 20), "\n")
 	m.Update(runeKey('i'), companies)
 	open := strings.Count(m.View(companies, nil, 120, 20), "\n")
@@ -328,7 +328,7 @@ func TestCompanyListModel_View_InfoBoxTakesItsSpaceFromTheTable(t *testing.T) {
 
 // openHighlighted presses enter to keep the matches, then enter again to
 // open the highlighted one, returning that intent.
-func openHighlighted(t *testing.T, m *companyListModel, companies []store.Company) tea.Msg {
+func openHighlighted(t *testing.T, m *companyListModel, companies []company.Company) tea.Msg {
 	t.Helper()
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
 	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
@@ -336,7 +336,7 @@ func openHighlighted(t *testing.T, m *companyListModel, companies []store.Compan
 }
 
 // typeKeys sends each rune of s to m as a key press.
-func typeKeys(t *testing.T, m *companyListModel, companies []store.Company, s string) {
+func typeKeys(t *testing.T, m *companyListModel, companies []company.Company, s string) {
 	t.Helper()
 	for _, r := range s {
 		m.Update(runeKey(r), companies)
@@ -348,7 +348,7 @@ func typeKeys(t *testing.T, m *companyListModel, companies []store.Company, s st
 func TestCompanyListModel_Search_EnterKeepsMatchesForCommands(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
 	m := &companyListModel{}
 
 	typeKeys(t, m, companies, "/glo")
@@ -372,7 +372,7 @@ func TestCompanyListModel_Search_EnterKeepsMatchesForCommands(t *testing.T) {
 func TestCompanyListModel_Search_EscClearsKeptMatchesAndKeepsHighlight(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
 	m := &companyListModel{}
 	typeKeys(t, m, companies, "/glo")
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
@@ -389,7 +389,7 @@ func TestCompanyListModel_Search_EscClearsKeptMatchesAndKeepsHighlight(t *testin
 func TestCompanyListModel_View_KeptMatches(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
 	m := &companyListModel{}
 	typeKeys(t, m, companies, "/glo")
 	if view := m.View(companies, nil, 200, 20); !strings.Contains(view, "enter: keep results") {
@@ -422,7 +422,7 @@ func TestCompanyListModel_Search_ArrowsMoveThroughMatches(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}, {ID: 3, Name: "Globex"}}
+			companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}, {ID: 3, Name: "Globex"}}
 			m := &companyListModel{}
 
 			typeKeys(t, m, companies, "/acme")
@@ -446,7 +446,7 @@ func TestCompanyListModel_Search_ArrowsMoveThroughMatches(t *testing.T) {
 func TestCompanyListModel_Search_BackspaceWidensMatches(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
 	m := &companyListModel{}
 
 	typeKeys(t, m, companies, "/gx") // matches nothing
@@ -460,7 +460,7 @@ func TestCompanyListModel_Search_BackspaceWidensMatches(t *testing.T) {
 func TestCompanyListModel_Search_SpaceIsPartOfTheQuery(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}}
 	m := &companyListModel{}
 
 	typeKeys(t, m, companies, "/acme")
@@ -476,7 +476,7 @@ func TestCompanyListModel_Search_SpaceIsPartOfTheQuery(t *testing.T) {
 func TestCompanyListModel_Search_EscClearsAndKeepsHighlight(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
 	m := &companyListModel{}
 
 	typeKeys(t, m, companies, "/glo")
@@ -501,7 +501,7 @@ func TestCompanyListModel_Search_CommandLettersAreTyped(t *testing.T) {
 	for _, r := range "qdreaiRbjk/" {
 		t.Run(string(r), func(t *testing.T) {
 			t.Parallel()
-			companies := []store.Company{{ID: 1, Name: "Zzz"}, {ID: 2, Name: "x" + string(r) + "y"}}
+			companies := []company.Company{{ID: 1, Name: "Zzz"}, {ID: 2, Name: "x" + string(r) + "y"}}
 			m := &companyListModel{}
 
 			typeKeys(t, m, companies, "/")
@@ -519,7 +519,7 @@ func TestCompanyListModel_Search_CommandLettersAreTyped(t *testing.T) {
 func TestCompanyListModel_View_Search(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}, {ID: 3, Name: "Globex"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}, {ID: 3, Name: "Globex"}}
 	tests := []struct {
 		name    string
 		keys    string
@@ -553,7 +553,7 @@ func TestCompanyListModel_View_Search(t *testing.T) {
 func TestCompanyListModel_View_HelpMatchesMode(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}}
 	tests := []struct {
 		name    string
 		keys    string
@@ -586,7 +586,7 @@ func TestCompanyListModel_View_HelpMatchesMode(t *testing.T) {
 func TestCompanyListModel_View_Search_InfoBoxDescribesHighlightedMatch(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{
+	companies := []company.Company{
 		{ID: 1, Name: "Acme", Description: "Makes anvils."},
 		{ID: 2, Name: "Globex", Description: "Makes doomsday devices."},
 	}
@@ -602,7 +602,7 @@ func TestCompanyListModel_View_Search_InfoBoxDescribesHighlightedMatch(t *testin
 func TestCompanyListModel_Search_BackspaceOnEmptyQueryCloses(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}}
 	m := &companyListModel{}
 
 	typeKeys(t, m, companies, "/")
@@ -615,7 +615,7 @@ func TestCompanyListModel_Search_BackspaceOnEmptyQueryCloses(t *testing.T) {
 func TestCompanyListModel_View_TableSpansTerminalWidth(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
 	tests := []struct {
 		name  string
 		width int
@@ -629,7 +629,7 @@ func TestCompanyListModel_View_TableSpansTerminalWidth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			m := newCompanyListModel(nil)
+			m := newCompanyListModel()
 			if got := tableWidthOf(t, m.View(companies, nil, tt.width, 40)); got != tt.want {
 				t.Errorf("table width = %d, want %d", got, tt.want)
 			}
@@ -654,7 +654,7 @@ func tableTop(t *testing.T, view string) int {
 func TestCompanyListModel_View_SearchLineDoesNotMoveTheTable(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
+	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
 	m := &companyListModel{}
 	idle := m.View(companies, nil, 80, 40)
 	if !strings.Contains(idle, "🔍") {
@@ -670,7 +670,7 @@ func TestCompanyListModel_View_SearchLineDoesNotMoveTheTable(t *testing.T) {
 func TestCompanyListModel_View_InfoBoxIsAsWideAsTheTable(t *testing.T) {
 	t.Parallel()
 
-	companies := []store.Company{{ID: 1, Name: "Acme", Description: strings.Repeat("Makes anvils for roadrunner enthusiasts. ", 3)}}
+	companies := []company.Company{{ID: 1, Name: "Acme", Description: strings.Repeat("Makes anvils for roadrunner enthusiasts. ", 3)}}
 	for _, width := range []int{80, 160, 0} {
 		m := &companyListModel{}
 		typeKeys(t, m, companies, "i")

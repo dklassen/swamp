@@ -10,9 +10,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/dklassen/swamp/application"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/store"
 )
 
 // applicationFormModel drives the screen for entering a posting's
@@ -22,7 +21,7 @@ import (
 // fetch (Ashby, Lever); stage_prepare returns what's saved here the same
 // way it returns a fetched Greenhouse form.
 type applicationFormModel struct {
-	store     *store.Store
+	postings  *service.PostingService
 	postingID int64
 	// previous is the stored form being edited, if any, so questions the
 	// user didn't change keep the Type and Options the text doesn't show.
@@ -40,7 +39,7 @@ type applicationFormModel struct {
 	saving bool
 }
 
-func newApplicationFormModel(s *store.Store, postingID int64, previous *jobboard.ApplicationForm, width, height int) applicationFormModel {
+func newApplicationFormModel(postings *service.PostingService, postingID int64, previous *jobboard.ApplicationForm, width, height int) applicationFormModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	seed := jobboard.ApplicationForm{}
@@ -49,7 +48,7 @@ func newApplicationFormModel(s *store.Store, postingID int64, previous *jobboard
 	}
 	ta.SetValue(jobboard.FormText(seed))
 	ta.Focus()
-	m := applicationFormModel{store: s, postingID: postingID, previous: previous, textarea: ta, seed: ta.Value()}
+	m := applicationFormModel{postings: postings, postingID: postingID, previous: previous, textarea: ta, seed: ta.Value()}
 	m.setHeight(height)
 	return m
 }
@@ -110,7 +109,7 @@ func (m *applicationFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 			return nil, nil
 		}
 		m.saving = true
-		return saveApplicationForm(m.store, m.postingID, form), nil
+		return saveApplicationForm(m.postings, m.postingID, form), nil
 	}
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
@@ -143,9 +142,9 @@ type applicationFormLoadedMsg struct {
 
 // loadApplicationForm reads postingID's stored form, fetched or entered by
 // hand, to seed the form screen.
-func loadApplicationForm(s *store.Store, postingID int64) tea.Cmd {
+func loadApplicationForm(postings *service.PostingService, postingID int64) tea.Cmd {
 	return func() tea.Msg {
-		stored, _, ok, err := application.GetForm(context.Background(), s.DB(), postingID)
+		stored, _, ok, err := postings.Form(context.Background(), postingID)
 		if err != nil || !ok {
 			return applicationFormLoadedMsg{postingID: postingID, err: err}
 		}
@@ -163,12 +162,12 @@ type applicationFormSavedMsg struct {
 
 // saveApplicationForm stores form as postingID's application form, where
 // stage_prepare reads it (#168, #184).
-func saveApplicationForm(s *store.Store, postingID int64, form jobboard.ApplicationForm) tea.Cmd {
+func saveApplicationForm(postings *service.PostingService, postingID int64, form jobboard.ApplicationForm) tea.Cmd {
 	return func() tea.Msg {
 		encoded, err := json.Marshal(form)
 		if err != nil {
 			return applicationFormSavedMsg{err: fmt.Errorf("tui: encode application form: %w", err)}
 		}
-		return applicationFormSavedMsg{err: application.SaveForm(context.Background(), s.DB(), postingID, string(encoded))}
+		return applicationFormSavedMsg{err: postings.SaveForm(context.Background(), postingID, string(encoded))}
 	}
 }

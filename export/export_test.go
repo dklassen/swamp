@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/export"
+	"github.com/dklassen/swamp/internal/domain/document"
 )
 
 // writeMarkdown writes minimal valid markdown to a temp file and returns
@@ -47,49 +47,49 @@ func TestFileName(t *testing.T) {
 		name         string
 		company      string
 		title        string
-		documentType documents.Type
+		documentType document.Type
 		want         string
 	}{
 		{
 			name:         "lowercases and hyphenates",
 			company:      "Northwind",
 			title:        "Delivery Platform",
-			documentType: documents.CoverLetter,
+			documentType: document.CoverLetter,
 			want:         "northwind-delivery-platform-cover_letter.pdf",
 		},
 		{
 			name:         "resume keeps its own document-type suffix",
 			company:      "Globex",
 			title:        "Integrations",
-			documentType: documents.Resume,
+			documentType: document.Resume,
 			want:         "globex-integrations-resume.pdf",
 		},
 		{
 			name:         "collapses punctuation runs into single hyphens",
 			company:      "Northwind",
 			title:        "Sr Data Scientist, Finance, Brokerage & Market Risk",
-			documentType: documents.Resume,
+			documentType: document.Resume,
 			want:         "northwind-sr-data-scientist-finance-brokerage-market-risk-resume.pdf",
 		},
 		{
 			name:         "trims leading and trailing separators",
 			company:      "  Acme!  ",
 			title:        "(Senior) Engineer -- Infra/Platform",
-			documentType: documents.CoverLetter,
+			documentType: document.CoverLetter,
 			want:         "acme-senior-engineer-infra-platform-cover_letter.pdf",
 		},
 		{
 			name:         "omits an empty component rather than leaving a stray hyphen",
 			company:      "",
 			title:        "Engineer",
-			documentType: documents.Resume,
+			documentType: document.Resume,
 			want:         "engineer-resume.pdf",
 		},
 		{
 			name:         "falls back to the document type when nothing else survives slugging",
 			company:      "!!!",
 			title:        "",
-			documentType: documents.Resume,
+			documentType: document.Resume,
 			want:         "resume.pdf",
 		},
 	}

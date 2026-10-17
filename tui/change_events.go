@@ -9,8 +9,11 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/scoring"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/change"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/domain/score"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -25,7 +28,7 @@ type changeTickMsg struct{}
 type changesMsg struct {
 	view   screen
 	from   int64
-	events []store.ChangeEvent
+	events []change.Event
 	tick   bool
 	err    error
 }
@@ -58,9 +61,9 @@ func (a *App) cursor(view screen) int64 {
 	return a.since
 }
 
-func readChanges(s *store.Store, view screen, from int64, tick bool) tea.Cmd {
+func readChanges(changes *service.ChangeLog, view screen, from int64, tick bool) tea.Cmd {
 	return func() tea.Msg {
-		events, err := s.ChangeEventsAfter(context.Background(), from)
+		events, err := changes.After(context.Background(), from)
 		return changesMsg{view: view, from: from, events: events, tick: tick, err: err}
 	}
 }
@@ -71,7 +74,7 @@ func (a *App) handleTick() tea.Cmd {
 	if !reloads(a.screen) {
 		return a.pollChanges()
 	}
-	return readChanges(a.store, a.screen, a.cursor(a.screen), true)
+	return readChanges(a.changeLogService, a.screen, a.cursor(a.screen), true)
 }
 
 // activate catches the view now on screen up on what changed while
@@ -84,9 +87,9 @@ func (a *App) activate() tea.Cmd {
 		// Its documents are files, which can change with no event.
 		a.seen[a.screen] = a.latestSeen
 		id := a.applicationDetail.application.ID
-		return tea.Batch(reloadApplicationDetail(a.store, id), loadDocumentReviews(a.store, a.documents, id))
+		return tea.Batch(reloadApplicationDetail(a.applicationService, id), loadDocumentReviews(a.documentService, a.documents, id))
 	}
-	return readChanges(a.store, a.screen, a.cursor(a.screen), false)
+	return readChanges(a.changeLogService, a.screen, a.cursor(a.screen), false)
 }
 
 // handleChanges reloads the view on screen if other processes' events
@@ -111,7 +114,7 @@ func (a *App) handleChanges(msg changesMsg) tea.Cmd {
 		return next
 	}
 	a.seen[a.screen] = max(a.cursor(a.screen), upTo)
-	others := slices.DeleteFunc(slices.Clone(msg.events), func(e store.ChangeEvent) bool { return e.Origin == a.origin })
+	others := slices.DeleteFunc(slices.Clone(msg.events), func(e change.Event) bool { return e.Origin == a.origin })
 	return tea.Batch(a.reloadFor(others), next)
 }
 
@@ -125,36 +128,36 @@ func reloads(s screen) bool {
 }
 
 // reloadFor reruns what the current screen shows, if events touch it.
-func (a *App) reloadFor(events []store.ChangeEvent) tea.Cmd {
+func (a *App) reloadFor(events []change.Event) tea.Cmd {
 	switch a.screen {
 	case screenActiveApplications:
 		if touches(events, "applications", "postings", "companies", "document_writes", "document_reviews", "document_exports") {
-			return loadActiveApplications(a.store, a.documents)
+			return loadActiveApplications(a.applicationService, a.documentService, a.documents)
 		}
 	case screenApplicationDetail:
 		view := a.applicationDetail.application
-		if slices.ContainsFunc(events, func(e store.ChangeEvent) bool {
+		if slices.ContainsFunc(events, func(e change.Event) bool {
 			return eventApplicationID(e) == view.ID || (e.Table == "postings" && e.RowID == view.Posting.ID)
 		}) {
-			return tea.Batch(reloadApplicationDetail(a.store, view.ID), loadDocumentReviews(a.store, a.documents, view.ID))
+			return tea.Batch(reloadApplicationDetail(a.applicationService, view.ID), loadDocumentReviews(a.documentService, a.documents, view.ID))
 		}
 	case screenPostingDetail:
 		d := a.postingDetail
 		var cmds []tea.Cmd
-		if slices.ContainsFunc(events, func(e store.ChangeEvent) bool {
+		if slices.ContainsFunc(events, func(e change.Event) bool {
 			return (e.Table == "postings" && e.RowID == d.posting.ID) || (e.Table == "applications" && eventPostingID(e) == d.posting.ID) || (d.hasApplication && eventApplicationID(e) == d.application.ID)
 		}) {
-			cmds = append(cmds, reloadPosting(a.store, d.posting.ID))
+			cmds = append(cmds, reloadPosting(a.postingService, d.posting.ID))
 		}
-		if slices.ContainsFunc(events, func(e store.ChangeEvent) bool {
+		if slices.ContainsFunc(events, func(e change.Event) bool {
 			return e.Table == "posting_scores" && eventPostingID(e) == d.posting.ID
 		}) {
-			cmds = append(cmds, loadPostingScores(a.store, d.posting.ID))
+			cmds = append(cmds, loadPostingScores(a.scoringService, d.posting.ID))
 		}
 		return tea.Batch(cmds...)
 	case screenPostingList:
 		if touches(events, "postings") {
-			return reloadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
+			return reloadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
 		}
 	case screenAllPostings:
 		// companies too: a deleted company's postings leave the list.
@@ -164,19 +167,19 @@ func (a *App) reloadFor(events []store.ChangeEvent) tea.Cmd {
 	case screenCompanyList:
 		// postings too: the list shows each company's open postings.
 		if touches(events, "companies", "postings") {
-			return loadCompanies(a.store)
+			return loadCompanies(a.companyService, a.postingService)
 		}
 	}
 	return nil
 }
 
-func touches(events []store.ChangeEvent, tables ...string) bool {
-	return slices.ContainsFunc(events, func(e store.ChangeEvent) bool { return slices.Contains(tables, e.Table) })
+func touches(events []change.Event, tables ...string) bool {
+	return slices.ContainsFunc(events, func(e change.Event) bool { return slices.Contains(tables, e.Table) })
 }
 
 // reloadPostings is loadPostings for a list already on screen.
-func reloadPostings(s *store.Store, companyID int64, hideArchived bool) tea.Cmd {
-	load := loadPostings(s, companyID, hideArchived)
+func reloadPostings(companies *service.CompanyService, postings *service.PostingService, companyID int64, hideArchived bool) tea.Cmd {
+	load := loadPostings(companies, postings, companyID, hideArchived)
 	return func() tea.Msg {
 		msg := load()
 		if loaded, ok := msg.(postingsLoadedMsg); ok {
@@ -188,7 +191,7 @@ func reloadPostings(s *store.Store, companyID int64, hideArchived bool) tea.Cmd 
 }
 
 // eventApplicationID is the application an event is about, or 0.
-func eventApplicationID(e store.ChangeEvent) int64 {
+func eventApplicationID(e change.Event) int64 {
 	switch e.Table {
 	case "applications":
 		return e.RowID
@@ -209,7 +212,7 @@ func eventApplicationID(e store.ChangeEvent) int64 {
 
 // eventPostingID is the posting an application or score event is about, or
 // 0.
-func eventPostingID(e store.ChangeEvent) int64 {
+func eventPostingID(e change.Event) int64 {
 	if e.Table != "applications" && e.Table != "posting_scores" {
 		return 0
 	}
@@ -233,13 +236,13 @@ type applicationDetailReloadedMsg struct {
 	err         error
 }
 
-func reloadApplicationDetail(s *store.Store, id int64) tea.Cmd {
+func reloadApplicationDetail(applications *service.ApplicationService, id int64) tea.Cmd {
 	return func() tea.Msg {
-		application, err := application.GetByID(context.Background(), s.DB(), id)
+		app, err := applications.Get(context.Background(), id)
 		if errors.Is(err, store.ErrNotFound) {
 			return applicationDetailReloadedMsg{id: id, deleted: true}
 		}
-		return applicationDetailReloadedMsg{id: id, application: application, err: err}
+		return applicationDetailReloadedMsg{id: id, application: app, err: err}
 	}
 }
 
@@ -253,7 +256,7 @@ func (a *App) handleApplicationDetailReloaded(msg applicationDetailReloadedMsg) 
 	if msg.deleted {
 		a.screen = screenActiveApplications
 		a.status = "The application you were viewing was deleted elsewhere"
-		return loadActiveApplications(a.store, a.documents)
+		return loadActiveApplications(a.applicationService, a.documentService, a.documents)
 	}
 	if msg.err == nil {
 		a.applicationDetail.application.Application = msg.application
@@ -272,13 +275,13 @@ func (a *App) replacePostingDetail(m postingDetailModel) {
 }
 
 type postingReloadedMsg struct {
-	posting store.Posting
+	posting posting.Posting
 	err     error
 }
 
-func reloadPosting(s *store.Store, id int64) tea.Cmd {
+func reloadPosting(postings *service.PostingService, id int64) tea.Cmd {
 	return func() tea.Msg {
-		p, err := s.GetPosting(context.Background(), id)
+		p, err := postings.Get(context.Background(), id)
 		return postingReloadedMsg{posting: p, err: err}
 	}
 }
@@ -294,20 +297,20 @@ func (a *App) handlePostingReloaded(msg postingReloadedMsg) tea.Cmd {
 		a.postings[i] = msg.posting
 	}
 	d := a.postingDetail
-	a.replacePostingDetail(newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), msg.posting, d.application, d.hasApplication, d.latestReviews, a.canNavigateSiblings(msg.posting.ID)))
-	return loadApplication(a.store, msg.posting.ID)
+	a.replacePostingDetail(newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), msg.posting, d.application, d.hasApplication, d.latestReviews, a.canNavigateSiblings(msg.posting.ID)))
+	return loadApplication(a.postingService, msg.posting.ID)
 }
 
 type postingScoresLoadedMsg struct {
 	postingID int64
-	scores    []scoring.Score
+	scores    []score.Score
 	err       error
 }
 
-func loadPostingScores(s *store.Store, postingID int64) tea.Cmd {
+func loadPostingScores(scores *service.ScoringService, postingID int64) tea.Cmd {
 	return func() tea.Msg {
-		scores, err := scoring.ForPosting(context.Background(), s.DB(), postingID)
-		return postingScoresLoadedMsg{postingID: postingID, scores: scores, err: err}
+		postingScores, err := scores.ForPosting(context.Background(), postingID)
+		return postingScoresLoadedMsg{postingID: postingID, scores: postingScores, err: err}
 	}
 }
 

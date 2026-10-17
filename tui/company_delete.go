@@ -6,28 +6,28 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/company"
 )
 
 // companyDeleteModel is the delete confirmation (d on the company list).
 // Deleting closes every open posting the company has, too much for one
 // stray key.
 type companyDeleteModel struct {
-	company      store.Company
+	company      company.Company
 	openPostings int
 	// confirmed is set once y is pressed, so a second y while the delete
 	// is in flight doesn't send another.
 	confirmed bool
 }
 
-func newCompanyDeleteModel(company store.Company, openPostings int) companyDeleteModel {
+func newCompanyDeleteModel(company company.Company, openPostings int) companyDeleteModel {
 	return companyDeleteModel{company: company, openPostings: openPostings}
 }
 
 // enterCompanyDeleteMsg signals that App should open the delete
 // confirmation for this company.
 type enterCompanyDeleteMsg struct {
-	company store.Company
+	company company.Company
 }
 
 // cancelCompanyDeleteMsg signals that App should go back to the company
@@ -36,7 +36,7 @@ type cancelCompanyDeleteMsg struct{}
 
 // confirmCompanyDeleteMsg signals that App should delete the company.
 type confirmCompanyDeleteMsg struct {
-	company store.Company
+	company company.Company
 }
 
 func (m *companyDeleteModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
