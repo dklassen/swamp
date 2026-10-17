@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"slices"
 	"testing"
 
@@ -11,6 +12,7 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/store"
 )
 
 // A review's cycle counts the reviews of that document for that
@@ -69,9 +71,9 @@ func TestDocumentService_Review_IsCurrentUntilTheContentChanges(t *testing.T) {
 		t.Fatalf("Review: %v", err)
 	}
 
-	review, ok, err := documents.LatestReview(ctx, app.ID, document.CoverLetter)
-	if err != nil || !ok {
-		t.Fatalf("LatestReview: ok %v, err %v", ok, err)
+	review, err := documents.LatestReview(ctx, app.ID, document.CoverLetter)
+	if err != nil {
+		t.Fatalf("LatestReview: %v", err)
 	}
 	if !review.IsCurrent(content) {
 		t.Error("IsCurrent(the reviewed content) = false, want true")
@@ -105,18 +107,13 @@ func TestDocumentService_Reviews_MostRecentCycleFirst(t *testing.T) {
 	}
 }
 
-// A document with no review yet isn't an error.
-func TestDocumentService_LatestReview_NoReviews_ReturnsNotOK(t *testing.T) {
+func TestDocumentService_LatestReview_NoReviews_ReturnsErrNotFound(t *testing.T) {
 	t.Parallel()
 	s := testutil.NewTestApp(t)
 	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
 
-	_, ok, err := s.Documents.LatestReview(context.Background(), app.ID, document.CoverLetter)
-	if err != nil {
-		t.Fatalf("LatestReview: %v", err)
-	}
-	if ok {
-		t.Error("ok = true, want false: no reviews exist yet")
+	if _, err := s.Documents.LatestReview(context.Background(), app.ID, document.CoverLetter); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("LatestReview with no reviews: err = %v, want store.ErrNotFound", err)
 	}
 }
 
@@ -134,9 +131,9 @@ func TestDocumentService_LatestReview_ReturnsTheMostRecentCycle(t *testing.T) {
 		t.Fatalf("Review (second): %v", err)
 	}
 
-	got, ok, err := documents.LatestReview(ctx, app.ID, document.CoverLetter)
-	if err != nil || !ok {
-		t.Fatalf("LatestReview: ok %v, err %v", ok, err)
+	got, err := documents.LatestReview(ctx, app.ID, document.CoverLetter)
+	if err != nil {
+		t.Fatalf("LatestReview: %v", err)
 	}
 	if diff := cmp.Diff(second, got); diff != "" {
 		t.Errorf("LatestReview (-want +got):\n%s", diff)
@@ -186,8 +183,8 @@ func TestDocumentService_LatestWrite_IsTheNewestOfThatDocument(t *testing.T) {
 	documents := s.Documents
 	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
 
-	if _, ok, err := documents.LatestWrite(ctx, app.ID, document.CoverLetter); err != nil || ok {
-		t.Fatalf("LatestWrite before any write = ok %v, err %v; want none", ok, err)
+	if _, err := documents.LatestWrite(ctx, app.ID, document.CoverLetter); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("LatestWrite before any write: err = %v, want store.ErrNotFound", err)
 	}
 	for _, w := range []struct {
 		documentType document.Type
@@ -203,9 +200,9 @@ func TestDocumentService_LatestWrite_IsTheNewestOfThatDocument(t *testing.T) {
 		}
 	}
 
-	got, ok, err := documents.LatestWrite(ctx, app.ID, document.CoverLetter)
-	if err != nil || !ok {
-		t.Fatalf("LatestWrite = ok %v, err %v; want the second write", ok, err)
+	got, err := documents.LatestWrite(ctx, app.ID, document.CoverLetter)
+	if err != nil {
+		t.Fatalf("LatestWrite: %v", err)
 	}
 	sum := sha256.Sum256([]byte("second"))
 	if want := hex.EncodeToString(sum[:]); got.Source != document.SourceEditor || got.ContentSHA256 != want {

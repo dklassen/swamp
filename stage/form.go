@@ -3,12 +3,14 @@ package stage
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/store"
 )
 
 // FormFetcher reads a posting's application form from its board:
@@ -41,12 +43,12 @@ const formMaxAge = 7 * 24 * time.Hour
 // A board with no fetcher (Ashby, Lever) gets the form entered by hand in
 // the TUI (#184), however old, or nil if none was.
 func (st *Stage) applicationForm(ctx context.Context, posting posting.Posting, company company.Company) (form *jobboard.ApplicationForm, formErr string, err error) {
-	stored, fetchedAt, haveStored, err := st.postings.Form(ctx, posting.ID)
-	if err != nil {
+	stored, fetchedAt, err := st.postings.Form(ctx, posting.ID)
+	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, "", fmt.Errorf("stage: %w", err)
 	}
 	var storedForm *jobboard.ApplicationForm
-	if haveStored {
+	if err == nil {
 		var f jobboard.ApplicationForm
 		if err := json.Unmarshal([]byte(stored), &f); err != nil {
 			return nil, "", fmt.Errorf("stage: decode stored application form: %w", err)

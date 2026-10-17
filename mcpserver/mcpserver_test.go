@@ -1132,9 +1132,9 @@ func TestWriteDocument_IsRecordedAndReachesTheChangeLog(t *testing.T) {
 		"Content":       "a draft",
 	})
 
-	write, ok, err := s.Documents.LatestWrite(ctx, prepared.ApplicationID, document.CoverLetter)
-	if err != nil || !ok {
-		t.Fatalf("LatestWrite = ok %v, err %v; want the write", ok, err)
+	write, err := s.Documents.LatestWrite(ctx, prepared.ApplicationID, document.CoverLetter)
+	if err != nil {
+		t.Fatalf("LatestWrite: %v", err)
 	}
 	if write.Source != document.SourceWriteDocument || write.ContentSHA256 != documents.ContentSHA256("a draft") {
 		t.Errorf("recorded write = source %v, hash %q; want write_document and the draft's hash", write.Source, write.ContentSHA256)

@@ -69,8 +69,8 @@ func TestPrepare_FetchesAndStoresTheApplicationForm(t *testing.T) {
 	if !fetcher.deadline {
 		t.Error("the fetch had no deadline, want it bounded by the fetch timeout")
 	}
-	if _, _, ok, err := s.Postings.Form(context.Background(), posting.ID); err != nil || !ok {
-		t.Errorf("stored form: ok %v, err %v; want it stored", ok, err)
+	if _, _, err := s.Postings.Form(context.Background(), posting.ID); err != nil {
+		t.Errorf("stored form: %v; want it stored", err)
 	}
 }
 

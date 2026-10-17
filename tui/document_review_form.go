@@ -17,6 +17,7 @@ import (
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/store"
 )
 
 // documentReviewFormModel drives the document-review-form screen: enter
@@ -185,11 +186,14 @@ func (m *documentReviewFormModel) View() string {
 // "rewritten by the agent at 14:05", or "" if the latest recorded write
 // is of some other version (the change was made outside Swamp).
 func whoWrote(documentService *service.DocumentService, applicationID int64, documentType document.Type, current string) string {
-	write, ok, err := documentService.LatestWrite(context.Background(), applicationID, documentType)
+	write, err := documentService.LatestWrite(context.Background(), applicationID, documentType)
+	if errors.Is(err, store.ErrNotFound) {
+		return ""
+	}
 	if err != nil {
 		return fmt.Sprintf("rewritten (couldn't tell by whom: %v)", err)
 	}
-	if !ok || write.ContentSHA256 != documents.ContentSHA256(current) {
+	if write.ContentSHA256 != documents.ContentSHA256(current) {
 		return ""
 	}
 	return "rewritten by " + documentWriterLabel(write.Source) + " at " + localClock(write.WrittenAt)

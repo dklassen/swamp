@@ -66,7 +66,7 @@ type markupWriter interface {
 }
 
 type formViewer interface {
-	Get(ctx context.Context, r store.Runner, postingID int64) (formJSON string, fetchedAt time.Time, ok bool, err error)
+	Get(ctx context.Context, r store.Runner, postingID int64) (formJSON string, fetchedAt time.Time, err error)
 }
 
 type formWriter interface {
@@ -281,8 +281,8 @@ func (service *PostingService) SaveForm(ctx context.Context, postingID int64, fo
 }
 
 // Form returns the posting's stored application form JSON and when it was
-// fetched. ok is false when it was never fetched.
-func (service *PostingService) Form(ctx context.Context, postingID int64) (formJSON string, fetchedAt time.Time, ok bool, err error) {
+// fetched, or store.ErrNotFound when it was never fetched.
+func (service *PostingService) Form(ctx context.Context, postingID int64) (formJSON string, fetchedAt time.Time, err error) {
 	return service.formViewer.Get(ctx, service.db, postingID)
 }
 

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -12,6 +13,7 @@ import (
 
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/store"
 )
 
 // applicationFormModel drives the screen for entering a posting's
@@ -144,8 +146,11 @@ type applicationFormLoadedMsg struct {
 // hand, to seed the form screen.
 func loadApplicationForm(postings *service.PostingService, postingID int64) tea.Cmd {
 	return func() tea.Msg {
-		stored, _, ok, err := postings.Form(context.Background(), postingID)
-		if err != nil || !ok {
+		stored, _, err := postings.Form(context.Background(), postingID)
+		if errors.Is(err, store.ErrNotFound) {
+			return applicationFormLoadedMsg{postingID: postingID}
+		}
+		if err != nil {
 			return applicationFormLoadedMsg{postingID: postingID, err: err}
 		}
 		var form jobboard.ApplicationForm

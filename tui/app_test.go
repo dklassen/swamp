@@ -3754,9 +3754,9 @@ func TestApp_ApplicationDetail_EnterApplicationFormByHand(t *testing.T) {
 	if app.screen != screenApplicationDetail {
 		t.Errorf("screen after saving = %v, want screenApplicationDetail", app.screen)
 	}
-	stored, _, ok, err := s.Postings.Form(context.Background(), posting.ID)
-	if err != nil || !ok {
-		t.Fatalf("application.GetForm: ok %v, err %v", ok, err)
+	stored, _, err := s.Postings.Form(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("Form: %v", err)
 	}
 	var got jobboard.ApplicationForm
 	if err := json.Unmarshal([]byte(stored), &got); err != nil {

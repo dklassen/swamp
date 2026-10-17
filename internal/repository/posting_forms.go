@@ -2,7 +2,6 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -27,16 +26,13 @@ func (PostingForms) Save(ctx context.Context, r store.Runner, postingID int64, f
 }
 
 // Get returns postingID's stored application form JSON and when it was
-// fetched. ok is false when it was never fetched.
-func (PostingForms) Get(ctx context.Context, r store.Runner, postingID int64) (formJSON string, fetchedAt time.Time, ok bool, err error) {
+// fetched, or store.ErrNotFound when it was never fetched.
+func (PostingForms) Get(ctx context.Context, r store.Runner, postingID int64) (formJSON string, fetchedAt time.Time, err error) {
 	row, err := store.Read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.PostingApplicationForm, error) {
 		return q.GetPostingApplicationForm(ctx, postingID)
 	})
-	if errors.Is(err, store.ErrNotFound) {
-		return "", time.Time{}, false, nil
-	}
 	if err != nil {
-		return "", time.Time{}, false, fmt.Errorf("application: get form: %w", err)
+		return "", time.Time{}, fmt.Errorf("application: get form: %w", err)
 	}
-	return row.Form, row.FetchedAt, true, nil
+	return row.Form, row.FetchedAt, nil
 }
