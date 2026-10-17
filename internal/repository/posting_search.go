@@ -21,9 +21,9 @@ type PostingSearchRepository struct{}
 // filtering and the limit happen in the database, so a call never reads
 // more than search.Limit + 1 rows. Postings of a company the user deleted
 // are never included.
-func (repository *PostingSearchRepository) Search(ctx context.Context, r store.Runner, search domain.Search) (domain.SearchPage, error) {
+func (repository *PostingSearchRepository) Search(ctx context.Context, r store.Runner, search domain.Search) (*domain.SearchPage, error) {
 	if search.Limit <= 0 {
-		return domain.SearchPage{}, fmt.Errorf("posting: search: limit %d, want at least 1", search.Limit)
+		return nil, fmt.Errorf("posting: search: limit %d, want at least 1", search.Limit)
 	}
 	params := sqlcdb.SearchPostingsByIDParams{
 		IncludeArchived:      search.IncludeArchived,
@@ -36,7 +36,7 @@ func (repository *PostingSearchRepository) Search(ctx context.Context, r store.R
 	case "open", "closed":
 		params.ListingStatus = search.ListingStatus
 	default:
-		return domain.SearchPage{}, fmt.Errorf("posting: search: unknown listing status %q", search.ListingStatus)
+		return nil, fmt.Errorf("posting: search: unknown listing status %q", search.ListingStatus)
 	}
 	if search.CompanyID != 0 {
 		params.CompanyID = search.CompanyID
@@ -54,14 +54,14 @@ func (repository *PostingSearchRepository) Search(ctx context.Context, r store.R
 		}
 		encoded, err := json.Marshal(names)
 		if err != nil {
-			return domain.SearchPage{}, fmt.Errorf("posting: search: encode application statuses: %w", err)
+			return nil, fmt.Errorf("posting: search: encode application statuses: %w", err)
 		}
 		params.Statuses = string(encoded)
 	}
 	if terms := strings.Fields(search.Query); len(terms) > 0 {
 		encoded, err := json.Marshal(terms)
 		if err != nil {
-			return domain.SearchPage{}, fmt.Errorf("posting: search: encode query terms: %w", err)
+			return nil, fmt.Errorf("posting: search: encode query terms: %w", err)
 		}
 		params.Terms = string(encoded)
 	}
@@ -73,7 +73,7 @@ func (repository *PostingSearchRepository) Search(ctx context.Context, r store.R
 		return searchInOrder(ctx, q, search, params)
 	})
 	if err != nil {
-		return domain.SearchPage{}, fmt.Errorf("posting: search: %w", err)
+		return nil, fmt.Errorf("posting: search: %w", err)
 	}
 	page := domain.SearchPage{}
 	if len(rows) > search.Limit {
@@ -106,7 +106,7 @@ func (repository *PostingSearchRepository) Search(ctx context.Context, r store.R
 		if row.ApplicationID.Valid {
 			status, err := application.ParseStatus(row.ApplicationStatus.String)
 			if err != nil {
-				return domain.SearchPage{}, err
+				return nil, err
 			}
 			listing.ApplicationID = row.ApplicationID.Int64
 			listing.ApplicationStatus = status
@@ -114,7 +114,7 @@ func (repository *PostingSearchRepository) Search(ctx context.Context, r store.R
 		}
 		page.Listings[i] = listing
 	}
-	return page, nil
+	return &page, nil
 }
 
 // searchInOrder runs order's query. Every order's query takes the same

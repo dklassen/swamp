@@ -16,11 +16,11 @@ type reviewViewer interface {
 }
 
 type reviewRecorder interface {
-	Insert(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type, cycle int64, content string, outcome document.Outcome, notes string) (document.Review, error)
+	Insert(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type, cycle int64, content string, outcome document.Outcome, notes string) (*document.Review, error)
 }
 
 type exportViewer interface {
-	Latest(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type) (document.Export, error)
+	Latest(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type) (*document.Export, error)
 }
 
 type exportRecorder interface {
@@ -28,7 +28,7 @@ type exportRecorder interface {
 }
 
 type writeViewer interface {
-	Latest(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type) (document.Write, error)
+	Latest(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type) (*document.Write, error)
 }
 
 type writeRecorder interface {
@@ -66,7 +66,7 @@ func NewDocumentService(db store.Store) *DocumentService {
 // the insert run in one transaction, so two reviews can't both read the
 // same count and record the same cycle.
 func (service *DocumentService) Review(ctx context.Context, applicationID int64, documentType document.Type, content string, outcome document.Outcome, notes string) (*document.Review, error) {
-	var review document.Review
+	var review *document.Review
 	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
 		count, err := service.reviewViewer.Count(ctx, tx, applicationID, documentType)
 		if err != nil {
@@ -78,7 +78,7 @@ func (service *DocumentService) Review(ctx context.Context, applicationID int64,
 	if err != nil {
 		return nil, err
 	}
-	return &review, nil
+	return review, nil
 }
 
 // Reviews returns applicationID's reviews of documentType, most recent
@@ -137,7 +137,7 @@ func (service *DocumentService) LatestExports(ctx context.Context, applicationID
 		if err != nil {
 			return nil, fmt.Errorf("document: latest export: %w", err)
 		}
-		exports[documentType] = export
+		exports[documentType] = *export
 	}
 	return exports, nil
 }
@@ -155,5 +155,5 @@ func (service *DocumentService) LatestWrite(ctx context.Context, applicationID i
 	if err != nil {
 		return nil, fmt.Errorf("document: latest write: %w", err)
 	}
-	return &write, nil
+	return write, nil
 }

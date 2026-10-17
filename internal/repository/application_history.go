@@ -66,19 +66,19 @@ func (repository *ApplicationHistoryRepository) List(ctx context.Context, r stor
 
 // Latest returns an application's newest status change, or
 // store.ErrNotFound when it has none.
-func (repository *ApplicationHistoryRepository) Latest(ctx context.Context, r store.Runner, applicationID int64) (domain.StatusChange, error) {
+func (repository *ApplicationHistoryRepository) Latest(ctx context.Context, r store.Runner, applicationID int64) (*domain.StatusChange, error) {
 	row, err := store.Read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.ApplicationStatusHistory, error) {
 		return q.LatestApplicationStatusChange(ctx, applicationID)
 	})
 	if errors.Is(err, store.ErrNotFound) {
-		return domain.StatusChange{}, store.ErrNotFound
+		return nil, store.ErrNotFound
 	}
 	if err != nil {
-		return domain.StatusChange{}, fmt.Errorf("application: latest status change for application %d: %w", applicationID, err)
+		return nil, fmt.Errorf("application: latest status change for application %d: %w", applicationID, err)
 	}
 	change, err := FromHistoryRow(row)
 	if err != nil {
-		return domain.StatusChange{}, fmt.Errorf("application: latest status change for application %d: %w", applicationID, err)
+		return nil, fmt.Errorf("application: latest status change for application %d: %w", applicationID, err)
 	}
-	return change, nil
+	return &change, nil
 }

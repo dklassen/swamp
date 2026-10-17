@@ -17,9 +17,9 @@ type ScoreRepository struct{}
 // another one doesn't count; "" is no rescore. Eligible postings are open,
 // not archived, not interested, without an application, at a company the
 // user hasn't deleted, and let through by its filters.
-func (repository *ScoreRepository) Pending(ctx context.Context, r store.Runner, rescoreProfileSHA256 string, beforeID int64, limit int) (domain.PendingPostingsPage, error) {
+func (repository *ScoreRepository) Pending(ctx context.Context, r store.Runner, rescoreProfileSHA256 string, beforeID int64, limit int) (*domain.PendingPostingsPage, error) {
 	if limit <= 0 {
-		return domain.PendingPostingsPage{}, fmt.Errorf("scoring: pending postings: limit %d, want at least 1", limit)
+		return nil, fmt.Errorf("scoring: pending postings: limit %d, want at least 1", limit)
 	}
 	params := sqlcdb.ListPendingPostingsParams{
 		// One more than asked for, to learn whether another page follows.
@@ -35,7 +35,7 @@ func (repository *ScoreRepository) Pending(ctx context.Context, r store.Runner, 
 		return q.ListPendingPostings(ctx, params)
 	})
 	if err != nil {
-		return domain.PendingPostingsPage{}, fmt.Errorf("scoring: pending postings: %w", err)
+		return nil, fmt.Errorf("scoring: pending postings: %w", err)
 	}
 	page := domain.PendingPostingsPage{}
 	if len(rows) > limit {
@@ -64,7 +64,7 @@ func (repository *ScoreRepository) Pending(ctx context.Context, r store.Runner, 
 			Reason:        reason,
 		}
 	}
-	return page, nil
+	return &page, nil
 }
 
 // Insert records entry as a score from provenance.

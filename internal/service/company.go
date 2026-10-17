@@ -14,19 +14,19 @@ import (
 )
 
 type companyViewer interface {
-	Get(ctx context.Context, r store.Runner, id int64) (company.Company, error)
-	GetIncludingDeleted(ctx context.Context, r store.Runner, id int64) (company.Company, error)
-	GetBySource(ctx context.Context, r store.Runner, source, sourceRef string) (company.Company, error)
+	Get(ctx context.Context, r store.Runner, id int64) (*company.Company, error)
+	GetIncludingDeleted(ctx context.Context, r store.Runner, id int64) (*company.Company, error)
+	GetBySource(ctx context.Context, r store.Runner, source, sourceRef string) (*company.Company, error)
 	ListActive(ctx context.Context, r store.Runner) ([]company.Company, error)
 }
 
 type companyWriter interface {
-	Insert(ctx context.Context, r store.Runner, name, source, sourceRef string) (company.Company, error)
-	SetName(ctx context.Context, r store.Runner, id int64, name string) (company.Company, error)
-	SetDescription(ctx context.Context, r store.Runner, id int64, description string) (company.Company, error)
+	Insert(ctx context.Context, r store.Runner, name, source, sourceRef string) (*company.Company, error)
+	SetName(ctx context.Context, r store.Runner, id int64, name string) (*company.Company, error)
+	SetDescription(ctx context.Context, r store.Runner, id int64, description string) (*company.Company, error)
 	SoftDelete(ctx context.Context, r store.Runner, id int64) error
 	Restore(ctx context.Context, r store.Runner, id int64) error
-	RestoreWithName(ctx context.Context, r store.Runner, id int64, name string) (company.Company, error)
+	RestoreWithName(ctx context.Context, r store.Runner, id int64, name string) (*company.Company, error)
 	MarkFetched(ctx context.Context, r store.Runner, id int64) error
 }
 
@@ -45,7 +45,7 @@ type filterWriter interface {
 }
 
 type companyPostingViewer interface {
-	Get(ctx context.Context, r store.Runner, id int64) (posting.Posting, error)
+	Get(ctx context.Context, r store.Runner, id int64) (*posting.Posting, error)
 	ListOpenIDsByCompany(ctx context.Context, r store.Runner, companyID int64) ([]int64, error)
 	Departments(ctx context.Context, r store.Runner, companyID int64) ([]string, error)
 	Locations(ctx context.Context, r store.Runner, companyID int64) ([]string, error)
@@ -56,7 +56,7 @@ type companyPostingStatusWriter interface {
 }
 
 type companyPostingHistoryWriter interface {
-	Insert(ctx context.Context, r store.Runner, p posting.Posting, changeType string) (posting.History, error)
+	Insert(ctx context.Context, r store.Runner, p posting.Posting, changeType string) (*posting.History, error)
 }
 
 type CompanyService struct {
@@ -94,7 +94,7 @@ func NewCompanyService(db store.Store) *CompanyService {
 // plain insert would fail when re-adding a company the user had removed;
 // restoring is what "re-add" means for a soft-deleted row.
 func (service *CompanyService) Add(ctx context.Context, name, source, sourceRef string) (*company.Company, error) {
-	var added company.Company
+	var added *company.Company
 	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
 		existing, err := service.companyViewer.GetBySource(ctx, tx, source, sourceRef)
 		switch {
@@ -114,7 +114,7 @@ func (service *CompanyService) Add(ctx context.Context, name, source, sourceRef 
 	if err != nil {
 		return nil, err
 	}
-	return &added, nil
+	return added, nil
 }
 
 // Delete marks a company deleted and closes its open postings, with a
@@ -144,7 +144,7 @@ func (service *CompanyService) Delete(ctx context.Context, id int64) error {
 			if !closed {
 				continue
 			}
-			if _, err := service.postingHistoryWriter.Insert(ctx, tx, before, posting.ChangeClosed); err != nil {
+			if _, err := service.postingHistoryWriter.Insert(ctx, tx, *before, posting.ChangeClosed); err != nil {
 				return err
 			}
 		}
@@ -192,31 +192,19 @@ func (service *CompanyService) SetFilters(ctx context.Context, id int64, filters
 
 // Get returns an active company, or store.ErrNotFound.
 func (service *CompanyService) Get(ctx context.Context, id int64) (*company.Company, error) {
-	c, err := service.companyViewer.Get(ctx, service.db, id)
-	if err != nil {
-		return nil, err
-	}
-	return &c, nil
+	return service.companyViewer.Get(ctx, service.db, id)
 }
 
 // GetIncludingDeleted is Get, but also finds a company the user deleted
 // (check DeletedAt).
 func (service *CompanyService) GetIncludingDeleted(ctx context.Context, id int64) (*company.Company, error) {
-	c, err := service.companyViewer.GetIncludingDeleted(ctx, service.db, id)
-	if err != nil {
-		return nil, err
-	}
-	return &c, nil
+	return service.companyViewer.GetIncludingDeleted(ctx, service.db, id)
 }
 
 // GetBySource finds the company for a job board slug, including a
 // soft-deleted one (check DeletedAt), or returns store.ErrNotFound.
 func (service *CompanyService) GetBySource(ctx context.Context, source, sourceRef string) (*company.Company, error) {
-	c, err := service.companyViewer.GetBySource(ctx, service.db, source, sourceRef)
-	if err != nil {
-		return nil, err
-	}
-	return &c, nil
+	return service.companyViewer.GetBySource(ctx, service.db, source, sourceRef)
 }
 
 func (service *CompanyService) ListActive(ctx context.Context) ([]company.Company, error) {
@@ -224,19 +212,11 @@ func (service *CompanyService) ListActive(ctx context.Context) ([]company.Compan
 }
 
 func (service *CompanyService) SetName(ctx context.Context, id int64, name string) (*company.Company, error) {
-	c, err := service.companyWriter.SetName(ctx, service.db, id, name)
-	if err != nil {
-		return nil, err
-	}
-	return &c, nil
+	return service.companyWriter.SetName(ctx, service.db, id, name)
 }
 
 func (service *CompanyService) SetDescription(ctx context.Context, id int64, description string) (*company.Company, error) {
-	c, err := service.companyWriter.SetDescription(ctx, service.db, id, description)
-	if err != nil {
-		return nil, err
-	}
-	return &c, nil
+	return service.companyWriter.SetDescription(ctx, service.db, id, description)
 }
 
 func (service *CompanyService) Restore(ctx context.Context, id int64) error {

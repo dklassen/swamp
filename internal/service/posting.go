@@ -21,20 +21,20 @@ import (
 var ErrPostingClosed = errors.New("application: posting is closed")
 
 type postingViewer interface {
-	Get(ctx context.Context, r store.Runner, id int64) (posting.Posting, error)
-	GetBySource(ctx context.Context, r store.Runner, source, sourceID string) (posting.Posting, error)
+	Get(ctx context.Context, r store.Runner, id int64) (*posting.Posting, error)
+	GetBySource(ctx context.Context, r store.Runner, source, sourceID string) (*posting.Posting, error)
 	ListInterested(ctx context.Context, r store.Runner, excluding []application.Status) ([]posting.Interested, error)
 	ListByCompany(ctx context.Context, r store.Runner, companyID int64) ([]posting.Posting, error)
 	CountOpenByCompany(ctx context.Context, r store.Runner) (map[int64]int, error)
 }
 
 type postingSearcher interface {
-	Search(ctx context.Context, r store.Runner, search posting.Search) (posting.SearchPage, error)
+	Search(ctx context.Context, r store.Runner, search posting.Search) (*posting.SearchPage, error)
 }
 
 type postingWriter interface {
-	Insert(ctx context.Context, r store.Runner, companyID int64, source, sourceID string, fields posting.IngestedFields) (posting.Posting, error)
-	Update(ctx context.Context, r store.Runner, id int64, fields posting.IngestedFields) (posting.Posting, error)
+	Insert(ctx context.Context, r store.Runner, companyID int64, source, sourceID string, fields posting.IngestedFields) (*posting.Posting, error)
+	Update(ctx context.Context, r store.Runner, id int64, fields posting.IngestedFields) (*posting.Posting, error)
 	MarkSeen(ctx context.Context, r store.Runner, ids []int64) error
 }
 
@@ -44,7 +44,7 @@ type postingStatusWriter interface {
 }
 
 type postingHistoryWriter interface {
-	Insert(ctx context.Context, r store.Runner, p posting.Posting, changeType string) (posting.History, error)
+	Insert(ctx context.Context, r store.Runner, p posting.Posting, changeType string) (*posting.History, error)
 }
 
 type postingHistoryViewer interface {
@@ -52,16 +52,16 @@ type postingHistoryViewer interface {
 }
 
 type markupViewer interface {
-	Get(ctx context.Context, r store.Runner, postingID int64) (posting.Markup, error)
+	Get(ctx context.Context, r store.Runner, postingID int64) (*posting.Markup, error)
 }
 
 type markupWriter interface {
-	Insert(ctx context.Context, r store.Runner, postingID int64) (posting.Markup, error)
-	SetInterested(ctx context.Context, r store.Runner, postingID int64) (posting.Markup, error)
-	UnmarkInterested(ctx context.Context, r store.Runner, postingID int64) (posting.Markup, error)
-	SetArchived(ctx context.Context, r store.Runner, postingID int64) (posting.Markup, error)
-	Unarchive(ctx context.Context, r store.Runner, postingID int64) (posting.Markup, error)
-	SetNotes(ctx context.Context, r store.Runner, postingID int64, notes string) (posting.Markup, error)
+	Insert(ctx context.Context, r store.Runner, postingID int64) (*posting.Markup, error)
+	SetInterested(ctx context.Context, r store.Runner, postingID int64) (*posting.Markup, error)
+	UnmarkInterested(ctx context.Context, r store.Runner, postingID int64) (*posting.Markup, error)
+	SetArchived(ctx context.Context, r store.Runner, postingID int64) (*posting.Markup, error)
+	Unarchive(ctx context.Context, r store.Runner, postingID int64) (*posting.Markup, error)
+	SetNotes(ctx context.Context, r store.Runner, postingID int64, notes string) (*posting.Markup, error)
 }
 
 type formViewer interface {
@@ -73,12 +73,12 @@ type formWriter interface {
 }
 
 type postingApplicationViewer interface {
-	GetByPostingID(ctx context.Context, r store.Runner, postingID int64) (application.Application, error)
+	GetByPostingID(ctx context.Context, r store.Runner, postingID int64) (*application.Application, error)
 }
 
 type postingApplicationWriter interface {
-	Insert(ctx context.Context, r store.Runner, postingID int64, status application.Status) (application.Application, error)
-	SetStatus(ctx context.Context, r store.Runner, id int64, status application.Status) (application.Application, error)
+	Insert(ctx context.Context, r store.Runner, postingID int64, status application.Status) (*application.Application, error)
+	SetStatus(ctx context.Context, r store.Runner, id int64, status application.Status) (*application.Application, error)
 }
 
 type postingApplicationHistoryViewer interface {
@@ -168,20 +168,20 @@ func (service *PostingService) Ingest(ctx context.Context, companyID int64, sour
 			if _, err := service.markupWriter.Insert(ctx, tx, created.ID); err != nil {
 				return err
 			}
-			result = IngestResult{Posting: created, Created: true}
+			result = IngestResult{Posting: *created, Created: true}
 		case err != nil:
 			return fmt.Errorf("posting: get by source: %w", err)
 		case cmp.Equal(existing.IngestedFields, fields):
-			result = IngestResult{Posting: existing}
+			result = IngestResult{Posting: *existing}
 		default:
-			if _, err := service.postingHistoryWriter.Insert(ctx, tx, existing, posting.ChangeContentUpdated); err != nil {
+			if _, err := service.postingHistoryWriter.Insert(ctx, tx, *existing, posting.ChangeContentUpdated); err != nil {
 				return err
 			}
 			updated, err := service.postingWriter.Update(ctx, tx, existing.ID, fields)
 			if err != nil {
 				return fmt.Errorf("posting: update: %w", err)
 			}
-			result = IngestResult{Posting: updated, Updated: true}
+			result = IngestResult{Posting: *updated, Updated: true}
 		}
 		return nil
 	})
@@ -193,30 +193,18 @@ func (service *PostingService) Ingest(ctx context.Context, companyID int64, sour
 
 // Search returns one page of the postings matching search.
 func (service *PostingService) Search(ctx context.Context, search posting.Search) (*posting.SearchPage, error) {
-	page, err := service.postingSearcher.Search(ctx, service.db, search)
-	if err != nil {
-		return nil, err
-	}
-	return &page, nil
+	return service.postingSearcher.Search(ctx, service.db, search)
 }
 
 // Get returns a posting by ID, or store.ErrNotFound.
 func (service *PostingService) Get(ctx context.Context, postingID int64) (*posting.Posting, error) {
-	p, err := service.postingViewer.Get(ctx, service.db, postingID)
-	if err != nil {
-		return nil, err
-	}
-	return &p, nil
+	return service.postingViewer.Get(ctx, service.db, postingID)
 }
 
 // GetBySource returns the posting source knows as sourceID, or
 // store.ErrNotFound.
 func (service *PostingService) GetBySource(ctx context.Context, source, sourceID string) (*posting.Posting, error) {
-	p, err := service.postingViewer.GetBySource(ctx, service.db, source, sourceID)
-	if err != nil {
-		return nil, err
-	}
-	return &p, nil
+	return service.postingViewer.GetBySource(ctx, service.db, source, sourceID)
 }
 
 // History returns a posting's earlier versions, oldest first: a snapshot
@@ -254,63 +242,35 @@ func (service *PostingService) Interested(ctx context.Context) ([]posting.Intere
 // Application returns the posting's live application, or
 // store.ErrNotFound when it has none.
 func (service *PostingService) Application(ctx context.Context, postingID int64) (*application.Application, error) {
-	app, err := service.applicationViewer.GetByPostingID(ctx, service.db, postingID)
-	if err != nil {
-		return nil, err
-	}
-	return &app, nil
+	return service.applicationViewer.GetByPostingID(ctx, service.db, postingID)
 }
 
 // Markup returns the user's triage on the posting, or store.ErrNotFound.
 func (service *PostingService) Markup(ctx context.Context, postingID int64) (*posting.Markup, error) {
-	markup, err := service.markupViewer.Get(ctx, service.db, postingID)
-	if err != nil {
-		return nil, err
-	}
-	return &markup, nil
+	return service.markupViewer.Get(ctx, service.db, postingID)
 }
 
 // SetInterested marks the posting interested, which also unarchives it.
 func (service *PostingService) SetInterested(ctx context.Context, postingID int64) (*posting.Markup, error) {
-	markup, err := service.markupWriter.SetInterested(ctx, service.db, postingID)
-	if err != nil {
-		return nil, err
-	}
-	return &markup, nil
+	return service.markupWriter.SetInterested(ctx, service.db, postingID)
 }
 
 func (service *PostingService) UnmarkInterested(ctx context.Context, postingID int64) (*posting.Markup, error) {
-	markup, err := service.markupWriter.UnmarkInterested(ctx, service.db, postingID)
-	if err != nil {
-		return nil, err
-	}
-	return &markup, nil
+	return service.markupWriter.UnmarkInterested(ctx, service.db, postingID)
 }
 
 // SetArchived archives the posting, which also unmarks it interested.
 func (service *PostingService) SetArchived(ctx context.Context, postingID int64) (*posting.Markup, error) {
-	markup, err := service.markupWriter.SetArchived(ctx, service.db, postingID)
-	if err != nil {
-		return nil, err
-	}
-	return &markup, nil
+	return service.markupWriter.SetArchived(ctx, service.db, postingID)
 }
 
 func (service *PostingService) Unarchive(ctx context.Context, postingID int64) (*posting.Markup, error) {
-	markup, err := service.markupWriter.Unarchive(ctx, service.db, postingID)
-	if err != nil {
-		return nil, err
-	}
-	return &markup, nil
+	return service.markupWriter.Unarchive(ctx, service.db, postingID)
 }
 
 // SetNotes replaces the user's notes on the posting.
 func (service *PostingService) SetNotes(ctx context.Context, postingID int64, notes string) (*posting.Markup, error) {
-	markup, err := service.markupWriter.SetNotes(ctx, service.db, postingID, notes)
-	if err != nil {
-		return nil, err
-	}
-	return &markup, nil
+	return service.markupWriter.SetNotes(ctx, service.db, postingID, notes)
 }
 
 // SaveForm stores what the posting's application form asks for, as JSON,
@@ -331,7 +291,7 @@ func (service *PostingService) Form(ctx context.Context, postingID int64) (*post
 // closing the posting can't slip in between, and a missing one with
 // store.ErrNotFound.
 func (service *PostingService) ApplyTo(ctx context.Context, postingID int64) (*application.Application, error) {
-	var created application.Application
+	var created *application.Application
 	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
 		p, err := service.postingViewer.Get(ctx, tx, postingID)
 		if err != nil {
@@ -349,7 +309,7 @@ func (service *PostingService) ApplyTo(ctx context.Context, postingID int64) (*a
 	if err != nil {
 		return nil, fmt.Errorf("application: create: %w", err)
 	}
-	return &created, nil
+	return created, nil
 }
 
 // Close closes an open posting, records a "closed" snapshot of it as it
@@ -366,7 +326,7 @@ func (service *PostingService) Close(ctx context.Context, postingID int64, endFr
 		if closed, err := service.postingStatusWriter.Close(ctx, tx, postingID); err != nil || !closed {
 			return err
 		}
-		if _, err := service.postingHistoryWriter.Insert(ctx, tx, before, posting.ChangeClosed); err != nil {
+		if _, err := service.postingHistoryWriter.Insert(ctx, tx, *before, posting.ChangeClosed); err != nil {
 			return err
 		}
 		return service.endApplication(ctx, tx, postingID, endFrom)
@@ -386,7 +346,7 @@ func (service *PostingService) Reopen(ctx context.Context, postingID int64) erro
 		if reopened, err := service.postingStatusWriter.Reopen(ctx, tx, postingID); err != nil || !reopened {
 			return err
 		}
-		if _, err := service.postingHistoryWriter.Insert(ctx, tx, before, posting.ChangeReopened); err != nil {
+		if _, err := service.postingHistoryWriter.Insert(ctx, tx, *before, posting.ChangeReopened); err != nil {
 			return err
 		}
 		return service.restoreApplication(ctx, tx, postingID)

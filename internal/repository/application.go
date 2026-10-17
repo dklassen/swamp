@@ -35,16 +35,20 @@ func FromRow(row sqlcdb.Application) (domain.Application, error) {
 	}, nil
 }
 
-func read(ctx context.Context, r store.Runner, fn func(*sqlcdb.Queries) (sqlcdb.Application, error)) (domain.Application, error) {
+func read(ctx context.Context, r store.Runner, fn func(*sqlcdb.Queries) (sqlcdb.Application, error)) (*domain.Application, error) {
 	row, err := store.Read(ctx, r, fn)
 	if err != nil {
-		return domain.Application{}, err
+		return nil, err
 	}
-	return FromRow(row)
+	app, err := FromRow(row)
+	if err != nil {
+		return nil, err
+	}
+	return &app, nil
 }
 
 // Insert starts an application for postingID at status.
-func (repository *ApplicationRepository) Insert(ctx context.Context, r store.Runner, postingID int64, status domain.Status) (domain.Application, error) {
+func (repository *ApplicationRepository) Insert(ctx context.Context, r store.Runner, postingID int64, status domain.Status) (*domain.Application, error) {
 	return read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Application, error) {
 		return q.CreateApplication(ctx, sqlcdb.CreateApplicationParams{
 			PostingID: postingID,
@@ -55,7 +59,7 @@ func (repository *ApplicationRepository) Insert(ctx context.Context, r store.Run
 
 // Get looks an application up by its own ID, unlike GetByPostingID.
 // Returns store.ErrNotFound for an ID with no live row.
-func (repository *ApplicationRepository) Get(ctx context.Context, r store.Runner, id int64) (domain.Application, error) {
+func (repository *ApplicationRepository) Get(ctx context.Context, r store.Runner, id int64) (*domain.Application, error) {
 	return read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Application, error) {
 		return q.GetApplicationByID(ctx, id)
 	})
@@ -63,7 +67,7 @@ func (repository *ApplicationRepository) Get(ctx context.Context, r store.Runner
 
 // GetByPostingID returns postingID's live application, or
 // store.ErrNotFound.
-func (repository *ApplicationRepository) GetByPostingID(ctx context.Context, r store.Runner, postingID int64) (domain.Application, error) {
+func (repository *ApplicationRepository) GetByPostingID(ctx context.Context, r store.Runner, postingID int64) (*domain.Application, error) {
 	return read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Application, error) {
 		return q.GetApplication(ctx, postingID)
 	})
@@ -72,7 +76,7 @@ func (repository *ApplicationRepository) GetByPostingID(ctx context.Context, r s
 // GetByIDIncludingDeleted is Get, but also finds an application the user
 // deleted (check DeletedAt). Returns store.ErrNotFound for an ID that was
 // never handed out.
-func (repository *ApplicationRepository) GetByIDIncludingDeleted(ctx context.Context, r store.Runner, id int64) (domain.Application, error) {
+func (repository *ApplicationRepository) GetByIDIncludingDeleted(ctx context.Context, r store.Runner, id int64) (*domain.Application, error) {
 	return read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Application, error) {
 		return q.GetApplicationByIDIncludingDeleted(ctx, id)
 	})
@@ -120,7 +124,7 @@ func (repository *ApplicationRepository) Delete(ctx context.Context, r store.Run
 	return nil
 }
 
-func (repository *ApplicationRepository) SetStatus(ctx context.Context, r store.Runner, id int64, status domain.Status) (domain.Application, error) {
+func (repository *ApplicationRepository) SetStatus(ctx context.Context, r store.Runner, id int64, status domain.Status) (*domain.Application, error) {
 	return read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Application, error) {
 		return q.UpdateApplicationStatus(ctx, sqlcdb.UpdateApplicationStatusParams{
 			ID:     id,
@@ -129,7 +133,7 @@ func (repository *ApplicationRepository) SetStatus(ctx context.Context, r store.
 	})
 }
 
-func (repository *ApplicationRepository) SetNotes(ctx context.Context, r store.Runner, id int64, notes string) (domain.Application, error) {
+func (repository *ApplicationRepository) SetNotes(ctx context.Context, r store.Runner, id int64, notes string) (*domain.Application, error) {
 	return read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Application, error) {
 		return q.UpdateApplicationNotes(ctx, sqlcdb.UpdateApplicationNotesParams{ID: id, Notes: notes})
 	})

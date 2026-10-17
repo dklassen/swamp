@@ -11,7 +11,7 @@ import (
 )
 
 type scoreViewer interface {
-	Pending(ctx context.Context, r store.Runner, rescoreProfileSHA256 string, beforeID int64, limit int) (score.PendingPostingsPage, error)
+	Pending(ctx context.Context, r store.Runner, rescoreProfileSHA256 string, beforeID int64, limit int) (*score.PendingPostingsPage, error)
 	HasRepeat(ctx context.Context, r store.Runner, postingID int64, contentSHA256, profileSHA256, model string) (bool, error)
 	ListByPosting(ctx context.Context, r store.Runner, postingID int64) ([]score.Score, error)
 }
@@ -45,11 +45,7 @@ func NewScoringService(db store.Store) *ScoringService {
 // content, newest first, before beforeID (0 for the first page). For a
 // rescore, rescoreProfileSHA256 names the profile; "" is no rescore.
 func (service *ScoringService) Pending(ctx context.Context, rescoreProfileSHA256 string, beforeID int64, limit int) (*score.PendingPostingsPage, error) {
-	page, err := service.scoreViewer.Pending(ctx, service.db, rescoreProfileSHA256, beforeID, limit)
-	if err != nil {
-		return nil, err
-	}
-	return &page, nil
+	return service.scoreViewer.Pending(ctx, service.db, rescoreProfileSHA256, beforeID, limit)
 }
 
 // ForPosting returns every score postingID was given, newest, its current
