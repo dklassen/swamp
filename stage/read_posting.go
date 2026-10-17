@@ -14,20 +14,20 @@ import (
 // it: the summary, the description as text, its company's description,
 // and the content hash a score of it must name.
 type FullPosting struct {
-	ID                 int64                `json:"ID"`
-	Title              string               `json:"Title"`
-	CompanyName        string               `json:"CompanyName"`
-	CompanyDescription string               `json:"CompanyDescription"`
-	Department         string               `json:"Department"`
-	Location           string               `json:"Location"`
-	WorkplaceType      string               `json:"WorkplaceType"`
-	ListingStatus      string               `json:"ListingStatus"`
-	PublishedAt        posting.OptionalTime `json:"PublishedAt"`
-	FirstSeenAt        time.Time            `json:"FirstSeenAt"`
-	DescriptionText    string               `json:"DescriptionText"`
-	JobURL             string               `json:"JobURL"`
-	ApplicationURL     string               `json:"ApplicationURL"`
-	Version            string               `json:"Version"`
+	ID                 int64                 `json:"ID"`
+	Title              string                `json:"Title"`
+	CompanyName        string                `json:"CompanyName"`
+	CompanyDescription string                `json:"CompanyDescription"`
+	Department         string                `json:"Department"`
+	Location           string                `json:"Location"`
+	WorkplaceType      string                `json:"WorkplaceType"`
+	ListingStatus      posting.ListingStatus `json:"ListingStatus"`
+	PublishedAt        posting.OptionalTime  `json:"PublishedAt"`
+	FirstSeenAt        time.Time             `json:"FirstSeenAt"`
+	DescriptionText    string                `json:"DescriptionText"`
+	JobURL             string                `json:"JobURL"`
+	ApplicationURL     string                `json:"ApplicationURL"`
+	Version            string                `json:"Version"`
 }
 
 // ReadPosting returns posting id in full. A posting at a company the user

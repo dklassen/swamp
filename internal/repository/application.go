@@ -98,9 +98,13 @@ func (repository *ApplicationRepository) ListActive(ctx context.Context, r store
 		if err != nil {
 			return nil, err
 		}
+		p, err := FromPostingRow(row.Posting)
+		if err != nil {
+			return nil, err
+		}
 		apps[i] = posting.ActiveApplication{
 			Application: app,
-			Posting:     FromPostingRow(row.Posting),
+			Posting:     p,
 			CompanyName: row.CompanyName,
 		}
 	}

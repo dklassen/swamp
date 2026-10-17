@@ -74,37 +74,37 @@ func TestClosePosting(t *testing.T) {
 			s := testutil.NewTestApp(t)
 			ctx := context.Background()
 			acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-			posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
+			p := mustUpsertPosting(t, s, acme.ID, "job-1", "Software Engineer")
 			if tt.application != nil {
-				if _, err := createApplication(ctx, s, posting.ID); err != nil {
+				if _, err := createApplication(ctx, s, p.ID); err != nil {
 					t.Fatalf("application.Create: %v", err)
 				}
-				if _, err := updateApplicationStatus(ctx, s, posting.ID, *tt.application); err != nil {
+				if _, err := updateApplicationStatus(ctx, s, p.ID, *tt.application); err != nil {
 					t.Fatalf("application.UpdateStatus: %v", err)
 				}
 			}
 			if tt.alreadyClosed {
-				if err := s.Postings.Close(ctx, posting.ID, nil); err != nil {
+				if err := s.Postings.Close(ctx, p.ID, nil); err != nil {
 					t.Fatalf("Close: %v", err)
 				}
 			}
-			before, err := s.Postings.History(ctx, posting.ID)
+			before, err := s.Postings.History(ctx, p.ID)
 			if err != nil {
 				t.Fatalf("ListPostingHistory: %v", err)
 			}
 
-			if err := s.Postings.Close(ctx, posting.ID, closeFrom); err != nil {
+			if err := s.Postings.Close(ctx, p.ID, closeFrom); err != nil {
 				t.Fatalf("Close: %v", err)
 			}
 
-			after, err := s.Postings.Get(ctx, posting.ID)
+			after, err := s.Postings.Get(ctx, p.ID)
 			if err != nil {
 				t.Fatalf("GetPosting: %v", err)
 			}
-			if after.ListingStatus != "closed" {
+			if after.ListingStatus != posting.ListingClosed {
 				t.Errorf("ListingStatus = %q, want closed", after.ListingStatus)
 			}
-			history, err := s.Postings.History(ctx, posting.ID)
+			history, err := s.Postings.History(ctx, p.ID)
 			if err != nil {
 				t.Fatalf("ListPostingHistory: %v", err)
 			}
@@ -118,7 +118,7 @@ func TestClosePosting(t *testing.T) {
 				}
 			}
 			if tt.application != nil {
-				app, err := s.Postings.Application(ctx, posting.ID)
+				app, err := s.Postings.Application(ctx, p.ID)
 				if err != nil {
 					t.Fatalf("application.Get: %v", err)
 				}

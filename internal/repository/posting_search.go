@@ -31,12 +31,8 @@ func (repository *PostingSearchRepository) Search(ctx context.Context, r store.R
 		// One more than asked for, to learn whether another page follows.
 		MaxRows: int64(search.Limit) + 1,
 	}
-	switch search.ListingStatus {
-	case "":
-	case "open", "closed":
-		params.ListingStatus = search.ListingStatus
-	default:
-		return nil, fmt.Errorf("posting: search: unknown listing status %q", search.ListingStatus)
+	if search.ListingStatus != nil {
+		params.ListingStatus = search.ListingStatus.String()
 	}
 	if search.CompanyID != 0 {
 		params.CompanyID = search.CompanyID
@@ -83,6 +79,10 @@ func (repository *PostingSearchRepository) Search(ctx context.Context, r store.R
 	page.Listings = make([]domain.Listing, len(rows))
 	for i, row := range rows {
 		page.Total = int(row.Total)
+		listingStatus, err := domain.ParseListingStatus(row.ListingStatus)
+		if err != nil {
+			return nil, fmt.Errorf("posting: search: posting %d: %w", row.ID, err)
+		}
 		listing := domain.Listing{
 			ID:             row.ID,
 			Title:          row.Title,
@@ -93,7 +93,7 @@ func (repository *PostingSearchRepository) Search(ctx context.Context, r store.R
 			ApplicationURL: row.ApplicationUrl,
 			PublishedAt:    row.PublishedAt.Time,
 			FirstSeenAt:    row.FirstSeenAt,
-			ListingStatus:  row.ListingStatus,
+			ListingStatus:  listingStatus,
 			CompanyName:    row.CompanyName,
 			Interested:     row.InterestedAt.Valid,
 			Archived:       row.ArchivedAt.Valid,

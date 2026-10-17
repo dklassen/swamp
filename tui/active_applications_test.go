@@ -197,8 +197,8 @@ func TestActiveApplicationListModel_View_FlagsClosedPosting(t *testing.T) {
 
 	apps := testActiveApplications()
 	apps[0].Status = application.Interviewing
-	apps[0].Posting.ListingStatus = "closed"
-	apps[1].Posting.ListingStatus = "open"
+	apps[0].Posting.ListingStatus = posting.ListingClosed
+	apps[1].Posting.ListingStatus = posting.ListingOpen
 
 	m := newActiveApplicationListModel()
 	got := m.View(apps, nil, time.Time{}, 0, 20)
@@ -225,14 +225,14 @@ func TestNextStep(t *testing.T) {
 	tests := []struct {
 		name    string
 		status  application.Status
-		listing string
+		listing posting.ListingStatus
 		reviews map[document.Type]document.Review
 		docs    map[document.Type]documentProgress
 		want    string
 	}{
 		{name: "not started: no next step", status: application.Interviewing, docs: both(exported, exported), want: ""},
-		{name: "posting closed", status: application.Started, listing: "closed", docs: both(drafted, drafted), want: "withdraw?"},
-		{name: "later stage, posting closed", status: application.Interviewing, listing: "closed", docs: both(exported, exported), want: "(closed)"},
+		{name: "posting closed", status: application.Started, listing: posting.ListingClosed, docs: both(drafted, drafted), want: "withdraw?"},
+		{name: "later stage, posting closed", status: application.Interviewing, listing: posting.ListingClosed, docs: both(exported, exported), want: "(closed)"},
 		{name: "nothing drafted", status: application.Started, docs: both(documentProgress{}, documentProgress{}), want: "draft"},
 		{name: "one document missing", status: application.Started, docs: both(drafted, documentProgress{}), want: "draft"},
 		{name: "drafted, not reviewed", status: application.Started, docs: both(drafted, drafted), want: "review"},
@@ -366,7 +366,7 @@ func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 	widest := posting.ActiveApplication{
 		Application: application.Application{ID: 1, Status: application.OfferReceived},
-		Posting: posting.Posting{ListingStatus: "closed", IngestedFields: posting.IngestedFields{
+		Posting: posting.Posting{ListingStatus: posting.ListingClosed, IngestedFields: posting.IngestedFields{
 			Title: strings.Repeat("Principal Engineer ", 5)}},
 		CompanyName: strings.Repeat("Longcompanyname ", 3),
 		StatusSince: now.Add(-400 * 24 * time.Hour),

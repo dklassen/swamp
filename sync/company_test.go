@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 )
@@ -102,7 +103,7 @@ func TestSyncCompany_DepartmentRenamedPastFilter_ContentUpdated(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListPostingsByCompany: %v", err)
 	}
-	if len(postings) != 1 || postings[0].Department != "Eng" || postings[0].ListingStatus != "open" {
+	if len(postings) != 1 || postings[0].Department != "Eng" || postings[0].ListingStatus != posting.ListingOpen {
 		t.Fatalf("postings = %+v, want the one posting, open, with department Eng", postings)
 	}
 	history, err := s.Postings.History(ctx, postings[0].ID)
@@ -235,8 +236,8 @@ func TestSyncCompany_PostingDisappearsFromFetch_ClosedWithHistory(t *testing.T) 
 	if len(postings) != 1 {
 		t.Fatalf("got %d postings, want 1", len(postings))
 	}
-	if postings[0].ListingStatus != "closed" {
-		t.Fatalf("posting ListingStatus = %q, want %q", postings[0].ListingStatus, "closed")
+	if postings[0].ListingStatus != posting.ListingClosed {
+		t.Fatalf("posting ListingStatus = %q, want %q", postings[0].ListingStatus, posting.ListingClosed)
 	}
 
 	history, err := s.Postings.History(ctx, postings[0].ID)
@@ -253,8 +254,8 @@ func TestSyncCompany_ClosedPostingReappears_ReopenedWithHistory(t *testing.T) {
 	ctx := context.Background()
 
 	company := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	posting := samplePosting("job-1", "Engineer", "Engineering", "Remote")
-	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": {posting}}}
+	listed := samplePosting("job-1", "Engineer", "Engineering", "Remote")
+	fetcher := &fakeFetcher{postings: map[string][]jobboard.Posting{"acme": {listed}}}
 	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
 	if _, err := syncer.SyncCompany(ctx, company.ID); err != nil {
@@ -265,7 +266,7 @@ func TestSyncCompany_ClosedPostingReappears_ReopenedWithHistory(t *testing.T) {
 		t.Fatalf("closing SyncCompany: %v", err)
 	}
 
-	fetcher.postings["acme"] = []jobboard.Posting{posting}
+	fetcher.postings["acme"] = []jobboard.Posting{listed}
 	result, err := syncer.SyncCompany(ctx, company.ID)
 	if err != nil {
 		t.Fatalf("reopening SyncCompany: %v", err)
@@ -278,7 +279,7 @@ func TestSyncCompany_ClosedPostingReappears_ReopenedWithHistory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListPostingsByCompany: %v", err)
 	}
-	if len(postings) != 1 || postings[0].ListingStatus != "open" {
+	if len(postings) != 1 || postings[0].ListingStatus != posting.ListingOpen {
 		t.Fatalf("postings = %+v, want one open posting", postings)
 	}
 

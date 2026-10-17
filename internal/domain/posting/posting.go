@@ -52,12 +52,12 @@ type Posting struct {
 	IngestedFields
 	// ContentSHA256 is ContentSHA256 of the content: the version a fit
 	// score is tied to.
-	ContentSHA256 string    `json:"ContentSHA256"`
-	ListingStatus string    `json:"ListingStatus"`
-	FirstSeenAt   time.Time `json:"FirstSeenAt"`
-	LastSeenAt    time.Time `json:"LastSeenAt"`
-	CreatedAt     time.Time `json:"CreatedAt"`
-	UpdatedAt     time.Time `json:"UpdatedAt"`
+	ContentSHA256 string        `json:"ContentSHA256"`
+	ListingStatus ListingStatus `json:"ListingStatus"`
+	FirstSeenAt   time.Time     `json:"FirstSeenAt"`
+	LastSeenAt    time.Time     `json:"LastSeenAt"`
+	CreatedAt     time.Time     `json:"CreatedAt"`
+	UpdatedAt     time.Time     `json:"UpdatedAt"`
 }
 
 // ContentSHA256 is contenthash.Of the fields the agent reads.

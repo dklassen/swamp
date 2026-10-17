@@ -93,8 +93,9 @@ func (m *allPostingsModel) load(size int) tea.Cmd {
 	s, start, order, query := m.postings, m.starts[len(m.starts)-1], m.order, m.query
 	return func() tea.Msg {
 		ctx := context.Background()
+		open := posting.ListingOpen
 		page, err := s.Search(ctx, posting.Search{
-			ListingStatus: "open",
+			ListingStatus: &open,
 			Order:         order,
 			AfterID:       start.id,
 			AfterScore:    start.score,
@@ -106,7 +107,7 @@ func (m *allPostingsModel) load(size int) tea.Cmd {
 		}
 		total := page.Total
 		if query != "" {
-			all, err := s.Search(ctx, posting.Search{ListingStatus: "open", Limit: 1})
+			all, err := s.Search(ctx, posting.Search{ListingStatus: &open, Limit: 1})
 			if err != nil {
 				return allPostingsLoadedMsg{start: start, order: order, query: query, size: size, err: err}
 			}

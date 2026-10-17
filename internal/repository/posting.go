@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 
 	"github.com/dklassen/swamp/internal/domain/application"
 	domain "github.com/dklassen/swamp/internal/domain/posting"
@@ -13,14 +14,18 @@ import (
 type PostingRepository struct{}
 
 // FromPostingRow converts a generated postings row.
-func FromPostingRow(row sqlcdb.Posting) domain.Posting {
+func FromPostingRow(row sqlcdb.Posting) (domain.Posting, error) {
+	listingStatus, err := domain.ParseListingStatus(row.ListingStatus)
+	if err != nil {
+		return domain.Posting{}, fmt.Errorf("posting %d: %w", row.ID, err)
+	}
 	return domain.Posting{
 		ID:            row.ID,
 		CompanyID:     row.CompanyID,
 		Source:        row.Source,
 		SourceID:      row.SourceID,
 		ContentSHA256: row.ContentSha256,
-		ListingStatus: row.ListingStatus,
+		ListingStatus: listingStatus,
 		FirstSeenAt:   row.FirstSeenAt,
 		LastSeenAt:    row.LastSeenAt,
 		CreatedAt:     row.CreatedAt,
@@ -39,7 +44,7 @@ func FromPostingRow(row sqlcdb.Posting) domain.Posting {
 			PublishedAt:     domain.OptionalTime{Time: row.PublishedAt.Time},
 			RawPayload:      row.RawPayload,
 		},
-	}
+	}, nil
 }
 
 func readPosting(ctx context.Context, r store.Runner, fn func(*sqlcdb.Queries) (sqlcdb.Posting, error)) (*domain.Posting, error) {
@@ -47,7 +52,10 @@ func readPosting(ctx context.Context, r store.Runner, fn func(*sqlcdb.Queries) (
 	if err != nil {
 		return nil, err
 	}
-	p := FromPostingRow(row)
+	p, err := FromPostingRow(row)
+	if err != nil {
+		return nil, err
+	}
 	return &p, nil
 }
 
@@ -139,7 +147,9 @@ func (repository *PostingRepository) ListByCompany(ctx context.Context, r store.
 	}
 	postings := make([]domain.Posting, len(rows))
 	for i, row := range rows {
-		postings[i] = FromPostingRow(row)
+		if postings[i], err = FromPostingRow(row); err != nil {
+			return nil, err
+		}
 	}
 	return postings, nil
 }
@@ -157,8 +167,12 @@ func (repository *PostingRepository) ListInterested(ctx context.Context, r store
 	}
 	postings := make([]domain.Interested, len(rows))
 	for i, row := range rows {
+		posting, err := FromPostingRow(row.Posting)
+		if err != nil {
+			return nil, err
+		}
 		p := domain.Interested{
-			Posting:     FromPostingRow(row.Posting),
+			Posting:     posting,
 			CompanyName: row.CompanyName,
 		}
 		if row.ApplicationID.Valid {

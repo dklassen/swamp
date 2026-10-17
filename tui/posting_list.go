@@ -219,7 +219,7 @@ func (m *postingListModel) View(snap postingListSnapshot, width, height int) str
 				padCol(p.Title, titleWidth),
 				padCol(p.Department, departmentColWidth),
 				padCol(p.Location, locationColWidth),
-				padCol(p.ListingStatus, statusColWidth),
+				padCol(p.ListingStatus.String(), statusColWidth),
 			)
 		}
 		b.WriteString(t.Render() + "\n")

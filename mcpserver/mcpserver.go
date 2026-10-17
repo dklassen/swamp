@@ -23,6 +23,7 @@ import (
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/sync"
@@ -173,7 +174,7 @@ func searchPostingsInputSchema() *jsonschema.Schema {
 		statuses = append(statuses, status.String())
 	}
 	schema.Properties["ApplicationStatuses"].Items.Enum = statuses
-	schema.Properties["ListingStatus"].Enum = []any{"open", "closed", "any"}
+	schema.Properties["ListingStatus"].Enum = []any{posting.ListingOpen.String(), posting.ListingClosed.String(), stage.AnyListingStatus}
 	sort := schema.Properties["Sort"]
 	sort.Enum = nil
 	description := []string{"the order to page in, one of:"}
