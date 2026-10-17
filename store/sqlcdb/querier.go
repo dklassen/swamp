@@ -15,7 +15,7 @@ type Querier interface {
 	// both sides are CURRENT_TIMESTAMP-format UTC text.
 	AcquireCompanySyncLease(ctx context.Context, arg AcquireCompanySyncLeaseParams) (int64, error)
 	ChangeEventsAfter(ctx context.Context, id int64) ([]ChangeEvent, error)
-	// Conditional, unlike MarkPostingClosed: 0 rows affected means the
+	// 0 rows affected means the
 	// posting was already closed (e.g. by an overlapping sync), so the
 	// caller records nothing (see store.ClosePosting, #147).
 	ClosePostingIfOpen(ctx context.Context, id int64) (int64, error)
@@ -170,8 +170,6 @@ type Querier interface {
 	ListPostingsByCompany(ctx context.Context, companyID int64) ([]Posting, error)
 	// Records a successful fetch of this company's postings (see sync.SyncCompany).
 	MarkCompanyFetched(ctx context.Context, id int64) error
-	MarkPostingClosed(ctx context.Context, id int64) error
-	MarkPostingReopened(ctx context.Context, id int64) error
 	// Records that a sync saw these postings on their board (#176). Not a
 	// content change: updated_at and posting_history are left alone. The
 	// slice is the only parameter, so sqlc.slice's ordering bug with other
@@ -180,7 +178,7 @@ type Querier interface {
 	// Frees the lease only if token still holds it, so a sync whose lease
 	// expired and was taken over can't release the new holder's.
 	ReleaseCompanySyncLease(ctx context.Context, arg ReleaseCompanySyncLeaseParams) error
-	// Conditional, unlike MarkPostingReopened: 0 rows affected means the
+	// 0 rows affected means the
 	// posting was already open again (e.g. reopened by an overlapping sync),
 	// so the caller records nothing (see store.ReopenPosting, #148).
 	ReopenPostingIfClosed(ctx context.Context, id int64) (int64, error)
@@ -294,7 +292,7 @@ type Querier interface {
 	UpdateCompanyName(ctx context.Context, arg UpdateCompanyNameParams) (Company, error)
 	// Updates ingested content fields only. Deliberately does not touch
 	// listing_status: transitions between open/closed are explicit domain
-	// decisions (see MarkPostingClosed/MarkPostingReopened), not a side effect
+	// decisions (see ClosePostingIfOpen/ReopenPostingIfClosed), not a side effect
 	// of re-ingesting content. Does not touch company_id: a given (source,
 	// source_id) is assumed to belong to the same company for its lifetime.
 	UpdatePosting(ctx context.Context, arg UpdatePostingParams) (Posting, error)
