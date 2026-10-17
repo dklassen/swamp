@@ -146,7 +146,7 @@ type applicationFormLoadedMsg struct {
 // hand, to seed the form screen.
 func loadApplicationForm(postings *service.PostingService, postingID int64) tea.Cmd {
 	return func() tea.Msg {
-		stored, _, err := postings.Form(context.Background(), postingID)
+		stored, err := postings.Form(context.Background(), postingID)
 		if errors.Is(err, store.ErrNotFound) {
 			return applicationFormLoadedMsg{postingID: postingID}
 		}
@@ -154,7 +154,7 @@ func loadApplicationForm(postings *service.PostingService, postingID int64) tea.
 			return applicationFormLoadedMsg{postingID: postingID, err: err}
 		}
 		var form jobboard.ApplicationForm
-		if err := json.Unmarshal([]byte(stored), &form); err != nil {
+		if err := json.Unmarshal([]byte(stored.JSON), &form); err != nil {
 			return applicationFormLoadedMsg{postingID: postingID, err: fmt.Errorf("tui: decode stored application form: %w", err)}
 		}
 		return applicationFormLoadedMsg{postingID: postingID, form: &form}

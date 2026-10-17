@@ -204,7 +204,7 @@ type postingService interface {
 	Interested(ctx context.Context) ([]posting.Interested, error)
 	CountOpenByCompany(ctx context.Context) (map[int64]int, error)
 	Markup(ctx context.Context, postingID int64) (posting.Markup, error)
-	Form(ctx context.Context, postingID int64) (formJSON string, fetchedAt time.Time, err error)
+	Form(ctx context.Context, postingID int64) (posting.Form, error)
 	SaveForm(ctx context.Context, postingID int64, formJSON string) error
 	Application(ctx context.Context, postingID int64) (application.Application, error)
 	ApplyTo(ctx context.Context, postingID int64) (application.Application, error)

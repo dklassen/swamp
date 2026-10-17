@@ -43,14 +43,14 @@ const formMaxAge = 7 * 24 * time.Hour
 // A board with no fetcher (Ashby, Lever) gets the form entered by hand in
 // the TUI (#184), however old, or nil if none was.
 func (st *Stage) applicationForm(ctx context.Context, posting posting.Posting, company company.Company) (form *jobboard.ApplicationForm, formErr string, err error) {
-	stored, fetchedAt, err := st.postings.Form(ctx, posting.ID)
+	stored, err := st.postings.Form(ctx, posting.ID)
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, "", fmt.Errorf("stage: %w", err)
 	}
 	var storedForm *jobboard.ApplicationForm
 	if err == nil {
 		var f jobboard.ApplicationForm
-		if err := json.Unmarshal([]byte(stored), &f); err != nil {
+		if err := json.Unmarshal([]byte(stored.JSON), &f); err != nil {
 			return nil, "", fmt.Errorf("stage: decode stored application form: %w", err)
 		}
 		storedForm = &f
@@ -60,7 +60,7 @@ func (st *Stage) applicationForm(ctx context.Context, posting posting.Posting, c
 	if !ok {
 		return storedForm, "", nil
 	}
-	if storedForm != nil && st.now().Sub(fetchedAt) < formMaxAge {
+	if storedForm != nil && st.now().Sub(stored.FetchedAt) < formMaxAge {
 		return storedForm, "", nil
 	}
 

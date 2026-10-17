@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"slices"
-	"time"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -66,7 +65,7 @@ type markupWriter interface {
 }
 
 type formViewer interface {
-	Get(ctx context.Context, r store.Runner, postingID int64) (formJSON string, fetchedAt time.Time, err error)
+	Get(ctx context.Context, r store.Runner, postingID int64) (posting.Form, error)
 }
 
 type formWriter interface {
@@ -280,9 +279,9 @@ func (service *PostingService) SaveForm(ctx context.Context, postingID int64, fo
 	return service.formWriter.Save(ctx, service.db, postingID, formJSON)
 }
 
-// Form returns the posting's stored application form JSON and when it was
-// fetched, or store.ErrNotFound when it was never fetched.
-func (service *PostingService) Form(ctx context.Context, postingID int64) (formJSON string, fetchedAt time.Time, err error) {
+// Form returns the posting's stored application form, or
+// store.ErrNotFound when it was never fetched.
+func (service *PostingService) Form(ctx context.Context, postingID int64) (posting.Form, error) {
 	return service.formViewer.Get(ctx, service.db, postingID)
 }
 
