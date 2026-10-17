@@ -222,20 +222,6 @@ func (repository *PostingRepository) Reopen(ctx context.Context, r store.Runner,
 	return n > 0, err
 }
 
-// MarkClosed closes a posting whatever its listing status.
-func (repository *PostingRepository) MarkClosed(ctx context.Context, r store.Runner, id int64) error {
-	return store.Write(ctx, r, func(q *sqlcdb.Queries) error {
-		return q.MarkPostingClosed(ctx, id)
-	})
-}
-
-// MarkReopened opens a posting whatever its listing status.
-func (repository *PostingRepository) MarkReopened(ctx context.Context, r store.Runner, id int64) error {
-	return store.Write(ctx, r, func(q *sqlcdb.Queries) error {
-		return q.MarkPostingReopened(ctx, id)
-	})
-}
-
 // Departments returns the distinct, non-empty department values across a
 // company's postings -- the keyspace to offer when picking department
 // filter values, since department is a company-specific vocabulary, not a

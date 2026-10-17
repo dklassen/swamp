@@ -18,7 +18,7 @@ SET listing_status = 'closed', updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND listing_status = 'open'
 `
 
-// Conditional, unlike MarkPostingClosed: 0 rows affected means the
+// 0 rows affected means the
 // posting was already closed (e.g. by an overlapping sync), so the
 // caller records nothing (see store.ClosePosting, #147).
 func (q *Queries) ClosePostingIfOpen(ctx context.Context, id int64) (int64, error) {
@@ -487,28 +487,6 @@ func (q *Queries) ListPostingsByCompany(ctx context.Context, companyID int64) ([
 	return items, nil
 }
 
-const markPostingClosed = `-- name: MarkPostingClosed :exec
-UPDATE postings
-SET listing_status = 'closed', updated_at = CURRENT_TIMESTAMP
-WHERE id = ?
-`
-
-func (q *Queries) MarkPostingClosed(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, markPostingClosed, id)
-	return err
-}
-
-const markPostingReopened = `-- name: MarkPostingReopened :exec
-UPDATE postings
-SET listing_status = 'open', updated_at = CURRENT_TIMESTAMP
-WHERE id = ?
-`
-
-func (q *Queries) MarkPostingReopened(ctx context.Context, id int64) error {
-	_, err := q.db.ExecContext(ctx, markPostingReopened, id)
-	return err
-}
-
 const markPostingsSeen = `-- name: MarkPostingsSeen :exec
 UPDATE postings
 SET last_seen_at = CURRENT_TIMESTAMP
@@ -540,7 +518,7 @@ SET listing_status = 'open', updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND listing_status = 'closed'
 `
 
-// Conditional, unlike MarkPostingReopened: 0 rows affected means the
+// 0 rows affected means the
 // posting was already open again (e.g. reopened by an overlapping sync),
 // so the caller records nothing (see store.ReopenPosting, #148).
 func (q *Queries) ReopenPostingIfClosed(ctx context.Context, id int64) (int64, error) {
@@ -1267,7 +1245,7 @@ type UpdatePostingParams struct {
 
 // Updates ingested content fields only. Deliberately does not touch
 // listing_status: transitions between open/closed are explicit domain
-// decisions (see MarkPostingClosed/MarkPostingReopened), not a side effect
+// decisions (see ClosePostingIfOpen/ReopenPostingIfClosed), not a side effect
 // of re-ingesting content. Does not touch company_id: a given (source,
 // source_id) is assumed to belong to the same company for its lifetime.
 func (q *Queries) UpdatePosting(ctx context.Context, arg UpdatePostingParams) (Posting, error) {

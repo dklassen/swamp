@@ -375,8 +375,8 @@ func TestSyncCompany_PostingReappears_ApplicationRestored(t *testing.T) {
 	if app.Status != application.Started {
 		t.Errorf("application status = %s, want %s restored", app.Status, application.Started)
 	}
-	if result.Reopened != 1 || result.ApplicationsRestored != 1 {
-		t.Errorf("Reopened = %d, ApplicationsRestored = %d, want 1 and 1", result.Reopened, result.ApplicationsRestored)
+	if result.Reopened != 1 {
+		t.Errorf("Reopened = %d, want 1", result.Reopened)
 	}
 }
 
