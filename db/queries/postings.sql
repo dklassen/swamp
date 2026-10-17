@@ -9,7 +9,7 @@ RETURNING *;
 -- name: UpdatePosting :one
 -- Updates ingested content fields only. Deliberately does not touch
 -- listing_status: transitions between open/closed are explicit domain
--- decisions (see MarkPostingClosed/MarkPostingReopened), not a side effect
+-- decisions (see ClosePostingIfOpen/ReopenPostingIfClosed), not a side effect
 -- of re-ingesting content. Does not touch company_id: a given (source,
 -- source_id) is assumed to belong to the same company for its lifetime.
 UPDATE postings
@@ -47,13 +47,8 @@ SELECT * FROM postings
 WHERE company_id = ?
 ORDER BY first_seen_at DESC, id DESC;
 
--- name: MarkPostingClosed :exec
-UPDATE postings
-SET listing_status = 'closed', updated_at = CURRENT_TIMESTAMP
-WHERE id = ?;
-
 -- name: ClosePostingIfOpen :execrows
--- Conditional, unlike MarkPostingClosed: 0 rows affected means the
+-- 0 rows affected means the
 -- posting was already closed (e.g. by an overlapping sync), so the
 -- caller records nothing (see store.ClosePosting, #147).
 UPDATE postings
@@ -61,17 +56,12 @@ SET listing_status = 'closed', updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND listing_status = 'open';
 
 -- name: ReopenPostingIfClosed :execrows
--- Conditional, unlike MarkPostingReopened: 0 rows affected means the
+-- 0 rows affected means the
 -- posting was already open again (e.g. reopened by an overlapping sync),
 -- so the caller records nothing (see store.ReopenPosting, #148).
 UPDATE postings
 SET listing_status = 'open', updated_at = CURRENT_TIMESTAMP
 WHERE id = ? AND listing_status = 'closed';
-
--- name: MarkPostingReopened :exec
-UPDATE postings
-SET listing_status = 'open', updated_at = CURRENT_TIMESTAMP
-WHERE id = ?;
 
 -- name: ListDistinctDepartmentsForCompany :many
 -- Keyspace discovery for filter selection: department is a company-

@@ -26,7 +26,7 @@ func TestPostingService_ApplyTo_ClosedPosting_Refused(t *testing.T) {
 	ctx := context.Background()
 	postings := s.Postings
 	p := testutil.MustIngestPosting(t, s, "job-1", "Software Engineer")
-	if _, _, err := postings.Close(ctx, p.ID, nil); err != nil {
+	if err := postings.Close(ctx, p.ID, nil); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 
@@ -88,12 +88,8 @@ func TestPostingService_Close_KeepsSubmittedThenClosedInHistory(t *testing.T) {
 		t.Fatalf("SetStatus: %v", err)
 	}
 
-	_, ended, err := s.Postings.Close(ctx, p.ID, []application.Status{application.Started, application.Submitted})
-	if err != nil {
+	if err := s.Postings.Close(ctx, p.ID, []application.Status{application.Started, application.Submitted}); err != nil {
 		t.Fatalf("Close: %v", err)
-	}
-	if !ended {
-		t.Fatal("Close did not end the application")
 	}
 
 	history, err := applications.History(ctx, app.ID)
@@ -207,7 +203,7 @@ func TestPostingService_Ingest_NewContentOnAClosedPosting_LeavesItClosed(t *test
 	ctx := context.Background()
 	postings := s.Postings
 	p := testutil.MustIngestPosting(t, s, "job-1", "Software Engineer")
-	if _, _, err := postings.Close(ctx, p.ID, nil); err != nil {
+	if err := postings.Close(ctx, p.ID, nil); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
 	closed, err := postings.Get(ctx, p.ID)
@@ -313,16 +309,15 @@ func TestPostingService_Ingest_ContentHashFollowsTheDescribedRole(t *testing.T) 
 func TestPostingService_Reopen(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
-		name         string
-		closed       bool
-		wantReopened bool
-		wantHistory  []string
+		name        string
+		closed      bool
+		wantHistory []string
 	}{
 		{
-			name: "closed: reopened with history", closed: true, wantReopened: true,
+			name: "closed: reopened with history", closed: true,
 			wantHistory: []string{posting.ChangeClosed, posting.ChangeReopened},
 		},
-		{name: "already open: changes nothing", closed: false, wantReopened: false},
+		{name: "already open: changes nothing", closed: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -333,7 +328,7 @@ func TestPostingService_Reopen(t *testing.T) {
 			open := testutil.MustIngestPosting(t, s, "job-1", "Software Engineer")
 			before := open
 			if tt.closed {
-				if _, _, err := postings.Close(ctx, open.ID, nil); err != nil {
+				if err := postings.Close(ctx, open.ID, nil); err != nil {
 					t.Fatalf("Close: %v", err)
 				}
 				var err error
@@ -342,12 +337,8 @@ func TestPostingService_Reopen(t *testing.T) {
 				}
 			}
 
-			reopened, _, err := postings.Reopen(ctx, open.ID)
-			if err != nil {
+			if err := postings.Reopen(ctx, open.ID); err != nil {
 				t.Fatalf("Reopen: %v", err)
-			}
-			if reopened != tt.wantReopened {
-				t.Errorf("Reopen reopened = %v, want %v", reopened, tt.wantReopened)
 			}
 			after, err := postings.Get(ctx, open.ID)
 			if err != nil {
@@ -454,7 +445,7 @@ func TestPostingService_Interested_ExcludesClosedDeletedAndFilteredOut(t *testin
 		hide func(t *testing.T, s testutil.TestApp, companyID, postingID int64)
 	}{
 		{"closed posting", func(t *testing.T, s testutil.TestApp, _, postingID int64) {
-			if _, _, err := s.Postings.Close(context.Background(), postingID, nil); err != nil {
+			if err := s.Postings.Close(context.Background(), postingID, nil); err != nil {
 				t.Fatalf("Close: %v", err)
 			}
 		}},

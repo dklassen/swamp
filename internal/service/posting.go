@@ -316,75 +316,64 @@ func (service *PostingService) ApplyTo(ctx context.Context, postingID int64) (ap
 // Close closes an open posting, records a "closed" snapshot of it as it
 // was, and ends its application when that is at one of endFrom, all in one
 // transaction: an interruption between them would leave the application
-// open for good, since the next sync only looks at open postings. closed
-// is false, and nothing changes, when the posting was already closed.
-func (service *PostingService) Close(ctx context.Context, postingID int64, endFrom []application.Status) (closed, applicationEnded bool, err error) {
-	err = store.InTx(ctx, service.db, func(tx store.Tx) error {
+// open for good, since the next sync only looks at open postings. Nothing
+// changes when the posting was already closed.
+func (service *PostingService) Close(ctx context.Context, postingID int64, endFrom []application.Status) error {
+	return store.InTx(ctx, service.db, func(tx store.Tx) error {
 		before, err := service.postingViewer.Get(ctx, tx, postingID)
 		if err != nil {
 			return fmt.Errorf("posting: get posting to close: %w", err)
 		}
-		if closed, err = service.postingStatusWriter.Close(ctx, tx, postingID); err != nil || !closed {
+		if closed, err := service.postingStatusWriter.Close(ctx, tx, postingID); err != nil || !closed {
 			return err
 		}
 		if _, err := service.postingHistoryWriter.Insert(ctx, tx, before, posting.ChangeClosed); err != nil {
 			return err
 		}
-		applicationEnded, err = service.endApplication(ctx, tx, postingID, endFrom)
-		return err
+		return service.endApplication(ctx, tx, postingID, endFrom)
 	})
-	if err != nil {
-		return false, false, err
-	}
-	return closed, applicationEnded, nil
 }
 
 // Reopen marks a closed posting open again, records a "reopened" snapshot
 // of it as it was just before, and undoes what Close did to its
-// application, all in one transaction. reopened is false, and nothing
-// changes, when the posting was already open.
-func (service *PostingService) Reopen(ctx context.Context, postingID int64) (reopened, applicationRestored bool, err error) {
-	err = store.InTx(ctx, service.db, func(tx store.Tx) error {
+// application, all in one transaction. Nothing changes when the posting
+// was already open.
+func (service *PostingService) Reopen(ctx context.Context, postingID int64) error {
+	return store.InTx(ctx, service.db, func(tx store.Tx) error {
 		before, err := service.postingViewer.Get(ctx, tx, postingID)
 		if err != nil {
 			return fmt.Errorf("posting: get posting to reopen: %w", err)
 		}
-		if reopened, err = service.postingStatusWriter.Reopen(ctx, tx, postingID); err != nil || !reopened {
+		if reopened, err := service.postingStatusWriter.Reopen(ctx, tx, postingID); err != nil || !reopened {
 			return err
 		}
 		if _, err := service.postingHistoryWriter.Insert(ctx, tx, before, posting.ChangeReopened); err != nil {
 			return err
 		}
-		applicationRestored, err = service.restoreApplication(ctx, tx, postingID)
-		return err
+		return service.restoreApplication(ctx, tx, postingID)
 	})
-	if err != nil {
-		return false, false, err
-	}
-	return reopened, applicationRestored, nil
 }
 
 // endApplication moves postingID's application, if it has one at a status
-// in from, to posting_closed, recorded as sync's change. ended is false
-// when there is no application or its status isn't in from.
-func (service *PostingService) endApplication(ctx context.Context, tx store.Tx, postingID int64, from []application.Status) (ended bool, err error) {
+// in from, to posting_closed, recorded as sync's change.
+func (service *PostingService) endApplication(ctx context.Context, tx store.Tx, postingID int64, from []application.Status) error {
 	app, err := service.applicationViewer.GetByPostingID(ctx, tx, postingID)
 	if errors.Is(err, store.ErrNotFound) {
-		return false, nil
+		return nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("application: end for closed posting %d: %w", postingID, err)
+		return fmt.Errorf("application: end for closed posting %d: %w", postingID, err)
 	}
 	if !slices.Contains(from, app.Status) {
-		return false, nil
+		return nil
 	}
 	if _, err := service.applicationWriter.SetStatus(ctx, tx, app.ID, application.PostingClosed); err != nil {
-		return false, fmt.Errorf("application: end for closed posting %d: %w", postingID, err)
+		return fmt.Errorf("application: end for closed posting %d: %w", postingID, err)
 	}
 	if err := service.applicationHistoryWriter.Insert(ctx, tx, app.ID, application.PostingClosed, application.ChangedBySync); err != nil {
-		return false, fmt.Errorf("application: end for closed posting %d: %w", postingID, err)
+		return fmt.Errorf("application: end for closed posting %d: %w", postingID, err)
 	}
-	return true, nil
+	return nil
 }
 
 // restoreApplication undoes endApplication when the posting reopens: an
@@ -393,33 +382,33 @@ func (service *PostingService) endApplication(ctx context.Context, tx store.Tx, 
 // application's latest change -- a posting_closed the user set, or any
 // status the user set since, is left alone, and so is a close recorded
 // before history said who made it.
-func (service *PostingService) restoreApplication(ctx context.Context, tx store.Tx, postingID int64) (restored bool, err error) {
+func (service *PostingService) restoreApplication(ctx context.Context, tx store.Tx, postingID int64) error {
 	app, err := service.applicationViewer.GetByPostingID(ctx, tx, postingID)
 	if errors.Is(err, store.ErrNotFound) {
-		return false, nil
+		return nil
 	}
 	if err != nil {
-		return false, fmt.Errorf("application: restore for reopened posting %d: %w", postingID, err)
+		return fmt.Errorf("application: restore for reopened posting %d: %w", postingID, err)
 	}
 	history, err := service.applicationHistoryViewer.List(ctx, tx, app.ID)
 	if err != nil {
-		return false, fmt.Errorf("application: restore for reopened posting %d: %w", postingID, err)
+		return fmt.Errorf("application: restore for reopened posting %d: %w", postingID, err)
 	}
 	if len(history) < 2 {
-		return false, nil
+		return nil
 	}
 	last := history[len(history)-1]
 	if app.Status != application.PostingClosed ||
 		last.Status != application.PostingClosed ||
 		last.ChangedBy != application.ChangedBySync {
-		return false, nil
+		return nil
 	}
 	previous := history[len(history)-2].Status
 	if _, err := service.applicationWriter.SetStatus(ctx, tx, app.ID, previous); err != nil {
-		return false, fmt.Errorf("application: restore for reopened posting %d: %w", postingID, err)
+		return fmt.Errorf("application: restore for reopened posting %d: %w", postingID, err)
 	}
 	if err := service.applicationHistoryWriter.Insert(ctx, tx, app.ID, previous, application.ChangedBySync); err != nil {
-		return false, fmt.Errorf("application: restore for reopened posting %d: %w", postingID, err)
+		return fmt.Errorf("application: restore for reopened posting %d: %w", postingID, err)
 	}
-	return true, nil
+	return nil
 }

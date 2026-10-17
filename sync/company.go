@@ -148,16 +148,10 @@ func (s *Syncer) ingest(ctx context.Context, company company.Company, fetched []
 			result.Updated++
 		}
 		if ingested.Posting.ListingStatus == "closed" {
-			reopened, applicationRestored, err := s.postings.Reopen(ctx, ingested.Posting.ID)
-			if err != nil {
+			if err := s.postings.Reopen(ctx, ingested.Posting.ID); err != nil {
 				return result, fmt.Errorf("sync: reopen posting: %w", err)
 			}
-			if reopened {
-				result.Reopened++
-			}
-			if applicationRestored {
-				result.ApplicationsRestored++
-			}
+			result.Reopened++
 		}
 	}
 	return result, nil
