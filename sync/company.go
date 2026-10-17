@@ -58,31 +58,27 @@ func toIngestedFields(p jobboard.Posting) posting.IngestedFields {
 //     between them it's left updated but still closed, a valid state;
 //   - the close pass not run, so no posting is closed;
 //   - the company not marked fetched, so "last fetched" stays stale;
-//   - Result counting only what ran. Callers report the error, not the
-//     counts.
+//   - no Result: callers report the error.
 //
 // Every write is conditional and safe to repeat, so the next clean sync
 // finishes the job.
-func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result Result, err error) {
-	result = Result{CompanyID: companyID}
-
+func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result *Result, err error) {
 	company, err := s.companies.Get(ctx, companyID)
 	if err != nil {
-		return result, fmt.Errorf("sync: get company: %w", err)
+		return nil, fmt.Errorf("sync: get company: %w", err)
 	}
-	result.Name = company.Name
 	fetcher, ok := s.fetchers[company.Source]
 	if !ok {
-		return result, fmt.Errorf("sync: unsupported source %q", company.Source)
+		return nil, fmt.Errorf("sync: unsupported source %q", company.Source)
 	}
 
 	token := rand.Text()
 	taken, err := s.companies.AcquireSyncLease(ctx, companyID, token, s.cfg.LeaseTimeout)
 	if err != nil {
-		return result, fmt.Errorf("sync: %w", err)
+		return nil, fmt.Errorf("sync: %w", err)
 	}
 	if !taken {
-		return result, ErrSyncInProgress
+		return nil, ErrSyncInProgress
 	}
 	s.trackLease(token, companyID)
 	defer func() {
@@ -91,11 +87,15 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result Resul
 		// cancelled. If this fails the lease stays held until it expires,
 		// which is worth reporting.
 		if releaseErr := s.companies.ReleaseSyncLease(context.WithoutCancel(ctx), companyID, token); releaseErr != nil {
-			err = errors.Join(err, fmt.Errorf("sync: %w", releaseErr))
+			result, err = nil, errors.Join(err, fmt.Errorf("sync: %w", releaseErr))
 		}
 	}()
 
-	return s.syncHeld(ctx, *company, fetcher, result)
+	held, err := s.syncHeld(ctx, *company, fetcher, Result{CompanyID: companyID, Name: company.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &held, nil
 }
 
 // syncHeld is SyncCompany's work once it holds the company's lease: fetch,

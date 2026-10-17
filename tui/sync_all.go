@@ -59,10 +59,10 @@ type syncAllStepMsg struct {
 func syncAllStep(syncer *sync.Syncer, runID int, company company.Company) tea.Cmd {
 	return func() tea.Msg {
 		result, err := syncer.SyncCompany(context.Background(), company.ID)
-		result.CompanyID = company.ID
-		result.Name = company.Name
-		result.Err = err
-		return syncAllStepMsg{runID: runID, result: result}
+		if err != nil {
+			return syncAllStepMsg{runID: runID, result: sync.Result{CompanyID: company.ID, Name: company.Name, Err: err}}
+		}
+		return syncAllStepMsg{runID: runID, result: *result}
 	}
 }
 

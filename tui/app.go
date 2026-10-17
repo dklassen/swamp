@@ -642,14 +642,18 @@ func updateCompanyName(companies *service.CompanyService, companyID int64, name 
 }
 
 type companyRefreshedMsg struct {
+	name   string
 	result sync.Result
 	err    error
 }
 
-func refreshCompany(syncer *sync.Syncer, companyID int64) tea.Cmd {
+func refreshCompany(syncer *sync.Syncer, company company.Company) tea.Cmd {
 	return func() tea.Msg {
-		result, err := syncer.SyncCompany(context.Background(), companyID)
-		return companyRefreshedMsg{result: result, err: err}
+		result, err := syncer.SyncCompany(context.Background(), company.ID)
+		if err != nil {
+			return companyRefreshedMsg{name: company.Name, err: err}
+		}
+		return companyRefreshedMsg{name: company.Name, result: *result}
 	}
 }
 
@@ -659,7 +663,7 @@ func refreshCompany(syncer *sync.Syncer, companyID int64) tea.Cmd {
 func (a *App) startRefresh(company company.Company) tea.Cmd {
 	a.refreshing++
 	a.refreshingName = company.Name
-	return tea.Batch(refreshCompany(a.syncer, company.ID), a.refreshSpinner.Tick)
+	return tea.Batch(refreshCompany(a.syncer, company), a.refreshSpinner.Tick)
 }
 
 type postingMarkupUpdatedMsg struct {
@@ -1107,7 +1111,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Another sync of this company (e.g. a scheduled `swamp fetch`)
 			// is running; this one fetched and wrote nothing (#150).
 			a.err = nil
-			a.status = msg.result.Name + " is already syncing elsewhere; try again in a moment"
+			a.status = msg.name + " is already syncing elsewhere; try again in a moment"
 			break
 		}
 		a.err = msg.err
