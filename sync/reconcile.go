@@ -4,10 +4,9 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/store"
 )
 
 // closeMissing reconciles the company's stored postings with the fetch:
@@ -15,13 +14,13 @@ import (
 // then closes each open one it didn't, ending its application if that is
 // still at one of earlyApplicationStatuses. "Missing" is decided from the
 // fetch, not from what ingest saved. It stops at the first error.
-func (s *Syncer) closeMissing(ctx context.Context, company store.Company, fetched []jobboard.Posting, result Result) (Result, error) {
+func (s *Syncer) closeMissing(ctx context.Context, company company.Company, fetched []jobboard.Posting, result Result) (Result, error) {
 	seenSourceIDs := make(map[string]bool, len(fetched))
 	for _, p := range fetched {
 		seenSourceIDs[p.SourceID] = true
 	}
 
-	existingPostings, err := s.store.ListPostingsByCompany(ctx, company.ID)
+	existingPostings, err := s.postings.ListByCompany(ctx, company.ID)
 	if err != nil {
 		return result, fmt.Errorf("sync: list existing postings: %w", err)
 	}
@@ -33,14 +32,14 @@ func (s *Syncer) closeMissing(ctx context.Context, company store.Company, fetche
 	}
 	// Every stored posting the board listed, including ones the filters
 	// now leave out: last_seen_at is when the board last listed it (#176).
-	if err := s.store.MarkPostingsSeen(ctx, seen); err != nil {
+	if err := s.postings.MarkSeen(ctx, seen); err != nil {
 		return result, fmt.Errorf("sync: mark postings seen: %w", err)
 	}
 	for _, existing := range existingPostings {
 		if existing.ListingStatus != "open" || seenSourceIDs[existing.SourceID] {
 			continue
 		}
-		closed, applicationEnded, err := closePosting(ctx, s.store, existing.ID, earlyApplicationStatuses)
+		closed, applicationEnded, err := s.postings.Close(ctx, existing.ID, earlyApplicationStatuses)
 		if err != nil {
 			return result, fmt.Errorf("sync: close posting: %w", err)
 		}
@@ -54,26 +53,6 @@ func (s *Syncer) closeMissing(ctx context.Context, company store.Company, fetche
 	return result, nil
 }
 
-// closePosting closes a posting and, if it really closed, ends its
-// application when that is at one of endFrom (sync passes
-// earlyApplicationStatuses), in one transaction: an interruption between
-// the two would leave the application open for good, since the next sync
-// only looks at open postings.
-func closePosting(ctx context.Context, st *store.Store, postingID int64, endFrom []applicationstatus.Status) (closed, applicationEnded bool, err error) {
-	err = store.InTx(ctx, st.DB(), func(tx store.Tx) error {
-		var err error
-		if closed, err = store.ClosePosting(ctx, tx, postingID); err != nil || !closed {
-			return err
-		}
-		applicationEnded, err = application.EndForPosting(ctx, tx, postingID, endFrom)
-		return err
-	})
-	if err != nil {
-		return false, false, err
-	}
-	return closed, applicationEnded, nil
-}
-
 // earlyApplicationStatuses are the statuses from which a posting being
 // taken down ends the application. Deliberately not every non-terminal
 // status: a company routinely pulls a listing while still interviewing
@@ -85,11 +64,11 @@ func closePosting(ctx context.Context, st *store.Store, postingID int64, endFrom
 // being reviewed. Only an application never sent can no longer be.
 //
 // Closing a posting's application, and undoing that when the posting
-// reappears (reopenPosting), are the only places sync reaches
+// reappears (PostingService.Reopen), are the only places sync reaches
 // past postings and posting history into application state, a deliberate
 // widening of what a sync does. The policy stays
-// here; closePosting applies it in the same transaction that closes the
+// here; PostingService.Close applies it in the same transaction that closes the
 // posting.
-var earlyApplicationStatuses = []applicationstatus.Status{
-	applicationstatus.Started,
+var earlyApplicationStatuses = []application.Status{
+	application.Started,
 }

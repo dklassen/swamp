@@ -7,8 +7,8 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/store"
 )
 
 func fieldNames(t reflect.Type) []string {
@@ -22,7 +22,7 @@ func fieldNames(t reflect.Type) []string {
 
 // TestIngestedFields_CoversEveryPostingField guards the single place
 // #57's mapping now depends on: a field added to jobboard.Posting (a new
-// piece of source-agnostic content) but not to store.IngestedFields
+// piece of source-agnostic content) but not to posting.IngestedFields
 // would silently never reach storage, since toIngestedFields has no
 // per-field code left to forget. SourceID is excluded -- it identifies
 // the posting rather than being ingested content, and lives directly on
@@ -36,9 +36,9 @@ func TestIngestedFields_CoversEveryPostingField(t *testing.T) {
 		}
 	}
 
-	got := fieldNames(reflect.TypeOf(store.IngestedFields{}))
+	got := fieldNames(reflect.TypeOf(posting.IngestedFields{}))
 
 	if diff := cmp.Diff(want, got); diff != "" {
-		t.Fatalf("store.IngestedFields fields != jobboard.Posting fields (-want +got):\n%s", diff)
+		t.Fatalf("posting.IngestedFields fields != jobboard.Posting fields (-want +got):\n%s", diff)
 	}
 }

@@ -19,10 +19,11 @@ import (
 	"github.com/google/jsonschema-go/jsonschema"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
-	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/cursor"
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/scoring"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/sync"
 )
@@ -112,7 +113,7 @@ type listPostingsOutput struct {
 }
 
 // The output type parameter is 'any' rather than []stage.Candidate: the
-// SDK's automatic JSON Schema inference panics on store.Posting's shape
+// SDK's automatic JSON Schema inference panics on posting.Posting's shape
 // (it embeds IngestedFields, which has an OptionalTime field whose custom
 // MarshalJSON returns a JSON string -- the inference library requires
 // embedded-struct fields with custom marshalers to marshal to an object).
@@ -168,7 +169,7 @@ func searchPostingsInputSchema() *jsonschema.Schema {
 		panic(fmt.Sprintf("mcpserver: infer search_postings input schema: %v", err))
 	}
 	var statuses []any
-	for _, status := range applicationstatus.All() {
+	for _, status := range application.All() {
 		statuses = append(statuses, status.String())
 	}
 	schema.Properties["ApplicationStatuses"].Items.Enum = statuses
@@ -184,14 +185,14 @@ func searchPostingsInputSchema() *jsonschema.Schema {
 	return schema
 }
 
-// Out is 'any': stage.SearchMatch carries applicationstatus.Status, whose
+// Out is 'any': stage.SearchMatch carries application.Status, whose
 // MarshalJSON writes a string where schema inference would see an
 // integer (the same problem listPostingsHandler works around).
 func searchPostingsHandler(st *stage.Stage) mcp.ToolHandlerFor[searchPostingsInput, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in searchPostingsInput) (*mcp.CallToolResult, any, error) {
-		statuses := make([]applicationstatus.Status, len(in.ApplicationStatuses))
+		statuses := make([]application.Status, len(in.ApplicationStatuses))
 		for i, name := range in.ApplicationStatuses {
-			status, err := applicationstatus.Parse(name)
+			status, err := application.ParseStatus(name)
 			if err != nil {
 				return nil, nil, fmt.Errorf("search_postings: %w", err)
 			}
@@ -226,7 +227,7 @@ type stagePrepareInput struct {
 }
 
 // Out is 'any' for the same reason as listPostingsHandler: stage.Prepared
-// embeds store.Posting, which trips the SDK's schema-inference panic on
+// embeds posting.Posting, which trips the SDK's schema-inference panic on
 // OptionalTime's custom string marshaling.
 func stagePrepareHandler(st *stage.Stage) mcp.ToolHandlerFor[stagePrepareInput, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in stagePrepareInput) (*mcp.CallToolResult, any, error) {
@@ -276,14 +277,14 @@ type recordScoresInput struct {
 }
 
 // recordScoresOutputSchema advertises a refusal's Why as its name, one of
-// scoring's refusals: inferred, it would be scoring.Refusal's int.
+// score.Refusals(): inferred, it would be score.Refusal's int.
 func recordScoresOutputSchema() *jsonschema.Schema {
 	schema, err := jsonschema.For[stage.RecordResult](nil)
 	if err != nil {
 		panic(fmt.Sprintf("mcpserver: infer record_scores output schema: %v", err))
 	}
 	var names []any
-	for _, refusal := range scoring.Refusals() {
+	for _, refusal := range score.Refusals() {
 		names = append(names, refusal.String())
 	}
 	schema.Properties["Refused"].Items.Properties["Why"] = &jsonschema.Schema{Type: "string", Enum: names}
@@ -306,9 +307,9 @@ func recordScoresHandler(st *stage.Stage) mcp.ToolHandlerFor[recordScoresInput, 
 }
 
 type writeDocumentInput struct {
-	ApplicationID int64          `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
-	DocumentType  documents.Type `json:"DocumentType" jsonschema:"the document type: one of the keys of stage_prepare's Documents"`
-	Content       string         `json:"Content" jsonschema:"the full document content to write, replacing whatever is there"`
+	ApplicationID int64         `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
+	DocumentType  document.Type `json:"DocumentType" jsonschema:"the document type: one of the keys of stage_prepare's Documents"`
+	Content       string        `json:"Content" jsonschema:"the full document content to write, replacing whatever is there"`
 	// A pointer so an empty value is refused rather than taken for omitted,
 	// which writes unconditionally.
 	ReplacesVersion *string `json:"ReplacesVersion,omitempty" jsonschema:"the Version this write replaces: from the read_document or stage_prepare you drafted from, which is no_document_yet when the document doesn't exist yet; the write is refused if the document changed since. Omit only when the user asked to overwrite regardless"`
@@ -339,7 +340,7 @@ func writeDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[writeDocumentInput
 // use into what to do next; consequence says what the call didn't do, if
 // anything. An agent may hold an ID from long ago, so "deleted" and
 // "never existed" get different advice.
-func documentToolError(tool string, applicationID int64, documentType documents.Type, consequence string, err error) error {
+func documentToolError(tool string, applicationID int64, documentType document.Type, consequence string, err error) error {
 	var deleted *stage.ApplicationDeletedError
 	switch {
 	case errors.As(err, &deleted):
@@ -356,8 +357,8 @@ func documentToolError(tool string, applicationID int64, documentType documents.
 }
 
 type readDocumentInput struct {
-	ApplicationID int64          `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
-	DocumentType  documents.Type `json:"DocumentType" jsonschema:"the document type: one of the keys of stage_prepare's Documents"`
+	ApplicationID int64         `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
+	DocumentType  document.Type `json:"DocumentType" jsonschema:"the document type: one of the keys of stage_prepare's Documents"`
 }
 
 type readDocumentOutput struct {
@@ -404,21 +405,21 @@ func readCanonicalHandler(tool, path string) mcp.ToolHandlerFor[readCanonicalInp
 }
 
 // documentInputSchema infers In's input schema, advertising any
-// documents.Type field as a string enum of documents.Types()'
+// document.Type field as a string enum of document.Types()'
 // names. Without the override, inference would see DocumentType's
 // underlying int and advertise an integer; the SDK validates arguments
 // against this schema before the handler runs, so an unknown value is a
-// tool error there. Decoding into documents.Type goes through its
+// tool error there. Decoding into document.Type goes through its
 // UnmarshalText. Panics like mcp.AddTool does on an uninferrable schema,
 // since that's a programming error caught at startup.
 func documentInputSchema[In any]() *jsonschema.Schema {
 	var names []any
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		names = append(names, documentType.String())
 	}
 	schema, err := jsonschema.For[In](&jsonschema.ForOptions{
 		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
-			reflect.TypeFor[documents.Type](): {Type: "string", Enum: names},
+			reflect.TypeFor[document.Type](): {Type: "string", Enum: names},
 		},
 	})
 	if err != nil {

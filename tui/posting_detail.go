@@ -8,27 +8,28 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/scoring"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/domain/score"
+	"github.com/dklassen/swamp/internal/service"
 )
 
 // postingDetailModel drives the posting-detail screen for a single
-// posting. It holds the store/documents it needs for its own commands,
+// posting. It holds the postings/documents it needs for its own commands,
 // the posting and application data it was constructed with (a snapshot,
 // not a live reference into App.applicationsByPosting -- App re-seeds
 // this model whenever that data changes, see App.Update), and its own
 // private viewport. No other screen reads or writes this state, and
 // this model never reaches into App's postings slice or cursor.
 type postingDetailModel struct {
-	store          *store.Store
+	postings       *service.PostingService
 	documents      *documents.Store
 	viewport       viewport.Model
 	width          int
 	help           string
-	posting        store.Posting
+	posting        posting.Posting
 	application    application.Application
 	hasApplication bool
 
@@ -42,15 +43,15 @@ type postingDetailModel struct {
 	canNavigateSiblings bool
 
 	// latestReviews holds the most recent DocumentReview per document
-	// type (keyed by documents.CoverLetter/documents.Resume),
+	// type (keyed by document.CoverLetter/document.Resume),
 	// loaded async via loadDocumentReviews the same way application
 	// itself is (#83) -- absent when not yet loaded,
 	// or nil when this posting has no application.
-	latestReviews map[documents.Type]docrecord.Review
+	latestReviews map[document.Type]document.Review
 
 	// scores is every score the posting was given, newest first; loaded
 	// async, and empty until then or when it has none.
-	scores []scoring.Score
+	scores []score.Score
 }
 
 // newPostingDetailModel returns a detail screen for p, sized to
@@ -59,11 +60,11 @@ type postingDetailModel struct {
 // data changes (navigating to a different posting, an application being
 // created/updated, or a window resize), matching the pre-extraction
 // showPostingDetail's "always rebuild, always reset scroll" behavior.
-func newPostingDetailModel(s *store.Store, docs *documents.Store, width, height int, p store.Posting, app application.Application, hasApp bool, latestReviews map[documents.Type]docrecord.Review, canNavigateSiblings bool) postingDetailModel {
+func newPostingDetailModel(postings *service.PostingService, docs *documents.Store, width, height int, p posting.Posting, app application.Application, hasApp bool, latestReviews map[document.Type]document.Review, canNavigateSiblings bool) postingDetailModel {
 	inner := detailInnerWidth(width)
 	help := indentLines(wrapToWidth(postingDetailHelp(canNavigateSiblings), inner), detailPadding)
 	vp := viewport.New(width, 0)
-	m := postingDetailModel{store: s, documents: docs, viewport: vp, width: width, help: help, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews, canNavigateSiblings: canNavigateSiblings}
+	m := postingDetailModel{postings: postings, documents: docs, viewport: vp, width: width, help: help, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews, canNavigateSiblings: canNavigateSiblings}
 	m.setContent()
 	m.setHeight(height)
 	return m
@@ -78,14 +79,14 @@ func (m *postingDetailModel) setContent() {
 }
 
 // setScores shows scores, newest first, keeping the scroll.
-func (m *postingDetailModel) setScores(scores []scoring.Score) {
+func (m *postingDetailModel) setScores(scores []score.Score) {
 	m.scores = scores
 	m.setContent()
 }
 
 // postingScoresSection is the posting's fit: its current score with its
 // reason and what gave it, then the earlier ones. Empty when it has none.
-func postingScoresSection(p store.Posting, scores []scoring.Score, width int) string {
+func postingScoresSection(p posting.Posting, scores []score.Score, width int) string {
 	if len(scores) == 0 {
 		return ""
 	}
@@ -107,7 +108,7 @@ func postingScoresSection(p store.Posting, scores []scoring.Score, width int) st
 }
 
 // scoredBy says when a score was given and by what.
-func scoredBy(s scoring.Score) string {
+func scoredBy(s score.Score) string {
 	by := s.ScoredAt.Local().Format("Jan 2") + " by " + s.Model
 	if s.ClientName != "" {
 		by += " (" + strings.TrimSpace(s.ClientName+" "+s.ClientVersion) + ")"
@@ -173,15 +174,15 @@ type navigatePostingMsg struct {
 // application-status-select screen, seeded from this application's
 // current status.
 type enterApplicationStatusMsg struct {
-	postingID int64
+	applicationID int64
 }
 
 // enterApplicationNotesMsg signals that App should switch to the
 // application-notes-edit screen, seeded from this application's current
 // notes.
 type enterApplicationNotesMsg struct {
-	postingID    int64
-	currentNotes string
+	applicationID int64
+	currentNotes  string
 }
 
 // enterDocumentReviewSelectMsg signals that App should switch to the
@@ -211,15 +212,15 @@ func (m *postingDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		}
 	case msg.String() == "a":
 		if !m.hasApplication {
-			return createApplication(m.store, m.posting.ID), nil
+			return createApplication(m.postings, m.posting.ID), nil
 		}
 	case msg.String() == "s":
 		if m.hasApplication {
-			return nil, enterApplicationStatusMsg{postingID: m.posting.ID}
+			return nil, enterApplicationStatusMsg{applicationID: m.application.ID}
 		}
 	case msg.String() == "n":
 		if m.hasApplication {
-			return nil, enterApplicationNotesMsg{postingID: m.posting.ID, currentNotes: m.application.Notes}
+			return nil, enterApplicationNotesMsg{applicationID: m.application.ID, currentNotes: m.application.Notes}
 		}
 	case msg.String() == "r":
 		if m.hasApplication {
@@ -247,7 +248,7 @@ func (m *postingDetailModel) View() string {
 // is active (see tea.WindowSizeMsg in App.Update).
 func (m *postingDetailModel) resize(width, height int) {
 	scores := m.scores
-	*m = newPostingDetailModel(m.store, m.documents, width, height, m.posting, m.application, m.hasApplication, m.latestReviews, m.canNavigateSiblings)
+	*m = newPostingDetailModel(m.postings, m.documents, width, height, m.posting, m.application, m.hasApplication, m.latestReviews, m.canNavigateSiblings)
 	m.setScores(scores)
 }
 

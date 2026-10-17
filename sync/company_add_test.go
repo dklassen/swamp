@@ -5,12 +5,13 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
 func TestAddCompany_NewValidBoard_CreatesCompanyWithDescription(t *testing.T) {
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
 	fetcher := &perBoardFetcher{
@@ -21,7 +22,7 @@ func TestAddCompany_NewValidBoard_CreatesCompanyWithDescription(t *testing.T) {
 			},
 		},
 	}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	const description = "Acme builds rockets for roadrunner enthusiasts."
 	got, err := syncer.AddCompany(ctx, "Acme", "ashby", "acme", description)
@@ -35,7 +36,7 @@ func TestAddCompany_NewValidBoard_CreatesCompanyWithDescription(t *testing.T) {
 		t.Errorf("OpenJobs = %d, want 2", got.OpenJobs)
 	}
 
-	stored, err := s.GetCompany(ctx, got.Company.ID)
+	stored, err := s.Companies.Get(ctx, got.Company.ID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
 	}
@@ -46,7 +47,7 @@ func TestAddCompany_NewValidBoard_CreatesCompanyWithDescription(t *testing.T) {
 		t.Errorf("stored Description = %q, want %q", stored.Description, description)
 	}
 
-	postings, err := s.ListPostingsByCompany(ctx, stored.ID)
+	postings, err := s.Postings.ListByCompany(ctx, stored.ID)
 	if err != nil {
 		t.Fatalf("ListPostingsByCompany: %v", err)
 	}
@@ -56,17 +57,17 @@ func TestAddCompany_NewValidBoard_CreatesCompanyWithDescription(t *testing.T) {
 }
 
 func TestAddCompany_BoardRejectsSlug_ReturnsErrorAndCreatesNothing(t *testing.T) {
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
 	fetcher := &perBoardFetcher{errBoards: map[string]error{"nope": errors.New("404 not found")}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	if _, err := syncer.AddCompany(ctx, "Nope", "ashby", "nope", "whatever"); err == nil {
 		t.Fatal("AddCompany error = nil, want an error for a slug the board rejects")
 	}
 
-	companies, err := s.ListActiveCompanies(ctx)
+	companies, err := s.Companies.ListActive(ctx)
 	if err != nil {
 		t.Fatalf("ListActiveCompanies: %v", err)
 	}
@@ -78,15 +79,15 @@ func TestAddCompany_BoardRejectsSlug_ReturnsErrorAndCreatesNothing(t *testing.T)
 // Deleting a company is the user's decision; an agent re-discovering it
 // mustn't quietly bring it back (unlike CreateCompany, which restores).
 func TestAddCompany_PreviouslyDeletedCompany_SkippedAndStaysDeleted(t *testing.T) {
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	if err := s.SoftDeleteCompany(ctx, acme.ID); err != nil {
+	if err := s.Companies.Delete(ctx, acme.ID); err != nil {
 		t.Fatalf("SoftDeleteCompany: %v", err)
 	}
 	fetcher := &perBoardFetcher{postings: map[string][]jobboard.Posting{"acme": nil}}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	got, err := syncer.AddCompany(ctx, "Acme", "ashby", "acme", "new description")
 	if err != nil {
@@ -99,7 +100,7 @@ func TestAddCompany_PreviouslyDeletedCompany_SkippedAndStaysDeleted(t *testing.T
 		t.Errorf("Company.ID = %d, want the deleted company's id %d", got.Company.ID, acme.ID)
 	}
 
-	if _, err := s.GetCompany(ctx, acme.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.Companies.Get(ctx, acme.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Fatalf("GetCompany after AddCompany error = %v, want ErrNotFound (still deleted)", err)
 	}
 }
@@ -119,17 +120,17 @@ func TestAddCompany_ActiveCompanyAlreadyExists_FillsOnlyMissingDescription(t *te
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			s := newTestStore(t)
+			s := testutil.NewTestApp(t)
 			ctx := context.Background()
 
 			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 			if tc.existing != "" {
-				if _, err := s.UpdateCompanyDescription(ctx, acme.ID, tc.existing); err != nil {
+				if _, err := s.Companies.SetDescription(ctx, acme.ID, tc.existing); err != nil {
 					t.Fatalf("UpdateCompanyDescription: %v", err)
 				}
 			}
 			fetcher := &perBoardFetcher{postings: map[string][]jobboard.Posting{"acme": nil}}
-			syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+			syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 			got, err := syncer.AddCompany(ctx, "Acme Renamed", "ashby", "acme", "new description")
 			if err != nil {
@@ -139,7 +140,7 @@ func TestAddCompany_ActiveCompanyAlreadyExists_FillsOnlyMissingDescription(t *te
 				t.Errorf("Outcome = %v, want AddCompanyAlreadyExists", got.Outcome)
 			}
 
-			stored, err := s.GetCompany(ctx, acme.ID)
+			stored, err := s.Companies.Get(ctx, acme.ID)
 			if err != nil {
 				t.Fatalf("GetCompany: %v", err)
 			}
@@ -149,7 +150,7 @@ func TestAddCompany_ActiveCompanyAlreadyExists_FillsOnlyMissingDescription(t *te
 			if stored.Name != "Acme" {
 				t.Errorf("Name = %q, want unchanged %q", stored.Name, "Acme")
 			}
-			companies, err := s.ListActiveCompanies(ctx)
+			companies, err := s.Companies.ListActive(ctx)
 			if err != nil {
 				t.Fatalf("ListActiveCompanies: %v", err)
 			}

@@ -7,7 +7,8 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/pursuit"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/posting"
 )
 
 // applicationDetailModel drives the application-detail screen: the place
@@ -15,16 +16,16 @@ import (
 // posting, editing the cover letter/resume in $EDITOR, and reviewing
 // each of them (see the #86 follow-up reorganizing the
 // active-applications ("application view") workflow). It holds only the
-// dependencies it needs for its own commands and the pursuit.Application it
+// dependencies it needs for its own commands and the posting.ActiveApplication it
 // was constructed with -- a snapshot, not a live reference into App's
 // activeApplications slice, refreshed by App whenever the underlying
 // data changes (mirroring postingDetailModel's own convention).
 type applicationDetailModel struct {
 	documents   *documents.Store
-	application pursuit.Application
+	application posting.ActiveApplication
 }
 
-func newApplicationDetailModel(docs *documents.Store, application pursuit.Application) applicationDetailModel {
+func newApplicationDetailModel(docs *documents.Store, application posting.ActiveApplication) applicationDetailModel {
 	return applicationDetailModel{documents: docs, application: application}
 }
 
@@ -44,7 +45,7 @@ func (m *applicationDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		return nil, enterApplicationDeleteMsg{application: m.application}
 	}
 	// Each document type's key edits it, and the uppercase key reviews it.
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		switch msg.String() {
 		case string(documentType.Key()):
 			return m.openDocument(documentType), nil
@@ -70,7 +71,7 @@ type refreshApplicationDetailMsg struct{}
 // because editing a specific application's documents is
 // application-specific functionality, not something the cross-company
 // list screen should own directly.
-func (m *applicationDetailModel) openDocument(documentType documents.Type) tea.Cmd {
+func (m *applicationDetailModel) openDocument(documentType document.Type) tea.Cmd {
 	if _, err := m.documents.EnsureDir(m.application.ID); err != nil {
 		return func() tea.Msg { return editorClosedMsg{err: err} }
 	}
@@ -92,7 +93,7 @@ func (m *applicationDetailModel) openDocument(documentType documents.Type) tea.C
 // which document via which key was pressed (L for cover letter, R for
 // resume), so there's no picker step. Returns nil (no-op) if the
 // document doesn't exist yet -- nothing to review.
-func (m *applicationDetailModel) enterReview(documentType documents.Type) tea.Msg {
+func (m *applicationDetailModel) enterReview(documentType document.Type) tea.Msg {
 	status := m.documents.Status(m.application.ID)
 	doc, err := status.Doc(documentType)
 	if err != nil {
@@ -114,7 +115,7 @@ func (m *applicationDetailModel) View() string {
 
 	status := m.documents.Status(m.application.ID)
 	b.WriteString("\n" + fieldLabel.Render("Documents") + "\n")
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		doc, err := status.Doc(documentType)
 		if err != nil {
 			continue
@@ -124,10 +125,10 @@ func (m *applicationDetailModel) View() string {
 	}
 
 	help := []string{"p: view posting"}
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		help = append(help, string(documentType.Key())+": edit "+documentType.Label())
 	}
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		help = append(help, string(unicode.ToUpper(documentType.Key()))+": review "+documentType.Label())
 	}
 	help = append(help, "f: application form", "S: submit", "D: delete", "u: refresh", "esc/b: back")
@@ -137,7 +138,7 @@ func (m *applicationDetailModel) View() string {
 
 // documentTitle is documentType's label in title case, for row headings
 // ("Cover Letter").
-func documentTitle(documentType documents.Type) string {
+func documentTitle(documentType document.Type) string {
 	words := strings.Fields(documentType.Label())
 	for i, word := range words {
 		r := []rune(word)

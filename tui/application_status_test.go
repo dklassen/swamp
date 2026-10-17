@@ -7,24 +7,23 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
+	"github.com/dklassen/swamp/internal/domain/application"
 )
 
 func TestApplicationStatusModel_New_SeedsCursorFromCurrentStatus(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationStatusModel(nil, 7, applicationstatus.Submitted, 0)
-	want := applicationStatusIndex(applicationstatus.Submitted)
+	m := newApplicationStatusModel(nil, 7, application.Submitted, 0)
+	want := applicationStatusIndex(application.Submitted)
 	if m.cursor != want {
-		t.Fatalf("cursor = %d, want %d (index of %s)", m.cursor, want, applicationstatus.Submitted)
+		t.Fatalf("cursor = %d, want %d (index of %s)", m.cursor, want, application.Submitted)
 	}
 }
 
 func TestApplicationStatusModel_CursorMovement_ClampsToStatusCount(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationStatusModel(nil, 7, applicationstatus.Started, 0)
+	m := newApplicationStatusModel(nil, 7, application.Started, 0)
 	for i := 0; i < len(applicationStatuses)+5; i++ {
 		m.Update(tea.KeyMsg{Type: tea.KeyDown})
 	}
@@ -41,7 +40,7 @@ func TestApplicationStatusModel_CursorMovement_ClampsToStatusCount(t *testing.T)
 func TestApplicationStatusModel_Esc_ReturnsCancelMsg(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationStatusModel(nil, 7, applicationstatus.Started, 0)
+	m := newApplicationStatusModel(nil, 7, application.Started, 0)
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
@@ -54,7 +53,7 @@ func TestApplicationStatusModel_Esc_ReturnsCancelMsg(t *testing.T) {
 func TestApplicationStatusModel_Enter_ReturnsUpdateCmd(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationStatusModel(nil, 7, applicationstatus.Started, 0)
+	m := newApplicationStatusModel(nil, 7, application.Started, 0)
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that updates the application status")
@@ -73,18 +72,18 @@ func TestApplicationStatusLabel(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		status applicationstatus.Status
+		status application.Status
 		want   string
 	}{
-		{applicationstatus.Started, "Started"},
-		{applicationstatus.Submitted, "Submitted"},
-		{applicationstatus.Interviewing, "Interviewing"},
-		{applicationstatus.Rejected, "Rejected"},
-		{applicationstatus.OfferReceived, "Offer received"},
-		{applicationstatus.OfferAccepted, "Offer accepted"},
-		{applicationstatus.OfferDeclined, "Offer declined"},
-		{applicationstatus.PostingClosed, "Posting closed"},
-		{applicationstatus.Withdrawn, "Withdrawn"},
+		{application.Started, "Started"},
+		{application.Submitted, "Submitted"},
+		{application.Interviewing, "Interviewing"},
+		{application.Rejected, "Rejected"},
+		{application.OfferReceived, "Offer received"},
+		{application.OfferAccepted, "Offer accepted"},
+		{application.OfferDeclined, "Offer declined"},
+		{application.PostingClosed, "Posting closed"},
+		{application.Withdrawn, "Withdrawn"},
 	}
 
 	for _, tt := range tests {
@@ -103,7 +102,7 @@ func TestApplicationStatusLabel(t *testing.T) {
 func TestApplicationStatusLabel_CoversEveryStatus(t *testing.T) {
 	t.Parallel()
 
-	for _, status := range applicationstatus.All() {
+	for _, status := range application.All() {
 		if got := applicationStatusLabel(status); got == status.String() {
 			t.Errorf("applicationStatusLabel(%s) returned the raw enum value %q -- needs a display label", status, got)
 		}
@@ -113,7 +112,7 @@ func TestApplicationStatusLabel_CoversEveryStatus(t *testing.T) {
 func TestApplicationStatusModel_View_ShowsLabelsNotEnumValues(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationStatusModel(nil, 7, applicationstatus.Started, 0)
+	m := newApplicationStatusModel(nil, 7, application.Started, 0)
 	got := m.View()
 
 	if !strings.Contains(got, "Offer received") {
@@ -132,7 +131,7 @@ func TestApplicationStatusModel_View_ShowsLabelsNotEnumValues(t *testing.T) {
 func TestApplicationStatusModel_View_OffersWithdrawn(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationStatusModel(nil, 7, applicationstatus.Started, 0)
+	m := newApplicationStatusModel(nil, 7, application.Started, 0)
 
 	if got := m.View(); !strings.Contains(got, "Withdrawn") {
 		t.Errorf("View() = %q, want Withdrawn offered -- it's the only way to close an application by hand without claiming a rejection that never happened", got)
@@ -147,7 +146,7 @@ func TestStatusForm_ShowsTheStatusAsItIsNow(t *testing.T) {
 	t.Parallel()
 
 	app, target := deleteTestApp(t)
-	if _, err := updateApplicationStatusIn(context.Background(), app.store, target.PostingID, applicationstatus.Interviewing); err != nil {
+	if _, err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
@@ -157,8 +156,8 @@ func TestStatusForm_ShowsTheStatusAsItIsNow(t *testing.T) {
 	if app.screen != screenApplicationStatusSelect {
 		t.Fatalf("screen after s = %v, want the status form", app.screen)
 	}
-	if want := applicationStatusIndex(applicationstatus.Interviewing); app.applicationStatus.cursor != want {
-		t.Errorf("cursor = %d (%s), want %d (%s, the stored status)", app.applicationStatus.cursor, applicationStatuses[app.applicationStatus.cursor], want, applicationstatus.Interviewing)
+	if want := applicationStatusIndex(application.Interviewing); app.applicationStatus.cursor != want {
+		t.Errorf("cursor = %d (%s), want %d (%s, the stored status)", app.applicationStatus.cursor, applicationStatuses[app.applicationStatus.cursor], want, application.Interviewing)
 	}
 }
 
@@ -166,7 +165,7 @@ func TestStatusForm_ApplicationDeletedMeanwhile_StaysAndSaysSo(t *testing.T) {
 	t.Parallel()
 
 	app, target := deleteTestApp(t)
-	if err := application.Delete(context.Background(), app.store.DB(), target.ID); err != nil {
+	if err := storeOf(app).Applications.Delete(context.Background(), target.ID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
 

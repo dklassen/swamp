@@ -9,15 +9,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/company"
 )
 
-// companyListModel drives the company-list screen. It holds only the
-// dependencies it needs to dispatch its own commands (store) and
-// its own private cursor -- companies themselves are domain data owned
-// by App and passed in on every call, never cached here.
+// companyListModel drives the company-list screen. It holds only its own
+// private cursor -- companies themselves are domain data owned by App and
+// passed in on every call, never cached here.
 type companyListModel struct {
-	store  *store.Store
 	cursor int
 	// showInfo is whether the info box (i) is open. Ephemeral, like cursor:
 	// closed each time the app starts.
@@ -28,8 +26,8 @@ type companyListModel struct {
 	query     string
 }
 
-func newCompanyListModel(s *store.Store) companyListModel {
-	return companyListModel{store: s}
+func newCompanyListModel() companyListModel {
+	return companyListModel{}
 }
 
 // enterCompanyFormMsg signals that App should switch to the company-form
@@ -39,19 +37,19 @@ type enterCompanyFormMsg struct{}
 
 // enterCompanyEditMsg signals that App should switch to the company-edit
 // screen for the given company.
-type enterCompanyEditMsg struct{ company store.Company }
+type enterCompanyEditMsg struct{ company company.Company }
 
 // refreshCompanyMsg asks App to refresh the given company. App starts the
 // sync itself, rather than this screen, because only App knows whether
 // another sync (e.g. a sync-all run) is already under way (#152).
-type refreshCompanyMsg struct{ company store.Company }
+type refreshCompanyMsg struct{ company company.Company }
 
 // syncAllKeyMsg is 'R': App starts a sync-all run (#153).
 type syncAllKeyMsg struct{}
 
 // selectCompanyMsg signals that App should switch to the posting-list
 // screen for the given company.
-type selectCompanyMsg struct{ company store.Company }
+type selectCompanyMsg struct{ company company.Company }
 
 // backToActiveApplicationsMsg signals that App should switch back to the
 // active-applications tab.
@@ -63,7 +61,7 @@ type backToActiveApplicationsMsg struct{}
 // synchronously, in the same Update call -- not deferred through
 // bubbletea's async loop -- so screen transitions happen with the same
 // timing as before this type existed.
-func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (tea.Cmd, tea.Msg) {
+func (m *companyListModel) Update(msg tea.KeyMsg, companies []company.Company) (tea.Cmd, tea.Msg) {
 	if m.searching {
 		return m.updateSearch(msg, companies)
 	}
@@ -113,7 +111,7 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []store.Company) (te
 // updateSearch handles a key while the '/' prompt is open. Every edit
 // to the query re-filters straight away and puts the cursor back on the
 // first match.
-func (m *companyListModel) updateSearch(msg tea.KeyMsg, companies []store.Company) (tea.Cmd, tea.Msg) {
+func (m *companyListModel) updateSearch(msg tea.KeyMsg, companies []company.Company) (tea.Cmd, tea.Msg) {
 	switch msg.Type {
 	case tea.KeyRunes, tea.KeySpace:
 		m.query += string(msg.Runes)
@@ -145,7 +143,7 @@ func (m *companyListModel) updateSearch(msg tea.KeyMsg, companies []store.Compan
 
 // clearSearch drops the query, keeping the highlighted company highlighted
 // in the full list.
-func (m *companyListModel) clearSearch(companies []store.Company) {
+func (m *companyListModel) clearSearch(companies []company.Company) {
 	cursor := 0
 	if visible := m.visible(companies); m.cursor < len(visible) {
 		cursor = max(indexOfCompany(companies, visible[m.cursor].ID), 0)
@@ -157,12 +155,12 @@ func (m *companyListModel) clearSearch(companies []store.Company) {
 // visible is the part of companies the query matches: a case-insensitive
 // substring of the name, in the order given. With no query, it's all of
 // them.
-func (m *companyListModel) visible(companies []store.Company) []store.Company {
+func (m *companyListModel) visible(companies []company.Company) []company.Company {
 	if m.query == "" {
 		return companies
 	}
 	q := strings.ToLower(m.query)
-	var matches []store.Company
+	var matches []company.Company
 	for _, c := range companies {
 		if strings.Contains(strings.ToLower(c.Name), q) {
 			matches = append(matches, c)
@@ -172,7 +170,7 @@ func (m *companyListModel) visible(companies []store.Company) []store.Company {
 }
 
 // View renders the list in height terminal rows (App.screenRows).
-func (m *companyListModel) View(companies []store.Company, openPostings map[int64]int, width, height int) string {
+func (m *companyListModel) View(companies []company.Company, openPostings map[int64]int, width, height int) string {
 	var b strings.Builder
 	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  tab: applications  q: quit")
 	switch {
@@ -278,7 +276,7 @@ const (
 // and slug, then its description word-wrapped. It's always the same height
 // -- top and bottom border, the header, and companyInfoDescriptionLines --
 // so moving the cursor with the box open never shifts the table.
-func companyInfoBox(c store.Company, width int) string {
+func companyInfoBox(c company.Company, width int) string {
 	// As wide as the table above it, less two border columns and one
 	// column of padding on each side.
 	textWidth := max(tableWidth(width)-4, 20)
@@ -312,7 +310,7 @@ func companyInfoBox(c store.Company, width int) string {
 }
 
 // selected is the ID of the company under the cursor, or 0.
-func (m *companyListModel) selected(companies []store.Company) int64 {
+func (m *companyListModel) selected(companies []company.Company) int64 {
 	if visible := m.visible(companies); m.cursor < len(visible) {
 		return visible[m.cursor].ID
 	}
@@ -321,7 +319,7 @@ func (m *companyListModel) selected(companies []store.Company) int64 {
 
 // keepCursorOn moves the cursor to company id after a reload; if it's
 // gone, the cursor stays in range.
-func (m *companyListModel) keepCursorOn(id int64, companies []store.Company) {
+func (m *companyListModel) keepCursorOn(id int64, companies []company.Company) {
 	visible := m.visible(companies)
 	if i := indexOfCompany(visible, id); i >= 0 {
 		m.cursor = i

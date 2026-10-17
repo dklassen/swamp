@@ -19,8 +19,8 @@ import (
 
 // mcpHandler serves Swamp's MCP tools over Streamable HTTP. See runMCPServe
 // for why localhost protection is off.
-func mcpHandler(s *store.Store, d *documents.Store, syncer *sync.Syncer) http.Handler {
-	return streamableHandler(mcpserver.New(newStage(s, d), d, syncer))
+func mcpHandler(db store.Store, d *documents.Store, syncer *sync.Syncer) http.Handler {
+	return streamableHandler(mcpserver.New(newStage(db, d), d, syncer))
 }
 
 // streamableHandler serves server over Streamable HTTP.
@@ -59,12 +59,12 @@ func startMCP(dbPath string, d *documents.Store, ln net.Listener, logger *slog.L
 	if err != nil {
 		return nil, fmt.Errorf("open db for the MCP server: %w", err)
 	}
-	s := store.New(sqlDB)
-	syncer := newSyncer(s)
+	db := store.New(sqlDB)
+	syncer := newSyncer(db)
 	// Cancelled on stop: an agent's open stream never goes idle, so
 	// Shutdown would otherwise wait out its whole deadline.
 	base, cancelRequests := context.WithCancel(context.Background())
-	server := mcpserver.New(newStage(s, d), d, syncer)
+	server := mcpserver.New(newStage(db, d), d, syncer)
 	server.AddReceivingMiddleware(releaseTerminalOnPanic(release))
 	srv := &http.Server{
 		Handler:     streamableHandler(server),

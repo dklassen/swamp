@@ -1,5 +1,5 @@
 // Package documents owns application documents: the list of document
-// types (see Type), and where each application's markdown files live on
+// types (see document.Type), and where each application's markdown files live on
 // the filesystem and whether they exist. Content is read only to check
 // whether a review or export still matches it (see Current) -- it's plain
 // markdown meant to be consumed directly by an external agent/editor,
@@ -16,11 +16,14 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
+
+	"github.com/dklassen/swamp/internal/domain/document"
 )
 
 // path is documentType's file for an application: <dir>/<name>.md.
-func path(dir string, documentType Type) string {
+func path(dir string, documentType document.Type) string {
 	return filepath.Join(dir, documentType.String()+".md")
 }
 
@@ -35,16 +38,16 @@ type Doc struct {
 	Exists bool
 }
 
-// Status is an application's documents, one per Type, as of the moment
+// Status is an application's documents, one per document.Type, as of the moment
 // Store.Status checked. Look one up with Doc.
 type Status struct {
-	docs map[Type]Doc
+	docs map[document.Type]Doc
 }
 
 // Doc returns documentType's document. A type with no document is an
 // error, never a fallback to another document, which would silently read
 // or write the wrong file (RFC 0004).
-func (s Status) Doc(documentType Type) (Doc, error) {
+func (s Status) Doc(documentType document.Type) (Doc, error) {
 	doc, ok := s.docs[documentType]
 	if !ok {
 		return Doc{}, fmt.Errorf("documents: no %s document", documentType)
@@ -79,8 +82,8 @@ func (s *Store) EnsureDir(applicationID int64) (Status, error) {
 
 // Path is where applicationID's documentType document lives, whether or
 // not it exists yet. An unknown type is an error.
-func (s *Store) Path(applicationID int64, documentType Type) (string, error) {
-	if !documentType.valid() {
+func (s *Store) Path(applicationID int64, documentType document.Type) (string, error) {
+	if !slices.Contains(document.Types(), documentType) {
 		return "", fmt.Errorf("documents: no %s document", documentType)
 	}
 	return path(applicationDir(s.base, applicationID), documentType), nil
@@ -94,7 +97,7 @@ func (s *Store) Path(applicationID int64, documentType Type) (string, error) {
 // (an export, a review, documents.Current) sees the old version or the
 // new one, never an empty or partial file, and a failed write leaves the
 // old version as it was.
-func (s *Store) Write(applicationID int64, documentType Type, content string) (string, error) {
+func (s *Store) Write(applicationID int64, documentType document.Type, content string) (string, error) {
 	return s.write(applicationID, documentType, content, nil)
 }
 
@@ -107,7 +110,7 @@ var ErrChanged = errors.New("documents: document changed since it was read")
 // expectedSHA256 expects no document, so a fresh draft can't replace one
 // that appeared in the meantime. The check runs just before
 // the rename; a write landing between the two still wins.
-func (s *Store) WriteIfUnchanged(applicationID int64, documentType Type, content, expectedSHA256 string) (string, error) {
+func (s *Store) WriteIfUnchanged(applicationID int64, documentType document.Type, content, expectedSHA256 string) (string, error) {
 	return s.write(applicationID, documentType, content, func() error {
 		got, err := s.SHA256(applicationID, documentType)
 		if err != nil {
@@ -122,7 +125,7 @@ func (s *Store) WriteIfUnchanged(applicationID int64, documentType Type, content
 
 // write is Write, with check (if any) run once the new content is ready
 // to rename into place, so the window between them stays small.
-func (s *Store) write(applicationID int64, documentType Type, content string, check func() error) (string, error) {
+func (s *Store) write(applicationID int64, documentType document.Type, content string, check func() error) (string, error) {
 	p, err := s.Path(applicationID, documentType)
 	if err != nil {
 		return "", err
@@ -179,7 +182,7 @@ func ContentSHA256(content string) string {
 
 // SHA256 is the ContentSHA256 of applicationID's documentType document
 // as it is on disk now, or empty when it doesn't exist.
-func (s *Store) SHA256(applicationID int64, documentType Type) (string, error) {
+func (s *Store) SHA256(applicationID int64, documentType document.Type) (string, error) {
 	p, err := s.Path(applicationID, documentType)
 	if err != nil {
 		return "", err
@@ -215,12 +218,12 @@ func (s *Store) ProfilePath() string {
 	return filepath.Join(canonicalDir(s.base), "profile.md")
 }
 
-// Status returns applicationID's documents, one per Type, and whether
+// Status returns applicationID's documents, one per document.Type, and whether
 // each exists on disk, checked via os.Stat.
 func (s *Store) Status(applicationID int64) Status {
 	dir := applicationDir(s.base, applicationID)
-	docs := make(map[Type]Doc, len(types))
-	for _, documentType := range Types() {
+	docs := make(map[document.Type]Doc, len(document.Types()))
+	for _, documentType := range document.Types() {
 		p := path(dir, documentType)
 		docs[documentType] = Doc{Path: p, Exists: fileExists(p)}
 	}

@@ -10,18 +10,18 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/dklassen/swamp/companyfilter"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
 
 // newSyncAllTestApp returns an App on the company list with companies
 // Acme, Globex and Initech, whose boards each list one posting except
 // those named in failing, whose fetch fails.
-func newSyncAllTestApp(t *testing.T, failing ...string) (*App, *store.Store) {
+func newSyncAllTestApp(t *testing.T, failing ...string) (*App, testutil.TestApp) {
 	t.Helper()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	postings := map[string][]jobboard.Posting{}
 	errBoards := map[string]error{}
 	for _, slug := range []string{"acme", "globex", "initech"} {
@@ -33,7 +33,7 @@ func newSyncAllTestApp(t *testing.T, failing ...string) (*App, *store.Store) {
 	mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	mustCreateCompany(t, s, "Globex", "ashby", "globex")
 	mustCreateCompany(t, s, "Initech", "ashby", "initech")
-	syncer := sync.New(s, map[string]sync.PostingFetcher{"ashby": &fakeFetcher{postings: postings, errBoards: errBoards}}, sync.DefaultConfig())
+	syncer := sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{"ashby": &fakeFetcher{postings: postings, errBoards: errBoards}}, sync.DefaultConfig())
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 	return app, s
@@ -89,7 +89,7 @@ func TestApp_SyncAll_StepsThroughEveryCompanyThenSummarizes(t *testing.T) {
 	}
 	app = applyCmd(t, app, cmd) // the end-of-run reload
 	for _, c := range app.companies {
-		postings, err := s.ListPostingsByCompany(t.Context(), c.ID)
+		postings, err := s.Postings.ListByCompany(t.Context(), c.ID)
 		if err != nil {
 			t.Fatalf("ListPostingsByCompany: %v", err)
 		}
@@ -117,7 +117,7 @@ func TestApp_SyncAll_FailingCompany_RunContinuesAndSummaryNamesIt(t *testing.T) 
 
 // TestApp_SyncAll_NoCompanies_FinishesImmediately.
 func TestApp_SyncAll_NoCompanies_FinishesImmediately(t *testing.T) {
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 
@@ -217,13 +217,8 @@ func TestApp_SyncAll_RDuringRun_Refused(t *testing.T) {
 // so a run in progress is no reason to refuse it.
 func TestApp_SyncAll_FilterSaveDuringRun_Saves(t *testing.T) {
 	app, s := newSyncAllTestApp(t)
-	if _, err := s.UpsertPosting(t.Context(), store.CreatePostingParams{
-		CompanyID:      app.companies[0].ID,
-		Source:         "ashby",
-		SourceID:       "acme-eng",
-		IngestedFields: store.IngestedFields{Title: "Engineer", Department: "Engineering"},
-	}); err != nil {
-		t.Fatalf("UpsertPosting: %v", err)
+	if _, err := s.Postings.Ingest(t.Context(), app.companies[0].ID, "ashby", "acme-eng", posting.IngestedFields{Title: "Engineer", Department: "Engineering"}); err != nil {
+		t.Fatalf("Ingest: %v", err)
 	}
 	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // Acme's postings
 	app = applyCmd(t, app, cmd)
@@ -240,9 +235,9 @@ func TestApp_SyncAll_FilterSaveDuringRun_Saves(t *testing.T) {
 		t.Fatal("saving filters during a sync-all run returned nil Cmd, want one that saves them")
 	}
 	app = applyCmd(t, app, cmd)
-	saved, err := companyfilter.List(t.Context(), s.DB(), app.selectedCompany.ID)
+	saved, err := s.Companies.Filters(t.Context(), app.selectedCompany.ID)
 	if err != nil {
-		t.Fatalf("companyfilter.List: %v", err)
+		t.Fatalf("Filters: %v", err)
 	}
 	if len(saved) != 1 {
 		t.Errorf("saved filters = %+v, want the one selected", saved)
@@ -274,7 +269,7 @@ func TestApp_SyncAll_LeavingCompanyList_RunContinues(t *testing.T) {
 func TestApp_SyncAll_CompanySyncingElsewhere_SummarizedAsSkipped(t *testing.T) {
 	app, s := newSyncAllTestApp(t)
 	globex := app.companies[1]
-	if taken, err := s.AcquireSyncLease(t.Context(), globex.ID, "swamp-fetch", time.Minute); err != nil || !taken {
+	if taken, err := s.Companies.AcquireSyncLease(t.Context(), globex.ID, "swamp-fetch", time.Minute); err != nil || !taken {
 		t.Fatalf("AcquireSyncLease = %v, %v", taken, err)
 	}
 

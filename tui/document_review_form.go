@@ -14,13 +14,13 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
 
-	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/service"
 )
 
 // documentReviewFormModel drives the document-review-form screen: enter
-// notes and submit a review outcome for one document. It holds the store
+// notes and submit a review outcome for one document. It holds the service
 // it needs to save the review, the application/document it's reviewing
 // (fixed for this screen's lifetime), the content read from disk when
 // the review-select screen was entered (so the review's snapshot is
@@ -28,13 +28,13 @@ import (
 // contain by the time this form is submitted), and its own private
 // textarea.
 type documentReviewFormModel struct {
-	store         *store.Store
-	documents     *documents.Store
-	applicationID int64
-	documentType  documents.Type
-	content       string
-	textarea      textarea.Model
-	instance      screenInstance
+	documentService *service.DocumentService
+	documents       *documents.Store
+	applicationID   int64
+	documentType    document.Type
+	content         string
+	textarea        textarea.Model
+	instance        screenInstance
 	// changes is set when a save found the document rewritten since the
 	// form read it: the diff from that version to content, which is now
 	// the current one.
@@ -48,18 +48,18 @@ type documentReviewFormModel struct {
 // leaves under its status/error banner (App.screenRows). App refits the
 // height with setHeight whenever that changes; the width is fixed at
 // construction.
-func newDocumentReviewFormModel(s *store.Store, docs *documents.Store, applicationID int64, documentType documents.Type, content string, width, height int, instance screenInstance) documentReviewFormModel {
+func newDocumentReviewFormModel(documentService *service.DocumentService, docs *documents.Store, applicationID int64, documentType document.Type, content string, width, height int, instance screenInstance) documentReviewFormModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	ta.Focus()
 	m := documentReviewFormModel{
-		store:         s,
-		documents:     docs,
-		applicationID: applicationID,
-		documentType:  documentType,
-		content:       content,
-		textarea:      ta,
-		instance:      instance,
+		documentService: documentService,
+		documents:       docs,
+		applicationID:   applicationID,
+		documentType:    documentType,
+		content:         content,
+		textarea:        ta,
+		instance:        instance,
 	}
 	m.setHeight(height)
 	return m
@@ -111,7 +111,7 @@ func documentReviewFormHelp() string {
 type cancelDocumentReviewFormMsg struct{}
 
 type documentReviewCreatedMsg struct {
-	review docrecord.Review
+	review document.Review
 	from   screenInstance
 	err    error
 }
@@ -131,7 +131,7 @@ type documentChangedDuringReviewMsg struct {
 // form was open. A review of a version that's gone would
 // never count as current, and an agent would never see its notes, so
 // instead it reports the current content for the form to show.
-func createDocumentReview(s *store.Store, docs *documents.Store, applicationID int64, documentType documents.Type, content string, outcome docrecord.Outcome, notes string, from screenInstance) tea.Cmd {
+func createDocumentReview(documentService *service.DocumentService, docs *documents.Store, applicationID int64, documentType document.Type, content string, outcome document.Outcome, notes string, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
 		path, err := docs.Path(applicationID, documentType)
 		if err != nil {
@@ -145,15 +145,9 @@ func createDocumentReview(s *store.Store, docs *documents.Store, applicationID i
 			return documentReviewCreatedMsg{from: from, err: fmt.Errorf("check the document before saving the review: %w", err)}
 		}
 		if string(current) != content {
-			return documentChangedDuringReviewMsg{current: string(current), who: whoWrote(s, applicationID, documentType, string(current)), from: from}
+			return documentChangedDuringReviewMsg{current: string(current), who: whoWrote(documentService, applicationID, documentType, string(current)), from: from}
 		}
-		ctx := context.Background()
-		var review docrecord.Review
-		err = store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-			var err error
-			review, err = docrecord.CreateReview(ctx, tx, applicationID, documentType, content, outcome, notes)
-			return err
-		})
+		review, err := documentService.Review(context.Background(), applicationID, documentType, content, outcome, notes)
 		return documentReviewCreatedMsg{review: review, from: from, err: err}
 	}
 }
@@ -168,9 +162,9 @@ func (m *documentReviewFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 	case tea.KeyEsc:
 		return nil, cancelDocumentReviewFormMsg{}
 	case tea.KeyCtrlS:
-		return createDocumentReview(m.store, m.documents, m.applicationID, m.documentType, m.content, docrecord.Passed, m.textarea.Value(), m.instance), nil
+		return createDocumentReview(m.documentService, m.documents, m.applicationID, m.documentType, m.content, document.Passed, m.textarea.Value(), m.instance), nil
 	case tea.KeyCtrlG:
-		return createDocumentReview(m.store, m.documents, m.applicationID, m.documentType, m.content, docrecord.Flagged, m.textarea.Value(), m.instance), nil
+		return createDocumentReview(m.documentService, m.documents, m.applicationID, m.documentType, m.content, document.Flagged, m.textarea.Value(), m.instance), nil
 	}
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
@@ -190,8 +184,8 @@ func (m *documentReviewFormModel) View() string {
 // whoWrote describes the recorded write that produced current, e.g.
 // "rewritten by the agent at 14:05", or "" if the latest recorded write
 // is of some other version (the change was made outside Swamp).
-func whoWrote(s *store.Store, applicationID int64, documentType documents.Type, current string) string {
-	write, ok, err := docrecord.LatestWrite(context.Background(), s.DB(), applicationID, documentType)
+func whoWrote(documentService *service.DocumentService, applicationID int64, documentType document.Type, current string) string {
+	write, ok, err := documentService.LatestWrite(context.Background(), applicationID, documentType)
 	if err != nil {
 		return fmt.Sprintf("rewritten (couldn't tell by whom: %v)", err)
 	}
@@ -202,11 +196,11 @@ func whoWrote(s *store.Store, applicationID int64, documentType documents.Type, 
 }
 
 // documentWriterLabel is who a write source is, for a sentence.
-func documentWriterLabel(source docrecord.Source) string {
+func documentWriterLabel(source document.Source) string {
 	switch source {
-	case docrecord.SourceWriteDocument:
+	case document.SourceWriteDocument:
 		return "the agent"
-	case docrecord.SourceEditor:
+	case document.SourceEditor:
 		return "you, in $EDITOR,"
 	default:
 		return source.String()

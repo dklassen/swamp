@@ -10,7 +10,8 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/lipgloss/table"
 
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/service"
 )
 
 // seenColWidth fits a first-seen date, "Sep 30".
@@ -31,14 +32,14 @@ const allPostingsResultsHelp = "↑/↓ (j/k): select  ←/→ (h/l): page  s: s
 // a time. Pages are fixed rather than scrolling, so a posting arriving
 // lands on page 1 instead of shifting the one being read.
 type allPostingsModel struct {
-	store  *store.Store
-	cursor int
+	postings *service.PostingService
+	cursor   int
 	// starts is where each page so far began, page 1's being the zero
 	// start; the last is the page on screen.
 	starts []pageStart
 	// order is newest first or best fit first.
-	order store.PostingOrder
-	page  store.PostingSearchPage
+	order posting.Order
+	page  posting.SearchPage
 	// size is the number of rows page was read at.
 	size int
 	// searching is whether the '/' line is open and taking keys; query is
@@ -52,8 +53,8 @@ type allPostingsModel struct {
 	total int
 }
 
-func newAllPostingsModel(s *store.Store) allPostingsModel {
-	return allPostingsModel{store: s, starts: []pageStart{{}}, order: store.PostingOrderIDDesc}
+func newAllPostingsModel(postings *service.PostingService) allPostingsModel {
+	return allPostingsModel{postings: postings, starts: []pageStart{{}}, order: posting.OrderIDDesc}
 }
 
 // pageStart is the row a page was read after: its ID, and its score for the
@@ -65,10 +66,10 @@ type pageStart struct {
 
 type allPostingsLoadedMsg struct {
 	start pageStart
-	order store.PostingOrder
+	order posting.Order
 	query string
 	size  int
-	page  store.PostingSearchPage
+	page  posting.SearchPage
 	total int
 	err   error
 }
@@ -89,10 +90,10 @@ func (m *allPostingsModel) pageSize(height int) int {
 // load reads the page on screen again, size rows long, with the query and,
 // when there is one, the total without it.
 func (m *allPostingsModel) load(size int) tea.Cmd {
-	s, start, order, query := m.store, m.starts[len(m.starts)-1], m.order, m.query
+	s, start, order, query := m.postings, m.starts[len(m.starts)-1], m.order, m.query
 	return func() tea.Msg {
 		ctx := context.Background()
-		page, err := s.SearchPostings(ctx, store.PostingSearch{
+		page, err := s.Search(ctx, posting.Search{
 			Order:      order,
 			AfterID:    start.id,
 			AfterScore: start.score,
@@ -101,8 +102,8 @@ func (m *allPostingsModel) load(size int) tea.Cmd {
 		})
 		total := page.Total
 		if err == nil && query != "" {
-			var all store.PostingSearchPage
-			all, err = s.SearchPostings(ctx, store.PostingSearch{Limit: 1})
+			var all posting.SearchPage
+			all, err = s.Search(ctx, posting.Search{Limit: 1})
 			total = all.Total
 		}
 		return allPostingsLoadedMsg{start: start, order: order, query: query, size: size, page: page, total: total, err: err}
@@ -169,7 +170,7 @@ func (m *allPostingsModel) typedKey(query string) tea.Cmd {
 
 // orderLabel names the order the pages are in.
 func (m *allPostingsModel) orderLabel() string {
-	if m.order == store.PostingOrderScoreDesc {
+	if m.order == posting.OrderScoreDesc {
 		return "best fit first"
 	}
 	return "newest first"
@@ -185,7 +186,7 @@ func (m *allPostingsModel) pages() int {
 
 // fitCell is a posting's current score, blank when it has none and dimmed
 // when its content has changed since.
-func fitCell(l store.PostingListing) string {
+func fitCell(l posting.Listing) string {
 	if l.Score == 0 {
 		return padCol("", fitColWidth)
 	}
@@ -198,7 +199,7 @@ func fitCell(l store.PostingListing) string {
 
 // locationLabel is a posting's location with its workplace type, when the
 // board gave one.
-func locationLabel(l store.PostingListing) string {
+func locationLabel(l posting.Listing) string {
 	switch {
 	case l.WorkplaceType == "":
 		return l.Location
@@ -281,10 +282,10 @@ func (m *allPostingsModel) Update(msg tea.KeyMsg, size int) (tea.Cmd, tea.Msg) {
 			return nil, enterPostingDetailMsg{postingID: m.page.Listings[m.cursor].ID}
 		}
 	case msg.String() == "s":
-		if m.order == store.PostingOrderScoreDesc {
-			m.order = store.PostingOrderIDDesc
+		if m.order == posting.OrderScoreDesc {
+			m.order = posting.OrderIDDesc
 		} else {
-			m.order = store.PostingOrderScoreDesc
+			m.order = posting.OrderScoreDesc
 		}
 		return m.firstPage(size), nil
 	case msg.String() == "/":
@@ -294,12 +295,12 @@ func (m *allPostingsModel) Update(msg tea.KeyMsg, size int) (tea.Cmd, tea.Msg) {
 	case msg.String() == "i":
 		if m.cursor < len(m.page.Listings) {
 			l := m.page.Listings[m.cursor]
-			return toggleInterested(m.store, l.ID, l.Interested), nil
+			return toggleInterested(m.postings, l.ID, l.Interested), nil
 		}
 	case msg.String() == "x":
 		if m.cursor < len(m.page.Listings) {
 			l := m.page.Listings[m.cursor]
-			return toggleArchived(m.store, l.ID, l.Archived), nil
+			return toggleArchived(m.postings, l.ID, l.Archived), nil
 		}
 	case msg.String() == "o":
 		if m.cursor < len(m.page.Listings) && m.page.Listings[m.cursor].JobURL != "" {
@@ -360,13 +361,13 @@ type openJobURLMsg struct{ url string }
 // allPostingsDetailLoadedMsg is the posting enter opened: a page row
 // lacks the description the detail shows.
 type allPostingsDetailLoadedMsg struct {
-	posting store.Posting
+	posting posting.Posting
 	err     error
 }
 
-func loadAllPostingsDetail(s *store.Store, id int64) tea.Cmd {
+func loadAllPostingsDetail(postings *service.PostingService, id int64) tea.Cmd {
 	return func() tea.Msg {
-		p, err := s.GetPosting(context.Background(), id)
+		p, err := postings.Get(context.Background(), id)
 		return allPostingsDetailLoadedMsg{posting: p, err: err}
 	}
 }

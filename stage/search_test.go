@@ -8,12 +8,13 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
 	"github.com/dklassen/swamp/cursor"
-	"github.com/dklassen/swamp/postingmarkup"
-	"github.com/dklassen/swamp/scoring"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/domain/score"
+	"github.com/dklassen/swamp/internal/repository"
+	"github.com/dklassen/swamp/internal/testutil"
 )
 
 // searchStage is a Stage over two companies' postings: three open at
@@ -21,9 +22,9 @@ import (
 // one closed and one archived at Acme, and one open at Beta.
 type searchStage struct {
 	st                            *Stage
-	acme, beta                    store.Company
-	shortlist, started, submitted store.Posting
-	closed, archived, betaPosting store.Posting
+	acme, beta                    company.Company
+	shortlist, started, submitted posting.Posting
+	closed, archived, betaPosting posting.Posting
 	startedApp                    application.Application
 }
 
@@ -47,13 +48,13 @@ func newSearchStage(t *testing.T) searchStage {
 	if _, err := createApplication(ctx, s, f.submitted.ID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := updateApplicationStatus(ctx, s, f.submitted.ID, applicationstatus.Submitted); err != nil {
+	if _, err := updateApplicationStatus(ctx, s, f.submitted.ID, application.Submitted); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
-	if err := s.MarkPostingClosed(ctx, f.closed.ID); err != nil {
+	if err := (&repository.PostingRepository{}).MarkClosed(ctx, s.Store, f.closed.ID); err != nil {
 		t.Fatalf("MarkPostingClosed: %v", err)
 	}
-	if _, err := postingmarkup.SetArchived(ctx, s.DB(), f.archived.ID); err != nil {
+	if _, err := s.Postings.SetArchived(ctx, f.archived.ID); err != nil {
 		t.Fatalf("postingmarkup.SetArchived: %v", err)
 	}
 	return f
@@ -67,7 +68,7 @@ func matchIDs(matches []SearchMatch) []int64 {
 	return ids
 }
 
-func postingIDs(postings ...store.Posting) []int64 {
+func postingIDs(postings ...posting.Posting) []int64 {
 	ids := make([]int64, len(postings))
 	for i, p := range postings {
 		ids[i] = p.ID
@@ -89,7 +90,7 @@ func TestSearch_FiltersAndDefaults(t *testing.T) {
 			postingIDs(f.shortlist, f.started, f.submitted, f.betaPosting)},
 		{"company", SearchOptions{CompanyID: f.beta.ID}, postingIDs(f.betaPosting)},
 		{"with an application", SearchOptions{HasApplication: &yes}, postingIDs(f.started, f.submitted)},
-		{"application statuses", SearchOptions{ApplicationStatuses: []applicationstatus.Status{applicationstatus.Submitted}},
+		{"application statuses", SearchOptions{ApplicationStatuses: []application.Status{application.Submitted}},
 			postingIDs(f.submitted)},
 		{"interested shortlist: interested, no application", SearchOptions{Interested: &yes, HasApplication: &no},
 			postingIDs(f.shortlist)},
@@ -139,7 +140,7 @@ func TestSearch_MatchCarriesItsApplication(t *testing.T) {
 		t.Errorf("match FirstSeenAt = %v, want the posting's %v", m.Posting.FirstSeenAt, f.started.FirstSeenAt)
 	}
 	if m.ApplicationID == nil || *m.ApplicationID != f.startedApp.ID ||
-		m.ApplicationStatus == nil || *m.ApplicationStatus != applicationstatus.Started {
+		m.ApplicationStatus == nil || *m.ApplicationStatus != application.Started {
 		t.Errorf("match application = %v %v, want %d started", m.ApplicationID, m.ApplicationStatus, f.startedApp.ID)
 	}
 }
@@ -200,7 +201,7 @@ func TestSearch_CursorFromAnotherSearch(t *testing.T) {
 	t.Parallel()
 	f := newSearchStage(t)
 	ctx := context.Background()
-	statuses := []applicationstatus.Status{applicationstatus.Started, applicationstatus.Submitted}
+	statuses := []application.Status{application.Started, application.Submitted}
 
 	first, err := f.st.Search(ctx, SearchOptions{ApplicationStatuses: statuses, Limit: 1})
 	if err != nil {
@@ -214,7 +215,7 @@ func TestSearch_CursorFromAnotherSearch(t *testing.T) {
 	if _, err := f.st.Search(ctx, SearchOptions{CompanyID: f.beta.ID, ApplicationStatuses: statuses, Cursor: next}); !errors.Is(err, cursor.ErrMismatch) {
 		t.Errorf("cursor with another company: err = %v, want cursor.ErrMismatch", err)
 	}
-	reordered := []applicationstatus.Status{applicationstatus.Submitted, applicationstatus.Started}
+	reordered := []application.Status{application.Submitted, application.Started}
 	second, err := f.st.Search(ctx, SearchOptions{ApplicationStatuses: reordered, Limit: 5, Cursor: next})
 	if err != nil {
 		t.Fatalf("same filters, statuses reordered, bigger page: %v", err)
@@ -263,14 +264,14 @@ func TestSearch_LimitDefaultsAndCap(t *testing.T) {
 // the agent without a name and a note on how stable it is to page.
 func TestSortOrders_EveryStoreOrderIsRegistered(t *testing.T) {
 	t.Parallel()
-	registered := map[store.PostingOrder]bool{}
+	registered := map[posting.Order]bool{}
 	for _, order := range SortOrders() {
 		if order.Description == "" {
 			t.Errorf("%s has no description", order.Name())
 		}
 		registered[order.Order] = true
 	}
-	for _, order := range store.PostingOrders() {
+	for _, order := range posting.Orders() {
 		if !registered[order] {
 			t.Errorf("store order %s isn't in SortOrders", order)
 		}
@@ -310,16 +311,13 @@ func TestSearch_PublishedDescPagesNewestOnTheBoardFirst(t *testing.T) {
 	st, s, _ := newTestStage(t)
 	ctx := context.Background()
 	acme := mustCreateCompany(t, s, "Acme")
-	posting := func(sourceID string, published time.Time) store.Posting {
+	posting := func(sourceID string, published time.Time) posting.Posting {
 		t.Helper()
-		p, err := s.UpsertPosting(ctx, store.CreatePostingParams{
-			CompanyID: acme.ID, Source: "ashby", SourceID: sourceID,
-			IngestedFields: store.IngestedFields{Title: "Role " + sourceID, PublishedAt: store.OptionalTime{Time: published}, RawPayload: "{}"},
-		})
+		ingested, err := s.Postings.Ingest(ctx, acme.ID, "ashby", sourceID, posting.IngestedFields{Title: "Role " + sourceID, PublishedAt: posting.OptionalTime{Time: published}, RawPayload: "{}"})
 		if err != nil {
-			t.Fatalf("UpsertPosting: %v", err)
+			t.Fatalf("Ingest: %v", err)
 		}
-		return p
+		return ingested.Posting
 	}
 	day := func(d int) time.Time { return time.Date(2026, 9, d, 12, 0, 0, 0, time.UTC) }
 	older := posting("1", day(1))
@@ -392,7 +390,7 @@ func TestSearch_ScoreDescPagesBestFitFirst(t *testing.T) {
 	low := mustUpsertPosting(t, s, acme.ID, "1", "Low")
 	high := mustUpsertPosting(t, s, acme.ID, "2", "High")
 	unscored := mustUpsertPosting(t, s, acme.ID, "3", "Unscored")
-	if _, err := recordScores(ctx, s, scoring.Provenance{Model: "m", ProfileSHA256: "p"}, []scoring.Entry{
+	if _, err := recordScores(ctx, s, score.Provenance{Model: "m", ProfileSHA256: "p"}, []score.Entry{
 		{PostingID: low.ID, Score: 2, Reason: "weak", ContentSHA256: low.ContentSHA256},
 		{PostingID: high.ID, Score: 5, Reason: "strong", ContentSHA256: high.ContentSHA256},
 	}); err != nil {
@@ -424,32 +422,18 @@ func TestSearch_ScoreDescPagesBestFitFirst(t *testing.T) {
 	}
 }
 
-func recordScores(ctx context.Context, s *store.Store, provenance scoring.Provenance, entries []scoring.Entry) (scoring.RecordResult, error) {
-	var result scoring.RecordResult
-	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-		var err error
-		result, err = scoring.Record(ctx, tx, provenance, entries)
-		return err
-	})
-	return result, err
+func recordScores(ctx context.Context, s testutil.TestApp, provenance score.Provenance, entries []score.Entry) (score.RecordResult, error) {
+	return s.Scores.Record(ctx, provenance, entries)
 }
 
-func createApplication(ctx context.Context, s *store.Store, postingID int64) (application.Application, error) {
-	var app application.Application
-	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-		var err error
-		app, err = application.Create(ctx, tx, postingID)
-		return err
-	})
-	return app, err
+func createApplication(ctx context.Context, s testutil.TestApp, postingID int64) (application.Application, error) {
+	return s.Postings.ApplyTo(ctx, postingID)
 }
 
-func updateApplicationStatus(ctx context.Context, s *store.Store, postingID int64, status applicationstatus.Status) (application.Application, error) {
-	var app application.Application
-	err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-		var err error
-		app, err = application.UpdateStatus(ctx, tx, postingID, status)
-		return err
-	})
-	return app, err
+func updateApplicationStatus(ctx context.Context, s testutil.TestApp, postingID int64, status application.Status) (application.Application, error) {
+	app, err := s.Postings.Application(ctx, postingID)
+	if err != nil {
+		return application.Application{}, err
+	}
+	return s.Applications.SetStatus(ctx, app.ID, status)
 }

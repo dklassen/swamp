@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/document"
 )
 
 func TestDocumentReviewSelectModel_New_SeedsOptionsFromDocumentStatus(t *testing.T) {
@@ -28,10 +29,10 @@ func TestDocumentReviewSelectModel_New_SeedsOptionsFromDocumentStatus(t *testing
 	if len(m.options) != 2 {
 		t.Fatalf("len(options) = %d, want 2", len(m.options))
 	}
-	if m.options[0].documentType != documents.CoverLetter || !m.options[0].exists {
+	if m.options[0].documentType != document.CoverLetter || !m.options[0].exists {
 		t.Fatalf("options[0] = %+v, want cover_letter, exists=true", m.options[0])
 	}
-	if m.options[1].documentType != documents.Resume || m.options[1].exists {
+	if m.options[1].documentType != document.Resume || m.options[1].exists {
 		t.Fatalf("options[1] = %+v, want resume, exists=false", m.options[1])
 	}
 }
@@ -105,8 +106,8 @@ func TestDocumentReviewSelectModel_Enter_OnExistingDocument_ReturnsContentReadFr
 	if got.applicationID != 1 {
 		t.Fatalf("applicationID = %d, want 1", got.applicationID)
 	}
-	if got.documentType != documents.CoverLetter {
-		t.Fatalf("documentType = %q, want %q", got.documentType, documents.CoverLetter)
+	if got.documentType != document.CoverLetter {
+		t.Fatalf("documentType = %q, want %q", got.documentType, document.CoverLetter)
 	}
 	if got.content != want {
 		t.Fatalf("content = %q, want %q", got.content, want)
@@ -118,11 +119,11 @@ func TestDocumentReviewSelectModel_OffersEveryDocumentType(t *testing.T) {
 	t.Parallel()
 
 	m := newDocumentReviewSelectModel(documents.NewStore(t.TempDir()), 1)
-	var got []documents.Type
+	var got []document.Type
 	for _, option := range m.options {
 		got = append(got, option.documentType)
 	}
-	if diff := cmp.Diff(documents.Types(), got); diff != "" {
+	if diff := cmp.Diff(document.Types(), got); diff != "" {
 		t.Errorf("options mismatch (-want +got):\n%s", diff)
 	}
 }

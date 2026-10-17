@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/document"
 )
 
 // documentReviewOption is one selectable document on the document-review-
@@ -14,7 +15,7 @@ import (
 // agent may not have drafted it).
 type documentReviewOption struct {
 	label        string
-	documentType documents.Type
+	documentType document.Type
 	path         string
 	exists       bool
 }
@@ -36,7 +37,7 @@ type documentReviewSelectModel struct {
 func newDocumentReviewSelectModel(docs *documents.Store, applicationID int64) documentReviewSelectModel {
 	status := docs.Status(applicationID)
 	var options []documentReviewOption
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		doc, err := status.Doc(documentType)
 		if err != nil {
 			continue
@@ -60,7 +61,7 @@ type cancelDocumentReviewSelectMsg struct{}
 // content.
 type enterDocumentReviewFormMsg struct {
 	applicationID int64
-	documentType  documents.Type
+	documentType  document.Type
 	content       string
 	err           error
 }
@@ -100,7 +101,7 @@ func (m *documentReviewSelectModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 // the review form for it. Callers resolve the path themselves: the
 // picker from the options built when it opened, application detail
 // fresh from docs.Status at key-press time.
-func readDocumentForReview(applicationID int64, documentType documents.Type, path string) enterDocumentReviewFormMsg {
+func readDocumentForReview(applicationID int64, documentType document.Type, path string) enterDocumentReviewFormMsg {
 	content, err := os.ReadFile(path)
 	return enterDocumentReviewFormMsg{
 		applicationID: applicationID,

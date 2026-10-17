@@ -1,11 +1,15 @@
-package store
+package store_test
 
 import (
 	"context"
 	"database/sql"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/store"
 )
 
 // TestOpen_TransactionsTakeTheWriteLockWhenTheyBegin checks a transaction
@@ -19,7 +23,7 @@ func TestOpen_TransactionsTakeTheWriteLockWhenTheyBegin(t *testing.T) {
 	t.Parallel()
 
 	path := t.TempDir() + "/test.db"
-	sqlDB, err := Open(path, DefaultConfig())
+	sqlDB, err := store.Open(path, store.DefaultConfig())
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -63,19 +67,19 @@ func TestOpen_ConfiguresConnectionForConcurrentWriters(t *testing.T) {
 
 	tests := []struct {
 		name   string
-		cfg    Config
+		cfg    store.Config
 		pragma string
 		want   string
 	}{
-		{name: "default busy timeout", cfg: DefaultConfig(), pragma: "busy_timeout", want: "5000"},
-		{name: "configured busy timeout", cfg: Config{BusyTimeout: 250 * time.Millisecond}, pragma: "busy_timeout", want: "250"},
-		{name: "journal mode", cfg: DefaultConfig(), pragma: "journal_mode", want: "wal"},
+		{name: "default busy timeout", cfg: store.DefaultConfig(), pragma: "busy_timeout", want: "5000"},
+		{name: "configured busy timeout", cfg: store.Config{BusyTimeout: 250 * time.Millisecond}, pragma: "busy_timeout", want: "250"},
+		{name: "journal mode", cfg: store.DefaultConfig(), pragma: "journal_mode", want: "wal"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			sqlDB, err := Open(t.TempDir()+"/test.db", tt.cfg)
+			sqlDB, err := store.Open(t.TempDir()+"/test.db", tt.cfg)
 			if err != nil {
 				t.Fatalf("Open: %v", err)
 			}
@@ -106,18 +110,18 @@ func TestOpen_WritesTimesInTheConfiguredFormat(t *testing.T) {
 	written := time.Date(2026, 8, 24, 13, 15, 0, 0, time.FixedZone("", -4*60*60))
 	tests := []struct {
 		name string
-		cfg  Config
+		cfg  store.Config
 		want string
 	}{
-		{name: "default, converted to UTC", cfg: DefaultConfig(), want: "2026-08-24 17:15:00+00:00"},
-		{name: "sqlite format, no timezone", cfg: Config{BusyTimeout: time.Second, TimeFormat: "sqlite"}, want: "2026-08-24 13:15:00-04:00"},
-		{name: "datetime", cfg: Config{BusyTimeout: time.Second, TimeFormat: "datetime"}, want: "2026-08-24 13:15:00"},
+		{name: "default, converted to UTC", cfg: store.DefaultConfig(), want: "2026-08-24 17:15:00+00:00"},
+		{name: "sqlite format, no timezone", cfg: store.Config{BusyTimeout: time.Second, TimeFormat: "sqlite"}, want: "2026-08-24 13:15:00-04:00"},
+		{name: "datetime", cfg: store.Config{BusyTimeout: time.Second, TimeFormat: "datetime"}, want: "2026-08-24 13:15:00"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			sqlDB, err := Open(t.TempDir()+"/test.db", tt.cfg)
+			sqlDB, err := store.Open(t.TempDir()+"/test.db", tt.cfg)
 			if err != nil {
 				t.Fatalf("Open: %v", err)
 			}
@@ -163,11 +167,10 @@ func TestOpen_EqualFold_AgreesWithGo(t *testing.T) {
 		t.Run("origin "+origin, func(t *testing.T) {
 			t.Parallel()
 
-			path := t.TempDir() + "/test.db"
-			newTestStoreAt(t, path) // migrate, so the origin can be stamped
-			cfg := DefaultConfig()
+			path := testutil.MigratedDBPath(t)
+			cfg := store.DefaultConfig()
 			cfg.Origin = origin
-			sqlDB, err := Open(path, cfg)
+			sqlDB, err := store.Open(path, cfg)
 			if err != nil {
 				t.Fatalf("Open: %v", err)
 			}
@@ -212,11 +215,10 @@ func TestOpen_ContainsFold_AgreesWithGo(t *testing.T) {
 		t.Run("origin "+origin, func(t *testing.T) {
 			t.Parallel()
 
-			path := t.TempDir() + "/test.db"
-			newTestStoreAt(t, path) // migrate, so the origin can be stamped
-			cfg := DefaultConfig()
+			path := testutil.MigratedDBPath(t)
+			cfg := store.DefaultConfig()
 			cfg.Origin = origin
-			sqlDB, err := Open(path, cfg)
+			sqlDB, err := store.Open(path, cfg)
 			if err != nil {
 				t.Fatalf("Open: %v", err)
 			}
@@ -236,5 +238,78 @@ func TestOpen_ContainsFold_AgreesWithGo(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestOpen_WithOrigin_KeepsTheConnectionSettings: stamping a connection
+// must keep every setting Open sets for concurrent writers and times.
+func TestOpen_WithOrigin_KeepsTheConnectionSettings(t *testing.T) {
+	t.Parallel()
+
+	path := testutil.MigratedDBPath(t)
+	cfg := store.DefaultConfig()
+	cfg.Origin = "tui:1"
+	sqlDB, err := store.Open(path, cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	for pragma, want := range map[string]string{
+		"busy_timeout": strconv.FormatInt(store.DefaultConfig().BusyTimeout.Milliseconds(), 10),
+		"journal_mode": strings.ToLower(store.JournalMode),
+	} {
+		var got string
+		if err := sqlDB.QueryRow("PRAGMA " + pragma).Scan(&got); err != nil {
+			t.Fatalf("PRAGMA %s: %v", pragma, err)
+		}
+		if got != want {
+			t.Errorf("PRAGMA %s = %q, want %q", pragma, got, want)
+		}
+	}
+
+	if _, err := sqlDB.Exec("CREATE TABLE t (v TIMESTAMP)"); err != nil {
+		t.Fatalf("create table: %v", err)
+	}
+	if _, err := sqlDB.Exec("INSERT INTO t (v) VALUES (?)", time.Date(2026, 8, 24, 13, 15, 0, 0, time.FixedZone("", -4*60*60))); err != nil {
+		t.Fatalf("insert: %v", err)
+	}
+	var stored string
+	if err := sqlDB.QueryRow("SELECT CAST(v AS TEXT) FROM t").Scan(&stored); err != nil {
+		t.Fatalf("select: %v", err)
+	}
+	if want := "2026-08-24 17:15:00+00:00"; stored != want {
+		t.Errorf("stored %q, want %q", stored, want)
+	}
+
+	tx, err := sqlDB.BeginTx(context.Background(), nil)
+	if err != nil {
+		t.Fatalf("BeginTx: %v", err)
+	}
+	t.Cleanup(func() { _ = tx.Rollback() })
+	other, err := sql.Open("sqlite", "file:"+path) // doesn't wait for locks
+	if err != nil {
+		t.Fatalf("open second connection: %v", err)
+	}
+	t.Cleanup(func() { _ = other.Close() })
+	if _, err := other.Exec("INSERT INTO t (v) VALUES (NULL)"); err == nil {
+		t.Error("another connection wrote while a transaction was open: the transaction didn't take the write lock at BeginTx")
+	}
+}
+
+func TestOpen_WithOrigin_OnAnUnmigratedDatabase_SaysToMigrate(t *testing.T) {
+	t.Parallel()
+
+	cfg := store.DefaultConfig()
+	cfg.Origin = "tui:1"
+	sqlDB, err := store.Open(t.TempDir()+"/test.db", cfg)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	t.Cleanup(func() { _ = sqlDB.Close() })
+
+	err = sqlDB.Ping()
+	if err == nil || !strings.Contains(err.Error(), "swamp migrate up") {
+		t.Errorf("first use of a stamped store on an unmigrated database = %v, want an error saying to run swamp migrate up", err)
 	}
 }

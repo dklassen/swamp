@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -13,33 +14,33 @@ import (
 // it: the summary, the description as text, its company's description,
 // and the content hash a score of it must name.
 type FullPosting struct {
-	ID                 int64              `json:"ID"`
-	Title              string             `json:"Title"`
-	CompanyName        string             `json:"CompanyName"`
-	CompanyDescription string             `json:"CompanyDescription"`
-	Department         string             `json:"Department"`
-	Location           string             `json:"Location"`
-	WorkplaceType      string             `json:"WorkplaceType"`
-	ListingStatus      string             `json:"ListingStatus"`
-	PublishedAt        store.OptionalTime `json:"PublishedAt"`
-	FirstSeenAt        time.Time          `json:"FirstSeenAt"`
-	DescriptionText    string             `json:"DescriptionText"`
-	JobURL             string             `json:"JobURL"`
-	ApplicationURL     string             `json:"ApplicationURL"`
-	Version            string             `json:"Version"`
+	ID                 int64                `json:"ID"`
+	Title              string               `json:"Title"`
+	CompanyName        string               `json:"CompanyName"`
+	CompanyDescription string               `json:"CompanyDescription"`
+	Department         string               `json:"Department"`
+	Location           string               `json:"Location"`
+	WorkplaceType      string               `json:"WorkplaceType"`
+	ListingStatus      string               `json:"ListingStatus"`
+	PublishedAt        posting.OptionalTime `json:"PublishedAt"`
+	FirstSeenAt        time.Time            `json:"FirstSeenAt"`
+	DescriptionText    string               `json:"DescriptionText"`
+	JobURL             string               `json:"JobURL"`
+	ApplicationURL     string               `json:"ApplicationURL"`
+	Version            string               `json:"Version"`
 }
 
 // ReadPosting returns posting id in full. A posting at a company the user
 // deleted is refused, as search leaves it out.
 func (st *Stage) ReadPosting(ctx context.Context, id int64) (FullPosting, error) {
-	posting, err := st.store.GetPosting(ctx, id)
+	posting, err := st.postings.Get(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return FullPosting{}, fmt.Errorf("stage: no posting %d: %w", id, err)
 	}
 	if err != nil {
 		return FullPosting{}, fmt.Errorf("stage: get posting %d: %w", id, err)
 	}
-	company, err := st.store.GetCompanyIncludingDeleted(ctx, posting.CompanyID)
+	company, err := st.companies.GetIncludingDeleted(ctx, posting.CompanyID)
 	if err != nil {
 		return FullPosting{}, fmt.Errorf("stage: get company: %w", err)
 	}

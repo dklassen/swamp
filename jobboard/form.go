@@ -4,7 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/document"
 )
 
 // ApplicationForm is what a posting's application form asks for (#168):
@@ -16,8 +16,8 @@ import (
 type ApplicationForm struct {
 	// Documents has the form's requirement for each document type. A type
 	// missing from the map is Absent: the form doesn't ask for it.
-	Documents map[documents.Type]Requirement `json:"Documents"`
-	Questions []Question                     `json:"Questions"`
+	Documents map[document.Type]Requirement `json:"Documents"`
+	Questions []Question                    `json:"Questions"`
 }
 
 // Question is one custom question on a form. Type is a source-agnostic

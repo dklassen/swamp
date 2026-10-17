@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/dklassen/swamp/internal/testutil"
 )
 
 func TestCompanyEditModel_New_SeedsInputWithName(t *testing.T) {
@@ -81,13 +82,13 @@ func TestCompanyEditModel_Enter_WhitespaceOnlyName_NoOp(t *testing.T) {
 func TestCompanyEditModel_Enter_TrimsSavedName(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
-	created, err := s.CreateCompany(t.Context(), "Old Name", "ashby", "acme")
+	s := testutil.NewTestApp(t)
+	created, err := s.Companies.Add(t.Context(), "Old Name", "ashby", "acme")
 	if err != nil {
 		t.Fatalf("CreateCompany() error = %v", err)
 	}
 
-	m := newCompanyEditModel(s, created.ID, created.Name)
+	m := newCompanyEditModel(s.Companies, created.ID, created.Name)
 	m.nameInput.SetValue("  Acme Corp  ")
 
 	cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})

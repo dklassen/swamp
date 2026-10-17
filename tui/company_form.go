@@ -9,7 +9,7 @@ import (
 	"github.com/dklassen/swamp/sync"
 )
 
-// companySources are the store.Company.Source values this form can
+// companySources are the company.Company.Source values this form can
 // create, in the order the source field cycles through. Must be kept in
 // sync with cmd/swamp/main.go's newSyncer -- a source added there with no
 // entry here can never actually be added as a company.

@@ -5,12 +5,13 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/seed"
 )
 
 func TestImportCompanies_ValidEntry_CreatesCompany(t *testing.T) {
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
 	fetcher := &perBoardFetcher{
@@ -18,7 +19,7 @@ func TestImportCompanies_ValidEntry_CreatesCompany(t *testing.T) {
 			"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 		},
 	}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	entries := []seed.Entry{
 		{Name: "Acme", Source: "ashby", SourceRef: "acme"},
@@ -35,7 +36,7 @@ func TestImportCompanies_ValidEntry_CreatesCompany(t *testing.T) {
 		t.Errorf("results[0].Company.Name = %q, want %q", results[0].Company.Name, "Acme")
 	}
 
-	companies, err := s.ListActiveCompanies(ctx)
+	companies, err := s.Companies.ListActive(ctx)
 	if err != nil {
 		t.Fatalf("ListActiveCompanies: %v", err)
 	}
@@ -45,10 +46,10 @@ func TestImportCompanies_ValidEntry_CreatesCompany(t *testing.T) {
 }
 
 func TestImportCompanies_UnsupportedSource_NoCompanyCreated(t *testing.T) {
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
-	syncer := New(s, map[string]PostingFetcher{"ashby": &perBoardFetcher{}}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": &perBoardFetcher{}}, DefaultConfig())
 
 	entries := []seed.Entry{
 		{Name: "Acme", Source: "workday", SourceRef: "acme"},
@@ -62,7 +63,7 @@ func TestImportCompanies_UnsupportedSource_NoCompanyCreated(t *testing.T) {
 		t.Fatal("results[0].Err = nil, want error for unsupported source")
 	}
 
-	companies, err := s.ListActiveCompanies(ctx)
+	companies, err := s.Companies.ListActive(ctx)
 	if err != nil {
 		t.Fatalf("ListActiveCompanies: %v", err)
 	}
@@ -72,7 +73,7 @@ func TestImportCompanies_UnsupportedSource_NoCompanyCreated(t *testing.T) {
 }
 
 func TestImportCompanies_InvalidSourceRef_NoCompanyCreated(t *testing.T) {
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
 	fetcher := &perBoardFetcher{
@@ -80,7 +81,7 @@ func TestImportCompanies_InvalidSourceRef_NoCompanyCreated(t *testing.T) {
 			"bogus": errors.New("404 job not found"),
 		},
 	}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	entries := []seed.Entry{
 		{Name: "Acme", Source: "ashby", SourceRef: "bogus"},
@@ -94,7 +95,7 @@ func TestImportCompanies_InvalidSourceRef_NoCompanyCreated(t *testing.T) {
 		t.Fatal("results[0].Err = nil, want error for invalid source_ref")
 	}
 
-	companies, err := s.ListActiveCompanies(ctx)
+	companies, err := s.Companies.ListActive(ctx)
 	if err != nil {
 		t.Fatalf("ListActiveCompanies: %v", err)
 	}
@@ -104,7 +105,7 @@ func TestImportCompanies_InvalidSourceRef_NoCompanyCreated(t *testing.T) {
 }
 
 func TestImportCompanies_MixedBatch_GoodEntryStillImportedAfterBadOne(t *testing.T) {
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
 	fetcher := &perBoardFetcher{
@@ -115,7 +116,7 @@ func TestImportCompanies_MixedBatch_GoodEntryStillImportedAfterBadOne(t *testing
 			"bogus": errors.New("404 job not found"),
 		},
 	}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	entries := []seed.Entry{
 		{Name: "Bogus Co", Source: "ashby", SourceRef: "bogus"},
@@ -133,7 +134,7 @@ func TestImportCompanies_MixedBatch_GoodEntryStillImportedAfterBadOne(t *testing
 		t.Errorf("results[1].Err = %v, want nil for acme entry", results[1].Err)
 	}
 
-	companies, err := s.ListActiveCompanies(ctx)
+	companies, err := s.Companies.ListActive(ctx)
 	if err != nil {
 		t.Fatalf("ListActiveCompanies: %v", err)
 	}
@@ -143,7 +144,7 @@ func TestImportCompanies_MixedBatch_GoodEntryStillImportedAfterBadOne(t *testing
 }
 
 func TestImportCompanies_ReimportExistingCompany_DoesNotDuplicate(t *testing.T) {
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
 	fetcher := &perBoardFetcher{
@@ -151,7 +152,7 @@ func TestImportCompanies_ReimportExistingCompany_DoesNotDuplicate(t *testing.T) 
 			"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
 		},
 	}
-	syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 	entries := []seed.Entry{
 		{Name: "Acme", Source: "ashby", SourceRef: "acme"},
@@ -164,7 +165,7 @@ func TestImportCompanies_ReimportExistingCompany_DoesNotDuplicate(t *testing.T) 
 		t.Fatalf("results[0].Err = %v, want nil on reimport", results[0].Err)
 	}
 
-	companies, err := s.ListActiveCompanies(ctx)
+	companies, err := s.Companies.ListActive(ctx)
 	if err != nil {
 		t.Fatalf("ListActiveCompanies: %v", err)
 	}
@@ -190,18 +191,18 @@ func TestImportCompanies_Description_FillsOnlyMissing(t *testing.T) {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 
-			s := newTestStore(t)
+			s := testutil.NewTestApp(t)
 			ctx := context.Background()
 			if tc.preexisting {
 				acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 				if tc.existing != "" {
-					if _, err := s.UpdateCompanyDescription(ctx, acme.ID, tc.existing); err != nil {
+					if _, err := s.Companies.SetDescription(ctx, acme.ID, tc.existing); err != nil {
 						t.Fatalf("UpdateCompanyDescription: %v", err)
 					}
 				}
 			}
 			fetcher := &perBoardFetcher{postings: map[string][]jobboard.Posting{"acme": nil}}
-			syncer := New(s, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+			syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
 
 			results := syncer.ImportCompanies(ctx, []seed.Entry{
 				{Name: "Acme", Source: "ashby", SourceRef: "acme", Description: "from seed"},
@@ -210,7 +211,7 @@ func TestImportCompanies_Description_FillsOnlyMissing(t *testing.T) {
 				t.Fatalf("ImportCompanies: %v", results[0].Err)
 			}
 
-			got, err := s.GetCompany(ctx, results[0].Company.ID)
+			got, err := s.Companies.Get(ctx, results[0].Company.ID)
 			if err != nil {
 				t.Fatalf("GetCompany: %v", err)
 			}

@@ -20,11 +20,11 @@ type CompanySummary struct {
 // Companies returns every company the user hasn't deleted, ordered by
 // name (#220, RFC 0006). About 45 today, so it isn't paged.
 func (st *Stage) Companies(ctx context.Context) ([]CompanySummary, error) {
-	companies, err := st.store.ListActiveCompanies(ctx)
+	companies, err := st.companies.ListActive(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("stage: list companies: %w", err)
 	}
-	open, err := st.store.CountOpenPostingsByCompany(ctx)
+	open, err := st.postings.CountOpenByCompany(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("stage: count open postings: %w", err)
 	}

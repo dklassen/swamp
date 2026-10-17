@@ -12,9 +12,9 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -22,7 +22,7 @@ import (
 // application whose resume is drafted.
 func deleteTestApp(t *testing.T) (*App, application.Application) {
 	t.Helper()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	target := mustCreateApplication(t, s, posting.ID)
@@ -32,7 +32,7 @@ func deleteTestApp(t *testing.T) (*App, application.Application) {
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
-	if err := os.WriteFile(mustDoc(t, status, documents.Resume).Path, []byte("# Draft\n"), 0o644); err != nil {
+	if err := os.WriteFile(mustDoc(t, status, document.Resume).Path, []byte("# Draft\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	return app, target
@@ -68,7 +68,7 @@ func startDelete(t *testing.T, app *App) *App {
 // resumeDir is the application's document directory.
 func resumeDir(t *testing.T, app *App, applicationID int64) string {
 	t.Helper()
-	return filepath.Dir(mustDoc(t, app.documents.Status(applicationID), documents.Resume).Path)
+	return filepath.Dir(mustDoc(t, app.documents.Status(applicationID), document.Resume).Path)
 }
 
 func TestDeleteFlow_ConfirmingDeletesTheApplicationAndKeepsItsDocuments(t *testing.T) {
@@ -79,7 +79,7 @@ func TestDeleteFlow_ConfirmingDeletesTheApplicationAndKeepsItsDocuments(t *testi
 	app, cmd := sendKey(app, runeKey('y'))
 	app = applyCmd(t, app, cmd)
 
-	if _, err := application.GetByID(context.Background(), app.store.DB(), target.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := storeOf(app).Applications.Get(context.Background(), target.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("application.GetByID after confirming: err = %v, want ErrNotFound", err)
 	}
 	if _, err := os.Stat(resumeDir(t, app, target.ID)); err != nil {
@@ -107,10 +107,10 @@ func TestDeleteFlow_DecliningKeepsTheApplication(t *testing.T) {
 			app, cmd := sendKey(app, key)
 			app = applyCmd(t, app, cmd)
 
-			if _, err := application.GetByID(context.Background(), app.store.DB(), target.ID); err != nil {
+			if _, err := storeOf(app).Applications.Get(context.Background(), target.ID); err != nil {
 				t.Errorf("application.GetByID after declining: %v, want the application kept", err)
 			}
-			if !mustDoc(t, app.documents.Status(target.ID), documents.Resume).Exists {
+			if !mustDoc(t, app.documents.Status(target.ID), document.Resume).Exists {
 				t.Error("resume gone after declining, want it kept")
 			}
 			if app.screen != screenApplicationDetail {
@@ -149,14 +149,14 @@ func TestDeleteFlow_ConfirmationShowsTheStatusAsItIsNow(t *testing.T) {
 	t.Parallel()
 
 	app, target := deleteTestApp(t)
-	if _, err := updateApplicationStatusIn(context.Background(), app.store, target.PostingID, applicationstatus.Interviewing); err != nil {
+	if _, err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
 	app = startDelete(t, app)
 
 	view := app.applicationDelete.View(120)
-	if want := applicationStatusLabel(applicationstatus.Interviewing); !strings.Contains(view, want) {
+	if want := applicationStatusLabel(application.Interviewing); !strings.Contains(view, want) {
 		t.Errorf("confirmation doesn't show the stored status %q:\n%s", want, view)
 	}
 }
@@ -166,7 +166,7 @@ func TestDeleteFlow_AlreadyDeletedElsewhere_StaysOnDetailAndSaysSo(t *testing.T)
 
 	app, target := deleteTestApp(t)
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
-	if err := application.Delete(context.Background(), app.store.DB(), target.ID); err != nil {
+	if err := storeOf(app).Applications.Delete(context.Background(), target.ID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
 
@@ -231,7 +231,7 @@ func TestDeleteFlow_FromTheHomeList(t *testing.T) {
 	if app.screen != screenActiveApplications {
 		t.Errorf("screen after n = %v, want the home list", app.screen)
 	}
-	if _, err := application.GetByID(context.Background(), app.store.DB(), target.ID); err != nil {
+	if _, err := storeOf(app).Applications.Get(context.Background(), target.ID); err != nil {
 		t.Errorf("application.GetByID after n: %v, want the application kept", err)
 	}
 }

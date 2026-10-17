@@ -21,14 +21,13 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/charmbracelet/x/cellbuf"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/companyfilter"
-	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/filter"
-	"github.com/dklassen/swamp/postingmarkup"
-	"github.com/dklassen/swamp/pursuit"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/filter"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
@@ -73,18 +72,23 @@ const (
 )
 
 type App struct {
-	store     *store.Store
-	changeLog bool
-	origin    string
+	companyService     *service.CompanyService
+	postingService     *service.PostingService
+	applicationService *service.ApplicationService
+	documentService    *service.DocumentService
+	scoringService     *service.ScoringService
+	changeLogService   *service.ChangeLog
+	changeLog          bool
+	origin             string
 	// seen is each view's place in the change log (see cursor); a view
 	// not in it is at since. latestSeen is the newest event read so far.
 	seen       map[screen]int64
 	since      int64
 	latestSeen int64
 	syncer     *sync.Syncer
-	companies  []store.Company
+	companies  []company.Company
 	// companyOpenPostings is each company's open, unarchived posting count
-	// (store.CountOpenPostingsByCompany), loaded alongside companies.
+	// (PostingService.CountOpenByCompany), loaded alongside companies.
 	companyOpenPostings map[int64]int
 	companyList         companyListModel
 	allPostings         allPostingsModel
@@ -101,9 +105,9 @@ type App struct {
 	refreshing      int
 	refreshingName  string
 	refreshSpinner  spinner.Model
-	selectedCompany store.Company
-	postings        []store.Posting
-	postingMarkup   map[int64]postingmarkup.Markup
+	selectedCompany company.Company
+	postings        []posting.Posting
+	postingMarkup   map[int64]posting.Markup
 	postingList     postingListModel
 	postingDetail   postingDetailModel
 	// postingDetailFrom is the screen that opened posting detail.
@@ -111,7 +115,7 @@ type App struct {
 	// applicationsByPosting holds the application for each posting_id that
 	// has one (fetched async on entering posting detail -- see
 	// loadApplication). A posting with no entry has no application yet
-	// (Application is created lazily, unlike postingmarkup.Markup).
+	// (Application is created lazily, unlike posting.Markup).
 	applicationsByPosting map[int64]application.Application
 	applicationStatus     applicationStatusModel
 	applicationNotes      applicationNotesModel
@@ -131,14 +135,14 @@ type App struct {
 	lastScreenInstance screenInstance
 	// activeApplications backs the home screen: every application not at
 	// a terminal dead-end status, across every company (see
-	// pursuit.List).
-	activeApplications []pursuit.Application
+	// ApplicationService.Active).
+	activeApplications []posting.ActiveApplication
 	// activeApplicationProgress is each active application's document
 	// progress, by application ID, loaded with activeApplications. The
 	// home screen derives each row's next step from it and the row's
 	// LatestReviews when it renders, so patching one row's reviews (#91)
 	// moves its next step on too.
-	activeApplicationProgress map[int64]map[documents.Type]documentProgress
+	activeApplicationProgress map[int64]map[document.Type]documentProgress
 	activeApplicationList     activeApplicationListModel
 	applicationDetail         applicationDetailModel
 	applicationExport         applicationExportModel
@@ -207,16 +211,30 @@ func renderCursorLine(line string, isCursor bool) string {
 	return "  " + line + "\n"
 }
 
-func New(s *store.Store, syncer *sync.Syncer, docs *documents.Store) *App {
+func New(
+	companies *service.CompanyService,
+	postings *service.PostingService,
+	applications *service.ApplicationService,
+	documentService *service.DocumentService,
+	scores *service.ScoringService,
+	changes *service.ChangeLog,
+	syncer *sync.Syncer,
+	docs *documents.Store,
+) *App {
 	return &App{
-		store:                 s,
+		companyService:        companies,
+		postingService:        postings,
+		applicationService:    applications,
+		documentService:       documentService,
+		scoringService:        scores,
+		changeLogService:      changes,
 		seen:                  map[screen]int64{},
 		syncer:                syncer,
 		screen:                screenActiveApplications,
-		companyList:           newCompanyListModel(s),
-		allPostings:           newAllPostingsModel(s),
+		companyList:           newCompanyListModel(),
+		allPostings:           newAllPostingsModel(postings),
 		companyForm:           newCompanyFormModel(syncer),
-		postingList:           newPostingListModel(s),
+		postingList:           newPostingListModel(postings),
 		activeApplicationList: newActiveApplicationListModel(),
 		hideArchived:          true,
 		documents:             docs,
@@ -238,7 +256,7 @@ func (a *App) WithStatus(status string) *App {
 // the review left notes, an indented "Notes:" line -- the reviewer's
 // record of what specifically to fix before the next cycle (see
 // #83).
-func documentStatusLine(label string, exists bool, path string, review docrecord.Review, hasReview bool) string {
+func documentStatusLine(label string, exists bool, path string, review document.Review, hasReview bool) string {
 	status := "not found"
 	if exists {
 		status = "found"
@@ -253,20 +271,20 @@ func documentStatusLine(label string, exists bool, path string, review docrecord
 // outcomeDisplay is how each review outcome looks: its style, shared by
 // reviewBadge and reviewGlyph, and its glyph. An outcome missing here
 // renders dim, as "[<outcome>]" and "?"; a test checks every
-// docrecord.Outcomes() has an entry.
-var outcomeDisplay = map[docrecord.Outcome]struct {
+// document.Outcomes() has an entry.
+var outcomeDisplay = map[document.Outcome]struct {
 	style lipgloss.Style
 	glyph string
 }{
-	docrecord.Passed:  {passStyle, "✓"},
-	docrecord.Flagged: {errStyle, "✗"},
+	document.Passed:  {passStyle, "✓"},
+	document.Flagged: {errStyle, "✗"},
 }
 
 // reviewBadge renders a document's latest review outcome as a short
 // styled tag: dim "[not reviewed]" when hasReview is false (no review
 // recorded yet), otherwise the outcome's name in capitals, styled per
 // outcomeDisplay: green "[PASSED]", red "[FLAGGED]".
-func reviewBadge(review docrecord.Review, hasReview bool) string {
+func reviewBadge(review document.Review, hasReview bool) string {
 	if !hasReview {
 		return dimStyle.Render("[not reviewed]")
 	}
@@ -283,9 +301,9 @@ func reviewBadge(review docrecord.Review, hasReview bool) string {
 // reviewBadge's full "[FLAGGED]"/notes rendering (#83).
 // A document with no entry in reviews (no review recorded yet)
 // renders as a dim "-".
-func reviewGlyphSummary(reviews map[documents.Type]docrecord.Review) string {
-	entries := make([]string, 0, len(documents.Types()))
-	for _, documentType := range documents.Types() {
+func reviewGlyphSummary(reviews map[document.Type]document.Review) string {
+	entries := make([]string, 0, len(document.Types()))
+	for _, documentType := range document.Types() {
 		review, ok := reviews[documentType]
 		entries = append(entries, documentAbbreviation(documentType)+":"+reviewGlyph(review, ok))
 	}
@@ -294,7 +312,7 @@ func reviewGlyphSummary(reviews map[documents.Type]docrecord.Review) string {
 
 // documentAbbreviation is the initials of documentType's label, for the
 // review column: "CL" for cover letter, "R" for resume.
-func documentAbbreviation(documentType documents.Type) string {
+func documentAbbreviation(documentType document.Type) string {
 	var initials []rune
 	for _, word := range strings.Fields(documentType.Label()) {
 		initials = append(initials, unicode.ToUpper([]rune(word)[0]))
@@ -304,7 +322,7 @@ func documentAbbreviation(documentType documents.Type) string {
 
 // reviewGlyph is reviewBadge's one-character form, for list rows: dim "-"
 // with no review, otherwise the outcome's glyph from outcomeDisplay.
-func reviewGlyph(review docrecord.Review, hasReview bool) string {
+func reviewGlyph(review document.Review, hasReview bool) string {
 	if !hasReview {
 		return dimStyle.Render("-")
 	}
@@ -337,7 +355,7 @@ func reviewGlyph(review docrecord.Review, hasReview bool) string {
 // tea.Cmd/tea.Msg convention as the rest of this file's store-backed
 // state (#83). A document with no entry in the map
 // renders as "not reviewed".
-func postingDetailContent(p store.Posting, application application.Application, hasApplication bool, docs *documents.Store, latestReviews map[documents.Type]docrecord.Review, width int) string {
+func postingDetailContent(p posting.Posting, application application.Application, hasApplication bool, docs *documents.Store, latestReviews map[document.Type]document.Review, width int) string {
 	var b strings.Builder
 	b.WriteString(sectionHeading("Posting", width) + "\n")
 	fields := []struct{ label, value string }{
@@ -364,7 +382,7 @@ func postingDetailContent(p store.Posting, application application.Application, 
 		}
 		status := docs.Status(application.ID)
 		b.WriteString("\n")
-		for _, documentType := range documents.Types() {
+		for _, documentType := range document.Types() {
 			doc, err := status.Doc(documentType)
 			if err != nil {
 				continue
@@ -408,7 +426,7 @@ func (a *App) openDocumentReviewForm(msg enterDocumentReviewFormMsg) bool {
 	if msg.err != nil {
 		return false
 	}
-	a.documentReviewForm = newDocumentReviewFormModel(a.store, a.documents, msg.applicationID, msg.documentType, msg.content, a.width, a.screenRows(), a.newScreenInstance())
+	a.documentReviewForm = newDocumentReviewFormModel(a.documentService, a.documents, msg.applicationID, msg.documentType, msg.content, a.width, a.screenRows(), a.newScreenInstance())
 	return true
 }
 
@@ -446,16 +464,16 @@ func (a *App) returnBack() screen {
 // need refreshing.
 func (a *App) rebuildPostingDetailApplication() tea.Cmd {
 	_, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-	a.replacePostingDetail(newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), a.postingDetail.posting, app, hasApp, nil, a.canNavigateSiblings(a.postingDetail.posting.ID)))
-	return maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
+	a.replacePostingDetail(newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), a.postingDetail.posting, app, hasApp, nil, a.canNavigateSiblings(a.postingDetail.posting.ID)))
+	return maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID)
 }
 
 // lookupPosting finds id in a.postings, returning it along with its
 // application (if any) from a.applicationsByPosting -- used to seed a
 // fresh postingDetailModel by ID, since that model doesn't hold a
 // reference to either collection itself.
-func (a *App) lookupPosting(id int64) (store.Posting, application.Application, bool) {
-	var p store.Posting
+func (a *App) lookupPosting(id int64) (posting.Posting, application.Application, bool) {
+	var p posting.Posting
 	for _, candidate := range a.postings {
 		if candidate.ID == id {
 			p = candidate
@@ -467,7 +485,7 @@ func (a *App) lookupPosting(id int64) (store.Posting, application.Application, b
 }
 
 // indexOfPosting returns id's index in postings, or -1 if not present.
-func indexOfPosting(postings []store.Posting, id int64) int {
+func indexOfPosting(postings []posting.Posting, id int64) int {
 	for i, p := range postings {
 		if p.ID == id {
 			return i
@@ -477,7 +495,7 @@ func indexOfPosting(postings []store.Posting, id int64) int {
 }
 
 // indexOfApplication returns id's index in apps, or -1 if not present.
-func indexOfApplication(apps []pursuit.Application, id int64) int {
+func indexOfApplication(apps []posting.ActiveApplication, id int64) int {
 	for i, app := range apps {
 		if app.ID == id {
 			return i
@@ -487,7 +505,7 @@ func indexOfApplication(apps []pursuit.Application, id int64) int {
 }
 
 // indexOfCompany returns id's index in companies, or -1 if not present.
-func indexOfCompany(companies []store.Company, id int64) int {
+func indexOfCompany(companies []company.Company, id int64) int {
 	for i, c := range companies {
 		if c.ID == id {
 			return i
@@ -497,22 +515,22 @@ func indexOfCompany(companies []store.Company, id int64) int {
 }
 
 type companiesLoadedMsg struct {
-	companies    []store.Company
+	companies    []company.Company
 	openPostings map[int64]int
 	err          error
 }
 
 // loadCompanies loads the active companies along with each one's open posting
 // count for the company list's Open column.
-func loadCompanies(s *store.Store) tea.Cmd {
+func loadCompanies(companies *service.CompanyService, postings *service.PostingService) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		companies, err := s.ListActiveCompanies(ctx)
+		active, err := companies.ListActive(ctx)
 		if err != nil {
 			return companiesLoadedMsg{err: err}
 		}
-		openPostings, err := s.CountOpenPostingsByCompany(ctx)
-		return companiesLoadedMsg{companies: companies, openPostings: openPostings, err: err}
+		openPostings, err := postings.CountOpenByCompany(ctx)
+		return companiesLoadedMsg{companies: active, openPostings: openPostings, err: err}
 	}
 }
 
@@ -521,7 +539,7 @@ func loadCompanies(s *store.Store) tea.Cmd {
 // any in-place mutation (create, rename) that could change where an
 // entry belongs, since Go's string `<` matches SQLite's default byte-wise
 // collation.
-func sortCompaniesByName(companies []store.Company) {
+func sortCompaniesByName(companies []company.Company) {
 	sort.Slice(companies, func(i, j int) bool {
 		return companies[i].Name < companies[j].Name
 	})
@@ -529,38 +547,38 @@ func sortCompaniesByName(companies []store.Company) {
 
 func (a *App) Init() tea.Cmd {
 	// The all-postings page too, for its tab's count.
-	return tea.Batch(loadCompanies(a.store), loadActiveApplications(a.store, a.documents), a.allPostings.load(a.allPostings.pageSize(a.screenRows())), a.pollChanges())
+	return tea.Batch(loadCompanies(a.companyService, a.postingService), loadActiveApplications(a.applicationService, a.documentService, a.documents), a.allPostings.load(a.allPostings.pageSize(a.screenRows())), a.pollChanges())
 }
 
 type activeApplicationsLoadedMsg struct {
-	applications []pursuit.Application
-	progress     map[int64]map[documents.Type]documentProgress
+	applications []posting.ActiveApplication
+	progress     map[int64]map[document.Type]documentProgress
 	err          error
 }
 
 // loadActiveApplications fetches every active application, filtering
-// each one's LatestReviews through documents.Current -- store has
+// each one's LatestReviews through documents.Current -- the services have
 // no filesystem access (see documents.go's own doc comment) so
-// pursuit.List itself can't do this, and every screen this
+// ApplicationService.Active itself can't do this, and every screen this
 // list feeds (the active-applications glyph column, application detail,
 // and posting detail reached via application detail's 'p' fast path,
 // which skips its own separate load) would
 // otherwise show a stale review as if it still described the current
 // document.
-func loadActiveApplications(s *store.Store, docs *documents.Store) tea.Cmd {
+func loadActiveApplications(applications *service.ApplicationService, documentService *service.DocumentService, docs *documents.Store) tea.Cmd {
 	return func() tea.Msg {
-		apps, err := pursuit.List(context.Background(), s.DB())
+		apps, err := applications.Active(context.Background())
 		if err != nil {
 			return activeApplicationsLoadedMsg{err: err}
 		}
-		progress := make(map[int64]map[documents.Type]documentProgress, len(apps))
+		progress := make(map[int64]map[document.Type]documentProgress, len(apps))
 		for i, app := range apps {
-			reviews, err := documents.Current(docs.Status(app.ID), app.LatestReviews, docrecord.Review.IsCurrent)
+			reviews, err := documents.Current(docs.Status(app.ID), app.LatestReviews, document.Review.IsCurrent)
 			if err != nil {
 				return activeApplicationsLoadedMsg{err: err}
 			}
 			apps[i].LatestReviews = reviews
-			progress[app.ID], err = documentProgressOf(s, docs, app.ID)
+			progress[app.ID], err = documentProgressOf(documentService, docs, app.ID)
 			if err != nil {
 				return activeApplicationsLoadedMsg{err: err}
 			}
@@ -571,7 +589,7 @@ func loadActiveApplications(s *store.Store, docs *documents.Store) tea.Cmd {
 }
 
 type companyCreatedMsg struct {
-	company store.Company
+	company company.Company
 	err     error
 }
 
@@ -598,21 +616,21 @@ type companyDeletedMsg struct {
 	err       error
 }
 
-func deleteCompany(s *store.Store, companyID int64) tea.Cmd {
+func deleteCompany(companies *service.CompanyService, companyID int64) tea.Cmd {
 	return func() tea.Msg {
-		err := s.SoftDeleteCompany(context.Background(), companyID)
+		err := companies.Delete(context.Background(), companyID)
 		return companyDeletedMsg{companyID: companyID, err: err}
 	}
 }
 
 type companyNameUpdatedMsg struct {
-	company store.Company
+	company company.Company
 	err     error
 }
 
-func updateCompanyName(s *store.Store, companyID int64, name string) tea.Cmd {
+func updateCompanyName(companies *service.CompanyService, companyID int64, name string) tea.Cmd {
 	return func() tea.Msg {
-		company, err := s.UpdateCompanyName(context.Background(), companyID, name)
+		company, err := companies.SetName(context.Background(), companyID, name)
 		return companyNameUpdatedMsg{company: company, err: err}
 	}
 }
@@ -632,44 +650,44 @@ func refreshCompany(syncer *sync.Syncer, companyID int64) tea.Cmd {
 // startRefresh re-syncs company with the spinner turning until it reports.
 // The refresh goes first in the batch so a fast one has already finished
 // when the spinner's first tick arrives, which then stops it.
-func (a *App) startRefresh(company store.Company) tea.Cmd {
+func (a *App) startRefresh(company company.Company) tea.Cmd {
 	a.refreshing++
 	a.refreshingName = company.Name
 	return tea.Batch(refreshCompany(a.syncer, company.ID), a.refreshSpinner.Tick)
 }
 
 type postingMarkupUpdatedMsg struct {
-	markup postingmarkup.Markup
+	markup posting.Markup
 	err    error
 }
 
-func toggleInterested(s *store.Store, postingID int64, currentlyInterested bool) tea.Cmd {
+func toggleInterested(postings *service.PostingService, postingID int64, currentlyInterested bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 		var (
-			m   postingmarkup.Markup
+			m   posting.Markup
 			err error
 		)
 		if currentlyInterested {
-			m, err = postingmarkup.UnmarkInterested(ctx, s.DB(), postingID)
+			m, err = postings.UnmarkInterested(ctx, postingID)
 		} else {
-			m, err = postingmarkup.SetInterested(ctx, s.DB(), postingID)
+			m, err = postings.SetInterested(ctx, postingID)
 		}
 		return postingMarkupUpdatedMsg{markup: m, err: err}
 	}
 }
 
-func toggleArchived(s *store.Store, postingID int64, currentlyArchived bool) tea.Cmd {
+func toggleArchived(postings *service.PostingService, postingID int64, currentlyArchived bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 		var (
-			m   postingmarkup.Markup
+			m   posting.Markup
 			err error
 		)
 		if currentlyArchived {
-			m, err = postingmarkup.Unarchive(ctx, s.DB(), postingID)
+			m, err = postings.Unarchive(ctx, postingID)
 		} else {
-			m, err = postingmarkup.SetArchived(ctx, s.DB(), postingID)
+			m, err = postings.SetArchived(ctx, postingID)
 		}
 		return postingMarkupUpdatedMsg{markup: m, err: err}
 	}
@@ -680,15 +698,9 @@ type applicationCreatedMsg struct {
 	err         error
 }
 
-func createApplication(s *store.Store, postingID int64) tea.Cmd {
+func createApplication(postings *service.PostingService, postingID int64) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-		var app application.Application
-		err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-			var err error
-			app, err = application.Create(ctx, tx, postingID)
-			return err
-		})
+		app, err := postings.ApplyTo(context.Background(), postingID)
 		return applicationCreatedMsg{application: app, err: err}
 	}
 }
@@ -701,13 +713,13 @@ type applicationLoadedMsg struct {
 }
 
 // loadApplication fetches the application for a posting, if one exists.
-// application.Get returns store.ErrNotFound when the posting has no application
-// yet (the common case, since Application is created lazily via 'a' on the
-// detail screen rather than alongside every posting) -- that's translated
-// to found=false here rather than surfaced as an error.
-func loadApplication(s *store.Store, postingID int64) tea.Cmd {
+// PostingService.Application returns store.ErrNotFound when the posting has
+// no application yet (the common case, since Application is created lazily
+// via 'a' on the detail screen rather than alongside every posting) --
+// that's translated to found=false here rather than surfaced as an error.
+func loadApplication(postings *service.PostingService, postingID int64) tea.Cmd {
 	return func() tea.Msg {
-		app, err := application.Get(context.Background(), s.DB(), postingID)
+		app, err := postings.Application(context.Background(), postingID)
 		if errors.Is(err, store.ErrNotFound) {
 			return applicationLoadedMsg{postingID: postingID, found: false}
 		}
@@ -720,7 +732,7 @@ func loadApplication(s *store.Store, postingID int64) tea.Cmd {
 
 type documentReviewsLoadedMsg struct {
 	applicationID int64
-	reviews       map[documents.Type]docrecord.Review
+	reviews       map[document.Type]document.Review
 	err           error
 }
 
@@ -733,14 +745,14 @@ type documentReviewsLoadedMsg struct {
 // direct response to that review or independently) are filtered out by
 // documents.Current -- a stale review shouldn't render as if it
 // still described the current draft (see
-// docrecord.Review.IsCurrent).
-func loadDocumentReviews(s *store.Store, docs *documents.Store, applicationID int64) tea.Cmd {
+// document.Review.IsCurrent).
+func loadDocumentReviews(documentService *service.DocumentService, docs *documents.Store, applicationID int64) tea.Cmd {
 	return func() tea.Msg {
-		reviews, err := docrecord.LatestReviews(context.Background(), s.DB(), applicationID)
+		reviews, err := documentService.LatestReviews(context.Background(), applicationID)
 		if err != nil {
 			return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
 		}
-		reviews, err = documents.Current(docs.Status(applicationID), reviews, docrecord.Review.IsCurrent)
+		reviews, err = documents.Current(docs.Status(applicationID), reviews, document.Review.IsCurrent)
 		if err != nil {
 			return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
 		}
@@ -754,11 +766,11 @@ func loadDocumentReviews(s *store.Store, docs *documents.Store, applicationID in
 // the inline review status reloads through the same async round trip the
 // rest of this screen's store-backed state uses (see
 // postingDetailContent's own doc comment).
-func maybeLoadDocumentReviews(s *store.Store, docs *documents.Store, hasApp bool, applicationID int64) tea.Cmd {
+func maybeLoadDocumentReviews(documentService *service.DocumentService, docs *documents.Store, hasApp bool, applicationID int64) tea.Cmd {
 	if !hasApp {
 		return nil
 	}
-	return loadDocumentReviews(s, docs, applicationID)
+	return loadDocumentReviews(documentService, docs, applicationID)
 }
 
 type applicationStatusUpdatedMsg struct {
@@ -767,15 +779,9 @@ type applicationStatusUpdatedMsg struct {
 	err         error
 }
 
-func updateApplicationStatus(s *store.Store, postingID int64, status applicationstatus.Status, from screenInstance) tea.Cmd {
+func updateApplicationStatus(applications *service.ApplicationService, applicationID int64, status application.Status, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-		var app application.Application
-		err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-			var err error
-			app, err = application.UpdateStatus(ctx, tx, postingID, status)
-			return err
-		})
+		app, err := applications.SetStatus(context.Background(), applicationID, status)
 		return applicationStatusUpdatedMsg{application: app, from: from, err: err}
 	}
 }
@@ -786,16 +792,16 @@ type applicationNotesUpdatedMsg struct {
 	err         error
 }
 
-func updateApplicationNotes(s *store.Store, postingID int64, notes string, from screenInstance) tea.Cmd {
+func updateApplicationNotes(applications *service.ApplicationService, applicationID int64, notes string, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
-		app, err := application.UpdateNotes(context.Background(), s.DB(), postingID, notes)
+		app, err := applications.SetNotes(context.Background(), applicationID, notes)
 		return applicationNotesUpdatedMsg{application: app, from: from, err: err}
 	}
 }
 
 type postingsLoadedMsg struct {
-	postings    []store.Posting
-	markup      map[int64]postingmarkup.Markup
+	postings    []posting.Posting
+	markup      map[int64]posting.Markup
 	departments []string
 	locations   []string
 	err         error
@@ -812,7 +818,7 @@ type postingsLoadedMsg struct {
 // everything unfiltered.
 //
 // Also loads each visible posting's markup (interested/archived) so the
-// list can render it inline -- one postingmarkup.Get call per posting.
+// list can render it inline -- one PostingService.Markup call per posting.
 // Every posting always has exactly one markup row (created alongside it
 // in UpsertPosting), so N+1 here is N cheap local sqlite reads, not N
 // round trips to a remote service.
@@ -829,27 +835,27 @@ type postingsLoadedMsg struct {
 // ephemeral TUI display state (see the App.hideArchived field), not a
 // company_filters row, so it's applied here rather than at the
 // ingestion-gating layer.
-func loadPostings(s *store.Store, companyID int64, hideArchived bool) tea.Cmd {
+func loadPostings(companies *service.CompanyService, postings *service.PostingService, companyID int64, hideArchived bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		postings, err := s.ListPostingsByCompany(ctx, companyID)
+		list, err := postings.ListByCompany(ctx, companyID)
 		if err != nil {
 			return postingsLoadedMsg{err: err}
 		}
-		postings = filterOutClosed(postings)
-		companyFilters, err := companyfilter.List(ctx, s.DB(), companyID)
+		list = filterOutClosed(list)
+		companyFilters, err := companies.Filters(ctx, companyID)
 		if err != nil {
 			return postingsLoadedMsg{err: err}
 		}
 		departments, locations := splitCompanyFilters(companyFilters)
-		postings, err = filterPostingsByCompanyFilters(postings, companyFilters)
+		list, err = filterPostingsByCompanyFilters(list, companyFilters)
 		if err != nil {
 			return postingsLoadedMsg{err: err}
 		}
 
-		markup := make(map[int64]postingmarkup.Markup, len(postings))
-		for _, p := range postings {
-			m, err := postingmarkup.Get(ctx, s.DB(), p.ID)
+		markup := make(map[int64]posting.Markup, len(list))
+		for _, p := range list {
+			m, err := postings.Markup(ctx, p.ID)
 			if err != nil {
 				return postingsLoadedMsg{err: err}
 			}
@@ -857,16 +863,16 @@ func loadPostings(s *store.Store, companyID int64, hideArchived bool) tea.Cmd {
 		}
 
 		if hideArchived {
-			postings = filterOutArchived(postings, markup)
+			list = filterOutArchived(list, markup)
 		}
 
-		return postingsLoadedMsg{postings: postings, markup: markup, departments: departments, locations: locations}
+		return postingsLoadedMsg{postings: list, markup: markup, departments: departments, locations: locations}
 	}
 }
 
 // filterOutClosed drops postings whose listing has closed on the job board.
-func filterOutClosed(postings []store.Posting) []store.Posting {
-	visible := make([]store.Posting, 0, len(postings))
+func filterOutClosed(postings []posting.Posting) []posting.Posting {
+	visible := make([]posting.Posting, 0, len(postings))
 	for _, p := range postings {
 		if p.ListingStatus == "closed" {
 			continue
@@ -877,8 +883,8 @@ func filterOutClosed(postings []store.Posting) []store.Posting {
 }
 
 // filterOutArchived drops postings whose markup has ArchivedAt set.
-func filterOutArchived(postings []store.Posting, markup map[int64]postingmarkup.Markup) []store.Posting {
-	visible := make([]store.Posting, 0, len(postings))
+func filterOutArchived(postings []posting.Posting, markup map[int64]posting.Markup) []posting.Posting {
+	visible := make([]posting.Posting, 0, len(postings))
 	for _, p := range postings {
 		if markup[p.ID].ArchivedAt != nil {
 			continue
@@ -893,8 +899,8 @@ func filterOutArchived(postings []store.Posting, markup map[int64]postingmarkup.
 // so the list after a reload and the one narrowed right after a save
 // can't disagree. An unsupported field is returned as an error rather
 // than ignored.
-func filterPostingsByCompanyFilters(postings []store.Posting, companyFilters []filter.Filter) ([]store.Posting, error) {
-	narrowed := make([]store.Posting, 0, len(postings))
+func filterPostingsByCompanyFilters(postings []posting.Posting, companyFilters []filter.Filter) ([]posting.Posting, error) {
+	narrowed := make([]posting.Posting, 0, len(postings))
 	for _, p := range postings {
 		match, err := filter.Match(filter.Posting{Department: p.Department, Location: p.Location}, companyFilters)
 		if err != nil {
@@ -935,18 +941,18 @@ type filterOptionsLoadedMsg struct {
 	err             error
 }
 
-func loadFilterOptions(s *store.Store, companyID int64) tea.Cmd {
+func loadFilterOptions(companies *service.CompanyService, companyID int64) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
-		departments, err := s.ListDistinctDepartmentsForCompany(ctx, companyID)
+		departments, err := companies.Departments(ctx, companyID)
 		if err != nil {
 			return filterOptionsLoadedMsg{err: err}
 		}
-		locations, err := s.ListDistinctLocationsForCompany(ctx, companyID)
+		locations, err := companies.Locations(ctx, companyID)
 		if err != nil {
 			return filterOptionsLoadedMsg{err: err}
 		}
-		existing, err := companyfilter.List(ctx, s.DB(), companyID)
+		existing, err := companies.Filters(ctx, companyID)
 		if err != nil {
 			return filterOptionsLoadedMsg{err: err}
 		}
@@ -961,12 +967,9 @@ type companyFiltersSavedMsg struct {
 	err error
 }
 
-func saveCompanyFilters(s *store.Store, companyID int64, departments, locations []string) tea.Cmd {
+func saveCompanyFilters(companies *service.CompanyService, companyID int64, departments, locations []string) tea.Cmd {
 	return func() tea.Msg {
-		ctx := context.Background()
-		err := store.InTx(ctx, s.DB(), func(tx store.Tx) error {
-			return companyfilter.Replace(ctx, tx, companyID, companyFiltersFrom(departments, locations))
-		})
+		err := companies.SetFilters(context.Background(), companyID, companyFiltersFrom(departments, locations))
 		return companyFiltersSavedMsg{err: err}
 	}
 }
@@ -985,7 +988,7 @@ func companyFiltersFrom(departments, locations []string) []filter.Filter {
 // narrowPostingsToFilters narrows the list as soon as a filter selection
 // is saved, before the save completes, through the same match as
 // loadPostings.
-func narrowPostingsToFilters(postings []store.Posting, departments, locations []string) []store.Posting {
+func narrowPostingsToFilters(postings []posting.Posting, departments, locations []string) []posting.Posting {
 	narrowed, err := filterPostingsByCompanyFilters(postings, companyFiltersFrom(departments, locations))
 	if err != nil {
 		// Unreachable: filters is built entirely from filter.FieldDepartment/
@@ -1092,13 +1095,13 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.status = fmt.Sprintf("%s: fetched %d, created %d, updated %d, closed %d, reopened %d",
 				r.Name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
 			// The company list's Open and Last fetched columns just changed.
-			reload := loadCompanies(a.store)
+			reload := loadCompanies(a.companyService, a.postingService)
 			if r.CompanyID == a.selectedCompany.ID {
 				// The company whose postings are currently being viewed
 				// just finished a re-sync (r on its posting list): reload
 				// them from the DB. The cursor stays on its posting: the
 				// sync can add some ahead of it.
-				return a, tea.Batch(reload, reloadPostings(a.store, a.selectedCompany.ID, a.hideArchived))
+				return a, tea.Batch(reload, reloadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived))
 			}
 			return a, reload
 		}
@@ -1118,7 +1121,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		if msg.err == nil {
 			if a.postingMarkup == nil {
-				a.postingMarkup = make(map[int64]postingmarkup.Markup)
+				a.postingMarkup = make(map[int64]posting.Markup)
 			}
 			a.postingMarkup[msg.markup.PostingID] = msg.markup
 			// Archiving a posting while hideArchived is on should remove
@@ -1152,12 +1155,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// was opened from all postings.
 				p := a.postingDetail.posting
 				_, app, hasApp := a.lookupPosting(p.ID)
-				a.replacePostingDetail(newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID)))
-				return a, maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
+				a.replacePostingDetail(newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID)))
+				return a, maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID)
 			}
 		}
 	case applicationCreatedMsg:
-		if errors.Is(msg.err, application.ErrPostingClosed) {
+		if errors.Is(msg.err, service.ErrPostingClosed) {
 			// Refused, not failed (#175): the posting is no longer listed,
 			// so there's no form left to submit.
 			a.err = nil
@@ -1176,12 +1179,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// was opened from all postings.
 				p := a.postingDetail.posting
 				_, app, hasApp := a.lookupPosting(p.ID)
-				a.replacePostingDetail(newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID)))
-				reviewsCmd = maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID)
+				a.replacePostingDetail(newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID)))
+				reviewsCmd = maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID)
 			}
 			// A freshly-started application should show up in the active-
 			// applications list without needing a restart.
-			return a, tea.Batch(loadActiveApplications(a.store, a.documents), reviewsCmd)
+			return a, tea.Batch(loadActiveApplications(a.applicationService, a.documentService, a.documents), reviewsCmd)
 		}
 	case applicationDeletedMsg:
 		a.err = msg.err
@@ -1197,7 +1200,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			delete(a.applicationsByPosting, msg.application.Posting.ID)
 			a.status = "Deleted the application for " + msg.application.Posting.Title
-			return a, loadActiveApplications(a.store, a.documents)
+			return a, loadActiveApplications(a.applicationService, a.documentService, a.documents)
 		}
 	case applicationStatusUpdatedMsg:
 		a.err = msg.err
@@ -1224,7 +1227,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// it belongs in the active-applications list at all -- reload
 			// rather than patch in place so that's always correct,
 			// regardless of which screen triggered the change.
-			return a, tea.Batch(loadActiveApplications(a.store, a.documents), reviewsCmd)
+			return a, tea.Batch(loadActiveApplications(a.applicationService, a.documentService, a.documents), reviewsCmd)
 		}
 	case changeTickMsg:
 		return a, a.handleTick()
@@ -1246,9 +1249,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil && a.screen == screenAllPostings {
 			a.postingDetailFrom = screenAllPostings
 			app, hasApp := a.applicationsByPosting[msg.posting.ID]
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), msg.posting, app, hasApp, nil, a.canNavigateSiblings(msg.posting.ID))
+			a.postingDetail = newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), msg.posting, app, hasApp, nil, a.canNavigateSiblings(msg.posting.ID))
 			a.enterFrom(screenPostingDetail)
-			return a, tea.Batch(loadApplication(a.store, msg.posting.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID), loadPostingScores(a.store, msg.posting.ID))
+			return a, tea.Batch(loadApplication(a.postingService, msg.posting.ID), maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID), loadPostingScores(a.scoringService, msg.posting.ID))
 		}
 	case postingScoresLoadedMsg:
 		a.handlePostingScoresLoaded(msg)
@@ -1263,7 +1266,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// after an error: the editor didn't start or exited abnormally,
 		// and the reload's result would clear the error before it's seen.
 		if msg.err == nil && a.screen == screenApplicationDetail {
-			return a, recordEditorWrite(a.store, a.documents, msg)
+			return a, recordEditorWrite(a.documentService, a.documents, msg)
 		}
 	case applicationReloadedForDeleteMsg:
 		a.err = msg.err
@@ -1278,7 +1281,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Open the form only if the user is still where they asked for it.
 		if msg.err == nil && a.screen == msg.from {
 			a.enterFrom(screenApplicationStatusSelect)
-			a.applicationStatus = newApplicationStatusModel(a.store, msg.postingID, msg.status, a.newScreenInstance())
+			a.applicationStatus = newApplicationStatusModel(a.applicationService, msg.applicationID, msg.status, a.newScreenInstance())
 		}
 	case applicationFormLoadedMsg:
 		a.err = msg.err
@@ -1286,7 +1289,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// was loaded for.
 		if msg.err == nil && a.screen == screenApplicationDetail && a.applicationDetail.application.Posting.ID == msg.postingID {
 			a.screen = screenApplicationForm
-			a.applicationForm = newApplicationFormModel(a.store, msg.postingID, msg.form, a.width, a.screenRows())
+			a.applicationForm = newApplicationFormModel(a.postingService, msg.postingID, msg.form, a.width, a.screenRows())
 		}
 	case applicationFormSavedMsg:
 		a.err = msg.err
@@ -1363,7 +1366,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// documentReviewsLoadedMsg also patches this application's
 				// home-screen row, so its glyph and next step aren't stale
 				// once the user backs out -- no full reload needed (#91).
-				return a, loadDocumentReviews(a.store, a.documents, a.applicationDetail.application.ID)
+				return a, loadDocumentReviews(a.documentService, a.documents, a.applicationDetail.application.ID)
 			case screenPostingDetail:
 				return a, a.rebuildPostingDetailApplication()
 			}
@@ -1374,7 +1377,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// navigated away from is simply discarded -- msg.applicationID no
 		// longer matching what's on screen means this result is stale.
 		if msg.err == nil && a.screen == screenPostingDetail && a.postingDetail.application.ID == msg.applicationID {
-			a.replacePostingDetail(newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), a.postingDetail.posting, a.postingDetail.application, a.postingDetail.hasApplication, msg.reviews, a.canNavigateSiblings(a.postingDetail.posting.ID)))
+			a.replacePostingDetail(newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), a.postingDetail.posting, a.postingDetail.application, a.postingDetail.hasApplication, msg.reviews, a.canNavigateSiblings(a.postingDetail.posting.ID)))
 		}
 		if msg.err == nil && a.screen == screenApplicationDetail && a.applicationDetail.application.ID == msg.applicationID {
 			a.applicationDetail.application.LatestReviews = msg.reviews
@@ -1397,7 +1400,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// of just the optimistic narrowing applied synchronously when
 			// the filter selection was saved (see screenFilterSelect's
 			// saveFilterSelectionMsg handling in updateKeyMsg).
-			return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
+			return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
 		}
 	case browserOpenedMsg:
 		a.err = msg.err
@@ -1453,7 +1456,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case screenActiveApplications:
 			a.screen = screenCompanyList
 			// Archiving or unarchiving may have changed open counts.
-			return a, loadCompanies(a.store)
+			return a, loadCompanies(a.companyService, a.postingService)
 		case screenCompanyList:
 			a.screen = screenAllPostings
 			return a, a.allPostings.load(a.allPostings.pageSize(a.screenRows()))
@@ -1467,7 +1470,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd, intent := a.allPostings.Update(msg, a.allPostings.pageSize(a.screenRows()))
 		switch v := intent.(type) {
 		case enterPostingDetailMsg:
-			return a, loadAllPostingsDetail(a.store, v.postingID)
+			return a, loadAllPostingsDetail(a.postingService, v.postingID)
 		case openJobURLMsg:
 			return a, a.openURL(v.url)
 		}
@@ -1476,26 +1479,26 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		cmd, intent := a.activeApplicationList.Update(msg, a.activeApplications)
 		switch v := intent.(type) {
 		case enterApplicationStatusMsg:
-			return a, loadApplicationStatus(a.store, v.postingID, a.screen)
+			return a, loadApplicationStatus(a.applicationService, v.applicationID, a.screen)
 		case enterApplicationDetailMsg:
 			a.screen = screenApplicationDetail
 			a.applicationDetail = newApplicationDetailModel(a.documents, v.application)
 		case enterApplicationExportMsg:
 			a.screen = screenApplicationExport
-			a.applicationExport = newApplicationExportModel(a.store, a.documents, v.application, a.exportDir, a.width)
+			a.applicationExport = newApplicationExportModel(a.documentService, a.documents, v.application, a.exportDir, a.width)
 		case enterApplicationDeleteMsg:
-			return a, reloadApplicationForDelete(a.store, v.application, screenActiveApplications)
+			return a, reloadApplicationForDelete(a.applicationService, v.application, screenActiveApplications)
 		}
 		return a, cmd
 	case screenApplicationDetail:
 		cmd, intent := a.applicationDetail.Update(msg)
 		switch v := intent.(type) {
 		case enterApplicationFormMsg:
-			return a, loadApplicationForm(a.store, v.postingID)
+			return a, loadApplicationForm(a.postingService, v.postingID)
 		case enterApplicationSubmitMsg:
 			return a, a.startApplicationSubmit(v.application)
 		case enterApplicationDeleteMsg:
-			return a, reloadApplicationForDelete(a.store, v.application, screenApplicationDetail)
+			return a, reloadApplicationForDelete(a.applicationService, v.application, screenApplicationDetail)
 		case backToActiveApplicationsMsg:
 			a.screen = screenActiveApplications
 		case enterPostingDetailMsg:
@@ -1503,7 +1506,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			// this can't use lookupPosting -- a.postings is only populated
 			// by browsing that list, which application detail (reached via
 			// active-applications) may never have done. applicationDetail's
-			// own pursuit.Application already carries the full posting,
+			// own posting.ActiveApplication already carries the full posting,
 			// application, and latest reviews (freshly loaded for the
 			// active-applications screen), so render from that directly
 			// rather than triggering loadApplication's own rebuild, which
@@ -1525,17 +1528,17 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 				a.applicationsByPosting = make(map[int64]application.Application)
 			}
 			a.applicationsByPosting[appView.Posting.ID] = appView.Application
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), appView.Posting, appView.Application, true, appView.LatestReviews, a.canNavigateSiblings(appView.Posting.ID))
+			a.postingDetail = newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), appView.Posting, appView.Application, true, appView.LatestReviews, a.canNavigateSiblings(appView.Posting.ID))
 			// Built from application detail's copy, so as up to date as it.
 			a.seen[screenPostingDetail] = a.cursor(screenApplicationDetail)
 			a.enterFrom(screenPostingDetail)
-			return a, tea.Batch(cmd, loadPostingScores(a.store, appView.Posting.ID))
+			return a, tea.Batch(cmd, loadPostingScores(a.scoringService, appView.Posting.ID))
 		case enterDocumentReviewFormMsg:
 			if a.openDocumentReviewForm(v) {
 				a.enterFrom(screenDocumentReviewForm)
 			}
 		case refreshApplicationDetailMsg:
-			return a, loadDocumentReviews(a.store, a.documents, a.applicationDetail.application.ID)
+			return a, loadDocumentReviews(a.documentService, a.documents, a.applicationDetail.application.ID)
 		}
 		return a, cmd
 	case screenCompanyList:
@@ -1546,7 +1549,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.companyForm = newCompanyFormModel(a.syncer)
 		case enterCompanyEditMsg:
 			a.screen = screenCompanyEdit
-			a.companyEdit = newCompanyEditModel(a.store, v.company.ID, v.company.Name)
+			a.companyEdit = newCompanyEditModel(a.companyService, v.company.ID, v.company.Name)
 		case enterCompanyDeleteMsg:
 			a.screen = screenCompanyDelete
 			a.companyDelete = newCompanyDeleteModel(v.company, a.companyOpenPostings[v.company.ID])
@@ -1562,7 +1565,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case selectCompanyMsg:
 			a.selectedCompany = v.company
 			a.screen = screenPostingList
-			return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
+			return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
 		}
 		return a, cmd
 	case screenPostingList:
@@ -1579,16 +1582,16 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case backToCompanyListMsg:
 			a.screen = screenCompanyList
 			// Archiving or unarchiving may have changed open counts.
-			return a, loadCompanies(a.store)
+			return a, loadCompanies(a.companyService, a.postingService)
 		case enterPostingDetailMsg:
 			a.postingDetailFrom = screenPostingList
 			p, app, hasApp := a.lookupPosting(v.postingID)
-			a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
+			a.postingDetail = newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 			a.enterFrom(screenPostingDetail)
-			return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID), loadPostingScores(a.store, p.ID))
+			return a, tea.Batch(loadApplication(a.postingService, p.ID), maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID), loadPostingScores(a.scoringService, p.ID))
 		case enterFilterSelectMsg:
 			a.screen = screenFilterSelect
-			return a, loadFilterOptions(a.store, a.selectedCompany.ID)
+			return a, loadFilterOptions(a.companyService, a.selectedCompany.ID)
 		case refreshSelectedCompanyMsg:
 			if a.syncAll.running {
 				// The run may be syncing this company right now.
@@ -1598,7 +1601,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return a, a.startRefresh(a.selectedCompany)
 		case toggleHideArchivedMsg:
 			a.hideArchived = !a.hideArchived
-			return a, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived)
+			return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
 		}
 		return a, cmd
 	case screenPostingDetail:
@@ -1614,14 +1617,14 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if idx >= 0 && newIdx >= 0 && newIdx < len(a.postings) {
 				p := a.postings[newIdx]
 				app, hasApp := a.applicationsByPosting[p.ID]
-				a.postingDetail = newPostingDetailModel(a.store, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
-				return a, tea.Batch(loadApplication(a.store, p.ID), maybeLoadDocumentReviews(a.store, a.documents, hasApp, app.ID), loadPostingScores(a.store, p.ID))
+				a.postingDetail = newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
+				return a, tea.Batch(loadApplication(a.postingService, p.ID), maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID), loadPostingScores(a.scoringService, p.ID))
 			}
 		case enterApplicationStatusMsg:
-			return a, loadApplicationStatus(a.store, v.postingID, a.screen)
+			return a, loadApplicationStatus(a.applicationService, v.applicationID, a.screen)
 		case enterApplicationNotesMsg:
 			a.screen = screenApplicationNotesEdit
-			a.applicationNotes = newApplicationNotesModel(a.store, v.postingID, v.currentNotes, a.width, a.screenRows(), a.newScreenInstance())
+			a.applicationNotes = newApplicationNotesModel(a.applicationService, v.applicationID, v.currentNotes, a.width, a.screenRows(), a.newScreenInstance())
 		case enterDocumentReviewSelectMsg:
 			a.enterFrom(screenDocumentReviewSelect)
 			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, v.applicationID)
@@ -1647,7 +1650,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case cancelApplicationSubmitMsg:
 			a.screen = screenApplicationDetail
 		case confirmApplicationSubmitMsg:
-			return a, updateApplicationStatus(a.store, v.postingID, applicationstatus.Submitted, a.applicationSubmit.instance)
+			return a, updateApplicationStatus(a.applicationService, v.applicationID, application.Submitted, a.applicationSubmit.instance)
 		}
 		return a, cmd
 	case screenApplicationDelete:
@@ -1656,7 +1659,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case cancelApplicationDeleteMsg:
 			a.screen = a.applicationDelete.from
 		case confirmApplicationDeleteMsg:
-			return a, deleteApplication(a.store, v.application)
+			return a, deleteApplication(a.applicationService, v.application)
 		}
 		return a, cmd
 	case screenCompanyDelete:
@@ -1665,7 +1668,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 		case cancelCompanyDeleteMsg:
 			a.screen = screenCompanyList
 		case confirmCompanyDeleteMsg:
-			return a, deleteCompany(a.store, v.company.ID)
+			return a, deleteCompany(a.companyService, v.company.ID)
 		}
 		return a, cmd
 	case screenApplicationNotesEdit:
@@ -1713,7 +1716,7 @@ func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			a.activeFilterDepartments = v.departments
 			a.activeFilterLocations = v.locations
 			a.postingList.resetCursorIfOutOfBounds(len(a.postings))
-			return a, saveCompanyFilters(a.store, a.selectedCompany.ID, v.departments, v.locations)
+			return a, saveCompanyFilters(a.companyService, a.selectedCompany.ID, v.departments, v.locations)
 		}
 		return a, cmd
 	case screenCompanyForm:
@@ -1909,7 +1912,7 @@ func detailRow(label string, lines []string) string {
 // and path, the latest review's badge, and the review's notes on their
 // own line under the value column -- the aligned counterpart of
 // documentStatusLine, which application detail still uses.
-func detailDocumentField(label string, exists bool, path string, review docrecord.Review, hasReview bool, width int) string {
+func detailDocumentField(label string, exists bool, path string, review document.Review, hasReview bool, width int) string {
 	status := "not found"
 	if exists {
 		status = "found"

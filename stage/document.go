@@ -7,9 +7,8 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/docrecord"
-	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -46,7 +45,7 @@ func (e *ApplicationDeletedError) Error() string {
 // so writing for an ID with no application would leave a draft for
 // whichever application gets that ID next.
 func (st *Stage) application(ctx context.Context, applicationID int64) (application.Application, error) {
-	app, err := application.GetByIDIncludingDeleted(ctx, st.store.DB(), applicationID)
+	app, err := st.applications.GetIncludingDeleted(ctx, applicationID)
 	if errors.Is(err, store.ErrNotFound) {
 		return application.Application{}, fmt.Errorf("%w: %d", ErrApplicationNotFound, applicationID)
 	}
@@ -65,7 +64,7 @@ func (st *Stage) application(ctx context.Context, applicationID int64) (applicat
 // writes only if the document is still that version (NoDocumentYet: still
 // absent), and fails with documents.ErrChanged otherwise; nil writes
 // unconditionally.
-func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documentType documents.Type, content string, replacesVersion *string) (string, error) {
+func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documentType document.Type, content string, replacesVersion *string) (string, error) {
 	if replacesVersion != nil && *replacesVersion == "" {
 		return "", ErrEmptyReplacesVersion
 	}
@@ -87,7 +86,7 @@ func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documen
 	}
 	// A file write is invisible to the database; recording it is how other
 	// processes learn of it, and that the agent made it.
-	if err := docrecord.RecordWrite(ctx, st.store.DB(), applicationID, documentType, content, docrecord.SourceWriteDocument); err != nil {
+	if err := st.docs.RecordWrite(ctx, applicationID, documentType, content, document.SourceWriteDocument); err != nil {
 		return "", fmt.Errorf("stage: %s was written to %s, but recording the write failed: %w", documentType, path, err)
 	}
 	return path, nil
@@ -96,7 +95,7 @@ func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documen
 // ReadDocument returns applicationID's documentType document and its
 // path, with the same application check as WriteDocument. Unlike a write
 // it never creates the application's folder.
-func (st *Stage) ReadDocument(ctx context.Context, applicationID int64, documentType documents.Type) (path, content string, err error) {
+func (st *Stage) ReadDocument(ctx context.Context, applicationID int64, documentType document.Type) (path, content string, err error) {
 	if _, err := st.application(ctx, applicationID); err != nil {
 		return "", "", err
 	}

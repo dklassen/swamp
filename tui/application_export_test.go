@@ -11,20 +11,19 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/pursuit"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/testutil"
 )
 
 // testExportApplication is the application every export-screen test
 // drafts documents for.
-func testExportApplication() pursuit.Application {
-	return pursuit.Application{
-		Application: application.Application{ID: 42, Status: applicationstatus.Started},
-		Posting:     store.Posting{ID: 7, IngestedFields: store.IngestedFields{Title: "Delivery Platform"}},
+func testExportApplication() posting.ActiveApplication {
+	return posting.ActiveApplication{
+		Application: application.Application{ID: 42, Status: application.Started},
+		Posting:     posting.Posting{ID: 7, IngestedFields: posting.IngestedFields{Title: "Delivery Platform"}},
 		CompanyName: "Northwind",
 	}
 }
@@ -32,7 +31,7 @@ func testExportApplication() pursuit.Application {
 // writeApplicationDocuments creates a documents base dir containing the
 // named markdown documents for applicationID, and returns a Store over
 // it. Document types not named are left absent on disk.
-func writeApplicationDocuments(t *testing.T, applicationID int64, present ...documents.Type) *documents.Store {
+func writeApplicationDocuments(t *testing.T, applicationID int64, present ...document.Type) *documents.Store {
 	t.Helper()
 	base := t.TempDir()
 	dir := filepath.Join(base, strconv.FormatInt(applicationID, 10))
@@ -51,8 +50,8 @@ func writeApplicationDocuments(t *testing.T, applicationID int64, present ...doc
 func TestApplicationExportModel_PrefillsDestinationWithDefaultDir(t *testing.T) {
 	t.Parallel()
 
-	docs := writeApplicationDocuments(t, 42, documents.CoverLetter)
-	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), "/home/dana/Desktop", 80)
+	docs := writeApplicationDocuments(t, 42, document.CoverLetter)
+	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication(), "/home/dana/Desktop", 80)
 
 	if got := m.textinput.Value(); got != "/home/dana/Desktop" {
 		t.Errorf("destination prefill = %q, want %q", got, "/home/dana/Desktop")
@@ -65,8 +64,8 @@ func TestApplicationExportModel_PrefillsDestinationWithDefaultDir(t *testing.T) 
 func TestApplicationExportModel_EscCancels(t *testing.T) {
 	t.Parallel()
 
-	docs := writeApplicationDocuments(t, 42, documents.CoverLetter)
-	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), "/tmp", 80)
+	docs := writeApplicationDocuments(t, 42, document.CoverLetter)
+	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication(), "/tmp", 80)
 
 	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
 
@@ -78,9 +77,9 @@ func TestApplicationExportModel_EscCancels(t *testing.T) {
 func TestApplicationExportModel_EnterExportsBothDocumentsWithDescriptiveNames(t *testing.T) {
 	t.Parallel()
 
-	docs := writeApplicationDocuments(t, 42, documents.CoverLetter, documents.Resume)
+	docs := writeApplicationDocuments(t, 42, document.CoverLetter, document.Resume)
 	dest := t.TempDir()
-	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), dest, 80)
+	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication(), dest, 80)
 
 	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if intent != nil {
@@ -120,9 +119,9 @@ func TestApplicationExportModel_SkipsUndraftedDocumentsWithoutFailing(t *testing
 	t.Parallel()
 
 	// Resume drafted, cover letter never written.
-	docs := writeApplicationDocuments(t, 42, documents.Resume)
+	docs := writeApplicationDocuments(t, 42, document.Resume)
 	dest := t.TempDir()
-	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), dest, 80)
+	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication(), dest, 80)
 
 	cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := cmd().(applicationExportedMsg)
@@ -134,7 +133,7 @@ func TestApplicationExportModel_SkipsUndraftedDocumentsWithoutFailing(t *testing
 	if diff := cmp.Diff(wantPaths, got.paths); diff != "" {
 		t.Errorf("exported paths mismatch (-want +got):\n%s", diff)
 	}
-	wantSkipped := []documents.Type{documents.CoverLetter}
+	wantSkipped := []document.Type{document.CoverLetter}
 	if diff := cmp.Diff(wantSkipped, got.skipped); diff != "" {
 		t.Errorf("skipped mismatch (-want +got):\n%s", diff)
 	}
@@ -145,8 +144,8 @@ func TestApplicationExportModel_ExpandsTildeInDestination(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	docs := writeApplicationDocuments(t, 42, documents.Resume)
-	m := newApplicationExportModel(newTestStore(t), docs, testExportApplication(), "~/Desktop", 80)
+	docs := writeApplicationDocuments(t, 42, document.Resume)
+	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication(), "~/Desktop", 80)
 
 	cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	got := cmd().(applicationExportedMsg)
@@ -170,21 +169,21 @@ func TestApplicationExportModel_ExpandsTildeInDestination(t *testing.T) {
 func TestApplicationExportModel_RecordsEachExport(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
-	docs := writeApplicationDocuments(t, 42, documents.CoverLetter)
+	s := testutil.NewTestApp(t)
+	docs := writeApplicationDocuments(t, 42, document.CoverLetter)
 	dest := t.TempDir()
-	m := newApplicationExportModel(s, docs, testExportApplication(), dest, 80)
+	m := newApplicationExportModel(s.Documents, docs, testExportApplication(), dest, 80)
 
 	cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	if got := cmd().(applicationExportedMsg); got.err != nil {
 		t.Fatalf("export err = %v, want nil", got.err)
 	}
 
-	exports, err := docrecord.LatestExports(context.Background(), s.DB(), 42)
+	exports, err := s.Documents.LatestExports(context.Background(), 42)
 	if err != nil {
 		t.Fatalf("LatestExports: %v", err)
 	}
-	coverLetter, ok := exports[documents.CoverLetter]
+	coverLetter, ok := exports[document.CoverLetter]
 	if !ok {
 		t.Fatal("no cover letter export recorded")
 	}
@@ -194,7 +193,7 @@ func TestApplicationExportModel_RecordsEachExport(t *testing.T) {
 	if !coverLetter.IsCurrent("# Heading\n\nBody text.\n") {
 		t.Error("export isn't current for the content that was exported")
 	}
-	if _, ok := exports[documents.Resume]; ok {
+	if _, ok := exports[document.Resume]; ok {
 		t.Error("a resume export was recorded, but there was no resume to export")
 	}
 }

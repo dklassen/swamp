@@ -6,7 +6,7 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/service"
 )
 
 // companyEditModel drives the edit-company screen: name only. source/
@@ -14,7 +14,7 @@ import (
 // field here at all -- not just disabled, since there's nothing for this
 // screen to do with them.
 type companyEditModel struct {
-	store     *store.Store
+	companies *service.CompanyService
 	companyID int64
 	nameInput textinput.Model
 	// saving is true from the moment Enter dispatches updateCompanyName
@@ -27,11 +27,11 @@ type companyEditModel struct {
 
 // newCompanyEditModel returns an edit screen for companyID, seeded with
 // its current name.
-func newCompanyEditModel(s *store.Store, companyID int64, name string) companyEditModel {
+func newCompanyEditModel(companies *service.CompanyService, companyID int64, name string) companyEditModel {
 	input := textinput.New()
 	input.SetValue(name)
 	input.Focus()
-	return companyEditModel{store: s, companyID: companyID, nameInput: input}
+	return companyEditModel{companies: companies, companyID: companyID, nameInput: input}
 }
 
 // cancelCompanyEditMsg signals that App should switch back to the
@@ -51,7 +51,7 @@ func (m *companyEditModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 			return nil, nil
 		}
 		m.saving = true
-		return updateCompanyName(m.store, m.companyID, name), nil
+		return updateCompanyName(m.companies, m.companyID, name), nil
 	}
 	var cmd tea.Cmd
 	m.nameInput, cmd = m.nameInput.Update(msg)

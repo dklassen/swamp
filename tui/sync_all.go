@@ -7,7 +7,7 @@ import (
 	"github.com/charmbracelet/bubbles/progress"
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/sync"
 )
 
@@ -25,7 +25,7 @@ type syncAllState struct {
 	// run is recognised and dropped.
 	runID int
 	// companies is a snapshot of the company list when the run started.
-	companies []store.Company
+	companies []company.Company
 	// next is the index of the company in flight.
 	next    int
 	results []sync.Result
@@ -56,7 +56,7 @@ type syncAllStepMsg struct {
 }
 
 // syncAllStep syncs one company as a Cmd.
-func syncAllStep(syncer *sync.Syncer, runID int, company store.Company) tea.Cmd {
+func syncAllStep(syncer *sync.Syncer, runID int, company company.Company) tea.Cmd {
 	return func() tea.Msg {
 		result, err := syncer.SyncCompany(context.Background(), company.ID)
 		result.CompanyID = company.ID
@@ -71,7 +71,7 @@ func syncAllStep(syncer *sync.Syncer, runID int, company store.Company) tea.Cmd 
 func (a *App) startSyncAll() tea.Cmd {
 	a.syncAll = syncAllState{
 		runID:     a.syncAll.runID + 1,
-		companies: append([]store.Company(nil), a.companies...),
+		companies: append([]company.Company(nil), a.companies...),
 		running:   true,
 	}
 	// An error from an earlier action takes priority over the status line
@@ -119,10 +119,10 @@ func (a *App) finishSyncAll() tea.Cmd {
 	}
 	a.status = summary
 
-	cmds := []tea.Cmd{loadCompanies(a.store)}
+	cmds := []tea.Cmd{loadCompanies(a.companyService, a.postingService)}
 	for _, r := range run.results {
 		if r.Err == nil && r.CompanyID == a.selectedCompany.ID {
-			cmds = append(cmds, loadPostings(a.store, a.selectedCompany.ID, a.hideArchived))
+			cmds = append(cmds, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived))
 			break
 		}
 	}

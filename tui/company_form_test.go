@@ -7,7 +7,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/sync"
 )
 
@@ -145,7 +145,7 @@ func TestCompanyFormModel_Enter_ValidFields_ReturnsCreateCompanyCmd(t *testing.T
 func TestCompanyFormModel_Enter_CreatesCompanyWithSelectedSource(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	m := newCompanyFormModel(newFormTestSyncer(s))
 	m.Update(tea.KeyMsg{Type: tea.KeyRight}) // switch source to greenhouse
 	m.inputs[formFieldName].SetValue("Acme")
@@ -168,7 +168,7 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithSelectedSource(t *testing.T) {
 		t.Fatalf("created company Source = %q, want %q", created.company.Source, "greenhouse")
 	}
 
-	stored, err := s.GetCompany(context.Background(), created.company.ID)
+	stored, err := s.Companies.Get(context.Background(), created.company.ID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
 	}
@@ -180,7 +180,7 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithSelectedSource(t *testing.T) {
 func TestCompanyFormModel_Enter_CreatesCompanyWithLeverSource(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	m := newCompanyFormModel(newFormTestSyncer(s))
 	m.Update(tea.KeyMsg{Type: tea.KeyLeft}) // wraps backward to lever, the last source
 	if companySources[m.sourceIndex] != "lever" {
@@ -206,7 +206,7 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithLeverSource(t *testing.T) {
 		t.Fatalf("created company Source = %q, want %q", created.company.Source, "lever")
 	}
 
-	stored, err := s.GetCompany(context.Background(), created.company.ID)
+	stored, err := s.Companies.Get(context.Background(), created.company.ID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
 	}
@@ -231,7 +231,7 @@ func TestCompanyFormModel_Enter_WhitespaceOnlyName_NoOp(t *testing.T) {
 func TestCompanyFormModel_Enter_TrimsSavedName(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	m := newCompanyFormModel(newFormTestSyncer(s))
 	m.inputs[formFieldName].SetValue("  Acme  ")
 	m.inputs[formFieldSourceRef].SetValue("acme")
@@ -256,8 +256,8 @@ func TestCompanyFormModel_Enter_TrimsSavedName(t *testing.T) {
 func TestCompanyFormModel_Enter_BoardRejectsSourceRef_NoCompanyCreated(t *testing.T) {
 	t.Parallel()
 
-	s := newTestStore(t)
-	syncer := sync.New(s, map[string]sync.PostingFetcher{
+	s := testutil.NewTestApp(t)
+	syncer := sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{
 		"ashby": &fakeFetcher{errBoards: map[string]error{"acmee": errors.New("404 not found")}},
 	}, sync.DefaultConfig())
 	m := newCompanyFormModel(syncer)
@@ -276,7 +276,7 @@ func TestCompanyFormModel_Enter_BoardRejectsSourceRef_NoCompanyCreated(t *testin
 		t.Fatal("companyCreatedMsg.err = nil, want an error for a board that doesn't resolve")
 	}
 
-	companies, err := s.ListActiveCompanies(context.Background())
+	companies, err := s.Companies.ListActive(context.Background())
 	if err != nil {
 		t.Fatalf("ListActiveCompanies: %v", err)
 	}
@@ -287,12 +287,12 @@ func TestCompanyFormModel_Enter_BoardRejectsSourceRef_NoCompanyCreated(t *testin
 
 // newFormTestSyncer returns a syncer whose board check accepts any source
 // ref for every source the form can pick.
-func newFormTestSyncer(s *store.Store) *sync.Syncer {
+func newFormTestSyncer(s testutil.TestApp) *sync.Syncer {
 	fetchers := make(map[string]sync.PostingFetcher, len(companySources))
 	for _, src := range companySources {
 		fetchers[src] = &fakeFetcher{}
 	}
-	return sync.New(s, fetchers, sync.DefaultConfig())
+	return sync.New(s.Companies, s.Postings, fetchers, sync.DefaultConfig())
 }
 
 func TestCompanyFormModel_WhileBoardCheckInFlight(t *testing.T) {

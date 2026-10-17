@@ -11,24 +11,23 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/application"
-	"github.com/dklassen/swamp/applicationstatus"
-	"github.com/dklassen/swamp/docrecord"
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/pursuit"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/testutil"
 )
 
-func testActiveApplications() []pursuit.Application {
-	return []pursuit.Application{
+func testActiveApplications() []posting.ActiveApplication {
+	return []posting.ActiveApplication{
 		{
-			Application: application.Application{ID: 10, Status: applicationstatus.Started},
-			Posting:     store.Posting{ID: 1, IngestedFields: store.IngestedFields{Title: "Engineer"}},
+			Application: application.Application{ID: 10, Status: application.Started},
+			Posting:     posting.Posting{ID: 1, IngestedFields: posting.IngestedFields{Title: "Engineer"}},
 			CompanyName: "Acme",
 		},
 		{
-			Application: application.Application{ID: 20, Status: applicationstatus.Interviewing},
-			Posting:     store.Posting{ID: 2, IngestedFields: store.IngestedFields{Title: "Designer"}},
+			Application: application.Application{ID: 20, Status: application.Interviewing},
+			Posting:     posting.Posting{ID: 2, IngestedFields: posting.IngestedFields{Title: "Designer"}},
 			CompanyName: "Globex",
 		},
 	}
@@ -57,9 +56,9 @@ func TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication(t *test
 	t.Parallel()
 
 	apps := testActiveApplications()
-	apps[0].LatestReviews = map[documents.Type]docrecord.Review{
-		documents.CoverLetter: {Outcome: docrecord.Flagged},
-		documents.Resume:      {Outcome: docrecord.Passed},
+	apps[0].LatestReviews = map[document.Type]document.Review{
+		document.CoverLetter: {Outcome: document.Flagged},
+		document.Resume:      {Outcome: document.Passed},
 	}
 	// apps[1] is left with no LatestReviews -- neither document reviewed yet.
 
@@ -105,8 +104,8 @@ func TestActiveApplicationListModel_S_ReturnsEnterApplicationStatusMsg(t *testin
 	if !ok {
 		t.Fatalf("intent = %T, want enterApplicationStatusMsg", intent)
 	}
-	if got.postingID != 1 {
-		t.Fatalf("postingID = %d, want 1 (posting at cursor 0)", got.postingID)
+	if want := apps[0].ID; got.applicationID != want {
+		t.Fatalf("applicationID = %d, want %d (application at cursor 0)", got.applicationID, want)
 	}
 }
 
@@ -172,8 +171,8 @@ func TestActiveApplicationListModel_View_ShowsStatusLabelNotEnumValue(t *testing
 	t.Parallel()
 
 	apps := testActiveApplications()
-	apps[0].Status = applicationstatus.OfferReceived
-	apps[1].Status = applicationstatus.Started
+	apps[0].Status = application.OfferReceived
+	apps[1].Status = application.Started
 
 	m := newActiveApplicationListModel()
 	got := m.View(apps, nil, time.Time{}, 0, 20)
@@ -196,7 +195,7 @@ func TestActiveApplicationListModel_View_FlagsClosedPosting(t *testing.T) {
 	t.Parallel()
 
 	apps := testActiveApplications()
-	apps[0].Status = applicationstatus.Interviewing
+	apps[0].Status = application.Interviewing
 	apps[0].Posting.ListingStatus = "closed"
 	apps[1].Posting.ListingStatus = "open"
 
@@ -214,43 +213,43 @@ func TestActiveApplicationListModel_View_FlagsClosedPosting(t *testing.T) {
 func TestNextStep(t *testing.T) {
 	t.Parallel()
 
-	passed := docrecord.Review{Outcome: docrecord.Passed}
-	flagged := docrecord.Review{Outcome: docrecord.Flagged}
-	both := func(cl, r documentProgress) map[documents.Type]documentProgress {
-		return map[documents.Type]documentProgress{documents.CoverLetter: cl, documents.Resume: r}
+	passed := document.Review{Outcome: document.Passed}
+	flagged := document.Review{Outcome: document.Flagged}
+	both := func(cl, r documentProgress) map[document.Type]documentProgress {
+		return map[document.Type]documentProgress{document.CoverLetter: cl, document.Resume: r}
 	}
 	drafted := documentProgress{drafted: true}
 	exported := documentProgress{drafted: true, exported: true}
 
 	tests := []struct {
 		name    string
-		status  applicationstatus.Status
+		status  application.Status
 		listing string
-		reviews map[documents.Type]docrecord.Review
-		docs    map[documents.Type]documentProgress
+		reviews map[document.Type]document.Review
+		docs    map[document.Type]documentProgress
 		want    string
 	}{
-		{name: "not started: no next step", status: applicationstatus.Interviewing, docs: both(exported, exported), want: ""},
-		{name: "posting closed", status: applicationstatus.Started, listing: "closed", docs: both(drafted, drafted), want: "withdraw?"},
-		{name: "later stage, posting closed", status: applicationstatus.Interviewing, listing: "closed", docs: both(exported, exported), want: "(closed)"},
-		{name: "nothing drafted", status: applicationstatus.Started, docs: both(documentProgress{}, documentProgress{}), want: "draft"},
-		{name: "one document missing", status: applicationstatus.Started, docs: both(drafted, documentProgress{}), want: "draft"},
-		{name: "drafted, not reviewed", status: applicationstatus.Started, docs: both(drafted, drafted), want: "review"},
-		{name: "one passed, one not reviewed", status: applicationstatus.Started,
-			reviews: map[documents.Type]docrecord.Review{documents.CoverLetter: passed}, docs: both(drafted, drafted), want: "review"},
-		{name: "flagged beats unreviewed", status: applicationstatus.Started,
-			reviews: map[documents.Type]docrecord.Review{documents.Resume: flagged}, docs: both(drafted, drafted), want: "revise"},
-		{name: "passed, not exported", status: applicationstatus.Started,
-			reviews: map[documents.Type]docrecord.Review{documents.CoverLetter: passed, documents.Resume: passed}, docs: both(exported, drafted), want: "export"},
-		{name: "passed and exported", status: applicationstatus.Started,
-			reviews: map[documents.Type]docrecord.Review{documents.CoverLetter: passed, documents.Resume: passed}, docs: both(exported, exported), want: "submit"},
+		{name: "not started: no next step", status: application.Interviewing, docs: both(exported, exported), want: ""},
+		{name: "posting closed", status: application.Started, listing: "closed", docs: both(drafted, drafted), want: "withdraw?"},
+		{name: "later stage, posting closed", status: application.Interviewing, listing: "closed", docs: both(exported, exported), want: "(closed)"},
+		{name: "nothing drafted", status: application.Started, docs: both(documentProgress{}, documentProgress{}), want: "draft"},
+		{name: "one document missing", status: application.Started, docs: both(drafted, documentProgress{}), want: "draft"},
+		{name: "drafted, not reviewed", status: application.Started, docs: both(drafted, drafted), want: "review"},
+		{name: "one passed, one not reviewed", status: application.Started,
+			reviews: map[document.Type]document.Review{document.CoverLetter: passed}, docs: both(drafted, drafted), want: "review"},
+		{name: "flagged beats unreviewed", status: application.Started,
+			reviews: map[document.Type]document.Review{document.Resume: flagged}, docs: both(drafted, drafted), want: "revise"},
+		{name: "passed, not exported", status: application.Started,
+			reviews: map[document.Type]document.Review{document.CoverLetter: passed, document.Resume: passed}, docs: both(exported, drafted), want: "export"},
+		{name: "passed and exported", status: application.Started,
+			reviews: map[document.Type]document.Review{document.CoverLetter: passed, document.Resume: passed}, docs: both(exported, exported), want: "submit"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			a := pursuit.Application{
+			a := posting.ActiveApplication{
 				Application:   application.Application{Status: tt.status},
-				Posting:       store.Posting{ListingStatus: tt.listing},
+				Posting:       posting.Posting{ListingStatus: tt.listing},
 				LatestReviews: tt.reviews,
 			}
 			if got := nextStep(a, tt.docs); got != tt.want {
@@ -284,15 +283,15 @@ func TestActiveApplicationListModel_View_ShowsAgeAndNextStep(t *testing.T) {
 func TestOrderForHome(t *testing.T) {
 	t.Parallel()
 
-	app := func(id int64, status applicationstatus.Status, since time.Time) pursuit.Application {
-		return pursuit.Application{Application: application.Application{ID: id, Status: status}, StatusSince: since}
+	app := func(id int64, status application.Status, since time.Time) posting.ActiveApplication {
+		return posting.ActiveApplication{Application: application.Application{ID: id, Status: status}, StatusSince: since}
 	}
 	day := func(d int) time.Time { return time.Date(2026, 9, d, 0, 0, 0, 0, time.UTC) }
-	apps := []pursuit.Application{
-		app(1, applicationstatus.Interviewing, day(28)),
-		app(2, applicationstatus.Started, day(20)),
-		app(3, applicationstatus.Submitted, day(25)),
-		app(4, applicationstatus.Started, day(1)),
+	apps := []posting.ActiveApplication{
+		app(1, application.Interviewing, day(28)),
+		app(2, application.Started, day(20)),
+		app(3, application.Submitted, day(25)),
+		app(4, application.Started, day(1)),
 	}
 
 	orderForHome(apps)
@@ -312,36 +311,36 @@ func TestOrderForHome(t *testing.T) {
 func TestLoadActiveApplications_NextSteps(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	s := newTestStore(t)
+	s := testutil.NewTestApp(t)
 	docs := documents.NewStore(t.TempDir())
 	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
 
 	undrafted := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
 	ready := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-2", "Designer").ID)
 	stale := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-3", "Manager").ID)
-	for _, application := range []application.Application{ready, stale} {
-		paths, err := docs.EnsureDir(application.ID)
+	for _, target := range []application.Application{ready, stale} {
+		paths, err := docs.EnsureDir(target.ID)
 		if err != nil {
 			t.Fatalf("EnsureDir: %v", err)
 		}
-		for documentType, path := range map[documents.Type]string{documents.CoverLetter: mustDoc(t, paths, documents.CoverLetter).Path, documents.Resume: mustDoc(t, paths, documents.Resume).Path} {
+		for documentType, path := range map[document.Type]string{document.CoverLetter: mustDoc(t, paths, document.CoverLetter).Path, document.Resume: mustDoc(t, paths, document.Resume).Path} {
 			if err := os.WriteFile(path, []byte("# Draft"), 0o644); err != nil {
 				t.Fatalf("WriteFile: %v", err)
 			}
-			if _, err := createReview(ctx, s, application.ID, documentType, "# Draft", docrecord.Passed, ""); err != nil {
+			if _, err := createReview(ctx, s, target.ID, documentType, "# Draft", document.Passed, ""); err != nil {
 				t.Fatalf("CreateReview: %v", err)
 			}
 			exported := "# Draft"
-			if application.ID == stale.ID && documentType == documents.Resume {
+			if target.ID == stale.ID && documentType == document.Resume {
 				exported = "# An earlier draft"
 			}
-			if err := docrecord.RecordExport(ctx, s.DB(), application.ID, documentType, exported, "/out/x.pdf"); err != nil {
+			if err := s.Documents.RecordExport(ctx, target.ID, documentType, exported, "/out/x.pdf"); err != nil {
 				t.Fatalf("RecordExport: %v", err)
 			}
 		}
 	}
 
-	msg, ok := loadActiveApplications(s, docs)().(activeApplicationsLoadedMsg)
+	msg, ok := loadActiveApplications(s.Applications, s.Documents, docs)().(activeApplicationsLoadedMsg)
 	if !ok || msg.err != nil {
 		t.Fatalf("loadActiveApplications() = %+v, want a loaded message without error", msg)
 	}
@@ -364,15 +363,15 @@ func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 	t.Parallel()
 
 	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
-	widest := pursuit.Application{
-		Application: application.Application{ID: 1, Status: applicationstatus.OfferReceived},
-		Posting: store.Posting{ListingStatus: "closed", IngestedFields: store.IngestedFields{
+	widest := posting.ActiveApplication{
+		Application: application.Application{ID: 1, Status: application.OfferReceived},
+		Posting: posting.Posting{ListingStatus: "closed", IngestedFields: posting.IngestedFields{
 			Title: strings.Repeat("Principal Engineer ", 5)}},
 		CompanyName: strings.Repeat("Longcompanyname ", 3),
 		StatusSince: now.Add(-400 * 24 * time.Hour),
-		LatestReviews: map[documents.Type]docrecord.Review{
-			documents.CoverLetter: {Outcome: docrecord.Flagged},
-			documents.Resume:      {Outcome: docrecord.Passed},
+		LatestReviews: map[document.Type]document.Review{
+			document.CoverLetter: {Outcome: document.Flagged},
+			document.Resume:      {Outcome: document.Passed},
 		},
 	}
 	// The widest next step, "withdraw?", is only ever a started
@@ -380,8 +379,8 @@ func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 	// widest cell, so the table is as wide as one row holding both.
 	withdraw := widest
 	withdraw.ID = 2
-	withdraw.Status = applicationstatus.Started
-	apps := []pursuit.Application{widest, withdraw}
+	withdraw.Status = application.Started
+	apps := []posting.ActiveApplication{widest, withdraw}
 
 	tests := []struct {
 		name  string
@@ -417,7 +416,7 @@ func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 func TestReviewGlyphSummary_HasEveryDocumentType(t *testing.T) {
 	t.Parallel()
 	got := reviewGlyphSummary(nil)
-	for _, documentType := range documents.Types() {
+	for _, documentType := range document.Types() {
 		if want := documentAbbreviation(documentType) + ":"; !strings.Contains(got, want) {
 			t.Errorf("reviewGlyphSummary(nil) = %q, want an entry %q for the %s", got, want, documentType.Label())
 		}
@@ -427,18 +426,18 @@ func TestReviewGlyphSummary_HasEveryDocumentType(t *testing.T) {
 func TestReviewBadgeAndGlyph_Text(t *testing.T) {
 	t.Parallel()
 
-	unknown := docrecord.Outcome(99)
+	unknown := document.Outcome(99)
 	for _, tc := range []struct {
 		name      string
-		review    docrecord.Review
+		review    document.Review
 		hasReview bool
 		badge     string
 		glyph     string
 	}{
-		{"no review", docrecord.Review{}, false, "[not reviewed]", "-"},
-		{"passed", docrecord.Review{Outcome: docrecord.Passed}, true, "[PASSED]", "✓"},
-		{"flagged", docrecord.Review{Outcome: docrecord.Flagged}, true, "[FLAGGED]", "✗"},
-		{"unknown outcome", docrecord.Review{Outcome: unknown}, true, "[" + unknown.String() + "]", "?"},
+		{"no review", document.Review{}, false, "[not reviewed]", "-"},
+		{"passed", document.Review{Outcome: document.Passed}, true, "[PASSED]", "✓"},
+		{"flagged", document.Review{Outcome: document.Flagged}, true, "[FLAGGED]", "✗"},
+		{"unknown outcome", document.Review{Outcome: unknown}, true, "[" + unknown.String() + "]", "?"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -452,14 +451,14 @@ func TestReviewBadgeAndGlyph_Text(t *testing.T) {
 	}
 }
 
-// A new docrecord.Outcome needs a display of its own, or it renders as
+// A new document.Outcome needs a display of its own, or it renders as
 // the unknown-outcome fallback ("?").
 func TestReviewGlyph_EveryOutcomeHasItsOwn(t *testing.T) {
 	t.Parallel()
 
-	seen := make(map[string]docrecord.Outcome)
-	for _, outcome := range docrecord.Outcomes() {
-		glyph := ansi.Strip(reviewGlyph(docrecord.Review{Outcome: outcome}, true))
+	seen := make(map[string]document.Outcome)
+	for _, outcome := range document.Outcomes() {
+		glyph := ansi.Strip(reviewGlyph(document.Review{Outcome: outcome}, true))
 		if glyph == "?" {
 			t.Errorf("%s renders as the unknown-outcome glyph %q; give it a display", outcome, glyph)
 		}
@@ -482,7 +481,7 @@ func TestActiveApplicationListModel_View_ShortRowsKeepTheTableWidth(t *testing.T
 }
 
 // typeHomeKeys sends each rune of s to m as a key press.
-func typeHomeKeys(t *testing.T, m *activeApplicationListModel, apps []pursuit.Application, s string) {
+func typeHomeKeys(t *testing.T, m *activeApplicationListModel, apps []posting.ActiveApplication, s string) {
 	t.Helper()
 	for _, r := range s {
 		m.Update(runeKey(r), apps)
@@ -491,7 +490,7 @@ func typeHomeKeys(t *testing.T, m *activeApplicationListModel, apps []pursuit.Ap
 
 // openHomeHighlighted presses enter to keep the matches, then enter again
 // to open the highlighted one, returning that intent.
-func openHomeHighlighted(t *testing.T, m *activeApplicationListModel, apps []pursuit.Application) tea.Msg {
+func openHomeHighlighted(t *testing.T, m *activeApplicationListModel, apps []posting.ActiveApplication) tea.Msg {
 	t.Helper()
 	m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
 	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
@@ -500,11 +499,11 @@ func openHomeHighlighted(t *testing.T, m *activeApplicationListModel, apps []pur
 
 // testSearchApplications has three applications, at Acme, Globex and
 // Initech, for the search tests.
-func testSearchApplications() []pursuit.Application {
+func testSearchApplications() []posting.ActiveApplication {
 	apps := testActiveApplications()
-	return append(apps, pursuit.Application{
-		Application: application.Application{ID: 30, Status: applicationstatus.Submitted},
-		Posting:     store.Posting{ID: 3, IngestedFields: store.IngestedFields{Title: "Staff Analyst"}},
+	return append(apps, posting.ActiveApplication{
+		Application: application.Application{ID: 30, Status: application.Submitted},
+		Posting:     posting.Posting{ID: 3, IngestedFields: posting.IngestedFields{Title: "Staff Analyst"}},
 		CompanyName: "Initech",
 	})
 }
@@ -526,21 +525,22 @@ func TestActiveApplicationListModel_Search_EnterKeepsMatchesForCommands(t *testi
 		t.Fatalf("after enter: searching %v, query %q; want not typing, query \"glo\"", m.searching, m.query)
 	}
 
+	globex := apps[1]
 	_, intent := m.Update(runeKey('e'), apps)
-	if got, ok := intent.(enterApplicationExportMsg); !ok || got.application.ID != 20 {
-		t.Errorf("e on the kept matches: intent = %#v, want export for the Globex application (20)", intent)
+	if got, ok := intent.(enterApplicationExportMsg); !ok || got.application.ID != globex.ID {
+		t.Errorf("e on the kept matches: intent = %#v, want export for the Globex application (%d)", intent, globex.ID)
 	}
 	_, intent = m.Update(runeKey('s'), apps)
-	if got, ok := intent.(enterApplicationStatusMsg); !ok || got.postingID != 2 {
-		t.Errorf("s on the kept matches: intent = %#v, want status for the Globex posting (2)", intent)
+	if got, ok := intent.(enterApplicationStatusMsg); !ok || got.applicationID != globex.ID {
+		t.Errorf("s on the kept matches: intent = %#v, want status for the Globex application (%d)", intent, globex.ID)
 	}
 	_, intent = m.Update(runeKey('d'), apps)
-	if got, ok := intent.(enterApplicationDeleteMsg); !ok || got.application.ID != 20 {
-		t.Errorf("d on the kept matches: intent = %#v, want delete for the Globex application (20)", intent)
+	if got, ok := intent.(enterApplicationDeleteMsg); !ok || got.application.ID != globex.ID {
+		t.Errorf("d on the kept matches: intent = %#v, want delete for the Globex application (%d)", intent, globex.ID)
 	}
 	_, intent = m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
-	if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != 20 {
-		t.Errorf("enter on the kept matches: intent = %#v, want detail for the Globex application (20)", intent)
+	if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != globex.ID {
+		t.Errorf("enter on the kept matches: intent = %#v, want detail for the Globex application (%d)", intent, globex.ID)
 	}
 }
 
@@ -814,9 +814,9 @@ func TestActiveApplicationListModel_Search_ReloadKeepsTheHighlightedMatch(t *tes
 	// The reload brings in an application ahead of it that doesn't match,
 	// so its place in the full list moves and its place among the matches
 	// doesn't.
-	reloaded := append([]pursuit.Application{{
+	reloaded := append([]posting.ActiveApplication{{
 		Application: application.Application{ID: 40},
-		Posting:     store.Posting{ID: 4, IngestedFields: store.IngestedFields{Title: "Engineer II"}},
+		Posting:     posting.Posting{ID: 4, IngestedFields: posting.IngestedFields{Title: "Engineer II"}},
 		CompanyName: "Hooli",
 	}}, apps...)
 	m.keepCursorOn(m.selected(apps), reloaded)

@@ -4,8 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/dklassen/swamp/scoring"
-	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/internal/domain/score"
 )
 
 // RecordOptions is record_scores' input, and the client it was called
@@ -35,8 +34,8 @@ type RecordResult struct {
 
 // RefusedEntry is a score that wasn't recorded, and why.
 type RefusedEntry struct {
-	PostingID int64           `json:"PostingID"`
-	Why       scoring.Refusal `json:"Why"`
+	PostingID int64         `json:"PostingID"`
+	Why       score.Refusal `json:"Why"`
 }
 
 // RecordScores records the agent's scores against the profile it read, in
@@ -45,22 +44,17 @@ func (st *Stage) RecordScores(ctx context.Context, opts RecordOptions) (RecordRe
 	if err := st.checkProfile(opts.ProfileVersion); err != nil {
 		return RecordResult{}, err
 	}
-	entries := make([]scoring.Entry, len(opts.Scores))
+	entries := make([]score.Entry, len(opts.Scores))
 	for i, s := range opts.Scores {
-		entries[i] = scoring.Entry{PostingID: s.PostingID, Score: s.Score, Reason: s.Reason, ContentSHA256: s.PostingVersion}
+		entries[i] = score.Entry{PostingID: s.PostingID, Score: s.Score, Reason: s.Reason, ContentSHA256: s.PostingVersion}
 	}
-	provenance := scoring.Provenance{
+	provenance := score.Provenance{
 		Model:         opts.Model,
 		ClientName:    opts.ClientName,
 		ClientVersion: opts.ClientVersion,
 		ProfileSHA256: opts.ProfileVersion,
 	}
-	var recorded scoring.RecordResult
-	err := store.InTx(ctx, st.store.DB(), func(tx store.Tx) error {
-		var err error
-		recorded, err = scoring.Record(ctx, tx, provenance, entries)
-		return err
-	})
+	recorded, err := st.scores.Record(ctx, provenance, entries)
 	if err != nil {
 		return RecordResult{}, fmt.Errorf("stage: %w", err)
 	}

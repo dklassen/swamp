@@ -5,6 +5,8 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/dklassen/swamp/internal/domain/document"
 )
 
 // record stands in for docrecord.Review or docrecord.Export:
@@ -19,7 +21,7 @@ func TestCurrent_KeepsOnlyRecordsMatchingTheDocumentOnDisk(t *testing.T) {
 	if _, err := docs.EnsureDir(7); err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
-	coverLetter, err := docs.Path(7, CoverLetter)
+	coverLetter, err := docs.Path(7, document.CoverLetter)
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
@@ -27,13 +29,13 @@ func TestCurrent_KeepsOnlyRecordsMatchingTheDocumentOnDisk(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 	// The resume was never written, so a record of it can't be current.
-	records := map[Type]record{CoverLetter: {content: "v2"}, Resume: {content: "v1"}}
+	records := map[document.Type]record{document.CoverLetter: {content: "v2"}, document.Resume: {content: "v1"}}
 
 	got, err := Current(docs.Status(7), records, recordIsCurrent)
 	if err != nil {
 		t.Fatalf("Current: %v", err)
 	}
-	if diff := cmp.Diff(map[Type]record{CoverLetter: {content: "v2"}}, got, cmp.AllowUnexported(record{})); diff != "" {
+	if diff := cmp.Diff(map[document.Type]record{document.CoverLetter: {content: "v2"}}, got, cmp.AllowUnexported(record{})); diff != "" {
 		t.Errorf("Current mismatch (-want +got):\n%s", diff)
 	}
 
@@ -54,7 +56,7 @@ func TestCurrent_KeepsOnlyRecordsMatchingTheDocumentOnDisk(t *testing.T) {
 func TestCurrent_ReadFailureIsAnError(t *testing.T) {
 	t.Parallel()
 	docs := NewStore(t.TempDir())
-	coverLetter, err := docs.Path(7, CoverLetter)
+	coverLetter, err := docs.Path(7, document.CoverLetter)
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
@@ -63,7 +65,7 @@ func TestCurrent_ReadFailureIsAnError(t *testing.T) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 
-	if _, err := Current(docs.Status(7), map[Type]record{CoverLetter: {content: "v1"}}, recordIsCurrent); err == nil {
+	if _, err := Current(docs.Status(7), map[document.Type]record{document.CoverLetter: {content: "v1"}}, recordIsCurrent); err == nil {
 		t.Error("Current succeeded, want the read error")
 	}
 }
