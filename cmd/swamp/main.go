@@ -28,14 +28,14 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/export"
-	"github.com/dklassen/swamp/greenhouse"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/service"
-	"github.com/dklassen/swamp/lever"
+	"github.com/dklassen/swamp/jobboard/ashby"
+	"github.com/dklassen/swamp/jobboard/greenhouse"
+	"github.com/dklassen/swamp/jobboard/lever"
 	"github.com/dklassen/swamp/seed"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
