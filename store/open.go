@@ -55,7 +55,7 @@ func DefaultConfig() Config {
 	return Config{BusyTimeout: 5 * time.Second, TimeFormat: "sqlite", Timezone: "UTC"}
 }
 
-// journalMode and txLock are what make more than one writer safe, so
+// JournalMode and txLock are what make more than one writer safe, so
 // they're fixed rather than part of Config -- a different value would
 // quietly bring back the SQLITE_BUSY failures in issue #136.
 //
@@ -69,7 +69,7 @@ func DefaultConfig() Config {
 // in between would make the write fail at once, which busy_timeout can't
 // retry. Waiting at BeginTx is where busy_timeout applies.
 const (
-	journalMode = "WAL"
+	JournalMode = "WAL"
 	txLock      = "immediate"
 )
 
@@ -79,7 +79,7 @@ const (
 // it rather than failing with SQLITE_BUSY (see issue #136).
 func Open(path string, cfg Config) (*sql.DB, error) {
 	dsn := fmt.Sprintf("file:%s?_pragma=busy_timeout(%d)&_pragma=journal_mode(%s)&_txlock=%s&_time_format=%s&_timezone=%s",
-		path, cfg.BusyTimeout.Milliseconds(), journalMode, txLock, cfg.TimeFormat, cfg.Timezone)
+		path, cfg.BusyTimeout.Milliseconds(), JournalMode, txLock, cfg.TimeFormat, cfg.Timezone)
 	return sql.OpenDB(connector{driver: sharedDriver, dsn: dsn, origin: cfg.Origin}), nil
 }
 
