@@ -189,7 +189,7 @@ func TestPostingService_Ingest_NewPosting_CreatesAnUntriagedMarkupRow(t *testing
 	if err != nil {
 		t.Fatalf("Markup: %v", err)
 	}
-	want := posting.Markup{PostingID: p.ID}
+	want := &posting.Markup{PostingID: p.ID}
 	if diff := cmp.Diff(want, markup, cmpopts.IgnoreFields(posting.Markup{}, "CreatedAt", "UpdatedAt")); diff != "" {
 		t.Errorf("markup (-want +got):\n%s", diff)
 	}
@@ -331,10 +331,11 @@ func TestPostingService_Reopen(t *testing.T) {
 				if err := postings.Close(ctx, open.ID, nil); err != nil {
 					t.Fatalf("Close: %v", err)
 				}
-				var err error
-				if before, err = postings.Get(ctx, open.ID); err != nil {
+				closed, err := postings.Get(ctx, open.ID)
+				if err != nil {
 					t.Fatalf("Get: %v", err)
 				}
+				before = *closed
 			}
 
 			if err := postings.Reopen(ctx, open.ID); err != nil {
@@ -588,5 +589,36 @@ func TestPostingService_Application_AfterDeleteAndRestart_IsTheLiveOne(t *testin
 	}
 	if diff := cmp.Diff(deleted, after); diff != "" {
 		t.Errorf("the deleted application changed (-before +after):\n%s", diff)
+	}
+}
+
+func TestPostingService_Form(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	p := testutil.MustIngestPosting(t, s, "job-1", "Software Engineer")
+
+	none, err := s.Postings.Form(ctx, p.ID)
+	if !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("Form before any save: err = %v, want store.ErrNotFound", err)
+	}
+	if none != nil {
+		t.Errorf("Form before any save = %+v, want nil", none)
+	}
+
+	const formJSON = `{"Questions":[]}`
+	if err := s.Postings.SaveForm(ctx, p.ID, formJSON); err != nil {
+		t.Fatalf("SaveForm: %v", err)
+	}
+	got, err := s.Postings.Form(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("Form: %v", err)
+	}
+	want := &posting.Form{PostingID: p.ID, JSON: formJSON}
+	if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(posting.Form{}, "FetchedAt")); diff != "" {
+		t.Errorf("Form (-want +got):\n%s", diff)
+	}
+	if got.FetchedAt.IsZero() {
+		t.Error("FetchedAt is zero, want when the form was saved")
 	}
 }

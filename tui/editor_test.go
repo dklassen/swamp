@@ -12,6 +12,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/store"
 )
 
 func TestEditorCommand_EditorSet_ReturnsEditorAndPath(t *testing.T) {
@@ -106,9 +107,9 @@ func TestApp_EditorClosedAfterAChange_RecordsTheWrite(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: document.Resume, before: documents.ContentSHA256("# Draft\n")})
 
-	write, ok, err := storeOf(app).Documents.LatestWrite(ctx, target.ID, document.Resume)
-	if err != nil || !ok {
-		t.Fatalf("LatestWrite = ok %v, err %v; want the edit recorded", ok, err)
+	write, err := storeOf(app).Documents.LatestWrite(ctx, target.ID, document.Resume)
+	if err != nil {
+		t.Fatalf("LatestWrite: %v; want the edit recorded", err)
 	}
 	if write.Source != document.SourceEditor || write.ContentSHA256 != documents.ContentSHA256("# Edited\n") {
 		t.Errorf("recorded write = source %v, hash %q; want editor and the edited content's hash", write.Source, write.ContentSHA256)
@@ -123,7 +124,7 @@ func TestApp_EditorClosedWithoutAChange_RecordsNothing(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: document.Resume, before: documents.ContentSHA256("# Draft\n")})
 
-	if _, ok, err := storeOf(app).Documents.LatestWrite(context.Background(), target.ID, document.Resume); err != nil || ok {
-		t.Errorf("LatestWrite = ok %v, err %v; want nothing recorded for an unchanged document", ok, err)
+	if _, err := storeOf(app).Documents.LatestWrite(context.Background(), target.ID, document.Resume); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("LatestWrite: err = %v, want store.ErrNotFound: nothing recorded for an unchanged document", err)
 	}
 }

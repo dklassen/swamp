@@ -150,7 +150,7 @@ func TestApplicationService_Active_IncludesTheLatestReviewPerDocument(t *testing
 	if len(got) != 1 {
 		t.Fatalf("Active = %d applications, want 1", len(got))
 	}
-	want := map[document.Type]document.Review{document.CoverLetter: second}
+	want := map[document.Type]document.Review{document.CoverLetter: *second}
 	if diff := cmp.Diff(want, got[0].LatestReviews); diff != "" {
 		t.Errorf("LatestReviews (-want +got):\n%s", diff)
 	}

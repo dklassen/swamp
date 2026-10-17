@@ -120,7 +120,7 @@ func mustCreateCompany(t *testing.T, s testutil.TestApp, name string) company.Co
 	if err != nil {
 		t.Fatalf("CreateCompany: %v", err)
 	}
-	return c
+	return *c
 }
 
 func mustUpsertPosting(t *testing.T, s testutil.TestApp, companyID int64, sourceID, title string) posting.Posting {
@@ -1132,9 +1132,9 @@ func TestWriteDocument_IsRecordedAndReachesTheChangeLog(t *testing.T) {
 		"Content":       "a draft",
 	})
 
-	write, ok, err := s.Documents.LatestWrite(ctx, prepared.ApplicationID, document.CoverLetter)
-	if err != nil || !ok {
-		t.Fatalf("LatestWrite = ok %v, err %v; want the write", ok, err)
+	write, err := s.Documents.LatestWrite(ctx, prepared.ApplicationID, document.CoverLetter)
+	if err != nil {
+		t.Fatalf("LatestWrite: %v", err)
 	}
 	if write.Source != document.SourceWriteDocument || write.ContentSHA256 != documents.ContentSHA256("a draft") {
 		t.Errorf("recorded write = source %v, hash %q; want write_document and the draft's hash", write.Source, write.ContentSHA256)
@@ -1489,10 +1489,10 @@ func TestOldVersionArgumentNames_AreRefused(t *testing.T) {
 	}
 }
 
-func recordScores(ctx context.Context, s testutil.TestApp, provenance score.Provenance, entries []score.Entry) (score.RecordResult, error) {
+func recordScores(ctx context.Context, s testutil.TestApp, provenance score.Provenance, entries []score.Entry) (*score.RecordResult, error) {
 	return s.Scores.Record(ctx, provenance, entries)
 }
 
-func createApplication(ctx context.Context, s testutil.TestApp, postingID int64) (application.Application, error) {
+func createApplication(ctx context.Context, s testutil.TestApp, postingID int64) (*application.Application, error) {
 	return s.Postings.ApplyTo(ctx, postingID)
 }

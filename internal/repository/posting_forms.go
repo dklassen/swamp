@@ -2,10 +2,9 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"time"
 
+	domain "github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/store/sqlcdb"
 )
@@ -26,17 +25,14 @@ func (PostingForms) Save(ctx context.Context, r store.Runner, postingID int64, f
 	return nil
 }
 
-// Get returns postingID's stored application form JSON and when it was
-// fetched. ok is false when it was never fetched.
-func (PostingForms) Get(ctx context.Context, r store.Runner, postingID int64) (formJSON string, fetchedAt time.Time, ok bool, err error) {
+// Get returns postingID's stored application form, or store.ErrNotFound
+// when it was never fetched.
+func (PostingForms) Get(ctx context.Context, r store.Runner, postingID int64) (*domain.Form, error) {
 	row, err := store.Read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.PostingApplicationForm, error) {
 		return q.GetPostingApplicationForm(ctx, postingID)
 	})
-	if errors.Is(err, store.ErrNotFound) {
-		return "", time.Time{}, false, nil
-	}
 	if err != nil {
-		return "", time.Time{}, false, fmt.Errorf("application: get form: %w", err)
+		return nil, fmt.Errorf("application: get form: %w", err)
 	}
-	return row.Form, row.FetchedAt, true, nil
+	return &domain.Form{PostingID: row.PostingID, JSON: row.Form, FetchedAt: row.FetchedAt}, nil
 }

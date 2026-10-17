@@ -193,25 +193,25 @@ type Prepared struct {
 }
 
 type companyService interface {
-	Get(ctx context.Context, id int64) (company.Company, error)
-	GetIncludingDeleted(ctx context.Context, id int64) (company.Company, error)
+	Get(ctx context.Context, id int64) (*company.Company, error)
+	GetIncludingDeleted(ctx context.Context, id int64) (*company.Company, error)
 	ListActive(ctx context.Context) ([]company.Company, error)
 }
 
 type postingService interface {
-	Get(ctx context.Context, postingID int64) (posting.Posting, error)
-	Search(ctx context.Context, search posting.Search) (posting.SearchPage, error)
+	Get(ctx context.Context, postingID int64) (*posting.Posting, error)
+	Search(ctx context.Context, search posting.Search) (*posting.SearchPage, error)
 	Interested(ctx context.Context) ([]posting.Interested, error)
 	CountOpenByCompany(ctx context.Context) (map[int64]int, error)
-	Markup(ctx context.Context, postingID int64) (posting.Markup, error)
-	Form(ctx context.Context, postingID int64) (formJSON string, fetchedAt time.Time, ok bool, err error)
+	Markup(ctx context.Context, postingID int64) (*posting.Markup, error)
+	Form(ctx context.Context, postingID int64) (*posting.Form, error)
 	SaveForm(ctx context.Context, postingID int64, formJSON string) error
-	Application(ctx context.Context, postingID int64) (application.Application, error)
-	ApplyTo(ctx context.Context, postingID int64) (application.Application, error)
+	Application(ctx context.Context, postingID int64) (*application.Application, error)
+	ApplyTo(ctx context.Context, postingID int64) (*application.Application, error)
 }
 
 type applicationService interface {
-	GetIncludingDeleted(ctx context.Context, applicationID int64) (application.Application, error)
+	GetIncludingDeleted(ctx context.Context, applicationID int64) (*application.Application, error)
 	Active(ctx context.Context) ([]posting.ActiveApplication, error)
 }
 
@@ -221,8 +221,8 @@ type documentService interface {
 }
 
 type scoringService interface {
-	Pending(ctx context.Context, rescoreProfileSHA256 string, beforeID int64, limit int) (score.PendingPostingsPage, error)
-	Record(ctx context.Context, provenance score.Provenance, entries []score.Entry) (score.RecordResult, error)
+	Pending(ctx context.Context, rescoreProfileSHA256 string, beforeID int64, limit int) (*score.PendingPostingsPage, error)
+	Record(ctx context.Context, provenance score.Provenance, entries []score.Entry) (*score.RecordResult, error)
 }
 
 // Stage is the single entry point for the agent hand-off mechanism,
@@ -395,7 +395,7 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 	}
 	status := st.documents.Status(app.ID)
 
-	form, formErr, err := st.applicationForm(ctx, posting, company)
+	form, formErr, err := st.applicationForm(ctx, *posting, *company)
 	if err != nil {
 		return nil, err
 	}
@@ -426,7 +426,7 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 	}
 
 	return &Prepared{
-		Posting:              preparedPosting(posting),
+		Posting:              preparedPosting(*posting),
 		CompanyName:          company.Name,
 		ApplicationID:        app.ID,
 		Documents:            preparedDocuments,

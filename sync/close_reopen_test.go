@@ -26,7 +26,7 @@ func mustCreateApplication(t *testing.T, s testutil.TestApp, postingID int64) ap
 	if err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	return a
+	return *a
 }
 
 func mustClosePosting(t *testing.T, s testutil.TestApp, postingID int64, from []application.Status) {

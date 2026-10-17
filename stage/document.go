@@ -55,7 +55,7 @@ func (st *Stage) application(ctx context.Context, applicationID int64) (applicat
 	if !app.DeletedAt.IsZero() {
 		return application.Application{}, &ApplicationDeletedError{ApplicationID: applicationID, PostingID: app.PostingID}
 	}
-	return app, nil
+	return *app, nil
 }
 
 // WriteDocument replaces applicationID's documentType document with

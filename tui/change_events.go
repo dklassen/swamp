@@ -242,7 +242,10 @@ func reloadApplicationDetail(applications *service.ApplicationService, id int64)
 		if errors.Is(err, store.ErrNotFound) {
 			return applicationDetailReloadedMsg{id: id, deleted: true}
 		}
-		return applicationDetailReloadedMsg{id: id, application: app, err: err}
+		if err != nil {
+			return applicationDetailReloadedMsg{id: id, err: err}
+		}
+		return applicationDetailReloadedMsg{id: id, application: *app}
 	}
 }
 
@@ -282,7 +285,10 @@ type postingReloadedMsg struct {
 func reloadPosting(postings *service.PostingService, id int64) tea.Cmd {
 	return func() tea.Msg {
 		p, err := postings.Get(context.Background(), id)
-		return postingReloadedMsg{posting: p, err: err}
+		if err != nil {
+			return postingReloadedMsg{err: err}
+		}
+		return postingReloadedMsg{posting: *p}
 	}
 }
 

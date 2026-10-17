@@ -3620,7 +3620,7 @@ func TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T
 		t.Fatalf("application.Get: %v", err)
 	}
 
-	app, _ = sendKey(app, applicationNotesUpdatedMsg{application: stored, from: earlier})
+	app, _ = sendKey(app, applicationNotesUpdatedMsg{application: *stored, from: earlier})
 
 	if app.screen != screenApplicationNotesEdit {
 		t.Fatalf("screen after the earlier instance's save result = %v, want screenApplicationNotesEdit (the reopened one stays open)", app.screen)
@@ -3754,12 +3754,12 @@ func TestApp_ApplicationDetail_EnterApplicationFormByHand(t *testing.T) {
 	if app.screen != screenApplicationDetail {
 		t.Errorf("screen after saving = %v, want screenApplicationDetail", app.screen)
 	}
-	stored, _, ok, err := s.Postings.Form(context.Background(), posting.ID)
-	if err != nil || !ok {
-		t.Fatalf("application.GetForm: ok %v, err %v", ok, err)
+	stored, err := s.Postings.Form(context.Background(), posting.ID)
+	if err != nil {
+		t.Fatalf("Form: %v", err)
 	}
 	var got jobboard.ApplicationForm
-	if err := json.Unmarshal([]byte(stored), &got); err != nil {
+	if err := json.Unmarshal([]byte(stored.JSON), &got); err != nil {
 		t.Fatalf("decode stored form: %v", err)
 	}
 	want := jobboard.ApplicationForm{

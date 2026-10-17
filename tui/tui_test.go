@@ -22,7 +22,7 @@ func mustCreateCompany(t *testing.T, s testutil.TestApp, name, source, sourceRef
 	if err != nil {
 		t.Fatalf("CreateCompany: %v", err)
 	}
-	return c
+	return *c
 }
 
 // mustUpsertPosting creates a posting directly via the posting service,
@@ -43,7 +43,7 @@ func mustCreateApplication(t *testing.T, s testutil.TestApp, postingID int64) ap
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	return a
+	return *a
 }
 
 // fakeFetcher is a sync.PostingFetcher whose FetchPostings return value is
@@ -104,23 +104,23 @@ func addCompanyFilter(t *testing.T, s testutil.TestApp, companyID int64, field, 
 	}
 }
 
-func recordScores(ctx context.Context, s testutil.TestApp, provenance score.Provenance, entries []score.Entry) (score.RecordResult, error) {
+func recordScores(ctx context.Context, s testutil.TestApp, provenance score.Provenance, entries []score.Entry) (*score.RecordResult, error) {
 	return s.Scores.Record(ctx, provenance, entries)
 }
 
-func createReview(ctx context.Context, s testutil.TestApp, applicationID int64, documentType document.Type, content string, outcome document.Outcome, notes string) (document.Review, error) {
+func createReview(ctx context.Context, s testutil.TestApp, applicationID int64, documentType document.Type, content string, outcome document.Outcome, notes string) (*document.Review, error) {
 	return s.Documents.Review(ctx, applicationID, documentType, content, outcome, notes)
 }
 
-func createApplicationIn(ctx context.Context, s testutil.TestApp, postingID int64) (application.Application, error) {
+func createApplicationIn(ctx context.Context, s testutil.TestApp, postingID int64) (*application.Application, error) {
 	return s.Postings.ApplyTo(ctx, postingID)
 }
 
 // updateApplicationStatusIn sets the status of postingID's application.
-func updateApplicationStatusIn(ctx context.Context, s testutil.TestApp, postingID int64, status application.Status) (application.Application, error) {
+func updateApplicationStatusIn(ctx context.Context, s testutil.TestApp, postingID int64, status application.Status) (*application.Application, error) {
 	app, err := s.Postings.Application(ctx, postingID)
 	if err != nil {
-		return application.Application{}, err
+		return nil, err
 	}
 	return s.Applications.SetStatus(ctx, app.ID, status)
 }

@@ -270,7 +270,7 @@ func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
 	if err := s.Documents.RecordWrite(ctx, application.ID, document.CoverLetter, "Rewritten by the agent\n", document.SourceWriteDocument); err != nil {
 		t.Fatalf("RecordWrite: %v", err)
 	}
-	write, _, err := s.Documents.LatestWrite(ctx, application.ID, document.CoverLetter)
+	write, err := s.Documents.LatestWrite(ctx, application.ID, document.CoverLetter)
 	if err != nil {
 		t.Fatalf("LatestWrite: %v", err)
 	}

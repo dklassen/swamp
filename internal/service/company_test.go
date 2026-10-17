@@ -124,7 +124,7 @@ func TestCompanyService_Delete_ClosesItsOpenPostings(t *testing.T) {
 		if err != nil {
 			t.Fatalf("History: %v", err)
 		}
-		st := state{Posting: p}
+		st := state{Posting: *p}
 		for _, h := range history {
 			st.History = append(st.History, h.ChangeType)
 		}
@@ -153,7 +153,7 @@ func TestCompanyService_Delete_ClosesItsOpenPostings(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Application: %v", err)
 	}
-	if diff := cmp.Diff(app, appAfter); diff != "" {
+	if diff := cmp.Diff(app, *appAfter); diff != "" {
 		t.Errorf("application changed (-before +after):\n%s", diff)
 	}
 }

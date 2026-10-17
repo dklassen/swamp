@@ -44,8 +44,12 @@ func NewScoringService(db store.Store) *ScoringService {
 // Pending returns one page of the postings with no score on their current
 // content, newest first, before beforeID (0 for the first page). For a
 // rescore, rescoreProfileSHA256 names the profile; "" is no rescore.
-func (service *ScoringService) Pending(ctx context.Context, rescoreProfileSHA256 string, beforeID int64, limit int) (score.PendingPostingsPage, error) {
-	return service.scoreViewer.Pending(ctx, service.db, rescoreProfileSHA256, beforeID, limit)
+func (service *ScoringService) Pending(ctx context.Context, rescoreProfileSHA256 string, beforeID int64, limit int) (*score.PendingPostingsPage, error) {
+	page, err := service.scoreViewer.Pending(ctx, service.db, rescoreProfileSHA256, beforeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	return &page, nil
 }
 
 // ForPosting returns every score postingID was given, newest, its current
@@ -58,12 +62,12 @@ func (service *ScoringService) ForPosting(ctx context.Context, postingID int64) 
 // at all: a failing write undoes the whole batch. An entry that can't be
 // recorded is refused, and the result says why. A call with no model or
 // profile hash records nothing.
-func (service *ScoringService) Record(ctx context.Context, provenance score.Provenance, entries []score.Entry) (score.RecordResult, error) {
+func (service *ScoringService) Record(ctx context.Context, provenance score.Provenance, entries []score.Entry) (*score.RecordResult, error) {
 	switch {
 	case provenance.Model == "":
-		return score.RecordResult{}, errors.New("scoring: record scores: model is required")
+		return nil, errors.New("scoring: record scores: model is required")
 	case provenance.ProfileSHA256 == "":
-		return score.RecordResult{}, errors.New("scoring: record scores: profile hash is required")
+		return nil, errors.New("scoring: record scores: profile hash is required")
 	}
 	var result score.RecordResult
 	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
@@ -84,9 +88,9 @@ func (service *ScoringService) Record(ctx context.Context, provenance score.Prov
 		return nil
 	})
 	if err != nil {
-		return score.RecordResult{}, err
+		return nil, err
 	}
-	return result, nil
+	return &result, nil
 }
 
 // check says whether e can be recorded, and if not, why. It reads inside

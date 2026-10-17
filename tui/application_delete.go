@@ -105,7 +105,10 @@ func reloadApplicationForDelete(applications *service.ApplicationService, view p
 		if errors.Is(err, store.ErrNotFound) {
 			return applicationReloadedForDeleteMsg{from: from, err: errors.New("this application was already deleted")}
 		}
-		view.Application = app
-		return applicationReloadedForDeleteMsg{application: view, from: from, err: err}
+		if err != nil {
+			return applicationReloadedForDeleteMsg{from: from, err: err}
+		}
+		view.Application = *app
+		return applicationReloadedForDeleteMsg{application: view, from: from}
 	}
 }

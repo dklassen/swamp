@@ -90,7 +90,7 @@ func MustAddCompany(t *testing.T, s TestApp, name string) company.Company {
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	return c
+	return *c
 }
 
 // MustIngestPosting adds a company and one posting for it.
@@ -119,5 +119,5 @@ func MustApplyTo(t *testing.T, s TestApp, postingID int64) application.Applicati
 	if err != nil {
 		t.Fatalf("ApplyTo: %v", err)
 	}
-	return app
+	return *app
 }
