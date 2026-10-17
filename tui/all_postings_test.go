@@ -58,8 +58,12 @@ func TestAllPostings_ShowsOpenPostingsAcrossCompaniesNewestFirst(t *testing.T) {
 	shelved := mustUpsertPostingAt(t, s, acme.ID, "2", "Shelved Role", "Platform", "Toronto", "")
 	mustUpsertPostingAt(t, s, globex.ID, "3", "Account Executive", "Sales", "Remote", "")
 	newer := mustUpsertPostingAt(t, s, globex.ID, "4", "Platform Engineer", "Infra", "New York", "")
+	taken := mustUpsertPostingAt(t, s, acme.ID, "5", "Filled Role", "Platform", "Toronto", "")
 	if _, err := s.Postings.SetArchived(ctx, shelved.ID); err != nil {
 		t.Fatalf("SetArchived: %v", err)
+	}
+	if err := s.Postings.Close(ctx, taken.ID, nil); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 	if _, err := s.Postings.SetInterested(ctx, older.ID); err != nil {
 		t.Fatalf("SetInterested: %v", err)
@@ -71,9 +75,9 @@ func TestAllPostings_ShowsOpenPostingsAcrossCompaniesNewestFirst(t *testing.T) {
 	app = openAllPostings(t, app)
 
 	view := strings.Join(viewLines(app), "\n")
-	for _, hidden := range []string{"Shelved Role", "Account Executive"} {
+	for _, hidden := range []string{"Shelved Role", "Account Executive", "Filled Role"} {
 		if strings.Contains(view, hidden) {
-			t.Errorf("view shows %q, which is archived or hidden by its company's filters:\n%s", hidden, view)
+			t.Errorf("view shows %q, which is archived, closed or hidden by its company's filters:\n%s", hidden, view)
 		}
 	}
 	newerAt, olderAt := strings.Index(view, "Platform Engineer"), strings.Index(view, "Backend Engineer")
@@ -452,6 +456,34 @@ func TestAllPostings_TypingSearchesAfterAPause(t *testing.T) {
 	}
 	if !strings.Contains(app.View(), "2 of 3") {
 		t.Errorf("search line doesn't say 2 of 3:\n%s", app.View())
+	}
+}
+
+// The total a search counts against is the postings the view shows, so a
+// closed posting counts toward neither side.
+func TestAllPostings_SearchCountsOnlyOpenPostings(t *testing.T) {
+	t.Parallel()
+
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
+	mustUpsertPosting(t, s, acme.ID, "2", "Designer")
+	filled := mustUpsertPosting(t, s, acme.ID, "3", "Platform Lead")
+	if err := s.Postings.Close(ctx, filled.ID, nil); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = openAllPostings(t, app)
+
+	app = searchAllPostings(t, app, "plat")
+
+	if diff := cmp.Diff([]string{"Platform Engineer"}, pageTitles(app)); diff != "" {
+		t.Errorf("search results (-want +got):\n%s", diff)
+	}
+	if !strings.Contains(app.View(), "1 of 2") {
+		t.Errorf("search line doesn't say 1 of 2:\n%s", app.View())
 	}
 }
 
