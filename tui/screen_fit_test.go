@@ -30,9 +30,9 @@ func newFullTestApp(t *testing.T) *App {
 	ctx := context.Background()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i < 40; i++ {
-		mustCreateCompany(t, s, fmt.Sprintf("Company %02d", i), "ashby", fmt.Sprintf("company-%02d", i))
+		mustCreateCompany(t, s, fmt.Sprintf("Company %02d", i), jobboard.Ashby, fmt.Sprintf("company-%02d", i))
 	}
 
 	var board []jobboard.Posting
@@ -45,7 +45,7 @@ func newFullTestApp(t *testing.T) *App {
 			Location:   fmt.Sprintf("City %02d", i),
 		}
 		board = append(board, p)
-		ingested, err := s.Postings.Ingest(ctx, acme.ID, "ashby", p.SourceID, posting.IngestedFields{
+		ingested, err := s.Postings.Ingest(ctx, acme.ID, jobboard.Ashby, p.SourceID, posting.IngestedFields{
 			Title:      p.Title,
 			Department: p.Department,
 			Location:   p.Location,

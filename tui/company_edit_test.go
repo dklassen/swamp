@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 )
 
 func TestCompanyEditModel_New_SeedsInputWithName(t *testing.T) {
@@ -83,7 +84,7 @@ func TestCompanyEditModel_Enter_TrimsSavedName(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	created, err := s.Companies.Add(t.Context(), "Old Name", "ashby", "acme")
+	created, err := s.Companies.Add(t.Context(), "Old Name", jobboard.Ashby, "acme")
 	if err != nil {
 		t.Fatalf("CreateCompany() error = %v", err)
 	}

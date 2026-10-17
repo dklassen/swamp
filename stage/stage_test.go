@@ -20,6 +20,7 @@ import (
 	"github.com/dklassen/swamp/internal/repository"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -37,7 +38,7 @@ func stageOn(s testutil.TestApp, d *documents.Store, opts ...Option) *Stage {
 
 func mustCreateCompany(t *testing.T, s testutil.TestApp, name string) company.Company {
 	t.Helper()
-	c, err := s.Companies.Add(context.Background(), name, "ashby", name)
+	c, err := s.Companies.Add(context.Background(), name, jobboard.Ashby, name)
 	if err != nil {
 		t.Fatalf("CreateCompany: %v", err)
 	}
@@ -46,7 +47,7 @@ func mustCreateCompany(t *testing.T, s testutil.TestApp, name string) company.Co
 
 func mustUpsertPosting(t *testing.T, s testutil.TestApp, companyID int64, sourceID, title string) posting.Posting {
 	t.Helper()
-	ingested, err := s.Postings.Ingest(context.Background(), companyID, "ashby", sourceID, posting.IngestedFields{
+	ingested, err := s.Postings.Ingest(context.Background(), companyID, jobboard.Ashby, sourceID, posting.IngestedFields{
 		Title:      title,
 		RawPayload: `{"id":"` + sourceID + `"}`,
 	})

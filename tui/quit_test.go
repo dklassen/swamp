@@ -5,6 +5,7 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 )
 
 // ctrl+c quits wherever the user is, including on a search line or a
@@ -39,7 +40,7 @@ func TestApp_CtrlC_QuitsFromAnyScreen(t *testing.T) {
 			t.Parallel()
 
 			s := testutil.NewTestApp(t)
-			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 			mustUpsertPosting(t, s, acme.ID, "1", "Engineer")
 			app := newTestApp(t, s, newTestSyncer(s, nil))
 			app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})

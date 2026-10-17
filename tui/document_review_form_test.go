@@ -112,7 +112,7 @@ func TestDocumentReviewFormModel_TypingKey_UpdatesTextareaValue(t *testing.T) {
 
 func TestApp_ReviewSavedOfAnUnchangedDocument_DoesNotWarn(t *testing.T) {
 	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
@@ -145,7 +145,7 @@ func TestApp_ReviewSavedOfAnUnchangedDocument_DoesNotWarn(t *testing.T) {
 // what changed, and the next save reviews what's on disk.
 func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *testing.T) {
 	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
@@ -204,7 +204,7 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 
 func TestApp_ReviewOfADocumentDeletedMeanwhile_SavesNothingAndSaysSo(t *testing.T) {
 	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
@@ -246,7 +246,7 @@ func TestApp_ReviewOfADocumentDeletedMeanwhile_SavesNothingAndSaysSo(t *testing.
 func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
@@ -291,7 +291,7 @@ func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
 func TestApp_ReviewOfADocumentChangedOutsideSwamp_DoesNotNameTheLastWriter(t *testing.T) {
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})

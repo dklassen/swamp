@@ -49,7 +49,7 @@ func newTestServer(t *testing.T) (*mcp.Server, testutil.TestApp, *documents.Stor
 	fetcher := fakeFetcher{boards: map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}, {SourceID: "job-2", Title: "Designer"}},
 	}}
-	syncer := swampsync.New(s.Companies, s.Postings, map[string]swampsync.PostingFetcher{"ashby": fetcher}, swampsync.DefaultConfig())
+	syncer := swampsync.New(s.Companies, s.Postings, map[string]swampsync.PostingFetcher{jobboard.Ashby: fetcher}, swampsync.DefaultConfig())
 	return New(stage.New(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, d), d, syncer), s, d
 }
 
@@ -117,7 +117,7 @@ func callTool[Out any](t *testing.T, cs *mcp.ClientSession, name string, args an
 
 func mustCreateCompany(t *testing.T, s testutil.TestApp, name string) company.Company {
 	t.Helper()
-	c, err := s.Companies.Add(context.Background(), name, "ashby", name)
+	c, err := s.Companies.Add(context.Background(), name, jobboard.Ashby, name)
 	if err != nil {
 		t.Fatalf("CreateCompany: %v", err)
 	}
@@ -126,7 +126,7 @@ func mustCreateCompany(t *testing.T, s testutil.TestApp, name string) company.Co
 
 func mustUpsertPosting(t *testing.T, s testutil.TestApp, companyID int64, sourceID, title string) posting.Posting {
 	t.Helper()
-	ingested, err := s.Postings.Ingest(context.Background(), companyID, "ashby", sourceID, posting.IngestedFields{
+	ingested, err := s.Postings.Ingest(context.Background(), companyID, jobboard.Ashby, sourceID, posting.IngestedFields{
 		Title:      title,
 		RawPayload: `{"id":"` + sourceID + `"}`,
 	})
@@ -361,7 +361,7 @@ func TestAddCompany_NewBoard_CreatesCompanyWithDescription(t *testing.T) {
 	const description = "Acme builds rockets for roadrunner enthusiasts."
 	got := callTool[addCompanyOutput](t, cs, "add_company", map[string]any{
 		"Name":        "Acme",
-		"Source":      "ashby",
+		"Source":      jobboard.Ashby,
 		"Slug":        "acme",
 		"Description": description,
 	})
@@ -395,7 +395,7 @@ func TestAddCompany_ExistingCompany_ReportsOutcome(t *testing.T) {
 			t.Parallel()
 
 			srv, s, _ := newTestServer(t)
-			acme, err := s.Companies.Add(context.Background(), "Acme", "ashby", "acme")
+			acme, err := s.Companies.Add(context.Background(), "Acme", jobboard.Ashby, "acme")
 			if err != nil {
 				t.Fatalf("CreateCompany: %v", err)
 			}
@@ -407,7 +407,7 @@ func TestAddCompany_ExistingCompany_ReportsOutcome(t *testing.T) {
 			cs := connectClient(t, srv)
 
 			got := callTool[addCompanyOutput](t, cs, "add_company", map[string]any{
-				"Name": "Acme", "Source": "ashby", "Slug": "acme", "Description": "whatever",
+				"Name": "Acme", "Source": jobboard.Ashby, "Slug": "acme", "Description": "whatever",
 			})
 
 			if got.Outcome != tc.want {
@@ -429,7 +429,7 @@ func TestAddCompany_BoardRejectsSlug_ReturnsToolErrorAndCreatesNothing(t *testin
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
 		Name: "add_company",
 		Arguments: map[string]any{
-			"Name": "Nope", "Source": "ashby", "Slug": "nope", "Description": "whatever",
+			"Name": "Nope", "Source": jobboard.Ashby, "Slug": "nope", "Description": "whatever",
 		},
 	})
 	if err != nil {
@@ -757,8 +757,8 @@ func TestListCompanies_LiveCompaniesByNameWithOpenCounts(t *testing.T) {
 		gotCompanies[i] = company{c.ID, c.Name, c.Source, c.OpenPostings}
 	}
 	want := []company{
-		{acme.ID, "Acme", "ashby", 2},
-		{beta.ID, "Beta", "ashby", 0},
+		{acme.ID, "Acme", jobboard.Ashby, 2},
+		{beta.ID, "Beta", jobboard.Ashby, 0},
 	}
 	if diff := cmp.Diff(want, gotCompanies); diff != "" {
 		t.Errorf("list_companies mismatch (-want +got):\n%s", diff)
@@ -1159,7 +1159,7 @@ func TestReadPosting_ReturnsThePostingInFull(t *testing.T) {
 	if _, err := s.Companies.SetDescription(ctx, acme.ID, "Builds rockets."); err != nil {
 		t.Fatalf("UpdateCompanyDescription: %v", err)
 	}
-	ingested, err := s.Postings.Ingest(ctx, acme.ID, "ashby", "job-1", posting.IngestedFields{
+	ingested, err := s.Postings.Ingest(ctx, acme.ID, jobboard.Ashby, "job-1", posting.IngestedFields{
 		Title: "Platform Engineer", Department: "Infra", Location: "Dublin", WorkplaceType: "Hybrid",
 		DescriptionText: "Run the platform.", DescriptionHTML: "<p>Run the platform.</p>",
 		JobURL: "https://jobs.example.com/acme/1", ApplicationURL: "https://jobs.example.com/acme/1/apply", RawPayload: "{}",

@@ -23,7 +23,7 @@ func TestApp_AnotherProcessesChange_ReloadsTheHomeListQuietly(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Staff Engineer")
 	target, err := createApplicationIn(context.Background(), s, posting.ID)
@@ -50,7 +50,7 @@ func TestApp_ItsOwnChange_IsSkipped(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Staff Engineer")
 	target, err := createApplicationIn(context.Background(), s, posting.ID)
@@ -72,7 +72,7 @@ func TestApp_ATickReadsTheFeed(t *testing.T) {
 
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Staff Engineer")
 	since, err := s.Changes.Latest(ctx)
 	if err != nil {
@@ -104,7 +104,7 @@ func TestApp_HomeListReload_KeepsTheCursorOnTheSameApplication(t *testing.T) {
 
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i, title := range []string{"First", "Second", "Third"} {
 		posting := mustUpsertPosting(t, s, acme.ID, "job-"+string(rune('a'+i)), title)
 		if _, err := createApplicationIn(ctx, s, posting.ID); err != nil {
@@ -137,7 +137,7 @@ func TestApp_CompanyListReload_KeepsTheCursorOnTheSameCompany(t *testing.T) {
 
 	s := testutil.NewTestApp(t)
 	for _, name := range []string{"Acme", "Globex", "Initech"} {
-		mustCreateCompany(t, s, name, "ashby", strings.ToLower(name))
+		mustCreateCompany(t, s, name, jobboard.Ashby, strings.ToLower(name))
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
@@ -168,7 +168,7 @@ func TestApp_PostingListReload_KeepsTheCursorAndShowsTheChange(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "First"}, {SourceID: "job-2", Title: "Second"}, {SourceID: "job-3", Title: "Third"}},
 	})
@@ -255,7 +255,7 @@ func TestApp_PostingDetailReload_ShowsTheChangeAndKeepsTheScroll(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	long := strings.Repeat("A line of the job description.\n\n", 80)
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", DescriptionText: long}},
@@ -294,7 +294,7 @@ func TestApp_ApplicationStartedElsewhere_PostingDetailShowsIt(t *testing.T) {
 
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{"acme": {{SourceID: "job-1", Title: "Engineer"}}})
 	app := newTestApp(t, s, syncer).WithChangeLog(0, "tui:1")
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -400,7 +400,7 @@ func TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere(t *testing.T) {
 
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	first := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
 	second := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-2", "Designer").ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")

@@ -30,10 +30,10 @@ func newSyncAllTestApp(t *testing.T, failing ...string) (*App, testutil.TestApp)
 	for _, slug := range failing {
 		errBoards[slug] = errors.New("status 404")
 	}
-	mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	mustCreateCompany(t, s, "Globex", "ashby", "globex")
-	mustCreateCompany(t, s, "Initech", "ashby", "initech")
-	syncer := sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{"ashby": &fakeFetcher{postings: postings, errBoards: errBoards}}, sync.DefaultConfig())
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	mustCreateCompany(t, s, "Globex", jobboard.Ashby, "globex")
+	mustCreateCompany(t, s, "Initech", jobboard.Ashby, "initech")
+	syncer := sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{jobboard.Ashby: &fakeFetcher{postings: postings, errBoards: errBoards}}, sync.DefaultConfig())
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
 	return app, s
@@ -217,7 +217,7 @@ func TestApp_SyncAll_RDuringRun_Refused(t *testing.T) {
 // so a run in progress is no reason to refuse it.
 func TestApp_SyncAll_FilterSaveDuringRun_Saves(t *testing.T) {
 	app, s := newSyncAllTestApp(t)
-	if _, err := s.Postings.Ingest(t.Context(), app.companies[0].ID, "ashby", "acme-eng", posting.IngestedFields{Title: "Engineer", Department: "Engineering"}); err != nil {
+	if _, err := s.Postings.Ingest(t.Context(), app.companies[0].ID, jobboard.Ashby, "acme-eng", posting.IngestedFields{Title: "Engineer", Department: "Engineering"}); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
 	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // Acme's postings

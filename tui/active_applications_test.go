@@ -16,6 +16,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 )
 
 func testActiveApplications() []posting.ActiveApplication {
@@ -313,7 +314,7 @@ func TestLoadActiveApplications_NextSteps(t *testing.T) {
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
 	docs := documents.NewStore(t.TempDir())
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 
 	undrafted := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
 	ready := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-2", "Designer").ID)

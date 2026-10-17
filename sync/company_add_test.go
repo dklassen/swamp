@@ -22,10 +22,10 @@ func TestAddCompany_NewValidBoard_CreatesCompanyWithDescription(t *testing.T) {
 			},
 		},
 	}
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
 	const description = "Acme builds rockets for roadrunner enthusiasts."
-	got, err := syncer.AddCompany(ctx, "Acme", "ashby", "acme", description)
+	got, err := syncer.AddCompany(ctx, "Acme", jobboard.Ashby, "acme", description)
 	if err != nil {
 		t.Fatalf("AddCompany: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestAddCompany_NewValidBoard_CreatesCompanyWithDescription(t *testing.T) {
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
 	}
-	if stored.Name != "Acme" || stored.Source != "ashby" || stored.SourceRef != "acme" {
+	if stored.Name != "Acme" || stored.Source != jobboard.Ashby || stored.SourceRef != "acme" {
 		t.Errorf("stored company = %q %s/%s, want Acme ashby/acme", stored.Name, stored.Source, stored.SourceRef)
 	}
 	if stored.Description != description {
@@ -61,9 +61,9 @@ func TestAddCompany_BoardRejectsSlug_ReturnsErrorAndCreatesNothing(t *testing.T)
 	ctx := context.Background()
 
 	fetcher := &perBoardFetcher{errBoards: map[string]error{"nope": errors.New("404 not found")}}
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
-	if _, err := syncer.AddCompany(ctx, "Nope", "ashby", "nope", "whatever"); err == nil {
+	if _, err := syncer.AddCompany(ctx, "Nope", jobboard.Ashby, "nope", "whatever"); err == nil {
 		t.Fatal("AddCompany error = nil, want an error for a slug the board rejects")
 	}
 
@@ -82,14 +82,14 @@ func TestAddCompany_PreviouslyDeletedCompany_SkippedAndStaysDeleted(t *testing.T
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	if err := s.Companies.Delete(ctx, acme.ID); err != nil {
 		t.Fatalf("SoftDeleteCompany: %v", err)
 	}
 	fetcher := &perBoardFetcher{postings: map[string][]jobboard.Posting{"acme": nil}}
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
-	got, err := syncer.AddCompany(ctx, "Acme", "ashby", "acme", "new description")
+	got, err := syncer.AddCompany(ctx, "Acme", jobboard.Ashby, "acme", "new description")
 	if err != nil {
 		t.Fatalf("AddCompany: %v", err)
 	}
@@ -123,16 +123,16 @@ func TestAddCompany_ActiveCompanyAlreadyExists_FillsOnlyMissingDescription(t *te
 			s := testutil.NewTestApp(t)
 			ctx := context.Background()
 
-			acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+			acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 			if tc.existing != "" {
 				if _, err := s.Companies.SetDescription(ctx, acme.ID, tc.existing); err != nil {
 					t.Fatalf("UpdateCompanyDescription: %v", err)
 				}
 			}
 			fetcher := &perBoardFetcher{postings: map[string][]jobboard.Posting{"acme": nil}}
-			syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+			syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
-			got, err := syncer.AddCompany(ctx, "Acme Renamed", "ashby", "acme", "new description")
+			got, err := syncer.AddCompany(ctx, "Acme Renamed", jobboard.Ashby, "acme", "new description")
 			if err != nil {
 				t.Fatalf("AddCompany: %v", err)
 			}

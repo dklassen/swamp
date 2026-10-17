@@ -6,21 +6,20 @@ import (
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/sync"
 )
 
 // companySources are the company.Company.Source values this form can
-// create, in the order the source field cycles through. Must be kept in
-// sync with cmd/swamp/main.go's newSyncer -- a source added there with no
-// entry here can never actually be added as a company.
-var companySources = []string{"ashby", "greenhouse", "lever"}
+// create, in the order the source field cycles through.
+var companySources = jobboard.Sources()
 
 // sourceRefLabels gives each source's second field a label matching what
 // that source actually needs to identify a company's board.
 var sourceRefLabels = map[string]string{
-	"ashby":      "Ashby slug",
-	"greenhouse": "Greenhouse board token",
-	"lever":      "Lever site",
+	jobboard.Ashby:      "Ashby slug",
+	jobboard.Greenhouse: "Greenhouse board token",
+	jobboard.Lever:      "Lever site",
 }
 
 // formInputs indices: a non-textinput source picker, then name, then

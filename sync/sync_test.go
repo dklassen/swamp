@@ -67,7 +67,7 @@ func (f *barrierFetcher) FetchPostings(ctx context.Context, boardSlug string) ([
 func syncOverlapping(t *testing.T, s testutil.TestApp, companyID int64, runs int, postings []jobboard.Posting) []Result {
 	t.Helper()
 	fetcher := newBarrierFetcher(runs, postings)
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{"ashby": fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 	company, err := s.Companies.Get(context.Background(), companyID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)

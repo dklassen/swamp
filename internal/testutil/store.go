@@ -10,6 +10,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -85,7 +86,7 @@ func NewTestApp(t *testing.T) TestApp {
 
 func MustAddCompany(t *testing.T, s TestApp, name string) company.Company {
 	t.Helper()
-	c, err := s.Companies.Add(context.Background(), name, "ashby", name)
+	c, err := s.Companies.Add(context.Background(), name, jobboard.Ashby, name)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -95,7 +96,7 @@ func MustAddCompany(t *testing.T, s TestApp, name string) company.Company {
 // MustIngestPosting adds a company and one posting for it.
 func MustIngestPosting(t *testing.T, s TestApp, sourceID, title string) posting.Posting {
 	t.Helper()
-	acme, err := s.Companies.Add(context.Background(), "Acme", "ashby", "acme")
+	acme, err := s.Companies.Add(context.Background(), "Acme", jobboard.Ashby, "acme")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -105,7 +106,7 @@ func MustIngestPosting(t *testing.T, s TestApp, sourceID, title string) posting.
 // MustIngestPostingFor adds a posting to an existing company.
 func MustIngestPostingFor(t *testing.T, s TestApp, companyID int64, sourceID, title string) posting.Posting {
 	t.Helper()
-	ingested, err := s.Postings.Ingest(context.Background(), companyID, "ashby", sourceID, posting.IngestedFields{Title: title, RawPayload: "{}"})
+	ingested, err := s.Postings.Ingest(context.Background(), companyID, jobboard.Ashby, sourceID, posting.IngestedFields{Title: title, RawPayload: "{}"})
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}

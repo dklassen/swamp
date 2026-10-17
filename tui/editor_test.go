@@ -11,6 +11,7 @@ import (
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 )
 
 func TestEditorCommand_EditorSet_ReturnsEditorAndPath(t *testing.T) {
@@ -41,7 +42,7 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	target := mustCreateApplication(t, s, posting.ID)
 	docs := documents.NewStore(t.TempDir())

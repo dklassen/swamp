@@ -28,14 +28,15 @@ import (
 
 	tea "github.com/charmbracelet/bubbletea"
 
-	"github.com/dklassen/swamp/ashby"
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/export"
-	"github.com/dklassen/swamp/greenhouse"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/service"
-	"github.com/dklassen/swamp/lever"
+	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/jobboard/ashby"
+	"github.com/dklassen/swamp/jobboard/greenhouse"
+	"github.com/dklassen/swamp/jobboard/lever"
 	"github.com/dklassen/swamp/seed"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
@@ -189,9 +190,9 @@ func main() {
 // directly rather than a client-local type (#57).
 func newSyncer(db store.Store) *sync.Syncer {
 	return sync.New(service.NewCompanyService(db), service.NewPostingService(db), map[string]sync.PostingFetcher{
-		"ashby":      ashby.NewClient(),
-		"greenhouse": greenhouse.NewClient(),
-		"lever":      lever.NewClient(),
+		jobboard.Ashby:      ashby.NewClient(),
+		jobboard.Greenhouse: greenhouse.NewClient(),
+		jobboard.Lever:      lever.NewClient(),
 	}, sync.DefaultConfig())
 }
 
@@ -200,7 +201,7 @@ func newSyncer(db store.Store) *sync.Syncer {
 // and Lever) under the same fetch timeout as a sync.
 func newStage(db store.Store, d *documents.Store) *stage.Stage {
 	return stage.New(service.NewCompanyService(db), service.NewPostingService(db), service.NewApplicationService(db), service.NewDocumentService(db), service.NewScoringService(db), d, stage.WithFormFetchers(map[string]stage.FormFetcher{
-		"greenhouse": greenhouse.NewClient(),
+		jobboard.Greenhouse: greenhouse.NewClient(),
 	}, sync.DefaultConfig().FetchTimeout))
 }
 

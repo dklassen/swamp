@@ -14,6 +14,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -24,11 +25,11 @@ func TestChangeLog_After_ReturnsAnotherProcessesChangeSinceLatest(t *testing.T) 
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
 	other := testutil.OpenStore(t, s.Path, "mcp:7")
-	acme, err := service.NewCompanyService(other).Add(ctx, "Acme", "ashby", "acme")
+	acme, err := service.NewCompanyService(other).Add(ctx, "Acme", jobboard.Ashby, "acme")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	ingested, err := service.NewPostingService(other).Ingest(ctx, acme.ID, "ashby", "job-1", posting.IngestedFields{Title: "Engineer", RawPayload: "{}"})
+	ingested, err := service.NewPostingService(other).Ingest(ctx, acme.ID, jobboard.Ashby, "job-1", posting.IngestedFields{Title: "Engineer", RawPayload: "{}"})
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -118,7 +119,7 @@ func TestChangeLog_EachLoggedTable(t *testing.T) {
 		op     string
 	}{
 		{"company added", func(ctx context.Context, f fixture) error {
-			_, err := service.NewCompanyService(f.db).Add(ctx, "Globex", "lever", "globex")
+			_, err := service.NewCompanyService(f.db).Add(ctx, "Globex", jobboard.Lever, "globex")
 			return err
 		}, "companies", "insert"},
 		{"company renamed", func(ctx context.Context, f fixture) error {
@@ -129,7 +130,7 @@ func TestChangeLog_EachLoggedTable(t *testing.T) {
 			return service.NewCompanyService(f.db).Delete(ctx, f.companyID)
 		}, "companies", "update"},
 		{"posting found", func(ctx context.Context, f fixture) error {
-			_, err := service.NewPostingService(f.db).Ingest(ctx, f.companyID, "ashby", "job-2", posting.IngestedFields{Title: "Designer", RawPayload: "{}"})
+			_, err := service.NewPostingService(f.db).Ingest(ctx, f.companyID, jobboard.Ashby, "job-2", posting.IngestedFields{Title: "Designer", RawPayload: "{}"})
 			return err
 		}, "postings", "insert"},
 		{"posting closed", func(ctx context.Context, f fixture) error {

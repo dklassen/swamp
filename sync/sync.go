@@ -102,7 +102,7 @@ type postingService interface {
 }
 
 // Syncer routes each company to the PostingFetcher for its source
-// (company.Source, e.g. "ashby" or "greenhouse") -- see SyncCompany.
+// (company.Source, e.g. jobboard.Ashby or jobboard.Greenhouse) -- see SyncCompany.
 type Syncer struct {
 	companies companyService
 	postings  postingService

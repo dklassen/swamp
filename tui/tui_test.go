@@ -30,7 +30,7 @@ func mustCreateCompany(t *testing.T, s testutil.TestApp, name, source, sourceRef
 // exist without driving a full sync.
 func mustUpsertPosting(t *testing.T, s testutil.TestApp, companyID int64, sourceID, title string) posting.Posting {
 	t.Helper()
-	ingested, err := s.Postings.Ingest(context.Background(), companyID, "ashby", sourceID, posting.IngestedFields{Title: title})
+	ingested, err := s.Postings.Ingest(context.Background(), companyID, jobboard.Ashby, sourceID, posting.IngestedFields{Title: title})
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -79,7 +79,7 @@ func storeOf(app *App) testutil.TestApp {
 }
 
 func newTestSyncer(s testutil.TestApp, postings map[string][]jobboard.Posting) *sync.Syncer {
-	return sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{"ashby": &fakeFetcher{postings: postings}}, sync.DefaultConfig())
+	return sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{jobboard.Ashby: &fakeFetcher{postings: postings}}, sync.DefaultConfig())
 }
 
 // mustDoc is status.Doc(documentType), failing the test on an error.

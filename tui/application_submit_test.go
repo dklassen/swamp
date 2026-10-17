@@ -15,6 +15,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 )
 
 // submitTestApp is an App on the home screen with one started
@@ -25,8 +26,8 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, applicati
 	t.Helper()
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", "ashby", "acme")
-	ingested, err := s.Postings.Ingest(ctx, acme.ID, "ashby", "job-1", posting.IngestedFields{
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	ingested, err := s.Postings.Ingest(ctx, acme.ID, jobboard.Ashby, "job-1", posting.IngestedFields{
 		Title:          "Engineer",
 		ApplicationURL: applicationURL,
 		JobURL:         jobURL,
