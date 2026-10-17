@@ -58,31 +58,27 @@ func toIngestedFields(p jobboard.Posting) posting.IngestedFields {
 //     between them it's left updated but still closed, a valid state;
 //   - the close pass not run, so no posting is closed;
 //   - the company not marked fetched, so "last fetched" stays stale;
-//   - Result counting only what ran. Callers report the error, not the
-//     counts.
+//   - no Result: callers report the error.
 //
 // Every write is conditional and safe to repeat, so the next clean sync
 // finishes the job.
-func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result Result, err error) {
-	result = Result{CompanyID: companyID}
-
+func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result *Result, err error) {
 	company, err := s.companies.Get(ctx, companyID)
 	if err != nil {
-		return result, fmt.Errorf("sync: get company: %w", err)
+		return nil, fmt.Errorf("sync: get company: %w", err)
 	}
-	result.Name = company.Name
 	fetcher, ok := s.fetchers[company.Source]
 	if !ok {
-		return result, fmt.Errorf("sync: unsupported source %q", company.Source)
+		return nil, fmt.Errorf("sync: unsupported source %q", company.Source)
 	}
 
 	token := rand.Text()
 	taken, err := s.companies.AcquireSyncLease(ctx, companyID, token, s.cfg.LeaseTimeout)
 	if err != nil {
-		return result, fmt.Errorf("sync: %w", err)
+		return nil, fmt.Errorf("sync: %w", err)
 	}
 	if !taken {
-		return result, ErrSyncInProgress
+		return nil, ErrSyncInProgress
 	}
 	s.trackLease(token, companyID)
 	defer func() {
@@ -91,11 +87,15 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result Resul
 		// cancelled. If this fails the lease stays held until it expires,
 		// which is worth reporting.
 		if releaseErr := s.companies.ReleaseSyncLease(context.WithoutCancel(ctx), companyID, token); releaseErr != nil {
-			err = errors.Join(err, fmt.Errorf("sync: %w", releaseErr))
+			result, err = nil, errors.Join(err, fmt.Errorf("sync: %w", releaseErr))
 		}
 	}()
 
-	return s.syncHeld(ctx, *company, fetcher, result)
+	held, err := s.syncHeld(ctx, *company, fetcher, Result{CompanyID: companyID, Name: company.Name})
+	if err != nil {
+		return nil, err
+	}
+	return &held, nil
 }
 
 // syncHeld is SyncCompany's work once it holds the company's lease: fetch,
@@ -164,19 +164,19 @@ func (s *Syncer) ingest(ctx context.Context, company company.Company, fetched []
 // blocks the create. The fetched postings are discarded; ingestion waits
 // for the next sync.
 // Shared by the TUI's add-company form and ImportCompanies.
-func (s *Syncer) CreateCompany(ctx context.Context, name, source, sourceRef string) (company.Company, error) {
+func (s *Syncer) CreateCompany(ctx context.Context, name, source, sourceRef string) (*company.Company, error) {
 	fetcher, ok := s.fetchers[source]
 	if !ok {
-		return company.Company{}, fmt.Errorf("sync: unsupported source %q", source)
+		return nil, fmt.Errorf("sync: unsupported source %q", source)
 	}
 	if _, err := s.fetch(ctx, fetcher, sourceRef); err != nil {
-		return company.Company{}, fmt.Errorf("sync: %s/%s does not resolve to a real board: %w", source, sourceRef, err)
+		return nil, fmt.Errorf("sync: %s/%s does not resolve to a real board: %w", source, sourceRef, err)
 	}
 	created, err := s.companies.Add(ctx, name, source, sourceRef)
 	if err != nil {
-		return company.Company{}, fmt.Errorf("sync: create company: %w", err)
+		return nil, fmt.Errorf("sync: create company: %w", err)
 	}
-	return *created, nil
+	return created, nil
 }
 
 // ImportResult reports the outcome of importing one seed.Entry.
@@ -219,9 +219,9 @@ func (s *Syncer) ImportCompanies(ctx context.Context, entries []seed.Entry) []Im
 				results[i].Err = fmt.Errorf("sync: set company description: %w", err)
 				continue
 			}
-			company = *updated
+			company = updated
 		}
-		results[i].Company = company
+		results[i].Company = *company
 	}
 	return results
 }
@@ -257,41 +257,41 @@ type AddCompanyResult struct {
 // fetched postings are only counted, not ingested -- like any other way of
 // adding a company, ingestion waits for the next sync, after the user has
 // had a chance to set filters.
-func (s *Syncer) AddCompany(ctx context.Context, name, source, sourceRef, description string) (AddCompanyResult, error) {
+func (s *Syncer) AddCompany(ctx context.Context, name, source, sourceRef, description string) (*AddCompanyResult, error) {
 	existing, err := s.companies.GetBySource(ctx, source, sourceRef)
 	switch {
 	case errors.Is(err, store.ErrNotFound):
 		// New company: fall through to the board check and create.
 	case err != nil:
-		return AddCompanyResult{}, fmt.Errorf("sync: look up company: %w", err)
+		return nil, fmt.Errorf("sync: look up company: %w", err)
 	case existing.DeletedAt != nil:
-		return AddCompanyResult{Outcome: AddCompanySkippedDeleted, Company: *existing}, nil
+		return &AddCompanyResult{Outcome: AddCompanySkippedDeleted, Company: *existing}, nil
 	default:
 		if existing.Description == "" && description != "" {
 			existing, err = s.companies.SetDescription(ctx, existing.ID, description)
 			if err != nil {
-				return AddCompanyResult{}, fmt.Errorf("sync: set company description: %w", err)
+				return nil, fmt.Errorf("sync: set company description: %w", err)
 			}
 		}
-		return AddCompanyResult{Outcome: AddCompanyAlreadyExists, Company: *existing}, nil
+		return &AddCompanyResult{Outcome: AddCompanyAlreadyExists, Company: *existing}, nil
 	}
 
 	fetcher, ok := s.fetchers[source]
 	if !ok {
-		return AddCompanyResult{}, fmt.Errorf("sync: unsupported source %q", source)
+		return nil, fmt.Errorf("sync: unsupported source %q", source)
 	}
 	postings, err := s.fetch(ctx, fetcher, sourceRef)
 	if err != nil {
-		return AddCompanyResult{}, fmt.Errorf("sync: %s/%s does not resolve to a real board: %w", source, sourceRef, err)
+		return nil, fmt.Errorf("sync: %s/%s does not resolve to a real board: %w", source, sourceRef, err)
 	}
 
 	company, err := s.companies.Add(ctx, name, source, sourceRef)
 	if err != nil {
-		return AddCompanyResult{}, fmt.Errorf("sync: create company: %w", err)
+		return nil, fmt.Errorf("sync: create company: %w", err)
 	}
 	company, err = s.companies.SetDescription(ctx, company.ID, description)
 	if err != nil {
-		return AddCompanyResult{}, fmt.Errorf("sync: set company description: %w", err)
+		return nil, fmt.Errorf("sync: set company description: %w", err)
 	}
-	return AddCompanyResult{Outcome: AddCompanyCreated, Company: *company, OpenJobs: len(postings)}, nil
+	return &AddCompanyResult{Outcome: AddCompanyCreated, Company: *company, OpenJobs: len(postings)}, nil
 }

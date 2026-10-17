@@ -3017,6 +3017,23 @@ func TestApp_CompanyRefreshed_ForDifferentCompany_DoesNotReloadPostings(t *testi
 	}
 }
 
+// A refresh refused because another process is syncing the company has no
+// result, so the status names the company the refresh was started for.
+func TestApp_CompanyRefreshed_SyncInProgress_SaysWhichCompany(t *testing.T) {
+	s := testutil.NewTestApp(t)
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+
+	app, _ = sendKey(app, companyRefreshedMsg{name: "Acme", err: sync.ErrSyncInProgress})
+
+	if app.err != nil {
+		t.Errorf("app.err = %v, want nil: a sync elsewhere isn't a failure", app.err)
+	}
+	if want := "Acme is already syncing elsewhere"; !strings.Contains(app.status, want) {
+		t.Errorf("app.status = %q, want it to contain %q", app.status, want)
+	}
+}
+
 func TestApp_OpenPostingList_WithPreExistingSavedFilters_NarrowsOnFirstLoad(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")

@@ -142,10 +142,11 @@ func (s *Syncer) SyncAll(ctx context.Context) ([]Result, error) {
 	results := make([]Result, len(companies))
 	for i, company := range companies {
 		result, err := s.SyncCompany(ctx, company.ID)
-		result.CompanyID = company.ID
-		result.Name = company.Name
-		result.Err = err
-		results[i] = result
+		if err != nil {
+			results[i] = Result{CompanyID: company.ID, Name: company.Name, Err: err}
+			continue
+		}
+		results[i] = *result
 	}
 	return results, nil
 }

@@ -302,7 +302,7 @@ func recordScoresHandler(st *stage.Stage) mcp.ToolHandlerFor[recordScoresInput, 
 		if err != nil {
 			return nil, stage.RecordResult{}, fmt.Errorf("record_scores: %w", err)
 		}
-		return nil, result, nil
+		return nil, *result, nil
 	}
 }
 
