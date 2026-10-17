@@ -21,7 +21,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
-	"github.com/dklassen/swamp/internal/repository"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/stage"
@@ -693,8 +692,8 @@ func TestStagePrepare_ClosedPosting_ReturnsToolErrorSayingSo(t *testing.T) {
 	srv, s, _ := newTestServer(t)
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
-	if err := (&repository.PostingRepository{}).MarkClosed(context.Background(), s.Store, posting.ID); err != nil {
-		t.Fatalf("MarkPostingClosed: %v", err)
+	if _, _, err := s.Postings.Close(context.Background(), posting.ID, nil); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 	cs := connectClient(t, srv)
 
@@ -737,8 +736,8 @@ func TestListCompanies_LiveCompaniesByNameWithOpenCounts(t *testing.T) {
 	mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
 	closed := mustUpsertPosting(t, s, acme.ID, "job-3", "Writer")
-	if err := (&repository.PostingRepository{}).MarkClosed(ctx, s.Store, closed.ID); err != nil {
-		t.Fatalf("MarkPostingClosed: %v", err)
+	if _, _, err := s.Postings.Close(ctx, closed.ID, nil); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 	if err := s.Companies.Delete(ctx, gone.ID); err != nil {
 		t.Fatalf("SoftDeleteCompany: %v", err)

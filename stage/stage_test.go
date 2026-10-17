@@ -17,7 +17,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
-	"github.com/dklassen/swamp/internal/repository"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
@@ -992,8 +991,8 @@ func TestPrepare_ClosedPostingWithoutApplication_Refused(t *testing.T) {
 	st, s, _ := newTestStage(t)
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	if err := (&repository.PostingRepository{}).MarkClosed(context.Background(), s.Store, posting.ID); err != nil {
-		t.Fatalf("MarkPostingClosed: %v", err)
+	if _, _, err := s.Postings.Close(context.Background(), posting.ID, nil); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 
 	if _, err := st.Prepare(context.Background(), posting.ID); !errors.Is(err, service.ErrPostingClosed) {
@@ -1017,8 +1016,8 @@ func TestList_ExcludesInterestedPostingTheCompanyListHides(t *testing.T) {
 		hide func(t *testing.T, s testutil.TestApp, companyID, postingID int64)
 	}{
 		{"closed", func(t *testing.T, s testutil.TestApp, _, postingID int64) {
-			if err := (&repository.PostingRepository{}).MarkClosed(context.Background(), s.Store, postingID); err != nil {
-				t.Fatalf("MarkPostingClosed: %v", err)
+			if _, _, err := s.Postings.Close(context.Background(), postingID, nil); err != nil {
+				t.Fatalf("Close: %v", err)
 			}
 		}},
 		{"filtered out", func(t *testing.T, s testutil.TestApp, companyID, _ int64) {

@@ -9,7 +9,6 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/posting"
-	"github.com/dklassen/swamp/internal/repository"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 )
@@ -102,9 +101,13 @@ func TestClosePosting(t *testing.T) {
 				}
 			}
 			if tt.alreadyClosed {
-				if err := (&repository.PostingRepository{}).MarkClosed(ctx, s.Store, posting.ID); err != nil {
-					t.Fatalf("MarkClosed: %v", err)
+				if _, _, err := s.Postings.Close(ctx, posting.ID, nil); err != nil {
+					t.Fatalf("Close: %v", err)
 				}
+			}
+			before, err := s.Postings.History(ctx, posting.ID)
+			if err != nil {
+				t.Fatalf("ListPostingHistory: %v", err)
 			}
 
 			got, err := closeWith(ctx, s, posting.ID, closeFrom)
@@ -126,12 +129,13 @@ func TestClosePosting(t *testing.T) {
 			if err != nil {
 				t.Fatalf("ListPostingHistory: %v", err)
 			}
-			if len(history) != tt.wantHistory {
-				t.Fatalf("history rows = %d, want %d", len(history), tt.wantHistory)
+			added := history[len(before):]
+			if len(added) != tt.wantHistory {
+				t.Fatalf("history rows added = %d, want %d", len(added), tt.wantHistory)
 			}
 			if tt.wantHistory == 1 {
-				if history[0].ChangeType != "closed" || !strings.Contains(history[0].Snapshot, `"ListingStatus":"open"`) {
-					t.Errorf("history = %q with snapshot %s, want a \"closed\" row snapshotting the posting as it was, still open", history[0].ChangeType, history[0].Snapshot)
+				if added[0].ChangeType != "closed" || !strings.Contains(added[0].Snapshot, `"ListingStatus":"open"`) {
+					t.Errorf("history = %q with snapshot %s, want a \"closed\" row snapshotting the posting as it was, still open", added[0].ChangeType, added[0].Snapshot)
 				}
 			}
 			if tt.application != nil {

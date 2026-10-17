@@ -13,7 +13,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
-	"github.com/dklassen/swamp/internal/repository"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 )
@@ -52,8 +51,8 @@ func newSearchStage(t *testing.T) searchStage {
 	if _, err := updateApplicationStatus(ctx, s, f.submitted.ID, application.Submitted); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
-	if err := (&repository.PostingRepository{}).MarkClosed(ctx, s.Store, f.closed.ID); err != nil {
-		t.Fatalf("MarkPostingClosed: %v", err)
+	if _, _, err := s.Postings.Close(ctx, f.closed.ID, nil); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 	if _, err := s.Postings.SetArchived(ctx, f.archived.ID); err != nil {
 		t.Fatalf("postingmarkup.SetArchived: %v", err)

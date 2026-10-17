@@ -21,7 +21,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
-	"github.com/dklassen/swamp/internal/repository"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -829,8 +828,8 @@ func TestApp_PostingList_NeverShowsClosedPostings(t *testing.T) {
 	if closedID == 0 {
 		t.Fatal("could not find Designer posting to close")
 	}
-	if err := (&repository.PostingRepository{}).MarkClosed(context.Background(), s.Store, closedID); err != nil {
-		t.Fatalf("MarkPostingClosed: %v", err)
+	if _, _, err := s.Postings.Close(context.Background(), closedID, nil); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 
 	// Showing archived postings mustn't bring closed ones back.
@@ -950,8 +949,8 @@ func TestApp_PressA_OnPostingDetail_ClosedPosting_ExplainsInStatus(t *testing.T)
 	app = openPostingList(t, app)
 	postingID := app.postings[0].ID
 	app = openPostingDetail(t, app)
-	if err := (&repository.PostingRepository{}).MarkClosed(context.Background(), s.Store, postingID); err != nil {
-		t.Fatalf("MarkPostingClosed: %v", err)
+	if _, _, err := s.Postings.Close(context.Background(), postingID, nil); err != nil {
+		t.Fatalf("Close: %v", err)
 	}
 
 	app, cmd := sendKey(app, runeKey('a'))
