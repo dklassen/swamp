@@ -52,7 +52,7 @@ func (repository *DocumentReviewRepository) Count(ctx context.Context, r store.R
 
 // Insert records a review of content, documentType's content as of now,
 // as the given cycle.
-func (repository *DocumentReviewRepository) Insert(ctx context.Context, r store.Runner, applicationID int64, documentType domain.Type, cycle int64, content string, outcome domain.Outcome, notes string) (domain.Review, error) {
+func (repository *DocumentReviewRepository) Insert(ctx context.Context, r store.Runner, applicationID int64, documentType domain.Type, cycle int64, content string, outcome domain.Outcome, notes string) (*domain.Review, error) {
 	row, err := store.Read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.DocumentReview, error) {
 		return q.CreateDocumentReview(ctx, sqlcdb.CreateDocumentReviewParams{
 			ApplicationID:   applicationID,
@@ -65,9 +65,13 @@ func (repository *DocumentReviewRepository) Insert(ctx context.Context, r store.
 		})
 	})
 	if err != nil {
-		return domain.Review{}, fmt.Errorf("document: create review: %w", err)
+		return nil, fmt.Errorf("document: create review: %w", err)
 	}
-	return FromDocumentReviewRow(row)
+	review, err := FromDocumentReviewRow(row)
+	if err != nil {
+		return nil, err
+	}
+	return &review, nil
 }
 
 // List returns applicationID's reviews of documentType, most recent cycle

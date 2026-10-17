@@ -31,26 +31,27 @@ func FromCompanyRow(row sqlcdb.Company) domain.Company {
 	return c
 }
 
-func readCompany(ctx context.Context, r store.Runner, fn func(*sqlcdb.Queries) (sqlcdb.Company, error)) (domain.Company, error) {
+func readCompany(ctx context.Context, r store.Runner, fn func(*sqlcdb.Queries) (sqlcdb.Company, error)) (*domain.Company, error) {
 	row, err := store.Read(ctx, r, fn)
 	if err != nil {
-		return domain.Company{}, err
+		return nil, err
 	}
-	return FromCompanyRow(row), nil
+	c := FromCompanyRow(row)
+	return &c, nil
 }
 
 type CompanyRepository struct{}
 
 // Insert adds a company. (source, source_ref) is unique whether or not the
 // company is deleted.
-func (repository *CompanyRepository) Insert(ctx context.Context, r store.Runner, name, source, sourceRef string) (domain.Company, error) {
+func (repository *CompanyRepository) Insert(ctx context.Context, r store.Runner, name, source, sourceRef string) (*domain.Company, error) {
 	return readCompany(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Company, error) {
 		return q.CreateCompany(ctx, sqlcdb.CreateCompanyParams{Name: name, Source: source, SourceRef: sourceRef})
 	})
 }
 
 // Get returns an active company, or store.ErrNotFound.
-func (repository *CompanyRepository) Get(ctx context.Context, r store.Runner, id int64) (domain.Company, error) {
+func (repository *CompanyRepository) Get(ctx context.Context, r store.Runner, id int64) (*domain.Company, error) {
 	return readCompany(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Company, error) {
 		return q.GetCompany(ctx, id)
 	})
@@ -58,7 +59,7 @@ func (repository *CompanyRepository) Get(ctx context.Context, r store.Runner, id
 
 // GetIncludingDeleted is Get, but also finds a company the user deleted
 // (check DeletedAt).
-func (repository *CompanyRepository) GetIncludingDeleted(ctx context.Context, r store.Runner, id int64) (domain.Company, error) {
+func (repository *CompanyRepository) GetIncludingDeleted(ctx context.Context, r store.Runner, id int64) (*domain.Company, error) {
 	return readCompany(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Company, error) {
 		return q.GetCompanyIncludingDeleted(ctx, id)
 	})
@@ -66,7 +67,7 @@ func (repository *CompanyRepository) GetIncludingDeleted(ctx context.Context, r 
 
 // GetBySource finds the company for a job board slug, including a
 // soft-deleted one (check DeletedAt), or returns store.ErrNotFound.
-func (repository *CompanyRepository) GetBySource(ctx context.Context, r store.Runner, source, sourceRef string) (domain.Company, error) {
+func (repository *CompanyRepository) GetBySource(ctx context.Context, r store.Runner, source, sourceRef string) (*domain.Company, error) {
 	return readCompany(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Company, error) {
 		return q.GetCompanyBySourceAndSourceRef(ctx, sqlcdb.GetCompanyBySourceAndSourceRefParams{Source: source, SourceRef: sourceRef})
 	})
@@ -89,7 +90,7 @@ func (repository *CompanyRepository) ListActive(ctx context.Context, r store.Run
 // SetName changes an active company's name only -- source and source_ref
 // are immutable after creation: changing either really means "this is a
 // different board," not "edit this company".
-func (repository *CompanyRepository) SetName(ctx context.Context, r store.Runner, id int64, name string) (domain.Company, error) {
+func (repository *CompanyRepository) SetName(ctx context.Context, r store.Runner, id int64, name string) (*domain.Company, error) {
 	return readCompany(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Company, error) {
 		return q.UpdateCompanyName(ctx, sqlcdb.UpdateCompanyNameParams{ID: id, Name: name})
 	})
@@ -97,7 +98,7 @@ func (repository *CompanyRepository) SetName(ctx context.Context, r store.Runner
 
 // SetDescription sets who the company is (what it builds, stage, domain).
 // Like SetName it excludes soft-deleted companies.
-func (repository *CompanyRepository) SetDescription(ctx context.Context, r store.Runner, id int64, description string) (domain.Company, error) {
+func (repository *CompanyRepository) SetDescription(ctx context.Context, r store.Runner, id int64, description string) (*domain.Company, error) {
 	return readCompany(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Company, error) {
 		return q.UpdateCompanyDescription(ctx, sqlcdb.UpdateCompanyDescriptionParams{ID: id, Description: description})
 	})
@@ -116,7 +117,7 @@ func (repository *CompanyRepository) Restore(ctx context.Context, r store.Runner
 }
 
 // RestoreWithName restores a company and renames it in one statement.
-func (repository *CompanyRepository) RestoreWithName(ctx context.Context, r store.Runner, id int64, name string) (domain.Company, error) {
+func (repository *CompanyRepository) RestoreWithName(ctx context.Context, r store.Runner, id int64, name string) (*domain.Company, error) {
 	return readCompany(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Company, error) {
 		return q.RestoreCompanyWithName(ctx, sqlcdb.RestoreCompanyWithNameParams{ID: id, Name: name})
 	})

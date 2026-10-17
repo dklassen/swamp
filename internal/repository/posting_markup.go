@@ -26,25 +26,26 @@ func FromPostingMarkupRow(row sqlcdb.PostingMarkup) domain.Markup {
 	return m
 }
 
-func readMarkup(ctx context.Context, r store.Runner, op string, fn func(*sqlcdb.Queries) (sqlcdb.PostingMarkup, error)) (domain.Markup, error) {
+func readMarkup(ctx context.Context, r store.Runner, op string, fn func(*sqlcdb.Queries) (sqlcdb.PostingMarkup, error)) (*domain.Markup, error) {
 	row, err := store.Read(ctx, r, fn)
 	if err != nil {
-		return domain.Markup{}, fmt.Errorf("postingmarkup: %s: %w", op, err)
+		return nil, fmt.Errorf("postingmarkup: %s: %w", op, err)
 	}
-	return FromPostingMarkupRow(row), nil
+	m := FromPostingMarkupRow(row)
+	return &m, nil
 }
 
 type PostingMarkupRepository struct{}
 
 // Insert creates postingID's markup row, with nothing marked.
-func (repository *PostingMarkupRepository) Insert(ctx context.Context, r store.Runner, postingID int64) (domain.Markup, error) {
+func (repository *PostingMarkupRepository) Insert(ctx context.Context, r store.Runner, postingID int64) (*domain.Markup, error) {
 	return readMarkup(ctx, r, "create", func(q *sqlcdb.Queries) (sqlcdb.PostingMarkup, error) {
 		return q.CreatePostingMarkup(ctx, postingID)
 	})
 }
 
 // Get returns postingID's markup, or store.ErrNotFound.
-func (repository *PostingMarkupRepository) Get(ctx context.Context, r store.Runner, postingID int64) (domain.Markup, error) {
+func (repository *PostingMarkupRepository) Get(ctx context.Context, r store.Runner, postingID int64) (*domain.Markup, error) {
 	return readMarkup(ctx, r, "get", func(q *sqlcdb.Queries) (sqlcdb.PostingMarkup, error) {
 		return q.GetPostingMarkup(ctx, postingID)
 	})
@@ -52,13 +53,13 @@ func (repository *PostingMarkupRepository) Get(ctx context.Context, r store.Runn
 
 // SetInterested sets InterestedAt and also clears ArchivedAt -- see the
 // SetPostingInterested query comment for why.
-func (repository *PostingMarkupRepository) SetInterested(ctx context.Context, r store.Runner, postingID int64) (domain.Markup, error) {
+func (repository *PostingMarkupRepository) SetInterested(ctx context.Context, r store.Runner, postingID int64) (*domain.Markup, error) {
 	return readMarkup(ctx, r, "set interested", func(q *sqlcdb.Queries) (sqlcdb.PostingMarkup, error) {
 		return q.SetPostingInterested(ctx, postingID)
 	})
 }
 
-func (repository *PostingMarkupRepository) UnmarkInterested(ctx context.Context, r store.Runner, postingID int64) (domain.Markup, error) {
+func (repository *PostingMarkupRepository) UnmarkInterested(ctx context.Context, r store.Runner, postingID int64) (*domain.Markup, error) {
 	return readMarkup(ctx, r, "unmark interested", func(q *sqlcdb.Queries) (sqlcdb.PostingMarkup, error) {
 		return q.UnmarkPostingInterested(ctx, postingID)
 	})
@@ -66,19 +67,19 @@ func (repository *PostingMarkupRepository) UnmarkInterested(ctx context.Context,
 
 // SetArchived sets ArchivedAt and also clears InterestedAt -- see the
 // SetPostingArchived query comment for why.
-func (repository *PostingMarkupRepository) SetArchived(ctx context.Context, r store.Runner, postingID int64) (domain.Markup, error) {
+func (repository *PostingMarkupRepository) SetArchived(ctx context.Context, r store.Runner, postingID int64) (*domain.Markup, error) {
 	return readMarkup(ctx, r, "set archived", func(q *sqlcdb.Queries) (sqlcdb.PostingMarkup, error) {
 		return q.SetPostingArchived(ctx, postingID)
 	})
 }
 
-func (repository *PostingMarkupRepository) Unarchive(ctx context.Context, r store.Runner, postingID int64) (domain.Markup, error) {
+func (repository *PostingMarkupRepository) Unarchive(ctx context.Context, r store.Runner, postingID int64) (*domain.Markup, error) {
 	return readMarkup(ctx, r, "unarchive", func(q *sqlcdb.Queries) (sqlcdb.PostingMarkup, error) {
 		return q.UnarchivePosting(ctx, postingID)
 	})
 }
 
-func (repository *PostingMarkupRepository) SetNotes(ctx context.Context, r store.Runner, postingID int64, notes string) (domain.Markup, error) {
+func (repository *PostingMarkupRepository) SetNotes(ctx context.Context, r store.Runner, postingID int64, notes string) (*domain.Markup, error) {
 	return readMarkup(ctx, r, "update notes", func(q *sqlcdb.Queries) (sqlcdb.PostingMarkup, error) {
 		return q.UpdatePostingMarkupNotes(ctx, sqlcdb.UpdatePostingMarkupNotesParams{PostingID: postingID, Notes: notes})
 	})

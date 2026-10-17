@@ -30,7 +30,7 @@ func (repository *DocumentWriteRepository) Insert(ctx context.Context, r store.R
 
 // Latest returns the newest recorded write of applicationID's
 // documentType, or store.ErrNotFound when none was recorded.
-func (repository *DocumentWriteRepository) Latest(ctx context.Context, r store.Runner, applicationID int64, documentType domain.Type) (domain.Write, error) {
+func (repository *DocumentWriteRepository) Latest(ctx context.Context, r store.Runner, applicationID int64, documentType domain.Type) (*domain.Write, error) {
 	row, err := store.Read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.DocumentWrite, error) {
 		return q.LatestDocumentWrite(ctx, sqlcdb.LatestDocumentWriteParams{
 			ApplicationID: applicationID,
@@ -38,17 +38,17 @@ func (repository *DocumentWriteRepository) Latest(ctx context.Context, r store.R
 		})
 	})
 	if err != nil {
-		return domain.Write{}, err
+		return nil, err
 	}
 	parsedType, err := domain.ParseType(row.DocumentType)
 	if err != nil {
-		return domain.Write{}, fmt.Errorf("document: %w", err)
+		return nil, fmt.Errorf("document: %w", err)
 	}
 	source, err := domain.ParseSource(row.Source)
 	if err != nil {
-		return domain.Write{}, err
+		return nil, err
 	}
-	return domain.Write{
+	return &domain.Write{
 		ID:            row.ID,
 		ApplicationID: row.ApplicationID,
 		DocumentType:  parsedType,

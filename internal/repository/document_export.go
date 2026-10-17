@@ -30,7 +30,7 @@ func (repository *DocumentExportRepository) Insert(ctx context.Context, r store.
 
 // Latest returns applicationID's most recent export of documentType, or
 // store.ErrNotFound when it was never exported.
-func (repository *DocumentExportRepository) Latest(ctx context.Context, r store.Runner, applicationID int64, documentType domain.Type) (domain.Export, error) {
+func (repository *DocumentExportRepository) Latest(ctx context.Context, r store.Runner, applicationID int64, documentType domain.Type) (*domain.Export, error) {
 	row, err := store.Read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.DocumentExport, error) {
 		return q.LatestDocumentExport(ctx, sqlcdb.LatestDocumentExportParams{
 			ApplicationID: applicationID,
@@ -38,13 +38,13 @@ func (repository *DocumentExportRepository) Latest(ctx context.Context, r store.
 		})
 	})
 	if err != nil {
-		return domain.Export{}, err
+		return nil, err
 	}
 	parsedType, err := domain.ParseType(row.DocumentType)
 	if err != nil {
-		return domain.Export{}, err
+		return nil, err
 	}
-	return domain.Export{
+	return &domain.Export{
 		ID:            row.ID,
 		ApplicationID: row.ApplicationID,
 		DocumentType:  parsedType,

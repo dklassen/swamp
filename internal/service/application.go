@@ -14,20 +14,20 @@ import (
 )
 
 type applicationViewer interface {
-	Get(ctx context.Context, r store.Runner, id int64) (application.Application, error)
-	GetByIDIncludingDeleted(ctx context.Context, r store.Runner, id int64) (application.Application, error)
+	Get(ctx context.Context, r store.Runner, id int64) (*application.Application, error)
+	GetByIDIncludingDeleted(ctx context.Context, r store.Runner, id int64) (*application.Application, error)
 	ListActive(ctx context.Context, r store.Runner, excluding []application.Status) ([]posting.ActiveApplication, error)
 }
 
 type applicationWriter interface {
-	SetStatus(ctx context.Context, r store.Runner, id int64, status application.Status) (application.Application, error)
-	SetNotes(ctx context.Context, r store.Runner, id int64, notes string) (application.Application, error)
+	SetStatus(ctx context.Context, r store.Runner, id int64, status application.Status) (*application.Application, error)
+	SetNotes(ctx context.Context, r store.Runner, id int64, notes string) (*application.Application, error)
 	Delete(ctx context.Context, r store.Runner, id int64) error
 }
 
 type applicationHistoryViewer interface {
 	List(ctx context.Context, r store.Runner, applicationID int64) ([]application.StatusChange, error)
-	Latest(ctx context.Context, r store.Runner, applicationID int64) (application.StatusChange, error)
+	Latest(ctx context.Context, r store.Runner, applicationID int64) (*application.StatusChange, error)
 }
 
 type applicationHistoryWriter interface {
@@ -95,29 +95,17 @@ func (service *ApplicationService) Active(ctx context.Context) ([]posting.Active
 
 // Get returns a live application by ID, or store.ErrNotFound.
 func (service *ApplicationService) Get(ctx context.Context, applicationID int64) (*application.Application, error) {
-	app, err := service.applicationViewer.Get(ctx, service.db, applicationID)
-	if err != nil {
-		return nil, err
-	}
-	return &app, nil
+	return service.applicationViewer.Get(ctx, service.db, applicationID)
 }
 
 // GetIncludingDeleted is Get, but also finds an application the user
 // deleted (check DeletedAt).
 func (service *ApplicationService) GetIncludingDeleted(ctx context.Context, applicationID int64) (*application.Application, error) {
-	app, err := service.applicationViewer.GetByIDIncludingDeleted(ctx, service.db, applicationID)
-	if err != nil {
-		return nil, err
-	}
-	return &app, nil
+	return service.applicationViewer.GetByIDIncludingDeleted(ctx, service.db, applicationID)
 }
 
 func (service *ApplicationService) SetNotes(ctx context.Context, applicationID int64, notes string) (*application.Application, error) {
-	app, err := service.applicationWriter.SetNotes(ctx, service.db, applicationID, notes)
-	if err != nil {
-		return nil, err
-	}
-	return &app, nil
+	return service.applicationWriter.SetNotes(ctx, service.db, applicationID, notes)
 }
 
 // Delete soft-deletes an application, or returns store.ErrNotFound.
@@ -134,7 +122,7 @@ func (service *ApplicationService) History(ctx context.Context, applicationID in
 // change. Saving the status it already has records nothing: it isn't a
 // change.
 func (service *ApplicationService) SetStatus(ctx context.Context, applicationID int64, status application.Status) (*application.Application, error) {
-	var updated application.Application
+	var updated *application.Application
 	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
 		before, err := service.applicationViewer.Get(ctx, tx, applicationID)
 		if err != nil {
@@ -152,7 +140,7 @@ func (service *ApplicationService) SetStatus(ctx context.Context, applicationID 
 	if err != nil {
 		return nil, fmt.Errorf("application: update status: %w", err)
 	}
-	return &updated, nil
+	return updated, nil
 }
 
 // StatusSince is when app entered its current status: its newest status
