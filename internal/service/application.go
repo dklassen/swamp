@@ -95,17 +95,29 @@ func (service *ApplicationService) Active(ctx context.Context) ([]posting.Active
 
 // Get returns a live application by ID, or store.ErrNotFound.
 func (service *ApplicationService) Get(ctx context.Context, applicationID int64) (*application.Application, error) {
-	return pointer(service.applicationViewer.Get(ctx, service.db, applicationID))
+	app, err := service.applicationViewer.Get(ctx, service.db, applicationID)
+	if err != nil {
+		return nil, err
+	}
+	return &app, nil
 }
 
 // GetIncludingDeleted is Get, but also finds an application the user
 // deleted (check DeletedAt).
 func (service *ApplicationService) GetIncludingDeleted(ctx context.Context, applicationID int64) (*application.Application, error) {
-	return pointer(service.applicationViewer.GetByIDIncludingDeleted(ctx, service.db, applicationID))
+	app, err := service.applicationViewer.GetByIDIncludingDeleted(ctx, service.db, applicationID)
+	if err != nil {
+		return nil, err
+	}
+	return &app, nil
 }
 
 func (service *ApplicationService) SetNotes(ctx context.Context, applicationID int64, notes string) (*application.Application, error) {
-	return pointer(service.applicationWriter.SetNotes(ctx, service.db, applicationID, notes))
+	app, err := service.applicationWriter.SetNotes(ctx, service.db, applicationID, notes)
+	if err != nil {
+		return nil, err
+	}
+	return &app, nil
 }
 
 // Delete soft-deletes an application, or returns store.ErrNotFound.

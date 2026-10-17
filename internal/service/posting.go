@@ -193,18 +193,30 @@ func (service *PostingService) Ingest(ctx context.Context, companyID int64, sour
 
 // Search returns one page of the postings matching search.
 func (service *PostingService) Search(ctx context.Context, search posting.Search) (*posting.SearchPage, error) {
-	return pointer(service.postingSearcher.Search(ctx, service.db, search))
+	page, err := service.postingSearcher.Search(ctx, service.db, search)
+	if err != nil {
+		return nil, err
+	}
+	return &page, nil
 }
 
 // Get returns a posting by ID, or store.ErrNotFound.
 func (service *PostingService) Get(ctx context.Context, postingID int64) (*posting.Posting, error) {
-	return pointer(service.postingViewer.Get(ctx, service.db, postingID))
+	p, err := service.postingViewer.Get(ctx, service.db, postingID)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
 }
 
 // GetBySource returns the posting source knows as sourceID, or
 // store.ErrNotFound.
 func (service *PostingService) GetBySource(ctx context.Context, source, sourceID string) (*posting.Posting, error) {
-	return pointer(service.postingViewer.GetBySource(ctx, service.db, source, sourceID))
+	p, err := service.postingViewer.GetBySource(ctx, service.db, source, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	return &p, nil
 }
 
 // History returns a posting's earlier versions, oldest first: a snapshot
@@ -242,35 +254,63 @@ func (service *PostingService) Interested(ctx context.Context) ([]posting.Intere
 // Application returns the posting's live application, or
 // store.ErrNotFound when it has none.
 func (service *PostingService) Application(ctx context.Context, postingID int64) (*application.Application, error) {
-	return pointer(service.applicationViewer.GetByPostingID(ctx, service.db, postingID))
+	app, err := service.applicationViewer.GetByPostingID(ctx, service.db, postingID)
+	if err != nil {
+		return nil, err
+	}
+	return &app, nil
 }
 
 // Markup returns the user's triage on the posting, or store.ErrNotFound.
 func (service *PostingService) Markup(ctx context.Context, postingID int64) (*posting.Markup, error) {
-	return pointer(service.markupViewer.Get(ctx, service.db, postingID))
+	markup, err := service.markupViewer.Get(ctx, service.db, postingID)
+	if err != nil {
+		return nil, err
+	}
+	return &markup, nil
 }
 
 // SetInterested marks the posting interested, which also unarchives it.
 func (service *PostingService) SetInterested(ctx context.Context, postingID int64) (*posting.Markup, error) {
-	return pointer(service.markupWriter.SetInterested(ctx, service.db, postingID))
+	markup, err := service.markupWriter.SetInterested(ctx, service.db, postingID)
+	if err != nil {
+		return nil, err
+	}
+	return &markup, nil
 }
 
 func (service *PostingService) UnmarkInterested(ctx context.Context, postingID int64) (*posting.Markup, error) {
-	return pointer(service.markupWriter.UnmarkInterested(ctx, service.db, postingID))
+	markup, err := service.markupWriter.UnmarkInterested(ctx, service.db, postingID)
+	if err != nil {
+		return nil, err
+	}
+	return &markup, nil
 }
 
 // SetArchived archives the posting, which also unmarks it interested.
 func (service *PostingService) SetArchived(ctx context.Context, postingID int64) (*posting.Markup, error) {
-	return pointer(service.markupWriter.SetArchived(ctx, service.db, postingID))
+	markup, err := service.markupWriter.SetArchived(ctx, service.db, postingID)
+	if err != nil {
+		return nil, err
+	}
+	return &markup, nil
 }
 
 func (service *PostingService) Unarchive(ctx context.Context, postingID int64) (*posting.Markup, error) {
-	return pointer(service.markupWriter.Unarchive(ctx, service.db, postingID))
+	markup, err := service.markupWriter.Unarchive(ctx, service.db, postingID)
+	if err != nil {
+		return nil, err
+	}
+	return &markup, nil
 }
 
 // SetNotes replaces the user's notes on the posting.
 func (service *PostingService) SetNotes(ctx context.Context, postingID int64, notes string) (*posting.Markup, error) {
-	return pointer(service.markupWriter.SetNotes(ctx, service.db, postingID, notes))
+	markup, err := service.markupWriter.SetNotes(ctx, service.db, postingID, notes)
+	if err != nil {
+		return nil, err
+	}
+	return &markup, nil
 }
 
 // SaveForm stores what the posting's application form asks for, as JSON,

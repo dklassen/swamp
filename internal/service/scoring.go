@@ -45,7 +45,11 @@ func NewScoringService(db store.Store) *ScoringService {
 // content, newest first, before beforeID (0 for the first page). For a
 // rescore, rescoreProfileSHA256 names the profile; "" is no rescore.
 func (service *ScoringService) Pending(ctx context.Context, rescoreProfileSHA256 string, beforeID int64, limit int) (*score.PendingPostingsPage, error) {
-	return pointer(service.scoreViewer.Pending(ctx, service.db, rescoreProfileSHA256, beforeID, limit))
+	page, err := service.scoreViewer.Pending(ctx, service.db, rescoreProfileSHA256, beforeID, limit)
+	if err != nil {
+		return nil, err
+	}
+	return &page, nil
 }
 
 // ForPosting returns every score postingID was given, newest, its current

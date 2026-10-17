@@ -192,19 +192,31 @@ func (service *CompanyService) SetFilters(ctx context.Context, id int64, filters
 
 // Get returns an active company, or store.ErrNotFound.
 func (service *CompanyService) Get(ctx context.Context, id int64) (*company.Company, error) {
-	return pointer(service.companyViewer.Get(ctx, service.db, id))
+	c, err := service.companyViewer.Get(ctx, service.db, id)
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
 }
 
 // GetIncludingDeleted is Get, but also finds a company the user deleted
 // (check DeletedAt).
 func (service *CompanyService) GetIncludingDeleted(ctx context.Context, id int64) (*company.Company, error) {
-	return pointer(service.companyViewer.GetIncludingDeleted(ctx, service.db, id))
+	c, err := service.companyViewer.GetIncludingDeleted(ctx, service.db, id)
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
 }
 
 // GetBySource finds the company for a job board slug, including a
 // soft-deleted one (check DeletedAt), or returns store.ErrNotFound.
 func (service *CompanyService) GetBySource(ctx context.Context, source, sourceRef string) (*company.Company, error) {
-	return pointer(service.companyViewer.GetBySource(ctx, service.db, source, sourceRef))
+	c, err := service.companyViewer.GetBySource(ctx, service.db, source, sourceRef)
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
 }
 
 func (service *CompanyService) ListActive(ctx context.Context) ([]company.Company, error) {
@@ -212,11 +224,19 @@ func (service *CompanyService) ListActive(ctx context.Context) ([]company.Compan
 }
 
 func (service *CompanyService) SetName(ctx context.Context, id int64, name string) (*company.Company, error) {
-	return pointer(service.companyWriter.SetName(ctx, service.db, id, name))
+	c, err := service.companyWriter.SetName(ctx, service.db, id, name)
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
 }
 
 func (service *CompanyService) SetDescription(ctx context.Context, id int64, description string) (*company.Company, error) {
-	return pointer(service.companyWriter.SetDescription(ctx, service.db, id, description))
+	c, err := service.companyWriter.SetDescription(ctx, service.db, id, description)
+	if err != nil {
+		return nil, err
+	}
+	return &c, nil
 }
 
 func (service *CompanyService) Restore(ctx context.Context, id int64) error {
