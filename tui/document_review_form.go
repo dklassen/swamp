@@ -149,7 +149,10 @@ func createDocumentReview(documentService *service.DocumentService, docs *docume
 			return documentChangedDuringReviewMsg{current: string(current), who: whoWrote(documentService, applicationID, documentType, string(current)), from: from}
 		}
 		review, err := documentService.Review(context.Background(), applicationID, documentType, content, outcome, notes)
-		return documentReviewCreatedMsg{review: review, from: from, err: err}
+		if err != nil {
+			return documentReviewCreatedMsg{from: from, err: err}
+		}
+		return documentReviewCreatedMsg{review: *review, from: from}
 	}
 }
 

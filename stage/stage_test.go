@@ -41,7 +41,7 @@ func mustCreateCompany(t *testing.T, s testutil.TestApp, name string) company.Co
 	if err != nil {
 		t.Fatalf("CreateCompany: %v", err)
 	}
-	return c
+	return *c
 }
 
 func mustUpsertPosting(t *testing.T, s testutil.TestApp, companyID int64, sourceID, title string) posting.Posting {
@@ -1003,7 +1003,7 @@ func TestPrepare_ClosedPostingWithoutApplication_Refused(t *testing.T) {
 	}
 }
 
-func createReview(ctx context.Context, s testutil.TestApp, applicationID int64, documentType document.Type, content string, outcome document.Outcome, notes string) (document.Review, error) {
+func createReview(ctx context.Context, s testutil.TestApp, applicationID int64, documentType document.Type, content string, outcome document.Outcome, notes string) (*document.Review, error) {
 	return s.Documents.Review(ctx, applicationID, documentType, content, outcome, notes)
 }
 

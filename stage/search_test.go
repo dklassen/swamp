@@ -42,9 +42,11 @@ func newSearchStage(t *testing.T) searchStage {
 
 	mustMarkInterested(t, s, f.shortlist.ID)
 	var err error
-	if f.startedApp, err = createApplication(ctx, s, f.started.ID); err != nil {
+	started, err := createApplication(ctx, s, f.started.ID)
+	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
+	f.startedApp = *started
 	if _, err := createApplication(ctx, s, f.submitted.ID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
@@ -422,18 +424,18 @@ func TestSearch_ScoreDescPagesBestFitFirst(t *testing.T) {
 	}
 }
 
-func recordScores(ctx context.Context, s testutil.TestApp, provenance score.Provenance, entries []score.Entry) (score.RecordResult, error) {
+func recordScores(ctx context.Context, s testutil.TestApp, provenance score.Provenance, entries []score.Entry) (*score.RecordResult, error) {
 	return s.Scores.Record(ctx, provenance, entries)
 }
 
-func createApplication(ctx context.Context, s testutil.TestApp, postingID int64) (application.Application, error) {
+func createApplication(ctx context.Context, s testutil.TestApp, postingID int64) (*application.Application, error) {
 	return s.Postings.ApplyTo(ctx, postingID)
 }
 
-func updateApplicationStatus(ctx context.Context, s testutil.TestApp, postingID int64, status application.Status) (application.Application, error) {
+func updateApplicationStatus(ctx context.Context, s testutil.TestApp, postingID int64, status application.Status) (*application.Application, error) {
 	app, err := s.Postings.Application(ctx, postingID)
 	if err != nil {
-		return application.Application{}, err
+		return nil, err
 	}
 	return s.Applications.SetStatus(ctx, app.ID, status)
 }

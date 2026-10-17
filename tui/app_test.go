@@ -3620,7 +3620,7 @@ func TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T
 		t.Fatalf("application.Get: %v", err)
 	}
 
-	app, _ = sendKey(app, applicationNotesUpdatedMsg{application: stored, from: earlier})
+	app, _ = sendKey(app, applicationNotesUpdatedMsg{application: *stored, from: earlier})
 
 	if app.screen != screenApplicationNotesEdit {
 		t.Fatalf("screen after the earlier instance's save result = %v, want screenApplicationNotesEdit (the reopened one stays open)", app.screen)

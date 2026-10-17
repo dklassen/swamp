@@ -95,7 +95,7 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result Resul
 		}
 	}()
 
-	return s.syncHeld(ctx, company, fetcher, result)
+	return s.syncHeld(ctx, *company, fetcher, result)
 }
 
 // syncHeld is SyncCompany's work once it holds the company's lease: fetch,
@@ -176,7 +176,7 @@ func (s *Syncer) CreateCompany(ctx context.Context, name, source, sourceRef stri
 	if err != nil {
 		return company.Company{}, fmt.Errorf("sync: create company: %w", err)
 	}
-	return created, nil
+	return *created, nil
 }
 
 // ImportResult reports the outcome of importing one seed.Entry.
@@ -214,11 +214,12 @@ func (s *Syncer) ImportCompanies(ctx context.Context, entries []seed.Entry) []Im
 		// Fill in the description only if the company has none, so re-importing
 		// never overwrites one written since (same rule as AddCompany).
 		if company.Description == "" && e.Description != "" {
-			company, err = s.companies.SetDescription(ctx, company.ID, e.Description)
+			updated, err := s.companies.SetDescription(ctx, company.ID, e.Description)
 			if err != nil {
 				results[i].Err = fmt.Errorf("sync: set company description: %w", err)
 				continue
 			}
+			company = *updated
 		}
 		results[i].Company = company
 	}
@@ -264,7 +265,7 @@ func (s *Syncer) AddCompany(ctx context.Context, name, source, sourceRef, descri
 	case err != nil:
 		return AddCompanyResult{}, fmt.Errorf("sync: look up company: %w", err)
 	case existing.DeletedAt != nil:
-		return AddCompanyResult{Outcome: AddCompanySkippedDeleted, Company: existing}, nil
+		return AddCompanyResult{Outcome: AddCompanySkippedDeleted, Company: *existing}, nil
 	default:
 		if existing.Description == "" && description != "" {
 			existing, err = s.companies.SetDescription(ctx, existing.ID, description)
@@ -272,7 +273,7 @@ func (s *Syncer) AddCompany(ctx context.Context, name, source, sourceRef, descri
 				return AddCompanyResult{}, fmt.Errorf("sync: set company description: %w", err)
 			}
 		}
-		return AddCompanyResult{Outcome: AddCompanyAlreadyExists, Company: existing}, nil
+		return AddCompanyResult{Outcome: AddCompanyAlreadyExists, Company: *existing}, nil
 	}
 
 	fetcher, ok := s.fetchers[source]
@@ -292,5 +293,5 @@ func (s *Syncer) AddCompany(ctx context.Context, name, source, sourceRef, descri
 	if err != nil {
 		return AddCompanyResult{}, fmt.Errorf("sync: set company description: %w", err)
 	}
-	return AddCompanyResult{Outcome: AddCompanyCreated, Company: company, OpenJobs: len(postings)}, nil
+	return AddCompanyResult{Outcome: AddCompanyCreated, Company: *company, OpenJobs: len(postings)}, nil
 }

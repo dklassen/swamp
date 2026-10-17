@@ -189,7 +189,7 @@ func TestPostingService_Ingest_NewPosting_CreatesAnUntriagedMarkupRow(t *testing
 	if err != nil {
 		t.Fatalf("Markup: %v", err)
 	}
-	want := posting.Markup{PostingID: p.ID}
+	want := &posting.Markup{PostingID: p.ID}
 	if diff := cmp.Diff(want, markup, cmpopts.IgnoreFields(posting.Markup{}, "CreatedAt", "UpdatedAt")); diff != "" {
 		t.Errorf("markup (-want +got):\n%s", diff)
 	}
@@ -331,10 +331,11 @@ func TestPostingService_Reopen(t *testing.T) {
 				if err := postings.Close(ctx, open.ID, nil); err != nil {
 					t.Fatalf("Close: %v", err)
 				}
-				var err error
-				if before, err = postings.Get(ctx, open.ID); err != nil {
+				closed, err := postings.Get(ctx, open.ID)
+				if err != nil {
 					t.Fatalf("Get: %v", err)
 				}
+				before = *closed
 			}
 
 			if err := postings.Reopen(ctx, open.ID); err != nil {

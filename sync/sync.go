@@ -74,11 +74,11 @@ func DefaultConfig() Config {
 
 // companyService is what a sync reads and writes about the companies it syncs.
 type companyService interface {
-	Get(ctx context.Context, id int64) (company.Company, error)
-	GetBySource(ctx context.Context, source, sourceRef string) (company.Company, error)
+	Get(ctx context.Context, id int64) (*company.Company, error)
+	GetBySource(ctx context.Context, source, sourceRef string) (*company.Company, error)
 	ListActive(ctx context.Context) ([]company.Company, error)
-	Add(ctx context.Context, name, source, sourceRef string) (company.Company, error)
-	SetDescription(ctx context.Context, id int64, description string) (company.Company, error)
+	Add(ctx context.Context, name, source, sourceRef string) (*company.Company, error)
+	SetDescription(ctx context.Context, id int64, description string) (*company.Company, error)
 	MarkFetched(ctx context.Context, id int64) error
 	AcquireSyncLease(ctx context.Context, id int64, token string, expiry time.Duration) (bool, error)
 	ReleaseSyncLease(ctx context.Context, id int64, token string) error
@@ -86,7 +86,7 @@ type companyService interface {
 
 // postingService is what a sync reads and writes about a company's postings.
 type postingService interface {
-	Ingest(ctx context.Context, companyID int64, source, sourceID string, fields posting.IngestedFields) (service.IngestResult, error)
+	Ingest(ctx context.Context, companyID int64, source, sourceID string, fields posting.IngestedFields) (*service.IngestResult, error)
 	ListByCompany(ctx context.Context, companyID int64) ([]posting.Posting, error)
 	MarkSeen(ctx context.Context, ids []int64) error
 	Close(ctx context.Context, postingID int64, endFrom []application.Status) error

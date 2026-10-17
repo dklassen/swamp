@@ -102,7 +102,7 @@ func TestDocumentService_Reviews_MostRecentCycleFirst(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Reviews: %v", err)
 	}
-	if diff := cmp.Diff([]document.Review{second, first}, got); diff != "" {
+	if diff := cmp.Diff([]document.Review{*second, *first}, got); diff != "" {
 		t.Errorf("Reviews (-want +got):\n%s", diff)
 	}
 }
@@ -139,7 +139,7 @@ func TestDocumentService_LatestReview_ReturnsTheMostRecentCycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LatestReview: %v", err)
 	}
-	if diff := cmp.Diff(&second, got); diff != "" {
+	if diff := cmp.Diff(second, got); diff != "" {
 		t.Errorf("LatestReview (-want +got):\n%s", diff)
 	}
 }

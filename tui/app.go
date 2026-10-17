@@ -631,7 +631,10 @@ type companyNameUpdatedMsg struct {
 func updateCompanyName(companies *service.CompanyService, companyID int64, name string) tea.Cmd {
 	return func() tea.Msg {
 		company, err := companies.SetName(context.Background(), companyID, name)
-		return companyNameUpdatedMsg{company: company, err: err}
+		if err != nil {
+			return companyNameUpdatedMsg{err: err}
+		}
+		return companyNameUpdatedMsg{company: *company}
 	}
 }
 
@@ -665,7 +668,7 @@ func toggleInterested(postings *service.PostingService, postingID int64, current
 	return func() tea.Msg {
 		ctx := context.Background()
 		var (
-			m   posting.Markup
+			m   *posting.Markup
 			err error
 		)
 		if currentlyInterested {
@@ -673,7 +676,10 @@ func toggleInterested(postings *service.PostingService, postingID int64, current
 		} else {
 			m, err = postings.SetInterested(ctx, postingID)
 		}
-		return postingMarkupUpdatedMsg{markup: m, err: err}
+		if err != nil {
+			return postingMarkupUpdatedMsg{err: err}
+		}
+		return postingMarkupUpdatedMsg{markup: *m}
 	}
 }
 
@@ -681,7 +687,7 @@ func toggleArchived(postings *service.PostingService, postingID int64, currently
 	return func() tea.Msg {
 		ctx := context.Background()
 		var (
-			m   posting.Markup
+			m   *posting.Markup
 			err error
 		)
 		if currentlyArchived {
@@ -689,7 +695,10 @@ func toggleArchived(postings *service.PostingService, postingID int64, currently
 		} else {
 			m, err = postings.SetArchived(ctx, postingID)
 		}
-		return postingMarkupUpdatedMsg{markup: m, err: err}
+		if err != nil {
+			return postingMarkupUpdatedMsg{err: err}
+		}
+		return postingMarkupUpdatedMsg{markup: *m}
 	}
 }
 
@@ -701,7 +710,10 @@ type applicationCreatedMsg struct {
 func createApplication(postings *service.PostingService, postingID int64) tea.Cmd {
 	return func() tea.Msg {
 		app, err := postings.ApplyTo(context.Background(), postingID)
-		return applicationCreatedMsg{application: app, err: err}
+		if err != nil {
+			return applicationCreatedMsg{err: err}
+		}
+		return applicationCreatedMsg{application: *app}
 	}
 }
 
@@ -726,7 +738,7 @@ func loadApplication(postings *service.PostingService, postingID int64) tea.Cmd 
 		if err != nil {
 			return applicationLoadedMsg{postingID: postingID, err: err}
 		}
-		return applicationLoadedMsg{postingID: postingID, application: app, found: true}
+		return applicationLoadedMsg{postingID: postingID, application: *app, found: true}
 	}
 }
 
@@ -782,7 +794,10 @@ type applicationStatusUpdatedMsg struct {
 func updateApplicationStatus(applications *service.ApplicationService, applicationID int64, status application.Status, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
 		app, err := applications.SetStatus(context.Background(), applicationID, status)
-		return applicationStatusUpdatedMsg{application: app, from: from, err: err}
+		if err != nil {
+			return applicationStatusUpdatedMsg{from: from, err: err}
+		}
+		return applicationStatusUpdatedMsg{application: *app, from: from}
 	}
 }
 
@@ -795,7 +810,10 @@ type applicationNotesUpdatedMsg struct {
 func updateApplicationNotes(applications *service.ApplicationService, applicationID int64, notes string, from screenInstance) tea.Cmd {
 	return func() tea.Msg {
 		app, err := applications.SetNotes(context.Background(), applicationID, notes)
-		return applicationNotesUpdatedMsg{application: app, from: from, err: err}
+		if err != nil {
+			return applicationNotesUpdatedMsg{from: from, err: err}
+		}
+		return applicationNotesUpdatedMsg{application: *app, from: from}
 	}
 }
 
@@ -859,7 +877,7 @@ func loadPostings(companies *service.CompanyService, postings *service.PostingSe
 			if err != nil {
 				return postingsLoadedMsg{err: err}
 			}
-			markup[p.ID] = m
+			markup[p.ID] = *m
 		}
 
 		if hideArchived {

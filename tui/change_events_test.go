@@ -367,7 +367,7 @@ func mustPosting(t *testing.T, s testutil.TestApp, id int64) posting.Posting {
 	if err != nil {
 		t.Fatalf("GetPosting: %v", err)
 	}
-	return p
+	return *p
 }
 
 // TestApp_EnteringApplicationDetail_ShowsAChangeMadeBeforeIt: the home

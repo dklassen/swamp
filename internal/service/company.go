@@ -93,7 +93,7 @@ func NewCompanyService(db store.Store) *CompanyService {
 // instead. source+source_ref is unique regardless of deleted_at, so a
 // plain insert would fail when re-adding a company the user had removed;
 // restoring is what "re-add" means for a soft-deleted row.
-func (service *CompanyService) Add(ctx context.Context, name, source, sourceRef string) (company.Company, error) {
+func (service *CompanyService) Add(ctx context.Context, name, source, sourceRef string) (*company.Company, error) {
 	var added company.Company
 	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
 		existing, err := service.companyViewer.GetBySource(ctx, tx, source, sourceRef)
@@ -112,9 +112,9 @@ func (service *CompanyService) Add(ctx context.Context, name, source, sourceRef 
 		return nil
 	})
 	if err != nil {
-		return company.Company{}, err
+		return nil, err
 	}
-	return added, nil
+	return &added, nil
 }
 
 // Delete marks a company deleted and closes its open postings, with a
@@ -191,32 +191,32 @@ func (service *CompanyService) SetFilters(ctx context.Context, id int64, filters
 }
 
 // Get returns an active company, or store.ErrNotFound.
-func (service *CompanyService) Get(ctx context.Context, id int64) (company.Company, error) {
-	return service.companyViewer.Get(ctx, service.db, id)
+func (service *CompanyService) Get(ctx context.Context, id int64) (*company.Company, error) {
+	return pointer(service.companyViewer.Get(ctx, service.db, id))
 }
 
 // GetIncludingDeleted is Get, but also finds a company the user deleted
 // (check DeletedAt).
-func (service *CompanyService) GetIncludingDeleted(ctx context.Context, id int64) (company.Company, error) {
-	return service.companyViewer.GetIncludingDeleted(ctx, service.db, id)
+func (service *CompanyService) GetIncludingDeleted(ctx context.Context, id int64) (*company.Company, error) {
+	return pointer(service.companyViewer.GetIncludingDeleted(ctx, service.db, id))
 }
 
 // GetBySource finds the company for a job board slug, including a
 // soft-deleted one (check DeletedAt), or returns store.ErrNotFound.
-func (service *CompanyService) GetBySource(ctx context.Context, source, sourceRef string) (company.Company, error) {
-	return service.companyViewer.GetBySource(ctx, service.db, source, sourceRef)
+func (service *CompanyService) GetBySource(ctx context.Context, source, sourceRef string) (*company.Company, error) {
+	return pointer(service.companyViewer.GetBySource(ctx, service.db, source, sourceRef))
 }
 
 func (service *CompanyService) ListActive(ctx context.Context) ([]company.Company, error) {
 	return service.companyViewer.ListActive(ctx, service.db)
 }
 
-func (service *CompanyService) SetName(ctx context.Context, id int64, name string) (company.Company, error) {
-	return service.companyWriter.SetName(ctx, service.db, id, name)
+func (service *CompanyService) SetName(ctx context.Context, id int64, name string) (*company.Company, error) {
+	return pointer(service.companyWriter.SetName(ctx, service.db, id, name))
 }
 
-func (service *CompanyService) SetDescription(ctx context.Context, id int64, description string) (company.Company, error) {
-	return service.companyWriter.SetDescription(ctx, service.db, id, description)
+func (service *CompanyService) SetDescription(ctx context.Context, id int64, description string) (*company.Company, error) {
+	return pointer(service.companyWriter.SetDescription(ctx, service.db, id, description))
 }
 
 func (service *CompanyService) Restore(ctx context.Context, id int64) error {

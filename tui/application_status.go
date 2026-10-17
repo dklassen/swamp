@@ -140,6 +140,9 @@ func loadApplicationStatus(applications *service.ApplicationService, application
 		if errors.Is(err, store.ErrNotFound) {
 			err = errors.New("this application was deleted in the meantime")
 		}
-		return applicationStatusLoadedMsg{applicationID: applicationID, status: app.Status, from: from, err: err}
+		if err != nil {
+			return applicationStatusLoadedMsg{applicationID: applicationID, from: from, err: err}
+		}
+		return applicationStatusLoadedMsg{applicationID: applicationID, status: app.Status, from: from}
 	}
 }

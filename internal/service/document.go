@@ -65,7 +65,7 @@ func NewDocumentService(db store.Store) *DocumentService {
 // reviews for this application and document type, plus one. The count and
 // the insert run in one transaction, so two reviews can't both read the
 // same count and record the same cycle.
-func (service *DocumentService) Review(ctx context.Context, applicationID int64, documentType document.Type, content string, outcome document.Outcome, notes string) (document.Review, error) {
+func (service *DocumentService) Review(ctx context.Context, applicationID int64, documentType document.Type, content string, outcome document.Outcome, notes string) (*document.Review, error) {
 	var review document.Review
 	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
 		count, err := service.reviewViewer.Count(ctx, tx, applicationID, documentType)
@@ -76,9 +76,9 @@ func (service *DocumentService) Review(ctx context.Context, applicationID int64,
 		return err
 	})
 	if err != nil {
-		return document.Review{}, err
+		return nil, err
 	}
-	return review, nil
+	return &review, nil
 }
 
 // Reviews returns applicationID's reviews of documentType, most recent

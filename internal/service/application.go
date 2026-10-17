@@ -94,18 +94,18 @@ func (service *ApplicationService) Active(ctx context.Context) ([]posting.Active
 }
 
 // Get returns a live application by ID, or store.ErrNotFound.
-func (service *ApplicationService) Get(ctx context.Context, applicationID int64) (application.Application, error) {
-	return service.applicationViewer.Get(ctx, service.db, applicationID)
+func (service *ApplicationService) Get(ctx context.Context, applicationID int64) (*application.Application, error) {
+	return pointer(service.applicationViewer.Get(ctx, service.db, applicationID))
 }
 
 // GetIncludingDeleted is Get, but also finds an application the user
 // deleted (check DeletedAt).
-func (service *ApplicationService) GetIncludingDeleted(ctx context.Context, applicationID int64) (application.Application, error) {
-	return service.applicationViewer.GetByIDIncludingDeleted(ctx, service.db, applicationID)
+func (service *ApplicationService) GetIncludingDeleted(ctx context.Context, applicationID int64) (*application.Application, error) {
+	return pointer(service.applicationViewer.GetByIDIncludingDeleted(ctx, service.db, applicationID))
 }
 
-func (service *ApplicationService) SetNotes(ctx context.Context, applicationID int64, notes string) (application.Application, error) {
-	return service.applicationWriter.SetNotes(ctx, service.db, applicationID, notes)
+func (service *ApplicationService) SetNotes(ctx context.Context, applicationID int64, notes string) (*application.Application, error) {
+	return pointer(service.applicationWriter.SetNotes(ctx, service.db, applicationID, notes))
 }
 
 // Delete soft-deletes an application, or returns store.ErrNotFound.
@@ -121,7 +121,7 @@ func (service *ApplicationService) History(ctx context.Context, applicationID in
 // SetStatus sets an application's status and records it as the user's
 // change. Saving the status it already has records nothing: it isn't a
 // change.
-func (service *ApplicationService) SetStatus(ctx context.Context, applicationID int64, status application.Status) (application.Application, error) {
+func (service *ApplicationService) SetStatus(ctx context.Context, applicationID int64, status application.Status) (*application.Application, error) {
 	var updated application.Application
 	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
 		before, err := service.applicationViewer.Get(ctx, tx, applicationID)
@@ -138,9 +138,9 @@ func (service *ApplicationService) SetStatus(ctx context.Context, applicationID 
 		return service.applicationHistoryWriter.Insert(ctx, tx, updated.ID, status, application.ChangedByUser)
 	})
 	if err != nil {
-		return application.Application{}, fmt.Errorf("application: update status: %w", err)
+		return nil, fmt.Errorf("application: update status: %w", err)
 	}
-	return updated, nil
+	return &updated, nil
 }
 
 // StatusSince is when app entered its current status: its newest status

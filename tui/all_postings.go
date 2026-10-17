@@ -100,13 +100,18 @@ func (m *allPostingsModel) load(size int) tea.Cmd {
 			Query:      query,
 			Limit:      size,
 		})
+		if err != nil {
+			return allPostingsLoadedMsg{start: start, order: order, query: query, size: size, err: err}
+		}
 		total := page.Total
-		if err == nil && query != "" {
-			var all posting.SearchPage
-			all, err = s.Search(ctx, posting.Search{Limit: 1})
+		if query != "" {
+			all, err := s.Search(ctx, posting.Search{Limit: 1})
+			if err != nil {
+				return allPostingsLoadedMsg{start: start, order: order, query: query, size: size, err: err}
+			}
 			total = all.Total
 		}
-		return allPostingsLoadedMsg{start: start, order: order, query: query, size: size, page: page, total: total, err: err}
+		return allPostingsLoadedMsg{start: start, order: order, query: query, size: size, page: *page, total: total}
 	}
 }
 
@@ -368,6 +373,9 @@ type allPostingsDetailLoadedMsg struct {
 func loadAllPostingsDetail(postings *service.PostingService, id int64) tea.Cmd {
 	return func() tea.Msg {
 		p, err := postings.Get(context.Background(), id)
-		return allPostingsDetailLoadedMsg{posting: p, err: err}
+		if err != nil {
+			return allPostingsDetailLoadedMsg{err: err}
+		}
+		return allPostingsDetailLoadedMsg{posting: *p}
 	}
 }

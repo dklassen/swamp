@@ -19,7 +19,7 @@ func mustCreateCompany(t *testing.T, s testutil.TestApp, name, source, sourceRef
 	if err != nil {
 		t.Fatalf("CreateCompany: %v", err)
 	}
-	return c
+	return *c
 }
 
 // fakeFetcher is a PostingFetcher whose FetchPostings return value is
@@ -79,7 +79,7 @@ func syncOverlapping(t *testing.T, s testutil.TestApp, companyID int64, runs int
 		done.Add(1)
 		go func() {
 			defer done.Done()
-			results[i], errs[i] = syncer.syncHeld(context.Background(), company, fetcher, Result{CompanyID: companyID})
+			results[i], errs[i] = syncer.syncHeld(context.Background(), *company, fetcher, Result{CompanyID: companyID})
 		}()
 	}
 	done.Wait()
@@ -135,16 +135,16 @@ func addCompanyFilter(t *testing.T, s testutil.TestApp, companyID int64, field, 
 	}
 }
 
-func createApplication(ctx context.Context, s testutil.TestApp, postingID int64) (application.Application, error) {
+func createApplication(ctx context.Context, s testutil.TestApp, postingID int64) (*application.Application, error) {
 	return s.Postings.ApplyTo(ctx, postingID)
 }
 
 // updateApplicationStatus sets postingID's application to status, as the
 // user would.
-func updateApplicationStatus(ctx context.Context, s testutil.TestApp, postingID int64, status application.Status) (application.Application, error) {
+func updateApplicationStatus(ctx context.Context, s testutil.TestApp, postingID int64, status application.Status) (*application.Application, error) {
 	app, err := s.Postings.Application(ctx, postingID)
 	if err != nil {
-		return application.Application{}, err
+		return nil, err
 	}
 	return s.Applications.SetStatus(ctx, app.ID, status)
 }
