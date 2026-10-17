@@ -1166,16 +1166,16 @@ func TestReadPosting_ReturnsThePostingInFull(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
-	posting := ingested.Posting
+	p := ingested.Posting
 	cs := connectClient(t, srv)
 
-	got := callTool[stage.FullPosting](t, cs, "read_posting", map[string]any{"PostingID": posting.ID})
+	got := callTool[stage.FullPosting](t, cs, "read_posting", map[string]any{"PostingID": p.ID})
 
 	want := stage.FullPosting{
-		ID: posting.ID, Title: "Platform Engineer", CompanyName: "Acme", CompanyDescription: "Builds rockets.",
-		Department: "Infra", Location: "Dublin", WorkplaceType: "Hybrid", ListingStatus: "open",
+		ID: p.ID, Title: "Platform Engineer", CompanyName: "Acme", CompanyDescription: "Builds rockets.",
+		Department: "Infra", Location: "Dublin", WorkplaceType: "Hybrid", ListingStatus: posting.ListingOpen,
 		DescriptionText: "Run the platform.", JobURL: "https://jobs.example.com/acme/1", ApplicationURL: "https://jobs.example.com/acme/1/apply",
-		FirstSeenAt: posting.FirstSeenAt, Version: posting.ContentSHA256,
+		FirstSeenAt: p.FirstSeenAt, Version: p.ContentSHA256,
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("read_posting (-want +got):\n%s", diff)

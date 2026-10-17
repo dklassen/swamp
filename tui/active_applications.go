@@ -304,7 +304,7 @@ type documentProgress struct {
 // a.LatestReviews must already be filtered to current reviews (see
 // documents.Current), as loadActiveApplications does.
 func nextStep(a posting.ActiveApplication, docs map[document.Type]documentProgress) string {
-	closed := a.Posting.ListingStatus == "closed"
+	closed := a.Posting.ListingStatus == posting.ListingClosed
 	if a.Status != application.Started {
 		if closed {
 			return "(closed)"

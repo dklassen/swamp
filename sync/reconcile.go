@@ -6,6 +6,7 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/jobboard"
 )
 
@@ -36,7 +37,7 @@ func (s *Syncer) closeMissing(ctx context.Context, company company.Company, fetc
 		return result, fmt.Errorf("sync: mark postings seen: %w", err)
 	}
 	for _, existing := range existingPostings {
-		if existing.ListingStatus != "open" || seenSourceIDs[existing.SourceID] {
+		if existing.ListingStatus != posting.ListingOpen || seenSourceIDs[existing.SourceID] {
 			continue
 		}
 		if err := s.postings.Close(ctx, existing.ID, earlyApplicationStatuses); err != nil {

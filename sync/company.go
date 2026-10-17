@@ -147,7 +147,7 @@ func (s *Syncer) ingest(ctx context.Context, company company.Company, fetched []
 		if ingested.Updated {
 			result.Updated++
 		}
-		if ingested.Posting.ListingStatus == "closed" {
+		if ingested.Posting.ListingStatus == posting.ListingClosed {
 			if err := s.postings.Reopen(ctx, ingested.Posting.ID); err != nil {
 				return result, fmt.Errorf("sync: reopen posting: %w", err)
 			}

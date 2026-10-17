@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 )
@@ -214,7 +215,7 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 	if _, err := seed.SyncCompany(ctx, acme.ID); err != nil {
 		t.Fatalf("next SyncCompany: %v", err)
 	}
-	posting, err := s.Postings.Get(ctx, xID)
+	p, err := s.Postings.Get(ctx, xID)
 	if err != nil {
 		t.Fatalf("GetPosting: %v", err)
 	}
@@ -222,8 +223,8 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 	if err != nil {
 		t.Fatalf("application.Get: %v", err)
 	}
-	if posting.ListingStatus != "open" || app.Status != application.Started {
-		t.Errorf("after the next sync: posting %s, application %s; want open and %s", posting.ListingStatus, app.Status, application.Started)
+	if p.ListingStatus != posting.ListingOpen || app.Status != application.Started {
+		t.Errorf("after the next sync: posting %s, application %s; want open and %s", p.ListingStatus, app.Status, application.Started)
 	}
 }
 

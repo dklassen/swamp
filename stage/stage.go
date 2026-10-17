@@ -77,25 +77,25 @@ func postingSummary(p posting.Posting) PostingSummary {
 // draft, without RawPayload and DescriptionHTML. Drafting reads
 // DescriptionText, and those two were most of the response (#117).
 type PreparedPosting struct {
-	ID              int64                `json:"ID"`
-	CompanyID       int64                `json:"CompanyID"`
-	Source          string               `json:"Source"`
-	SourceID        string               `json:"SourceID"`
-	Title           string               `json:"Title"`
-	Department      string               `json:"Department"`
-	Team            string               `json:"Team"`
-	Location        string               `json:"Location"`
-	EmploymentType  string               `json:"EmploymentType"`
-	WorkplaceType   string               `json:"WorkplaceType"`
-	DescriptionText string               `json:"DescriptionText"`
-	JobURL          string               `json:"JobURL"`
-	ApplicationURL  string               `json:"ApplicationURL"`
-	PublishedAt     posting.OptionalTime `json:"PublishedAt"`
-	ListingStatus   string               `json:"ListingStatus"`
-	FirstSeenAt     time.Time            `json:"FirstSeenAt"`
-	LastSeenAt      time.Time            `json:"LastSeenAt"`
-	CreatedAt       time.Time            `json:"CreatedAt"`
-	UpdatedAt       time.Time            `json:"UpdatedAt"`
+	ID              int64                 `json:"ID"`
+	CompanyID       int64                 `json:"CompanyID"`
+	Source          string                `json:"Source"`
+	SourceID        string                `json:"SourceID"`
+	Title           string                `json:"Title"`
+	Department      string                `json:"Department"`
+	Team            string                `json:"Team"`
+	Location        string                `json:"Location"`
+	EmploymentType  string                `json:"EmploymentType"`
+	WorkplaceType   string                `json:"WorkplaceType"`
+	DescriptionText string                `json:"DescriptionText"`
+	JobURL          string                `json:"JobURL"`
+	ApplicationURL  string                `json:"ApplicationURL"`
+	PublishedAt     posting.OptionalTime  `json:"PublishedAt"`
+	ListingStatus   posting.ListingStatus `json:"ListingStatus"`
+	FirstSeenAt     time.Time             `json:"FirstSeenAt"`
+	LastSeenAt      time.Time             `json:"LastSeenAt"`
+	CreatedAt       time.Time             `json:"CreatedAt"`
+	UpdatedAt       time.Time             `json:"UpdatedAt"`
 }
 
 func preparedPosting(p posting.Posting) PreparedPosting {

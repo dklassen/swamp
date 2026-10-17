@@ -23,7 +23,7 @@ type Listing struct {
 	PublishedAt time.Time
 	// FirstSeenAt is when Swamp first stored the posting.
 	FirstSeenAt   time.Time
-	ListingStatus string
+	ListingStatus ListingStatus
 	CompanyName   string
 	Interested    bool
 	Archived      bool
@@ -45,8 +45,8 @@ type Listing struct {
 type Search struct {
 	// CompanyID is one company's ID; 0 is any company.
 	CompanyID int64
-	// ListingStatus is "open" or "closed"; "" is either.
-	ListingStatus   string
+	// ListingStatus filters when set; nil is either.
+	ListingStatus   *ListingStatus
 	IncludeArchived bool
 	// HasApplication and Interested filter when set; nil is either.
 	HasApplication      *bool

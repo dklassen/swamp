@@ -297,7 +297,7 @@ func (service *PostingService) ApplyTo(ctx context.Context, postingID int64) (*a
 		if err != nil {
 			return err
 		}
-		if p.ListingStatus == "closed" {
+		if p.ListingStatus == posting.ListingClosed {
 			return ErrPostingClosed
 		}
 		created, err = service.applicationWriter.Insert(ctx, tx, postingID, application.Started)

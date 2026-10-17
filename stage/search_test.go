@@ -96,8 +96,8 @@ func TestSearch_FiltersAndDefaults(t *testing.T) {
 			postingIDs(f.submitted)},
 		{"interested shortlist: interested, no application", SearchOptions{Interested: &yes, HasApplication: &no},
 			postingIDs(f.shortlist)},
-		{"closed", SearchOptions{ListingStatus: "closed"}, postingIDs(f.closed)},
-		{"any listing status", SearchOptions{ListingStatus: "any"},
+		{"closed", SearchOptions{ListingStatus: posting.ListingClosed.String()}, postingIDs(f.closed)},
+		{"any listing status", SearchOptions{ListingStatus: AnyListingStatus},
 			postingIDs(f.shortlist, f.started, f.submitted, f.closed, f.betaPosting)},
 		{"archived included", SearchOptions{IncludeArchived: true},
 			postingIDs(f.shortlist, f.started, f.submitted, f.archived, f.betaPosting)},
@@ -135,7 +135,7 @@ func TestSearch_MatchCarriesItsApplication(t *testing.T) {
 		t.Fatalf("got %d matches, want 1", len(got.Postings))
 	}
 	m := got.Postings[0]
-	if m.Posting.ID != f.started.ID || m.Posting.Title != "Data Engineer" || m.CompanyName != "Acme" || m.ListingStatus != "open" {
+	if m.Posting.ID != f.started.ID || m.Posting.Title != "Data Engineer" || m.CompanyName != "Acme" || m.ListingStatus != posting.ListingOpen {
 		t.Errorf("match = %+v, want the started Data Engineer posting at Acme, open", m)
 	}
 	if m.Posting.FirstSeenAt.IsZero() || !m.Posting.FirstSeenAt.Equal(f.started.FirstSeenAt) {

@@ -364,7 +364,7 @@ func postingDetailContent(p posting.Posting, application application.Application
 		{"Location", p.Location},
 		{"Employment type", p.EmploymentType},
 		{"Workplace type", p.WorkplaceType},
-		{"Status", p.ListingStatus},
+		{"Status", p.ListingStatus.String()},
 		{"Job URL", p.JobURL},
 		{"Application URL", p.ApplicationURL},
 	}
@@ -899,7 +899,7 @@ func loadPostings(companies *service.CompanyService, postings *service.PostingSe
 func filterOutClosed(postings []posting.Posting) []posting.Posting {
 	visible := make([]posting.Posting, 0, len(postings))
 	for _, p := range postings {
-		if p.ListingStatus == "closed" {
+		if p.ListingStatus == posting.ListingClosed {
 			continue
 		}
 		visible = append(visible, p)

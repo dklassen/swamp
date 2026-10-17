@@ -18,6 +18,10 @@ const (
 	maxSearchLimit     = 100
 )
 
+// AnyListingStatus is the SearchOptions.ListingStatus that matches open and
+// closed postings alike.
+const AnyListingStatus = "any"
+
 // SortIDAsc orders matches by posting ID, oldest to Swamp first: the
 // default order (#221).
 var SortIDAsc = posting.OrderIDAsc.String()
@@ -56,7 +60,8 @@ type SearchOptions struct {
 	HasApplication      *bool
 	Interested          *bool
 	ApplicationStatuses []application.Status
-	// ListingStatus is "open" (the default when empty), "closed" or "any".
+	// ListingStatus is "open" (the default when empty), "closed" or
+	// AnyListingStatus.
 	ListingStatus   string
 	IncludeArchived bool
 	// Query is space-separated terms, each of which must appear in the
@@ -88,14 +93,14 @@ type SearchResult struct {
 // SearchMatch is one posting Search found: list_postings' summary, its
 // company, listing status and markup, and its application, if any.
 type SearchMatch struct {
-	Posting           PostingSummary      `json:"Posting"`
-	CompanyName       string              `json:"CompanyName"`
-	ListingStatus     string              `json:"ListingStatus"`
-	Interested        bool                `json:"Interested"`
-	Archived          bool                `json:"Archived"`
-	ApplicationID     *int64              `json:"ApplicationID"`
-	ApplicationStatus *application.Status `json:"ApplicationStatus"`
-	ApplicationNotes  string              `json:"ApplicationNotes"`
+	Posting           PostingSummary        `json:"Posting"`
+	CompanyName       string                `json:"CompanyName"`
+	ListingStatus     posting.ListingStatus `json:"ListingStatus"`
+	Interested        bool                  `json:"Interested"`
+	Archived          bool                  `json:"Archived"`
+	ApplicationID     *int64                `json:"ApplicationID"`
+	ApplicationStatus *application.Status   `json:"ApplicationStatus"`
+	ApplicationNotes  string                `json:"ApplicationNotes"`
 	// Score is the posting's current fit score, 1 to 5, with its reason; 0
 	// when it has none.
 	Score       int    `json:"Score"`
@@ -125,12 +130,16 @@ type searchFilters struct {
 // stable while other postings change.
 func (st *Stage) Search(ctx context.Context, opts SearchOptions) (*SearchResult, error) {
 	listingStatus := opts.ListingStatus
-	switch listingStatus {
-	case "":
-		listingStatus = "open"
-	case "open", "closed", "any":
-	default:
-		return nil, fmt.Errorf("stage: unknown listing status %q: want open, closed or any", opts.ListingStatus)
+	if listingStatus == "" {
+		listingStatus = posting.ListingOpen.String()
+	}
+	var listingFilter *posting.ListingStatus
+	if listingStatus != AnyListingStatus {
+		status, err := posting.ParseListingStatus(listingStatus)
+		if err != nil {
+			return nil, fmt.Errorf("stage: unknown listing status %q: want open, closed or any", opts.ListingStatus)
+		}
+		listingFilter = &status
 	}
 	sort := opts.Sort
 	if sort == "" {
@@ -166,15 +175,13 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (*SearchResult,
 	search := posting.Search{
 		Order:               order,
 		CompanyID:           opts.CompanyID,
+		ListingStatus:       listingFilter,
 		IncludeArchived:     opts.IncludeArchived,
 		HasApplication:      opts.HasApplication,
 		Interested:          opts.Interested,
 		ApplicationStatuses: opts.ApplicationStatuses,
 		Query:               opts.Query,
 		Limit:               limit,
-	}
-	if listingStatus != "any" {
-		search.ListingStatus = listingStatus
 	}
 	if opts.Cursor != "" {
 		key, err := cursor.Decode(opts.Cursor, sort, fingerprint)
