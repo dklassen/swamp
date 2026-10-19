@@ -70,8 +70,8 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	}
 
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
-	if app.screen != screenActiveApplications {
-		t.Fatalf("screen after esc = %v, want the home list", app.screen)
+	if app.currentScreen != screenActiveApplications {
+		t.Fatalf("screen after esc = %v, want the home list", app.currentScreen)
 	}
 	if view := viewText(app); strings.Contains(view, "R:✓") {
 		t.Errorf("home list row still shows the resume as passed:\n%s", view)

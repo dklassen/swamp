@@ -6,6 +6,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/tui/message"
 )
 
 func TestCompanyEditModel_New_SeedsInputWithName(t *testing.T) {
@@ -97,15 +98,15 @@ func TestCompanyEditModel_Enter_TrimsSavedName(t *testing.T) {
 		t.Fatal("cmd = nil, want a command that saves the company name")
 	}
 	msg := cmd()
-	updated, ok := msg.(companyNameUpdatedMsg)
+	updated, ok := msg.(message.CompanyNameUpdatedMsg)
 	if !ok {
-		t.Fatalf("msg = %T, want companyNameUpdatedMsg", msg)
+		t.Fatalf("msg = %T, want message.CompanyNameUpdatedMsg", msg)
 	}
-	if updated.err != nil {
-		t.Fatalf("updateCompanyName error = %v", updated.err)
+	if updated.Err != nil {
+		t.Fatalf("updateCompanyName error = %v", updated.Err)
 	}
-	if updated.company.Name != "Acme Corp" {
-		t.Fatalf("company.Name = %q, want %q (trimmed)", updated.company.Name, "Acme Corp")
+	if updated.Company.Name != "Acme Corp" {
+		t.Fatalf("company.Name = %q, want %q (trimmed)", updated.Company.Name, "Acme Corp")
 	}
 }
 

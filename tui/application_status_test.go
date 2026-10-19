@@ -153,8 +153,8 @@ func TestStatusForm_ShowsTheStatusAsItIsNow(t *testing.T) {
 	app, cmd := sendKey(app, runeKey('s'))
 	app = applyCmd(t, app, cmd)
 
-	if app.screen != screenApplicationStatusSelect {
-		t.Fatalf("screen after s = %v, want the status form", app.screen)
+	if app.currentScreen != screenApplicationStatusSelect {
+		t.Fatalf("screen after s = %v, want the status form", app.currentScreen)
 	}
 	if want := applicationStatusIndex(application.Interviewing); app.applicationStatus.cursor != want {
 		t.Errorf("cursor = %d (%s), want %d (%s, the stored status)", app.applicationStatus.cursor, applicationStatuses[app.applicationStatus.cursor], want, application.Interviewing)
@@ -171,8 +171,8 @@ func TestStatusForm_ApplicationDeletedMeanwhile_StaysAndSaysSo(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, runeKey('s'))
 
-	if app.screen != screenActiveApplications {
-		t.Errorf("screen = %v, want the home list (no status left to change)", app.screen)
+	if app.currentScreen != screenActiveApplications {
+		t.Errorf("screen = %v, want the home list (no status left to change)", app.currentScreen)
 	}
 	if app.err == nil || !strings.Contains(app.err.Error(), "deleted in the meantime") {
 		t.Errorf("err = %v, want one saying it was deleted", app.err)

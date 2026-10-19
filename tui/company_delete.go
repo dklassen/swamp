@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // companyDeleteModel is the delete confirmation (d on the company list).
@@ -22,12 +23,6 @@ type companyDeleteModel struct {
 
 func newCompanyDeleteModel(company company.Company, openPostings int) companyDeleteModel {
 	return companyDeleteModel{company: company, openPostings: openPostings}
-}
-
-// enterCompanyDeleteMsg signals that App should open the delete
-// confirmation for this company.
-type enterCompanyDeleteMsg struct {
-	company company.Company
 }
 
 // cancelCompanyDeleteMsg signals that App should go back to the company
@@ -53,12 +48,12 @@ func (m *companyDeleteModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 // View is a box for App to draw over the company list, at most width wide.
 func (m *companyDeleteModel) View(width int) string {
 	var b strings.Builder
-	b.WriteString(fieldLabel.Render("Delete "+m.company.Name+"?") + " (" + m.company.Source + ")\n")
+	b.WriteString(model.FieldLabel.Render("Delete "+m.company.Name+"?") + " (" + m.company.Source + ")\n")
 	fmt.Fprintf(&b, "Closes its open postings (%d) and keeps its applications.\n\n", m.openPostings)
 	if m.confirmed {
 		b.WriteString("Deleting...")
 	} else {
-		b.WriteString(fieldLabel.Render("y") + ": delete  " + fieldLabel.Render("n/esc/enter") + ": keep it")
+		b.WriteString(model.FieldLabel.Render("y") + ": delete  " + model.FieldLabel.Render("n/esc/enter") + ": keep it")
 	}
 	return confirmBox(b.String(), width)
 }

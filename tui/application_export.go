@@ -15,6 +15,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // applicationExportModel drives the application-export screen: pick a
@@ -67,10 +68,10 @@ func (m *applicationExportModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) 
 
 func (m *applicationExportModel) View() string {
 	var b strings.Builder
-	b.WriteString(fieldLabel.Render("Application:") + " " + m.application.CompanyName + " -- " + m.application.Posting.Title + "\n\n")
-	b.WriteString(fieldLabel.Render("Destination folder:") + "\n")
+	b.WriteString(model.FieldLabel.Render("Application:") + " " + m.application.CompanyName + " -- " + m.application.Posting.Title + "\n\n")
+	b.WriteString(model.FieldLabel.Render("Destination folder:") + "\n")
 	b.WriteString(m.textinput.View() + "\n")
-	b.WriteString(helpStyle.Render("enter: export  esc: cancel"))
+	b.WriteString(model.HelpStyle.Render("enter: export  esc: cancel"))
 	return b.String()
 }
 

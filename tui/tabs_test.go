@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"regexp"
 	"strings"
 	"testing"
 
@@ -28,10 +29,10 @@ func TestApp_Tab_SwitchesBetweenTheLists(t *testing.T) {
 
 			s := testutil.NewTestApp(t)
 			app := newTestApp(t, s, newTestSyncer(s, nil))
-			app.screen = tt.from
+			app.currentScreen = tt.from
 			app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
-			if app.screen != tt.want {
-				t.Errorf("screen after tab = %v, want %v", app.screen, tt.want)
+			if app.currentScreen != tt.want {
+				t.Errorf("screen after tab = %v, want %v", app.currentScreen, tt.want)
 			}
 		})
 	}
@@ -44,12 +45,12 @@ func TestApp_Tab_KeepsTheCompanySearch(t *testing.T) {
 
 	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app.screen = screenCompanyList
+	app.currentScreen = screenCompanyList
 	for _, key := range []tea.KeyPressMsg{runeKey('/'), runeKey('g'), {Code: tea.KeyTab}} {
 		app = sendKeyAndApply(t, app, key)
 	}
-	if app.screen != screenAllPostings {
-		t.Fatalf("screen after tab while searching = %v, want all postings", app.screen)
+	if app.currentScreen != screenAllPostings {
+		t.Fatalf("screen after tab while searching = %v, want all postings", app.currentScreen)
 	}
 	for range 2 {
 		app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
@@ -75,7 +76,7 @@ func viewLines(app *App) []string {
 	return strings.Split(ansi.Strip(viewText(app)), "\n")
 }
 
-func TestApp_TabBar_ShowsEveryTabWithItsCount(t *testing.T) {
+func TestApp_TabBar_ShowsEveryTab(t *testing.T) {
 	t.Parallel()
 
 	// The all-postings count is right before that tab has been opened.
@@ -86,9 +87,12 @@ func TestApp_TabBar_ShowsEveryTabWithItsCount(t *testing.T) {
 		mustUpsertPosting(t, s, acme.ID, "1", "Engineer")
 		app := newTestApp(t, s, newTestSyncer(s, nil))
 		app, _ = sendKey(app, tea.WindowSizeMsg{Width: 100, Height: 24})
-		app.screen = sc
-		if got := viewLines(app)[0]; !strings.Contains(got, "Applications 0") || !strings.Contains(got, "Companies 2") || !strings.Contains(got, "All postings 1") {
-			t.Errorf("screen %v: first line = %q, want every tab with its count", sc, got)
+		app.currentScreen = sc
+		if got := viewLines(app)[0]; !strings.Contains(got, "Applications 0") || !strings.Contains(got, "Companies") || !strings.Contains(got, "All postings 1") {
+			t.Errorf("screen %v: first line = %q, want every tab, with counts on applications and all postings", sc, got)
+		}
+		if got := viewLines(app)[0]; regexp.MustCompile(`Companies \d`).MatchString(got) {
+			t.Errorf("screen %v: first line = %q, want the companies tab without a count", sc, got)
 		}
 	}
 }
@@ -101,11 +105,11 @@ func TestApp_TabBar_UnderlinesTheTabOnScreen(t *testing.T) {
 		label  string
 	}{
 		{screenActiveApplications, "Applications 0"},
-		{screenCompanyList, "Companies 2"},
+		{screenCompanyList, "Companies"},
 	}
 	for _, tt := range tests {
 		app := newTabsTestApp(t, 120)
-		app.screen = tt.screen
+		app.currentScreen = tt.screen
 		lines := viewLines(app)
 		tabs, rule := []rune(lines[0]), []rune(lines[1])
 		if got := len(rule); got != 120 {
@@ -128,10 +132,10 @@ func TestApp_Esc_OnATab_StaysPut(t *testing.T) {
 
 	for _, sc := range []screen{screenActiveApplications, screenCompanyList} {
 		app := newTabsTestApp(t, 100)
-		app.screen = sc
+		app.currentScreen = sc
 		app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
-		if app.screen != sc {
-			t.Errorf("screen after esc on %v = %v, want it unchanged", sc, app.screen)
+		if app.currentScreen != sc {
+			t.Errorf("screen after esc on %v = %v, want it unchanged", sc, app.currentScreen)
 		}
 	}
 }
@@ -148,14 +152,14 @@ func TestApp_ActiveApplications_SearchSurvivesDetailAndTab(t *testing.T) {
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.screen != screenApplicationDetail || app.applicationDetail.application.Posting.Title != "Engineer 07" {
-		t.Fatalf("after enter, enter: screen %v showing %q, want application detail for Engineer 07", app.screen, app.applicationDetail.application.Posting.Title)
+	if app.currentScreen != screenApplicationDetail || app.applicationDetail.application.Posting.Title != "Engineer 07" {
+		t.Fatalf("after enter, enter: screen %v showing %q, want application detail for Engineer 07", app.currentScreen, app.applicationDetail.application.Posting.Title)
 	}
 	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEsc}, {Code: tea.KeyTab}, {Code: tea.KeyTab}, {Code: tea.KeyTab}} {
 		app = sendKeyAndApply(t, app, key)
 	}
-	if app.screen != screenActiveApplications || app.activeApplicationList.searching || app.activeApplicationList.query != "engineer 07" {
+	if app.currentScreen != screenActiveApplications || app.activeApplicationList.searching || app.activeApplicationList.query != "engineer 07" {
 		t.Errorf("back on the home list: screen %v, searching %v, query %q; want the matches for %q still kept",
-			app.screen, app.activeApplicationList.searching, app.activeApplicationList.query, "engineer 07")
+			app.currentScreen, app.activeApplicationList.searching, app.activeApplicationList.query, "engineer 07")
 	}
 }

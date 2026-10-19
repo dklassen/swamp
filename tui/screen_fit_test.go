@@ -19,6 +19,7 @@ import (
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/sync"
+	"github.com/dklassen/swamp/tui/message"
 )
 
 // newFullTestApp returns an App with enough data to fill every list
@@ -117,7 +118,7 @@ func sizedScreens() []sizedScreen {
 			// notice (on by default). Filtering on every department
 			// keeps all 40 postings.
 			ctx := context.Background()
-			acme := app.companies[0]
+			acme := app.companyList.companies[0]
 			if _, err := app.companyService.SetDescription(ctx, acme.ID, "Acme makes everything."); err != nil {
 				t.Fatalf("SetDescription: %v", err)
 			}
@@ -211,7 +212,7 @@ func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 		text string
 	}{
 		{name: "no banner"},
-		{name: "status", msg: companyRefreshedMsg{result: sync.Result{Name: "Acme", Fetched: 40}}, text: "Acme: fetched 40"},
+		{name: "status", msg: message.CompanyRefreshedMsg{Result: sync.Result{Name: "Acme", Fetched: 40}}, text: "Acme: fetched 40"},
 		{name: "error", msg: browserOpenedMsg{err: errors.New("could not open browser")}, text: "error: could not open browser"},
 	}
 	for _, sc := range sizedScreens() {
@@ -220,14 +221,14 @@ func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 				app := newFullTestApp(t)
 				app, _ = sendKey(app, tea.WindowSizeMsg{Width: width, Height: height})
 				app = sc.open(t, app)
-				if app.screen != sc.screen {
-					t.Fatalf("screen = %v, want %v", app.screen, sc.screen)
+				if app.currentScreen != sc.screen {
+					t.Fatalf("screen = %v, want %v", app.currentScreen, sc.screen)
 				}
 				// Clear whatever getting here left behind (openPostingList
 				// syncs, which sets a status), then show this case's banner.
 				app = clearBanner(app)
 				if bn.msg != nil {
-					app, _ = sendKey(app, bn.msg)
+					app = sendKeyAndApply(t, app, bn.msg)
 				}
 
 				// One row per line: bubbletea truncates lines wider than

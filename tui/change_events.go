@@ -71,25 +71,25 @@ func readChanges(changes *service.ChangeLog, view screen, from int64, tick bool)
 // handleTick reads for the view on screen. A form has none: the view
 // under it catches up when it's back.
 func (a *App) handleTick() tea.Cmd {
-	if !reloads(a.screen) {
+	if !reloads(a.currentScreen) {
 		return a.pollChanges()
 	}
-	return readChanges(a.changeLogService, a.screen, a.cursor(a.screen), true)
+	return readChanges(a.changeLogService, a.currentScreen, a.cursor(a.currentScreen), true)
 }
 
 // activate catches the view now on screen up on what changed while
 // another screen was up.
 func (a *App) activate() tea.Cmd {
-	if !a.changeLog || !reloads(a.screen) {
+	if !a.changeLog || !reloads(a.currentScreen) {
 		return nil
 	}
-	if a.screen == screenApplicationDetail {
+	if a.currentScreen == screenApplicationDetail {
 		// Its documents are files, which can change with no event.
-		a.seen[a.screen] = a.latestSeen
+		a.seen[a.currentScreen] = a.latestSeen
 		id := a.applicationDetail.application.ID
 		return tea.Batch(reloadApplicationDetail(a.applicationService, id), loadDocumentReviews(a.documentService, a.documents, id))
 	}
-	return readChanges(a.changeLogService, a.screen, a.cursor(a.screen), false)
+	return readChanges(a.changeLogService, a.currentScreen, a.cursor(a.currentScreen), false)
 }
 
 // handleChanges reloads the view on screen if other processes' events
@@ -110,10 +110,10 @@ func (a *App) handleChanges(msg changesMsg) tea.Cmd {
 	a.latestSeen = max(a.latestSeen, upTo)
 	// A read for another view, or one starting past this view's place,
 	// could lack events it hasn't seen: it keeps its place and reads again.
-	if msg.view != a.screen || msg.from > a.cursor(a.screen) {
+	if msg.view != a.currentScreen || msg.from > a.cursor(a.currentScreen) {
 		return next
 	}
-	a.seen[a.screen] = max(a.cursor(a.screen), upTo)
+	a.seen[a.currentScreen] = max(a.cursor(a.currentScreen), upTo)
 	others := slices.DeleteFunc(slices.Clone(msg.events), func(e change.Event) bool { return e.Origin == a.origin })
 	return tea.Batch(a.reloadFor(others), next)
 }
@@ -129,7 +129,7 @@ func reloads(s screen) bool {
 
 // reloadFor reruns what the current screen shows, if events touch it.
 func (a *App) reloadFor(events []change.Event) tea.Cmd {
-	switch a.screen {
+	switch a.currentScreen {
 	case screenActiveApplications:
 		if touches(events, "applications", "postings", "companies", "document_writes", "document_reviews", "document_exports") {
 			return loadActiveApplications(a.applicationService, a.documentService, a.documents)
@@ -252,12 +252,12 @@ func reloadApplicationDetail(applications *service.ApplicationService, id int64)
 // handleApplicationDetailReloaded refreshes the application on screen, or
 // leaves it if it was deleted underneath.
 func (a *App) handleApplicationDetailReloaded(msg applicationDetailReloadedMsg) tea.Cmd {
-	if a.screen != screenApplicationDetail || a.applicationDetail.application.ID != msg.id {
+	if a.currentScreen != screenApplicationDetail || a.applicationDetail.application.ID != msg.id {
 		return nil
 	}
 	a.setLoadErr(msg.err)
 	if msg.deleted {
-		a.screen = screenActiveApplications
+		a.currentScreen = screenActiveApplications
 		a.status = "The application you were viewing was deleted elsewhere"
 		return loadActiveApplications(a.applicationService, a.documentService, a.documents)
 	}
@@ -296,7 +296,7 @@ func reloadPosting(postings *service.PostingService, id int64) tea.Cmd {
 // application, which rebuilds the screen again with the same scroll.
 func (a *App) handlePostingReloaded(msg postingReloadedMsg) tea.Cmd {
 	a.setLoadErr(msg.err)
-	if msg.err != nil || a.screen != screenPostingDetail || a.postingDetail.posting.ID != msg.posting.ID {
+	if msg.err != nil || a.currentScreen != screenPostingDetail || a.postingDetail.posting.ID != msg.posting.ID {
 		return nil
 	}
 	if i := indexOfPosting(a.postings, msg.posting.ID); i >= 0 {

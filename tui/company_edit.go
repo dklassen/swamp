@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // companyEditModel drives the edit-company screen: name only. source/
@@ -59,7 +60,7 @@ func (m *companyEditModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 }
 
 // saveResolved marks the in-flight save (if any) as done, letting Esc
-// cancel normally again. Called by App once companyNameUpdatedMsg
+// cancel normally again. Called by App once message.CompanyNameUpdatedMsg
 // arrives, whether the save succeeded or failed -- either way, there's
 // no longer a save in flight for Esc to race.
 func (m *companyEditModel) saveResolved() {
@@ -68,8 +69,8 @@ func (m *companyEditModel) saveResolved() {
 
 func (m *companyEditModel) View() string {
 	var b strings.Builder
-	b.WriteString(focusedLabel.Render("Name:") + " " + m.nameInput.View() + "\n")
-	b.WriteString(helpStyle.Render("enter: save  esc: cancel"))
+	b.WriteString(model.FocusedLabel.Render("Name:") + " " + m.nameInput.View() + "\n")
+	b.WriteString(model.HelpStyle.Render("enter: save  esc: cancel"))
 	return b.String()
 }
 

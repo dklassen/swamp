@@ -12,120 +12,180 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
+
+// companyListOf is a company list that has loaded companies and drawn in
+// width by rows.
+func companyListOf(t *testing.T, companies []company.Company, openPostings map[int64]int, width, rows int) *companyListModel {
+	t.Helper()
+	m := newCompanyListModel(nil, nil)
+	m.companiesLoaded(message.CompaniesLoadedMsg{Companies: companies, OpenPostings: openPostings})
+	m.resize(message.ContentSizeMsg{Width: width, Rows: rows})
+	return m
+}
+
+// press sends key to m and returns the message its command produces, or
+// nil when it returns none.
+func press(t *testing.T, m *companyListModel, key tea.KeyPressMsg) tea.Msg {
+	t.Helper()
+	cmd := m.keyPressed(key)
+	if cmd == nil {
+		return nil
+	}
+	return cmd()
+}
+
+func companyListView(m *companyListModel) string {
+	return m.View().Content
+}
 
 func TestCompanyListModel_CursorMovement(t *testing.T) {
 	t.Parallel()
 
-	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
-	m := &companyListModel{}
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}, nil, 0, 40)
 
-	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, companies)
+	press(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 	if m.cursor != 1 {
 		t.Fatalf("cursor after down = %d, want 1", m.cursor)
 	}
 
-	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, companies)
+	press(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 	if m.cursor != 1 {
 		t.Fatalf("cursor after down at bottom = %d, want 1 (clamped)", m.cursor)
 	}
 
-	m.Update(tea.KeyPressMsg{Code: tea.KeyUp}, companies)
+	press(t, m, tea.KeyPressMsg{Code: tea.KeyUp})
 	if m.cursor != 0 {
 		t.Fatalf("cursor after up = %d, want 0", m.cursor)
 	}
 }
 
-func TestCompanyListModel_Enter_ReturnsSelectCompanyMsg(t *testing.T) {
+func TestCompanyListModel_Enter_ReturnsOpenCompanyPostingsMsg(t *testing.T) {
 	t.Parallel()
 
-	companies := []company.Company{{ID: 1, Name: "Acme"}}
-	m := &companyListModel{}
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}}, nil, 0, 40)
 
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, companies)
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	sel, ok := intent.(selectCompanyMsg)
+	intent := press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	sel, ok := intent.(message.OpenCompanyPostingsMsg)
 	if !ok {
-		t.Fatalf("intent = %T, want selectCompanyMsg", intent)
+		t.Fatalf("intent = %T, want message.OpenCompanyPostingsMsg", intent)
 	}
-	if sel.company.ID != 1 {
-		t.Fatalf("selectCompanyMsg.company.ID = %d, want 1", sel.company.ID)
+	if sel.Company.ID != 1 {
+		t.Fatalf("message.OpenCompanyPostingsMsg.Company.ID = %d, want 1", sel.Company.ID)
 	}
 }
 
 func TestCompanyListModel_Enter_NoCompanies_ReturnsNothing(t *testing.T) {
 	t.Parallel()
 
-	m := &companyListModel{}
+	m := companyListOf(t, nil, nil, 0, 40)
 
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, nil)
-	if cmd != nil || intent != nil {
-		t.Fatalf("cmd, intent = %v, %v, want nil, nil", cmd, intent)
+	if intent := press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter}); intent != nil {
+		t.Fatalf("intent = %#v, want nil", intent)
 	}
 }
 
-func TestCompanyListModel_E_ReturnsEnterCompanyEditMsg(t *testing.T) {
+func TestCompanyListModel_E_ReturnsOpenCompanyEditMsg(t *testing.T) {
 	t.Parallel()
 
-	companies := []company.Company{{ID: 1, Name: "Acme"}}
-	m := &companyListModel{}
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}}, nil, 0, 40)
 
-	cmd, intent := m.Update(runeKey('e'), companies)
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	edit, ok := intent.(enterCompanyEditMsg)
+	intent := press(t, m, runeKey('e'))
+	edit, ok := intent.(message.OpenCompanyEditMsg)
 	if !ok {
-		t.Fatalf("intent = %T, want enterCompanyEditMsg", intent)
+		t.Fatalf("intent = %T, want message.OpenCompanyEditMsg", intent)
 	}
-	if edit.company.ID != 1 {
-		t.Fatalf("enterCompanyEditMsg.company.ID = %d, want 1", edit.company.ID)
+	if edit.Company.ID != 1 {
+		t.Fatalf("message.OpenCompanyEditMsg.Company.ID = %d, want 1", edit.Company.ID)
 	}
 }
 
-// TestCompanyListModel_R_ReturnsRefreshCompanyMsg: 'r' asks App to
-// refresh the selected company rather than starting the sync itself, so
-// App -- which knows about any other sync running -- decides (#152).
+// TestCompanyListModel_R_ReturnsRefreshCompanyMsg: 'r' asks for the selected
+// company to be refreshed rather than starting the sync itself, so what
+// knows about any other sync running decides (#152).
 func TestCompanyListModel_R_ReturnsRefreshCompanyMsg(t *testing.T) {
 	t.Parallel()
 
-	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
-	m := &companyListModel{cursor: 1}
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}, nil, 0, 40)
+	press(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 
-	cmd, intent := m.Update(runeKey('r'), companies)
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	refresh, ok := intent.(refreshCompanyMsg)
+	intent := press(t, m, runeKey('r'))
+	refresh, ok := intent.(message.RefreshCompanyMsg)
 	if !ok {
-		t.Fatalf("intent = %T, want refreshCompanyMsg", intent)
+		t.Fatalf("intent = %T, want message.RefreshCompanyMsg", intent)
 	}
-	if refresh.company.ID != 2 {
-		t.Fatalf("refreshCompanyMsg.company.ID = %d, want 2", refresh.company.ID)
+	if refresh.Company.ID != 2 {
+		t.Fatalf("RefreshCompanyMsg.Company.ID = %d, want 2", refresh.Company.ID)
+	}
+}
+
+func TestCompanyListModel_D_ReturnsOpenCompanyDeleteMsgWithOpenPostings(t *testing.T) {
+	t.Parallel()
+
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}}, map[int64]int{1: 3}, 0, 40)
+
+	intent := press(t, m, runeKey('d'))
+	del, ok := intent.(message.OpenCompanyDeleteMsg)
+	if !ok {
+		t.Fatalf("intent = %T, want message.OpenCompanyDeleteMsg", intent)
+	}
+	if del.Company.ID != 1 || del.OpenPostings != 3 {
+		t.Fatalf("message.OpenCompanyDeleteMsg = %+v, want company 1 with 3 open postings", del)
+	}
+}
+
+// A command runs off the event loop, so it carries the company the cursor
+// was on when the key was pressed, not wherever the cursor is later.
+func TestCompanyListModel_CommandKeepsTheCompanyFromWhenTheKeyWasPressed(t *testing.T) {
+	t.Parallel()
+
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}, nil, 0, 40)
+
+	cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})
+	press(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+
+	if sel, ok := cmd().(message.OpenCompanyPostingsMsg); !ok || sel.Company.ID != 1 {
+		t.Fatalf("enter's command after the cursor moved = %#v, want message.OpenCompanyPostingsMsg for Acme (ID 1)", sel)
+	}
+}
+
+// 'R' hands the run its own copy of the companies, so a reload landing
+// mid-run can't change which companies it syncs.
+func TestCompanyListModel_ShiftR_ReturnsToggleSyncAllMsgWithACopyOfTheCompanies(t *testing.T) {
+	t.Parallel()
+
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}, nil, 0, 40)
+
+	intent := press(t, m, runeKey('R'))
+	start, ok := intent.(message.ToggleSyncAllMsg)
+	if !ok {
+		t.Fatalf("intent = %T, want message.ToggleSyncAllMsg", intent)
+	}
+	m.companies[0].Name = "Changed"
+	if len(start.Companies) != 2 || start.Companies[0].Name != "Acme" || start.Companies[1].Name != "Globex" {
+		t.Fatalf("ToggleSyncAllMsg.Companies = %+v, want a copy of Acme and Globex", start.Companies)
 	}
 }
 
 func TestCompanyListModel_R_NoCompanies_ReturnsNothing(t *testing.T) {
 	t.Parallel()
 
-	m := &companyListModel{}
+	m := companyListOf(t, nil, nil, 0, 40)
 
-	cmd, intent := m.Update(runeKey('r'), nil)
-	if cmd != nil || intent != nil {
-		t.Fatalf("cmd, intent = %v, %v, want nil, nil", cmd, intent)
+	if intent := press(t, m, runeKey('r')); intent != nil {
+		t.Fatalf("intent = %#v, want nil", intent)
 	}
 }
 
 func TestCompanyListModel_E_NoCompanies_ReturnsNothing(t *testing.T) {
 	t.Parallel()
 
-	m := &companyListModel{}
+	m := companyListOf(t, nil, nil, 0, 40)
 
-	cmd, intent := m.Update(runeKey('e'), nil)
-	if cmd != nil || intent != nil {
-		t.Fatalf("cmd, intent = %v, %v, want nil, nil", cmd, intent)
+	if intent := press(t, m, runeKey('e')); intent != nil {
+		t.Fatalf("intent = %#v, want nil", intent)
 	}
 }
 
@@ -135,25 +195,58 @@ func TestCompanyListModel_EscOrB_DoesNothing(t *testing.T) {
 	t.Parallel()
 
 	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEsc}, runeKey('b')} {
-		m := &companyListModel{}
-		if cmd, intent := m.Update(key, nil); cmd != nil || intent != nil {
-			t.Errorf("Update(%v) = %v, %v, want nil, nil", key, cmd, intent)
+		m := companyListOf(t, nil, nil, 0, 40)
+		if intent := press(t, m, key); intent != nil {
+			t.Errorf("press(%v) = %#v, want nil", key, intent)
 		}
 	}
 }
 
-func TestCompanyListModel_A_ReturnsEnterCompanyFormMsg(t *testing.T) {
+func TestCompanyListModel_A_ReturnsOpenCompanyFormMsg(t *testing.T) {
 	t.Parallel()
 
-	m := &companyListModel{}
+	m := companyListOf(t, nil, nil, 0, 40)
 
-	cmd, intent := m.Update(runeKey('a'), nil)
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
+	if intent := press(t, m, runeKey('a')); intent != (message.OpenCompanyFormMsg{}) {
+		t.Fatalf("intent = %T, want message.OpenCompanyFormMsg", intent)
 	}
-	if _, ok := intent.(enterCompanyFormMsg); !ok {
-		t.Fatalf("intent = %T, want enterCompanyFormMsg", intent)
+}
+
+// recordingRouter keeps every handler registered with it, by the
+// message type it was registered for.
+type recordingRouter struct {
+	routes map[model.RouteID]model.HandlerFunc
+}
+
+func (r *recordingRouter) Register(msg tea.Msg, _ model.Scope, handler model.HandlerFunc) error {
+	r.routes[model.RouteIDOf(msg)] = handler
+	return nil
+}
+
+// assertHandlersFailOnWrongMessage checks every handler c registers sends
+// an ErrMsg when handed a message of another type, rather than panicking.
+func assertHandlersFailOnWrongMessage(t *testing.T, c model.SubComponent) {
+	t.Helper()
+	r := &recordingRouter{routes: map[model.RouteID]model.HandlerFunc{}}
+	if err := c.RegisterRoutes(r, 1); err != nil {
+		t.Fatalf("RegisterRoutes: %v", err)
 	}
+	for id, handle := range r.routes {
+		t.Run(id.String(), func(t *testing.T) {
+			cmd := handle(probeMsg{})
+			if cmd == nil {
+				t.Fatal("handler given probeMsg returned no command, want one sending message.ErrMsg")
+			}
+			if got, ok := cmd().(message.ErrMsg); !ok || got.Err == nil {
+				t.Errorf("handler given probeMsg sent %#v, want a message.ErrMsg with an Err", got)
+			}
+		})
+	}
+}
+
+func TestCompanyListModel_Handlers_FailOnTheWrongMessage(t *testing.T) {
+	t.Parallel()
+	assertHandlersFailOnWrongMessage(t, newCompanyListModel(nil, nil))
 }
 
 func TestCompanyListModel_ClampCursor(t *testing.T) {
@@ -176,8 +269,7 @@ func TestCompanyListModel_View_ShowsOpenPostingsAndLastFetched(t *testing.T) {
 	}
 	openPostings := map[int64]int{1: 14}
 
-	m := newCompanyListModel()
-	got := m.View(companies, openPostings, 0, 40)
+	got := companyListView(companyListOf(t, companies, openPostings, 0, 40))
 
 	for _, want := range []string{
 		"Contoso", "14", fetched.Local().Format("2006-01-02 15:04"),
@@ -202,8 +294,7 @@ func TestCompanyListModel_View_TableHasNoDescription(t *testing.T) {
 
 	companies := []company.Company{{ID: 1, Name: "Contoso", Description: "Open-core collaboration platform."}}
 
-	m := newCompanyListModel()
-	got := m.View(companies, nil, 120, 40)
+	got := companyListView(companyListOf(t, companies, nil, 120, 40))
 	for _, notWant := range []string{"Description", "Open-core collaboration platform."} {
 		if strings.Contains(got, notWant) {
 			t.Errorf("View with the info box closed contains %q:\n%s", notWant, got)
@@ -223,14 +314,14 @@ func TestCompanyListModel_View_SameHeightWhateverTheSelectedDescription(t *testi
 	}
 
 	for _, infoOpen := range []bool{false, true} {
-		m := newCompanyListModel()
+		m := companyListOf(t, companies, nil, 120, 30)
 		if infoOpen {
-			m.Update(runeKey('i'), companies)
+			press(t, m, runeKey('i'))
 		}
 		var heights []int
 		for range companies {
-			heights = append(heights, strings.Count(m.View(companies, nil, 120, 30), "\n"))
-			m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, companies)
+			heights = append(heights, strings.Count(companyListView(m), "\n"))
+			press(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 		}
 		for i, h := range heights {
 			if h != heights[0] {
@@ -251,21 +342,21 @@ func TestCompanyListModel_View_SameWidthWhateverIsScrolledIntoView(t *testing.T)
 		{ID: 3, Name: "Stark"},
 	}
 
-	m := newCompanyListModel()
 	// A height with room for one company at a time, so each cursor
 	// position scrolls a different name into view: the table's own chrome
 	// plus one row, the help line with its margin, and the search line.
-	height := postingTableChromeLines + 1 + lipgloss.Height(helpStyle.Render("help")) + 1
+	height := postingTableChromeLines + 1 + lipgloss.Height(model.HelpStyle.Render("help")) + 1
+	m := companyListOf(t, companies, nil, 0, height)
 	var widths []int
 	for range companies {
-		view := m.View(companies, nil, 0, height)
+		view := companyListView(m)
 		if n := strings.Count(view, "│ ") / 3; n != 2 {
 			t.Fatalf("view shows %d table rows (header included), want 2 -- one company at a time:\n%s", n, view)
 		}
 		firstLine := strings.SplitN(view, "╭", 2)[1]
 		firstLine = strings.SplitN(firstLine, "\n", 2)[0]
 		widths = append(widths, lipgloss.Width(firstLine))
-		m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, companies)
+		press(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 	}
 	for i, w := range widths {
 		if w != widths[0] {
@@ -286,24 +377,23 @@ func TestCompanyListModel_I_TogglesInfoBoxWithFullDescription(t *testing.T) {
 		return strings.Join(strings.Fields(strings.NewReplacer("│", " ", "╭", " ", "╮", " ", "─", " ").Replace(s)), " ")
 	}
 
-	m := newCompanyListModel()
-	if got := m.View(companies, nil, 120, 40); strings.Contains(got, "greenhouse/contoso") {
+	m := companyListOf(t, companies, nil, 120, 40)
+	if got := companyListView(m); strings.Contains(got, "greenhouse/contoso") {
 		t.Fatalf("info box should start closed:\n%s", got)
 	}
 
-	cmd, intent := m.Update(runeKey('i'), companies)
-	if cmd != nil || intent != nil {
-		t.Fatalf("Update on 'i' = (%v, %v), want (nil, nil): the box is this screen's own state", cmd, intent)
+	if intent := press(t, m, runeKey('i')); intent != nil {
+		t.Fatalf("intent on 'i' = %#v, want nil: the box is this screen's own state", intent)
 	}
-	got := m.View(companies, nil, 120, 40)
+	got := companyListView(m)
 	for _, want := range []string{"Contoso · greenhouse/contoso", strings.TrimSpace(long)} {
 		if !strings.Contains(squash(got), want) {
 			t.Errorf("open info box missing %q:\n%s", want, got)
 		}
 	}
 
-	m.Update(runeKey('i'), companies)
-	if got := m.View(companies, nil, 120, 40); strings.Contains(got, "greenhouse/contoso") {
+	press(t, m, runeKey('i'))
+	if got := companyListView(m); strings.Contains(got, "greenhouse/contoso") {
 		t.Errorf("second 'i' should close the info box:\n%s", got)
 	}
 }
@@ -318,10 +408,10 @@ func TestCompanyListModel_View_InfoBoxTakesItsSpaceFromTheTable(t *testing.T) {
 		companies = append(companies, company.Company{ID: int64(i + 1), Name: fmt.Sprintf("Company %02d", i), Description: "Makes widgets."})
 	}
 
-	m := newCompanyListModel()
-	closed := strings.Count(m.View(companies, nil, 120, 20), "\n")
-	m.Update(runeKey('i'), companies)
-	open := strings.Count(m.View(companies, nil, 120, 20), "\n")
+	m := companyListOf(t, companies, nil, 120, 20)
+	closed := strings.Count(companyListView(m), "\n")
+	press(t, m, runeKey('i'))
+	open := strings.Count(companyListView(m), "\n")
 
 	if open != closed {
 		t.Errorf("View with info box open = %d lines, want %d (same as closed)", open, closed)
@@ -330,18 +420,17 @@ func TestCompanyListModel_View_InfoBoxTakesItsSpaceFromTheTable(t *testing.T) {
 
 // openHighlighted presses enter to keep the matches, then enter again to
 // open the highlighted one, returning that intent.
-func openHighlighted(t *testing.T, m *companyListModel, companies []company.Company) tea.Msg {
+func openHighlighted(t *testing.T, m *companyListModel) tea.Msg {
 	t.Helper()
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, companies)
-	_, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, companies)
-	return intent
+	press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	return press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 }
 
 // typeKeys sends each rune of s to m as a key press.
-func typeKeys(t *testing.T, m *companyListModel, companies []company.Company, s string) {
+func typeKeys(t *testing.T, m *companyListModel, s string) {
 	t.Helper()
 	for _, r := range s {
-		m.Update(runeKey(r), companies)
+		press(t, m, runeKey(r))
 	}
 }
 
@@ -350,36 +439,34 @@ func typeKeys(t *testing.T, m *companyListModel, companies []company.Company, s 
 func TestCompanyListModel_Search_EnterKeepsMatchesForCommands(t *testing.T) {
 	t.Parallel()
 
-	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
-	m := &companyListModel{}
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}, nil, 0, 40)
 
-	typeKeys(t, m, companies, "/glo")
-	if _, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, companies); intent != nil {
+	typeKeys(t, m, "/glo")
+	if intent := press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter}); intent != nil {
 		t.Fatalf("enter while typing: intent = %#v, want none", intent)
 	}
 	if m.searching || m.query != "glo" {
 		t.Fatalf("after enter: searching %v, query %q; want not typing, query \"glo\"", m.searching, m.query)
 	}
 
-	_, intent := m.Update(runeKey('e'), companies)
-	if edit, ok := intent.(enterCompanyEditMsg); !ok || edit.company.ID != 2 {
-		t.Errorf("e on the kept matches: intent = %#v, want enterCompanyEditMsg for Globex", intent)
+	intent := press(t, m, runeKey('e'))
+	if edit, ok := intent.(message.OpenCompanyEditMsg); !ok || edit.Company.ID != 2 {
+		t.Errorf("e on the kept matches: intent = %#v, want message.OpenCompanyEditMsg for Globex", intent)
 	}
-	_, intent = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, companies)
-	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
-		t.Errorf("enter on the kept matches: intent = %#v, want selectCompanyMsg for Globex", intent)
+	intent = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if sel, ok := intent.(message.OpenCompanyPostingsMsg); !ok || sel.Company.ID != 2 {
+		t.Errorf("enter on the kept matches: intent = %#v, want message.OpenCompanyPostingsMsg for Globex", intent)
 	}
 }
 
 func TestCompanyListModel_Search_EscClearsKeptMatchesAndKeepsHighlight(t *testing.T) {
 	t.Parallel()
 
-	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
-	m := &companyListModel{}
-	typeKeys(t, m, companies, "/glo")
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, companies)
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}, nil, 0, 40)
+	typeKeys(t, m, "/glo")
+	press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	if _, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc}, companies); intent != nil {
+	if intent := press(t, m, tea.KeyPressMsg{Code: tea.KeyEsc}); intent != nil {
 		t.Errorf("esc on kept matches: intent = %#v, want none", intent)
 	}
 
@@ -391,16 +478,15 @@ func TestCompanyListModel_Search_EscClearsKeptMatchesAndKeepsHighlight(t *testin
 func TestCompanyListModel_View_KeptMatches(t *testing.T) {
 	t.Parallel()
 
-	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
-	m := &companyListModel{}
-	typeKeys(t, m, companies, "/glo")
-	if view := m.View(companies, nil, 200, 20); !strings.Contains(view, "enter: keep results") {
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}, nil, 200, 20)
+	typeKeys(t, m, "/glo")
+	if view := companyListView(m); !strings.Contains(view, "enter: keep results") {
 		t.Errorf("typing help doesn't say enter keeps the results:\n%s", view)
 	}
 
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, companies)
+	press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	view := ansi.Strip(m.View(companies, nil, 200, 20))
+	view := ansi.Strip(companyListView(m))
 	for _, want := range []string{"🔍 glo  1 of 3", "/: edit search", "esc: clear search", "e: edit"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view doesn't show %q:\n%s", want, view)
@@ -424,22 +510,21 @@ func TestCompanyListModel_Search_ArrowsMoveThroughMatches(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}, {ID: 3, Name: "Globex"}}
-			m := &companyListModel{}
+			m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}, {ID: 3, Name: "Globex"}}, nil, 0, 40)
 
-			typeKeys(t, m, companies, "/acme")
-			m.Update(tt.down, companies)
-			m.Update(tt.down, companies) // past the last match: stays on it
-			intent := openHighlighted(t, m, companies)
-			if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
-				t.Fatalf("intent after down, down, enter = %#v, want selectCompanyMsg for Acme Robotics (ID 2)", intent)
+			typeKeys(t, m, "/acme")
+			press(t, m, tt.down)
+			press(t, m, tt.down) // past the last match: stays on it
+			intent := openHighlighted(t, m)
+			if sel, ok := intent.(message.OpenCompanyPostingsMsg); !ok || sel.Company.ID != 2 {
+				t.Fatalf("intent after down, down, enter = %#v, want message.OpenCompanyPostingsMsg for Acme Robotics (ID 2)", intent)
 			}
 
-			m.Update(runeKey('/'), companies)
-			m.Update(tt.up, companies)
-			intent = openHighlighted(t, m, companies)
-			if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 1 {
-				t.Fatalf("intent after up, enter = %#v, want selectCompanyMsg for Acme (ID 1)", intent)
+			press(t, m, runeKey('/'))
+			press(t, m, tt.up)
+			intent = openHighlighted(t, m)
+			if sel, ok := intent.(message.OpenCompanyPostingsMsg); !ok || sel.Company.ID != 1 {
+				t.Fatalf("intent after up, enter = %#v, want message.OpenCompanyPostingsMsg for Acme (ID 1)", intent)
 			}
 		})
 	}
@@ -448,28 +533,26 @@ func TestCompanyListModel_Search_ArrowsMoveThroughMatches(t *testing.T) {
 func TestCompanyListModel_Search_BackspaceWidensMatches(t *testing.T) {
 	t.Parallel()
 
-	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
-	m := &companyListModel{}
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}, nil, 0, 40)
 
-	typeKeys(t, m, companies, "/gx") // matches nothing
-	m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace}, companies)
-	intent := openHighlighted(t, m, companies)
-	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
-		t.Fatalf("intent after backspace, enter = %#v, want selectCompanyMsg for Globex (ID 2)", intent)
+	typeKeys(t, m, "/gx") // matches nothing
+	press(t, m, tea.KeyPressMsg{Code: tea.KeyBackspace})
+	intent := openHighlighted(t, m)
+	if sel, ok := intent.(message.OpenCompanyPostingsMsg); !ok || sel.Company.ID != 2 {
+		t.Fatalf("intent after backspace, enter = %#v, want message.OpenCompanyPostingsMsg for Globex (ID 2)", intent)
 	}
 }
 
 func TestCompanyListModel_Search_SpaceIsPartOfTheQuery(t *testing.T) {
 	t.Parallel()
 
-	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}}
-	m := &companyListModel{}
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Acme Robotics"}}, nil, 0, 40)
 
-	typeKeys(t, m, companies, "/acme")
-	m.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}, companies)
-	intent := openHighlighted(t, m, companies)
-	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
-		t.Fatalf("intent after \"acme \", enter = %#v, want selectCompanyMsg for Acme Robotics (ID 2)", intent)
+	typeKeys(t, m, "/acme")
+	press(t, m, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	intent := openHighlighted(t, m)
+	if sel, ok := intent.(message.OpenCompanyPostingsMsg); !ok || sel.Company.ID != 2 {
+		t.Fatalf("intent after \"acme \", enter = %#v, want message.OpenCompanyPostingsMsg for Acme Robotics (ID 2)", intent)
 	}
 }
 
@@ -478,21 +561,20 @@ func TestCompanyListModel_Search_SpaceIsPartOfTheQuery(t *testing.T) {
 func TestCompanyListModel_Search_EscClearsAndKeepsHighlight(t *testing.T) {
 	t.Parallel()
 
-	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
-	m := &companyListModel{}
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}, nil, 0, 40)
 
-	typeKeys(t, m, companies, "/glo")
-	if _, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc}, companies); intent != nil {
+	typeKeys(t, m, "/glo")
+	if intent := press(t, m, tea.KeyPressMsg{Code: tea.KeyEsc}); intent != nil {
 		t.Fatalf("intent on esc in the prompt = %#v, want nil (esc closes the prompt, it doesn't leave the screen)", intent)
 	}
-	_, intent := m.Update(runeKey('e'), companies)
-	if edit, ok := intent.(enterCompanyEditMsg); !ok || edit.company.ID != 2 {
-		t.Fatalf("intent on 'e' after esc = %#v, want enterCompanyEditMsg for Globex (ID 2)", intent)
+	intent := press(t, m, runeKey('e'))
+	if edit, ok := intent.(message.OpenCompanyEditMsg); !ok || edit.Company.ID != 2 {
+		t.Fatalf("intent on 'e' after esc = %#v, want message.OpenCompanyEditMsg for Globex (ID 2)", intent)
 	}
-	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, companies)
-	_, intent = m.Update(runeKey('e'), companies)
-	if edit, ok := intent.(enterCompanyEditMsg); !ok || edit.company.ID != 3 {
-		t.Fatalf("intent on down, 'e' after esc = %#v, want enterCompanyEditMsg for Initech (ID 3): the full list is back", intent)
+	press(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+	intent = press(t, m, runeKey('e'))
+	if edit, ok := intent.(message.OpenCompanyEditMsg); !ok || edit.Company.ID != 3 {
+		t.Fatalf("intent on down, 'e' after esc = %#v, want message.OpenCompanyEditMsg for Initech (ID 3): the full list is back", intent)
 	}
 }
 
@@ -503,18 +585,31 @@ func TestCompanyListModel_Search_CommandLettersAreTyped(t *testing.T) {
 	for _, r := range "qdreaiRbjk/" {
 		t.Run(string(r), func(t *testing.T) {
 			t.Parallel()
-			companies := []company.Company{{ID: 1, Name: "Zzz"}, {ID: 2, Name: "x" + string(r) + "y"}}
-			m := &companyListModel{}
+			m := companyListOf(t, []company.Company{{ID: 1, Name: "Zzz"}, {ID: 2, Name: "x" + string(r) + "y"}}, nil, 0, 40)
 
-			typeKeys(t, m, companies, "/")
-			if cmd, intent := m.Update(runeKey(r), companies); cmd != nil || intent != nil {
-				t.Fatalf("cmd, intent on %q in the prompt = %v, %#v, want nil, nil", r, cmd, intent)
+			typeKeys(t, m, "/")
+			if intent := press(t, m, runeKey(r)); intent != nil {
+				t.Fatalf("intent on %q in the prompt = %#v, want nil", r, intent)
 			}
-			intent := openHighlighted(t, m, companies)
-			if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
-				t.Fatalf("intent on enter after typing %q = %#v, want selectCompanyMsg for ID 2", r, intent)
+			intent := openHighlighted(t, m)
+			if sel, ok := intent.(message.OpenCompanyPostingsMsg); !ok || sel.Company.ID != 2 {
+				t.Fatalf("intent on enter after typing %q = %#v, want message.OpenCompanyPostingsMsg for ID 2", r, intent)
 			}
 		})
+	}
+}
+
+// A reload arriving while the prompt is open still reaches the list.
+func TestCompanyListModel_Search_ReloadWhileTypingIsKept(t *testing.T) {
+	t.Parallel()
+
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}}, nil, 80, 40)
+	typeKeys(t, m, "/")
+
+	m.companiesLoaded(message.CompaniesLoadedMsg{Companies: []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}})
+
+	if got := companyListView(m); !strings.Contains(got, "Globex") {
+		t.Errorf("View after a reload with the prompt open is missing Globex:\n%s", got)
 	}
 }
 
@@ -535,9 +630,9 @@ func TestCompanyListModel_View_Search(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := &companyListModel{}
-			typeKeys(t, m, companies, tt.keys)
-			got := m.View(companies, nil, 80, 40)
+			m := companyListOf(t, companies, nil, 80, 40)
+			typeKeys(t, m, tt.keys)
+			got := companyListView(m)
 			for _, want := range tt.want {
 				if !strings.Contains(got, want) {
 					t.Errorf("View missing %q:\n%s", want, got)
@@ -555,7 +650,6 @@ func TestCompanyListModel_View_Search(t *testing.T) {
 func TestCompanyListModel_View_HelpMatchesMode(t *testing.T) {
 	t.Parallel()
 
-	companies := []company.Company{{ID: 1, Name: "Acme"}}
 	tests := []struct {
 		name    string
 		keys    string
@@ -568,9 +662,9 @@ func TestCompanyListModel_View_HelpMatchesMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := &companyListModel{}
-			typeKeys(t, m, companies, tt.keys)
-			got := m.View(companies, nil, 0, 40)
+			m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}}, nil, 0, 40)
+			typeKeys(t, m, tt.keys)
+			got := companyListView(m)
 			for _, want := range tt.want {
 				if !strings.Contains(got, want) {
 					t.Errorf("View missing %q:\n%s", want, got)
@@ -592,10 +686,10 @@ func TestCompanyListModel_View_Search_InfoBoxDescribesHighlightedMatch(t *testin
 		{ID: 1, Name: "Acme", Description: "Makes anvils."},
 		{ID: 2, Name: "Globex", Description: "Makes doomsday devices."},
 	}
-	m := &companyListModel{}
-	typeKeys(t, m, companies, "i/glo")
+	m := companyListOf(t, companies, nil, 80, 40)
+	typeKeys(t, m, "i/glo")
 
-	got := m.View(companies, nil, 80, 40)
+	got := companyListView(m)
 	if !strings.Contains(got, "Makes doomsday devices.") || strings.Contains(got, "Makes anvils.") {
 		t.Errorf("View's info box should describe Globex, the highlighted match:\n%s", got)
 	}
@@ -604,13 +698,12 @@ func TestCompanyListModel_View_Search_InfoBoxDescribesHighlightedMatch(t *testin
 func TestCompanyListModel_Search_BackspaceOnEmptyQueryCloses(t *testing.T) {
 	t.Parallel()
 
-	companies := []company.Company{{ID: 1, Name: "Acme"}}
-	m := &companyListModel{}
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}}, nil, 0, 40)
 
-	typeKeys(t, m, companies, "/")
-	m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace}, companies)
-	if cmd, _ := m.Update(runeKey('q'), companies); cmd == nil {
-		t.Fatal("cmd on 'q' after backspace on an empty query = nil, want tea.Quit (the prompt should be closed)")
+	typeKeys(t, m, "/")
+	press(t, m, tea.KeyPressMsg{Code: tea.KeyBackspace})
+	if intent := press(t, m, runeKey('q')); intent != (tea.QuitMsg{}) {
+		t.Fatalf("intent on 'q' after backspace on an empty query = %#v, want tea.QuitMsg (the prompt should be closed)", intent)
 	}
 }
 
@@ -631,8 +724,8 @@ func TestCompanyListModel_View_TableSpansTerminalWidth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			m := newCompanyListModel()
-			if got := tableWidthOf(t, m.View(companies, nil, tt.width, 40)); got != tt.want {
+			m := companyListOf(t, companies, nil, tt.width, 40)
+			if got := tableWidthOf(t, companyListView(m)); got != tt.want {
 				t.Errorf("table width = %d, want %d", got, tt.want)
 			}
 		})
@@ -656,14 +749,13 @@ func tableTop(t *testing.T, view string) int {
 func TestCompanyListModel_View_SearchLineDoesNotMoveTheTable(t *testing.T) {
 	t.Parallel()
 
-	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
-	m := &companyListModel{}
-	idle := m.View(companies, nil, 80, 40)
+	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}, nil, 80, 40)
+	idle := companyListView(m)
 	if !strings.Contains(idle, "🔍") {
 		t.Errorf("idle view has no search line:\n%s", idle)
 	}
-	typeKeys(t, m, companies, "/")
-	if got, want := tableTop(t, m.View(companies, nil, 80, 40)), tableTop(t, idle); got != want {
+	typeKeys(t, m, "/")
+	if got, want := tableTop(t, companyListView(m)), tableTop(t, idle); got != want {
 		t.Errorf("table starts on line %d with the search open, want %d (as when idle)", got, want)
 	}
 }
@@ -674,10 +766,10 @@ func TestCompanyListModel_View_InfoBoxIsAsWideAsTheTable(t *testing.T) {
 
 	companies := []company.Company{{ID: 1, Name: "Acme", Description: strings.Repeat("Makes anvils for roadrunner enthusiasts. ", 3)}}
 	for _, width := range []int{80, 160, 0} {
-		m := &companyListModel{}
-		typeKeys(t, m, companies, "i")
+		m := companyListOf(t, companies, nil, width, 40)
+		typeKeys(t, m, "i")
 		var tops []int
-		for _, line := range strings.Split(m.View(companies, nil, width, 40), "\n") {
+		for _, line := range strings.Split(companyListView(m), "\n") {
 			if strings.Contains(line, "╭") {
 				tops = append(tops, lipgloss.Width(line))
 			}

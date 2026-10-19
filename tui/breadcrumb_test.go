@@ -49,13 +49,22 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			app := New(nil, nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
+			app := New(
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				documents.NewStore(t.TempDir()),
+			)
 			app.width = 120
 			app.selectedCompany = company.Company{Name: "Globex"}
 			app.postingDetail.posting = p
 			app.applicationDetail.application = view
 			app.documentReviewForm.documentType = document.CoverLetter
-			app.screen, app.returnStack = tt.screen, tt.stack
+			app.currentScreen, app.returnStack = tt.screen, tt.stack
 
 			if got := strings.TrimSpace(strings.Split(ansi.Strip(app.header()), "\n")[0]); got != tt.want {
 				t.Errorf("breadcrumb = %q, want %q", got, tt.want)
@@ -111,8 +120,8 @@ func TestApp_Screens_BreadcrumbReplacesTheTitle(t *testing.T) {
 			app := newFullTestApp(t)
 			app, _ = sendKey(app, tea.WindowSizeMsg{Width: 100, Height: 24})
 			app = clearBanner(sc.open(t, app))
-			if app.screen != sc.screen {
-				t.Fatalf("screen = %v, want %v", app.screen, sc.screen)
+			if app.currentScreen != sc.screen {
+				t.Fatalf("screen = %v, want %v", app.currentScreen, sc.screen)
 			}
 			lines := viewLines(app)
 			if got := strings.TrimSpace(lines[2]); got == formerTitle(app) {
@@ -175,10 +184,19 @@ func TestApp_Header_LongBreadcrumbLosesItsMiddleFirst(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			app := New(nil, nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
+			app := New(
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				documents.NewStore(t.TempDir()),
+			)
 			app.width = tt.width
 			app.applicationDetail.application = view
-			app.screen, app.returnStack = screenPostingDetail, []screen{screenApplicationDetail}
+			app.currentScreen, app.returnStack = screenPostingDetail, []screen{screenApplicationDetail}
 
 			line := strings.Split(ansi.Strip(app.header()), "\n")[0]
 			if got := strings.TrimSpace(line); got != tt.want {

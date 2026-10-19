@@ -16,6 +16,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // mustUpsertPostingAt is mustUpsertPosting with a department, location and
@@ -41,8 +42,8 @@ func openAllPostings(t *testing.T, app *App) *App {
 	for range 2 {
 		app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 	}
-	if app.screen != screenAllPostings {
-		t.Fatalf("screen after two tabs = %v, want all postings", app.screen)
+	if app.currentScreen != screenAllPostings {
+		t.Fatalf("screen after two tabs = %v, want all postings", app.currentScreen)
 	}
 	return app
 }
@@ -198,12 +199,12 @@ func TestAllPostings_EnterOpensTheDetailAndEscComesBack(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	if app.screen != screenPostingDetail || app.postingDetail.posting.ID != want.ID || app.postingDetail.posting.Title != want.Title {
-		t.Fatalf("after enter: screen %v showing posting %d %q, want detail for %d %q", app.screen, app.postingDetail.posting.ID, app.postingDetail.posting.Title, want.ID, want.Title)
+	if app.currentScreen != screenPostingDetail || app.postingDetail.posting.ID != want.ID || app.postingDetail.posting.Title != want.Title {
+		t.Fatalf("after enter: screen %v showing posting %d %q, want detail for %d %q", app.currentScreen, app.postingDetail.posting.ID, app.postingDetail.posting.Title, want.ID, want.Title)
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
-	if app.screen != screenAllPostings || len(app.allPostings.starts) != 2 || app.allPostings.cursor != 1 {
-		t.Errorf("after esc: screen %v, page %d, row %d; want all postings, page 2, row 1", app.screen, len(app.allPostings.starts), app.allPostings.cursor)
+	if app.currentScreen != screenAllPostings || len(app.allPostings.starts) != 2 || app.allPostings.cursor != 1 {
+		t.Errorf("after esc: screen %v, page %d, row %d; want all postings, page 2, row 1", app.currentScreen, len(app.allPostings.starts), app.allPostings.cursor)
 	}
 }
 
@@ -221,16 +222,16 @@ func TestAllPostings_DetailDoesNotStepThroughACompanyListBrowsedEarlier(t *testi
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.screen != screenPostingList || len(app.postings) != 3 {
-		t.Fatalf("screen %v with %d postings, want Acme's posting list with 3", app.screen, len(app.postings))
+	if app.currentScreen != screenPostingList || len(app.postings) != 3 {
+		t.Fatalf("screen %v with %d postings, want Acme's posting list with 3", app.currentScreen, len(app.postings))
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	if app.screen != screenPostingDetail {
-		t.Fatalf("screen = %v, want posting detail", app.screen)
+	if app.currentScreen != screenPostingDetail {
+		t.Fatalf("screen = %v, want posting detail", app.currentScreen)
 	}
 	if app.postingDetail.canNavigateSiblings {
 		t.Error("posting detail opened from all postings offers stepping through Acme's posting list")
@@ -365,7 +366,7 @@ func TestAllPostings_ANewPostingElsewhere_KeepsThePageAndCountsIt(t *testing.T) 
 	page2 := pageTitles(app)
 
 	added := mustUpsertPosting(t, s, acme.ID, "8", "Role 8")
-	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "postings", RowID: added.ID, Op: "insert", Origin: "fetch:9"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "postings", RowID: added.ID, Op: "insert", Origin: "fetch:9"}}})
 
 	if diff := cmp.Diff(page2, pageTitles(app)); diff != "" {
 		t.Errorf("page 2 changed under the user (-before +after):\n%s", diff)
@@ -392,7 +393,7 @@ func TestAllPostings_MarkedInterestedElsewhere_ShowsTheStar(t *testing.T) {
 	if _, err := s.Postings.SetInterested(context.Background(), posting.ID); err != nil {
 		t.Fatalf("SetInterested: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "posting_markup", RowID: posting.ID, Op: "update", Origin: "tui:2"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "posting_markup", RowID: posting.ID, Op: "update", Origin: "tui:2"}}})
 
 	if !strings.Contains(viewText(app), "★") {
 		t.Errorf("view doesn't star the posting another window marked interested:\n%s", viewText(app))
@@ -521,8 +522,8 @@ func TestAllPostings_EscClearsTheSearch(t *testing.T) {
 	if diff := cmp.Diff([]string{"Designer", "Platform Engineer"}, pageTitles(app)); diff != "" {
 		t.Errorf("after esc (-want +got):\n%s", diff)
 	}
-	if app.screen != screenAllPostings {
-		t.Errorf("esc left the view: screen %v", app.screen)
+	if app.currentScreen != screenAllPostings {
+		t.Errorf("esc left the view: screen %v", app.currentScreen)
 	}
 }
 
@@ -541,8 +542,8 @@ func TestAllPostings_EnterKeepsTheResultsAndKeysActOnThem(t *testing.T) {
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = sendKeyAndApply(t, app, runeKey('i'))
 
-	if app.screen != screenAllPostings || app.allPostings.searching || app.allPostings.query != "design" {
-		t.Errorf("after enter, i: screen %v, searching %v, query %q; want the view, not typing, query \"design\"", app.screen, app.allPostings.searching, app.allPostings.query)
+	if app.currentScreen != screenAllPostings || app.allPostings.searching || app.allPostings.query != "design" {
+		t.Errorf("after enter, i: screen %v, searching %v, query %q; want the view, not typing, query \"design\"", app.currentScreen, app.allPostings.searching, app.allPostings.query)
 	}
 	markup, err := s.Postings.Markup(context.Background(), designer.ID)
 	if err != nil {
@@ -619,8 +620,8 @@ func TestAllPostings_EscClearsKeptResults(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
-	if app.screen != screenAllPostings || app.allPostings.query != "" {
-		t.Errorf("after esc: screen %v, query %q; want the view, query cleared", app.screen, app.allPostings.query)
+	if app.currentScreen != screenAllPostings || app.allPostings.query != "" {
+		t.Errorf("after esc: screen %v, query %q; want the view, query cleared", app.currentScreen, app.allPostings.query)
 	}
 	if diff := cmp.Diff([]string{"Designer", "Platform Engineer"}, pageTitles(app)); diff != "" {
 		t.Errorf("after esc (-want +got):\n%s", diff)
@@ -723,7 +724,7 @@ func TestAllPostings_ShowsEachPostingsFit(t *testing.T) {
 	if diff := cmp.Diff(map[string]string{"Scored": "4", "Rewritten since": "2", "Unscored": ""}, fit); diff != "" {
 		t.Errorf("Fit column (-want +got):\n%s", diff)
 	}
-	if !strings.Contains(app.View().Content, dimStyle.Render(padCol("2", fitColWidth))) {
+	if !strings.Contains(app.View().Content, model.DimStyle.Render(padCol("2", fitColWidth))) {
 		t.Error("the stale score isn't drawn dimmed")
 	}
 }
@@ -782,7 +783,7 @@ func TestAllPostings_AScoreRecordedElsewhere_Shows(t *testing.T) {
 	app = openAllPostings(t, app)
 
 	mustScore(t, s, p, 4, "p")
-	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "posting_scores", RowID: 1, Op: "insert", Origin: "mcp:7"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "posting_scores", RowID: 1, Op: "insert", Origin: "mcp:7"}}})
 
 	if got := app.allPostings.page.Listings[0].Score; got != 4 {
 		t.Errorf("score after the agent recorded one = %d, want 4", got)
@@ -825,7 +826,7 @@ func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("recordScores: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "posting_scores", RowID: 3, Op: "insert", New: fmt.Sprintf(`{"posting_id":%d,"score":5}`, p.ID), Origin: "mcp:7"}}})
+	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "posting_scores", RowID: 3, Op: "insert", New: fmt.Sprintf(`{"posting_id":%d,"score":5}`, p.ID), Origin: "mcp:7"}}})
 
 	if view := ansi.Strip(viewText(app)); !strings.Contains(view, "5 · after the rewrite") {
 		t.Errorf("detail doesn't show the score the agent just recorded:\n%s", view)

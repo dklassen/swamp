@@ -10,6 +10,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // applicationStatuses is the full fixed set of legal application statuses,
@@ -78,12 +79,12 @@ func (m *applicationStatusModel) View() string {
 	var b strings.Builder
 	for i, st := range applicationStatuses {
 		if i == m.cursor {
-			b.WriteString(cursorStyle.Render("> "+applicationStatusLabel(st)) + "\n")
+			b.WriteString(model.CursorStyle.Render("> "+applicationStatusLabel(st)) + "\n")
 		} else {
 			b.WriteString("  " + applicationStatusLabel(st) + "\n")
 		}
 	}
-	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: save  esc/b: cancel"))
+	b.WriteString(model.HelpStyle.Render("↑/↓ (j/k): select  enter: save  esc/b: cancel"))
 	return b.String()
 }
 

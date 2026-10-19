@@ -1,4 +1,4 @@
-// Package tui is the terminal UI: Bubble Tea models for browsing and
+// Package tui is the terminal UI: Bubble Tea model for browsing and
 // managing companies and their postings. Markup editing (status, notes,
 // tags, interview stages) is a later increment. Update stays
 // side-effect-free -- store calls are wrapped in tea.Cmd so the
@@ -11,12 +11,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"strings"
 	"time"
 	"unicode"
 
-	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/cellbuf"
@@ -30,22 +30,8 @@ import (
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
-)
-
-var (
-	cursorStyle = lipgloss.NewStyle().Foreground(lipgloss.Color("212"))
-	helpStyle   = lipgloss.NewStyle().Foreground(lipgloss.Color("240")).MarginTop(1)
-	// dimStyle is helpStyle's same muted color without its MarginTop(1) --
-	// that margin renders a leading blank line, which is right for the
-	// screen-bottom help line helpStyle exists for but breaks any inline
-	// use (a table cell, a line that isn't the very start of the view).
-	dimStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("240"))
-	errStyle     = lipgloss.NewStyle().Foreground(lipgloss.Color("196"))
-	warnStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("214"))
-	passStyle    = lipgloss.NewStyle().Foreground(lipgloss.Color("42"))
-	fieldLabel   = lipgloss.NewStyle().Bold(true)
-	focusedLabel = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
-	sectionStyle = lipgloss.NewStyle().Bold(true).Foreground(lipgloss.Color("212"))
+	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 type screen int
@@ -82,29 +68,20 @@ type App struct {
 	origin             string
 	// seen is each view's place in the change log (see cursor); a view
 	// not in it is at since. latestSeen is the newest event read so far.
-	seen       map[screen]int64
-	since      int64
-	latestSeen int64
-	syncer     *sync.Syncer
-	companies  []company.Company
-	// companyOpenPostings is each company's open, unarchived posting count
-	// (PostingService.CountOpenByCompany), loaded alongside companies.
-	companyOpenPostings map[int64]int
-	companyList         companyListModel
-	allPostings         allPostingsModel
-	screen              screen
-	companyForm         companyFormModel
-	companyEdit         companyEditModel
-	status              string
-	err                 error
-	// syncAll is the sync-all run, if one is or was under way (#153).
-	syncAll syncAllState
-	// refreshing counts single-company refreshes (r) in flight, the
-	// spinner turns while it's above zero, and refreshingName is the
-	// latest one's company.
-	refreshing      int
-	refreshingName  string
-	refreshSpinner  spinner.Model
+	seen          map[screen]int64
+	since         int64
+	latestSeen    int64
+	syncer        *sync.Syncer
+	companyList   *companyListModel
+	allPostings   allPostingsModel
+	currentScreen screen
+	companyForm   companyFormModel
+	companyEdit   companyEditModel
+	status        string
+	err           error
+	// syncing runs sync all and refreshes, and draws their progress in the
+	// banner.
+	syncing         *model.Syncing
 	selectedCompany company.Company
 	postings        []posting.Posting
 	postingMarkup   map[int64]posting.Markup
@@ -179,6 +156,14 @@ type App struct {
 	// invisible.
 	activeFilterDepartments []string
 	activeFilterLocations   []string
+
+	// routes is every registered component's handlers, by message type,
+	// and registering is the one whose RegisterRoutes is running.
+	routes       map[model.RouteID][]*model.Route
+	registering  model.SubComponent
+	lastInstance message.ScreenInstance
+	// sized is the last size sent to the screens.
+	sized message.ContentSizeMsg
 }
 
 // defaultExportDir is where the export screen points before anything has
@@ -196,7 +181,7 @@ func renderFilterOption(label string, checked, isCursor bool) string {
 	}
 	line := box + " " + label
 	if isCursor {
-		return cursorStyle.Render("> "+line) + "\n"
+		return model.CursorStyle.Render("> "+line) + "\n"
 	}
 	return "  " + line + "\n"
 }
@@ -206,7 +191,7 @@ func renderFilterOption(label string, checked, isCursor bool) string {
 // and documentReviewSelectModel's option lists both use.
 func renderCursorLine(line string, isCursor bool) string {
 	if isCursor {
-		return cursorStyle.Render("> "+line) + "\n"
+		return model.CursorStyle.Render("> "+line) + "\n"
 	}
 	return "  " + line + "\n"
 }
@@ -221,7 +206,7 @@ func New(
 	syncer *sync.Syncer,
 	docs *documents.Store,
 ) *App {
-	return &App{
+	a := &App{
 		companyService:        companies,
 		postingService:        postings,
 		applicationService:    applications,
@@ -230,8 +215,8 @@ func New(
 		changeLogService:      changes,
 		seen:                  map[screen]int64{},
 		syncer:                syncer,
-		screen:                screenActiveApplications,
-		companyList:           newCompanyListModel(),
+		currentScreen:         screenActiveApplications,
+		companyList:           newCompanyListModel(companies, postings),
 		allPostings:           newAllPostingsModel(postings),
 		companyForm:           newCompanyFormModel(syncer),
 		postingList:           newPostingListModel(postings),
@@ -240,8 +225,51 @@ func New(
 		documents:             docs,
 		exportDir:             defaultExportDir,
 		openURL:               openInBrowser,
-		refreshSpinner:        spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(cursorStyle)),
+		syncing:               model.NewSyncing(syncer),
+		routes:                map[model.RouteID][]*model.Route{},
 	}
+	a.register(a.companyList)
+	a.register(a.syncing)
+	return a
+}
+
+// register runs s's RegisterRoutes, recording s as its handlers' owner.
+func (a *App) register(s model.SubComponent) {
+	a.lastInstance++
+	a.registering = s
+	if err := s.RegisterRoutes(a, a.lastInstance); err != nil {
+		panic(fmt.Sprintf("tui: registering %T: %v", s, err))
+	}
+}
+
+// Register is Router's, for the component whose RegisterRoutes is running.
+func (a *App) Register(msg tea.Msg, scope model.Scope, handler model.HandlerFunc) error {
+	id := model.RouteIDOf(msg)
+	a.routes[id] = append(a.routes[id], model.NewRoute(a.registering, scope, handler))
+	return nil
+}
+
+// route calls every handler registered for msg's type that its scope lets
+// through.
+func (a *App) route(msg tea.Msg) tea.Cmd {
+	rs := a.routes[model.RouteIDOf(msg)]
+	focused := a.focused()
+	cmds := make([]tea.Cmd, 0, len(rs))
+	for _, r := range rs {
+		if r.Accepts(focused) {
+			cmds = append(cmds, r.Handle(msg))
+		}
+	}
+	return tea.Batch(cmds...)
+}
+
+// focused is the converted screen on screen, or nil when the screen up
+// hasn't registered routes yet.
+func (a *App) focused() model.SubComponent {
+	if a.currentScreen == screenCompanyList {
+		return a.companyList
+	}
+	return nil
 }
 
 // WithStatus starts the App with status on the status line.
@@ -261,9 +289,9 @@ func documentStatusLine(label string, exists bool, path string, review document.
 	if exists {
 		status = "found"
 	}
-	line := fieldLabel.Render(label+":") + " " + status + " (" + path + ") " + reviewBadge(review, hasReview) + "\n"
+	line := model.FieldLabel.Render(label+":") + " " + status + " (" + path + ") " + reviewBadge(review, hasReview) + "\n"
 	if hasReview && review.Notes != "" {
-		line += "  " + dimStyle.Render("Notes: "+review.Notes) + "\n"
+		line += "  " + model.DimStyle.Render("Notes: "+review.Notes) + "\n"
 	}
 	return line
 }
@@ -276,8 +304,8 @@ var outcomeDisplay = map[document.Outcome]struct {
 	style lipgloss.Style
 	glyph string
 }{
-	document.Passed:  {passStyle, "✓"},
-	document.Flagged: {errStyle, "✗"},
+	document.Passed:  {model.PassStyle, "✓"},
+	document.Flagged: {model.ErrStyle, "✗"},
 }
 
 // reviewBadge renders a document's latest review outcome as a short
@@ -286,11 +314,11 @@ var outcomeDisplay = map[document.Outcome]struct {
 // outcomeDisplay: green "[PASSED]", red "[FLAGGED]".
 func reviewBadge(review document.Review, hasReview bool) string {
 	if !hasReview {
-		return dimStyle.Render("[not reviewed]")
+		return model.DimStyle.Render("[not reviewed]")
 	}
 	display, ok := outcomeDisplay[review.Outcome]
 	if !ok {
-		return dimStyle.Render("[" + review.Outcome.String() + "]")
+		return model.DimStyle.Render("[" + review.Outcome.String() + "]")
 	}
 	return display.style.Render("[" + strings.ToUpper(review.Outcome.String()) + "]")
 }
@@ -324,11 +352,11 @@ func documentAbbreviation(documentType document.Type) string {
 // with no review, otherwise the outcome's glyph from outcomeDisplay.
 func reviewGlyph(review document.Review, hasReview bool) string {
 	if !hasReview {
-		return dimStyle.Render("-")
+		return model.DimStyle.Render("-")
 	}
 	display, ok := outcomeDisplay[review.Outcome]
 	if !ok {
-		return dimStyle.Render("?")
+		return model.DimStyle.Render("?")
 	}
 	return display.style.Render(display.glyph)
 }
@@ -391,7 +419,7 @@ func postingDetailContent(p posting.Posting, application application.Application
 			b.WriteString(detailDocumentField(documentTitle(documentType), doc.Exists, doc.Path, review, hasReview, width))
 		}
 	} else {
-		b.WriteString(helpStyle.Render("No application started -- press 'a' to start one.") + "\n")
+		b.WriteString(model.HelpStyle.Render("No application started -- press 'a' to start one.") + "\n")
 	}
 	if desc := p.DescriptionText; desc != "" {
 		b.WriteString("\n" + sectionHeading("Description", width) + "\n" + desc + "\n")
@@ -413,8 +441,8 @@ func (a *App) newScreenInstance() screenInstance {
 // enterFrom switches to next, pushing the current screen onto
 // returnStack so returnBack can come back to it.
 func (a *App) enterFrom(next screen) {
-	a.returnStack = append(a.returnStack, a.screen)
-	a.screen = next
+	a.returnStack = append(a.returnStack, a.currentScreen)
+	a.currentScreen = next
 }
 
 // openDocumentReviewForm builds the review form from msg, or records
@@ -442,12 +470,12 @@ func (a *App) setLoadErr(err error) {
 // returning it. An empty stack means a push was missed somewhere; falling
 // back to the home screen beats panicking or staying stuck.
 func (a *App) returnBack() screen {
-	a.screen = screenActiveApplications
+	a.currentScreen = screenActiveApplications
 	if n := len(a.returnStack); n > 0 {
-		a.screen = a.returnStack[n-1]
+		a.currentScreen = a.returnStack[n-1]
 		a.returnStack = a.returnStack[:n-1]
 	}
-	return a.screen
+	return a.currentScreen
 }
 
 // rebuildPostingDetailApplication refreshes a.postingDetail after a
@@ -514,12 +542,6 @@ func indexOfCompany(companies []company.Company, id int64) int {
 	return -1
 }
 
-type companiesLoadedMsg struct {
-	companies    []company.Company
-	openPostings map[int64]int
-	err          error
-}
-
 // loadCompanies loads the active companies along with each one's open posting
 // count for the company list's Open column.
 func loadCompanies(companies *service.CompanyService, postings *service.PostingService) tea.Cmd {
@@ -527,10 +549,10 @@ func loadCompanies(companies *service.CompanyService, postings *service.PostingS
 		ctx := context.Background()
 		active, err := companies.ListActive(ctx)
 		if err != nil {
-			return companiesLoadedMsg{err: err}
+			return message.CompaniesLoadedMsg{Err: err}
 		}
 		openPostings, err := postings.CountOpenByCompany(ctx)
-		return companiesLoadedMsg{companies: active, openPostings: openPostings, err: err}
+		return message.CompaniesLoadedMsg{Companies: active, OpenPostings: openPostings, Err: err}
 	}
 }
 
@@ -547,7 +569,7 @@ func sortCompaniesByName(companies []company.Company) {
 
 func (a *App) Init() tea.Cmd {
 	// The all-postings page too, for its tab's count.
-	return tea.Batch(loadCompanies(a.companyService, a.postingService), loadActiveApplications(a.applicationService, a.documentService, a.documents), a.allPostings.load(a.allPostings.pageSize(a.screenRows())), a.pollChanges())
+	return tea.Batch(a.companyList.Init(), loadActiveApplications(a.applicationService, a.documentService, a.documents), a.allPostings.load(a.allPostings.pageSize(a.screenRows())), a.pollChanges())
 }
 
 type activeApplicationsLoadedMsg struct {
@@ -588,11 +610,6 @@ func loadActiveApplications(applications *service.ApplicationService, documentSe
 	}
 }
 
-type companyCreatedMsg struct {
-	company company.Company
-	err     error
-}
-
 // boardCheckTimeout bounds createCompany's live board check, so an
 // unreachable API fails the add (closed) instead of leaving the form
 // waiting (#36). Syncer already gives up on any fetch
@@ -608,62 +625,27 @@ func createCompany(syncer *sync.Syncer, name, source, sourceRef string) tea.Cmd 
 		defer cancel()
 		company, err := syncer.CreateCompany(ctx, name, source, sourceRef)
 		if err != nil {
-			return companyCreatedMsg{err: err}
+			return message.CompanyCreatedMsg{Err: err}
 		}
-		return companyCreatedMsg{company: *company}
+		return message.CompanyCreatedMsg{Company: *company}
 	}
-}
-
-type companyDeletedMsg struct {
-	companyID int64
-	err       error
 }
 
 func deleteCompany(companies *service.CompanyService, companyID int64) tea.Cmd {
 	return func() tea.Msg {
 		err := companies.Delete(context.Background(), companyID)
-		return companyDeletedMsg{companyID: companyID, err: err}
+		return message.CompanyDeletedMsg{CompanyID: companyID, Err: err}
 	}
-}
-
-type companyNameUpdatedMsg struct {
-	company company.Company
-	err     error
 }
 
 func updateCompanyName(companies *service.CompanyService, companyID int64, name string) tea.Cmd {
 	return func() tea.Msg {
 		company, err := companies.SetName(context.Background(), companyID, name)
 		if err != nil {
-			return companyNameUpdatedMsg{err: err}
+			return message.CompanyNameUpdatedMsg{Err: err}
 		}
-		return companyNameUpdatedMsg{company: *company}
+		return message.CompanyNameUpdatedMsg{Company: *company}
 	}
-}
-
-type companyRefreshedMsg struct {
-	name   string
-	result sync.Result
-	err    error
-}
-
-func refreshCompany(syncer *sync.Syncer, company company.Company) tea.Cmd {
-	return func() tea.Msg {
-		result, err := syncer.SyncCompany(context.Background(), company.ID)
-		if err != nil {
-			return companyRefreshedMsg{name: company.Name, err: err}
-		}
-		return companyRefreshedMsg{name: company.Name, result: *result}
-	}
-}
-
-// startRefresh re-syncs company with the spinner turning until it reports.
-// The refresh goes first in the batch so a fast one has already finished
-// when the spinner's first tick arrives, which then stops it.
-func (a *App) startRefresh(company company.Company) tea.Cmd {
-	a.refreshing++
-	a.refreshingName = company.Name
-	return tea.Batch(refreshCompany(a.syncer, company), a.refreshSpinner.Tick)
 }
 
 type postingMarkupUpdatedMsg struct {
@@ -1026,19 +1008,64 @@ func narrowPostingsToFilters(postings []posting.Posting, departments, locations 
 	return narrowed
 }
 
+// errInternal is the banner for an ErrMsg: the error itself means nothing
+// to the user, so it says where the details went.
+var errInternal = errors.New("internal error, see swamp.log")
+
+// handle is the routers handler for global control messages
+func (a *App) handle(msg tea.Msg) (tea.Cmd, bool) {
+	switch msg := msg.(type) {
+	case tea.KeyPressMsg:
+		if msg.String() == "ctrl+c" {
+			return tea.Quit, true
+		}
+	case message.BannerMsg:
+		a.setBanner(msg)
+		return nil, true
+	case message.ErrMsg:
+		// The TUI owns the terminal, so cmd/swamp points log at swamp.log.
+		log.Printf("tui: %v", msg.Err)
+		a.err = errInternal
+		return nil, true
+	}
+	return nil, false
+}
+
+// setBanner shows what a screen reported.
+func (a *App) setBanner(msg message.BannerMsg) {
+	if msg.Load {
+		a.setLoadErr(msg.Err)
+		return
+	}
+	a.err, a.status = msg.Err, msg.Status
+}
+
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	before := a.screen
+	cmd, handled := a.handle(msg)
+	if handled {
+		return a, cmd
+	}
+
+	routed := a.route(msg)
+	before := a.currentScreen
 	model, cmd := a.update(msg)
-	if a.screen != before {
+	cmd = tea.Batch(routed, cmd)
+	if a.currentScreen != before {
 		cmd = tea.Batch(cmd, a.activate())
 	}
+	// The window or the banner may have changed size, on any message.
+	if size := (message.ContentSizeMsg{Width: a.width, Rows: a.screenRows()}); size != a.sized {
+		a.sized = size
+		cmd = tea.Batch(cmd, a.route(size))
+	}
+
 	// The banner above the screen can appear, change, or clear on any
 	// message -- a sync finishing, a failed browser open -- including
 	// while a screen is up, so refit the screens that keep their size in
 	// state to the rows left under the banner every time, rather than only
 	// when they're built. The list screens are sized as they render, so
 	// they need nothing here.
-	switch a.screen {
+	switch a.currentScreen {
 	case screenPostingDetail:
 		a.postingDetail.setHeight(a.screenRows())
 	case screenApplicationNotesEdit:
@@ -1053,72 +1080,58 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case companiesLoadedMsg:
-		a.setLoadErr(msg.err)
-		previousCompany := a.companyList.selected(a.companies)
-		a.companies = msg.companies
-		a.companyList.keepCursorOn(previousCompany, a.companies)
-		a.companyOpenPostings = msg.openPostings
 	case activeApplicationsLoadedMsg:
 		a.setLoadErr(msg.err)
 		previous := a.activeApplicationList.selected(a.activeApplications)
 		a.activeApplications = msg.applications
 		a.activeApplicationProgress = msg.progress
 		a.activeApplicationList.keepCursorOn(previous, a.activeApplications)
-	case companyCreatedMsg:
-		a.err = msg.err
+	case message.CompanyCreatedMsg:
+		a.err = msg.Err
 		a.companyForm.checkResolved()
-		if msg.err == nil {
-			a.companies = append(a.companies, msg.company)
-			sortCompaniesByName(a.companies)
-			a.screen = screenCompanyList
+		if msg.Err == nil {
+			a.currentScreen = screenCompanyList
 		}
-	case companyDeletedMsg:
-		a.err = msg.err
+	case message.CompanyDeletedMsg:
+		a.err = msg.Err
 		// Back to the list either way: a failed delete's y is spent, and
 		// the error shows there.
-		if a.screen == screenCompanyDelete {
-			a.screen = screenCompanyList
+		if a.currentScreen == screenCompanyDelete {
+			a.currentScreen = screenCompanyList
 		}
-		if msg.err == nil {
-			if i := indexOfCompany(a.companies, msg.companyID); i != -1 {
-				a.companies = append(a.companies[:i], a.companies[i+1:]...)
-			}
-			a.companyList.clampCursor(len(a.companies))
-		}
-	case companyNameUpdatedMsg:
-		a.err = msg.err
+	case message.CompanyNameUpdatedMsg:
+		a.err = msg.Err
 		a.companyEdit.saveResolved()
-		if msg.err == nil {
-			if i := indexOfCompany(a.companies, msg.company.ID); i != -1 {
-				a.companies[i] = msg.company
+		if msg.Err == nil {
+			a.currentScreen = screenCompanyList
+		}
+	case message.OpenCompanyFormMsg:
+		a.currentScreen = screenCompanyForm
+		a.companyForm = newCompanyFormModel(a.syncer)
+	case message.OpenCompanyEditMsg:
+		a.currentScreen = screenCompanyEdit
+		a.companyEdit = newCompanyEditModel(a.companyService, msg.Company.ID, msg.Company.Name)
+	case message.OpenCompanyDeleteMsg:
+		a.currentScreen = screenCompanyDelete
+		a.companyDelete = newCompanyDeleteModel(msg.Company, msg.OpenPostings)
+	case message.OpenCompanyPostingsMsg:
+		a.selectedCompany = msg.Company
+		a.currentScreen = screenPostingList
+		return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
+	case message.SyncAllFinishedMsg:
+		// The company list once (open counts, last fetched), and the
+		// posting list if its company was synced.
+		cmds := []tea.Cmd{loadCompanies(a.companyService, a.postingService)}
+		for _, r := range msg.Results {
+			if r.Err == nil && r.CompanyID == a.selectedCompany.ID {
+				cmds = append(cmds, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived))
+				break
 			}
-			sortCompaniesByName(a.companies)
-			a.screen = screenCompanyList
 		}
-	case syncAllStepMsg:
-		return a, a.handleSyncAllStep(msg)
-	case spinner.TickMsg:
-		if a.refreshing == 0 {
-			return a, nil
-		}
-		var cmd tea.Cmd
-		a.refreshSpinner, cmd = a.refreshSpinner.Update(msg)
-		return a, cmd
-	case companyRefreshedMsg:
-		a.refreshing = max(a.refreshing-1, 0)
-		if errors.Is(msg.err, sync.ErrSyncInProgress) {
-			// Another sync of this company (e.g. a scheduled `swamp fetch`)
-			// is running; this one fetched and wrote nothing (#150).
-			a.err = nil
-			a.status = msg.name + " is already syncing elsewhere; try again in a moment"
-			break
-		}
-		a.err = msg.err
-		if msg.err == nil {
-			r := msg.result
-			a.status = fmt.Sprintf("%s: fetched %d, created %d, updated %d, closed %d, reopened %d",
-				r.Name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
+		return a, tea.Batch(cmds...)
+	case message.CompanyRefreshedMsg:
+		if msg.Err == nil {
+			r := msg.Result
 			// The company list's Open and Last fetched columns just changed.
 			reload := loadCompanies(a.companyService, a.postingService)
 			if r.CompanyID == a.selectedCompany.ID {
@@ -1160,7 +1173,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				}
 				a.postingList.clampCursor(len(a.postings))
 			}
-			if a.screen == screenAllPostings {
+			if a.currentScreen == screenAllPostings {
 				return a, a.allPostings.load(a.allPostings.size)
 			}
 		}
@@ -1175,7 +1188,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				delete(a.applicationsByPosting, msg.postingID)
 			}
-			if a.screen == screenPostingDetail {
+			if a.currentScreen == screenPostingDetail {
 				// The posting on screen, which a.postings lacks when the detail
 				// was opened from all postings.
 				p := a.postingDetail.posting
@@ -1199,7 +1212,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			}
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			var reviewsCmd tea.Cmd
-			if a.screen == screenPostingDetail {
+			if a.currentScreen == screenPostingDetail {
 				// The posting on screen, which a.postings lacks when the detail
 				// was opened from all postings.
 				p := a.postingDetail.posting
@@ -1213,14 +1226,14 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case applicationDeletedMsg:
 		a.err = msg.err
-		if a.screen == screenApplicationDelete {
+		if a.currentScreen == screenApplicationDelete {
 			if msg.err != nil {
 				// Back where it was opened rather than leaving a
 				// confirmation whose y is already spent; the error shows there.
-				a.screen = a.applicationDelete.from
+				a.currentScreen = a.applicationDelete.from
 				return a, nil
 			}
-			a.screen = screenActiveApplications
+			a.currentScreen = screenActiveApplications
 		}
 		if msg.err == nil {
 			delete(a.applicationsByPosting, msg.application.Posting.ID)
@@ -1236,15 +1249,15 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			// Nothing blocks esc while the save is in flight, so the user
 			// may already have left -- only navigate if they're still here.
-			if a.screen == screenApplicationStatusSelect && a.applicationStatus.instance == msg.from {
+			if a.currentScreen == screenApplicationStatusSelect && a.applicationStatus.instance == msg.from {
 				a.returnBack()
 			}
-			if a.screen == screenApplicationSubmit && a.applicationSubmit.instance == msg.from {
+			if a.currentScreen == screenApplicationSubmit && a.applicationSubmit.instance == msg.from {
 				a.status = "Marked " + a.applicationSubmit.application.Posting.Title + " submitted"
-				a.screen = screenActiveApplications
+				a.currentScreen = screenActiveApplications
 			}
 			var reviewsCmd tea.Cmd
-			if a.screen == screenPostingDetail {
+			if a.currentScreen == screenPostingDetail {
 				reviewsCmd = a.rebuildPostingDetailApplication()
 			}
 			// The new status may have moved this application to/from a
@@ -1271,7 +1284,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case allPostingsDetailLoadedMsg:
 		a.err = msg.err
 		// Only if the user is still where they pressed enter.
-		if msg.err == nil && a.screen == screenAllPostings {
+		if msg.err == nil && a.currentScreen == screenAllPostings {
 			a.postingDetailFrom = screenAllPostings
 			app, hasApp := a.applicationsByPosting[msg.posting.ID]
 			a.postingDetail = newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), msg.posting, app, hasApp, nil, a.canNavigateSiblings(msg.posting.ID))
@@ -1290,21 +1303,21 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// application's reviews the way u does. Not
 		// after an error: the editor didn't start or exited abnormally,
 		// and the reload's result would clear the error before it's seen.
-		if msg.err == nil && a.screen == screenApplicationDetail {
+		if msg.err == nil && a.currentScreen == screenApplicationDetail {
 			return a, recordEditorWrite(a.documentService, a.documents, msg)
 		}
 	case applicationReloadedForDeleteMsg:
 		a.err = msg.err
 		// Same guard as applicationFormLoadedMsg: only if the user is still
 		// where delete was pressed, and on detail, on that application.
-		if msg.err == nil && a.screen == msg.from && (msg.from != screenApplicationDetail || a.applicationDetail.application.ID == msg.application.ID) {
+		if msg.err == nil && a.currentScreen == msg.from && (msg.from != screenApplicationDetail || a.applicationDetail.application.ID == msg.application.ID) {
 			a.applicationDelete = newApplicationDeleteModel(msg.application, msg.from)
-			a.screen = screenApplicationDelete
+			a.currentScreen = screenApplicationDelete
 		}
 	case applicationStatusLoadedMsg:
 		a.err = msg.err
 		// Open the form only if the user is still where they asked for it.
-		if msg.err == nil && a.screen == msg.from {
+		if msg.err == nil && a.currentScreen == msg.from {
 			a.enterFrom(screenApplicationStatusSelect)
 			a.applicationStatus = newApplicationStatusModel(a.applicationService, msg.applicationID, msg.status, a.newScreenInstance())
 		}
@@ -1312,25 +1325,25 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		// Open the form only if the user is still on the application it
 		// was loaded for.
-		if msg.err == nil && a.screen == screenApplicationDetail && a.applicationDetail.application.Posting.ID == msg.postingID {
-			a.screen = screenApplicationForm
+		if msg.err == nil && a.currentScreen == screenApplicationDetail && a.applicationDetail.application.Posting.ID == msg.postingID {
+			a.currentScreen = screenApplicationForm
 			a.applicationForm = newApplicationFormModel(a.postingService, msg.postingID, msg.form, a.width, a.screenRows())
 		}
 	case applicationFormSavedMsg:
 		a.err = msg.err
-		if msg.err != nil && a.screen == screenApplicationForm {
+		if msg.err != nil && a.currentScreen == screenApplicationForm {
 			a.applicationForm.saving = false
 		}
 		if msg.err == nil {
 			a.status = "Application form saved"
 			// Same late-save guard as applicationNotesUpdatedMsg.
-			if a.screen == screenApplicationForm {
-				a.screen = screenApplicationDetail
+			if a.currentScreen == screenApplicationForm {
+				a.currentScreen = screenApplicationDetail
 			}
 		}
 	case applicationNotesUpdatedMsg:
 		a.err = msg.err
-		if msg.err != nil && a.screen == screenApplicationNotesEdit && a.applicationNotes.instance == msg.from {
+		if msg.err != nil && a.currentScreen == screenApplicationNotesEdit && a.applicationNotes.instance == msg.from {
 			a.applicationNotes.saving = false
 		}
 		if msg.err == nil {
@@ -1341,16 +1354,16 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// Same late-save guard as applicationStatusUpdatedMsg: yanking
 			// the user back to posting detail after their own esc already
 			// popped its returnStack entry would strand the next esc.
-			if a.screen == screenApplicationNotesEdit && a.applicationNotes.instance == msg.from {
-				a.screen = screenPostingDetail
+			if a.currentScreen == screenApplicationNotesEdit && a.applicationNotes.instance == msg.from {
+				a.currentScreen = screenPostingDetail
 			}
-			if a.screen == screenPostingDetail {
+			if a.currentScreen == screenPostingDetail {
 				return a, a.rebuildPostingDetailApplication()
 			}
 		}
 	case applicationExportedMsg:
 		a.err = msg.err
-		if a.screen == screenApplicationSubmit {
+		if a.currentScreen == screenApplicationSubmit {
 			// The submit screen shows the result itself, failure included,
 			// and stays put: the user still decides whether they submitted.
 			a.applicationSubmit.exported = &msg
@@ -1368,10 +1381,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		a.exportDir = msg.dir
 		a.status = exportStatusLine(msg)
-		a.screen = screenActiveApplications
+		a.currentScreen = screenActiveApplications
 		return a, nil
 	case documentChangedDuringReviewMsg:
-		if a.screen == screenDocumentReviewForm && a.documentReviewForm.instance == msg.from {
+		if a.currentScreen == screenDocumentReviewForm && a.documentReviewForm.instance == msg.from {
 			a.documentReviewForm.reload(msg.current, msg.who)
 		}
 	case documentReviewCreatedMsg:
@@ -1379,14 +1392,14 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil {
 			// Nothing blocks esc while the save is in flight, so the user
 			// may already have left -- only navigate if they're still here.
-			if a.screen == screenDocumentReviewForm && a.documentReviewForm.instance == msg.from {
+			if a.currentScreen == screenDocumentReviewForm && a.documentReviewForm.instance == msg.from {
 				a.returnBack()
 			}
 			// Reload so the freshly-submitted review's outcome/notes show up
 			// immediately wherever it's displayed, without having to
 			// navigate away and back (#83) -- which
 			// reload depends on which screen the user is now on.
-			switch a.screen {
+			switch a.currentScreen {
 			case screenApplicationDetail:
 				// documentReviewsLoadedMsg also patches this application's
 				// home-screen row, so its glyph and next step aren't stale
@@ -1401,10 +1414,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A response for a posting/application the user has since
 		// navigated away from is simply discarded -- msg.applicationID no
 		// longer matching what's on screen means this result is stale.
-		if msg.err == nil && a.screen == screenPostingDetail && a.postingDetail.application.ID == msg.applicationID {
+		if msg.err == nil && a.currentScreen == screenPostingDetail && a.postingDetail.application.ID == msg.applicationID {
 			a.replacePostingDetail(newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), a.postingDetail.posting, a.postingDetail.application, a.postingDetail.hasApplication, msg.reviews, a.canNavigateSiblings(a.postingDetail.posting.ID)))
 		}
-		if msg.err == nil && a.screen == screenApplicationDetail && a.applicationDetail.application.ID == msg.applicationID {
+		if msg.err == nil && a.currentScreen == screenApplicationDetail && a.applicationDetail.application.ID == msg.applicationID {
 			a.applicationDetail.application.LatestReviews = msg.reviews
 		}
 		// The reviews are fresh whichever screen asked for them, so the
@@ -1429,7 +1442,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case browserOpenedMsg:
 		a.err = msg.err
-		if a.screen == screenApplicationSubmit {
+		if a.currentScreen == screenApplicationSubmit {
 			// Also shown next to the link, so the step doesn't claim the
 			// link opened when it didn't.
 			a.applicationSubmit.opened = &msg
@@ -1437,7 +1450,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
-		if a.screen == screenPostingDetail {
+		if a.currentScreen == screenPostingDetail {
 			// Re-wrap at the new width: viewport.View() truncates rather
 			// than re-wrapping already-set content when Width shrinks, so
 			// just resizing the fields isn't enough. postingDetail.resize
@@ -1447,7 +1460,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.postingDetail.resize(a.width, a.screenRows())
 		}
 		var reload tea.Cmd
-		if size := a.allPostings.pageSize(a.screenRows()); a.screen == screenAllPostings && size != a.allPostings.size {
+		if size := a.allPostings.pageSize(a.screenRows()); a.currentScreen == screenAllPostings && size != a.allPostings.size {
 			reload = a.allPostings.load(size)
 		}
 		// The terminal rewraps the old frame when it narrows, pushing rows
@@ -1455,9 +1468,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// frame that got shorter, so without this they stay on screen.
 		return a, tea.Batch(tea.ClearScreen, reload)
 	case tea.KeyPressMsg:
-		prevScreen := a.screen
+		prevScreen := a.currentScreen
 		model, cmd := a.updateKeyMsg(msg)
-		if a.screen != prevScreen {
+		if a.currentScreen != prevScreen {
 			// A stale error from whatever screen the user just left (e.g.
 			// a failed save they then cancelled out of) shouldn't keep
 			// showing on the screen they land on next -- see #41.
@@ -1473,13 +1486,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // paste gives pasted text to the screen's text field, if it has one. A
 // paste is never a key, so a pasted "q" can't quit.
 func (a *App) paste(msg tea.PasteMsg) tea.Cmd {
-	switch a.screen {
+	switch a.currentScreen {
 	case screenAllPostings:
 		return a.allPostings.paste(msg)
 	case screenActiveApplications:
 		a.activeApplicationList.paste(msg)
-	case screenCompanyList:
-		a.companyList.paste(msg)
 	case screenCompanyForm:
 		return a.companyForm.paste(msg)
 	case screenCompanyEdit:
@@ -1497,28 +1508,23 @@ func (a *App) paste(msg tea.PasteMsg) tea.Cmd {
 }
 
 func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	// The terminal is in raw mode, so ctrl+c reaches us as a key rather
-	// than stopping the program.
-	if msg.String() == "ctrl+c" {
-		return a, tea.Quit
-	}
 	// Ahead of the screen's own keys, so it works with the company search
 	// open too.
 	if msg.String() == "tab" {
-		switch a.screen {
+		switch a.currentScreen {
 		case screenActiveApplications:
-			a.screen = screenCompanyList
+			a.currentScreen = screenCompanyList
 			// Archiving or unarchiving may have changed open counts.
 			return a, loadCompanies(a.companyService, a.postingService)
 		case screenCompanyList:
-			a.screen = screenAllPostings
+			a.currentScreen = screenAllPostings
 			return a, a.allPostings.load(a.allPostings.pageSize(a.screenRows()))
 		case screenAllPostings:
-			a.screen = screenActiveApplications
+			a.currentScreen = screenActiveApplications
 			return a, nil
 		}
 	}
-	switch a.screen {
+	switch a.currentScreen {
 	case screenAllPostings:
 		cmd, intent := a.allPostings.Update(msg, a.allPostings.pageSize(a.screenRows()))
 		switch v := intent.(type) {
@@ -1532,12 +1538,12 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		cmd, intent := a.activeApplicationList.Update(msg, a.activeApplications)
 		switch v := intent.(type) {
 		case enterApplicationStatusMsg:
-			return a, loadApplicationStatus(a.applicationService, v.applicationID, a.screen)
+			return a, loadApplicationStatus(a.applicationService, v.applicationID, a.currentScreen)
 		case enterApplicationDetailMsg:
-			a.screen = screenApplicationDetail
+			a.currentScreen = screenApplicationDetail
 			a.applicationDetail = newApplicationDetailModel(a.documents, v.application)
 		case enterApplicationExportMsg:
-			a.screen = screenApplicationExport
+			a.currentScreen = screenApplicationExport
 			a.applicationExport = newApplicationExportModel(a.documentService, a.documents, v.application, a.exportDir, a.width)
 		case enterApplicationDeleteMsg:
 			return a, reloadApplicationForDelete(a.applicationService, v.application, screenActiveApplications)
@@ -1553,7 +1559,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case enterApplicationDeleteMsg:
 			return a, reloadApplicationForDelete(a.applicationService, v.application, screenApplicationDetail)
 		case backToActiveApplicationsMsg:
-			a.screen = screenActiveApplications
+			a.currentScreen = screenActiveApplications
 		case enterPostingDetailMsg:
 			// Unlike screenPostingList's own enterPostingDetailMsg handler,
 			// this can't use lookupPosting -- a.postings is only populated
@@ -1594,33 +1600,6 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return a, loadDocumentReviews(a.documentService, a.documents, a.applicationDetail.application.ID)
 		}
 		return a, cmd
-	case screenCompanyList:
-		cmd, intent := a.companyList.Update(msg, a.companies)
-		switch v := intent.(type) {
-		case enterCompanyFormMsg:
-			a.screen = screenCompanyForm
-			a.companyForm = newCompanyFormModel(a.syncer)
-		case enterCompanyEditMsg:
-			a.screen = screenCompanyEdit
-			a.companyEdit = newCompanyEditModel(a.companyService, v.company.ID, v.company.Name)
-		case enterCompanyDeleteMsg:
-			a.screen = screenCompanyDelete
-			a.companyDelete = newCompanyDeleteModel(v.company, a.companyOpenPostings[v.company.ID])
-		case refreshCompanyMsg:
-			if a.syncAll.running {
-				// The run may be syncing this company right now (#150).
-				a.status = "Sync all in progress: refresh unavailable"
-				return a, nil
-			}
-			return a, a.startRefresh(v.company)
-		case syncAllKeyMsg:
-			return a, a.toggleSyncAll()
-		case selectCompanyMsg:
-			a.selectedCompany = v.company
-			a.screen = screenPostingList
-			return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
-		}
-		return a, cmd
 	case screenPostingList:
 		snap := postingListSnapshot{
 			companyDescription:      a.selectedCompany.Description,
@@ -1633,7 +1612,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		cmd, intent := a.postingList.Update(msg, snap)
 		switch v := intent.(type) {
 		case backToCompanyListMsg:
-			a.screen = screenCompanyList
+			a.currentScreen = screenCompanyList
 			// Archiving or unarchiving may have changed open counts.
 			return a, loadCompanies(a.companyService, a.postingService)
 		case enterPostingDetailMsg:
@@ -1643,15 +1622,11 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			a.enterFrom(screenPostingDetail)
 			return a, tea.Batch(loadApplication(a.postingService, p.ID), maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID), loadPostingScores(a.scoringService, p.ID))
 		case enterFilterSelectMsg:
-			a.screen = screenFilterSelect
+			a.currentScreen = screenFilterSelect
 			return a, loadFilterOptions(a.companyService, a.selectedCompany.ID)
 		case refreshSelectedCompanyMsg:
-			if a.syncAll.running {
-				// The run may be syncing this company right now.
-				a.status = "Sync all in progress: refresh unavailable"
-				return a, nil
-			}
-			return a, a.startRefresh(a.selectedCompany)
+			c := a.selectedCompany
+			return a, func() tea.Msg { return message.RefreshCompanyMsg{Company: c} }
 		case toggleHideArchivedMsg:
 			a.hideArchived = !a.hideArchived
 			return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
@@ -1674,9 +1649,9 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return a, tea.Batch(loadApplication(a.postingService, p.ID), maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID), loadPostingScores(a.scoringService, p.ID))
 			}
 		case enterApplicationStatusMsg:
-			return a, loadApplicationStatus(a.applicationService, v.applicationID, a.screen)
+			return a, loadApplicationStatus(a.applicationService, v.applicationID, a.currentScreen)
 		case enterApplicationNotesMsg:
-			a.screen = screenApplicationNotesEdit
+			a.currentScreen = screenApplicationNotesEdit
 			a.applicationNotes = newApplicationNotesModel(a.applicationService, v.applicationID, v.currentNotes, a.width, a.screenRows(), a.newScreenInstance())
 		case enterDocumentReviewSelectMsg:
 			a.enterFrom(screenDocumentReviewSelect)
@@ -1694,14 +1669,14 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case screenApplicationExport:
 		cmd, intent := a.applicationExport.Update(msg)
 		if _, ok := intent.(cancelApplicationExportMsg); ok {
-			a.screen = screenActiveApplications
+			a.currentScreen = screenActiveApplications
 		}
 		return a, cmd
 	case screenApplicationSubmit:
 		cmd, intent := a.applicationSubmit.Update(msg)
 		switch v := intent.(type) {
 		case cancelApplicationSubmitMsg:
-			a.screen = screenApplicationDetail
+			a.currentScreen = screenApplicationDetail
 		case confirmApplicationSubmitMsg:
 			return a, updateApplicationStatus(a.applicationService, v.applicationID, application.Submitted, a.applicationSubmit.instance)
 		}
@@ -1710,7 +1685,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		cmd, intent := a.applicationDelete.Update(msg)
 		switch v := intent.(type) {
 		case cancelApplicationDeleteMsg:
-			a.screen = a.applicationDelete.from
+			a.currentScreen = a.applicationDelete.from
 		case confirmApplicationDeleteMsg:
 			return a, deleteApplication(a.applicationService, v.application)
 		}
@@ -1719,7 +1694,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		cmd, intent := a.companyDelete.Update(msg)
 		switch v := intent.(type) {
 		case cancelCompanyDeleteMsg:
-			a.screen = screenCompanyList
+			a.currentScreen = screenCompanyList
 		case confirmCompanyDeleteMsg:
 			return a, deleteCompany(a.companyService, v.company.ID)
 		}
@@ -1727,13 +1702,13 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case screenApplicationNotesEdit:
 		cmd, intent := a.applicationNotes.Update(msg)
 		if _, ok := intent.(cancelApplicationNotesMsg); ok {
-			a.screen = screenPostingDetail
+			a.currentScreen = screenPostingDetail
 		}
 		return a, cmd
 	case screenApplicationForm:
 		cmd, intent := a.applicationForm.Update(msg)
 		if _, ok := intent.(cancelApplicationFormMsg); ok {
-			a.screen = screenApplicationDetail
+			a.currentScreen = screenApplicationDetail
 		}
 		return a, cmd
 	case screenDocumentReviewSelect:
@@ -1745,7 +1720,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// Replaces the picker rather than pushing onto it, so leaving
 			// the form goes straight back to posting detail.
 			if a.openDocumentReviewForm(v) {
-				a.screen = screenDocumentReviewForm
+				a.currentScreen = screenDocumentReviewForm
 			}
 		}
 		return a, cmd
@@ -1759,12 +1734,12 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		cmd, intent := a.filterSelect.Update(msg)
 		switch v := intent.(type) {
 		case cancelFilterSelectMsg:
-			a.screen = screenPostingList
+			a.currentScreen = screenPostingList
 		case saveFilterSelectionMsg:
 			// Narrowed synchronously, before saveCompanyFilters' Cmd even
 			// runs -- it's the same in-memory narrowing loadPostings' own
 			// authoritative pass uses, working off what's already loaded.
-			a.screen = screenPostingList
+			a.currentScreen = screenPostingList
 			a.postings = narrowPostingsToFilters(a.postings, v.departments, v.locations)
 			a.activeFilterDepartments = v.departments
 			a.activeFilterLocations = v.locations
@@ -1775,13 +1750,13 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case screenCompanyForm:
 		cmd, intent := a.companyForm.Update(msg)
 		if _, ok := intent.(cancelCompanyFormMsg); ok {
-			a.screen = screenCompanyList
+			a.currentScreen = screenCompanyList
 		}
 		return a, cmd
 	case screenCompanyEdit:
 		cmd, intent := a.companyEdit.Update(msg)
 		if _, ok := intent.(cancelCompanyEditMsg); ok {
-			a.screen = screenCompanyList
+			a.currentScreen = screenCompanyList
 		}
 		return a, cmd
 	}
@@ -1794,16 +1769,13 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // their own, so one coming and going doesn't move the screen.
 func (a *App) banner() string {
 	if a.err != nil {
-		return "\n\n" + errStyle.Render(fmt.Sprintf("error: %v", a.err))
+		return "\n\n" + model.ErrStyle.Render(fmt.Sprintf("error: %v", a.err))
 	}
-	if a.syncAll.running {
-		return "\n\n" + a.syncAll.bar() + "  " + dimStyle.Render(a.status)
-	}
-	if a.refreshing > 0 {
-		return "\n\n" + a.refreshSpinner.View() + dimStyle.Render("Refreshing "+a.refreshingName+"…")
+	if syncing := a.syncing.View().Content; syncing != "" {
+		return "\n\n" + syncing
 	}
 	if a.status != "" {
-		return "\n\n" + dimStyle.Render(a.status)
+		return "\n\n" + model.DimStyle.Render(a.status)
 	}
 	return ""
 }
@@ -1819,7 +1791,7 @@ func (a *App) screenRows() int {
 
 func (a *App) View() tea.View {
 	body := a.body(a.beneath())
-	switch a.screen {
+	switch a.currentScreen {
 	case screenCompanyDelete:
 		body = overlay(body, a.companyDelete.View(a.width), a.width)
 	case screenApplicationDelete:
@@ -1841,13 +1813,13 @@ func (a *App) View() tea.View {
 // beneath is the screen drawn on screen: a.screen, or the one a
 // confirmation's box is drawn over.
 func (a *App) beneath() screen {
-	switch a.screen {
+	switch a.currentScreen {
 	case screenCompanyDelete:
 		return screenCompanyList
 	case screenApplicationDelete:
 		return a.applicationDelete.from
 	}
-	return a.screen
+	return a.currentScreen
 }
 
 // body draws s, between the header and the banner.
@@ -1861,7 +1833,7 @@ func (a *App) body(s screen) string {
 	case screenAllPostings:
 		b.WriteString(a.allPostings.View(a.width, a.screenRows()))
 	case screenCompanyList:
-		b.WriteString(a.companyList.View(a.companies, a.companyOpenPostings, a.width, a.screenRows()))
+		b.WriteString(a.companyList.View().Content)
 	case screenCompanyForm:
 		b.WriteString(a.companyForm.View())
 	case screenCompanyEdit:
@@ -1920,7 +1892,7 @@ func sectionHeading(name string, width int) string {
 	if rest := width - lipgloss.Width(name) - 1; rest > ruleWidth {
 		ruleWidth = rest
 	}
-	return sectionStyle.Render(name) + " " + dimStyle.Render(strings.Repeat("─", ruleWidth))
+	return model.SectionStyle.Render(name) + " " + model.DimStyle.Render(strings.Repeat("─", ruleWidth))
 }
 
 // detailLabelWidth is the width of posting detail's label column, sized
@@ -1960,7 +1932,7 @@ func detailRow(label string, lines []string) string {
 		lines[i] = indent + lines[i]
 	}
 	gap := strings.Repeat(" ", detailLabelWidth-lipgloss.Width(label))
-	return fieldLabel.Render(label) + gap + strings.Join(lines, "\n") + "\n"
+	return model.FieldLabel.Render(label) + gap + strings.Join(lines, "\n") + "\n"
 }
 
 // detailDocumentField is detailField for a drafted document: its presence
@@ -1992,7 +1964,7 @@ func detailDocumentField(label string, exists bool, path string, review document
 		row = detailRow(label, lines)
 	}
 	if hasReview && review.Notes != "" {
-		row += detailField("", dimStyle.Render("Notes: "+review.Notes), width)
+		row += detailField("", model.DimStyle.Render("Notes: "+review.Notes), width)
 	}
 	return row
 }

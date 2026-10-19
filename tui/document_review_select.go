@@ -8,6 +8,7 @@ import (
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // documentReviewOption is one selectable document on the document-review-
@@ -120,6 +121,6 @@ func (m *documentReviewSelectModel) View() string {
 		}
 		b.WriteString(renderCursorLine(opt.label+" ("+status+")", i == m.cursor))
 	}
-	b.WriteString(helpStyle.Render("↑/↓ (j/k): select  enter: review  esc/b: cancel"))
+	b.WriteString(model.HelpStyle.Render("↑/↓ (j/k): select  enter: review  esc/b: cancel"))
 	return b.String()
 }

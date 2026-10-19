@@ -14,6 +14,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // postingDetailModel drives the posting-detail screen for a single
@@ -96,12 +97,12 @@ func postingScoresSection(p posting.Posting, scores []score.Score, width int) st
 	b.WriteString(detailField("Score", fmt.Sprintf("%d · %s", current.Score, current.Reason), width))
 	b.WriteString(detailField("Scored", scoredBy(current), width))
 	if current.ContentSHA256 != p.ContentSHA256 {
-		b.WriteString(helpStyle.Render("The posting has changed since this score.") + "\n")
+		b.WriteString(model.HelpStyle.Render("The posting has changed since this score.") + "\n")
 	}
 	if len(scores) > 1 {
-		b.WriteString(fieldLabel.Render("Earlier") + "\n")
+		b.WriteString(model.FieldLabel.Render("Earlier") + "\n")
 		for _, earlier := range scores[1:] {
-			b.WriteString(dimStyle.Render(fmt.Sprintf("  %d · %s (%s)", earlier.Score, earlier.Reason, scoredBy(earlier))) + "\n")
+			b.WriteString(model.DimStyle.Render(fmt.Sprintf("  %d · %s (%s)", earlier.Score, earlier.Reason, scoredBy(earlier))) + "\n")
 		}
 	}
 	return b.String() + "\n"
@@ -124,7 +125,7 @@ func scoredBy(s score.Score) string {
 // position is kept (clamped to the new height), since the banner can come
 // and go while the user is reading.
 func (m *postingDetailModel) setHeight(height int) {
-	chrome := lipgloss.Height(helpStyle.Render(m.help))
+	chrome := lipgloss.Height(model.HelpStyle.Render(m.help))
 	m.viewport.SetHeight(max(height-chrome, 0))
 	m.viewport.SetYOffset(m.viewport.YOffset())
 }
@@ -239,7 +240,7 @@ func (m *postingDetailModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 func (m *postingDetailModel) View() string {
 	var b strings.Builder
 	b.WriteString(m.viewport.View() + "\n")
-	b.WriteString(helpStyle.Render(m.help))
+	b.WriteString(model.HelpStyle.Render(m.help))
 	return b.String()
 }
 

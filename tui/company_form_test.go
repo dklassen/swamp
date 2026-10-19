@@ -10,6 +10,7 @@ import (
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/sync"
+	"github.com/dklassen/swamp/tui/message"
 )
 
 func TestCompanyFormModel_New_FocusesSourceFieldFirst(t *testing.T) {
@@ -158,18 +159,18 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithSelectedSource(t *testing.T) {
 	}
 
 	msg := cmd()
-	created, ok := msg.(companyCreatedMsg)
+	created, ok := msg.(message.CompanyCreatedMsg)
 	if !ok {
-		t.Fatalf("msg = %T, want companyCreatedMsg", msg)
+		t.Fatalf("msg = %T, want message.CompanyCreatedMsg", msg)
 	}
-	if created.err != nil {
-		t.Fatalf("companyCreatedMsg.err = %v, want nil", created.err)
+	if created.Err != nil {
+		t.Fatalf("message.CompanyCreatedMsg.Err = %v, want nil", created.Err)
 	}
-	if created.company.Source != jobboard.Greenhouse {
-		t.Fatalf("created company Source = %q, want %q", created.company.Source, jobboard.Greenhouse)
+	if created.Company.Source != jobboard.Greenhouse {
+		t.Fatalf("created company Source = %q, want %q", created.Company.Source, jobboard.Greenhouse)
 	}
 
-	stored, err := s.Companies.Get(context.Background(), created.company.ID)
+	stored, err := s.Companies.Get(context.Background(), created.Company.ID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
 	}
@@ -196,18 +197,18 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithLeverSource(t *testing.T) {
 	}
 
 	msg := cmd()
-	created, ok := msg.(companyCreatedMsg)
+	created, ok := msg.(message.CompanyCreatedMsg)
 	if !ok {
-		t.Fatalf("msg = %T, want companyCreatedMsg", msg)
+		t.Fatalf("msg = %T, want message.CompanyCreatedMsg", msg)
 	}
-	if created.err != nil {
-		t.Fatalf("companyCreatedMsg.err = %v, want nil", created.err)
+	if created.Err != nil {
+		t.Fatalf("message.CompanyCreatedMsg.Err = %v, want nil", created.Err)
 	}
-	if created.company.Source != jobboard.Lever {
-		t.Fatalf("created company Source = %q, want %q", created.company.Source, jobboard.Lever)
+	if created.Company.Source != jobboard.Lever {
+		t.Fatalf("created company Source = %q, want %q", created.Company.Source, jobboard.Lever)
 	}
 
-	stored, err := s.Companies.Get(context.Background(), created.company.ID)
+	stored, err := s.Companies.Get(context.Background(), created.Company.ID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
 	}
@@ -242,15 +243,15 @@ func TestCompanyFormModel_Enter_TrimsSavedName(t *testing.T) {
 		t.Fatal("cmd = nil, want a command that creates the company")
 	}
 	msg := cmd()
-	created, ok := msg.(companyCreatedMsg)
+	created, ok := msg.(message.CompanyCreatedMsg)
 	if !ok {
-		t.Fatalf("msg = %T, want companyCreatedMsg", msg)
+		t.Fatalf("msg = %T, want message.CompanyCreatedMsg", msg)
 	}
-	if created.err != nil {
-		t.Fatalf("companyCreatedMsg.err = %v, want nil", created.err)
+	if created.Err != nil {
+		t.Fatalf("message.CompanyCreatedMsg.Err = %v, want nil", created.Err)
 	}
-	if created.company.Name != "Acme" {
-		t.Fatalf("created company Name = %q, want %q (trimmed)", created.company.Name, "Acme")
+	if created.Company.Name != "Acme" {
+		t.Fatalf("created company Name = %q, want %q (trimmed)", created.Company.Name, "Acme")
 	}
 }
 
@@ -269,12 +270,12 @@ func TestCompanyFormModel_Enter_BoardRejectsSourceRef_NoCompanyCreated(t *testin
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that checks the board and creates the company")
 	}
-	created, ok := cmd().(companyCreatedMsg)
+	created, ok := cmd().(message.CompanyCreatedMsg)
 	if !ok {
-		t.Fatal("msg is not a companyCreatedMsg")
+		t.Fatal("msg is not a message.CompanyCreatedMsg")
 	}
-	if created.err == nil {
-		t.Fatal("companyCreatedMsg.err = nil, want an error for a board that doesn't resolve")
+	if created.Err == nil {
+		t.Fatal("message.CompanyCreatedMsg.Err = nil, want an error for a board that doesn't resolve")
 	}
 
 	companies, err := s.Companies.ListActive(context.Background())

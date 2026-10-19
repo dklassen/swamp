@@ -8,6 +8,7 @@ import (
 
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/sync"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // companySources are the company.Company.Source values this form can
@@ -122,8 +123,9 @@ func (m *companyFormModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 }
 
 // checkResolved marks the in-flight board check (if any) as done. Called
-// by App once companyCreatedMsg arrives, success or failure -- on failure
-// the form stays open with its inputs intact so a typo can be fixed.
+// by App once message.CompanyCreatedMsg arrives, success or failure -- on
+// failure the form stays open with its inputs intact so a typo can be
+// fixed.
 func (m *companyFormModel) checkResolved() {
 	m.checking = false
 }
@@ -135,7 +137,7 @@ func renderSourcePicker(selected int) string {
 	parts := make([]string, len(companySources))
 	for i, src := range companySources {
 		if i == selected {
-			parts[i] = cursorStyle.Render("[" + src + "]")
+			parts[i] = model.CursorStyle.Render("[" + src + "]")
 		} else {
 			parts[i] = " " + src + " "
 		}
@@ -146,9 +148,9 @@ func renderSourcePicker(selected int) string {
 func (m *companyFormModel) View() string {
 	var b strings.Builder
 
-	sourceLabel := fieldLabel
+	sourceLabel := model.FieldLabel
 	if m.focus == formFieldSource {
-		sourceLabel = focusedLabel
+		sourceLabel = model.FocusedLabel
 	}
 	b.WriteString(sourceLabel.Render("Source:") + " " + renderSourcePicker(m.sourceIndex) + "\n")
 
@@ -157,17 +159,17 @@ func (m *companyFormModel) View() string {
 		formFieldSourceRef: sourceRefLabels[companySources[m.sourceIndex]],
 	}
 	for _, field := range []int{formFieldName, formFieldSourceRef} {
-		label := fieldLabel
+		label := model.FieldLabel
 		if field == m.focus {
-			label = focusedLabel
+			label = model.FocusedLabel
 		}
 		b.WriteString(label.Render(labels[field]+":") + " " + m.inputs[field].View() + "\n")
 	}
 
 	if m.checking {
-		b.WriteString(helpStyle.Render("Checking board...") + "\n")
+		b.WriteString(model.HelpStyle.Render("Checking board...") + "\n")
 	}
-	b.WriteString(helpStyle.Render("tab: next field  ←/→: change source  enter: save  esc: cancel"))
+	b.WriteString(model.HelpStyle.Render("tab: next field  ←/→: change source  enter: save  esc: cancel"))
 	return b.String()
 }
 

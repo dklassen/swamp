@@ -8,6 +8,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // applicationNotesModel drives the application-notes-edit screen for a
@@ -50,15 +51,15 @@ func (m *applicationNotesModel) setHeight(height int) {
 	m.textarea.SetHeight(max(height-lipgloss.Height(applicationNotesHelp()), 0))
 }
 
-func applicationNotesHelp() string { return helpStyle.Render("ctrl+s: save  esc: cancel") }
+func applicationNotesHelp() string { return model.HelpStyle.Render("ctrl+s: save  esc: cancel") }
 
 // discardBox is the box App draws over the screen while esc's discard
 // question is open, at most width wide.
 func (m *applicationNotesModel) discardBox(width int) string {
 	var b strings.Builder
-	b.WriteString(fieldLabel.Render("Discard unsaved changes?") + "\n")
+	b.WriteString(model.FieldLabel.Render("Discard unsaved changes?") + "\n")
 	b.WriteString("Your edits to the notes aren't saved.\n\n")
-	b.WriteString(fieldLabel.Render("y") + ": discard  " + fieldLabel.Render("n/esc") + ": keep editing  " + fieldLabel.Render("ctrl+s") + ": save")
+	b.WriteString(model.FieldLabel.Render("y") + ": discard  " + model.FieldLabel.Render("n/esc") + ": keep editing  " + model.FieldLabel.Render("ctrl+s") + ": save")
 	return confirmBox(b.String(), width)
 }
 

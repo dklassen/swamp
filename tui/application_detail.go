@@ -9,6 +9,7 @@ import (
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // applicationDetailModel drives the application-detail screen: the place
@@ -107,14 +108,14 @@ func (m *applicationDetailModel) enterReview(documentType document.Type) tea.Msg
 
 func (m *applicationDetailModel) View() string {
 	var b strings.Builder
-	b.WriteString(fieldLabel.Render("Company:") + " " + m.application.CompanyName + "\n")
-	b.WriteString(fieldLabel.Render("Status:") + " " + applicationStatusLabel(m.application.Status) + "\n")
+	b.WriteString(model.FieldLabel.Render("Company:") + " " + m.application.CompanyName + "\n")
+	b.WriteString(model.FieldLabel.Render("Status:") + " " + applicationStatusLabel(m.application.Status) + "\n")
 	if m.application.Notes != "" {
-		b.WriteString(fieldLabel.Render("Notes:") + " " + m.application.Notes + "\n")
+		b.WriteString(model.FieldLabel.Render("Notes:") + " " + m.application.Notes + "\n")
 	}
 
 	status := m.documents.Status(m.application.ID)
-	b.WriteString("\n" + fieldLabel.Render("Documents") + "\n")
+	b.WriteString("\n" + model.FieldLabel.Render("Documents") + "\n")
 	for _, documentType := range document.Types() {
 		doc, err := status.Doc(documentType)
 		if err != nil {
@@ -132,7 +133,7 @@ func (m *applicationDetailModel) View() string {
 		help = append(help, string(unicode.ToUpper(documentType.Key()))+": review "+documentType.Label())
 	}
 	help = append(help, "f: application form", "S: submit", "D: delete", "u: refresh", "esc/b: back")
-	b.WriteString(helpStyle.Render(strings.Join(help, "  ")))
+	b.WriteString(model.HelpStyle.Render(strings.Join(help, "  ")))
 	return b.String()
 }
 
