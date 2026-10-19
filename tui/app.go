@@ -1464,8 +1464,36 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.err = nil
 		}
 		return model, cmd
+	case tea.PasteMsg:
+		return a, a.paste(msg)
 	}
 	return a, nil
+}
+
+// paste gives pasted text to the screen's text field, if it has one. A
+// paste is never a key, so a pasted "q" can't quit.
+func (a *App) paste(msg tea.PasteMsg) tea.Cmd {
+	switch a.screen {
+	case screenAllPostings:
+		return a.allPostings.paste(msg)
+	case screenActiveApplications:
+		a.activeApplicationList.paste(msg)
+	case screenCompanyList:
+		a.companyList.paste(msg)
+	case screenCompanyForm:
+		return a.companyForm.paste(msg)
+	case screenCompanyEdit:
+		return a.companyEdit.paste(msg)
+	case screenApplicationExport:
+		return a.applicationExport.paste(msg)
+	case screenApplicationNotesEdit:
+		return a.applicationNotes.paste(msg)
+	case screenApplicationForm:
+		return a.applicationForm.paste(msg)
+	case screenDocumentReviewForm:
+		return a.documentReviewForm.paste(msg)
+	}
+	return nil
 }
 
 func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {

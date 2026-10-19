@@ -72,3 +72,9 @@ func (m *companyEditModel) View() string {
 	b.WriteString(helpStyle.Render("enter: save  esc: cancel"))
 	return b.String()
 }
+
+func (m *companyEditModel) paste(msg tea.PasteMsg) tea.Cmd {
+	var cmd tea.Cmd
+	m.nameInput, cmd = m.nameInput.Update(msg)
+	return cmd
+}

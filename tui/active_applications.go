@@ -162,6 +162,13 @@ func (m *activeApplicationListModel) updateSearch(msg tea.KeyPressMsg, apps []po
 	return nil, nil
 }
 
+func (m *activeApplicationListModel) paste(msg tea.PasteMsg) {
+	if m.searching {
+		m.query += msg.Content
+		m.cursor = 0
+	}
+}
+
 // clearSearch drops the query, keeping the highlighted application
 // highlighted in the full list.
 func (m *activeApplicationListModel) clearSearch(apps []posting.ActiveApplication) {

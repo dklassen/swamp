@@ -104,3 +104,12 @@ func (m *applicationNotesModel) View() string {
 	b.WriteString(applicationNotesHelp())
 	return b.String()
 }
+
+func (m *applicationNotesModel) paste(msg tea.PasteMsg) tea.Cmd {
+	if m.saving || m.confirmingDiscard {
+		return nil
+	}
+	var cmd tea.Cmd
+	m.textarea, cmd = m.textarea.Update(msg)
+	return cmd
+}

@@ -118,6 +118,15 @@ func (m *applicationFormModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 	return cmd, nil
 }
 
+func (m *applicationFormModel) paste(msg tea.PasteMsg) tea.Cmd {
+	if m.saving || m.confirmingDiscard {
+		return nil
+	}
+	var cmd tea.Cmd
+	m.textarea, cmd = m.textarea.Update(msg)
+	return cmd
+}
+
 func (m *applicationFormModel) View() string {
 	var b strings.Builder
 	b.WriteString(applicationFormIntro() + "\n")

@@ -170,3 +170,12 @@ func (m *companyFormModel) View() string {
 	b.WriteString(helpStyle.Render("tab: next field  ←/→: change source  enter: save  esc: cancel"))
 	return b.String()
 }
+
+func (m *companyFormModel) paste(msg tea.PasteMsg) tea.Cmd {
+	if m.checking || m.focus == formFieldSource {
+		return nil
+	}
+	var cmd tea.Cmd
+	m.inputs[m.focus], cmd = m.inputs[m.focus].Update(msg)
+	return cmd
+}

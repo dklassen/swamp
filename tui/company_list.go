@@ -143,6 +143,13 @@ func (m *companyListModel) updateSearch(msg tea.KeyPressMsg, companies []company
 	return nil, nil
 }
 
+func (m *companyListModel) paste(msg tea.PasteMsg) {
+	if m.searching {
+		m.query += msg.Content
+		m.cursor = 0
+	}
+}
+
 // clearSearch drops the query, keeping the highlighted company highlighted
 // in the full list.
 func (m *companyListModel) clearSearch(companies []company.Company) {

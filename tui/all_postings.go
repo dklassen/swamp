@@ -175,6 +175,13 @@ func (m *allPostingsModel) typedKey(query string) tea.Cmd {
 	return tea.Tick(searchPause, func(time.Time) tea.Msg { return allPostingsSearchMsg{typed: typed} })
 }
 
+func (m *allPostingsModel) paste(msg tea.PasteMsg) tea.Cmd {
+	if !m.searching {
+		return nil
+	}
+	return m.typedKey(m.query + msg.Content)
+}
+
 // orderLabel names the order the pages are in.
 func (m *allPostingsModel) orderLabel() string {
 	if m.order == posting.OrderScoreDesc {

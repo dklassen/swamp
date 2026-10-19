@@ -176,3 +176,9 @@ func exportStatusLine(msg applicationExportedMsg) string {
 	}
 	return line
 }
+
+func (m *applicationExportModel) paste(msg tea.PasteMsg) tea.Cmd {
+	var cmd tea.Cmd
+	m.textinput, cmd = m.textinput.Update(msg)
+	return cmd
+}

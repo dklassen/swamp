@@ -224,3 +224,9 @@ func localClock(t time.Time) string {
 	}
 	return local.Format("Jan 2 15:04")
 }
+
+func (m *documentReviewFormModel) paste(msg tea.PasteMsg) tea.Cmd {
+	var cmd tea.Cmd
+	m.textarea, cmd = m.textarea.Update(msg)
+	return cmd
+}
