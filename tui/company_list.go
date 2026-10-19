@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -10,12 +12,15 @@ import (
 	"charm.land/lipgloss/v2/table"
 
 	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
 
-// companyListModel drives the company-list screen. It holds only its own
-// private cursor -- companies themselves are domain data owned by App and
-// passed in on every call, never cached here.
+// companyListModel drives the company-list screen, and owns the companies
+// it shows.
 type companyListModel struct {
+	id     message.ScreenInstance
 	cursor int
 	// showInfo is whether the info box (i) is open. Ephemeral, like cursor:
 	// closed each time the app starts.
@@ -24,94 +29,154 @@ type companyListModel struct {
 	// is what's been typed into it. Ephemeral, like cursor.
 	searching bool
 	query     string
+
+	companyService *service.CompanyService
+	postingService *service.PostingService
+
+	companies []company.Company
+	// openPostings is each company's open, unarchived posting count.
+	openPostings map[int64]int
+
+	width  int
+	height int
 }
 
-func newCompanyListModel() companyListModel {
-	return companyListModel{}
+func newCompanyListModel(companies *service.CompanyService, postings *service.PostingService) *companyListModel {
+	return &companyListModel{
+		companyService: companies,
+		postingService: postings,
+	}
 }
 
-// enterCompanyFormMsg signals that App should switch to the company-form
-// screen. companyListModel doesn't reset form state itself -- that's
-// still App's job until the form screen is extracted (RFC #19, PR 2).
-type enterCompanyFormMsg struct{}
+func (m *companyListModel) RegisterRoutes(r model.Router, id message.ScreenInstance) error {
+	m.id = id
+	return errors.Join(
+		model.Handle(r, model.AlwaysScope, m.companiesLoaded),
+		model.Handle(r, model.AlwaysScope, m.companyCreated),
+		model.Handle(r, model.AlwaysScope, m.companyDeleted),
+		model.Handle(r, model.AlwaysScope, m.companyNameUpdated),
+		model.Handle(r, model.FocusScope, m.keyPressed),
+		model.Handle(r, model.FocusScope, m.paste),
+		model.Handle(r, model.AlwaysScope, m.resize),
+	)
+}
 
-// enterCompanyEditMsg signals that App should switch to the company-edit
-// screen for the given company.
-type enterCompanyEditMsg struct{ company company.Company }
+func (m *companyListModel) Init() tea.Cmd {
+	return loadCompanies(m.companyService, m.postingService)
+}
 
-// refreshCompanyMsg asks App to refresh the given company. App starts the
-// sync itself, rather than this screen, because only App knows whether
-// another sync (e.g. a sync-all run) is already under way (#152).
-type refreshCompanyMsg struct{ company company.Company }
+func (m *companyListModel) companiesLoaded(loaded message.CompaniesLoadedMsg) tea.Cmd {
+	previous := m.selected()
+	m.companies = loaded.Companies
+	m.openPostings = loaded.OpenPostings
+	m.keepCursorOn(previous)
+	return message.ReportLoad(loaded.Err)
+}
 
-// syncAllKeyMsg is 'R': App starts a sync-all run (#153).
-type syncAllKeyMsg struct{}
+func (m *companyListModel) companyCreated(created message.CompanyCreatedMsg) tea.Cmd {
+	if created.Err == nil {
+		m.companies = append(m.companies, created.Company)
+		sortCompaniesByName(m.companies)
+	}
+	return nil
+}
 
-// selectCompanyMsg signals that App should switch to the posting-list
-// screen for the given company.
-type selectCompanyMsg struct{ company company.Company }
+func (m *companyListModel) companyDeleted(deleted message.CompanyDeletedMsg) tea.Cmd {
+	if deleted.Err == nil {
+		if i := indexOfCompany(m.companies, deleted.CompanyID); i != -1 {
+			m.companies = append(m.companies[:i], m.companies[i+1:]...)
+		}
+		m.clampCursor(len(m.companies))
+	}
+	return nil
+}
+
+func (m *companyListModel) companyNameUpdated(updated message.CompanyNameUpdatedMsg) tea.Cmd {
+	if updated.Err == nil {
+		if i := indexOfCompany(m.companies, updated.Company.ID); i != -1 {
+			m.companies[i] = updated.Company
+		}
+		sortCompaniesByName(m.companies)
+	}
+	return nil
+}
 
 // backToActiveApplicationsMsg signals that App should switch back to the
 // active-applications tab.
 type backToActiveApplicationsMsg struct{}
 
-// Update handles one key press. The returned tea.Cmd (if non-nil) is a
-// real async command for App to run through bubbletea as usual. The
-// returned tea.Msg (if non-nil) is an intent for App to apply
-// synchronously, in the same Update call -- not deferred through
-// bubbletea's async loop -- so screen transitions happen with the same
-// timing as before this type existed.
-func (m *companyListModel) Update(msg tea.KeyPressMsg, companies []company.Company) (tea.Cmd, tea.Msg) {
+// resize keeps the size it draws in, so it's right when the list is next
+// shown.
+func (m *companyListModel) resize(size message.ContentSizeMsg) tea.Cmd {
+	m.width, m.height = size.Width, size.Rows
+	return nil
+}
+
+// Update has nothing to do: everything the list handles is registered.
+func (m *companyListModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
+
+// keyPressed handles a key. Each command carries a copy of what it needs,
+// since it runs off the event loop.
+func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	if m.searching {
-		return m.updateSearch(msg, companies)
+		m.updateSearch(key)
+		return nil
 	}
+
 	// Commands act on the matches a kept search shows, not the whole list.
-	visible := m.visible(companies)
-	switch {
-	case msg.String() == "down", msg.String() == "j":
+	visible := m.visible()
+	var current company.Company
+	onCompany := m.cursor < len(visible)
+	if onCompany {
+		current = visible[m.cursor]
+	}
+	switch key.String() {
+	case "down", "j":
 		if m.cursor < len(visible)-1 {
 			m.cursor++
 		}
-	case msg.String() == "up", msg.String() == "k":
+	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case msg.String() == "q":
-		return tea.Quit, nil
-	case msg.String() == "d":
-		if m.cursor < len(visible) {
-			return nil, enterCompanyDeleteMsg{company: visible[m.cursor]}
+	case "q":
+		return tea.Quit
+	case "d":
+		if onCompany {
+			openPostings := m.openPostings[current.ID]
+			return func() tea.Msg { return message.OpenCompanyDeleteMsg{Company: current, OpenPostings: openPostings} }
 		}
-	case msg.String() == "r":
-		if m.cursor < len(visible) {
-			return nil, refreshCompanyMsg{company: visible[m.cursor]}
+	case "r":
+		if onCompany {
+			return func() tea.Msg { return message.RefreshCompanyMsg{Company: current} }
 		}
-	case msg.String() == "R":
-		return nil, syncAllKeyMsg{}
-	case msg.String() == "i":
+	case "R":
+		companies := slices.Clone(m.companies)
+		return func() tea.Msg { return message.ToggleSyncAllMsg{Companies: companies} }
+	case "i":
 		m.showInfo = !m.showInfo
-	case msg.String() == "a":
-		return nil, enterCompanyFormMsg{}
-	case msg.String() == "/":
+	case "a":
+		return func() tea.Msg { return message.OpenCompanyFormMsg{} }
+	case "/":
 		m.searching = true
-	case msg.String() == "esc":
-		m.clearSearch(companies)
-	case msg.String() == "e":
-		if m.cursor < len(visible) {
-			return nil, enterCompanyEditMsg{company: visible[m.cursor]}
+	case "esc":
+		m.clearSearch()
+	case "e":
+		if onCompany {
+			return func() tea.Msg { return message.OpenCompanyEditMsg{Company: current} }
 		}
-	case msg.String() == "enter":
-		if m.cursor < len(visible) {
-			return nil, selectCompanyMsg{company: visible[m.cursor]}
+	case "enter":
+		if onCompany {
+			return func() tea.Msg { return message.OpenCompanyPostingsMsg{Company: current} }
 		}
 	}
-	return nil, nil
+	return nil
 }
 
 // updateSearch handles a key while the '/' prompt is open. Every edit
 // to the query re-filters straight away and puts the cursor back on the
 // first match.
-func (m *companyListModel) updateSearch(msg tea.KeyPressMsg, companies []company.Company) (tea.Cmd, tea.Msg) {
+func (m *companyListModel) updateSearch(msg tea.KeyPressMsg) {
 	switch msg.String() {
 	default:
 		if msg.Text != "" {
@@ -127,9 +192,9 @@ func (m *companyListModel) updateSearch(msg tea.KeyPressMsg, companies []company
 		}
 	case "esc":
 		m.searching = false
-		m.clearSearch(companies)
+		m.clearSearch()
 	case "down", "ctrl+n":
-		if m.cursor < len(m.visible(companies))-1 {
+		if m.cursor < len(m.visible())-1 {
 			m.cursor++
 		}
 	case "up", "ctrl+p":
@@ -140,37 +205,37 @@ func (m *companyListModel) updateSearch(msg tea.KeyPressMsg, companies []company
 		// Keeps the matches, so letters act on them instead of being typed.
 		m.searching = false
 	}
-	return nil, nil
 }
 
-func (m *companyListModel) paste(msg tea.PasteMsg) {
+func (m *companyListModel) paste(msg tea.PasteMsg) tea.Cmd {
 	if m.searching {
 		m.query += msg.Content
 		m.cursor = 0
 	}
+	return nil
 }
 
 // clearSearch drops the query, keeping the highlighted company highlighted
 // in the full list.
-func (m *companyListModel) clearSearch(companies []company.Company) {
+func (m *companyListModel) clearSearch() {
 	cursor := 0
-	if visible := m.visible(companies); m.cursor < len(visible) {
-		cursor = max(indexOfCompany(companies, visible[m.cursor].ID), 0)
+	if visible := m.visible(); m.cursor < len(visible) {
+		cursor = max(indexOfCompany(m.companies, visible[m.cursor].ID), 0)
 	}
 	m.query = ""
 	m.cursor = cursor
 }
 
-// visible is the part of companies the query matches: a case-insensitive
-// substring of the name, in the order given. With no query, it's all of
-// them.
-func (m *companyListModel) visible(companies []company.Company) []company.Company {
+// visible is the part of the companies the query matches: a
+// case-insensitive substring of the name, in list order. With no query,
+// it's all of them.
+func (m *companyListModel) visible() []company.Company {
 	if m.query == "" {
-		return companies
+		return m.companies
 	}
 	q := strings.ToLower(m.query)
 	var matches []company.Company
-	for _, c := range companies {
+	for _, c := range m.companies {
 		if strings.Contains(strings.ToLower(c.Name), q) {
 			matches = append(matches, c)
 		}
@@ -178,37 +243,37 @@ func (m *companyListModel) visible(companies []company.Company) []company.Compan
 	return matches
 }
 
-// View renders the list in height terminal rows (App.screenRows).
-func (m *companyListModel) View(companies []company.Company, openPostings map[int64]int, width, height int) string {
+// View renders the list in the rows of the last ContentSizeMsg.
+func (m *companyListModel) View() tea.View {
 	var b strings.Builder
-	help := helpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  tab: applications  q: quit")
+	help := model.HelpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  tab: applications  q: quit")
 	switch {
 	case m.searching:
-		help = helpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: keep results  esc: clear")
+		help = model.HelpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: keep results  esc: clear")
 	case m.query != "":
-		help = helpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: edit search  esc: clear search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  q: quit")
+		help = model.HelpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: edit search  esc: clear search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  q: quit")
 	}
-	visible := m.visible(companies)
+	visible := m.visible()
 	// A sync landing while the prompt is open can shrink visible under
 	// the cursor.
 	cursor := min(m.cursor, max(len(visible)-1, 0))
 	var prompt string
-	if len(companies) > 0 {
-		prompt = searchLine(m.searching, m.query, len(visible), len(companies))
+	if len(m.companies) > 0 {
+		prompt = searchLine(m.searching, m.query, len(visible), len(m.companies))
 		b.WriteString(prompt + "\n")
 	}
 	switch {
-	case len(companies) == 0:
+	case len(m.companies) == 0:
 		b.WriteString("No companies yet. Press 'a' to add one.\n")
 	case len(visible) == 0:
 		fmt.Fprintf(&b, "No companies match %q.\n", m.query)
 	}
 	var infoBox string
 	if m.showInfo && cursor < len(visible) {
-		infoBox = companyInfoBox(visible[cursor], width)
+		infoBox = companyInfoBox(visible[cursor], m.width)
 	}
 	if len(visible) > 0 {
-		start, end := visibleWindow(cursor, len(visible), tableRows(height, help, infoBox, prompt))
+		start, end := visibleWindow(cursor, len(visible), tableRows(m.height, help, infoBox, prompt))
 		cursorRow := cursor - start
 		t := table.New().
 			Border(lipgloss.RoundedBorder()).
@@ -216,16 +281,16 @@ func (m *companyListModel) View(companies []company.Company, openPostings map[in
 			StyleFunc(func(row, _ int) lipgloss.Style {
 				style := lipgloss.NewStyle().Padding(0, 1)
 				if row == cursorRow {
-					return style.Inherit(cursorStyle)
+					return style.Inherit(model.CursorStyle)
 				}
 				return style
 			})
-		nameWidth := flexColWidth(width, openColWidth, lastFetchedColWidth)
+		nameWidth := flexColWidth(m.width, openColWidth, lastFetchedColWidth)
 		for i := start; i < end; i++ {
 			c := visible[i]
 			t.Row(
 				padCol(c.Name, nameWidth),
-				fmt.Sprintf("%*d", openColWidth, openPostings[c.ID]),
+				fmt.Sprintf("%*d", openColWidth, m.openPostings[c.ID]),
 				padCol(lastFetchedLabel(c.LastFetchedAt), lastFetchedColWidth),
 			)
 		}
@@ -235,13 +300,11 @@ func (m *companyListModel) View(companies []company.Company, openPostings map[in
 		b.WriteString(infoBox + "\n")
 	}
 	b.WriteString(help)
-	return b.String()
+	return tea.NewView(b.String())
 }
 
-// clampCursor keeps the cursor in bounds after companies shrinks (e.g. a
-// deletion). App can't reach m.cursor directly since it's private, so
-// this is the explicit hook for that case -- see companyDeletedMsg in
-// App.Update.
+// clampCursor keeps the cursor in bounds after the companies shrink (e.g.
+// a deletion).
 func (m *companyListModel) clampCursor(n int) {
 	if m.cursor >= n && m.cursor > 0 {
 		m.cursor = n - 1
@@ -298,7 +361,7 @@ func companyInfoBox(c company.Company, width int) string {
 			lines = append(lines, strings.TrimRight(line, " "))
 		}
 	} else {
-		lines = []string{dimStyle.Render("No description yet.")}
+		lines = []string{model.DimStyle.Render("No description yet.")}
 	}
 	if len(lines) > companyInfoDescriptionLines {
 		last := []rune(lines[companyInfoDescriptionLines-1])
@@ -320,8 +383,8 @@ func companyInfoBox(c company.Company, width int) string {
 }
 
 // selected is the ID of the company under the cursor, or 0.
-func (m *companyListModel) selected(companies []company.Company) int64 {
-	if visible := m.visible(companies); m.cursor < len(visible) {
+func (m *companyListModel) selected() int64 {
+	if visible := m.visible(); m.cursor < len(visible) {
 		return visible[m.cursor].ID
 	}
 	return 0
@@ -329,8 +392,8 @@ func (m *companyListModel) selected(companies []company.Company) int64 {
 
 // keepCursorOn moves the cursor to company id after a reload; if it's
 // gone, the cursor stays in range.
-func (m *companyListModel) keepCursorOn(id int64, companies []company.Company) {
-	visible := m.visible(companies)
+func (m *companyListModel) keepCursorOn(id int64) {
+	visible := m.visible()
 	if i := indexOfCompany(visible, id); i >= 0 {
 		m.cursor = i
 		return

@@ -18,6 +18,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // documentReviewFormModel drives the document-review-form screen: enter
@@ -100,11 +101,11 @@ func (m *documentReviewFormModel) changesView() string {
 		notice = "The document was " + m.who + " while you were reviewing, so nothing was saved."
 	}
 	notice += " This is what changed; it's what you're reviewing now. Check your notes still apply, then save again."
-	return warnStyle.Render(notice) + "\n" + strings.Join(lines, "\n") + "\n"
+	return model.WarnStyle.Render(notice) + "\n" + strings.Join(lines, "\n") + "\n"
 }
 
 func documentReviewFormHelp() string {
-	return helpStyle.Render("ctrl+s: pass  ctrl+g: flag  esc: cancel")
+	return model.HelpStyle.Render("ctrl+s: pass  ctrl+g: flag  esc: cancel")
 }
 
 // cancelDocumentReviewFormMsg signals that App should switch back to the

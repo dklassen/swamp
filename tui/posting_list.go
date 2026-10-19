@@ -10,6 +10,7 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // Column widths for the posting table; Title takes what's left. Values
@@ -180,17 +181,17 @@ func (m *postingListModel) Update(msg tea.KeyPressMsg, snap postingListSnapshot)
 // still fits.
 func (m *postingListModel) View(snap postingListSnapshot, width, height int) string {
 	var b strings.Builder
-	help := helpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  r: refresh  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back")
+	help := model.HelpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  r: refresh  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back")
 	// The description gets one line, truncated to the table's width.
 	var description, summary, archived string
 	if snap.companyDescription != "" {
-		description = dimStyle.Render(truncateCol(strings.Join(strings.Fields(snap.companyDescription), " "), tableWidth(width)))
+		description = model.DimStyle.Render(truncateCol(strings.Join(strings.Fields(snap.companyDescription), " "), tableWidth(width)))
 	}
 	if s := filterSummaryLine(snap.activeFilterDepartments, snap.activeFilterLocations); s != "" {
-		summary = helpStyle.Render(s)
+		summary = model.HelpStyle.Render(s)
 	}
 	if snap.hideArchived {
-		archived = helpStyle.Render("Archived postings hidden (press 'A' to show)")
+		archived = model.HelpStyle.Render("Archived postings hidden (press 'A' to show)")
 	}
 	for _, line := range []string{description, summary, archived} {
 		if line != "" {
@@ -208,7 +209,7 @@ func (m *postingListModel) View(snap postingListSnapshot, width, height int) str
 			StyleFunc(func(row, _ int) lipgloss.Style {
 				style := lipgloss.NewStyle().Padding(0, 1)
 				if row == cursorRow {
-					return style.Inherit(cursorStyle)
+					return style.Inherit(model.CursorStyle)
 				}
 				return style
 			})
@@ -259,7 +260,7 @@ func (m *postingListModel) resetCursorIfOutOfBounds(n int) {
 // setCursor points the cursor at index i, if valid. Used to keep this
 // screen's cursor in sync with wherever h/l navigation inside
 // postingDetailModel last landed, when the user returns to the list --
-// the two models don't share a cursor (postingDetailModel tracks only
+// the two model don't share a cursor (postingDetailModel tracks only
 // the one posting it's showing), so App reconciles them here at the
 // transition boundary rather than either model needing to know about
 // the other (see backToPostingListMsg in App.Update).

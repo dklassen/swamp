@@ -61,13 +61,13 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, applicati
 func startSubmit(t *testing.T, app *App) *App {
 	t.Helper()
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.screen != screenApplicationDetail {
-		t.Fatalf("screen after enter = %v, want application detail", app.screen)
+	if app.currentScreen != screenApplicationDetail {
+		t.Fatalf("screen after enter = %v, want application detail", app.currentScreen)
 	}
 	app, cmd := sendKey(app, runeKey('S'))
 	app = applyCmd(t, app, cmd)
-	if app.screen != screenApplicationSubmit {
-		t.Fatalf("screen after S = %v, want the submit screen", app.screen)
+	if app.currentScreen != screenApplicationSubmit {
+		t.Fatalf("screen after S = %v, want the submit screen", app.currentScreen)
 	}
 	return app
 }
@@ -100,8 +100,8 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 	if got.Status != application.Submitted {
 		t.Errorf("status after confirming = %s, want %s", got.Status, application.Submitted)
 	}
-	if app.screen != screenActiveApplications {
-		t.Errorf("screen after confirming = %v, want the home screen", app.screen)
+	if app.currentScreen != screenActiveApplications {
+		t.Errorf("screen after confirming = %v, want the home screen", app.currentScreen)
 	}
 }
 
@@ -123,8 +123,8 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 			if got.Status != application.Started {
 				t.Errorf("status = %s, want it left at %s", got.Status, application.Started)
 			}
-			if app.screen != screenApplicationDetail {
-				t.Errorf("screen = %v, want back on application detail", app.screen)
+			if app.currentScreen != screenApplicationDetail {
+				t.Errorf("screen = %v, want back on application detail", app.currentScreen)
 			}
 		})
 	}
@@ -144,14 +144,14 @@ func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc}) // back to application detail, save still in flight
 	app, cmd := sendKey(app, runeKey('S'))
 	app = applyCmd(t, app, cmd)
-	if app.screen != screenApplicationSubmit {
-		t.Fatalf("screen after S again = %v, want the submit screen", app.screen)
+	if app.currentScreen != screenApplicationSubmit {
+		t.Fatalf("screen after S again = %v, want the submit screen", app.currentScreen)
 	}
 
 	app = applyCmd(t, app, saveCmd)
 
-	if app.screen != screenApplicationSubmit {
-		t.Errorf("screen after the earlier instance's save result = %v, want the submit screen (the reopened one stays open)", app.screen)
+	if app.currentScreen != screenApplicationSubmit {
+		t.Errorf("screen after the earlier instance's save result = %v, want the submit screen (the reopened one stays open)", app.currentScreen)
 	}
 }
 

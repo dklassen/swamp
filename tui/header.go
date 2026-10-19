@@ -6,6 +6,8 @@ import (
 	"strings"
 
 	"charm.land/lipgloss/v2"
+
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // header is the line App.View draws above every screen, with a rule
@@ -21,14 +23,14 @@ func (a *App) header() string {
 	// Less the leading space.
 	crumbs := fitCrumbs(a.crumbs(a.path(s)), tableWidth(a.width)-1)
 	for i, crumb := range crumbs {
-		style := dimStyle
+		style := model.DimStyle
 		if i == len(crumbs)-1 {
-			style = sectionStyle
+			style = model.SectionStyle
 		}
 		crumbs[i] = style.Render(crumb)
 	}
-	line := " " + strings.Join(crumbs, dimStyle.Render(crumbSeparator))
-	return line + "\n" + dimStyle.Render(strings.Repeat("─", tableWidth(a.width))) + "\n"
+	line := " " + strings.Join(crumbs, model.DimStyle.Render(crumbSeparator))
+	return line + "\n" + model.DimStyle.Render(strings.Repeat("─", tableWidth(a.width))) + "\n"
 }
 
 const crumbSeparator = " › "
@@ -145,14 +147,15 @@ func (a *App) crumbs(path []screen) []string {
 	return crumbs
 }
 
-// tabBar names every tab with its count, and underlines active.
+// tabBar names every tab, with a count on all but the companies tab, and
+// underlines active.
 func (a *App) tabBar(active screen) string {
 	tabs := []struct {
 		screen screen
 		label  string
 	}{
 		{screenActiveApplications, fmt.Sprintf(" Applications %d ", len(a.activeApplications))},
-		{screenCompanyList, fmt.Sprintf(" Companies %d ", len(a.companies))},
+		{screenCompanyList, " Companies "},
 		{screenAllPostings, fmt.Sprintf(" All postings %d ", a.allPostings.total)},
 	}
 	const gap = "  "
@@ -160,17 +163,17 @@ func (a *App) tabBar(active screen) string {
 	for i, tab := range tabs {
 		if i > 0 {
 			line.WriteString(gap)
-			rule.WriteString(dimStyle.Render(strings.Repeat("─", len(gap))))
+			rule.WriteString(model.DimStyle.Render(strings.Repeat("─", len(gap))))
 		}
-		style, stroke := dimStyle, "─"
+		style, stroke := model.DimStyle, "─"
 		if tab.screen == active {
-			style, stroke = sectionStyle, "━"
+			style, stroke = model.SectionStyle, "━"
 		}
 		line.WriteString(style.Render(tab.label))
 		rule.WriteString(style.Render(strings.Repeat(stroke, lipgloss.Width(tab.label))))
 	}
 	if rest := tableWidth(a.width) - lipgloss.Width(rule.String()); rest > 0 {
-		rule.WriteString(dimStyle.Render(strings.Repeat("─", rest)))
+		rule.WriteString(model.DimStyle.Render(strings.Repeat("─", rest)))
 	}
 	return line.String() + "\n" + rule.String() + "\n"
 }

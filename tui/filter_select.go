@@ -7,6 +7,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/dklassen/swamp/internal/domain/filter"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // filterSelectModel drives the department/location filter-select screen
@@ -155,7 +156,7 @@ func filterWindow(cursor, deptCount, locCount, rows int) (deptStart, deptEnd, lo
 // (issue #138).
 func (m *filterSelectModel) View(height int) string {
 	var b strings.Builder
-	help := helpStyle.Render("↑/↓ (j/k): select  space: toggle  enter: save  esc/b: cancel")
+	help := model.HelpStyle.Render("↑/↓ (j/k): select  space: toggle  enter: save  esc/b: cancel")
 	if len(m.departmentOptions) == 0 && len(m.locationOptions) == 0 {
 		b.WriteString("No department/location values discovered yet -- refresh the company first.\n")
 	}
@@ -167,14 +168,14 @@ func (m *filterSelectModel) View(height int) string {
 		deptStart, deptEnd, locStart, locEnd = filterWindow(m.cursor, len(m.departmentOptions), len(m.locationOptions), rows-2)
 	}
 	if deptStart < deptEnd {
-		b.WriteString(fieldLabel.Render("Department") + "\n")
+		b.WriteString(model.FieldLabel.Render("Department") + "\n")
 		for i := deptStart; i < deptEnd; i++ {
 			d := m.departmentOptions[i]
 			b.WriteString(renderFilterOption(d, m.selectedDepartments[d], i == m.cursor))
 		}
 	}
 	if locStart < locEnd {
-		b.WriteString(fieldLabel.Render("Location") + "\n")
+		b.WriteString(model.FieldLabel.Render("Location") + "\n")
 		for i := locStart; i < locEnd; i++ {
 			l := m.locationOptions[i]
 			b.WriteString(renderFilterOption(l, m.selectedLocations[l], len(m.departmentOptions)+i == m.cursor))

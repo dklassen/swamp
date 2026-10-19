@@ -45,23 +45,23 @@ func deleteTestApp(t *testing.T) (*App, application.Application) {
 func startDelete(t *testing.T, app *App) *App {
 	t.Helper()
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.screen != screenApplicationDetail {
-		t.Fatalf("screen after enter = %v, want application detail", app.screen)
+	if app.currentScreen != screenApplicationDetail {
+		t.Fatalf("screen after enter = %v, want application detail", app.currentScreen)
 	}
 	app, cmd := sendKey(app, runeKey('p'))
 	app = applyCmd(t, app, cmd)
 	app, cmd = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
 	app = applyCmd(t, app, cmd)
-	if app.screen != screenApplicationDetail {
-		t.Fatalf("screen after viewing the posting = %v, want application detail", app.screen)
+	if app.currentScreen != screenApplicationDetail {
+		t.Fatalf("screen after viewing the posting = %v, want application detail", app.currentScreen)
 	}
 	if _, ok := app.applicationsByPosting[app.applicationDetail.application.Posting.ID]; !ok {
 		t.Fatal("applicationsByPosting has no entry for the application after viewing its posting")
 	}
 	app, cmd = sendKey(app, runeKey('D'))
 	app = applyCmd(t, app, cmd)
-	if app.screen != screenApplicationDelete {
-		t.Fatalf("screen after D = %v, want the delete confirmation", app.screen)
+	if app.currentScreen != screenApplicationDelete {
+		t.Fatalf("screen after D = %v, want the delete confirmation", app.currentScreen)
 	}
 	return app
 }
@@ -86,8 +86,8 @@ func TestDeleteFlow_ConfirmingDeletesTheApplicationAndKeepsItsDocuments(t *testi
 	if _, err := os.Stat(resumeDir(t, app, target.ID)); err != nil {
 		t.Errorf("document directory after confirming: Stat err = %v, want it kept", err)
 	}
-	if app.screen != screenActiveApplications {
-		t.Errorf("screen after confirming = %v, want the home screen", app.screen)
+	if app.currentScreen != screenActiveApplications {
+		t.Errorf("screen after confirming = %v, want the home screen", app.currentScreen)
 	}
 	if len(app.activeApplications) != 0 {
 		t.Errorf("active applications = %d, want the deleted one gone from the list", len(app.activeApplications))
@@ -114,8 +114,8 @@ func TestDeleteFlow_DecliningKeepsTheApplication(t *testing.T) {
 			if !mustDoc(t, app.documents.Status(target.ID), document.Resume).Exists {
 				t.Error("resume gone after declining, want it kept")
 			}
-			if app.screen != screenApplicationDetail {
-				t.Errorf("screen = %v, want back on application detail", app.screen)
+			if app.currentScreen != screenApplicationDetail {
+				t.Errorf("screen = %v, want back on application detail", app.currentScreen)
 			}
 		})
 	}
@@ -132,8 +132,8 @@ func TestDeleteFlow_FailureReturnsToDetailWithTheError(t *testing.T) {
 	failure := errors.New("disk on fire")
 	app, _ = sendKey(app, applicationDeletedMsg{application: app.applicationDelete.application, err: failure})
 
-	if app.screen != screenApplicationDetail {
-		t.Errorf("screen = %v, want back on application detail", app.screen)
+	if app.currentScreen != screenApplicationDetail {
+		t.Errorf("screen = %v, want back on application detail", app.currentScreen)
 	}
 	if !errors.Is(app.err, failure) {
 		t.Errorf("err = %v, want %v shown", app.err, failure)
@@ -173,8 +173,8 @@ func TestDeleteFlow_AlreadyDeletedElsewhere_StaysOnDetailAndSaysSo(t *testing.T)
 
 	app = sendKeyAndApply(t, app, runeKey('D'))
 
-	if app.screen != screenApplicationDetail {
-		t.Errorf("screen = %v, want application detail (nothing left to confirm)", app.screen)
+	if app.currentScreen != screenApplicationDetail {
+		t.Errorf("screen = %v, want application detail (nothing left to confirm)", app.currentScreen)
 	}
 	if app.err == nil || !strings.Contains(app.err.Error(), "already deleted") {
 		t.Errorf("err = %v, want one saying it was already deleted", app.err)
@@ -216,8 +216,8 @@ func TestDeleteFlow_FromTheHomeList(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, runeKey('d'))
 
-	if app.screen != screenApplicationDelete {
-		t.Fatalf("screen after d = %v, want the delete confirmation", app.screen)
+	if app.currentScreen != screenApplicationDelete {
+		t.Fatalf("screen after d = %v, want the delete confirmation", app.currentScreen)
 	}
 	view := ansi.Strip(viewText(app))
 	if after := strings.SplitN(view, "\n", 3)[:2]; !slices.Equal(after, before) {
@@ -229,8 +229,8 @@ func TestDeleteFlow_FromTheHomeList(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, runeKey('n'))
 
-	if app.screen != screenActiveApplications {
-		t.Errorf("screen after n = %v, want the home list", app.screen)
+	if app.currentScreen != screenActiveApplications {
+		t.Errorf("screen after n = %v, want the home list", app.currentScreen)
 	}
 	if _, err := storeOf(app).Applications.Get(context.Background(), target.ID); err != nil {
 		t.Errorf("application.GetByID after n: %v, want the application kept", err)

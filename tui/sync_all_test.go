@@ -14,6 +14,7 @@ import (
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/sync"
+	"github.com/dklassen/swamp/tui/message"
 )
 
 // newSyncAllTestApp returns an App on the company list with companies
@@ -39,15 +40,32 @@ func newSyncAllTestApp(t *testing.T, failing ...string) (*App, testutil.TestApp)
 	return app, s
 }
 
-// step runs one command and feeds its message to app, returning the
-// command Update gives back without running it -- unlike applyCmd, which
-// drains the whole chain -- so tests can act between companies.
+// step runs one command and feeds its message to app (each one, for a
+// batch), returning the commands Update gives back without running them
+// -- unlike applyCmd, which drains the whole chain -- so tests can act
+// between companies.
 func step(t *testing.T, app *App, cmd tea.Cmd) (*App, tea.Cmd) {
 	t.Helper()
 	if cmd == nil {
 		t.Fatal("step: nil Cmd, want the next sync-all step")
 	}
-	return sendKey(app, cmd())
+	batch, ok := cmd().(tea.BatchMsg)
+	if !ok {
+		return sendKey(app, cmd())
+	}
+	var next []tea.Cmd
+	for _, c := range batch {
+		var n tea.Cmd
+		app, n = sendKey(app, c())
+		next = append(next, n)
+	}
+	return app, tea.Batch(next...)
+}
+
+// bannerLine is the last line app shows: the banner, when it has one.
+func bannerLine(app *App) string {
+	lines := strings.Split(ansi.Strip(viewText(app)), "\n")
+	return lines[len(lines)-1]
 }
 
 // TestApp_SyncAll_R_StartsWithFirstCompany: 'R' on the company list
@@ -56,12 +74,12 @@ func step(t *testing.T, app *App, cmd tea.Cmd) (*App, tea.Cmd) {
 func TestApp_SyncAll_R_StartsWithFirstCompany(t *testing.T) {
 	app, _ := newSyncAllTestApp(t)
 
-	app, cmd := sendKey(app, runeKey('R'))
+	app, cmd := sendIntentKey(t, app, runeKey('R'))
 	if cmd == nil {
 		t.Fatal("Update on 'R' returned nil Cmd, want the first sync step")
 	}
-	if want := "Syncing 1/3: Acme"; !strings.Contains(app.status, want) {
-		t.Errorf("status = %q, want it to contain %q", app.status, want)
+	if want := "Syncing 1/3: Acme"; !strings.Contains(bannerLine(app), want) {
+		t.Errorf("banner = %q, want it to contain %q", bannerLine(app), want)
 	}
 }
 
@@ -71,24 +89,24 @@ func TestApp_SyncAll_R_StartsWithFirstCompany(t *testing.T) {
 func TestApp_SyncAll_StepsThroughEveryCompanyThenSummarizes(t *testing.T) {
 	app, s := newSyncAllTestApp(t)
 
-	app, cmd := sendKey(app, runeKey('R'))
+	app, cmd := sendIntentKey(t, app, runeKey('R'))
 	app, cmd = step(t, app, cmd)
-	if want := "Syncing 2/3: Globex"; !strings.Contains(app.status, want) {
-		t.Errorf("after the first company, status = %q, want it to contain %q", app.status, want)
+	if want := "Syncing 2/3: Globex"; !strings.Contains(bannerLine(app), want) {
+		t.Errorf("after the first company, banner = %q, want it to contain %q", bannerLine(app), want)
 	}
 	app, cmd = step(t, app, cmd)
-	if want := "Syncing 3/3: Initech"; !strings.Contains(app.status, want) {
-		t.Errorf("after the second company, status = %q, want it to contain %q", app.status, want)
+	if want := "Syncing 3/3: Initech"; !strings.Contains(bannerLine(app), want) {
+		t.Errorf("after the second company, banner = %q, want it to contain %q", bannerLine(app), want)
 	}
 	app, cmd = step(t, app, cmd)
+	app = applyCmd(t, app, cmd) // the summary and the end-of-run reload
 	if app.status != "3 companies, 0 failed" {
 		t.Errorf("final status = %q, want %q", app.status, "3 companies, 0 failed")
 	}
-	if app.syncAll.running {
-		t.Error("syncAll.running after the last company = true, want false")
+	if syncBarShowing(app) {
+		t.Error("progress bar still showing after the last company")
 	}
-	app = applyCmd(t, app, cmd) // the end-of-run reload
-	for _, c := range app.companies {
+	for _, c := range app.companyList.companies {
 		postings, err := s.Postings.ListByCompany(t.Context(), c.ID)
 		if err != nil {
 			t.Fatalf("ListPostingsByCompany: %v", err)
@@ -103,10 +121,11 @@ func TestApp_SyncAll_StepsThroughEveryCompanyThenSummarizes(t *testing.T) {
 func TestApp_SyncAll_FailingCompany_RunContinuesAndSummaryNamesIt(t *testing.T) {
 	app, _ := newSyncAllTestApp(t, "globex")
 
-	app, cmd := sendKey(app, runeKey('R'))
+	app, cmd := sendIntentKey(t, app, runeKey('R'))
 	for range 3 {
 		app, cmd = step(t, app, cmd)
 	}
+	app = applyCmd(t, app, cmd)
 	if want := "3 companies, 1 failed (Globex)"; app.status != want {
 		t.Errorf("final status = %q, want %q", app.status, want)
 	}
@@ -121,9 +140,10 @@ func TestApp_SyncAll_NoCompanies_FinishesImmediately(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 
-	app, _ = sendKey(app, runeKey('R'))
-	if app.status != "0 companies, 0 failed" || app.syncAll.running {
-		t.Errorf("status = %q, running = %v, want %q and false", app.status, app.syncAll.running, "0 companies, 0 failed")
+	app, cmd := sendIntentKey(t, app, runeKey('R'))
+	app = applyCmd(t, app, cmd)
+	if app.status != "0 companies, 0 failed" || syncBarShowing(app) {
+		t.Errorf("status = %q, bar showing = %v, want %q and no bar", app.status, syncBarShowing(app), "0 companies, 0 failed")
 	}
 }
 
@@ -133,25 +153,26 @@ func TestApp_SyncAll_NoCompanies_FinishesImmediately(t *testing.T) {
 func TestApp_SyncAll_RAgainDuringRun_StopsAfterInFlightCompany(t *testing.T) {
 	app, _ := newSyncAllTestApp(t)
 
-	app, cmd := sendKey(app, runeKey('R'))
-	app, _ = sendKey(app, runeKey('R')) // stop while Acme is in flight
-	app, next := step(t, app, cmd)      // Acme reports back
+	app, cmd := sendIntentKey(t, app, runeKey('R'))
+	app, _ = sendIntentKey(t, app, runeKey('R')) // stop while Acme is in flight
+	app, next := step(t, app, cmd)               // Acme reports back
 
-	if want := "Stopped after 1/3: 1 company, 0 failed"; app.status != want {
-		t.Errorf("status = %q, want %q", app.status, want)
-	}
-	if app.syncAll.running {
-		t.Error("syncAll.running after stopping = true, want false")
+	if syncBarShowing(app) {
+		t.Error("progress bar still showing after stopping")
 	}
 	if next == nil {
-		t.Fatal("stopping returned nil Cmd, want the end-of-run reload")
+		t.Fatal("stopping returned nil Cmd, want the summary and the end-of-run reload")
 	}
 	if msg, ok := next().(tea.BatchMsg); ok {
 		for _, c := range msg {
-			if _, isStep := c().(syncAllStepMsg); isStep {
+			if _, isStep := c().(message.SyncAllStepMsg); isStep {
 				t.Error("stopping issued another company's sync")
 			}
 		}
+	}
+	app = applyCmd(t, app, next)
+	if want := "Stopped after 1/3: 1 company, 0 failed"; app.status != want {
+		t.Errorf("status = %q, want %q", app.status, want)
 	}
 }
 
@@ -161,18 +182,18 @@ func TestApp_SyncAll_RAgainDuringRun_StopsAfterInFlightCompany(t *testing.T) {
 func TestApp_SyncAll_StopThenRBeforeInFlightReports_NoSecondRun(t *testing.T) {
 	app, _ := newSyncAllTestApp(t)
 
-	app, cmd := sendKey(app, runeKey('R'))
-	app, _ = sendKey(app, runeKey('R')) // stop
-	app, again := sendKey(app, runeKey('R'))
+	app, cmd := sendIntentKey(t, app, runeKey('R'))
+	app, _ = sendIntentKey(t, app, runeKey('R')) // stop
+	app, again := sendIntentKey(t, app, runeKey('R'))
 	if again != nil {
 		t.Error("'R' while the stopped run's company is still in flight returned a Cmd, want nil")
 	}
-	if app.syncAll.runID != 1 {
-		t.Errorf("runID = %d, want 1 -- no second run started", app.syncAll.runID)
+	if want := "Stopping after Acme…"; !strings.HasSuffix(bannerLine(app), want) {
+		t.Errorf("banner = %q, want it to end with %q -- no second run started", bannerLine(app), want)
 	}
 	app, _ = step(t, app, cmd)
-	if app.syncAll.running {
-		t.Error("syncAll.running after the in-flight company reported = true, want false")
+	if syncBarShowing(app) {
+		t.Error("progress bar still showing after the in-flight company reported")
 	}
 }
 
@@ -181,19 +202,18 @@ func TestApp_SyncAll_StopThenRBeforeInFlightReports_NoSecondRun(t *testing.T) {
 func TestApp_SyncAll_MessageFromEarlierRun_Ignored(t *testing.T) {
 	app, _ := newSyncAllTestApp(t)
 
-	app, cmd := sendKey(app, runeKey('R'))
-	app, _ = sendKey(app, runeKey('R'))
+	app, cmd := sendIntentKey(t, app, runeKey('R'))
+	app, _ = sendIntentKey(t, app, runeKey('R'))
 	app, _ = step(t, app, cmd) // run 1 stops after Acme
-	app, _ = sendKey(app, runeKey('R'))
-	status := app.status
+	app, _ = sendIntentKey(t, app, runeKey('R'))
+	banner := bannerLine(app)
 
-	app, stray := sendKey(app, syncAllStepMsg{runID: 1, result: sync.Result{Name: "Acme"}})
+	app, stray := sendKey(app, message.SyncAllStepMsg{RunID: 1, Result: sync.Result{Name: "Acme"}})
 	if stray != nil {
 		t.Error("a message from run 1 issued a Cmd during run 2, want nil")
 	}
-	if len(app.syncAll.results) != 0 || app.syncAll.next != 0 || app.status != status {
-		t.Errorf("after a stray run-1 message: results %d, next %d, status %q; want 0, 0, %q",
-			len(app.syncAll.results), app.syncAll.next, app.status, status)
+	if bannerLine(app) != banner {
+		t.Errorf("banner after a stray run-1 message = %q, want %q (unchanged)", bannerLine(app), banner)
 	}
 }
 
@@ -203,13 +223,13 @@ func TestApp_SyncAll_MessageFromEarlierRun_Ignored(t *testing.T) {
 func TestApp_SyncAll_RDuringRun_Refused(t *testing.T) {
 	app, _ := newSyncAllTestApp(t)
 
-	app, _ = sendKey(app, runeKey('R'))
-	app, cmd := sendKey(app, runeKey('r'))
+	app, _ = sendIntentKey(t, app, runeKey('R'))
+	app, cmd := sendIntentKey(t, app, runeKey('r'))
 	if cmd != nil {
 		t.Error("'r' during a sync-all run returned a Cmd, want nil")
 	}
-	if want := "Sync all in progress: refresh unavailable"; app.status != want {
-		t.Errorf("status = %q, want %q", app.status, want)
+	if want := "Sync all in progress: refresh unavailable"; !strings.HasSuffix(bannerLine(app), want) {
+		t.Errorf("banner = %q, want it to end with %q", bannerLine(app), want)
 	}
 }
 
@@ -217,19 +237,19 @@ func TestApp_SyncAll_RDuringRun_Refused(t *testing.T) {
 // so a run in progress is no reason to refuse it.
 func TestApp_SyncAll_FilterSaveDuringRun_Saves(t *testing.T) {
 	app, s := newSyncAllTestApp(t)
-	if _, err := s.Postings.Ingest(t.Context(), app.companies[0].ID, jobboard.Ashby, "acme-eng", posting.IngestedFields{Title: "Engineer", Department: "Engineering"}); err != nil {
+	if _, err := s.Postings.Ingest(t.Context(), app.companyList.companies[0].ID, jobboard.Ashby, "acme-eng", posting.IngestedFields{Title: "Engineer", Department: "Engineering"}); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
+	app, _ = sendIntentKey(t, app, runeKey('R'))                  // a run under way, its first step not run
 	app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // Acme's postings
 	app = applyCmd(t, app, cmd)
 	app, cmd = sendKey(app, runeKey('f'))
 	app = applyCmd(t, app, cmd)
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 
-	app.syncAll = syncAllState{runID: 1, running: true, companies: app.companies}
 	app, cmd = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.screen != screenPostingList {
-		t.Errorf("screen = %v, want screenPostingList", app.screen)
+	if app.currentScreen != screenPostingList {
+		t.Errorf("screen = %v, want screenPostingList", app.currentScreen)
 	}
 	if cmd == nil {
 		t.Fatal("saving filters during a sync-all run returned nil Cmd, want one that saves them")
@@ -244,20 +264,21 @@ func TestApp_SyncAll_FilterSaveDuringRun_Saves(t *testing.T) {
 	}
 }
 
-// TestApp_SyncAll_LeavingCompanyList_RunContinues: the run belongs to
-// App, not the company list screen, so it carries on and still reports
-// its summary after the user moves elsewhere.
+// TestApp_SyncAll_LeavingCompanyList_RunContinues: the run doesn't belong
+// to the company list screen, so it carries on and still reports its
+// summary after the user moves elsewhere.
 func TestApp_SyncAll_LeavingCompanyList_RunContinues(t *testing.T) {
 	app, _ := newSyncAllTestApp(t)
 
-	app, cmd := sendKey(app, runeKey('R'))
+	app, cmd := sendIntentKey(t, app, runeKey('R'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
-	if app.screen != screenAllPostings {
-		t.Fatalf("screen after tab = %v, want screenAllPostings", app.screen)
+	if app.currentScreen != screenAllPostings {
+		t.Fatalf("screen after tab = %v, want screenAllPostings", app.currentScreen)
 	}
 	for range 3 {
 		app, cmd = step(t, app, cmd)
 	}
+	app = applyCmd(t, app, cmd)
 	if app.status != "3 companies, 0 failed" {
 		t.Errorf("status after leaving the company list = %q, want %q", app.status, "3 companies, 0 failed")
 	}
@@ -268,15 +289,16 @@ func TestApp_SyncAll_LeavingCompanyList_RunContinues(t *testing.T) {
 // run and reported as skipped, not failed.
 func TestApp_SyncAll_CompanySyncingElsewhere_SummarizedAsSkipped(t *testing.T) {
 	app, s := newSyncAllTestApp(t)
-	globex := app.companies[1]
+	globex := app.companyList.companies[1]
 	if taken, err := s.Companies.AcquireSyncLease(t.Context(), globex.ID, "swamp-fetch", time.Minute); err != nil || !taken {
 		t.Fatalf("AcquireSyncLease = %v, %v", taken, err)
 	}
 
-	app, cmd := sendKey(app, runeKey('R'))
+	app, cmd := sendIntentKey(t, app, runeKey('R'))
 	for range 3 {
 		app, cmd = step(t, app, cmd)
 	}
+	app = applyCmd(t, app, cmd)
 	if want := "3 companies, 0 failed, 1 skipped (Globex)"; app.status != want {
 		t.Errorf("final status = %q, want %q", app.status, want)
 	}
@@ -287,18 +309,18 @@ func TestApp_SyncAll_CompanySyncingElsewhere_SummarizedAsSkipped(t *testing.T) {
 func TestApp_SyncAll_PostingListRefreshUnavailable(t *testing.T) {
 	app, _ := newSyncAllTestApp(t)
 
-	app, _ = sendKey(app, runeKey('R')) // the run's first step isn't run
+	app, _ = sendIntentKey(t, app, runeKey('R')) // the run's first step isn't run
 	app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = applyCmd(t, app, cmd)
-	if app.screen != screenPostingList {
-		t.Fatalf("screen = %v, want the posting list", app.screen)
+	if app.currentScreen != screenPostingList {
+		t.Fatalf("screen = %v, want the posting list", app.currentScreen)
 	}
-	app, cmd = sendKey(app, runeKey('r'))
+	app, cmd = sendIntentKey(t, app, runeKey('r'))
 	if cmd != nil {
 		t.Errorf("r during sync all returned a command, want none")
 	}
-	if want := "Sync all in progress: refresh unavailable"; app.status != want {
-		t.Errorf("status = %q, want %q", app.status, want)
+	if want := "Sync all in progress: refresh unavailable"; !strings.HasSuffix(bannerLine(app), want) {
+		t.Errorf("banner = %q, want it to end with %q", bannerLine(app), want)
 	}
 }
 
@@ -311,13 +333,20 @@ func barCells(view string) (filled, total int) {
 	return filled, filled + strings.Count(last, "░")
 }
 
+// syncBarShowing is whether app's banner has the sync-all bar, which it
+// does for exactly as long as a run is under way.
+func syncBarShowing(app *App) bool {
+	_, total := barCells(viewText(app))
+	return total > 0
+}
+
 // TestApp_SyncAll_ProgressBarFillsAsCompaniesFinish: the bar shows the share
 // of companies already synced, beside the company in flight.
 func TestApp_SyncAll_ProgressBarFillsAsCompaniesFinish(t *testing.T) {
 	app, _ := newSyncAllTestApp(t)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 
-	app, cmd := sendKey(app, runeKey('R'))
+	app, cmd := sendIntentKey(t, app, runeKey('R'))
 	for done := range 3 {
 		filled, total := barCells(viewText(app))
 		if total == 0 {
@@ -339,7 +368,7 @@ func TestApp_Refresh_ShowsASpinnerUntilTheCompanyReports(t *testing.T) {
 	app, _ := newSyncAllTestApp(t)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 
-	app, cmd := sendKey(app, runeKey('r'))
+	app, cmd := sendIntentKey(t, app, runeKey('r'))
 
 	lines := strings.Split(ansi.Strip(viewText(app)), "\n")
 	last := lines[len(lines)-1]

@@ -10,6 +10,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // applicationDeleteModel is the delete confirmation, a box over the screen
@@ -60,13 +61,13 @@ func (m *applicationDeleteModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) 
 // View is a box for App to draw over m.from, at most width wide.
 func (m *applicationDeleteModel) View(width int) string {
 	var b strings.Builder
-	b.WriteString(fieldLabel.Render("Delete the application for "+m.application.Posting.Title+"?") + " (" + m.application.CompanyName + ")\n")
+	b.WriteString(model.FieldLabel.Render("Delete the application for "+m.application.Posting.Title+"?") + " (" + m.application.CompanyName + ")\n")
 	b.WriteString("Status: " + applicationStatusLabel(m.application.Status) + "\n")
 	b.WriteString("Its status history, reviews and drafts are kept.\n\n")
 	if m.confirmed {
 		b.WriteString("Deleting...")
 	} else {
-		b.WriteString(fieldLabel.Render("y") + ": delete  " + fieldLabel.Render("n/esc/enter") + ": keep it")
+		b.WriteString(model.FieldLabel.Render("y") + ": delete  " + model.FieldLabel.Render("n/esc/enter") + ": keep it")
 	}
 	return confirmBox(b.String(), width)
 }

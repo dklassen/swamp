@@ -14,6 +14,7 @@ import (
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // applicationFormModel drives the screen for entering a posting's
@@ -62,18 +63,18 @@ func (m *applicationFormModel) setHeight(height int) {
 }
 
 func applicationFormIntro() string {
-	return dimStyle.Render("What the apply page asks for. Paste its questions below.")
+	return model.DimStyle.Render("What the apply page asks for. Paste its questions below.")
 }
 
-func applicationFormHelp() string { return helpStyle.Render("ctrl+s: save  esc: cancel") }
+func applicationFormHelp() string { return model.HelpStyle.Render("ctrl+s: save  esc: cancel") }
 
 // discardBox is the box App draws over the screen while esc's discard
 // question is open, at most width wide.
 func (m *applicationFormModel) discardBox(width int) string {
 	var b strings.Builder
-	b.WriteString(fieldLabel.Render("Discard unsaved changes?") + "\n")
+	b.WriteString(model.FieldLabel.Render("Discard unsaved changes?") + "\n")
 	b.WriteString("Your edits to the application form aren't saved.\n\n")
-	b.WriteString(fieldLabel.Render("y") + ": discard  " + fieldLabel.Render("n/esc") + ": keep editing  " + fieldLabel.Render("ctrl+s") + ": save")
+	b.WriteString(model.FieldLabel.Render("y") + ": discard  " + model.FieldLabel.Render("n/esc") + ": keep editing  " + model.FieldLabel.Render("ctrl+s") + ": save")
 	return confirmBox(b.String(), width)
 }
 
@@ -131,7 +132,7 @@ func (m *applicationFormModel) View() string {
 	var b strings.Builder
 	b.WriteString(applicationFormIntro() + "\n")
 	if m.parseErr != nil {
-		b.WriteString(errStyle.Render(m.parseErr.Error()))
+		b.WriteString(model.ErrStyle.Render(m.parseErr.Error()))
 	}
 	b.WriteString("\n")
 	b.WriteString(m.textarea.View() + "\n")

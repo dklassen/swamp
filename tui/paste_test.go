@@ -58,24 +58,24 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 		open func(app *App)
 	}{
 		{name: "company form", open: func(app *App) {
-			app.screen, app.companyForm = screenCompanyForm, newCompanyFormModel(nil)
+			app.currentScreen, app.companyForm = screenCompanyForm, newCompanyFormModel(nil)
 			// Past the source picker, which takes no text.
 			app.companyForm.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		}},
 		{name: "company edit", open: func(app *App) {
-			app.screen, app.companyEdit = screenCompanyEdit, newCompanyEditModel(nil, 1, "")
+			app.currentScreen, app.companyEdit = screenCompanyEdit, newCompanyEditModel(nil, 1, "")
 		}},
 		{name: "export", open: func(app *App) {
-			app.screen, app.applicationExport = screenApplicationExport, newApplicationExportModel(nil, app.documents, posting.ActiveApplication{}, "", 80)
+			app.currentScreen, app.applicationExport = screenApplicationExport, newApplicationExportModel(nil, app.documents, posting.ActiveApplication{}, "", 80)
 		}},
 		{name: "notes", open: func(app *App) {
-			app.screen, app.applicationNotes = screenApplicationNotesEdit, newApplicationNotesModel(nil, 1, "", 80, 20, 0)
+			app.currentScreen, app.applicationNotes = screenApplicationNotesEdit, newApplicationNotesModel(nil, 1, "", 80, 20, 0)
 		}},
 		{name: "application form", open: func(app *App) {
-			app.screen, app.applicationForm = screenApplicationForm, newApplicationFormModel(nil, 1, nil, 80, 20)
+			app.currentScreen, app.applicationForm = screenApplicationForm, newApplicationFormModel(nil, 1, nil, 80, 20)
 		}},
 		{name: "document review", open: func(app *App) {
-			app.screen, app.documentReviewForm = screenDocumentReviewForm, newDocumentReviewFormModel(nil, app.documents, 1, document.CoverLetter, "", 80, 20, 0)
+			app.currentScreen, app.documentReviewForm = screenDocumentReviewForm, newDocumentReviewFormModel(nil, app.documents, 1, document.CoverLetter, "", 80, 20, 0)
 		}},
 	}
 	for _, tt := range tests {
@@ -126,8 +126,8 @@ func TestApp_CompanyList_PasteWithSearchClosed_IsNotACommand(t *testing.T) {
 	if cmd != nil {
 		t.Errorf("paste returned a command (%T), want none", cmd())
 	}
-	if app.screen != screenCompanyList {
-		t.Errorf("screen = %v, want the company list", app.screen)
+	if app.currentScreen != screenCompanyList {
+		t.Errorf("screen = %v, want the company list", app.currentScreen)
 	}
 }
 
@@ -142,8 +142,8 @@ func TestApp_ActiveApplications_PasteIntoSearch_FiltersByIt(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.screen != screenApplicationDetail || app.applicationDetail.application.Posting.Title != "Engineer 07" {
-		t.Fatalf("after paste, enter, enter: screen %v showing %q, want application detail for Engineer 07", app.screen, app.applicationDetail.application.Posting.Title)
+	if app.currentScreen != screenApplicationDetail || app.applicationDetail.application.Posting.Title != "Engineer 07" {
+		t.Fatalf("after paste, enter, enter: screen %v showing %q, want application detail for Engineer 07", app.currentScreen, app.applicationDetail.application.Posting.Title)
 	}
 }
 

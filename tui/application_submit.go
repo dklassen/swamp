@@ -7,6 +7,7 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // applicationSubmitModel drives the submit screen (#166), reached with S
@@ -72,26 +73,26 @@ type confirmApplicationSubmitMsg struct {
 
 func (m *applicationSubmitModel) View() string {
 	var b strings.Builder
-	b.WriteString(fieldLabel.Render("Company:") + " " + m.application.CompanyName + "\n\n")
+	b.WriteString(model.FieldLabel.Render("Company:") + " " + m.application.CompanyName + "\n\n")
 
-	b.WriteString(fieldLabel.Render("1. Apply link:") + " ")
+	b.WriteString(model.FieldLabel.Render("1. Apply link:") + " ")
 	switch {
 	case m.url == "":
 		b.WriteString("this posting has no link to open\n")
 	case m.opened == nil:
 		b.WriteString("opening " + m.url + "...\n")
 	case m.opened.err != nil:
-		b.WriteString(errStyle.Render("couldn't open "+m.url+": "+m.opened.err.Error()) + "\n")
+		b.WriteString(model.ErrStyle.Render("couldn't open "+m.url+": "+m.opened.err.Error()) + "\n")
 	default:
 		b.WriteString("opened " + m.url + "\n")
 	}
 
-	b.WriteString(fieldLabel.Render("2. Documents:") + " ")
+	b.WriteString(model.FieldLabel.Render("2. Documents:") + " ")
 	switch {
 	case m.exported == nil:
 		b.WriteString("exporting...\n")
 	case m.exported.err != nil:
-		b.WriteString(errStyle.Render("export failed: "+m.exported.err.Error()) + "\n")
+		b.WriteString(model.ErrStyle.Render("export failed: "+m.exported.err.Error()) + "\n")
 	default:
 		b.WriteString(exportStatusLine(*m.exported) + "\n")
 		for _, path := range m.exported.paths {
@@ -103,11 +104,11 @@ func (m *applicationSubmitModel) View() string {
 		b.WriteString("  " + documentType.Label() + ": " + reviewBadge(review, ok) + "\n")
 	}
 
-	b.WriteString("\n" + fieldLabel.Render("3.") + " Fill in the form in your browser and submit it there.\n\n")
+	b.WriteString("\n" + model.FieldLabel.Render("3.") + " Fill in the form in your browser and submit it there.\n\n")
 	if m.confirmed {
 		b.WriteString("Marking submitted...\n")
 	} else {
-		b.WriteString("Did you submit it? " + fieldLabel.Render("y") + ": mark submitted  " + fieldLabel.Render("n/esc") + ": not yet, leave it as is\n")
+		b.WriteString("Did you submit it? " + model.FieldLabel.Render("y") + ": mark submitted  " + model.FieldLabel.Render("n/esc") + ": not yet, leave it as is\n")
 	}
 	return b.String()
 }
@@ -118,7 +119,7 @@ func (m *applicationSubmitModel) View() string {
 // like any other export (#188).
 func (a *App) startApplicationSubmit(application posting.ActiveApplication) tea.Cmd {
 	a.applicationSubmit = newApplicationSubmitModel(application, a.newScreenInstance())
-	a.screen = screenApplicationSubmit
+	a.currentScreen = screenApplicationSubmit
 	export := exportApplicationDocuments(a.documentService, a.documents, application, a.exportDir)
 	if a.applicationSubmit.url == "" {
 		return export

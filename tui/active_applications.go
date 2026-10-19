@@ -17,6 +17,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // activeApplicationListModel drives the active-applications screen -- the
@@ -204,12 +205,12 @@ func (m *activeApplicationListModel) visible(apps []posting.ActiveApplication) [
 // (see nextStep), and now is what each row's Age counts up to.
 func (m *activeApplicationListModel) View(apps []posting.ActiveApplication, progress map[int64]map[document.Type]documentProgress, now time.Time, width, height int) string {
 	var b strings.Builder
-	help := helpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: search  s: status  e: export PDFs  d: delete  tab: companies  q: quit")
+	help := model.HelpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: search  s: status  e: export PDFs  d: delete  tab: companies  q: quit")
 	switch {
 	case m.searching:
-		help = helpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: keep results  esc: clear")
+		help = model.HelpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: keep results  esc: clear")
 	case m.query != "":
-		help = helpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: edit search  esc: clear search  s: status  e: export PDFs  d: delete  q: quit")
+		help = model.HelpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: edit search  esc: clear search  s: status  e: export PDFs  d: delete  q: quit")
 	}
 	visible := m.visible(apps)
 	// A reload landing while the prompt is open can shrink visible under
@@ -234,7 +235,7 @@ func (m *activeApplicationListModel) View(apps []posting.ActiveApplication, prog
 			StyleFunc(func(row, _ int) lipgloss.Style {
 				style := lipgloss.NewStyle().Padding(0, 1)
 				if row == cursorRow {
-					return style.Inherit(cursorStyle)
+					return style.Inherit(model.CursorStyle)
 				}
 				return style
 			})

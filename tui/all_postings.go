@@ -12,6 +12,7 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // seenColWidth fits a first-seen date, "Sep 30".
@@ -84,7 +85,7 @@ type allPostingsSearchMsg struct{ typed int }
 // pageSize is how many rows fill height: what's left after the search and
 // page lines, the table's chrome and the help.
 func (m *allPostingsModel) pageSize(height int) int {
-	return max(tableRows(height-2, helpStyle.Render(allPostingsHelp)), 1)
+	return max(tableRows(height-2, model.HelpStyle.Render(allPostingsHelp)), 1)
 }
 
 // load reads the page on screen again, size rows long, with the query and,
@@ -206,7 +207,7 @@ func fitCell(l posting.Listing) string {
 	}
 	cell := padCol(fmt.Sprint(l.Score), fitColWidth)
 	if l.ScoreStale {
-		return dimStyle.Render(cell)
+		return model.DimStyle.Render(cell)
 	}
 	return cell
 }
@@ -225,15 +226,15 @@ func locationLabel(l posting.Listing) string {
 
 func (m *allPostingsModel) View(width, height int) string {
 	var b strings.Builder
-	help := helpStyle.Render(allPostingsHelp)
+	help := model.HelpStyle.Render(allPostingsHelp)
 	switch {
 	case m.searching:
-		help = helpStyle.Render(allPostingsSearchHelp)
+		help = model.HelpStyle.Render(allPostingsSearchHelp)
 	case m.query != "":
-		help = helpStyle.Render(allPostingsResultsHelp)
+		help = model.HelpStyle.Render(allPostingsResultsHelp)
 	}
 	b.WriteString(searchLine(m.searching, m.query, m.page.Total, m.total) + "\n")
-	fmt.Fprintf(&b, "%s\n", dimStyle.Render(fmt.Sprintf("Page %d of %d · %d postings · %s", len(m.starts), m.pages(), m.page.Total, m.orderLabel())))
+	fmt.Fprintf(&b, "%s\n", model.DimStyle.Render(fmt.Sprintf("Page %d of %d · %d postings · %s", len(m.starts), m.pages(), m.page.Total, m.orderLabel())))
 	switch {
 	case len(m.page.Listings) == 0 && m.query != "":
 		fmt.Fprintf(&b, "No postings match %q.\n", m.query)
@@ -249,7 +250,7 @@ func (m *allPostingsModel) View(width, height int) string {
 			StyleFunc(func(row, _ int) lipgloss.Style {
 				style := lipgloss.NewStyle().Padding(0, 1)
 				if row == cursorRow {
-					return style.Inherit(cursorStyle)
+					return style.Inherit(model.CursorStyle)
 				}
 				return style
 			})
