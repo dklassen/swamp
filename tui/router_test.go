@@ -22,10 +22,10 @@ type probe struct{ always, focused int }
 func (p *probe) Init() tea.Cmd                       { return nil }
 func (p *probe) Update(tea.Msg) (tea.Model, tea.Cmd) { return p, nil }
 func (p *probe) View() tea.View                      { return tea.NewView("") }
-func (p *probe) RegisterRoutes(r model.Router, _ message.ScreenInstance) error {
+func (p *probe) RegisterRoutes(r model.Router) error {
 	return errors.Join(
-		r.Register(probeMsg{}, model.AlwaysScope, func(tea.Msg) tea.Cmd { p.always++; return nil }),
-		r.Register(probeMsg{}, model.FocusScope, func(tea.Msg) tea.Cmd { p.focused++; return nil }),
+		r.Register(probeMsg{}, p, model.AlwaysScope, func(tea.Msg) tea.Cmd { p.always++; return nil }),
+		r.Register(probeMsg{}, p, model.FocusScope, func(tea.Msg) tea.Cmd { p.focused++; return nil }),
 	)
 }
 

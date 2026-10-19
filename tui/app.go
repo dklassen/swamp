@@ -160,7 +160,6 @@ type App struct {
 	// routes is every registered component's handlers, by message type,
 	// and registering is the one whose RegisterRoutes is running.
 	routes       map[model.RouteID][]*model.Route
-	registering  model.SubComponent
 	lastInstance message.ScreenInstance
 	// sized is the last size sent to the screens.
 	sized message.ContentSizeMsg
@@ -235,17 +234,15 @@ func New(
 
 // register runs s's RegisterRoutes, recording s as its handlers' owner.
 func (a *App) register(s model.SubComponent) {
-	a.lastInstance++
-	a.registering = s
-	if err := s.RegisterRoutes(a, a.lastInstance); err != nil {
+	if err := s.RegisterRoutes(a); err != nil {
 		panic(fmt.Sprintf("tui: registering %T: %v", s, err))
 	}
 }
 
 // Register is Router's, for the component whose RegisterRoutes is running.
-func (a *App) Register(msg tea.Msg, scope model.Scope, handler model.HandlerFunc) error {
+func (a *App) Register(msg tea.Msg, s model.SubComponent, scope model.Scope, handler model.HandlerFunc) error {
 	id := model.RouteIDOf(msg)
-	a.routes[id] = append(a.routes[id], model.NewRoute(a.registering, scope, handler))
+	a.routes[id] = append(a.routes[id], model.NewRoute(s, scope, handler))
 	return nil
 }
 

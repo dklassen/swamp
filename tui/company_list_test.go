@@ -218,7 +218,7 @@ type recordingRouter struct {
 	routes map[model.RouteID]model.HandlerFunc
 }
 
-func (r *recordingRouter) Register(msg tea.Msg, _ model.Scope, handler model.HandlerFunc) error {
+func (r *recordingRouter) Register(msg tea.Msg, m model.SubComponent, _ model.Scope, handler model.HandlerFunc) error {
 	r.routes[model.RouteIDOf(msg)] = handler
 	return nil
 }
@@ -228,7 +228,7 @@ func (r *recordingRouter) Register(msg tea.Msg, _ model.Scope, handler model.Han
 func assertHandlersFailOnWrongMessage(t *testing.T, c model.SubComponent) {
 	t.Helper()
 	r := &recordingRouter{routes: map[model.RouteID]model.HandlerFunc{}}
-	if err := c.RegisterRoutes(r, 1); err != nil {
+	if err := c.RegisterRoutes(r); err != nil {
 		t.Fatalf("RegisterRoutes: %v", err)
 	}
 	for id, handle := range r.routes {

@@ -27,18 +27,18 @@ type HandlerFunc func(tea.Msg) tea.Cmd
 type Router interface {
 	// Register calls handler for every msg of the same concrete type that
 	// scope lets through.
-	Register(msg tea.Msg, scope Scope, handler HandlerFunc) error
+	Register(msg tea.Msg, s SubComponent, scope Scope, handler HandlerFunc) error
 }
 
 // Handle registers handle for every T that scope lets through. The route
 // is T itself, so a handler can't be registered for a message it doesn't
 // take.
-func Handle[T tea.Msg](r Router, scope Scope, handle func(T) tea.Cmd) error {
+func Handle[T tea.Msg](r Router, s SubComponent, scope Scope, handle func(T) tea.Cmd) error {
 	var zero T
 	if any(zero) == nil {
 		return fmt.Errorf("model.Handle: the handler takes %v, an interface, which has no type to route by; take a concrete message type", reflect.TypeFor[T]())
 	}
-	return r.Register(zero, scope, func(msg tea.Msg) tea.Cmd {
+	return r.Register(zero, s, scope, func(msg tea.Msg) tea.Cmd {
 		m, ok := msg.(T)
 		if !ok {
 			return message.Fail(fmt.Errorf("handler for %T got %T", zero, msg))
@@ -53,7 +53,7 @@ func Handle[T tea.Msg](r Router, scope Scope, handle func(T) tea.Cmd) error {
 type SubComponent interface {
 	tea.Model
 	// RegisterRoutes runs when the router opens the component, before Init.
-	RegisterRoutes(r Router, id message.ScreenInstance) error
+	RegisterRoutes(r Router) error
 }
 
 // Route is one registered handler and the component that registered it.

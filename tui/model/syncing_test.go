@@ -19,7 +19,7 @@ type fakeRouter struct {
 	routes map[model.RouteID]*model.Route
 }
 
-func (r *fakeRouter) Register(msg tea.Msg, scope model.Scope, handler model.HandlerFunc) error {
+func (r *fakeRouter) Register(msg tea.Msg, m model.SubComponent, scope model.Scope, handler model.HandlerFunc) error {
 	r.routes[model.RouteIDOf(msg)] = model.NewRoute(r.owner, scope, handler)
 	return nil
 }
@@ -31,7 +31,7 @@ func newSyncing(t *testing.T) (*model.Syncing, func(tea.Msg) tea.Cmd) {
 	t.Helper()
 	m := model.NewSyncing(nil)
 	r := &fakeRouter{owner: m, routes: map[model.RouteID]*model.Route{}}
-	if err := m.RegisterRoutes(r, 1); err != nil {
+	if err := m.RegisterRoutes(r); err != nil {
 		t.Fatalf("RegisterRoutes: %v", err)
 	}
 	return m, func(msg tea.Msg) tea.Cmd {
@@ -155,7 +155,7 @@ func TestSyncing_Handlers_FailOnTheWrongMessage(t *testing.T) {
 	t.Parallel()
 	m := model.NewSyncing(nil)
 	r := &fakeRouter{owner: m, routes: map[model.RouteID]*model.Route{}}
-	if err := m.RegisterRoutes(r, 1); err != nil {
+	if err := m.RegisterRoutes(r); err != nil {
 		t.Fatalf("RegisterRoutes: %v", err)
 	}
 	for id, route := range r.routes {

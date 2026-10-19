@@ -48,16 +48,15 @@ func newCompanyListModel(companies *service.CompanyService, postings *service.Po
 	}
 }
 
-func (m *companyListModel) RegisterRoutes(r model.Router, id message.ScreenInstance) error {
-	m.id = id
+func (m *companyListModel) RegisterRoutes(r model.Router) error {
 	return errors.Join(
-		model.Handle(r, model.AlwaysScope, m.companiesLoaded),
-		model.Handle(r, model.AlwaysScope, m.companyCreated),
-		model.Handle(r, model.AlwaysScope, m.companyDeleted),
-		model.Handle(r, model.AlwaysScope, m.companyNameUpdated),
-		model.Handle(r, model.FocusScope, m.keyPressed),
-		model.Handle(r, model.FocusScope, m.paste),
-		model.Handle(r, model.AlwaysScope, m.resize),
+		model.Handle(r, m, model.AlwaysScope, m.companiesLoaded),
+		model.Handle(r, m, model.AlwaysScope, m.companyCreated),
+		model.Handle(r, m, model.AlwaysScope, m.companyDeleted),
+		model.Handle(r, m, model.AlwaysScope, m.companyNameUpdated),
+		model.Handle(r, m, model.FocusScope, m.keyPressed),
+		model.Handle(r, m, model.FocusScope, m.paste),
+		model.Handle(r, m, model.AlwaysScope, m.resize),
 	)
 }
 
