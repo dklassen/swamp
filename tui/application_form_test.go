@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // TestApplicationFormModel_InvalidText_StaysOpenAndSaysWhy: a line the
@@ -15,7 +15,7 @@ func TestApplicationFormModel_InvalidText_StaysOpenAndSaysWhy(t *testing.T) {
 
 	m := newApplicationFormModel(nil, 7, nil, 80, 20)
 	m.textarea.SetValue("resume: maybe\nWhy us? *\n")
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 	if cmd != nil || intent != nil {
 		t.Fatalf("ctrl+s on invalid text: cmd %v, intent %T; want neither (nothing saved, screen stays)", cmd, intent)
 	}
@@ -34,7 +34,7 @@ func TestApplicationFormModel_EscWithUnsavedEdits_AsksBeforeDiscarding(t *testin
 
 	m := newApplicationFormModel(nil, 7, nil, 80, 20)
 	m.textarea.InsertString("Why us? *\n")
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if cmd != nil || intent != nil {
 		t.Fatalf("esc with unsaved edits: cmd %v, intent %T; want neither (screen stays to ask)", cmd, intent)
 	}
@@ -50,16 +50,16 @@ func TestApplicationFormModel_DiscardPrompt(t *testing.T) {
 
 	tests := []struct {
 		name       string
-		key        tea.KeyMsg
+		key        tea.KeyPressMsg
 		wantCancel bool
 		wantSave   bool
 		wantPrompt bool
 	}{
-		{name: "y discards", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("y")}, wantCancel: true},
-		{name: "n keeps editing", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("n")}},
-		{name: "esc keeps editing", key: tea.KeyMsg{Type: tea.KeyEsc}},
-		{name: "ctrl+s saves", key: tea.KeyMsg{Type: tea.KeyCtrlS}, wantSave: true},
-		{name: "other keys are ignored", key: tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("x")}, wantPrompt: true},
+		{name: "y discards", key: runeKey('y'), wantCancel: true},
+		{name: "n keeps editing", key: runeKey('n')},
+		{name: "esc keeps editing", key: tea.KeyPressMsg{Code: tea.KeyEsc}},
+		{name: "ctrl+s saves", key: tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}, wantSave: true},
+		{name: "other keys are ignored", key: runeKey('x'), wantPrompt: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -68,7 +68,7 @@ func TestApplicationFormModel_DiscardPrompt(t *testing.T) {
 			m := newApplicationFormModel(nil, 7, nil, 80, 20)
 			m.textarea.InsertString("Why us? *\n")
 			typed := m.textarea.Value()
-			m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+			m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 
 			cmd, intent := m.Update(tt.key)
 			if _, cancelled := intent.(cancelApplicationFormMsg); cancelled != tt.wantCancel {
@@ -91,7 +91,7 @@ func TestApplicationFormModel_EscWithoutEdits_Cancels(t *testing.T) {
 	t.Parallel()
 
 	m := newApplicationFormModel(nil, 7, nil, 80, 20)
-	if _, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc}); intent != (cancelApplicationFormMsg{}) {
+	if _, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc}); intent != (cancelApplicationFormMsg{}) {
 		t.Fatalf("intent = %T, want cancelApplicationFormMsg", intent)
 	}
 }
@@ -103,12 +103,12 @@ func TestApplicationFormModel_WhileSaving_IgnoresKeys(t *testing.T) {
 
 	m := newApplicationFormModel(nil, 7, nil, 80, 20)
 	m.textarea.InsertString("Why us? *\n")
-	if cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS}); cmd == nil {
+	if cmd, _ := m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}); cmd == nil {
 		t.Fatal("ctrl+s on a valid form returned no save cmd")
 	}
 	typed := m.textarea.Value()
 
-	for _, key := range []tea.KeyMsg{{Type: tea.KeyEsc}, {Type: tea.KeyRunes, Runes: []rune("x")}, {Type: tea.KeyCtrlS}} {
+	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEsc}, runeKey('x'), {Code: 's', Mod: tea.ModCtrl}} {
 		if cmd, intent := m.Update(key); cmd != nil || intent != nil {
 			t.Errorf("%v while saving: cmd %v, intent %T; want neither", key, cmd, intent)
 		}

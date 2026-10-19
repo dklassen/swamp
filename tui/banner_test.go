@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -31,7 +31,7 @@ func TestApp_Banner_ShowsBelowTheScreen(t *testing.T) {
 			app = clearBanner(app)
 			tt.set(app)
 
-			lines := strings.Split(ansi.Strip(app.View()), "\n")
+			lines := strings.Split(ansi.Strip(viewText(app)), "\n")
 			if !strings.Contains(lines[0], "Applications") {
 				t.Errorf("first line = %q, want the tab bar", lines[0])
 			}

@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/company"
 )
@@ -39,9 +39,9 @@ type confirmCompanyDeleteMsg struct {
 	company company.Company
 }
 
-func (m *companyDeleteModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
+func (m *companyDeleteModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 	switch {
-	case msg.Type == tea.KeyEsc, msg.Type == tea.KeyEnter, msg.String() == "n":
+	case msg.String() == "esc", msg.String() == "enter", msg.String() == "n":
 		return nil, cancelCompanyDeleteMsg{}
 	case msg.String() == "y" && !m.confirmed:
 		m.confirmed = true

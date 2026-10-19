@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
@@ -55,8 +55,8 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	}
 	app := newAppOn(s, newTestSyncer(s, nil), docs)
 	app = applyCmd(t, app, app.Init())
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
-	if view := app.View(); !strings.Contains(view, "[PASSED]") {
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if view := viewText(app); !strings.Contains(view, "[PASSED]") {
 		t.Fatalf("application detail before the edit doesn't show [PASSED]:\n%s", view)
 	}
 
@@ -65,15 +65,15 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	}
 	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: document.Resume, before: documents.ContentSHA256("# Draft\n")})
 
-	if view := app.View(); strings.Contains(view, "[PASSED]") {
+	if view := viewText(app); strings.Contains(view, "[PASSED]") {
 		t.Errorf("application detail still shows the review of the old version as [PASSED]:\n%s", view)
 	}
 
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if app.screen != screenActiveApplications {
 		t.Fatalf("screen after esc = %v, want the home list", app.screen)
 	}
-	if view := app.View(); strings.Contains(view, "R:✓") {
+	if view := viewText(app); strings.Contains(view, "R:✓") {
 		t.Errorf("home list row still shows the resume as passed:\n%s", view)
 	}
 }
@@ -82,7 +82,7 @@ func TestApp_EditorClosedWithAnError_ShowsIt(t *testing.T) {
 	t.Parallel()
 
 	app, _ := deleteTestApp(t)
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	app = sendKeyAndApply(t, app, editorClosedMsg{err: errors.New("tui: $EDITOR is not set")})
 
@@ -100,7 +100,7 @@ func TestApp_EditorClosedAfterAChange_RecordsTheWrite(t *testing.T) {
 
 	ctx := context.Background()
 	app, target := deleteTestApp(t) // resume drafted as "# Draft\n"
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if _, err := app.documents.Write(target.ID, document.Resume, "# Edited\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -120,7 +120,7 @@ func TestApp_EditorClosedWithoutAChange_RecordsNothing(t *testing.T) {
 	t.Parallel()
 
 	app, target := deleteTestApp(t) // resume drafted as "# Draft\n"
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: document.Resume, before: documents.ContentSHA256("# Draft\n")})
 

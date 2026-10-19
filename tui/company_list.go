@@ -5,9 +5,9 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 
 	"github.com/dklassen/swamp/internal/domain/company"
 )
@@ -61,18 +61,18 @@ type backToActiveApplicationsMsg struct{}
 // synchronously, in the same Update call -- not deferred through
 // bubbletea's async loop -- so screen transitions happen with the same
 // timing as before this type existed.
-func (m *companyListModel) Update(msg tea.KeyMsg, companies []company.Company) (tea.Cmd, tea.Msg) {
+func (m *companyListModel) Update(msg tea.KeyPressMsg, companies []company.Company) (tea.Cmd, tea.Msg) {
 	if m.searching {
 		return m.updateSearch(msg, companies)
 	}
 	// Commands act on the matches a kept search shows, not the whole list.
 	visible := m.visible(companies)
 	switch {
-	case msg.Type == tea.KeyDown, msg.String() == "j":
+	case msg.String() == "down", msg.String() == "j":
 		if m.cursor < len(visible)-1 {
 			m.cursor++
 		}
-	case msg.Type == tea.KeyUp, msg.String() == "k":
+	case msg.String() == "up", msg.String() == "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
@@ -94,13 +94,13 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []company.Company) (
 		return nil, enterCompanyFormMsg{}
 	case msg.String() == "/":
 		m.searching = true
-	case msg.Type == tea.KeyEsc:
+	case msg.String() == "esc":
 		m.clearSearch(companies)
 	case msg.String() == "e":
 		if m.cursor < len(visible) {
 			return nil, enterCompanyEditMsg{company: visible[m.cursor]}
 		}
-	case msg.Type == tea.KeyEnter:
+	case msg.String() == "enter":
 		if m.cursor < len(visible) {
 			return nil, selectCompanyMsg{company: visible[m.cursor]}
 		}
@@ -111,34 +111,43 @@ func (m *companyListModel) Update(msg tea.KeyMsg, companies []company.Company) (
 // updateSearch handles a key while the '/' prompt is open. Every edit
 // to the query re-filters straight away and puts the cursor back on the
 // first match.
-func (m *companyListModel) updateSearch(msg tea.KeyMsg, companies []company.Company) (tea.Cmd, tea.Msg) {
-	switch msg.Type {
-	case tea.KeyRunes, tea.KeySpace:
-		m.query += string(msg.Runes)
-		m.cursor = 0
-	case tea.KeyBackspace:
+func (m *companyListModel) updateSearch(msg tea.KeyPressMsg, companies []company.Company) (tea.Cmd, tea.Msg) {
+	switch msg.String() {
+	default:
+		if msg.Text != "" {
+			m.query += msg.Text
+			m.cursor = 0
+		}
+	case "backspace":
 		if r := []rune(m.query); len(r) > 0 {
 			m.query = string(r[:len(r)-1])
 			m.cursor = 0
 		} else {
 			m.searching = false
 		}
-	case tea.KeyEsc:
+	case "esc":
 		m.searching = false
 		m.clearSearch(companies)
-	case tea.KeyDown, tea.KeyCtrlN:
+	case "down", "ctrl+n":
 		if m.cursor < len(m.visible(companies))-1 {
 			m.cursor++
 		}
-	case tea.KeyUp, tea.KeyCtrlP:
+	case "up", "ctrl+p":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case tea.KeyEnter:
+	case "enter":
 		// Keeps the matches, so letters act on them instead of being typed.
 		m.searching = false
 	}
 	return nil, nil
+}
+
+func (m *companyListModel) paste(msg tea.PasteMsg) {
+	if m.searching {
+		m.query += msg.Content
+		m.cursor = 0
+	}
 }
 
 // clearSearch drops the query, keeping the highlighted company highlighted
@@ -202,6 +211,7 @@ func (m *companyListModel) View(companies []company.Company, openPostings map[in
 		start, end := visibleWindow(cursor, len(visible), tableRows(height, help, infoBox, prompt))
 		cursorRow := cursor - start
 		t := table.New().
+			Border(lipgloss.RoundedBorder()).
 			Headers("Name", "Open", "Last fetched").
 			StyleFunc(func(row, _ int) lipgloss.Style {
 				style := lipgloss.NewStyle().Padding(0, 1)
@@ -305,7 +315,7 @@ func companyInfoBox(c company.Company, width int) string {
 	return lipgloss.NewStyle().
 		Border(lipgloss.RoundedBorder()).
 		Padding(0, 1).
-		Width(textWidth + 2).
+		Width(textWidth + 4).
 		Render(strings.Join(append([]string{header}, lines...), "\n"))
 }
 

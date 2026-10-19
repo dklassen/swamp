@@ -3,8 +3,8 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/sync"
@@ -86,25 +86,25 @@ func (m *companyFormModel) cycleSource(direction int) {
 	m.sourceIndex = ((m.sourceIndex+direction)%n + n) % n
 }
 
-func (m *companyFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
+func (m *companyFormModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 	if m.checking {
 		return nil, nil
 	}
 	switch {
-	case msg.Type == tea.KeyEsc:
+	case msg.String() == "esc":
 		return nil, cancelCompanyFormMsg{}
-	case msg.Type == tea.KeyTab:
+	case msg.String() == "tab":
 		m.blurFocused()
 		m.focus = (m.focus + 1) % formFieldCount
 		m.focusFocused()
 		return nil, nil
-	case m.focus == formFieldSource && msg.Type == tea.KeyRight:
+	case m.focus == formFieldSource && msg.String() == "right":
 		m.cycleSource(1)
 		return nil, nil
-	case m.focus == formFieldSource && msg.Type == tea.KeyLeft:
+	case m.focus == formFieldSource && msg.String() == "left":
 		m.cycleSource(-1)
 		return nil, nil
-	case msg.Type == tea.KeyEnter:
+	case msg.String() == "enter":
 		name := strings.TrimSpace(m.inputs[formFieldName].Value())
 		sourceRef := m.inputs[formFieldSourceRef].Value()
 		if name == "" || sourceRef == "" {
@@ -169,4 +169,13 @@ func (m *companyFormModel) View() string {
 	}
 	b.WriteString(helpStyle.Render("tab: next field  ←/→: change source  enter: save  esc: cancel"))
 	return b.String()
+}
+
+func (m *companyFormModel) paste(msg tea.PasteMsg) tea.Cmd {
+	if m.checking || m.focus == formFieldSource {
+		return nil
+	}
+	var cmd tea.Cmd
+	m.inputs[m.focus], cmd = m.inputs[m.focus].Update(msg)
+	return cmd
 }

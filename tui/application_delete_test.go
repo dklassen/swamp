@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/internal/domain/application"
@@ -44,13 +44,13 @@ func deleteTestApp(t *testing.T) (*App, application.Application) {
 // applicationsByPosting), and presses D.
 func startDelete(t *testing.T, app *App) *App {
 	t.Helper()
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if app.screen != screenApplicationDetail {
 		t.Fatalf("screen after enter = %v, want application detail", app.screen)
 	}
 	app, cmd := sendKey(app, runeKey('p'))
 	app = applyCmd(t, app, cmd)
-	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc})
+	app, cmd = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
 	app = applyCmd(t, app, cmd)
 	if app.screen != screenApplicationDetail {
 		t.Fatalf("screen after viewing the posting = %v, want application detail", app.screen)
@@ -99,7 +99,7 @@ func TestDeleteFlow_ConfirmingDeletesTheApplicationAndKeepsItsDocuments(t *testi
 
 func TestDeleteFlow_DecliningKeepsTheApplication(t *testing.T) {
 	t.Parallel()
-	for _, key := range []tea.KeyMsg{runeKey('n'), {Type: tea.KeyEsc}, {Type: tea.KeyEnter}} {
+	for _, key := range []tea.KeyPressMsg{runeKey('n'), {Code: tea.KeyEsc}, {Code: tea.KeyEnter}} {
 		t.Run(key.String(), func(t *testing.T) {
 			t.Parallel()
 			app, target := deleteTestApp(t)
@@ -166,7 +166,7 @@ func TestDeleteFlow_AlreadyDeletedElsewhere_StaysOnDetailAndSaysSo(t *testing.T)
 	t.Parallel()
 
 	app, target := deleteTestApp(t)
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if err := storeOf(app).Applications.Delete(context.Background(), target.ID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
@@ -188,12 +188,12 @@ func TestDeleteFlow_ConfirmationIsDrawnOverDetail(t *testing.T) {
 
 	app, _ := deleteTestApp(t)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
-	before := strings.SplitN(ansi.Strip(app.View()), "\n", 3)[:2]
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	before := strings.SplitN(ansi.Strip(viewText(app)), "\n", 3)[:2]
 
 	app = sendKeyAndApply(t, app, runeKey('D'))
 
-	view := ansi.Strip(app.View())
+	view := ansi.Strip(viewText(app))
 	if after := strings.SplitN(view, "\n", 3)[:2]; !slices.Equal(after, before) {
 		t.Errorf("header = %q, want it as before D, %q", after, before)
 	}
@@ -212,14 +212,14 @@ func TestDeleteFlow_FromTheHomeList(t *testing.T) {
 
 	app, target := deleteTestApp(t)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
-	before := strings.SplitN(ansi.Strip(app.View()), "\n", 3)[:2]
+	before := strings.SplitN(ansi.Strip(viewText(app)), "\n", 3)[:2]
 
 	app = sendKeyAndApply(t, app, runeKey('d'))
 
 	if app.screen != screenApplicationDelete {
 		t.Fatalf("screen after d = %v, want the delete confirmation", app.screen)
 	}
-	view := ansi.Strip(app.View())
+	view := ansi.Strip(viewText(app))
 	if after := strings.SplitN(view, "\n", 3)[:2]; !slices.Equal(after, before) {
 		t.Errorf("header = %q, want it as before d, %q", after, before)
 	}

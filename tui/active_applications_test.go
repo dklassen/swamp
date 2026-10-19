@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
@@ -40,14 +40,14 @@ func TestActiveApplicationListModel_CursorMovement_ClampsToApps(t *testing.T) {
 	m := newActiveApplicationListModel()
 	apps := testActiveApplications()
 
-	m.Update(tea.KeyMsg{Type: tea.KeyDown}, apps)
-	m.Update(tea.KeyMsg{Type: tea.KeyDown}, apps)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, apps)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, apps)
 	if m.cursor != 1 {
 		t.Fatalf("cursor after two downs = %d, want 1 (clamped)", m.cursor)
 	}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyUp}, apps)
-	m.Update(tea.KeyMsg{Type: tea.KeyUp}, apps)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyUp}, apps)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyUp}, apps)
 	if m.cursor != 0 {
 		t.Fatalf("cursor after two ups = %d, want 0 (clamped)", m.cursor)
 	}
@@ -64,7 +64,7 @@ func TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication(t *test
 	// apps[1] is left with no LatestReviews -- neither document reviewed yet.
 
 	m := newActiveApplicationListModel()
-	got := m.View(apps, nil, time.Time{}, 0, 20)
+	got := ansi.Strip(m.View(apps, nil, time.Time{}, 0, 20))
 
 	if !containsAll(got, "CL:✗ R:✓", "CL:- R:-") {
 		t.Fatalf("View() = %q, want CL:✗ R:✓ for the reviewed application and CL:- R:- for the unreviewed one", got)
@@ -116,7 +116,7 @@ func TestActiveApplicationListModel_Enter_ReturnsEnterApplicationDetailMsg(t *te
 	m := newActiveApplicationListModel()
 	apps := testActiveApplications()
 
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps)
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}
@@ -133,7 +133,7 @@ func TestActiveApplicationListModel_EmptyList_KeysDoNotPanic(t *testing.T) {
 	t.Parallel()
 
 	m := newActiveApplicationListModel()
-	for _, key := range []tea.KeyMsg{runeKey('s'), {Type: tea.KeyEnter}} {
+	for _, key := range []tea.KeyPressMsg{runeKey('s'), {Code: tea.KeyEnter}} {
 		if cmd, intent := m.Update(key, nil); cmd != nil || intent != nil {
 			t.Fatalf("Update(%v) on empty list = %v, %v, want nil, nil", key, cmd, intent)
 		}
@@ -145,9 +145,9 @@ func TestActiveApplicationListModel_E_EntersExportForSelectedApplication(t *test
 
 	m := newActiveApplicationListModel()
 	apps := testActiveApplications()
-	m.Update(tea.KeyMsg{Type: tea.KeyDown}, apps)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, apps)
 
-	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("e")}, apps)
+	_, intent := m.Update(runeKey('e'), apps)
 
 	got, ok := intent.(enterApplicationExportMsg)
 	if !ok {
@@ -493,8 +493,8 @@ func typeHomeKeys(t *testing.T, m *activeApplicationListModel, apps []posting.Ac
 // to open the highlighted one, returning that intent.
 func openHomeHighlighted(t *testing.T, m *activeApplicationListModel, apps []posting.ActiveApplication) tea.Msg {
 	t.Helper()
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
-	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps)
+	_, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps)
 	return intent
 }
 
@@ -519,7 +519,7 @@ func TestActiveApplicationListModel_Search_EnterKeepsMatchesForCommands(t *testi
 	m := newActiveApplicationListModel()
 
 	typeHomeKeys(t, &m, apps, "/glo")
-	if _, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps); intent != nil {
+	if _, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps); intent != nil {
 		t.Fatalf("enter while typing: intent = %#v, want none", intent)
 	}
 	if m.searching || m.query != "glo" {
@@ -539,7 +539,7 @@ func TestActiveApplicationListModel_Search_EnterKeepsMatchesForCommands(t *testi
 	if got, ok := intent.(enterApplicationDeleteMsg); !ok || got.application.ID != globex.ID {
 		t.Errorf("d on the kept matches: intent = %#v, want delete for the Globex application (%d)", intent, globex.ID)
 	}
-	_, intent = m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
+	_, intent = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps)
 	if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != globex.ID {
 		t.Errorf("enter on the kept matches: intent = %#v, want detail for the Globex application (%d)", intent, globex.ID)
 	}
@@ -551,7 +551,7 @@ func TestActiveApplicationListModel_Search_SlashEditsKeptQuery(t *testing.T) {
 	apps := testSearchApplications()
 	m := newActiveApplicationListModel()
 	typeHomeKeys(t, &m, apps, "/er")
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps)
 
 	typeHomeKeys(t, &m, apps, "/s")
 	if !m.searching || m.query != "ers" {
@@ -565,9 +565,9 @@ func TestActiveApplicationListModel_Search_EscClearsKeptMatchesAndKeepsHighlight
 	apps := testSearchApplications()
 	m := newActiveApplicationListModel()
 	typeHomeKeys(t, &m, apps, "/glo")
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps)
 
-	if _, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc}, apps); intent != nil {
+	if _, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc}, apps); intent != nil {
 		t.Errorf("esc on kept matches: intent = %#v, want none", intent)
 	}
 
@@ -586,9 +586,9 @@ func TestActiveApplicationListModel_View_KeptMatches(t *testing.T) {
 		t.Errorf("typing help doesn't say enter keeps the results:\n%s", view)
 	}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter}, apps)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps)
 
-	view := m.View(apps, nil, time.Time{}, 200, 20)
+	view := ansi.Strip(m.View(apps, nil, time.Time{}, 200, 20))
 	for _, want := range []string{"🔍 glo  1 of 3", "/: edit search", "esc: clear search", "s: status"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view doesn't show %q:\n%s", want, view)
@@ -632,10 +632,10 @@ func TestActiveApplicationListModel_Search_ArrowsMoveThroughMatches(t *testing.T
 
 	tests := []struct {
 		name     string
-		down, up tea.KeyMsg
+		down, up tea.KeyPressMsg
 	}{
-		{name: "arrows", down: tea.KeyMsg{Type: tea.KeyDown}, up: tea.KeyMsg{Type: tea.KeyUp}},
-		{name: "ctrl+n/ctrl+p", down: tea.KeyMsg{Type: tea.KeyCtrlN}, up: tea.KeyMsg{Type: tea.KeyCtrlP}},
+		{name: "arrows", down: tea.KeyPressMsg{Code: tea.KeyDown}, up: tea.KeyPressMsg{Code: tea.KeyUp}},
+		{name: "ctrl+n/ctrl+p", down: tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl}, up: tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -668,7 +668,7 @@ func TestActiveApplicationListModel_Search_BackspaceWidensMatches(t *testing.T) 
 	m := newActiveApplicationListModel()
 
 	typeHomeKeys(t, &m, apps, "/glx") // matches nothing
-	m.Update(tea.KeyMsg{Type: tea.KeyBackspace}, apps)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace}, apps)
 	intent := openHomeHighlighted(t, &m, apps)
 	if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != 20 {
 		t.Fatalf("intent after backspace, enter = %#v, want the Globex application (20)", intent)
@@ -682,7 +682,7 @@ func TestActiveApplicationListModel_Search_BackspaceOnEmptyQueryCloses(t *testin
 	m := newActiveApplicationListModel()
 
 	typeHomeKeys(t, &m, apps, "/")
-	m.Update(tea.KeyMsg{Type: tea.KeyBackspace}, apps)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace}, apps)
 	if cmd, _ := m.Update(runeKey('q'), apps); cmd == nil {
 		t.Fatal("cmd on 'q' after backspace on an empty query = nil, want tea.Quit (the prompt should be closed)")
 	}
@@ -698,14 +698,14 @@ func TestActiveApplicationListModel_Search_EscClearsAndKeepsHighlight(t *testing
 	m := newActiveApplicationListModel()
 
 	typeHomeKeys(t, &m, apps, "/glo")
-	if _, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc}, apps); intent != nil {
+	if _, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc}, apps); intent != nil {
 		t.Fatalf("intent on esc in the prompt = %#v, want nil (esc closes the prompt, it doesn't leave the screen)", intent)
 	}
 	_, intent := m.Update(runeKey('e'), apps)
 	if got, ok := intent.(enterApplicationExportMsg); !ok || got.application.ID != 20 {
 		t.Fatalf("intent on 'e' after esc = %#v, want export for the Globex application (20)", intent)
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyDown}, apps)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, apps)
 	_, intent = m.Update(runeKey('e'), apps)
 	if got, ok := intent.(enterApplicationExportMsg); !ok || got.application.ID != 30 {
 		t.Fatalf("intent on down, 'e' after esc = %#v, want export for the Initech application (30): the full list is back", intent)
@@ -809,8 +809,8 @@ func TestActiveApplicationListModel_Search_ReloadKeepsTheHighlightedMatch(t *tes
 
 	apps := testSearchApplications()
 	m := newActiveApplicationListModel()
-	typeHomeKeys(t, &m, apps, "/s")               // Designer at Globex, Staff Analyst at Initech
-	m.Update(tea.KeyMsg{Type: tea.KeyDown}, apps) // the Initech application (30)
+	typeHomeKeys(t, &m, apps, "/s")                    // Designer at Globex, Staff Analyst at Initech
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, apps) // the Initech application (30)
 
 	// The reload brings in an application ahead of it that doesn't match,
 	// so its place in the full list moves and its place among the matches

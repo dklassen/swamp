@@ -5,7 +5,7 @@ import (
 	"errors"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/service"
@@ -55,19 +55,19 @@ func newApplicationStatusModel(applications *service.ApplicationService, applica
 // posting-detail screen without saving.
 type cancelApplicationStatusMsg struct{}
 
-func (m *applicationStatusModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
+func (m *applicationStatusModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 	switch {
-	case msg.Type == tea.KeyDown, msg.String() == "j":
+	case msg.String() == "down", msg.String() == "j":
 		if m.cursor < len(applicationStatuses)-1 {
 			m.cursor++
 		}
-	case msg.Type == tea.KeyUp, msg.String() == "k":
+	case msg.String() == "up", msg.String() == "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case msg.Type == tea.KeyEsc, msg.String() == "b":
+	case msg.String() == "esc", msg.String() == "b":
 		return nil, cancelApplicationStatusMsg{}
-	case msg.Type == tea.KeyEnter:
+	case msg.String() == "enter":
 		status := applicationStatuses[m.cursor]
 		return updateApplicationStatus(m.applications, m.applicationID, status, m.instance), nil
 	}

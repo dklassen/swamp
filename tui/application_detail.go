@@ -4,7 +4,7 @@ import (
 	"strings"
 	"unicode"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
@@ -29,9 +29,9 @@ func newApplicationDetailModel(docs *documents.Store, application posting.Active
 	return applicationDetailModel{documents: docs, application: application}
 }
 
-func (m *applicationDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
+func (m *applicationDetailModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 	switch {
-	case msg.Type == tea.KeyEsc, msg.String() == "b":
+	case msg.String() == "esc", msg.String() == "b":
 		return nil, backToActiveApplicationsMsg{}
 	case msg.String() == "p":
 		return nil, enterPostingDetailMsg{postingID: m.application.Posting.ID}

@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/viewport"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/viewport"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
@@ -63,7 +63,7 @@ type postingDetailModel struct {
 func newPostingDetailModel(postings *service.PostingService, docs *documents.Store, width, height int, p posting.Posting, app application.Application, hasApp bool, latestReviews map[document.Type]document.Review, canNavigateSiblings bool) postingDetailModel {
 	inner := detailInnerWidth(width)
 	help := indentLines(wrapToWidth(postingDetailHelp(canNavigateSiblings), inner), detailPadding)
-	vp := viewport.New(width, 0)
+	vp := viewport.New(viewport.WithWidth(width))
 	m := postingDetailModel{postings: postings, documents: docs, viewport: vp, width: width, help: help, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews, canNavigateSiblings: canNavigateSiblings}
 	m.setContent()
 	m.setHeight(height)
@@ -73,7 +73,7 @@ func newPostingDetailModel(postings *service.PostingService, docs *documents.Sto
 // setContent lays the detail out at the model's width, keeping the scroll.
 func (m *postingDetailModel) setContent() {
 	inner := detailInnerWidth(m.width)
-	offset := m.viewport.YOffset
+	offset := m.viewport.YOffset()
 	m.viewport.SetContent(indentLines(wrapToWidth(postingScoresSection(m.posting, m.scores, inner)+postingDetailContent(m.posting, m.application, m.hasApplication, m.documents, m.latestReviews, inner), inner), detailPadding))
 	m.viewport.SetYOffset(offset)
 }
@@ -125,8 +125,8 @@ func scoredBy(s score.Score) string {
 // and go while the user is reading.
 func (m *postingDetailModel) setHeight(height int) {
 	chrome := lipgloss.Height(helpStyle.Render(m.help))
-	m.viewport.Height = max(height-chrome, 0)
-	m.viewport.SetYOffset(m.viewport.YOffset)
+	m.viewport.SetHeight(max(height-chrome, 0))
+	m.viewport.SetYOffset(m.viewport.YOffset())
 }
 
 // detailPadding is the margin (columns) kept clear on each side of the
@@ -198,13 +198,13 @@ type enterDocumentReviewSelectMsg struct {
 // user is still looking at this screen.
 type refreshPostingDetailMsg struct{}
 
-func (m *postingDetailModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
+func (m *postingDetailModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 	switch {
-	case msg.Type == tea.KeyRight, msg.String() == "l":
+	case msg.String() == "right", msg.String() == "l":
 		return nil, navigatePostingMsg{postingID: m.posting.ID, direction: 1}
-	case msg.Type == tea.KeyLeft, msg.String() == "h":
+	case msg.String() == "left", msg.String() == "h":
 		return nil, navigatePostingMsg{postingID: m.posting.ID, direction: -1}
-	case msg.Type == tea.KeyEsc, msg.String() == "b":
+	case msg.String() == "esc", msg.String() == "b":
 		return nil, backToPostingListMsg{}
 	case msg.String() == "o":
 		if m.posting.JobURL != "" {

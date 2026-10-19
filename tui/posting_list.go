@@ -3,9 +3,9 @@ package tui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/internal/domain/posting"
@@ -132,19 +132,19 @@ type refreshSelectedCompanyMsg struct{}
 // screen's to mutate directly.
 type toggleHideArchivedMsg struct{}
 
-func (m *postingListModel) Update(msg tea.KeyMsg, snap postingListSnapshot) (tea.Cmd, tea.Msg) {
+func (m *postingListModel) Update(msg tea.KeyPressMsg, snap postingListSnapshot) (tea.Cmd, tea.Msg) {
 	switch {
-	case msg.Type == tea.KeyDown, msg.String() == "j":
+	case msg.String() == "down", msg.String() == "j":
 		if m.cursor < len(snap.postings)-1 {
 			m.cursor++
 		}
-	case msg.Type == tea.KeyUp, msg.String() == "k":
+	case msg.String() == "up", msg.String() == "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case msg.Type == tea.KeyEsc, msg.String() == "b":
+	case msg.String() == "esc", msg.String() == "b":
 		return nil, backToCompanyListMsg{}
-	case msg.Type == tea.KeyEnter:
+	case msg.String() == "enter":
 		if m.cursor < len(snap.postings) {
 			return nil, enterPostingDetailMsg{postingID: snap.postings[m.cursor].ID}
 		}
@@ -203,6 +203,7 @@ func (m *postingListModel) View(snap postingListSnapshot, width, height int) str
 		start, end := visibleWindow(m.cursor, len(snap.postings), tableRows(height, description, summary, archived, help))
 		cursorRow := m.cursor - start
 		t := table.New().
+			Border(lipgloss.RoundedBorder()).
 			Headers("", "Title", "Department", "Location", "Status").
 			StyleFunc(func(row, _ int) lipgloss.Style {
 				style := lipgloss.NewStyle().Padding(0, 1)

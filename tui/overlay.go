@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 )
 
@@ -37,7 +37,7 @@ var confirmBoxStyle = lipgloss.NewStyle().
 func confirmBox(content string, width int) string {
 	style := confirmBoxStyle
 	if w := style.GetHorizontalFrameSize(); width > w && lipgloss.Width(content)+w > width {
-		style = style.Width(width - w)
+		style = style.Width(width)
 	}
 	return style.Render(content)
 }

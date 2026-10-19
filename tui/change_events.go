@@ -7,7 +7,7 @@ import (
 	"slices"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/change"
@@ -272,7 +272,7 @@ func (a *App) handleApplicationDetailReloaded(msg applicationDetailReloadedMsg) 
 func (a *App) replacePostingDetail(m postingDetailModel) {
 	if m.posting.ID == a.postingDetail.posting.ID {
 		m.setScores(a.postingDetail.scores)
-		m.viewport.SetYOffset(a.postingDetail.viewport.YOffset)
+		m.viewport.SetYOffset(a.postingDetail.viewport.YOffset())
 	}
 	a.postingDetail = m
 }

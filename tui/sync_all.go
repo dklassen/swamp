@@ -4,8 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/charmbracelet/bubbles/progress"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/progress"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/sync"
@@ -39,7 +39,7 @@ type syncAllState struct {
 // syncBar draws a run's progress. Drawn from next on every render rather
 // than animated: its frame ticks would have to ride along the one-Cmd-
 // per-company chain.
-var syncBar = progress.New(progress.WithDefaultGradient(), progress.WithoutPercentage(), progress.WithWidth(24))
+var syncBar = progress.New(progress.WithDefaultBlend(), progress.WithFillCharacters(progress.DefaultFullCharFullBlock, progress.DefaultEmptyCharBlock), progress.WithoutPercentage(), progress.WithWidth(24))
 
 // bar is the share of companies already synced.
 func (r *syncAllState) bar() string {

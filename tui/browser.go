@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"runtime"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 )
 
 // browserCommand picks the OS command to open url in the default browser.

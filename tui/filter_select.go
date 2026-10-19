@@ -3,8 +3,8 @@ package tui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/dklassen/swamp/internal/domain/filter"
 )
@@ -86,18 +86,18 @@ type saveFilterSelectionMsg struct {
 	locations   []string
 }
 
-func (m *filterSelectModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
+func (m *filterSelectModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 	total := len(m.departmentOptions) + len(m.locationOptions)
 	switch {
-	case msg.Type == tea.KeyDown, msg.String() == "j":
+	case msg.String() == "down", msg.String() == "j":
 		if m.cursor < total-1 {
 			m.cursor++
 		}
-	case msg.Type == tea.KeyUp, msg.String() == "k":
+	case msg.String() == "up", msg.String() == "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case msg.Type == tea.KeySpace:
+	case msg.String() == "space":
 		field, value, ok := m.itemAtCursor()
 		if ok {
 			switch field {
@@ -107,9 +107,9 @@ func (m *filterSelectModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 				m.selectedLocations[value] = !m.selectedLocations[value]
 			}
 		}
-	case msg.Type == tea.KeyEsc, msg.String() == "b":
+	case msg.String() == "esc", msg.String() == "b":
 		return nil, cancelFilterSelectMsg{}
-	case msg.Type == tea.KeyEnter:
+	case msg.String() == "enter":
 		departments, locations := m.selectedValues()
 		return nil, saveFilterSelectionMsg{departments: departments, locations: locations}
 	}

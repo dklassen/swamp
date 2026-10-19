@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
@@ -39,7 +39,7 @@ func mustUpsertPostingAt(t *testing.T, s testutil.TestApp, companyID int64, sour
 func openAllPostings(t *testing.T, app *App) *App {
 	t.Helper()
 	for range 2 {
-		app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
+		app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 	}
 	if app.screen != screenAllPostings {
 		t.Fatalf("screen after two tabs = %v, want all postings", app.screen)
@@ -132,8 +132,8 @@ func TestAllPostings_PagesForwardAndBack(t *testing.T) {
 		if diff := cmp.Diff(want(n), pageTitles(app)); diff != "" {
 			t.Errorf("page %d titles (-want +got):\n%s", n, diff)
 		}
-		if line := fmt.Sprintf("Page %d of %d", n, pages); !strings.Contains(app.View(), line) {
-			t.Errorf("view doesn't say %q:\n%s", line, app.View())
+		if line := fmt.Sprintf("Page %d of %d", n, pages); !strings.Contains(viewText(app), line) {
+			t.Errorf("view doesn't say %q:\n%s", line, viewText(app))
 		}
 	}
 
@@ -143,7 +143,7 @@ func TestAllPostings_PagesForwardAndBack(t *testing.T) {
 	for n := 2; n <= pages; n++ {
 		key := runeKey('l')
 		if n%2 == 0 {
-			key = tea.KeyMsg{Type: tea.KeyRight}
+			key = tea.KeyPressMsg{Code: tea.KeyRight}
 		}
 		app = sendKeyAndApply(t, app, key)
 		check(n)
@@ -153,7 +153,7 @@ func TestAllPostings_PagesForwardAndBack(t *testing.T) {
 	for n := pages - 1; n >= 1; n-- {
 		key := runeKey('h')
 		if n%2 == 0 {
-			key = tea.KeyMsg{Type: tea.KeyLeft}
+			key = tea.KeyPressMsg{Code: tea.KeyLeft}
 		}
 		app = sendKeyAndApply(t, app, key)
 		check(n)
@@ -191,17 +191,17 @@ func TestAllPostings_EnterOpensTheDetailAndEscComesBack(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
 	app = openAllPostings(t, app)
-	for _, key := range []tea.KeyMsg{runeKey('l'), runeKey('j')} {
+	for _, key := range []tea.KeyPressMsg{runeKey('l'), runeKey('j')} {
 		app = sendKeyAndApply(t, app, key)
 	}
 	want := app.allPostings.page.Listings[1]
 
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	if app.screen != screenPostingDetail || app.postingDetail.posting.ID != want.ID || app.postingDetail.posting.Title != want.Title {
 		t.Fatalf("after enter: screen %v showing posting %d %q, want detail for %d %q", app.screen, app.postingDetail.posting.ID, app.postingDetail.posting.Title, want.ID, want.Title)
 	}
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if app.screen != screenAllPostings || len(app.allPostings.starts) != 2 || app.allPostings.cursor != 1 {
 		t.Errorf("after esc: screen %v, page %d, row %d; want all postings, page 2, row 1", app.screen, len(app.allPostings.starts), app.allPostings.cursor)
 	}
@@ -219,15 +219,15 @@ func TestAllPostings_DetailDoesNotStepThroughACompanyListBrowsedEarlier(t *testi
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if app.screen != screenPostingList || len(app.postings) != 3 {
 		t.Fatalf("screen %v with %d postings, want Acme's posting list with 3", app.screen, len(app.postings))
 	}
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEsc})
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	if app.screen != screenPostingDetail {
 		t.Fatalf("screen = %v, want posting detail", app.screen)
@@ -260,7 +260,7 @@ func TestAllPostings_IMarksAndUnmarksInterested(t *testing.T) {
 		if got := app.allPostings.page.Listings[0]; got.ID != posting.ID || got.Interested != want {
 			t.Errorf("after i: top row = %d interested %v, want %d interested %v", got.ID, got.Interested, posting.ID, want)
 		}
-		if got := strings.Contains(app.View(), "★"); got != want {
+		if got := strings.Contains(viewText(app), "★"); got != want {
 			t.Errorf("after i: view shows ★ = %v, want %v", got, want)
 		}
 	}
@@ -359,7 +359,7 @@ func TestAllPostings_ANewPostingElsewhere_KeepsThePageAndCountsIt(t *testing.T) 
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
 	app = openAllPostings(t, app)
-	for _, key := range []tea.KeyMsg{runeKey('l'), runeKey('j')} {
+	for _, key := range []tea.KeyPressMsg{runeKey('l'), runeKey('j')} {
 		app = sendKeyAndApply(t, app, key)
 	}
 	page2 := pageTitles(app)
@@ -394,8 +394,8 @@ func TestAllPostings_MarkedInterestedElsewhere_ShowsTheStar(t *testing.T) {
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "posting_markup", RowID: posting.ID, Op: "update", Origin: "tui:2"}}})
 
-	if !strings.Contains(app.View(), "★") {
-		t.Errorf("view doesn't star the posting another window marked interested:\n%s", app.View())
+	if !strings.Contains(viewText(app), "★") {
+		t.Errorf("view doesn't star the posting another window marked interested:\n%s", viewText(app))
 	}
 }
 
@@ -408,14 +408,14 @@ func TestAllPostings_SlashOpensTheSearchLine(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app = openAllPostings(t, app)
-	if view := app.View(); !strings.Contains(view, "/ to search") {
+	if view := viewText(app); !strings.Contains(view, "/ to search") {
 		t.Errorf("view doesn't offer / to search:\n%s", view)
 	}
 
 	app = sendKeyAndApply(t, app, runeKey('/'))
 
-	if !app.allPostings.searching || !strings.Contains(app.View(), "🔍 ▏") {
-		t.Errorf("after /: searching %v, view:\n%s", app.allPostings.searching, app.View())
+	if !app.allPostings.searching || !strings.Contains(viewText(app), "🔍 ▏") {
+		t.Errorf("after /: searching %v, view:\n%s", app.allPostings.searching, viewText(app))
 	}
 }
 
@@ -454,8 +454,8 @@ func TestAllPostings_TypingSearchesAfterAPause(t *testing.T) {
 	if diff := cmp.Diff([]string{"Platform Lead", "Platform Engineer"}, pageTitles(app)); diff != "" {
 		t.Errorf("after the pause (-want +got):\n%s", diff)
 	}
-	if !strings.Contains(app.View(), "2 of 3") {
-		t.Errorf("search line doesn't say 2 of 3:\n%s", app.View())
+	if !strings.Contains(viewText(app), "2 of 3") {
+		t.Errorf("search line doesn't say 2 of 3:\n%s", viewText(app))
 	}
 }
 
@@ -482,8 +482,8 @@ func TestAllPostings_SearchCountsOnlyOpenPostings(t *testing.T) {
 	if diff := cmp.Diff([]string{"Platform Engineer"}, pageTitles(app)); diff != "" {
 		t.Errorf("search results (-want +got):\n%s", diff)
 	}
-	if !strings.Contains(app.View(), "1 of 2") {
-		t.Errorf("search line doesn't say 1 of 2:\n%s", app.View())
+	if !strings.Contains(viewText(app), "1 of 2") {
+		t.Errorf("search line doesn't say 1 of 2:\n%s", viewText(app))
 	}
 }
 
@@ -513,7 +513,7 @@ func TestAllPostings_EscClearsTheSearch(t *testing.T) {
 		t.Fatalf("search results (-want +got):\n%s", diff)
 	}
 
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
 	if app.allPostings.searching || app.allPostings.query != "" {
 		t.Errorf("after esc: searching %v, query %q; want closed and empty", app.allPostings.searching, app.allPostings.query)
@@ -538,7 +538,7 @@ func TestAllPostings_EnterKeepsTheResultsAndKeysActOnThem(t *testing.T) {
 	app = openAllPostings(t, app)
 	app = searchAllPostings(t, app, "design")
 
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = sendKeyAndApply(t, app, runeKey('i'))
 
 	if app.screen != screenAllPostings || app.allPostings.searching || app.allPostings.query != "design" {
@@ -567,13 +567,13 @@ func TestAllPostings_View_KeptResults(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 200, Height: 30})
 	app = openAllPostings(t, app)
 	app = searchAllPostings(t, app, "design")
-	if view := app.View(); !strings.Contains(view, "enter: keep results") {
+	if view := viewText(app); !strings.Contains(view, "enter: keep results") {
 		t.Errorf("typing help doesn't say enter keeps the results:\n%s", view)
 	}
 
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	view := app.View()
+	view := viewText(app)
 	for _, want := range []string{"🔍 design  1 of 2", "/: edit search", "esc: clear search", "i: interested"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view doesn't show %q:\n%s", want, view)
@@ -594,7 +594,7 @@ func TestAllPostings_SlashEditsKeptResultsQuery(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app = openAllPostings(t, app)
 	app = searchAllPostings(t, app, "design")
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	app = sendKeyAndApply(t, app, runeKey('/'))
 	app, _ = sendKey(app, runeKey('i'))
@@ -615,9 +615,9 @@ func TestAllPostings_EscClearsKeptResults(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app = openAllPostings(t, app)
 	app = searchAllPostings(t, app, "design")
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
 	if app.screen != screenAllPostings || app.allPostings.query != "" {
 		t.Errorf("after esc: screen %v, query %q; want the view, query cleared", app.screen, app.allPostings.query)
@@ -648,11 +648,11 @@ func TestAllPostings_PagesThroughSearchResults(t *testing.T) {
 
 	var seen []string
 	for n := 1; n <= pages; n++ {
-		if line := fmt.Sprintf("Page %d of %d · 7 postings", n, pages); !strings.Contains(app.View(), line) {
-			t.Errorf("view doesn't say %q:\n%s", line, app.View())
+		if line := fmt.Sprintf("Page %d of %d · 7 postings", n, pages); !strings.Contains(viewText(app), line) {
+			t.Errorf("view doesn't say %q:\n%s", line, viewText(app))
 		}
 		seen = append(seen, pageTitles(app)...)
-		app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyRight})
+		app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyRight})
 	}
 	want := []string{"Platform 7", "Platform 6", "Platform 5", "Platform 4", "Platform 3", "Platform 2", "Platform 1"}
 	if diff := cmp.Diff(want, seen); diff != "" {
@@ -661,7 +661,7 @@ func TestAllPostings_PagesThroughSearchResults(t *testing.T) {
 	if !app.allPostings.searching || app.allPostings.query != "platform" {
 		t.Errorf("paging closed the search: searching %v, query %q", app.allPostings.searching, app.allPostings.query)
 	}
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyLeft})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyLeft})
 	if len(app.allPostings.starts) != pages-1 {
 		t.Errorf("← went to page %d, want %d", len(app.allPostings.starts), pages-1)
 	}
@@ -679,7 +679,7 @@ func TestAllPostings_NoMatches_SaysWhatWasSearched(t *testing.T) {
 
 	app = searchAllPostings(t, app, "kafka")
 
-	if view := app.View(); !strings.Contains(view, `No postings match "kafka".`) {
+	if view := viewText(app); !strings.Contains(view, `No postings match "kafka".`) {
 		t.Errorf("view doesn't say what matched nothing:\n%s", view)
 	}
 }
@@ -723,7 +723,7 @@ func TestAllPostings_ShowsEachPostingsFit(t *testing.T) {
 	if diff := cmp.Diff(map[string]string{"Scored": "4", "Rewritten since": "2", "Unscored": ""}, fit); diff != "" {
 		t.Errorf("Fit column (-want +got):\n%s", diff)
 	}
-	if !strings.Contains(app.View(), dimStyle.Render(padCol("2", fitColWidth))) {
+	if !strings.Contains(app.View().Content, dimStyle.Render(padCol("2", fitColWidth))) {
 		t.Error("the stale score isn't drawn dimmed")
 	}
 }
@@ -748,8 +748,8 @@ func TestAllPostings_SSortsByFitAndBack(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, runeKey('s'))
 
-	if len(app.allPostings.starts) != 1 || !strings.Contains(app.View(), "best fit first") {
-		t.Fatalf("after s: page %d, view:\n%s", len(app.allPostings.starts), app.View())
+	if len(app.allPostings.starts) != 1 || !strings.Contains(viewText(app), "best fit first") {
+		t.Fatalf("after s: page %d, view:\n%s", len(app.allPostings.starts), viewText(app))
 	}
 	var seen []string
 	for {
@@ -808,9 +808,9 @@ func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 140, Height: 60})
 	app = openAllPostings(t, app)
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	view := ansi.Strip(app.View())
+	view := ansi.Strip(viewText(app))
 	for _, want := range []string{"Fit", "4 · Go and Kafka, remote", "claude-opus-5-5", "claude-code 2.4.1", "2 · first look", "claude-sonnet-5"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("detail is missing %q:\n%s", want, view)
@@ -827,7 +827,7 @@ func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "posting_scores", RowID: 3, Op: "insert", New: fmt.Sprintf(`{"posting_id":%d,"score":5}`, p.ID), Origin: "mcp:7"}}})
 
-	if view := ansi.Strip(app.View()); !strings.Contains(view, "5 · after the rewrite") {
+	if view := ansi.Strip(viewText(app)); !strings.Contains(view, "5 · after the rewrite") {
 		t.Errorf("detail doesn't show the score the agent just recorded:\n%s", view)
 	}
 }

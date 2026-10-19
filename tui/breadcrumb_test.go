@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/documents"
@@ -126,10 +126,10 @@ func TestApp_Screens_BreadcrumbReplacesTheTitle(t *testing.T) {
 // out, opened the same way.
 func unsizedScreens() []sizedScreen {
 	openApplication := func(t *testing.T, app *App) *App {
-		app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+		app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 		return applyCmd(t, app, cmd)
 	}
-	keys := func(open func(*testing.T, *App) *App, keys ...tea.KeyMsg) func(*testing.T, *App) *App {
+	keys := func(open func(*testing.T, *App) *App, keys ...tea.KeyPressMsg) func(*testing.T, *App) *App {
 		return func(t *testing.T, app *App) *App {
 			app = open(t, app)
 			for _, key := range keys {
@@ -146,8 +146,8 @@ func unsizedScreens() []sizedScreen {
 		{name: "review select", screen: screenDocumentReviewSelect, open: keys(func(t *testing.T, app *App) *App {
 			return clearBanner(openPostingDetail(t, openPostingList(t, app)))
 		}, runeKey('r'))},
-		{name: "add company", screen: screenCompanyForm, open: keys(home, tea.KeyMsg{Type: tea.KeyTab}, runeKey('a'))},
-		{name: "edit company", screen: screenCompanyEdit, open: keys(home, tea.KeyMsg{Type: tea.KeyTab}, runeKey('e'))},
+		{name: "add company", screen: screenCompanyForm, open: keys(home, tea.KeyPressMsg{Code: tea.KeyTab}, runeKey('a'))},
+		{name: "edit company", screen: screenCompanyEdit, open: keys(home, tea.KeyPressMsg{Code: tea.KeyTab}, runeKey('e'))},
 		{name: "application form", screen: screenApplicationForm, open: keys(openApplication, runeKey('f'))},
 	}
 }

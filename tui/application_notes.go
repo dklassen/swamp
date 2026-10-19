@@ -3,9 +3,9 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/dklassen/swamp/internal/service"
 )
@@ -66,7 +66,7 @@ func (m *applicationNotesModel) discardBox(width int) string {
 // posting-detail screen without saving.
 type cancelApplicationNotesMsg struct{}
 
-func (m *applicationNotesModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
+func (m *applicationNotesModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 	if m.saving {
 		return nil, nil
 	}
@@ -74,22 +74,22 @@ func (m *applicationNotesModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		switch {
 		case msg.String() == "y":
 			return nil, cancelApplicationNotesMsg{}
-		case msg.Type == tea.KeyEsc, msg.String() == "n":
+		case msg.String() == "esc", msg.String() == "n":
 			m.confirmingDiscard = false
 			return nil, nil
-		case msg.Type != tea.KeyCtrlS:
+		case msg.String() != "ctrl+s":
 			return nil, nil
 		}
 		m.confirmingDiscard = false
 	}
-	switch msg.Type {
-	case tea.KeyEsc:
+	switch msg.String() {
+	case "esc":
 		if m.textarea.Value() != m.seed {
 			m.confirmingDiscard = true
 			return nil, nil
 		}
 		return nil, cancelApplicationNotesMsg{}
-	case tea.KeyCtrlS:
+	case "ctrl+s":
 		m.saving = true
 		return updateApplicationNotes(m.applications, m.applicationID, m.textarea.Value(), m.instance), nil
 	}
@@ -103,4 +103,13 @@ func (m *applicationNotesModel) View() string {
 	b.WriteString(m.textarea.View() + "\n")
 	b.WriteString(applicationNotesHelp())
 	return b.String()
+}
+
+func (m *applicationNotesModel) paste(msg tea.PasteMsg) tea.Cmd {
+	if m.saving || m.confirmingDiscard {
+		return nil
+	}
+	var cmd tea.Cmd
+	m.textarea, cmd = m.textarea.Update(msg)
+	return cmd
 }

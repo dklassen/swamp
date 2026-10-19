@@ -9,10 +9,10 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/aymanbagabas/go-udiff"
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
@@ -161,13 +161,13 @@ func createDocumentReview(documentService *service.DocumentService, docs *docume
 // binds to "previous line" and "character forward" respectively; using
 // them here would silently submit the review whenever the user tries to
 // move the cursor while editing multi-line notes.
-func (m *documentReviewFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
-	switch msg.Type {
-	case tea.KeyEsc:
+func (m *documentReviewFormModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
+	switch msg.String() {
+	case "esc":
 		return nil, cancelDocumentReviewFormMsg{}
-	case tea.KeyCtrlS:
+	case "ctrl+s":
 		return createDocumentReview(m.documentService, m.documents, m.applicationID, m.documentType, m.content, document.Passed, m.textarea.Value(), m.instance), nil
-	case tea.KeyCtrlG:
+	case "ctrl+g":
 		return createDocumentReview(m.documentService, m.documents, m.applicationID, m.documentType, m.content, document.Flagged, m.textarea.Value(), m.instance), nil
 	}
 	var cmd tea.Cmd
@@ -223,4 +223,10 @@ func localClock(t time.Time) string {
 		return local.Format("15:04")
 	}
 	return local.Format("Jan 2 15:04")
+}
+
+func (m *documentReviewFormModel) paste(msg tea.PasteMsg) tea.Cmd {
+	var cmd tea.Cmd
+	m.textarea, cmd = m.textarea.Update(msg)
+	return cmd
 }

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"unicode"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
@@ -27,7 +27,7 @@ func TestApplicationDetailModel_EscOrB_ReturnsBackToActiveApplicationsMsg(t *tes
 	t.Parallel()
 
 	m := newApplicationDetailModel(documents.NewStore(t.TempDir()), testApplicationView())
-	for _, key := range []tea.KeyMsg{{Type: tea.KeyEsc}, runeKey('b')} {
+	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEsc}, runeKey('b')} {
 		cmd, intent := m.Update(key)
 		if cmd != nil {
 			t.Fatalf("cmd = %v, want nil", cmd)

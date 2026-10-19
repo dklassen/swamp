@@ -3,7 +3,7 @@ package tui
 import (
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
@@ -53,9 +53,9 @@ type enterApplicationSubmitMsg struct {
 // application detail without changing anything.
 type cancelApplicationSubmitMsg struct{}
 
-func (m *applicationSubmitModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
+func (m *applicationSubmitModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 	switch {
-	case msg.Type == tea.KeyEsc, msg.String() == "n":
+	case msg.String() == "esc", msg.String() == "n":
 		return nil, cancelApplicationSubmitMsg{}
 	case msg.String() == "y" && !m.confirmed:
 		m.confirmed = true

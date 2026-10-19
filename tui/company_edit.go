@@ -3,8 +3,8 @@ package tui
 import (
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/service"
 )
@@ -38,14 +38,14 @@ func newCompanyEditModel(companies *service.CompanyService, companyID int64, nam
 // company-list screen without saving.
 type cancelCompanyEditMsg struct{}
 
-func (m *companyEditModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
-	switch msg.Type {
-	case tea.KeyEsc:
+func (m *companyEditModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
+	switch msg.String() {
+	case "esc":
 		if m.saving {
 			return nil, nil
 		}
 		return nil, cancelCompanyEditMsg{}
-	case tea.KeyEnter:
+	case "enter":
 		name := strings.TrimSpace(m.nameInput.Value())
 		if name == "" {
 			return nil, nil
@@ -71,4 +71,10 @@ func (m *companyEditModel) View() string {
 	b.WriteString(focusedLabel.Render("Name:") + " " + m.nameInput.View() + "\n")
 	b.WriteString(helpStyle.Render("enter: save  esc: cancel"))
 	return b.String()
+}
+
+func (m *companyEditModel) paste(msg tea.PasteMsg) tea.Cmd {
+	var cmd tea.Cmd
+	m.nameInput, cmd = m.nameInput.Update(msg)
+	return cmd
 }

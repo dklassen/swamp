@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/internal/domain/application"
@@ -60,7 +60,7 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, applicati
 // presses S, running everything the submit screen kicks off.
 func startSubmit(t *testing.T, app *App) *App {
 	t.Helper()
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if app.screen != screenApplicationDetail {
 		t.Fatalf("screen after enter = %v, want application detail", app.screen)
 	}
@@ -107,7 +107,7 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 
 func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 	t.Parallel()
-	for _, key := range []tea.KeyMsg{runeKey('n'), {Type: tea.KeyEsc}} {
+	for _, key := range []tea.KeyPressMsg{runeKey('n'), {Code: tea.KeyEsc}} {
 		t.Run(key.String(), func(t *testing.T) {
 			t.Parallel()
 			app, target, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
@@ -141,7 +141,7 @@ func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing
 	if saveCmd == nil {
 		t.Fatal("Update on y returned nil Cmd, want a command that marks the application submitted")
 	}
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEsc}) // back to application detail, save still in flight
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc}) // back to application detail, save still in flight
 	app, cmd := sendKey(app, runeKey('S'))
 	app = applyCmd(t, app, cmd)
 	if app.screen != screenApplicationSubmit {

@@ -7,8 +7,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textinput"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/textinput"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/export"
@@ -41,7 +41,7 @@ type applicationExportModel struct {
 func newApplicationExportModel(documentService *service.DocumentService, docs *documents.Store, application posting.ActiveApplication, defaultDir string, width int) applicationExportModel {
 	ti := textinput.New()
 	ti.SetValue(defaultDir)
-	ti.Width = width
+	ti.SetWidth(width)
 	// Start the cursor past the prefilled path, so typing a deeper
 	// subdirectory extends it instead of landing in front of it.
 	ti.CursorEnd()
@@ -53,11 +53,11 @@ func newApplicationExportModel(documentService *service.DocumentService, docs *d
 // active-applications screen without exporting anything.
 type cancelApplicationExportMsg struct{}
 
-func (m *applicationExportModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
-	switch msg.Type {
-	case tea.KeyEsc:
+func (m *applicationExportModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
+	switch msg.String() {
+	case "esc":
 		return nil, cancelApplicationExportMsg{}
-	case tea.KeyEnter:
+	case "enter":
 		return exportApplicationDocuments(m.documentService, m.documents, m.application, m.textinput.Value()), nil
 	}
 	var cmd tea.Cmd
@@ -175,4 +175,10 @@ func exportStatusLine(msg applicationExportedMsg) string {
 		line += " (skipped " + strings.Join(labels, ", ") + " -- not drafted yet)"
 	}
 	return line
+}
+
+func (m *applicationExportModel) paste(msg tea.PasteMsg) tea.Cmd {
+	var cmd tea.Cmd
+	m.textinput, cmd = m.textinput.Update(msg)
+	return cmd
 }
