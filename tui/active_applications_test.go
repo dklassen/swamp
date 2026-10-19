@@ -147,7 +147,7 @@ func TestActiveApplicationListModel_E_EntersExportForSelectedApplication(t *test
 	apps := testActiveApplications()
 	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, apps)
 
-	_, intent := m.Update(runeKey([]rune("e")...), apps)
+	_, intent := m.Update(runeKey('e'), apps)
 
 	got, ok := intent.(enterApplicationExportMsg)
 	if !ok {

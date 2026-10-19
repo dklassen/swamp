@@ -78,11 +78,11 @@ func TestApplicationNotesModel_DiscardPrompt(t *testing.T) {
 		wantSave   bool
 		wantPrompt bool
 	}{
-		{name: "y discards", key: runeKey([]rune("y")...), wantCancel: true},
-		{name: "n keeps editing", key: runeKey([]rune("n")...)},
+		{name: "y discards", key: runeKey('y'), wantCancel: true},
+		{name: "n keeps editing", key: runeKey('n')},
 		{name: "esc keeps editing", key: tea.KeyPressMsg{Code: tea.KeyEsc}},
 		{name: "ctrl+s saves", key: tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}, wantSave: true},
-		{name: "other keys are ignored", key: runeKey([]rune("x")...), wantPrompt: true},
+		{name: "other keys are ignored", key: runeKey('x'), wantPrompt: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -120,7 +120,7 @@ func TestApplicationNotesModel_WhileSaving_IgnoresKeys(t *testing.T) {
 	m.textarea.InsertString(" and more")
 	m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
-	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEsc}, runeKey([]rune("x")...), {Code: 's', Mod: tea.ModCtrl}} {
+	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEsc}, runeKey('x'), {Code: 's', Mod: tea.ModCtrl}} {
 		if cmd, intent := m.Update(key); cmd != nil || intent != nil {
 			t.Errorf("%v while saving: cmd %v, intent %T; want neither", key, cmd, intent)
 		}
