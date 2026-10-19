@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 )
@@ -19,7 +19,7 @@ func TestApp_CtrlC_QuitsFromAnyScreen(t *testing.T) {
 	}{
 		{"applications", func(t *testing.T, app *App) *App { return app }},
 		{"companies, searching", func(t *testing.T, app *App) *App {
-			app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
+			app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 			return sendKeyAndApply(t, app, runeKey('/'))
 		}},
 		{"all postings, searching", func(t *testing.T, app *App) *App {
@@ -28,10 +28,10 @@ func TestApp_CtrlC_QuitsFromAnyScreen(t *testing.T) {
 		}},
 		{"posting detail", func(t *testing.T, app *App) *App {
 			app = openAllPostings(t, app)
-			return sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+			return sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 		}},
 		{"add company form", func(t *testing.T, app *App) *App {
-			app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
+			app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 			return sendKeyAndApply(t, app, runeKey('a'))
 		}},
 	}
@@ -47,7 +47,7 @@ func TestApp_CtrlC_QuitsFromAnyScreen(t *testing.T) {
 			app = tt.open(t, app)
 			on := app.screen
 
-			_, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyCtrlC})
+			_, cmd := sendKey(app, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 
 			if cmd == nil {
 				t.Fatalf("ctrl+c on screen %v did nothing", on)

@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/application"
 )
@@ -25,13 +25,13 @@ func TestApplicationStatusModel_CursorMovement_ClampsToStatusCount(t *testing.T)
 
 	m := newApplicationStatusModel(nil, 7, application.Started, 0)
 	for i := 0; i < len(applicationStatuses)+5; i++ {
-		m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	}
 	if m.cursor != len(applicationStatuses)-1 {
 		t.Fatalf("cursor after many downs = %d, want %d (clamped)", m.cursor, len(applicationStatuses)-1)
 	}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	if m.cursor != len(applicationStatuses)-2 {
 		t.Fatalf("cursor after one up = %d, want %d", m.cursor, len(applicationStatuses)-2)
 	}
@@ -41,7 +41,7 @@ func TestApplicationStatusModel_Esc_ReturnsCancelMsg(t *testing.T) {
 	t.Parallel()
 
 	m := newApplicationStatusModel(nil, 7, application.Started, 0)
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}
@@ -54,7 +54,7 @@ func TestApplicationStatusModel_Enter_ReturnsUpdateCmd(t *testing.T) {
 	t.Parallel()
 
 	m := newApplicationStatusModel(nil, 7, application.Started, 0)
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that updates the application status")
 	}

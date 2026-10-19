@@ -6,8 +6,9 @@ import (
 	"testing"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/jobboard"
@@ -19,17 +20,17 @@ func TestCompanyListModel_CursorMovement(t *testing.T) {
 	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
 	m := &companyListModel{}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyDown}, companies)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, companies)
 	if m.cursor != 1 {
 		t.Fatalf("cursor after down = %d, want 1", m.cursor)
 	}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyDown}, companies)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, companies)
 	if m.cursor != 1 {
 		t.Fatalf("cursor after down at bottom = %d, want 1 (clamped)", m.cursor)
 	}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyUp}, companies)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyUp}, companies)
 	if m.cursor != 0 {
 		t.Fatalf("cursor after up = %d, want 0", m.cursor)
 	}
@@ -41,7 +42,7 @@ func TestCompanyListModel_Enter_ReturnsSelectCompanyMsg(t *testing.T) {
 	companies := []company.Company{{ID: 1, Name: "Acme"}}
 	m := &companyListModel{}
 
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, companies)
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}
@@ -59,7 +60,7 @@ func TestCompanyListModel_Enter_NoCompanies_ReturnsNothing(t *testing.T) {
 
 	m := &companyListModel{}
 
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, nil)
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, nil)
 	if cmd != nil || intent != nil {
 		t.Fatalf("cmd, intent = %v, %v, want nil, nil", cmd, intent)
 	}
@@ -133,7 +134,7 @@ func TestCompanyListModel_E_NoCompanies_ReturnsNothing(t *testing.T) {
 func TestCompanyListModel_EscOrB_DoesNothing(t *testing.T) {
 	t.Parallel()
 
-	for _, key := range []tea.KeyMsg{{Type: tea.KeyEsc}, runeKey('b')} {
+	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEsc}, runeKey('b')} {
 		m := &companyListModel{}
 		if cmd, intent := m.Update(key, nil); cmd != nil || intent != nil {
 			t.Errorf("Update(%v) = %v, %v, want nil, nil", key, cmd, intent)
@@ -229,7 +230,7 @@ func TestCompanyListModel_View_SameHeightWhateverTheSelectedDescription(t *testi
 		var heights []int
 		for range companies {
 			heights = append(heights, strings.Count(m.View(companies, nil, 120, 30), "\n"))
-			m.Update(tea.KeyMsg{Type: tea.KeyDown}, companies)
+			m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, companies)
 		}
 		for i, h := range heights {
 			if h != heights[0] {
@@ -264,7 +265,7 @@ func TestCompanyListModel_View_SameWidthWhateverIsScrolledIntoView(t *testing.T)
 		firstLine := strings.SplitN(view, "╭", 2)[1]
 		firstLine = strings.SplitN(firstLine, "\n", 2)[0]
 		widths = append(widths, lipgloss.Width(firstLine))
-		m.Update(tea.KeyMsg{Type: tea.KeyDown}, companies)
+		m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, companies)
 	}
 	for i, w := range widths {
 		if w != widths[0] {
@@ -331,8 +332,8 @@ func TestCompanyListModel_View_InfoBoxTakesItsSpaceFromTheTable(t *testing.T) {
 // open the highlighted one, returning that intent.
 func openHighlighted(t *testing.T, m *companyListModel, companies []company.Company) tea.Msg {
 	t.Helper()
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
-	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, companies)
+	_, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, companies)
 	return intent
 }
 
@@ -353,7 +354,7 @@ func TestCompanyListModel_Search_EnterKeepsMatchesForCommands(t *testing.T) {
 	m := &companyListModel{}
 
 	typeKeys(t, m, companies, "/glo")
-	if _, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies); intent != nil {
+	if _, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, companies); intent != nil {
 		t.Fatalf("enter while typing: intent = %#v, want none", intent)
 	}
 	if m.searching || m.query != "glo" {
@@ -364,7 +365,7 @@ func TestCompanyListModel_Search_EnterKeepsMatchesForCommands(t *testing.T) {
 	if edit, ok := intent.(enterCompanyEditMsg); !ok || edit.company.ID != 2 {
 		t.Errorf("e on the kept matches: intent = %#v, want enterCompanyEditMsg for Globex", intent)
 	}
-	_, intent = m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	_, intent = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, companies)
 	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
 		t.Errorf("enter on the kept matches: intent = %#v, want selectCompanyMsg for Globex", intent)
 	}
@@ -376,9 +377,9 @@ func TestCompanyListModel_Search_EscClearsKeptMatchesAndKeepsHighlight(t *testin
 	companies := []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}, {ID: 3, Name: "Initech"}}
 	m := &companyListModel{}
 	typeKeys(t, m, companies, "/glo")
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, companies)
 
-	if _, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc}, companies); intent != nil {
+	if _, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc}, companies); intent != nil {
 		t.Errorf("esc on kept matches: intent = %#v, want none", intent)
 	}
 
@@ -397,9 +398,9 @@ func TestCompanyListModel_View_KeptMatches(t *testing.T) {
 		t.Errorf("typing help doesn't say enter keeps the results:\n%s", view)
 	}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter}, companies)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, companies)
 
-	view := m.View(companies, nil, 200, 20)
+	view := ansi.Strip(m.View(companies, nil, 200, 20))
 	for _, want := range []string{"🔍 glo  1 of 3", "/: edit search", "esc: clear search", "e: edit"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view doesn't show %q:\n%s", want, view)
@@ -415,10 +416,10 @@ func TestCompanyListModel_Search_ArrowsMoveThroughMatches(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		down, up tea.KeyMsg
+		down, up tea.KeyPressMsg
 	}{
-		{name: "arrows", down: tea.KeyMsg{Type: tea.KeyDown}, up: tea.KeyMsg{Type: tea.KeyUp}},
-		{name: "ctrl+n/ctrl+p", down: tea.KeyMsg{Type: tea.KeyCtrlN}, up: tea.KeyMsg{Type: tea.KeyCtrlP}},
+		{name: "arrows", down: tea.KeyPressMsg{Code: tea.KeyDown}, up: tea.KeyPressMsg{Code: tea.KeyUp}},
+		{name: "ctrl+n/ctrl+p", down: tea.KeyPressMsg{Code: 'n', Mod: tea.ModCtrl}, up: tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -451,7 +452,7 @@ func TestCompanyListModel_Search_BackspaceWidensMatches(t *testing.T) {
 	m := &companyListModel{}
 
 	typeKeys(t, m, companies, "/gx") // matches nothing
-	m.Update(tea.KeyMsg{Type: tea.KeyBackspace}, companies)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace}, companies)
 	intent := openHighlighted(t, m, companies)
 	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
 		t.Fatalf("intent after backspace, enter = %#v, want selectCompanyMsg for Globex (ID 2)", intent)
@@ -465,7 +466,7 @@ func TestCompanyListModel_Search_SpaceIsPartOfTheQuery(t *testing.T) {
 	m := &companyListModel{}
 
 	typeKeys(t, m, companies, "/acme")
-	m.Update(tea.KeyMsg{Type: tea.KeySpace, Runes: []rune{' '}}, companies)
+	m.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}, companies)
 	intent := openHighlighted(t, m, companies)
 	if sel, ok := intent.(selectCompanyMsg); !ok || sel.company.ID != 2 {
 		t.Fatalf("intent after \"acme \", enter = %#v, want selectCompanyMsg for Acme Robotics (ID 2)", intent)
@@ -481,14 +482,14 @@ func TestCompanyListModel_Search_EscClearsAndKeepsHighlight(t *testing.T) {
 	m := &companyListModel{}
 
 	typeKeys(t, m, companies, "/glo")
-	if _, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc}, companies); intent != nil {
+	if _, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc}, companies); intent != nil {
 		t.Fatalf("intent on esc in the prompt = %#v, want nil (esc closes the prompt, it doesn't leave the screen)", intent)
 	}
 	_, intent := m.Update(runeKey('e'), companies)
 	if edit, ok := intent.(enterCompanyEditMsg); !ok || edit.company.ID != 2 {
 		t.Fatalf("intent on 'e' after esc = %#v, want enterCompanyEditMsg for Globex (ID 2)", intent)
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyDown}, companies)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, companies)
 	_, intent = m.Update(runeKey('e'), companies)
 	if edit, ok := intent.(enterCompanyEditMsg); !ok || edit.company.ID != 3 {
 		t.Fatalf("intent on down, 'e' after esc = %#v, want enterCompanyEditMsg for Initech (ID 3): the full list is back", intent)
@@ -607,7 +608,7 @@ func TestCompanyListModel_Search_BackspaceOnEmptyQueryCloses(t *testing.T) {
 	m := &companyListModel{}
 
 	typeKeys(t, m, companies, "/")
-	m.Update(tea.KeyMsg{Type: tea.KeyBackspace}, companies)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace}, companies)
 	if cmd, _ := m.Update(runeKey('q'), companies); cmd == nil {
 		t.Fatal("cmd on 'q' after backspace on an empty query = nil, want tea.Quit (the prompt should be closed)")
 	}

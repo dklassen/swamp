@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/testutil"
@@ -29,7 +29,7 @@ func TestDocumentReviewFormModel_Esc_ReturnsCancelMsg(t *testing.T) {
 	t.Parallel()
 
 	m := newDocumentReviewFormModel(nil, nil, 1, document.CoverLetter, "content", 80, 10, 0)
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}
@@ -42,7 +42,7 @@ func TestDocumentReviewFormModel_CtrlS_ReturnsSaveCmd(t *testing.T) {
 	t.Parallel()
 
 	m := newDocumentReviewFormModel(nil, nil, 1, document.CoverLetter, "content", 80, 10, 0)
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyCtrlS})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that saves the review as passed")
 	}
@@ -55,7 +55,7 @@ func TestDocumentReviewFormModel_CtrlG_ReturnsSaveCmd(t *testing.T) {
 	t.Parallel()
 
 	m := newDocumentReviewFormModel(nil, nil, 1, document.CoverLetter, "content", 80, 10, 0)
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyCtrlG})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that saves the review as flagged")
 	}
@@ -82,11 +82,11 @@ func TestDocumentReviewFormModel_CtrlP_MovesTextareaCursorInsteadOfSaving(t *tes
 	t.Parallel()
 
 	m := newDocumentReviewFormModel(nil, nil, 1, document.CoverLetter, "content", 80, 10, 0)
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("line one")})
-	m.Update(tea.KeyMsg{Type: tea.KeyEnter})
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("line two")})
+	m.Update(runeKey([]rune("line one")...))
+	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m.Update(runeKey([]rune("line two")...))
 
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyCtrlP})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
 	if intent != nil {
 		t.Fatalf("intent = %v, want nil", intent)
 	}
@@ -104,7 +104,7 @@ func TestDocumentReviewFormModel_TypingKey_UpdatesTextareaValue(t *testing.T) {
 	t.Parallel()
 
 	m := newDocumentReviewFormModel(nil, nil, 1, document.CoverLetter, "content", 80, 10, 0)
-	m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("too generic")})
+	m.Update(runeKey([]rune("too generic")...))
 	if got := m.textarea.Value(); got != "too generic" {
 		t.Fatalf("textarea.Value() = %q, want %q", got, "too generic")
 	}
@@ -129,10 +129,10 @@ func TestApp_ReviewSavedOfAnUnchangedDocument_DoesNotWarn(t *testing.T) {
 
 	app = openPostingDetail(t, app)
 	app, _ = sendKey(app, runeKey('r'))
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // cover letter
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyCtrlS})
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
-	if view := app.View(); strings.Contains(view, "while you were reviewing") {
+	if view := viewText(app); strings.Contains(view, "while you were reviewing") {
 		t.Errorf("view warns about a document that didn't change:\n%s", view)
 	}
 }
@@ -163,12 +163,12 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 
 	app = openPostingDetail(t, app)
 	app, _ = sendKey(app, runeKey('r'))
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // cover letter
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
 	app, _ = sendKey(app, runeKey([]rune("tighten the intro")...))
 	if err := os.WriteFile(path, []byte("Dear team,\nRewritten meanwhile\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyCtrlS})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
 	if app.screen != screenDocumentReviewForm {
 		t.Fatalf("screen after saving a changed document = %v, want still the review form", app.screen)
@@ -180,14 +180,14 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 	if _, ok := reviews[document.CoverLetter]; ok {
 		t.Fatal("a review of the old version was saved, want none")
 	}
-	view := app.View()
+	view := viewText(app)
 	for _, want := range []string{"changed while you were reviewing", "-What you reviewed", "+Rewritten meanwhile", "tighten the intro"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view doesn't contain %q:\n%s", want, view)
 		}
 	}
 
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyCtrlS})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
 	if app.screen == screenDocumentReviewForm {
 		t.Fatal("second save left the form open, want the review saved")
@@ -222,11 +222,11 @@ func TestApp_ReviewOfADocumentDeletedMeanwhile_SavesNothingAndSaysSo(t *testing.
 
 	app = openPostingDetail(t, app)
 	app, _ = sendKey(app, runeKey('r'))
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // cover letter
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
 	if err := os.Remove(path); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyCtrlS})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
 	if app.err == nil || !strings.Contains(app.err.Error(), "deleted while you were reviewing") {
 		t.Errorf("err = %v, want one saying the document was deleted", app.err)
@@ -263,7 +263,7 @@ func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
 
 	app = openPostingDetail(t, app)
 	app, _ = sendKey(app, runeKey('r'))
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // cover letter
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
 	if _, err := app.documents.Write(application.ID, document.CoverLetter, "Rewritten by the agent\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -274,9 +274,9 @@ func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LatestWrite: %v", err)
 	}
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyCtrlS})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
-	view := app.View()
+	view := viewText(app)
 	for _, want := range []string{"rewritten by the agent", write.WrittenAt.Local().Format("15:04")} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view doesn't contain %q:\n%s", want, view)
@@ -312,13 +312,13 @@ func TestApp_ReviewOfADocumentChangedOutsideSwamp_DoesNotNameTheLastWriter(t *te
 
 	app = openPostingDetail(t, app)
 	app, _ = sendKey(app, runeKey('r'))
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // cover letter
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
 	if err := os.WriteFile(path, []byte("Changed outside Swamp\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyCtrlS})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
-	view := app.View()
+	view := viewText(app)
 	if !strings.Contains(view, "changed while you were reviewing") {
 		t.Fatalf("view doesn't show the changed notice:\n%s", view)
 	}

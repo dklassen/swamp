@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
@@ -67,7 +67,7 @@ func TestApplicationExportModel_EscCancels(t *testing.T) {
 	docs := writeApplicationDocuments(t, 42, document.CoverLetter)
 	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication(), "/tmp", 80)
 
-	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	_, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 
 	if _, ok := intent.(cancelApplicationExportMsg); !ok {
 		t.Fatalf("intent = %T, want cancelApplicationExportMsg", intent)
@@ -81,7 +81,7 @@ func TestApplicationExportModel_EnterExportsBothDocumentsWithDescriptiveNames(t 
 	dest := t.TempDir()
 	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication(), dest, 80)
 
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if intent != nil {
 		t.Fatalf("intent = %T, want nil (export runs as an async cmd)", intent)
 	}
@@ -123,7 +123,7 @@ func TestApplicationExportModel_SkipsUndraftedDocumentsWithoutFailing(t *testing
 	dest := t.TempDir()
 	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication(), dest, 80)
 
-	cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	got := cmd().(applicationExportedMsg)
 
 	if got.err != nil {
@@ -147,7 +147,7 @@ func TestApplicationExportModel_ExpandsTildeInDestination(t *testing.T) {
 	docs := writeApplicationDocuments(t, 42, document.Resume)
 	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication(), "~/Desktop", 80)
 
-	cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	got := cmd().(applicationExportedMsg)
 
 	if got.err != nil {
@@ -174,7 +174,7 @@ func TestApplicationExportModel_RecordsEachExport(t *testing.T) {
 	dest := t.TempDir()
 	m := newApplicationExportModel(s.Documents, docs, testExportApplication(), dest, 80)
 
-	cmd, _ := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if got := cmd().(applicationExportedMsg); got.err != nil {
 		t.Fatalf("export err = %v, want nil", got.err)
 	}

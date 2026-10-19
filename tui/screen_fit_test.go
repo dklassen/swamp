@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/internal/domain/application"
@@ -96,13 +96,13 @@ func sizedScreens() []sizedScreen {
 			return openAllPostings(t, app)
 		}},
 		{name: "company list", screen: screenCompanyList, open: func(t *testing.T, app *App) *App {
-			app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
+			app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 			return app
 		}},
 		{name: "company list searching, with info box", screen: screenCompanyList, open: func(t *testing.T, app *App) *App {
 			// "co" still matches 39 of the 40 companies, enough to fill
 			// the table under the prompt line.
-			app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
+			app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 			for _, r := range "i/co" {
 				app, _ = sendKey(app, runeKey(r))
 			}
@@ -151,7 +151,7 @@ func sizedScreens() []sizedScreen {
 			for range 40 {
 				app, _ = sendKey(app, runeKey('j'))
 			}
-			view := ansi.Strip(app.View())
+			view := ansi.Strip(viewText(app))
 			if !strings.Contains(view, "Department\n") || !strings.Contains(view, "Location\n") {
 				t.Fatalf("filter screen isn't showing both section labels:\n%s", view)
 			}
@@ -166,7 +166,7 @@ func sizedScreens() []sizedScreen {
 			return app
 		}},
 		{name: "review form from application detail", screen: screenDocumentReviewForm, open: func(t *testing.T, app *App) *App {
-			app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+			app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 			app = applyCmd(t, app, cmd)
 			app, cmd = sendKey(app, runeKey('R'))
 			return applyCmd(t, app, cmd)
@@ -174,13 +174,13 @@ func sizedScreens() []sizedScreen {
 		{name: "application submit", screen: screenApplicationSubmit, open: func(t *testing.T, app *App) *App {
 			app.openURL = func(string) tea.Cmd { return nil }
 			app.exportDir = t.TempDir()
-			app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+			app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 			app = applyCmd(t, app, cmd)
 			app, cmd = sendKey(app, runeKey('S'))
 			return applyCmd(t, app, cmd)
 		}},
 		{name: "application delete", screen: screenApplicationDelete, open: func(t *testing.T, app *App) *App {
-			app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+			app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 			app = applyCmd(t, app, cmd)
 			app, cmd = sendKey(app, runeKey('D'))
 			return applyCmd(t, app, cmd)
@@ -189,7 +189,7 @@ func sizedScreens() []sizedScreen {
 			app = clearBanner(openPostingDetail(t, openPostingList(t, app)))
 			app, cmd := sendKey(app, runeKey('r'))
 			app = applyCmd(t, app, cmd)
-			app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+			app, cmd = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 			return applyCmd(t, app, cmd)
 		}},
 	}
@@ -232,7 +232,7 @@ func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 
 				// One row per line: bubbletea truncates lines wider than
 				// the window rather than wrapping them.
-				view := ansi.Strip(app.View())
+				view := ansi.Strip(viewText(app))
 				if rows := strings.Count(view, "\n") + 1; rows > height {
 					t.Errorf("view takes %d terminal rows, want at most %d", rows, height)
 				}

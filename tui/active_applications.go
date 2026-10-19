@@ -8,9 +8,9 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
@@ -85,7 +85,7 @@ type enterApplicationExportMsg struct {
 // real async command for App to run through bubbletea as usual. The
 // returned tea.Msg (if non-nil) is an intent for App to apply
 // synchronously -- see companyListModel.Update for the same convention.
-func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []posting.ActiveApplication) (tea.Cmd, tea.Msg) {
+func (m *activeApplicationListModel) Update(msg tea.KeyPressMsg, apps []posting.ActiveApplication) (tea.Cmd, tea.Msg) {
 	if m.searching {
 		return m.updateSearch(msg, apps)
 	}
@@ -94,13 +94,13 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []posting.Activ
 	switch {
 	case msg.String() == "/":
 		m.searching = true
-	case msg.Type == tea.KeyEsc:
+	case msg.String() == "esc":
 		m.clearSearch(apps)
-	case msg.Type == tea.KeyDown, msg.String() == "j":
+	case msg.String() == "down", msg.String() == "j":
 		if m.cursor < len(visible)-1 {
 			m.cursor++
 		}
-	case msg.Type == tea.KeyUp, msg.String() == "k":
+	case msg.String() == "up", msg.String() == "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
@@ -119,7 +119,7 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []posting.Activ
 		if m.cursor < len(visible) {
 			return nil, enterApplicationDeleteMsg{application: visible[m.cursor]}
 		}
-	case msg.Type == tea.KeyEnter:
+	case msg.String() == "enter":
 		if m.cursor < len(visible) {
 			return nil, enterApplicationDetailMsg{application: visible[m.cursor]}
 		}
@@ -130,30 +130,32 @@ func (m *activeApplicationListModel) Update(msg tea.KeyMsg, apps []posting.Activ
 // updateSearch handles a key while the '/' prompt is open. Every edit
 // to the query re-filters straight away and puts the cursor back on the
 // first match.
-func (m *activeApplicationListModel) updateSearch(msg tea.KeyMsg, apps []posting.ActiveApplication) (tea.Cmd, tea.Msg) {
-	switch msg.Type {
-	case tea.KeyRunes, tea.KeySpace:
-		m.query += string(msg.Runes)
-		m.cursor = 0
-	case tea.KeyBackspace:
+func (m *activeApplicationListModel) updateSearch(msg tea.KeyPressMsg, apps []posting.ActiveApplication) (tea.Cmd, tea.Msg) {
+	switch msg.String() {
+	default:
+		if msg.Text != "" {
+			m.query += msg.Text
+			m.cursor = 0
+		}
+	case "backspace":
 		if r := []rune(m.query); len(r) > 0 {
 			m.query = string(r[:len(r)-1])
 			m.cursor = 0
 		} else {
 			m.searching = false
 		}
-	case tea.KeyEsc:
+	case "esc":
 		m.searching = false
 		m.clearSearch(apps)
-	case tea.KeyDown, tea.KeyCtrlN:
+	case "down", "ctrl+n":
 		if m.cursor < len(m.visible(apps))-1 {
 			m.cursor++
 		}
-	case tea.KeyUp, tea.KeyCtrlP:
+	case "up", "ctrl+p":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case tea.KeyEnter:
+	case "enter":
 		// Keeps the matches, so letters act on them instead of being typed.
 		m.searching = false
 	}
@@ -220,6 +222,7 @@ func (m *activeApplicationListModel) View(apps []posting.ActiveApplication, prog
 		start, end := visibleWindow(cursor, len(visible), tableRows(height, help, prompt))
 		cursorRow := cursor - start
 		t := table.New().
+			Border(lipgloss.RoundedBorder()).
 			Headers("Company", "Title", "Age", "Next", "Status", "Review").
 			StyleFunc(func(row, _ int) lipgloss.Style {
 				style := lipgloss.NewStyle().Padding(0, 1)

@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/change"
@@ -30,13 +30,13 @@ func TestApp_AnotherProcessesChange_ReloadsTheHomeListQuietly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	if strings.Contains(app.View(), "Staff Engineer") {
+	if strings.Contains(viewText(app), "Staff Engineer") {
 		t.Fatal("the home list shows the application before any reload; the test can't tell a reload happened")
 	}
 
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "applications", RowID: target.ID, Op: "insert", Origin: "mcp:7"}}})
 
-	if view := app.View(); !strings.Contains(view, "Staff Engineer") {
+	if view := viewText(app); !strings.Contains(view, "Staff Engineer") {
 		t.Errorf("home list after the agent's change doesn't show it:\n%s", view)
 	}
 	if app.status != "" {
@@ -60,7 +60,7 @@ func TestApp_ItsOwnChange_IsSkipped(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "applications", RowID: target.ID, Op: "insert", Origin: "tui:1"}}})
 
-	if view := app.View(); strings.Contains(view, "Staff Engineer") || strings.Contains(view, "Updated by") {
+	if view := viewText(app); strings.Contains(view, "Staff Engineer") || strings.Contains(view, "Updated by") {
 		t.Errorf("the TUI's own change was treated as another process's:\n%s", view)
 	}
 }
@@ -140,7 +140,7 @@ func TestApp_CompanyListReload_KeepsTheCursorOnTheSameCompany(t *testing.T) {
 		mustCreateCompany(t, s, name, jobboard.Ashby, strings.ToLower(name))
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 	if app.screen != screenCompanyList {
 		t.Fatalf("screen after c = %v, want the company list", app.screen)
 	}
@@ -189,8 +189,8 @@ func TestApp_PostingListReload_KeepsTheCursorAndShowsTheChange(t *testing.T) {
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "postings", RowID: renamed.ID, Op: "update", Origin: "fetch:9"}}})
 
-	if !strings.Contains(app.View(), "Renamed by sync") {
-		t.Errorf("posting list doesn't show the new title:\n%s", app.View())
+	if !strings.Contains(viewText(app), "Renamed by sync") {
+		t.Errorf("posting list doesn't show the new title:\n%s", viewText(app))
 	}
 	if got := app.postings[app.postingList.cursor].ID; got != onLast {
 		t.Errorf("cursor is on posting %d after the reload, want %d", got, onLast)
@@ -209,10 +209,10 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 	if _, err := createReview(ctx, storeOf(app), target.ID, document.Resume, "# Draft\n", document.Passed, ""); err != nil {
 		t.Fatalf("CreateReview: %v", err)
 	}
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = sendKeyAndApply(t, app, runeKey('u')) // show the review the test just made
-	if !strings.Contains(app.View(), "[PASSED]") {
-		t.Fatalf("application detail doesn't show the passed review:\n%s", app.View())
+	if !strings.Contains(viewText(app), "[PASSED]") {
+		t.Fatalf("application detail doesn't show the passed review:\n%s", viewText(app))
 	}
 
 	if _, err := app.documents.Write(target.ID, document.Resume, "# Revised by the agent\n"); err != nil {
@@ -220,7 +220,7 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "document_writes", RowID: 1, Op: "insert", New: `{"application_id":` + strconv.FormatInt(target.ID, 10) + `,"document_type":"resume","source":"write_document"}`, Origin: "mcp:7"}}})
 
-	view := app.View()
+	view := viewText(app)
 	if strings.Contains(view, "[PASSED]") {
 		t.Errorf("application detail still shows the review of the old version:\n%s", view)
 	}
@@ -234,7 +234,7 @@ func TestApp_ApplicationDeletedElsewhere_GoesBackAndSaysSo(t *testing.T) {
 
 	app, target := deleteTestApp(t)
 	app.WithChangeLog(0, "tui:1")
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if err := storeOf(app).Applications.Delete(context.Background(), target.ID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
@@ -244,8 +244,8 @@ func TestApp_ApplicationDeletedElsewhere_GoesBackAndSaysSo(t *testing.T) {
 	if app.screen != screenActiveApplications {
 		t.Errorf("screen = %v, want the home list", app.screen)
 	}
-	if !strings.Contains(app.View(), "was deleted") {
-		t.Errorf("the home list doesn't say the application was deleted:\n%s", app.View())
+	if !strings.Contains(viewText(app), "was deleted") {
+		t.Errorf("the home list doesn't say the application was deleted:\n%s", viewText(app))
 	}
 }
 
@@ -265,9 +265,9 @@ func TestApp_PostingDetailReload_ShowsTheChangeAndKeepsTheScroll(t *testing.T) {
 	app = openPostingList(t, app)
 	app = openPostingDetail(t, app)
 	for range 20 {
-		app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyDown})
+		app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyDown})
 	}
-	scrolled := app.postingDetail.viewport.YOffset
+	scrolled := app.postingDetail.viewport.YOffset()
 	if scrolled == 0 {
 		t.Fatal("posting detail didn't scroll; the test can't tell the scroll was kept")
 	}
@@ -281,7 +281,7 @@ func TestApp_PostingDetailReload_ShowsTheChangeAndKeepsTheScroll(t *testing.T) {
 	if got := app.postingDetail.posting.Title; got != "Senior Engineer" {
 		t.Errorf("posting detail title = %q, want the renamed %q", got, "Senior Engineer")
 	}
-	if got := app.postingDetail.viewport.YOffset; got != scrolled {
+	if got := app.postingDetail.viewport.YOffset(); got != scrolled {
 		t.Errorf("scroll offset = %d after the reload, want %d", got, scrolled)
 	}
 }
@@ -300,8 +300,8 @@ func TestApp_ApplicationStartedElsewhere_PostingDetailShowsIt(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
 	app = openPostingList(t, app)
 	app = openPostingDetail(t, app)
-	if !strings.Contains(app.View(), "No application started") {
-		t.Fatalf("posting detail already shows an application; the test can't tell a reload happened:\n%s", app.View())
+	if !strings.Contains(viewText(app), "No application started") {
+		t.Fatalf("posting detail already shows an application; the test can't tell a reload happened:\n%s", viewText(app))
 	}
 	since, err := s.Changes.Latest(ctx)
 	if err != nil {
@@ -317,7 +317,7 @@ func TestApp_ApplicationStartedElsewhere_PostingDetailShowsIt(t *testing.T) {
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: events})
 
-	if view := app.View(); strings.Contains(view, "No application started") || !strings.Contains(view, applicationStatusLabel(application.Started)) {
+	if view := viewText(app); strings.Contains(view, "No application started") || !strings.Contains(view, applicationStatusLabel(application.Started)) {
 		t.Errorf("posting detail doesn't show the application started elsewhere:\n%s", view)
 	}
 }
@@ -355,9 +355,9 @@ func TestApp_ChangesWhileAFormIsOpen_WaitUntilItCloses(t *testing.T) {
 		t.Fatalf("the status form changed under you: screen %v, cursor %d (was %d)", app.screen, app.applicationStatus.cursor, form.cursor)
 	}
 
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEsc})
-	if !strings.Contains(app.View(), "Started By The Agent") {
-		t.Errorf("the home list didn't catch up after the form closed:\n%s", app.View())
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if !strings.Contains(viewText(app), "Started By The Agent") {
+		t.Errorf("the home list didn't catch up after the form closed:\n%s", viewText(app))
 	}
 }
 
@@ -382,12 +382,12 @@ func TestApp_EnteringApplicationDetail_ShowsAChangeMadeBeforeIt(t *testing.T) {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	if app.screen != screenApplicationDetail {
 		t.Fatalf("screen = %v, want application detail", app.screen)
 	}
-	if view := app.View(); !strings.Contains(view, "Interviewing") {
+	if view := viewText(app); !strings.Contains(view, "Interviewing") {
 		t.Errorf("application detail doesn't show the status changed before entering it:\n%s", view)
 	}
 }
@@ -404,11 +404,11 @@ func TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere(t *testing.T) {
 	first := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
 	second := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-2", "Designer").ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
-	if strings.Contains(app.View(), "Interviewing") {
+	if strings.Contains(viewText(app), "Interviewing") {
 		t.Fatal("the home list shows Interviewing before any change; the test can't tell a reload happened")
 	}
 
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if app.screen != screenApplicationDetail {
 		t.Fatalf("screen = %v, want application detail", app.screen)
 	}
@@ -421,12 +421,12 @@ func TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere(t *testing.T) {
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "applications", RowID: other.ID, Op: "update", Origin: "mcp:7"}}})
 
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
 	if app.screen != screenActiveApplications {
 		t.Fatalf("screen = %v, want the home list", app.screen)
 	}
-	if view := app.View(); !strings.Contains(view, "Interviewing") {
+	if view := viewText(app); !strings.Contains(view, "Interviewing") {
 		t.Errorf("the home list doesn't show the change made while on application detail:\n%s", view)
 	}
 }
@@ -439,7 +439,7 @@ func TestApp_TabBackToTheHomeList_ShowsAChangeClearedOnTheCompanyList(t *testing
 
 	app, target := deleteTestApp(t)
 	app.WithChangeLog(0, "tui:1")
-	app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 	if app.screen != screenCompanyList {
 		t.Fatalf("screen = %v, want the company list", app.screen)
 	}
@@ -449,13 +449,13 @@ func TestApp_TabBackToTheHomeList_ShowsAChangeClearedOnTheCompanyList(t *testing
 	app = sendKeyAndApply(t, app, changesMsg{view: app.screen, events: []change.Event{{Table: "applications", RowID: target.ID, Op: "update", Origin: "mcp:7"}}})
 
 	for range 2 {
-		app = sendKeyAndApply(t, app, tea.KeyMsg{Type: tea.KeyTab})
+		app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 	}
 
 	if app.screen != screenActiveApplications {
 		t.Fatalf("screen = %v, want the home list", app.screen)
 	}
-	if view := app.View(); !strings.Contains(view, "Interviewing") {
+	if view := viewText(app); !strings.Contains(view, "Interviewing") {
 		t.Errorf("the home list doesn't show the change made while on the company list:\n%s", view)
 	}
 }

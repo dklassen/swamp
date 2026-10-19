@@ -6,8 +6,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/internal/domain/posting"
@@ -35,7 +35,7 @@ func newSyncAllTestApp(t *testing.T, failing ...string) (*App, testutil.TestApp)
 	mustCreateCompany(t, s, "Initech", jobboard.Ashby, "initech")
 	syncer := sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{jobboard.Ashby: &fakeFetcher{postings: postings, errBoards: errBoards}}, sync.DefaultConfig())
 	app := newTestApp(t, s, syncer)
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 	return app, s
 }
 
@@ -119,7 +119,7 @@ func TestApp_SyncAll_FailingCompany_RunContinuesAndSummaryNamesIt(t *testing.T) 
 func TestApp_SyncAll_NoCompanies_FinishesImmediately(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 
 	app, _ = sendKey(app, runeKey('R'))
 	if app.status != "0 companies, 0 failed" || app.syncAll.running {
@@ -220,14 +220,14 @@ func TestApp_SyncAll_FilterSaveDuringRun_Saves(t *testing.T) {
 	if _, err := s.Postings.Ingest(t.Context(), app.companies[0].ID, jobboard.Ashby, "acme-eng", posting.IngestedFields{Title: "Engineer", Department: "Engineering"}); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
-	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter}) // Acme's postings
+	app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // Acme's postings
 	app = applyCmd(t, app, cmd)
 	app, cmd = sendKey(app, runeKey('f'))
 	app = applyCmd(t, app, cmd)
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeySpace})
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 
 	app.syncAll = syncAllState{runID: 1, running: true, companies: app.companies}
-	app, cmd = sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, cmd = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if app.screen != screenPostingList {
 		t.Errorf("screen = %v, want screenPostingList", app.screen)
 	}
@@ -251,7 +251,7 @@ func TestApp_SyncAll_LeavingCompanyList_RunContinues(t *testing.T) {
 	app, _ := newSyncAllTestApp(t)
 
 	app, cmd := sendKey(app, runeKey('R'))
-	app, _ = sendKey(app, tea.KeyMsg{Type: tea.KeyTab})
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 	if app.screen != screenAllPostings {
 		t.Fatalf("screen after tab = %v, want screenAllPostings", app.screen)
 	}
@@ -288,7 +288,7 @@ func TestApp_SyncAll_PostingListRefreshUnavailable(t *testing.T) {
 	app, _ := newSyncAllTestApp(t)
 
 	app, _ = sendKey(app, runeKey('R')) // the run's first step isn't run
-	app, cmd := sendKey(app, tea.KeyMsg{Type: tea.KeyEnter})
+	app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = applyCmd(t, app, cmd)
 	if app.screen != screenPostingList {
 		t.Fatalf("screen = %v, want the posting list", app.screen)
@@ -319,17 +319,17 @@ func TestApp_SyncAll_ProgressBarFillsAsCompaniesFinish(t *testing.T) {
 
 	app, cmd := sendKey(app, runeKey('R'))
 	for done := range 3 {
-		filled, total := barCells(app.View())
+		filled, total := barCells(viewText(app))
 		if total == 0 {
-			t.Fatalf("after %d of 3 companies, no progress bar on the last line:\n%s", done, app.View())
+			t.Fatalf("after %d of 3 companies, no progress bar on the last line:\n%s", done, viewText(app))
 		}
 		if want := total * done / 3; filled < want-1 || filled > want+1 {
 			t.Errorf("after %d of 3 companies, bar filled %d of %d cells, want about %d", done, filled, total, want)
 		}
 		app, cmd = step(t, app, cmd)
 	}
-	if _, total := barCells(app.View()); total != 0 {
-		t.Errorf("progress bar still showing after the run finished:\n%s", app.View())
+	if _, total := barCells(viewText(app)); total != 0 {
+		t.Errorf("progress bar still showing after the run finished:\n%s", viewText(app))
 	}
 }
 
@@ -341,7 +341,7 @@ func TestApp_Refresh_ShowsASpinnerUntilTheCompanyReports(t *testing.T) {
 
 	app, cmd := sendKey(app, runeKey('r'))
 
-	lines := strings.Split(ansi.Strip(app.View()), "\n")
+	lines := strings.Split(ansi.Strip(viewText(app)), "\n")
 	last := lines[len(lines)-1]
 	if !strings.Contains(last, "Refreshing Acme…") || !strings.ContainsAny(last, spinnerGlyphs()) {
 		t.Errorf("last line while refreshing = %q, want a spinner and Refreshing Acme…", last)
@@ -349,7 +349,7 @@ func TestApp_Refresh_ShowsASpinnerUntilTheCompanyReports(t *testing.T) {
 
 	app = applyCmd(t, app, cmd)
 
-	lines = strings.Split(ansi.Strip(app.View()), "\n")
+	lines = strings.Split(ansi.Strip(viewText(app)), "\n")
 	last = lines[len(lines)-1]
 	if strings.Contains(last, "Refreshing") || strings.ContainsAny(last, spinnerGlyphs()) {
 		t.Errorf("last line after the refresh = %q, want the spinner gone", last)

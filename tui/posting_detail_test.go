@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/documents"
@@ -53,7 +53,7 @@ func TestPostingDetailModel_L_ReturnsNavigateForward(t *testing.T) {
 	t.Parallel()
 
 	m := newPostingDetailModel(nil, nil, 80, 20, posting.Posting{ID: 5}, application.Application{}, false, nil, true)
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyRight})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}
@@ -70,7 +70,7 @@ func TestPostingDetailModel_H_ReturnsNavigateBackward(t *testing.T) {
 	t.Parallel()
 
 	m := newPostingDetailModel(nil, nil, 80, 20, posting.Posting{ID: 5}, application.Application{}, false, nil, true)
-	_, intent := m.Update(tea.KeyMsg{Type: tea.KeyLeft})
+	_, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
 	got, ok := intent.(navigatePostingMsg)
 	if !ok || got.direction != -1 {
 		t.Fatalf("intent = %+v, want navigatePostingMsg{direction: -1}", intent)
@@ -81,7 +81,7 @@ func TestPostingDetailModel_Esc_ReturnsBackToPostingListMsg(t *testing.T) {
 	t.Parallel()
 
 	m := newPostingDetailModel(nil, nil, 80, 20, posting.Posting{ID: 5}, application.Application{}, false, nil, true)
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}
@@ -192,8 +192,8 @@ func TestPostingDetailModel_Resize_RebuildsViewportAtNewDimensions(t *testing.T)
 
 	m := newPostingDetailModel(nil, nil, 80, 20, posting.Posting{ID: 1, IngestedFields: posting.IngestedFields{Title: "Engineer"}}, application.Application{}, false, nil, true)
 	m.resize(40, 10)
-	if m.viewport.Width != 40 {
-		t.Fatalf("viewport width = %d, want 40", m.viewport.Width)
+	if m.viewport.Width() != 40 {
+		t.Fatalf("viewport width = %d, want 40", m.viewport.Width())
 	}
 	// The height is every row the screen gets, so the whole view -- viewport
 	// and help -- fits in it (see setHeight).

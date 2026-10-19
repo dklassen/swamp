@@ -3,7 +3,7 @@ package tui
 import (
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/filter"
 )
@@ -56,7 +56,7 @@ func TestFilterSelectModel_CursorMovement_ClampsToTotal(t *testing.T) {
 
 	m := newTestFilterSelectModel()
 	for i := 0; i < 10; i++ {
-		m.Update(tea.KeyMsg{Type: tea.KeyDown})
+		m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	}
 	if m.cursor != 3 { // 2 departments + 2 locations - 1
 		t.Fatalf("cursor after many downs = %d, want 3 (clamped)", m.cursor)
@@ -67,11 +67,11 @@ func TestFilterSelectModel_Space_TogglesSelection(t *testing.T) {
 	t.Parallel()
 
 	m := newTestFilterSelectModel()
-	m.Update(tea.KeyMsg{Type: tea.KeySpace}) // cursor 0 = Engineering
+	m.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}) // cursor 0 = Engineering
 	if !m.selectedDepartments["Engineering"] {
 		t.Fatal("Engineering should be selected after space")
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeySpace})
+	m.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	if m.selectedDepartments["Engineering"] {
 		t.Fatal("Engineering should be unselected after second space")
 	}
@@ -81,7 +81,7 @@ func TestFilterSelectModel_Esc_ReturnsCancelMsg(t *testing.T) {
 	t.Parallel()
 
 	m := newTestFilterSelectModel()
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}
@@ -94,7 +94,7 @@ func TestFilterSelectModel_Enter_ReturnsSaveFilterSelectionMsg(t *testing.T) {
 	t.Parallel()
 
 	m := newTestFilterSelectModel()
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil (saving is App's job, not this model's)", cmd)
 	}

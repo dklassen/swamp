@@ -26,7 +26,7 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/documents"
@@ -145,7 +145,7 @@ func main() {
 		syncer,
 		documentsStore,
 	).WithChangeLog(since, cfg.Origin)
-	program := tea.NewProgram(app, tea.WithAltScreen())
+	program := tea.NewProgram(app)
 	stopMCP := func(context.Context) error { return nil }
 	if rf.mcp {
 		// About to crash anyway: a failed release has nowhere better to go.

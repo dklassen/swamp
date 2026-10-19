@@ -5,7 +5,7 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/lipgloss/v2"
 )
 
 // header is the line App.View draws above every screen, with a rule

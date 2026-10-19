@@ -16,9 +16,9 @@ import (
 	"time"
 	"unicode"
 
-	"github.com/charmbracelet/bubbles/spinner"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/spinner"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/cellbuf"
 
 	"github.com/dklassen/swamp/documents"
@@ -1454,7 +1454,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// below where the new one ends. The renderer only clears below a
 		// frame that got shorter, so without this they stay on screen.
 		return a, tea.Batch(tea.ClearScreen, reload)
-	case tea.KeyMsg:
+	case tea.KeyPressMsg:
 		prevScreen := a.screen
 		model, cmd := a.updateKeyMsg(msg)
 		if a.screen != prevScreen {
@@ -1468,15 +1468,15 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return a, nil
 }
 
-func (a *App) updateKeyMsg(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	// The terminal is in raw mode, so ctrl+c reaches us as a key rather
 	// than stopping the program.
-	if msg.Type == tea.KeyCtrlC {
+	if msg.String() == "ctrl+c" {
 		return a, tea.Quit
 	}
 	// Ahead of the screen's own keys, so it works with the company search
 	// open too.
-	if msg.Type == tea.KeyTab {
+	if msg.String() == "tab" {
 		switch a.screen {
 		case screenActiveApplications:
 			a.screen = screenCompanyList
@@ -1789,7 +1789,7 @@ func (a *App) screenRows() int {
 	return max(a.height-strings.Count(a.header()+a.banner(), "\n"), 0)
 }
 
-func (a *App) View() string {
+func (a *App) View() tea.View {
 	body := a.body(a.beneath())
 	switch a.screen {
 	case screenCompanyDelete:
@@ -1805,7 +1805,9 @@ func (a *App) View() string {
 			body = overlay(body, a.applicationNotes.discardBox(a.width), a.width)
 		}
 	}
-	return a.header() + body + a.banner()
+	v := tea.NewView(a.header() + body + a.banner())
+	v.AltScreen = true
+	return v
 }
 
 // beneath is the screen drawn on screen: a.screen, or the one a

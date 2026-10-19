@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/dklassen/swamp/internal/domain/posting"
 )
@@ -26,14 +26,14 @@ func TestPostingListModel_CursorMovement_ClampsToPostings(t *testing.T) {
 	m := newPostingListModel(nil)
 	snap := testPostingListSnapshot()
 
-	m.Update(tea.KeyMsg{Type: tea.KeyDown}, snap)
-	m.Update(tea.KeyMsg{Type: tea.KeyDown}, snap)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, snap)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, snap)
 	if m.cursor != 1 {
 		t.Fatalf("cursor after two downs = %d, want 1 (clamped)", m.cursor)
 	}
 
-	m.Update(tea.KeyMsg{Type: tea.KeyUp}, snap)
-	m.Update(tea.KeyMsg{Type: tea.KeyUp}, snap)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyUp}, snap)
+	m.Update(tea.KeyPressMsg{Code: tea.KeyUp}, snap)
 	if m.cursor != 0 {
 		t.Fatalf("cursor after two ups = %d, want 0 (clamped)", m.cursor)
 	}
@@ -45,7 +45,7 @@ func TestPostingListModel_Enter_ReturnsEnterDetailMsg(t *testing.T) {
 	m := newPostingListModel(nil)
 	snap := testPostingListSnapshot()
 
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter}, snap)
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, snap)
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}
@@ -62,7 +62,7 @@ func TestPostingListModel_Esc_ReturnsBackToCompanyListMsg(t *testing.T) {
 	t.Parallel()
 
 	m := newPostingListModel(nil)
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc}, testPostingListSnapshot())
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc}, testPostingListSnapshot())
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}

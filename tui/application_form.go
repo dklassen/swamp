@@ -7,9 +7,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/charmbracelet/bubbles/textarea"
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
+	"charm.land/bubbles/v2/textarea"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
 
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/jobboard"
@@ -81,7 +81,7 @@ func (m *applicationFormModel) discardBox(width int) string {
 // detail without saving.
 type cancelApplicationFormMsg struct{}
 
-func (m *applicationFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
+func (m *applicationFormModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 	if m.saving {
 		return nil, nil
 	}
@@ -89,22 +89,22 @@ func (m *applicationFormModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
 		switch {
 		case msg.String() == "y":
 			return nil, cancelApplicationFormMsg{}
-		case msg.Type == tea.KeyEsc, msg.String() == "n":
+		case msg.String() == "esc", msg.String() == "n":
 			m.confirmingDiscard = false
 			return nil, nil
-		case msg.Type != tea.KeyCtrlS:
+		case msg.String() != "ctrl+s":
 			return nil, nil
 		}
 		m.confirmingDiscard = false
 	}
-	switch msg.Type {
-	case tea.KeyEsc:
+	switch msg.String() {
+	case "esc":
 		if m.textarea.Value() != m.seed {
 			m.confirmingDiscard = true
 			return nil, nil
 		}
 		return nil, cancelApplicationFormMsg{}
-	case tea.KeyCtrlS:
+	case "ctrl+s":
 		form, err := jobboard.ParseFormText(m.textarea.Value(), m.previous)
 		m.parseErr = err
 		if err != nil {

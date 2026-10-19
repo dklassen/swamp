@@ -5,7 +5,7 @@ import (
 	"path/filepath"
 	"testing"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
@@ -42,13 +42,13 @@ func TestDocumentReviewSelectModel_CursorMovement_ClampsToOptions(t *testing.T) 
 
 	m := newDocumentReviewSelectModel(documents.NewStore(t.TempDir()), 1)
 
-	m.Update(tea.KeyMsg{Type: tea.KeyDown})
-	m.Update(tea.KeyMsg{Type: tea.KeyDown})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
 	if m.cursor != 1 {
 		t.Fatalf("cursor after two downs = %d, want 1 (clamped)", m.cursor)
 	}
-	m.Update(tea.KeyMsg{Type: tea.KeyUp})
-	m.Update(tea.KeyMsg{Type: tea.KeyUp})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
+	m.Update(tea.KeyPressMsg{Code: tea.KeyUp})
 	if m.cursor != 0 {
 		t.Fatalf("cursor after two ups = %d, want 0 (clamped)", m.cursor)
 	}
@@ -58,7 +58,7 @@ func TestDocumentReviewSelectModel_Esc_ReturnsCancelMsg(t *testing.T) {
 	t.Parallel()
 
 	m := newDocumentReviewSelectModel(documents.NewStore(t.TempDir()), 1)
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEsc})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}
@@ -72,7 +72,7 @@ func TestDocumentReviewSelectModel_Enter_OnMissingDocument_NoOp(t *testing.T) {
 
 	m := newDocumentReviewSelectModel(documents.NewStore(t.TempDir()), 1)
 	// cursor starts at 0 (Cover Letter), which doesn't exist in a fresh temp dir.
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd != nil || intent != nil {
 		t.Fatalf("cmd, intent = %v, %v, want nil, nil (document doesn't exist)", cmd, intent)
 	}
@@ -92,7 +92,7 @@ func TestDocumentReviewSelectModel_Enter_OnExistingDocument_ReturnsContentReadFr
 	}
 
 	m := newDocumentReviewSelectModel(docs, 1)
-	cmd, intent := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
+	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}

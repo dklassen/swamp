@@ -6,9 +6,9 @@ import (
 	"strings"
 	"time"
 
-	tea "github.com/charmbracelet/bubbletea"
-	"github.com/charmbracelet/lipgloss"
-	"github.com/charmbracelet/lipgloss/table"
+	tea "charm.land/bubbletea/v2"
+	"charm.land/lipgloss/v2"
+	"charm.land/lipgloss/v2/table"
 
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
@@ -237,6 +237,7 @@ func (m *allPostingsModel) View(width, height int) string {
 		start, end := visibleWindow(m.cursor, len(m.page.Listings), tableRows(height-2, help))
 		cursorRow := m.cursor - start
 		t := table.New().
+			Border(lipgloss.RoundedBorder()).
 			Headers("Seen", "Company", "Title", "Department", "Location", "", "Fit").
 			StyleFunc(func(row, _ int) lipgloss.Style {
 				style := lipgloss.NewStyle().Padding(0, 1)
@@ -269,22 +270,22 @@ func (m *allPostingsModel) View(width, height int) string {
 
 // Update handles a key on the all-postings view, given the page size that
 // fills the window now.
-func (m *allPostingsModel) Update(msg tea.KeyMsg, size int) (tea.Cmd, tea.Msg) {
+func (m *allPostingsModel) Update(msg tea.KeyPressMsg, size int) (tea.Cmd, tea.Msg) {
 	if m.searching {
 		return m.updateSearch(msg, size)
 	}
 	switch {
-	case msg.Type == tea.KeyDown, msg.String() == "j":
+	case msg.String() == "down", msg.String() == "j":
 		if m.cursor < len(m.page.Listings)-1 {
 			m.cursor++
 		}
-	case msg.Type == tea.KeyUp, msg.String() == "k":
+	case msg.String() == "up", msg.String() == "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case msg.Type == tea.KeyRight, msg.String() == "l":
+	case msg.String() == "right", msg.String() == "l":
 		return m.nextPage(size), nil
-	case msg.Type == tea.KeyEnter:
+	case msg.String() == "enter":
 		if m.cursor < len(m.page.Listings) {
 			return nil, enterPostingDetailMsg{postingID: m.page.Listings[m.cursor].ID}
 		}
@@ -297,7 +298,7 @@ func (m *allPostingsModel) Update(msg tea.KeyMsg, size int) (tea.Cmd, tea.Msg) {
 		return m.firstPage(size), nil
 	case msg.String() == "/":
 		m.searching = true
-	case msg.Type == tea.KeyEsc:
+	case msg.String() == "esc":
 		return m.clearSearch(size), nil
 	case msg.String() == "i":
 		if m.cursor < len(m.page.Listings) {
@@ -313,7 +314,7 @@ func (m *allPostingsModel) Update(msg tea.KeyMsg, size int) (tea.Cmd, tea.Msg) {
 		if m.cursor < len(m.page.Listings) && m.page.Listings[m.cursor].JobURL != "" {
 			return nil, openJobURLMsg{url: m.page.Listings[m.cursor].JobURL}
 		}
-	case msg.Type == tea.KeyLeft, msg.String() == "h":
+	case msg.String() == "left", msg.String() == "h":
 		return m.previousPage(size), nil
 	}
 	return nil, nil
@@ -321,31 +322,33 @@ func (m *allPostingsModel) Update(msg tea.KeyMsg, size int) (tea.Cmd, tea.Msg) {
 
 // updateSearch handles a key while the search line is open: letters go
 // into the query, so only keys that aren't text move or page.
-func (m *allPostingsModel) updateSearch(msg tea.KeyMsg, size int) (tea.Cmd, tea.Msg) {
-	switch msg.Type {
-	case tea.KeyRunes, tea.KeySpace:
-		return m.typedKey(m.query + string(msg.Runes)), nil
-	case tea.KeyBackspace:
+func (m *allPostingsModel) updateSearch(msg tea.KeyPressMsg, size int) (tea.Cmd, tea.Msg) {
+	switch msg.String() {
+	default:
+		if msg.Text != "" {
+			return m.typedKey(m.query + msg.Text), nil
+		}
+	case "backspace":
 		if r := []rune(m.query); len(r) > 0 {
 			return m.typedKey(string(r[:len(r)-1])), nil
 		}
 		m.searching = false
-	case tea.KeyEsc:
+	case "esc":
 		m.searching = false
 		return m.clearSearch(size), nil
-	case tea.KeyDown, tea.KeyCtrlN:
+	case "down", "ctrl+n":
 		if m.cursor < len(m.page.Listings)-1 {
 			m.cursor++
 		}
-	case tea.KeyUp, tea.KeyCtrlP:
+	case "up", "ctrl+p":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case tea.KeyRight:
+	case "right":
 		return m.nextPage(size), nil
-	case tea.KeyLeft:
+	case "left":
 		return m.previousPage(size), nil
-	case tea.KeyEnter:
+	case "enter":
 		// Keeps the results, so letters act on them instead of being typed.
 		m.searching = false
 	}

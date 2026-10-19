@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	tea "github.com/charmbracelet/bubbletea"
+	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
@@ -75,19 +75,19 @@ type enterDocumentReviewFormMsg struct {
 // fast enough not to block the event loop noticeably. The actual store
 // write (createDocumentReview, in the form screen this leads to) still
 // goes through the normal async tea.Cmd convention.
-func (m *documentReviewSelectModel) Update(msg tea.KeyMsg) (tea.Cmd, tea.Msg) {
+func (m *documentReviewSelectModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 	switch {
-	case msg.Type == tea.KeyDown, msg.String() == "j":
+	case msg.String() == "down", msg.String() == "j":
 		if m.cursor < len(m.options)-1 {
 			m.cursor++
 		}
-	case msg.Type == tea.KeyUp, msg.String() == "k":
+	case msg.String() == "up", msg.String() == "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case msg.Type == tea.KeyEsc, msg.String() == "b":
+	case msg.String() == "esc", msg.String() == "b":
 		return nil, cancelDocumentReviewSelectMsg{}
-	case msg.Type == tea.KeyEnter:
+	case msg.String() == "enter":
 		opt := m.options[m.cursor]
 		if !opt.exists {
 			return nil, nil
