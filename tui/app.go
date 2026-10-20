@@ -1087,13 +1087,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err == nil {
 			a.currentScreen = screenCompanyList
 		}
-	case message.CompanyDeletedMsg:
-		a.err = msg.Err
-		// Back to the list either way: a failed delete's y is spent, and
-		// the error shows there.
-		if a.currentScreen == screenCompanyDelete {
-			return a, a.closeCompanyDelete()
-		}
 	case message.CompanyNameUpdatedMsg:
 		a.err = msg.Err
 		a.companyEdit.saveResolved()

@@ -414,6 +414,48 @@ func TestApp_CompanyDeleteConfirmation_TwoQuickNs_CloseItOnce(t *testing.T) {
 	}
 }
 
+func TestApp_CompanyDeleteConfirmation_HoldsTheListsKeysUntilItCloses(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	mustCreateCompany(t, s, "Globex", jobboard.Lever, "globex")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
+	app = sendKeyAndApply(t, app, runeKey('d'))
+
+	app = sendKeyAndApply(t, app, runeKey('j'))
+	if app.companyList.cursor != 0 {
+		t.Errorf("list cursor after j on the confirmation = %d, want 0", app.companyList.cursor)
+	}
+
+	app = sendKeyAndApply(t, app, runeKey('n'))
+	app = sendKeyAndApply(t, app, runeKey('j'))
+	if app.companyList.cursor != 1 {
+		t.Errorf("list cursor after closing and j = %d, want 1", app.companyList.cursor)
+	}
+}
+
+func TestApp_CompanyDeleteFails_ShowsTheErrorOnTheList(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
+	app = sendKeyAndApply(t, app, runeKey('d'))
+
+	failure := errors.New("disk full")
+	app = applyCmd(t, app, func() tea.Msg { return message.CompanyDeletedMsg{CompanyID: acme.ID, Err: failure} })
+
+	if app.currentScreen != screenCompanyList {
+		t.Errorf("screen after a failed delete = %v, want the company list", app.currentScreen)
+	}
+	if !errors.Is(app.err, failure) {
+		t.Errorf("err after a failed delete = %v, want %v", app.err, failure)
+	}
+}
+
 func TestApp_PressDThenY_DeletesSelectedCompany(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")

@@ -37,6 +37,7 @@ func (m *companyDeleteModel) Focused() bool { return m.focused }
 func (m *companyDeleteModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.WhenFocused(m, m.keyPressed),
+		model.Always(m.companyDeleted),
 		model.Always(m.resize),
 		model.Always(m.focusChanged),
 	}
@@ -45,6 +46,15 @@ func (m *companyDeleteModel) Routes() []*model.Route {
 func (m *companyDeleteModel) focusChanged(msg message.FocusChangedMsg) tea.Cmd {
 	m.focused = msg.Focused == m
 	return nil
+}
+
+// companyDeleted closes the confirmation either way: a failed delete's y
+// is spent, and the error shows on the list.
+func (m *companyDeleteModel) companyDeleted(deleted message.CompanyDeletedMsg) tea.Cmd {
+	if deleted.CompanyID != m.company.ID {
+		return nil
+	}
+	return func() tea.Msg { return message.CloseCompanyDeleteMsg{} }
 }
 
 func (m *companyDeleteModel) resize(size message.ContentSizeMsg) tea.Cmd {

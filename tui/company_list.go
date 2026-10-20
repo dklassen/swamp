@@ -96,7 +96,7 @@ func (m *companyListModel) companyDeleted(deleted message.CompanyDeletedMsg) tea
 		}
 		m.clampCursor(len(m.companies))
 	}
-	return nil
+	return message.ReportErr(deleted.Err)
 }
 
 func (m *companyListModel) companyNameUpdated(updated message.CompanyNameUpdatedMsg) tea.Cmd {
