@@ -390,6 +390,30 @@ func TestApp_CompanyDeleteConfirmation_AnythingButYKeepsIt(t *testing.T) {
 	}
 }
 
+// TestApp_CompanyDeleteConfirmation_TwoQuickNs_CloseItOnce: the second n
+// reaches the confirmation before the first one's close does.
+func TestApp_CompanyDeleteConfirmation_TwoQuickNs_CloseItOnce(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
+	app = sendKeyAndApply(t, app, runeKey('d'))
+
+	app, first := sendKey(app, runeKey('n'))
+	app, second := sendKey(app, runeKey('n'))
+	app = applyCmd(t, app, first)
+	app = applyCmd(t, app, second)
+
+	if app.currentScreen != screenCompanyList {
+		t.Errorf("screen after n, n = %v, want the company list", app.currentScreen)
+	}
+	if app.err != nil {
+		t.Errorf("err after n, n = %v, want none", app.err)
+	}
+}
+
 func TestApp_PressDThenY_DeletesSelectedCompany(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")

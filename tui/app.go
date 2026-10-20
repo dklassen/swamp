@@ -134,7 +134,7 @@ type App struct {
 	openURL           func(url string) tea.Cmd
 	applicationSubmit applicationSubmitModel
 	applicationDelete applicationDeleteModel
-	companyDelete     companyDeleteModel
+	companyDelete     *companyDeleteModel
 	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
 	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
@@ -244,9 +244,23 @@ func New(
 // focused is the converted screen on screen, or nil when the screen up
 // hasn't registered routes yet.
 func (a *App) focused() model.SubComponent {
-	if a.currentScreen == screenCompanyList {
+	switch a.currentScreen {
+	case screenCompanyList:
 		return a.companyList
+	case screenCompanyDelete:
+		return a.companyDelete
 	}
+	return nil
+}
+
+// closeCompanyDelete takes the delete confirmation down, back to the
+// company list.
+func (a *App) closeCompanyDelete() tea.Cmd {
+	if err := a.router.Deregister(a.companyDelete); err != nil {
+		return message.Fail(err)
+	}
+	a.companyDelete = nil
+	a.currentScreen = screenCompanyList
 	return nil
 }
 
@@ -1078,7 +1092,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Back to the list either way: a failed delete's y is spent, and
 		// the error shows there.
 		if a.currentScreen == screenCompanyDelete {
-			a.currentScreen = screenCompanyList
+			return a, a.closeCompanyDelete()
 		}
 	case message.CompanyNameUpdatedMsg:
 		a.err = msg.Err
@@ -1093,8 +1107,17 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.currentScreen = screenCompanyEdit
 		a.companyEdit = newCompanyEditModel(a.companyService, msg.Company.ID, msg.Company.Name)
 	case message.OpenCompanyDeleteMsg:
+		dialog := newCompanyDeleteModel(a.companyService, msg.Company, msg.OpenPostings, a.sized.Width)
+		if err := a.router.Register(dialog); err != nil {
+			return a, message.Fail(err)
+		}
+		a.companyDelete = dialog
 		a.currentScreen = screenCompanyDelete
-		a.companyDelete = newCompanyDeleteModel(msg.Company, msg.OpenPostings)
+	case message.CloseCompanyDeleteMsg:
+		// A second keep key, typed before the first one's close arrived.
+		if a.currentScreen == screenCompanyDelete {
+			return a, a.closeCompanyDelete()
+		}
 	case message.OpenCompanyPostingsMsg:
 		a.selectedCompany = msg.Company
 		a.currentScreen = screenPostingList
@@ -1671,15 +1694,6 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return a, deleteApplication(a.applicationService, v.application)
 		}
 		return a, cmd
-	case screenCompanyDelete:
-		cmd, intent := a.companyDelete.Update(msg)
-		switch v := intent.(type) {
-		case cancelCompanyDeleteMsg:
-			a.currentScreen = screenCompanyList
-		case confirmCompanyDeleteMsg:
-			return a, deleteCompany(a.companyService, v.company.ID)
-		}
-		return a, cmd
 	case screenApplicationNotesEdit:
 		cmd, intent := a.applicationNotes.Update(msg)
 		if _, ok := intent.(cancelApplicationNotesMsg); ok {
@@ -1774,7 +1788,7 @@ func (a *App) View() tea.View {
 	body := a.body(a.beneath())
 	switch a.currentScreen {
 	case screenCompanyDelete:
-		body = overlay(body, a.companyDelete.View(a.width), a.width)
+		body = overlay(body, a.companyDelete.View().Content, a.width)
 	case screenApplicationDelete:
 		body = overlay(body, a.applicationDelete.View(a.width), a.width)
 	case screenApplicationForm:

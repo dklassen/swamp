@@ -7,6 +7,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -14,39 +16,63 @@ import (
 // Deleting closes every open posting the company has, too much for one
 // stray key.
 type companyDeleteModel struct {
+	companyService *service.CompanyService
+
 	company      company.Company
 	openPostings int
 	// confirmed is set once y is pressed, so a second y while the delete
 	// is in flight doesn't send another.
 	confirmed bool
+
+	focused bool
+	width   int
 }
 
-func newCompanyDeleteModel(company company.Company, openPostings int) companyDeleteModel {
-	return companyDeleteModel{company: company, openPostings: openPostings}
+func newCompanyDeleteModel(companies *service.CompanyService, company company.Company, openPostings, width int) *companyDeleteModel {
+	return &companyDeleteModel{companyService: companies, company: company, openPostings: openPostings, width: width}
 }
 
-// cancelCompanyDeleteMsg signals that App should go back to the company
-// list.
-type cancelCompanyDeleteMsg struct{}
+func (m *companyDeleteModel) Focused() bool { return m.focused }
 
-// confirmCompanyDeleteMsg signals that App should delete the company.
-type confirmCompanyDeleteMsg struct {
-	company company.Company
-}
-
-func (m *companyDeleteModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
-	switch {
-	case msg.String() == "esc", msg.String() == "enter", msg.String() == "n":
-		return nil, cancelCompanyDeleteMsg{}
-	case msg.String() == "y" && !m.confirmed:
-		m.confirmed = true
-		return nil, confirmCompanyDeleteMsg{company: m.company}
+func (m *companyDeleteModel) Routes() []*model.Route {
+	return []*model.Route{
+		model.WhenFocused(m, m.keyPressed),
+		model.Always(m.resize),
+		model.Always(m.focusChanged),
 	}
-	return nil, nil
 }
 
-// View is a box for App to draw over the company list, at most width wide.
-func (m *companyDeleteModel) View(width int) string {
+func (m *companyDeleteModel) focusChanged(msg message.FocusChangedMsg) tea.Cmd {
+	m.focused = msg.Focused == m
+	return nil
+}
+
+func (m *companyDeleteModel) resize(size message.ContentSizeMsg) tea.Cmd {
+	m.width = size.Width
+	return nil
+}
+
+func (m *companyDeleteModel) Init() tea.Cmd { return nil }
+
+// Update has nothing to do: everything the confirmation handles is
+// registered.
+func (m *companyDeleteModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
+
+func (m *companyDeleteModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
+	switch key.String() {
+	case "esc", "enter", "n":
+		return func() tea.Msg { return message.CloseCompanyDeleteMsg{} }
+	case "y":
+		if !m.confirmed {
+			m.confirmed = true
+			return deleteCompany(m.companyService, m.company.ID)
+		}
+	}
+	return nil
+}
+
+// View is a box for App to draw over the company list.
+func (m *companyDeleteModel) View() tea.View {
 	var b strings.Builder
 	b.WriteString(model.FieldLabel.Render("Delete "+m.company.Name+"?") + " (" + m.company.Source + ")\n")
 	fmt.Fprintf(&b, "Closes its open postings (%d) and keeps its applications.\n\n", m.openPostings)
@@ -55,5 +81,5 @@ func (m *companyDeleteModel) View(width int) string {
 	} else {
 		b.WriteString(model.FieldLabel.Render("y") + ": delete  " + model.FieldLabel.Render("n/esc/enter") + ": keep it")
 	}
-	return confirmBox(b.String(), width)
+	return tea.NewView(confirmBox(b.String(), m.width))
 }

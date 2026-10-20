@@ -88,6 +88,9 @@ type OpenCompanyDeleteMsg struct {
 	OpenPostings int
 }
 
+// CloseCompanyDeleteMsg asks for the delete confirmation to close.
+type CloseCompanyDeleteMsg struct{}
+
 // OpenCompanyPostingsMsg asks for Company's postings.
 type OpenCompanyPostingsMsg struct{ Company company.Company }
 
