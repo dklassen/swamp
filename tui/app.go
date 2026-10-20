@@ -157,10 +157,9 @@ type App struct {
 	activeFilterDepartments []string
 	activeFilterLocations   []string
 
-	// routes is every registered component's handlers, by message type,
-	// and registering is the one whose RegisterRoutes is running.
-	routes       map[model.RouteID][]*model.Route
-	lastInstance message.ScreenInstance
+	// router is a message router for Dispatching bubbletea tea.Msg's
+	router *model.MsgRouter
+
 	// sized is the last size sent to the screens.
 	sized message.ContentSizeMsg
 }
@@ -225,39 +224,21 @@ func New(
 		exportDir:             defaultExportDir,
 		openURL:               openInBrowser,
 		syncing:               model.NewSyncing(syncer),
-		routes:                map[model.RouteID][]*model.Route{},
+		router:                model.NewMsgRouter(),
 	}
-	a.register(a.companyList)
-	a.register(a.syncing)
-	return a
-}
 
-// register runs s's RegisterRoutes, recording s as its handlers' owner.
-func (a *App) register(s model.SubComponent) {
-	if err := s.RegisterRoutes(a); err != nil {
-		panic(fmt.Sprintf("tui: registering %T: %v", s, err))
+	modules := []model.Routable{
+		a.companyList,
+		a.syncing,
 	}
-}
 
-// Register is Router's, for the component whose RegisterRoutes is running.
-func (a *App) Register(msg tea.Msg, s model.SubComponent, scope model.Scope, handler model.HandlerFunc) error {
-	id := model.RouteIDOf(msg)
-	a.routes[id] = append(a.routes[id], model.NewRoute(s, scope, handler))
-	return nil
-}
-
-// route calls every handler registered for msg's type that its scope lets
-// through.
-func (a *App) route(msg tea.Msg) tea.Cmd {
-	rs := a.routes[model.RouteIDOf(msg)]
-	focused := a.focused()
-	cmds := make([]tea.Cmd, 0, len(rs))
-	for _, r := range rs {
-		if r.Accepts(focused) {
-			cmds = append(cmds, r.Handle(msg))
+	for _, module := range modules {
+		if err := module.RegisterRoutes(a.router); err != nil {
+			return nil
 		}
 	}
-	return tea.Batch(cmds...)
+
+	return a
 }
 
 // focused is the converted screen on screen, or nil when the screen up
@@ -1043,7 +1024,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	}
 
-	routed := a.route(msg)
+	routed := a.router.Dispatch(msg)
+
 	before := a.currentScreen
 	model, cmd := a.update(msg)
 	cmd = tea.Batch(routed, cmd)
@@ -1053,7 +1035,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// The window or the banner may have changed size, on any message.
 	if size := (message.ContentSizeMsg{Width: a.width, Rows: a.screenRows()}); size != a.sized {
 		a.sized = size
-		cmd = tea.Batch(cmd, a.route(size))
+		cmd = tea.Batch(cmd, a.router.Dispatch(size))
 	}
 
 	// The banner above the screen can appear, change, or clear on any
@@ -1511,12 +1493,21 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch a.currentScreen {
 		case screenActiveApplications:
 			a.currentScreen = screenCompanyList
+
+			// TODO:: focus transitions done via different mechanism eg. msg
+			a.companyList.focused = true
 			// Archiving or unarchiving may have changed open counts.
 			return a, loadCompanies(a.companyService, a.postingService)
 		case screenCompanyList:
+
+			// TODO:: focus transitions done via different mechanism eg. msg
+			a.companyList.focused = false
 			a.currentScreen = screenAllPostings
 			return a, a.allPostings.load(a.allPostings.pageSize(a.screenRows()))
 		case screenAllPostings:
+
+			// TODO:: focus transitions done via different mechanism eg. msg
+			a.companyList.focused = false
 			a.currentScreen = screenActiveApplications
 			return a, nil
 		}

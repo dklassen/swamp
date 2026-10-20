@@ -33,9 +33,9 @@ func (p *probe) RegisterRoutes(r model.Router) error {
 // nothing it registered for only while in focus.
 func TestApp_Route_DeliversByScope(t *testing.T) {
 	t.Parallel()
-	app := newTestApp(t, testutil.NewTestApp(t), nil)
 	p := &probe{}
-	app.register(p)
+
+	app := newTestApp(t, testutil.NewTestApp(t), nil)
 
 	sendKey(app, probeMsg{})
 

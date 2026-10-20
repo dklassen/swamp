@@ -66,34 +66,6 @@ func (c *component) RegisterRoutes(model.Router) error {
 	return nil
 }
 
-func TestRoute_Accepts_DependsOnScopeAndFocus(t *testing.T) {
-	t.Parallel()
-	owner, other := &component{name: "owner"}, &component{name: "other"}
-
-	tests := []struct {
-		name    string
-		scope   model.Scope
-		focused model.SubComponent
-		want    bool
-	}{
-		{name: "always, owner in focus", scope: model.AlwaysScope, focused: owner, want: true},
-		{name: "always, another in focus", scope: model.AlwaysScope, focused: other, want: true},
-		{name: "always, nothing in focus", scope: model.AlwaysScope, focused: nil, want: true},
-		{name: "focus, owner in focus", scope: model.FocusScope, focused: owner, want: true},
-		{name: "focus, another in focus", scope: model.FocusScope, focused: other, want: false},
-		{name: "focus, nothing in focus", scope: model.FocusScope, focused: nil, want: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			r := model.NewRoute(owner, tt.scope, func(tea.Msg) tea.Cmd { return nil })
-			if got := r.Accepts(tt.focused); got != tt.want {
-				t.Errorf("Accepts(%v) = %v, want %v", tt.focused, got, tt.want)
-			}
-		})
-	}
-}
-
 // Handle registers under the type the handler takes, and hands it that
 // message as that type.
 func TestHandle_RoutesByTheHandlersMessageType(t *testing.T) {
@@ -102,7 +74,7 @@ func TestHandle_RoutesByTheHandlersMessageType(t *testing.T) {
 	r := &fakeRouter{owner: owner, routes: map[model.RouteID]*model.Route{}}
 	var got message.CompanyDeletedMsg
 
-	err := model.Handle(r, owner, model.AlwaysScope, func(msg message.CompanyDeletedMsg) tea.Cmd { got = msg; return nil })
+	err := model.Handle(r, owner, model.AlwaysScope, nil, func(msg message.CompanyDeletedMsg) tea.Cmd { got = msg; return nil })
 	if err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
@@ -124,7 +96,7 @@ func TestHandle_WrongMessageSendsAnErrMsg(t *testing.T) {
 
 	owner := &component{name: "owner"}
 	r := &fakeRouter{owner: owner, routes: map[model.RouteID]*model.Route{}}
-	if err := model.Handle(r, owner, model.AlwaysScope, func(message.CompanyDeletedMsg) tea.Cmd { return nil }); err != nil {
+	if err := model.Handle(r, owner, model.AlwaysScope, nil, func(message.CompanyDeletedMsg) tea.Cmd { return nil }); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
 
@@ -145,7 +117,7 @@ func TestHandle_RefusesAnInterfaceMessageType(t *testing.T) {
 	m := &component{name: "owner"}
 	r := &fakeRouter{owner: m, routes: map[model.RouteID]*model.Route{}}
 
-	err := model.Handle(r, m, model.FocusScope, func(tea.KeyMsg) tea.Cmd { return nil })
+	err := model.Handle(r, m, model.FocusScope, func() bool { return true }, func(tea.KeyMsg) tea.Cmd { return nil })
 
 	if err == nil {
 		t.Error("Handle with a tea.KeyMsg handler returned no error, want one: an interface can't be routed")

@@ -20,8 +20,10 @@ import (
 // companyListModel drives the company-list screen, and owns the companies
 // it shows.
 type companyListModel struct {
-	id     message.ScreenInstance
 	cursor int
+
+	focused bool
+
 	// showInfo is whether the info box (i) is open. Ephemeral, like cursor:
 	// closed each time the app starts.
 	showInfo bool
@@ -49,14 +51,17 @@ func newCompanyListModel(companies *service.CompanyService, postings *service.Po
 }
 
 func (m *companyListModel) RegisterRoutes(r model.Router) error {
+	focusFunc := func() bool {
+		return m.focused
+	}
 	return errors.Join(
-		model.Handle(r, m, model.AlwaysScope, m.companiesLoaded),
-		model.Handle(r, m, model.AlwaysScope, m.companyCreated),
-		model.Handle(r, m, model.AlwaysScope, m.companyDeleted),
-		model.Handle(r, m, model.AlwaysScope, m.companyNameUpdated),
-		model.Handle(r, m, model.FocusScope, m.keyPressed),
-		model.Handle(r, m, model.FocusScope, m.paste),
-		model.Handle(r, m, model.AlwaysScope, m.resize),
+		model.Handle(r, m, model.AlwaysScope, nil, m.companiesLoaded),
+		model.Handle(r, m, model.AlwaysScope, nil, m.companyCreated),
+		model.Handle(r, m, model.AlwaysScope, nil, m.companyDeleted),
+		model.Handle(r, m, model.AlwaysScope, nil, m.companyNameUpdated),
+		model.Handle(r, m, model.FocusScope, focusFunc, m.keyPressed),
+		model.Handle(r, m, model.FocusScope, focusFunc, m.paste),
+		model.Handle(r, m, model.AlwaysScope, nil, m.resize),
 	)
 }
 

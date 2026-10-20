@@ -1,8 +1,13 @@
+// Package model provides components for sharing data via Messages: a Router that
+// dispatches each message to the handlers registered for its type, a
+// Syncing model that runs company syncs in the background, and common
+// styles.
 package model
 
 import (
 	"fmt"
 	"reflect"
+	"sync"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -30,19 +35,77 @@ type Router interface {
 	Register(msg tea.Msg, s SubComponent, scope Scope, handler HandlerFunc) error
 }
 
+// Routable interface describes the ability to register its messages
+// with a Router
+type Routable interface {
+	RegisterRoutes(r Router) error
+}
+
+type MsgRouter struct {
+	mu sync.RWMutex
+	// Keyed by RouteID (the reflect.Type of the message)
+	routes map[RouteID][]*Route
+}
+
+func NewMsgRouter() *MsgRouter {
+	return &MsgRouter{
+		routes: make(map[RouteID][]*Route),
+	}
+}
+
+func (mr *MsgRouter) Register(msg tea.Msg, s SubComponent, scope Scope, handler HandlerFunc) error {
+	mr.mu.Lock()
+	defer mr.mu.Unlock()
+
+	id := RouteIDOf(msg)
+	if id.typ == nil {
+		return fmt.Errorf("router: cannot register a nil message type")
+	}
+
+	route := NewRoute(s, scope, handler)
+	mr.routes[id] = append(mr.routes[id], route)
+	return nil
+}
+
+func (mr *MsgRouter) Dispatch(msg tea.Msg) tea.Cmd {
+	mr.mu.RLock()
+	id := RouteIDOf(msg)
+	routes, exists := mr.routes[id]
+	mr.mu.RUnlock()
+
+	if !exists {
+		return nil
+	}
+
+	var cmds []tea.Cmd
+	for _, route := range routes {
+		// Execute the registered handler function
+		if cmd := route.Handle(msg); cmd != nil {
+			cmds = append(cmds, cmd)
+		}
+	}
+
+	return tea.Batch(cmds...)
+}
+
 // Handle registers handle for every T that scope lets through. The route
 // is T itself, so a handler can't be registered for a message it doesn't
 // take.
-func Handle[T tea.Msg](r Router, s SubComponent, scope Scope, handle func(T) tea.Cmd) error {
+func Handle[T tea.Msg](r Router, s SubComponent, scope Scope, isFocused func() bool, handle func(T) tea.Cmd) error {
 	var zero T
 	if any(zero) == nil {
 		return fmt.Errorf("model.Handle: the handler takes %v, an interface, which has no type to route by; take a concrete message type", reflect.TypeFor[T]())
 	}
 	return r.Register(zero, s, scope, func(msg tea.Msg) tea.Cmd {
+		if scope == FocusScope && isFocused != nil && !isFocused() {
+			return nil
+		}
+
 		m, ok := msg.(T)
 		if !ok {
 			return message.Fail(fmt.Errorf("handler for %T got %T", zero, msg))
 		}
+
 		return handle(m)
 	})
 }
@@ -52,8 +115,6 @@ func Handle[T tea.Msg](r Router, s SubComponent, scope Scope, handle func(T) tea
 // change them in place.
 type SubComponent interface {
 	tea.Model
-	// RegisterRoutes runs when the router opens the component, before Init.
-	RegisterRoutes(r Router) error
 }
 
 // Route is one registered handler and the component that registered it.
@@ -69,12 +130,6 @@ func NewRoute(owner SubComponent, scope Scope, handle HandlerFunc) *Route {
 		scope,
 		handle,
 	}
-}
-
-// Accepts reports whether r's handler gets a message while focused is the
-// component in focus; focused is nil when none is.
-func (r *Route) Accepts(focused SubComponent) bool {
-	return r.Scope == AlwaysScope || r.Owner == focused
 }
 
 // RouteID names the messages one set of handlers is for. It's opaque, so

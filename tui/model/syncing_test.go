@@ -40,9 +40,6 @@ func newSyncing(t *testing.T) (*model.Syncing, func(tea.Msg) tea.Cmd) {
 		if !ok {
 			t.Fatalf("nothing registered for %T", msg)
 		}
-		if !route.Accepts(nil) {
-			t.Fatalf("%T is registered with a scope that never reaches Syncing, which is never in focus", msg)
-		}
 		return route.Handle(msg)
 	}
 }

@@ -225,7 +225,7 @@ func (r *recordingRouter) Register(msg tea.Msg, m model.SubComponent, _ model.Sc
 
 // assertHandlersFailOnWrongMessage checks every handler c registers sends
 // an ErrMsg when handed a message of another type, rather than panicking.
-func assertHandlersFailOnWrongMessage(t *testing.T, c model.SubComponent) {
+func assertHandlersFailOnWrongMessage(t *testing.T, c model.Routable) {
 	t.Helper()
 	r := &recordingRouter{routes: map[model.RouteID]model.HandlerFunc{}}
 	if err := c.RegisterRoutes(r); err != nil {
