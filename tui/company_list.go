@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"errors"
 	"fmt"
 	"slices"
 	"strings"
@@ -52,17 +51,17 @@ func newCompanyListModel(companies *service.CompanyService, postings *service.Po
 
 func (m *companyListModel) Focused() bool { return m.focused }
 
-func (m *companyListModel) RegisterRoutes(r model.Router) error {
-	return errors.Join(
-		r.Register(model.Always(m.companiesLoaded)),
-		r.Register(model.Always(m.companyCreated)),
-		r.Register(model.Always(m.companyDeleted)),
-		r.Register(model.Always(m.companyNameUpdated)),
-		r.Register(model.WhenFocused(m, m.keyPressed)),
-		r.Register(model.WhenFocused(m, m.paste)),
-		r.Register(model.Always(m.resize)),
-		r.Register(model.Always(m.focusChanged)),
-	)
+func (m *companyListModel) Routes() []*model.Route {
+	return []*model.Route{
+		model.Always(m.companiesLoaded),
+		model.Always(m.companyCreated),
+		model.Always(m.companyDeleted),
+		model.Always(m.companyNameUpdated),
+		model.WhenFocused(m, m.keyPressed),
+		model.WhenFocused(m, m.paste),
+		model.Always(m.resize),
+		model.Always(m.focusChanged),
+	}
 }
 
 func (m *companyListModel) focusChanged(msg message.FocusChangedMsg) tea.Cmd {

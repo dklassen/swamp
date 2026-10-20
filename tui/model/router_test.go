@@ -57,14 +57,15 @@ func TestRouteIDOf_EqualExactlyForTheSameConcreteType(t *testing.T) {
 }
 
 // component is a SubComponent that does nothing, to own routes.
-type component struct{ name string }
+type component struct {
+	name   string
+	routes []*model.Route
+}
 
 func (c *component) Init() tea.Cmd                       { return nil }
 func (c *component) Update(tea.Msg) (tea.Model, tea.Cmd) { return c, nil }
 func (c *component) View() tea.View                      { return tea.NewView(c.name) }
-func (c *component) RegisterRoutes(model.Router) error {
-	return nil
-}
+func (c *component) Routes() []*model.Route              { return c.routes }
 
 // Always routes the type the handler takes, and hands it that message as
 // that type.
@@ -104,7 +105,9 @@ func TestRoute_WrongMessageSendsAnErrMsg(t *testing.T) {
 func TestMsgRouter_Register_RefusesAnInterfaceMessageType(t *testing.T) {
 	t.Parallel()
 
-	err := model.NewMsgRouter().Register(model.Always(func(tea.KeyMsg) tea.Cmd { return nil }))
+	owner := &component{routes: []*model.Route{model.Always(func(tea.KeyMsg) tea.Cmd { return nil })}}
+
+	err := model.NewMsgRouter().Register(owner)
 
 	if err == nil {
 		t.Error("Register of a tea.KeyMsg handler returned no error, want one: an interface can't be routed")
@@ -141,7 +144,8 @@ func TestMsgRouter_Dispatch_DeliversByScope(t *testing.T) {
 			owner := &focusable{component: component{name: "owner"}, focused: tt.focused}
 			r := model.NewMsgRouter()
 			got := 0
-			if err := r.Register(tt.route(owner, func(message.CompanyDeletedMsg) tea.Cmd { got++; return nil })); err != nil {
+			owner.routes = []*model.Route{tt.route(owner, func(message.CompanyDeletedMsg) tea.Cmd { got++; return nil })}
+			if err := r.Register(owner); err != nil {
 				t.Fatalf("Register: %v", err)
 			}
 
@@ -166,15 +170,126 @@ func whenFocused(owner *focusable, h func(message.CompanyDeletedMsg) tea.Cmd) *m
 func TestMsgRouter_Register_RefusesAZeroRoute(t *testing.T) {
 	t.Parallel()
 
-	if err := model.NewMsgRouter().Register(&model.Route{}); err == nil {
-		t.Error("Register(&model.Route{}) returned no error, want one: it has no type or handler")
+	owner := &component{routes: []*model.Route{{}}}
+
+	if err := model.NewMsgRouter().Register(owner); err == nil {
+		t.Error("Register of an owner with &model.Route{} returned no error, want one: it has no type or handler")
 	}
 }
 
 func TestMsgRouter_Register_RefusesANilRoute(t *testing.T) {
 	t.Parallel()
+	owner := &component{routes: []*model.Route{nil}}
+
+	if err := model.NewMsgRouter().Register(owner); err == nil {
+		t.Error("Register of an owner with a nil Route returned no error, want one")
+	}
+}
+
+func TestMsgRouter_Register_RefusesANilOwner(t *testing.T) {
+	t.Parallel()
 
 	if err := model.NewMsgRouter().Register(nil); err == nil {
 		t.Error("Register(nil) returned no error, want one")
+	}
+}
+
+// A deregistered owner's routes get no more messages.
+func TestMsgRouter_Deregister_StopsTheOwnersRoutes(t *testing.T) {
+	t.Parallel()
+	got := 0
+	owner := &component{routes: []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd { got++; return nil })}}
+	r := model.NewMsgRouter()
+	if err := r.Register(owner); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	r.Dispatch(message.CompanyDeletedMsg{})
+	if got != 1 {
+		t.Fatalf("deliveries before Deregister = %d, want 1", got)
+	}
+
+	if err := r.Deregister(owner); err != nil {
+		t.Fatalf("Deregister: %v", err)
+	}
+	r.Dispatch(message.CompanyDeletedMsg{})
+
+	if got != 1 {
+		t.Errorf("deliveries after Deregister = %d, want still 1", got)
+	}
+}
+
+// Owners are instances, not types: deregistering one leaves another of
+// the same type routed.
+func TestMsgRouter_Deregister_LeavesOtherInstancesOfTheSameType(t *testing.T) {
+	t.Parallel()
+	gone, kept := 0, 0
+	leaving := &component{routes: []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd { gone++; return nil })}}
+	staying := &component{routes: []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd { kept++; return nil })}}
+	r := model.NewMsgRouter()
+	for _, owner := range []*component{leaving, staying} {
+		if err := r.Register(owner); err != nil {
+			t.Fatalf("Register: %v", err)
+		}
+	}
+	r.Dispatch(message.CompanyDeletedMsg{})
+	if gone != 1 || kept != 1 {
+		t.Fatalf("deliveries before Deregister: leaving = %d, staying = %d, want 1 and 1", gone, kept)
+	}
+
+	if err := r.Deregister(leaving); err != nil {
+		t.Fatalf("Deregister: %v", err)
+	}
+	r.Dispatch(message.CompanyDeletedMsg{})
+
+	if gone != 1 || kept != 2 {
+		t.Errorf("deliveries after Deregister: leaving = %d, staying = %d, want 1 and 2", gone, kept)
+	}
+}
+
+// Deregistering what was never registered is a mistake, so it's an error.
+func TestMsgRouter_Deregister_RefusesAnOwnerItDoesNotHave(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		owner model.Routable
+	}{
+		{name: "nil", owner: nil},
+		{name: "never registered", owner: &component{}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if err := model.NewMsgRouter().Deregister(tt.owner); err == nil {
+				t.Errorf("Deregister(%v) returned no error, want one", tt.owner)
+			}
+		})
+	}
+}
+
+// A handler can deregister its own owner, such as a screen closing
+// itself; the dispatch it's part of still reaches every other owner.
+func TestMsgRouter_Deregister_DuringDispatchStillDeliversToOthers(t *testing.T) {
+	t.Parallel()
+	r := model.NewMsgRouter()
+	closing := &component{name: "closing"}
+	closing.routes = []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd {
+		if err := r.Deregister(closing); err != nil {
+			t.Errorf("Deregister: %v", err)
+		}
+		return nil
+	})}
+	got := 0
+	other := &component{name: "other", routes: []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd { got++; return nil })}}
+	for _, owner := range []*component{closing, other} {
+		if err := r.Register(owner); err != nil {
+			t.Fatalf("Register: %v", err)
+		}
+	}
+
+	r.Dispatch(message.CompanyDeletedMsg{})
+
+	if got != 1 {
+		t.Errorf("deliveries to the other owner = %d, want 1", got)
 	}
 }

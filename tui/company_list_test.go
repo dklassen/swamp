@@ -212,27 +212,15 @@ func TestCompanyListModel_A_ReturnsOpenCompanyFormMsg(t *testing.T) {
 	}
 }
 
-// recordingRouter keeps every handler registered with it, by the
-// message type it was registered for.
-type recordingRouter struct {
-	routes map[model.RouteID]*model.Route
-}
-
-func (r *recordingRouter) Register(route *model.Route) error {
-	r.routes[route.ID()] = route
-	return nil
-}
-
-// assertHandlersFailOnWrongMessage checks every handler c registers sends
+// assertHandlersFailOnWrongMessage checks every one of c's routes sends
 // an ErrMsg when handed a message of another type, rather than panicking.
 func assertHandlersFailOnWrongMessage(t *testing.T, c model.Routable) {
 	t.Helper()
-	r := &recordingRouter{routes: map[model.RouteID]*model.Route{}}
-	if err := c.RegisterRoutes(r); err != nil {
-		t.Fatalf("RegisterRoutes: %v", err)
+	if err := model.NewMsgRouter().Register(c); err != nil {
+		t.Fatalf("Register: %v", err)
 	}
-	for id, route := range r.routes {
-		t.Run(id.String(), func(t *testing.T) {
+	for _, route := range c.Routes() {
+		t.Run(route.ID().String(), func(t *testing.T) {
 			cmd := route.Handle(probeMsg{})
 			if cmd == nil {
 				t.Fatal("handler given probeMsg returned no command, want one sending message.ErrMsg")
@@ -801,8 +789,8 @@ func TestCompanyListModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 			t.Parallel()
 			m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}, nil, 0, 40)
 			r := model.NewMsgRouter()
-			if err := m.RegisterRoutes(r); err != nil {
-				t.Fatalf("RegisterRoutes: %v", err)
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
 			}
 
 			r.Dispatch(message.FocusChangedMsg{Focused: tt.focused(m)})

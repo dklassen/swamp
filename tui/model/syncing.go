@@ -39,14 +39,14 @@ func NewSyncing(syncer *sync.Syncer) *Syncing {
 	}
 }
 
-func (m *Syncing) RegisterRoutes(r Router) error {
-	return errors.Join(
-		r.Register(Always(m.syncAllKey)),
-		r.Register(Always(m.syncAllStep)),
-		r.Register(Always(m.startRefresh)),
-		r.Register(Always(m.companyRefreshed)),
-		r.Register(Always(m.tick)),
-	)
+func (m *Syncing) Routes() []*Route {
+	return []*Route{
+		Always(m.syncAllKey),
+		Always(m.syncAllStep),
+		Always(m.startRefresh),
+		Always(m.companyRefreshed),
+		Always(m.tick),
+	}
 }
 
 func (m *Syncing) Init() tea.Cmd { return nil }

@@ -233,8 +233,8 @@ func New(
 	}
 
 	for _, module := range modules {
-		if err := module.RegisterRoutes(a.router); err != nil {
-			return nil
+		if err := a.router.Register(module); err != nil {
+			panic(err)
 		}
 	}
 
