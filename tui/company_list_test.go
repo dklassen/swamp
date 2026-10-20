@@ -782,3 +782,35 @@ func TestCompanyListModel_View_InfoBoxIsAsWideAsTheTable(t *testing.T) {
 		}
 	}
 }
+
+// The list takes keys only while the last FocusChangedMsg named it.
+func TestCompanyListModel_TakesKeysOnlyWhileFocused(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		focused    func(m *companyListModel) tea.Model
+		wantCursor int
+	}{
+		{name: "the list in focus", focused: func(m *companyListModel) tea.Model { return m }, wantCursor: 1},
+		{name: "another component in focus", focused: func(*companyListModel) tea.Model { return newCompanyListModel(nil, nil) }, wantCursor: 0},
+		{name: "nothing in focus", focused: func(*companyListModel) tea.Model { return nil }, wantCursor: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}, nil, 0, 40)
+			r := model.NewMsgRouter()
+			if err := m.RegisterRoutes(r); err != nil {
+				t.Fatalf("RegisterRoutes: %v", err)
+			}
+
+			r.Dispatch(message.FocusChangedMsg{Focused: tt.focused(m)})
+			r.Dispatch(tea.KeyPressMsg{Code: tea.KeyDown})
+
+			if m.cursor != tt.wantCursor {
+				t.Errorf("cursor after down = %d, want %d", m.cursor, tt.wantCursor)
+			}
+		})
+	}
+}

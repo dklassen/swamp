@@ -1030,7 +1030,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	model, cmd := a.update(msg)
 	cmd = tea.Batch(routed, cmd)
 	if a.currentScreen != before {
-		cmd = tea.Batch(cmd, a.activate())
+		// Dispatched now, not as a Cmd, so keys already queued see it.
+		focused := a.router.Dispatch(message.FocusChangedMsg{Focused: a.focused()})
+		cmd = tea.Batch(cmd, focused, a.activate())
 	}
 	// The window or the banner may have changed size, on any message.
 	if size := (message.ContentSizeMsg{Width: a.width, Rows: a.screenRows()}); size != a.sized {
@@ -1493,21 +1495,12 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch a.currentScreen {
 		case screenActiveApplications:
 			a.currentScreen = screenCompanyList
-
-			// TODO:: focus transitions done via different mechanism eg. msg
-			a.companyList.focused = true
 			// Archiving or unarchiving may have changed open counts.
 			return a, loadCompanies(a.companyService, a.postingService)
 		case screenCompanyList:
-
-			// TODO:: focus transitions done via different mechanism eg. msg
-			a.companyList.focused = false
 			a.currentScreen = screenAllPostings
 			return a, a.allPostings.load(a.allPostings.pageSize(a.screenRows()))
 		case screenAllPostings:
-
-			// TODO:: focus transitions done via different mechanism eg. msg
-			a.companyList.focused = false
 			a.currentScreen = screenActiveApplications
 			return a, nil
 		}

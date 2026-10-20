@@ -61,7 +61,13 @@ func (m *companyListModel) RegisterRoutes(r model.Router) error {
 		r.Register(model.WhenFocused(m, m.keyPressed)),
 		r.Register(model.WhenFocused(m, m.paste)),
 		r.Register(model.Always(m.resize)),
+		r.Register(model.Always(m.focusChanged)),
 	)
+}
+
+func (m *companyListModel) focusChanged(msg message.FocusChangedMsg) tea.Cmd {
+	m.focused = msg.Focused == m
+	return nil
 }
 
 func (m *companyListModel) Init() tea.Cmd {

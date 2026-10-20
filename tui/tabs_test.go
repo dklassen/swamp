@@ -45,7 +45,7 @@ func TestApp_Tab_KeepsTheCompanySearch(t *testing.T) {
 
 	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app.currentScreen = screenCompanyList
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 	for _, key := range []tea.KeyPressMsg{runeKey('/'), runeKey('g'), {Code: tea.KeyTab}} {
 		app = sendKeyAndApply(t, app, key)
 	}
