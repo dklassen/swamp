@@ -54,13 +54,13 @@ func (m *companyListModel) Focused() bool { return m.focused }
 
 func (m *companyListModel) RegisterRoutes(r model.Router) error {
 	return errors.Join(
-		model.HandleAlways(r, m, m.companiesLoaded),
-		model.HandleAlways(r, m, m.companyCreated),
-		model.HandleAlways(r, m, m.companyDeleted),
-		model.HandleAlways(r, m, m.companyNameUpdated),
-		model.HandleFocused(r, m, m.keyPressed),
-		model.HandleFocused(r, m, m.paste),
-		model.HandleAlways(r, m, m.resize),
+		r.Register(model.Always(m.companiesLoaded)),
+		r.Register(model.Always(m.companyCreated)),
+		r.Register(model.Always(m.companyDeleted)),
+		r.Register(model.Always(m.companyNameUpdated)),
+		r.Register(model.WhenFocused(m, m.keyPressed)),
+		r.Register(model.WhenFocused(m, m.paste)),
+		r.Register(model.Always(m.resize)),
 	)
 }
 

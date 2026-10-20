@@ -215,11 +215,11 @@ func TestCompanyListModel_A_ReturnsOpenCompanyFormMsg(t *testing.T) {
 // recordingRouter keeps every handler registered with it, by the
 // message type it was registered for.
 type recordingRouter struct {
-	routes map[model.RouteID]model.HandlerFunc
+	routes map[model.RouteID]*model.Route
 }
 
-func (r *recordingRouter) Register(msg tea.Msg, _ model.SubComponent, handler model.HandlerFunc) error {
-	r.routes[model.RouteIDOf(msg)] = handler
+func (r *recordingRouter) Register(route *model.Route) error {
+	r.routes[route.ID()] = route
 	return nil
 }
 
@@ -227,13 +227,13 @@ func (r *recordingRouter) Register(msg tea.Msg, _ model.SubComponent, handler mo
 // an ErrMsg when handed a message of another type, rather than panicking.
 func assertHandlersFailOnWrongMessage(t *testing.T, c model.Routable) {
 	t.Helper()
-	r := &recordingRouter{routes: map[model.RouteID]model.HandlerFunc{}}
+	r := &recordingRouter{routes: map[model.RouteID]*model.Route{}}
 	if err := c.RegisterRoutes(r); err != nil {
 		t.Fatalf("RegisterRoutes: %v", err)
 	}
-	for id, handle := range r.routes {
+	for id, route := range r.routes {
 		t.Run(id.String(), func(t *testing.T) {
-			cmd := handle(probeMsg{})
+			cmd := route.Handle(probeMsg{})
 			if cmd == nil {
 				t.Fatal("handler given probeMsg returned no command, want one sending message.ErrMsg")
 			}

@@ -18,8 +18,8 @@ type fakeRouter struct {
 	routes map[model.RouteID]*model.Route
 }
 
-func (r *fakeRouter) Register(msg tea.Msg, _ model.SubComponent, handler model.HandlerFunc) error {
-	r.routes[model.RouteIDOf(msg)] = model.NewRoute(handler)
+func (r *fakeRouter) Register(route *model.Route) error {
+	r.routes[route.ID()] = route
 	return nil
 }
 

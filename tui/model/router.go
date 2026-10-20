@@ -14,13 +14,11 @@ import (
 	"github.com/dklassen/swamp/tui/message"
 )
 
-// HandlerFunc handles a message of the type it was registered for.
-type HandlerFunc func(tea.Msg) tea.Cmd
-
 // Router is what a component registers its routes with.
 type Router interface {
-	// Register calls handler for every msg of the same concrete type.
-	Register(msg tea.Msg, s SubComponent, handler HandlerFunc) error
+	// Register calls route's handler for every message of its type that
+	// route lets through.
+	Register(route *Route) error
 }
 
 // Routable interface describes the ability to register its messages
@@ -41,17 +39,21 @@ func NewMsgRouter() *MsgRouter {
 	}
 }
 
-func (mr *MsgRouter) Register(msg tea.Msg, s SubComponent, handler HandlerFunc) error {
+func (mr *MsgRouter) Register(route *Route) error {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
 
-	id := RouteIDOf(msg)
-	if id.typ == nil {
-		return fmt.Errorf("router: cannot register a nil message type")
+	if route == nil {
+		return fmt.Errorf("router: cannot register a nil Route; make one with Always or WhenFocused")
+	}
+	if route.err != nil {
+		return route.err
+	}
+	if route.id.typ == nil {
+		return fmt.Errorf("router: cannot register a zero Route; make one with Always or WhenFocused")
 	}
 
-	route := NewRoute(handler)
-	mr.routes[id] = append(mr.routes[id], route)
+	mr.routes[route.id] = append(mr.routes[route.id], route)
 	return nil
 }
 
@@ -76,36 +78,6 @@ func (mr *MsgRouter) Dispatch(msg tea.Msg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// HandleAlways registers handle for every T, whether or not owner is in
-// focus, such as a load's result. The route is T itself, so a handler
-// can't be registered for a message it doesn't take.
-func HandleAlways[T tea.Msg](r Router, owner SubComponent, handle func(T) tea.Cmd) error {
-	return register(r, owner, func() bool { return true }, handle)
-}
-
-// HandleFocused registers handle for every T that arrives while owner is
-// in focus, such as typed input.
-func HandleFocused[T tea.Msg](r Router, owner Focusable, handle func(T) tea.Cmd) error {
-	return register(r, owner, owner.Focused, handle)
-}
-
-func register[T tea.Msg](r Router, owner SubComponent, accepts func() bool, handle func(T) tea.Cmd) error {
-	var zero T
-	if any(zero) == nil {
-		return fmt.Errorf("model: the handler takes %v, an interface, which has no type to route by; take a concrete message type", reflect.TypeFor[T]())
-	}
-	return r.Register(zero, owner, func(msg tea.Msg) tea.Cmd {
-		m, ok := msg.(T)
-		if !ok {
-			return message.Fail(fmt.Errorf("handler for %T got %T", zero, msg))
-		}
-		if !accepts() {
-			return nil
-		}
-		return handle(m)
-	})
-}
-
 // SubComponent is a screen, or anything else the router sends messages
 // to. Implementations are pointer types, since the handlers they register
 // change them in place.
@@ -119,16 +91,52 @@ type Focusable interface {
 	Focused() bool
 }
 
-// Route is one registered handler.
+// Route is one handler and when it gets its messages. Its fields are
+// unexported so Always and WhenFocused are the only ways to make one.
 type Route struct {
-	Handle HandlerFunc
+	id     RouteID
+	handle func(tea.Msg) tea.Cmd
+	err    error
 }
 
-func NewRoute(handle HandlerFunc) *Route {
+// Always is a route to handle for every T, whether or not its owner is in
+// focus, such as a load's result. The route is T itself, so a handler
+// can't be registered for a message it doesn't take.
+func Always[T tea.Msg](handle func(T) tea.Cmd) *Route {
+	return newRoute(func() bool { return true }, handle)
+}
+
+// WhenFocused is a route to handle for every T that arrives while owner is
+// in focus, such as typed input.
+func WhenFocused[T tea.Msg](owner Focusable, handle func(T) tea.Cmd) *Route {
+	return newRoute(owner.Focused, handle)
+}
+
+func newRoute[T tea.Msg](accepts func() bool, handle func(T) tea.Cmd) *Route {
+	var zero T
+	if any(zero) == nil {
+		return &Route{err: fmt.Errorf("model: the handler takes %v, an interface, which has no type to route by; take a concrete message type", reflect.TypeFor[T]())}
+	}
 	return &Route{
-		handle,
+		id: RouteIDOf(zero),
+		handle: func(msg tea.Msg) tea.Cmd {
+			m, ok := msg.(T)
+			if !ok {
+				return message.Fail(fmt.Errorf("handler for %T got %T", zero, msg))
+			}
+			if !accepts() {
+				return nil
+			}
+			return handle(m)
+		},
 	}
 }
+
+// ID is the type of message r is for.
+func (r *Route) ID() RouteID { return r.id }
+
+// Handle hands msg to r's handler if r lets it through.
+func (r *Route) Handle(msg tea.Msg) tea.Cmd { return r.handle(msg) }
 
 // RouteID names the messages one set of handlers is for. It's opaque, so
 // only RouteIDOf knows how it is made.

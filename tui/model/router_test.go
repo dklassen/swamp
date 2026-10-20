@@ -66,22 +66,16 @@ func (c *component) RegisterRoutes(model.Router) error {
 	return nil
 }
 
-// HandleAlways registers under the type the handler takes, and hands it that
-// message as that type.
-func TestHandle_RoutesByTheHandlersMessageType(t *testing.T) {
+// Always routes the type the handler takes, and hands it that message as
+// that type.
+func TestAlways_RoutesByTheHandlersMessageType(t *testing.T) {
 	t.Parallel()
-	owner := &component{name: "owner"}
-	r := &fakeRouter{routes: map[model.RouteID]*model.Route{}}
 	var got message.CompanyDeletedMsg
 
-	err := model.HandleAlways(r, owner, func(msg message.CompanyDeletedMsg) tea.Cmd { got = msg; return nil })
-	if err != nil {
-		t.Fatalf("Handle: %v", err)
-	}
+	route := model.Always(func(msg message.CompanyDeletedMsg) tea.Cmd { got = msg; return nil })
 
-	route, ok := r.routes[model.RouteIDOf(message.CompanyDeletedMsg{})]
-	if !ok {
-		t.Fatalf("Handle registered %v, want a route for message.CompanyDeletedMsg", r.routes)
+	if want := model.RouteIDOf(message.CompanyDeletedMsg{}); route.ID() != want {
+		t.Fatalf("route.ID() = %v, want %v", route.ID(), want)
 	}
 	route.Handle(message.CompanyDeletedMsg{CompanyID: 7})
 	if got.CompanyID != 7 {
@@ -91,16 +85,11 @@ func TestHandle_RoutesByTheHandlersMessageType(t *testing.T) {
 
 // The router only calls a route with its own type, so a mismatch is the
 // router's fault; it's reported as an ErrMsg, not a panic.
-func TestHandle_WrongMessageSendsAnErrMsg(t *testing.T) {
+func TestRoute_WrongMessageSendsAnErrMsg(t *testing.T) {
 	t.Parallel()
+	route := model.Always(func(message.CompanyDeletedMsg) tea.Cmd { return nil })
 
-	owner := &component{name: "owner"}
-	r := &fakeRouter{routes: map[model.RouteID]*model.Route{}}
-	if err := model.HandleAlways(r, owner, func(message.CompanyDeletedMsg) tea.Cmd { return nil }); err != nil {
-		t.Fatalf("Handle: %v", err)
-	}
-
-	cmd := r.routes[model.RouteIDOf(message.CompanyDeletedMsg{})].Handle(message.CompanyCreatedMsg{})
+	cmd := route.Handle(message.CompanyCreatedMsg{})
 
 	if cmd == nil {
 		t.Fatal("handler given the wrong message returned no command, want one sending message.ErrMsg")
@@ -112,18 +101,13 @@ func TestHandle_WrongMessageSendsAnErrMsg(t *testing.T) {
 
 // A route is a concrete type, and an interface's zero value has none, so
 // a handler that takes an interface would never be called.
-func TestHandle_RefusesAnInterfaceMessageType(t *testing.T) {
+func TestMsgRouter_Register_RefusesAnInterfaceMessageType(t *testing.T) {
 	t.Parallel()
-	m := &component{name: "owner"}
-	r := &fakeRouter{routes: map[model.RouteID]*model.Route{}}
 
-	err := model.HandleAlways(r, m, func(tea.KeyMsg) tea.Cmd { return nil })
+	err := model.NewMsgRouter().Register(model.Always(func(tea.KeyMsg) tea.Cmd { return nil }))
 
 	if err == nil {
-		t.Error("Handle with a tea.KeyMsg handler returned no error, want one: an interface can't be routed")
-	}
-	if len(r.routes) != 0 {
-		t.Errorf("Handle registered %v, want nothing", r.routes)
+		t.Error("Register of a tea.KeyMsg handler returned no error, want one: an interface can't be routed")
 	}
 }
 
@@ -135,21 +119,21 @@ type focusable struct {
 
 func (f *focusable) Focused() bool { return f.focused }
 
-// An always handler gets every message of its type; a focused one only
+// An Always route gets every message of its type; a WhenFocused one only
 // while its owner is in focus.
 func TestMsgRouter_Dispatch_DeliversByScope(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name    string
-		handle  func(model.Router, *focusable, func(message.CompanyDeletedMsg) tea.Cmd) error
+		route   func(*focusable, func(message.CompanyDeletedMsg) tea.Cmd) *model.Route
 		focused bool
 		want    int
 	}{
-		{name: "always, in focus", handle: handleAlways, focused: true, want: 1},
-		{name: "always, out of focus", handle: handleAlways, focused: false, want: 1},
-		{name: "focused, in focus", handle: handleFocused, focused: true, want: 1},
-		{name: "focused, out of focus", handle: handleFocused, focused: false, want: 0},
+		{name: "always, in focus", route: always, focused: true, want: 1},
+		{name: "always, out of focus", route: always, focused: false, want: 1},
+		{name: "when focused, in focus", route: whenFocused, focused: true, want: 1},
+		{name: "when focused, out of focus", route: whenFocused, focused: false, want: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -157,8 +141,8 @@ func TestMsgRouter_Dispatch_DeliversByScope(t *testing.T) {
 			owner := &focusable{component: component{name: "owner"}, focused: tt.focused}
 			r := model.NewMsgRouter()
 			got := 0
-			if err := tt.handle(r, owner, func(message.CompanyDeletedMsg) tea.Cmd { got++; return nil }); err != nil {
-				t.Fatalf("registering: %v", err)
+			if err := r.Register(tt.route(owner, func(message.CompanyDeletedMsg) tea.Cmd { got++; return nil })); err != nil {
+				t.Fatalf("Register: %v", err)
 			}
 
 			r.Dispatch(message.CompanyDeletedMsg{})
@@ -170,10 +154,27 @@ func TestMsgRouter_Dispatch_DeliversByScope(t *testing.T) {
 	}
 }
 
-func handleAlways(r model.Router, owner *focusable, h func(message.CompanyDeletedMsg) tea.Cmd) error {
-	return model.HandleAlways(r, owner, h)
+func always(_ *focusable, h func(message.CompanyDeletedMsg) tea.Cmd) *model.Route {
+	return model.Always(h)
 }
 
-func handleFocused(r model.Router, owner *focusable, h func(message.CompanyDeletedMsg) tea.Cmd) error {
-	return model.HandleFocused(r, owner, h)
+func whenFocused(owner *focusable, h func(message.CompanyDeletedMsg) tea.Cmd) *model.Route {
+	return model.WhenFocused(owner, h)
+}
+
+// A Route made without Always or WhenFocused has no type or handler.
+func TestMsgRouter_Register_RefusesAZeroRoute(t *testing.T) {
+	t.Parallel()
+
+	if err := model.NewMsgRouter().Register(&model.Route{}); err == nil {
+		t.Error("Register(&model.Route{}) returned no error, want one: it has no type or handler")
+	}
+}
+
+func TestMsgRouter_Register_RefusesANilRoute(t *testing.T) {
+	t.Parallel()
+
+	if err := model.NewMsgRouter().Register(nil); err == nil {
+		t.Error("Register(nil) returned no error, want one")
+	}
 }
