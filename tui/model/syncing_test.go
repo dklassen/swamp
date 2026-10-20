@@ -13,24 +13,22 @@ import (
 	"github.com/dklassen/swamp/tui/model"
 )
 
-// fakeRouter records what owner registers, by message type.
+// fakeRouter records what's registered, by message type.
 type fakeRouter struct {
-	owner  model.SubComponent
 	routes map[model.RouteID]*model.Route
 }
 
-func (r *fakeRouter) Register(msg tea.Msg, m model.SubComponent, scope model.Scope, handler model.HandlerFunc) error {
-	r.routes[model.RouteIDOf(msg)] = model.NewRoute(r.owner, scope, handler)
+func (r *fakeRouter) Register(msg tea.Msg, _ model.SubComponent, handler model.HandlerFunc) error {
+	r.routes[model.RouteIDOf(msg)] = model.NewRoute(handler)
 	return nil
 }
 
 // newSyncing is a Syncing with its routes registered, and send, which
-// delivers a message as the router would. Syncing is never in focus, so a
-// route only it can't get fails the test.
+// delivers a message as the router would.
 func newSyncing(t *testing.T) (*model.Syncing, func(tea.Msg) tea.Cmd) {
 	t.Helper()
 	m := model.NewSyncing(nil)
-	r := &fakeRouter{owner: m, routes: map[model.RouteID]*model.Route{}}
+	r := &fakeRouter{routes: map[model.RouteID]*model.Route{}}
 	if err := m.RegisterRoutes(r); err != nil {
 		t.Fatalf("RegisterRoutes: %v", err)
 	}
@@ -151,7 +149,7 @@ type wrongMsg struct{}
 func TestSyncing_Handlers_FailOnTheWrongMessage(t *testing.T) {
 	t.Parallel()
 	m := model.NewSyncing(nil)
-	r := &fakeRouter{owner: m, routes: map[model.RouteID]*model.Route{}}
+	r := &fakeRouter{routes: map[model.RouteID]*model.Route{}}
 	if err := m.RegisterRoutes(r); err != nil {
 		t.Fatalf("RegisterRoutes: %v", err)
 	}

@@ -218,7 +218,7 @@ type recordingRouter struct {
 	routes map[model.RouteID]model.HandlerFunc
 }
 
-func (r *recordingRouter) Register(msg tea.Msg, m model.SubComponent, _ model.Scope, handler model.HandlerFunc) error {
+func (r *recordingRouter) Register(msg tea.Msg, _ model.SubComponent, handler model.HandlerFunc) error {
 	r.routes[model.RouteIDOf(msg)] = handler
 	return nil
 }

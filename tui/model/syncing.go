@@ -41,11 +41,11 @@ func NewSyncing(syncer *sync.Syncer) *Syncing {
 
 func (m *Syncing) RegisterRoutes(r Router) error {
 	return errors.Join(
-		Handle(r, m, AlwaysScope, nil, m.syncAllKey),
-		Handle(r, m, AlwaysScope, nil, m.syncAllStep),
-		Handle(r, m, AlwaysScope, nil, m.startRefresh),
-		Handle(r, m, AlwaysScope, nil, m.companyRefreshed),
-		Handle(r, m, AlwaysScope, nil, m.tick),
+		HandleAlways(r, m, m.syncAllKey),
+		HandleAlways(r, m, m.syncAllStep),
+		HandleAlways(r, m, m.startRefresh),
+		HandleAlways(r, m, m.companyRefreshed),
+		HandleAlways(r, m, m.tick),
 	)
 }
 

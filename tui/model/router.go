@@ -14,25 +14,13 @@ import (
 	"github.com/dklassen/swamp/tui/message"
 )
 
-// Scope is when a registered handler gets the messages it registered for.
-type Scope int
-
-const (
-	// AlwaysScope: every message of the type, whether or not the owner is
-	// in focus, such as a load's result.
-	AlwaysScope Scope = iota
-	// FocusScope: only while the owner is in focus, such as typed input.
-	FocusScope
-)
-
 // HandlerFunc handles a message of the type it was registered for.
 type HandlerFunc func(tea.Msg) tea.Cmd
 
 // Router is what a component registers its routes with.
 type Router interface {
-	// Register calls handler for every msg of the same concrete type that
-	// scope lets through.
-	Register(msg tea.Msg, s SubComponent, scope Scope, handler HandlerFunc) error
+	// Register calls handler for every msg of the same concrete type.
+	Register(msg tea.Msg, s SubComponent, handler HandlerFunc) error
 }
 
 // Routable interface describes the ability to register its messages
@@ -53,7 +41,7 @@ func NewMsgRouter() *MsgRouter {
 	}
 }
 
-func (mr *MsgRouter) Register(msg tea.Msg, s SubComponent, scope Scope, handler HandlerFunc) error {
+func (mr *MsgRouter) Register(msg tea.Msg, s SubComponent, handler HandlerFunc) error {
 	mr.mu.Lock()
 	defer mr.mu.Unlock()
 
@@ -62,7 +50,7 @@ func (mr *MsgRouter) Register(msg tea.Msg, s SubComponent, scope Scope, handler 
 		return fmt.Errorf("router: cannot register a nil message type")
 	}
 
-	route := NewRoute(s, scope, handler)
+	route := NewRoute(handler)
 	mr.routes[id] = append(mr.routes[id], route)
 	return nil
 }
@@ -88,24 +76,32 @@ func (mr *MsgRouter) Dispatch(msg tea.Msg) tea.Cmd {
 	return tea.Batch(cmds...)
 }
 
-// Handle registers handle for every T that scope lets through. The route
-// is T itself, so a handler can't be registered for a message it doesn't
-// take.
-func Handle[T tea.Msg](r Router, s SubComponent, scope Scope, isFocused func() bool, handle func(T) tea.Cmd) error {
+// HandleAlways registers handle for every T, whether or not owner is in
+// focus, such as a load's result. The route is T itself, so a handler
+// can't be registered for a message it doesn't take.
+func HandleAlways[T tea.Msg](r Router, owner SubComponent, handle func(T) tea.Cmd) error {
+	return register(r, owner, func() bool { return true }, handle)
+}
+
+// HandleFocused registers handle for every T that arrives while owner is
+// in focus, such as typed input.
+func HandleFocused[T tea.Msg](r Router, owner Focusable, handle func(T) tea.Cmd) error {
+	return register(r, owner, owner.Focused, handle)
+}
+
+func register[T tea.Msg](r Router, owner SubComponent, accepts func() bool, handle func(T) tea.Cmd) error {
 	var zero T
 	if any(zero) == nil {
-		return fmt.Errorf("model.Handle: the handler takes %v, an interface, which has no type to route by; take a concrete message type", reflect.TypeFor[T]())
+		return fmt.Errorf("model: the handler takes %v, an interface, which has no type to route by; take a concrete message type", reflect.TypeFor[T]())
 	}
-	return r.Register(zero, s, scope, func(msg tea.Msg) tea.Cmd {
-		if scope == FocusScope && isFocused != nil && !isFocused() {
-			return nil
-		}
-
+	return r.Register(zero, owner, func(msg tea.Msg) tea.Cmd {
 		m, ok := msg.(T)
 		if !ok {
 			return message.Fail(fmt.Errorf("handler for %T got %T", zero, msg))
 		}
-
+		if !accepts() {
+			return nil
+		}
 		return handle(m)
 	})
 }
@@ -117,17 +113,19 @@ type SubComponent interface {
 	tea.Model
 }
 
-// Route is one registered handler and the component that registered it.
+// Focusable is a SubComponent that knows whether it's in focus.
+type Focusable interface {
+	SubComponent
+	Focused() bool
+}
+
+// Route is one registered handler.
 type Route struct {
-	Owner  SubComponent
-	Scope  Scope
 	Handle HandlerFunc
 }
 
-func NewRoute(owner SubComponent, scope Scope, handle HandlerFunc) *Route {
+func NewRoute(handle HandlerFunc) *Route {
 	return &Route{
-		owner,
-		scope,
 		handle,
 	}
 }

@@ -50,18 +50,17 @@ func newCompanyListModel(companies *service.CompanyService, postings *service.Po
 	}
 }
 
+func (m *companyListModel) Focused() bool { return m.focused }
+
 func (m *companyListModel) RegisterRoutes(r model.Router) error {
-	focusFunc := func() bool {
-		return m.focused
-	}
 	return errors.Join(
-		model.Handle(r, m, model.AlwaysScope, nil, m.companiesLoaded),
-		model.Handle(r, m, model.AlwaysScope, nil, m.companyCreated),
-		model.Handle(r, m, model.AlwaysScope, nil, m.companyDeleted),
-		model.Handle(r, m, model.AlwaysScope, nil, m.companyNameUpdated),
-		model.Handle(r, m, model.FocusScope, focusFunc, m.keyPressed),
-		model.Handle(r, m, model.FocusScope, focusFunc, m.paste),
-		model.Handle(r, m, model.AlwaysScope, nil, m.resize),
+		model.HandleAlways(r, m, m.companiesLoaded),
+		model.HandleAlways(r, m, m.companyCreated),
+		model.HandleAlways(r, m, m.companyDeleted),
+		model.HandleAlways(r, m, m.companyNameUpdated),
+		model.HandleFocused(r, m, m.keyPressed),
+		model.HandleFocused(r, m, m.paste),
+		model.HandleAlways(r, m, m.resize),
 	)
 }
 

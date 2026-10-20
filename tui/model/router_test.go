@@ -66,15 +66,15 @@ func (c *component) RegisterRoutes(model.Router) error {
 	return nil
 }
 
-// Handle registers under the type the handler takes, and hands it that
+// HandleAlways registers under the type the handler takes, and hands it that
 // message as that type.
 func TestHandle_RoutesByTheHandlersMessageType(t *testing.T) {
 	t.Parallel()
 	owner := &component{name: "owner"}
-	r := &fakeRouter{owner: owner, routes: map[model.RouteID]*model.Route{}}
+	r := &fakeRouter{routes: map[model.RouteID]*model.Route{}}
 	var got message.CompanyDeletedMsg
 
-	err := model.Handle(r, owner, model.AlwaysScope, nil, func(msg message.CompanyDeletedMsg) tea.Cmd { got = msg; return nil })
+	err := model.HandleAlways(r, owner, func(msg message.CompanyDeletedMsg) tea.Cmd { got = msg; return nil })
 	if err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
@@ -95,8 +95,8 @@ func TestHandle_WrongMessageSendsAnErrMsg(t *testing.T) {
 	t.Parallel()
 
 	owner := &component{name: "owner"}
-	r := &fakeRouter{owner: owner, routes: map[model.RouteID]*model.Route{}}
-	if err := model.Handle(r, owner, model.AlwaysScope, nil, func(message.CompanyDeletedMsg) tea.Cmd { return nil }); err != nil {
+	r := &fakeRouter{routes: map[model.RouteID]*model.Route{}}
+	if err := model.HandleAlways(r, owner, func(message.CompanyDeletedMsg) tea.Cmd { return nil }); err != nil {
 		t.Fatalf("Handle: %v", err)
 	}
 
@@ -115,9 +115,9 @@ func TestHandle_WrongMessageSendsAnErrMsg(t *testing.T) {
 func TestHandle_RefusesAnInterfaceMessageType(t *testing.T) {
 	t.Parallel()
 	m := &component{name: "owner"}
-	r := &fakeRouter{owner: m, routes: map[model.RouteID]*model.Route{}}
+	r := &fakeRouter{routes: map[model.RouteID]*model.Route{}}
 
-	err := model.Handle(r, m, model.FocusScope, func() bool { return true }, func(tea.KeyMsg) tea.Cmd { return nil })
+	err := model.HandleAlways(r, m, func(tea.KeyMsg) tea.Cmd { return nil })
 
 	if err == nil {
 		t.Error("Handle with a tea.KeyMsg handler returned no error, want one: an interface can't be routed")
@@ -125,4 +125,55 @@ func TestHandle_RefusesAnInterfaceMessageType(t *testing.T) {
 	if len(r.routes) != 0 {
 		t.Errorf("Handle registered %v, want nothing", r.routes)
 	}
+}
+
+// focusable is a component whose focus the test sets.
+type focusable struct {
+	component
+	focused bool
+}
+
+func (f *focusable) Focused() bool { return f.focused }
+
+// An always handler gets every message of its type; a focused one only
+// while its owner is in focus.
+func TestMsgRouter_Dispatch_DeliversByScope(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		handle  func(model.Router, *focusable, func(message.CompanyDeletedMsg) tea.Cmd) error
+		focused bool
+		want    int
+	}{
+		{name: "always, in focus", handle: handleAlways, focused: true, want: 1},
+		{name: "always, out of focus", handle: handleAlways, focused: false, want: 1},
+		{name: "focused, in focus", handle: handleFocused, focused: true, want: 1},
+		{name: "focused, out of focus", handle: handleFocused, focused: false, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			owner := &focusable{component: component{name: "owner"}, focused: tt.focused}
+			r := model.NewMsgRouter()
+			got := 0
+			if err := tt.handle(r, owner, func(message.CompanyDeletedMsg) tea.Cmd { got++; return nil }); err != nil {
+				t.Fatalf("registering: %v", err)
+			}
+
+			r.Dispatch(message.CompanyDeletedMsg{})
+
+			if got != tt.want {
+				t.Errorf("deliveries = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func handleAlways(r model.Router, owner *focusable, h func(message.CompanyDeletedMsg) tea.Cmd) error {
+	return model.HandleAlways(r, owner, h)
+}
+
+func handleFocused(r model.Router, owner *focusable, h func(message.CompanyDeletedMsg) tea.Cmd) error {
+	return model.HandleFocused(r, owner, h)
 }
