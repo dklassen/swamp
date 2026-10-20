@@ -215,25 +215,25 @@ func TestCompanyListModel_A_ReturnsOpenCompanyFormMsg(t *testing.T) {
 // recordingRouter keeps every handler registered with it, by the
 // message type it was registered for.
 type recordingRouter struct {
-	routes map[model.RouteID]model.HandlerFunc
+	routes map[model.RouteID]*model.Route
 }
 
-func (r *recordingRouter) Register(msg tea.Msg, _ model.Scope, handler model.HandlerFunc) error {
-	r.routes[model.RouteIDOf(msg)] = handler
+func (r *recordingRouter) Register(route *model.Route) error {
+	r.routes[route.ID()] = route
 	return nil
 }
 
 // assertHandlersFailOnWrongMessage checks every handler c registers sends
 // an ErrMsg when handed a message of another type, rather than panicking.
-func assertHandlersFailOnWrongMessage(t *testing.T, c model.SubComponent) {
+func assertHandlersFailOnWrongMessage(t *testing.T, c model.Routable) {
 	t.Helper()
-	r := &recordingRouter{routes: map[model.RouteID]model.HandlerFunc{}}
-	if err := c.RegisterRoutes(r, 1); err != nil {
+	r := &recordingRouter{routes: map[model.RouteID]*model.Route{}}
+	if err := c.RegisterRoutes(r); err != nil {
 		t.Fatalf("RegisterRoutes: %v", err)
 	}
-	for id, handle := range r.routes {
+	for id, route := range r.routes {
 		t.Run(id.String(), func(t *testing.T) {
-			cmd := handle(probeMsg{})
+			cmd := route.Handle(probeMsg{})
 			if cmd == nil {
 				t.Fatal("handler given probeMsg returned no command, want one sending message.ErrMsg")
 			}
@@ -780,5 +780,37 @@ func TestCompanyListModel_View_InfoBoxIsAsWideAsTheTable(t *testing.T) {
 		if tops[1] != tops[0] {
 			t.Errorf("width %d: info box is %d wide, want %d (the table's width)", width, tops[1], tops[0])
 		}
+	}
+}
+
+// The list takes keys only while the last FocusChangedMsg named it.
+func TestCompanyListModel_TakesKeysOnlyWhileFocused(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		focused    func(m *companyListModel) tea.Model
+		wantCursor int
+	}{
+		{name: "the list in focus", focused: func(m *companyListModel) tea.Model { return m }, wantCursor: 1},
+		{name: "another component in focus", focused: func(*companyListModel) tea.Model { return newCompanyListModel(nil, nil) }, wantCursor: 0},
+		{name: "nothing in focus", focused: func(*companyListModel) tea.Model { return nil }, wantCursor: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}, nil, 0, 40)
+			r := model.NewMsgRouter()
+			if err := m.RegisterRoutes(r); err != nil {
+				t.Fatalf("RegisterRoutes: %v", err)
+			}
+
+			r.Dispatch(message.FocusChangedMsg{Focused: tt.focused(m)})
+			r.Dispatch(tea.KeyPressMsg{Code: tea.KeyDown})
+
+			if m.cursor != tt.wantCursor {
+				t.Errorf("cursor after down = %d, want %d", m.cursor, tt.wantCursor)
+			}
+		})
 	}
 }

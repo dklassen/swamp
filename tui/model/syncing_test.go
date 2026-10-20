@@ -13,25 +13,23 @@ import (
 	"github.com/dklassen/swamp/tui/model"
 )
 
-// fakeRouter records what owner registers, by message type.
+// fakeRouter records what's registered, by message type.
 type fakeRouter struct {
-	owner  model.SubComponent
 	routes map[model.RouteID]*model.Route
 }
 
-func (r *fakeRouter) Register(msg tea.Msg, scope model.Scope, handler model.HandlerFunc) error {
-	r.routes[model.RouteIDOf(msg)] = model.NewRoute(r.owner, scope, handler)
+func (r *fakeRouter) Register(route *model.Route) error {
+	r.routes[route.ID()] = route
 	return nil
 }
 
 // newSyncing is a Syncing with its routes registered, and send, which
-// delivers a message as the router would. Syncing is never in focus, so a
-// route only it can't get fails the test.
+// delivers a message as the router would.
 func newSyncing(t *testing.T) (*model.Syncing, func(tea.Msg) tea.Cmd) {
 	t.Helper()
 	m := model.NewSyncing(nil)
-	r := &fakeRouter{owner: m, routes: map[model.RouteID]*model.Route{}}
-	if err := m.RegisterRoutes(r, 1); err != nil {
+	r := &fakeRouter{routes: map[model.RouteID]*model.Route{}}
+	if err := m.RegisterRoutes(r); err != nil {
 		t.Fatalf("RegisterRoutes: %v", err)
 	}
 	return m, func(msg tea.Msg) tea.Cmd {
@@ -39,9 +37,6 @@ func newSyncing(t *testing.T) (*model.Syncing, func(tea.Msg) tea.Cmd) {
 		route, ok := r.routes[model.RouteIDOf(msg)]
 		if !ok {
 			t.Fatalf("nothing registered for %T", msg)
-		}
-		if !route.Accepts(nil) {
-			t.Fatalf("%T is registered with a scope that never reaches Syncing, which is never in focus", msg)
 		}
 		return route.Handle(msg)
 	}
@@ -154,8 +149,8 @@ type wrongMsg struct{}
 func TestSyncing_Handlers_FailOnTheWrongMessage(t *testing.T) {
 	t.Parallel()
 	m := model.NewSyncing(nil)
-	r := &fakeRouter{owner: m, routes: map[model.RouteID]*model.Route{}}
-	if err := m.RegisterRoutes(r, 1); err != nil {
+	r := &fakeRouter{routes: map[model.RouteID]*model.Route{}}
+	if err := m.RegisterRoutes(r); err != nil {
 		t.Fatalf("RegisterRoutes: %v", err)
 	}
 	for id, route := range r.routes {

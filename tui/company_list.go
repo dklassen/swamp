@@ -20,8 +20,10 @@ import (
 // companyListModel drives the company-list screen, and owns the companies
 // it shows.
 type companyListModel struct {
-	id     message.ScreenInstance
 	cursor int
+
+	focused bool
+
 	// showInfo is whether the info box (i) is open. Ephemeral, like cursor:
 	// closed each time the app starts.
 	showInfo bool
@@ -48,17 +50,24 @@ func newCompanyListModel(companies *service.CompanyService, postings *service.Po
 	}
 }
 
-func (m *companyListModel) RegisterRoutes(r model.Router, id message.ScreenInstance) error {
-	m.id = id
+func (m *companyListModel) Focused() bool { return m.focused }
+
+func (m *companyListModel) RegisterRoutes(r model.Router) error {
 	return errors.Join(
-		model.Handle(r, model.AlwaysScope, m.companiesLoaded),
-		model.Handle(r, model.AlwaysScope, m.companyCreated),
-		model.Handle(r, model.AlwaysScope, m.companyDeleted),
-		model.Handle(r, model.AlwaysScope, m.companyNameUpdated),
-		model.Handle(r, model.FocusScope, m.keyPressed),
-		model.Handle(r, model.FocusScope, m.paste),
-		model.Handle(r, model.AlwaysScope, m.resize),
+		r.Register(model.Always(m.companiesLoaded)),
+		r.Register(model.Always(m.companyCreated)),
+		r.Register(model.Always(m.companyDeleted)),
+		r.Register(model.Always(m.companyNameUpdated)),
+		r.Register(model.WhenFocused(m, m.keyPressed)),
+		r.Register(model.WhenFocused(m, m.paste)),
+		r.Register(model.Always(m.resize)),
+		r.Register(model.Always(m.focusChanged)),
 	)
+}
+
+func (m *companyListModel) focusChanged(msg message.FocusChangedMsg) tea.Cmd {
+	m.focused = msg.Focused == m
+	return nil
 }
 
 func (m *companyListModel) Init() tea.Cmd {

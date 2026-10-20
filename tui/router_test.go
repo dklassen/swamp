@@ -10,39 +10,10 @@ import (
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/tui/message"
-	"github.com/dklassen/swamp/tui/model"
 )
 
-// probeMsg is a message only probe registers for.
+// probeMsg is a message nothing registers for.
 type probeMsg struct{}
-
-// probe registers for probeMsg in both scopes and counts what reaches it.
-type probe struct{ always, focused int }
-
-func (p *probe) Init() tea.Cmd                       { return nil }
-func (p *probe) Update(tea.Msg) (tea.Model, tea.Cmd) { return p, nil }
-func (p *probe) View() tea.View                      { return tea.NewView("") }
-func (p *probe) RegisterRoutes(r model.Router, _ message.ScreenInstance) error {
-	return errors.Join(
-		r.Register(probeMsg{}, model.AlwaysScope, func(tea.Msg) tea.Cmd { p.always++; return nil }),
-		r.Register(probeMsg{}, model.FocusScope, func(tea.Msg) tea.Cmd { p.focused++; return nil }),
-	)
-}
-
-// A component that isn't in focus gets what it registered for always, and
-// nothing it registered for only while in focus.
-func TestApp_Route_DeliversByScope(t *testing.T) {
-	t.Parallel()
-	app := newTestApp(t, testutil.NewTestApp(t), nil)
-	p := &probe{}
-	app.register(p)
-
-	sendKey(app, probeMsg{})
-
-	if p.always != 1 || p.focused != 0 {
-		t.Errorf("deliveries: always %d, focused %d; want 1 and 0 (the probe is never in focus)", p.always, p.focused)
-	}
-}
 
 // A key reaches the company list once while it's on screen: one down
 // moves one row, so enter opens the second company, not the third.

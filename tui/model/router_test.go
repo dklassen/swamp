@@ -59,55 +59,23 @@ func TestRouteIDOf_EqualExactlyForTheSameConcreteType(t *testing.T) {
 // component is a SubComponent that does nothing, to own routes.
 type component struct{ name string }
 
-func (c *component) Init() tea.Cmd                                             { return nil }
-func (c *component) Update(tea.Msg) (tea.Model, tea.Cmd)                       { return c, nil }
-func (c *component) View() tea.View                                            { return tea.NewView(c.name) }
-func (c *component) RegisterRoutes(model.Router, message.ScreenInstance) error { return nil }
-
-func TestRoute_Accepts_DependsOnScopeAndFocus(t *testing.T) {
-	t.Parallel()
-	owner, other := &component{name: "owner"}, &component{name: "other"}
-
-	tests := []struct {
-		name    string
-		scope   model.Scope
-		focused model.SubComponent
-		want    bool
-	}{
-		{name: "always, owner in focus", scope: model.AlwaysScope, focused: owner, want: true},
-		{name: "always, another in focus", scope: model.AlwaysScope, focused: other, want: true},
-		{name: "always, nothing in focus", scope: model.AlwaysScope, focused: nil, want: true},
-		{name: "focus, owner in focus", scope: model.FocusScope, focused: owner, want: true},
-		{name: "focus, another in focus", scope: model.FocusScope, focused: other, want: false},
-		{name: "focus, nothing in focus", scope: model.FocusScope, focused: nil, want: false},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			r := model.NewRoute(owner, tt.scope, func(tea.Msg) tea.Cmd { return nil })
-			if got := r.Accepts(tt.focused); got != tt.want {
-				t.Errorf("Accepts(%v) = %v, want %v", tt.focused, got, tt.want)
-			}
-		})
-	}
+func (c *component) Init() tea.Cmd                       { return nil }
+func (c *component) Update(tea.Msg) (tea.Model, tea.Cmd) { return c, nil }
+func (c *component) View() tea.View                      { return tea.NewView(c.name) }
+func (c *component) RegisterRoutes(model.Router) error {
+	return nil
 }
 
-// Handle registers under the type the handler takes, and hands it that
-// message as that type.
-func TestHandle_RoutesByTheHandlersMessageType(t *testing.T) {
+// Always routes the type the handler takes, and hands it that message as
+// that type.
+func TestAlways_RoutesByTheHandlersMessageType(t *testing.T) {
 	t.Parallel()
-	owner := &component{name: "owner"}
-	r := &fakeRouter{owner: owner, routes: map[model.RouteID]*model.Route{}}
 	var got message.CompanyDeletedMsg
 
-	err := model.Handle(r, model.AlwaysScope, func(msg message.CompanyDeletedMsg) tea.Cmd { got = msg; return nil })
-	if err != nil {
-		t.Fatalf("Handle: %v", err)
-	}
+	route := model.Always(func(msg message.CompanyDeletedMsg) tea.Cmd { got = msg; return nil })
 
-	route, ok := r.routes[model.RouteIDOf(message.CompanyDeletedMsg{})]
-	if !ok {
-		t.Fatalf("Handle registered %v, want a route for message.CompanyDeletedMsg", r.routes)
+	if want := model.RouteIDOf(message.CompanyDeletedMsg{}); route.ID() != want {
+		t.Fatalf("route.ID() = %v, want %v", route.ID(), want)
 	}
 	route.Handle(message.CompanyDeletedMsg{CompanyID: 7})
 	if got.CompanyID != 7 {
@@ -117,14 +85,11 @@ func TestHandle_RoutesByTheHandlersMessageType(t *testing.T) {
 
 // The router only calls a route with its own type, so a mismatch is the
 // router's fault; it's reported as an ErrMsg, not a panic.
-func TestHandle_WrongMessageSendsAnErrMsg(t *testing.T) {
+func TestRoute_WrongMessageSendsAnErrMsg(t *testing.T) {
 	t.Parallel()
-	r := &fakeRouter{owner: &component{name: "owner"}, routes: map[model.RouteID]*model.Route{}}
-	if err := model.Handle(r, model.AlwaysScope, func(message.CompanyDeletedMsg) tea.Cmd { return nil }); err != nil {
-		t.Fatalf("Handle: %v", err)
-	}
+	route := model.Always(func(message.CompanyDeletedMsg) tea.Cmd { return nil })
 
-	cmd := r.routes[model.RouteIDOf(message.CompanyDeletedMsg{})].Handle(message.CompanyCreatedMsg{})
+	cmd := route.Handle(message.CompanyCreatedMsg{})
 
 	if cmd == nil {
 		t.Fatal("handler given the wrong message returned no command, want one sending message.ErrMsg")
@@ -136,16 +101,80 @@ func TestHandle_WrongMessageSendsAnErrMsg(t *testing.T) {
 
 // A route is a concrete type, and an interface's zero value has none, so
 // a handler that takes an interface would never be called.
-func TestHandle_RefusesAnInterfaceMessageType(t *testing.T) {
+func TestMsgRouter_Register_RefusesAnInterfaceMessageType(t *testing.T) {
 	t.Parallel()
-	r := &fakeRouter{owner: &component{name: "owner"}, routes: map[model.RouteID]*model.Route{}}
 
-	err := model.Handle(r, model.FocusScope, func(tea.KeyMsg) tea.Cmd { return nil })
+	err := model.NewMsgRouter().Register(model.Always(func(tea.KeyMsg) tea.Cmd { return nil }))
 
 	if err == nil {
-		t.Error("Handle with a tea.KeyMsg handler returned no error, want one: an interface can't be routed")
+		t.Error("Register of a tea.KeyMsg handler returned no error, want one: an interface can't be routed")
 	}
-	if len(r.routes) != 0 {
-		t.Errorf("Handle registered %v, want nothing", r.routes)
+}
+
+// focusable is a component whose focus the test sets.
+type focusable struct {
+	component
+	focused bool
+}
+
+func (f *focusable) Focused() bool { return f.focused }
+
+// An Always route gets every message of its type; a WhenFocused one only
+// while its owner is in focus.
+func TestMsgRouter_Dispatch_DeliversByScope(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		route   func(*focusable, func(message.CompanyDeletedMsg) tea.Cmd) *model.Route
+		focused bool
+		want    int
+	}{
+		{name: "always, in focus", route: always, focused: true, want: 1},
+		{name: "always, out of focus", route: always, focused: false, want: 1},
+		{name: "when focused, in focus", route: whenFocused, focused: true, want: 1},
+		{name: "when focused, out of focus", route: whenFocused, focused: false, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			owner := &focusable{component: component{name: "owner"}, focused: tt.focused}
+			r := model.NewMsgRouter()
+			got := 0
+			if err := r.Register(tt.route(owner, func(message.CompanyDeletedMsg) tea.Cmd { got++; return nil })); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+
+			r.Dispatch(message.CompanyDeletedMsg{})
+
+			if got != tt.want {
+				t.Errorf("deliveries = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func always(_ *focusable, h func(message.CompanyDeletedMsg) tea.Cmd) *model.Route {
+	return model.Always(h)
+}
+
+func whenFocused(owner *focusable, h func(message.CompanyDeletedMsg) tea.Cmd) *model.Route {
+	return model.WhenFocused(owner, h)
+}
+
+// A Route made without Always or WhenFocused has no type or handler.
+func TestMsgRouter_Register_RefusesAZeroRoute(t *testing.T) {
+	t.Parallel()
+
+	if err := model.NewMsgRouter().Register(&model.Route{}); err == nil {
+		t.Error("Register(&model.Route{}) returned no error, want one: it has no type or handler")
+	}
+}
+
+func TestMsgRouter_Register_RefusesANilRoute(t *testing.T) {
+	t.Parallel()
+
+	if err := model.NewMsgRouter().Register(nil); err == nil {
+		t.Error("Register(nil) returned no error, want one")
 	}
 }

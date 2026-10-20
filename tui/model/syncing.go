@@ -39,13 +39,13 @@ func NewSyncing(syncer *sync.Syncer) *Syncing {
 	}
 }
 
-func (m *Syncing) RegisterRoutes(r Router, _ message.ScreenInstance) error {
+func (m *Syncing) RegisterRoutes(r Router) error {
 	return errors.Join(
-		Handle(r, AlwaysScope, m.syncAllKey),
-		Handle(r, AlwaysScope, m.syncAllStep),
-		Handle(r, AlwaysScope, m.startRefresh),
-		Handle(r, AlwaysScope, m.companyRefreshed),
-		Handle(r, AlwaysScope, m.tick),
+		r.Register(Always(m.syncAllKey)),
+		r.Register(Always(m.syncAllStep)),
+		r.Register(Always(m.startRefresh)),
+		r.Register(Always(m.companyRefreshed)),
+		r.Register(Always(m.tick)),
 	)
 }
 
