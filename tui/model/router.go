@@ -7,28 +7,25 @@ package model
 import (
 	"fmt"
 	"reflect"
-	"sync"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/tui/message"
 )
 
-// Router is what a component registers its routes with.
+// Router is what a component's routes are registered with.
 type Router interface {
-	// Register calls route's handler for every message of its type that
-	// route lets through.
-	Register(route *Route) error
+	// Register calls each of owner's routes for every message of its type
+	// that the route lets through.
+	Register(owner Routable) error
 }
 
-// Routable interface describes the ability to register its messages
-// with a Router
+// Routable is a component with routes for a Router.
 type Routable interface {
-	RegisterRoutes(r Router) error
+	Routes() []*Route
 }
 
 type MsgRouter struct {
-	mu sync.RWMutex
 	// Keyed by RouteID (the reflect.Type of the message)
 	routes map[RouteID][]*Route
 }
@@ -39,29 +36,67 @@ func NewMsgRouter() *MsgRouter {
 	}
 }
 
-func (mr *MsgRouter) Register(route *Route) error {
-	mr.mu.Lock()
-	defer mr.mu.Unlock()
-
-	if route == nil {
-		return fmt.Errorf("router: cannot register a nil Route; make one with Always or WhenFocused")
-	}
-	if route.err != nil {
-		return route.err
-	}
-	if route.id.typ == nil {
-		return fmt.Errorf("router: cannot register a zero Route; make one with Always or WhenFocused")
+// Register adds owner's routes, or none of them if any is invalid.
+func (mr *MsgRouter) Register(owner Routable) error {
+	if owner == nil {
+		return fmt.Errorf("router: cannot register a nil owner")
 	}
 
-	mr.routes[route.id] = append(mr.routes[route.id], route)
+	routes := owner.Routes()
+
+	owned := make([]*Route, 0, len(routes))
+	for _, route := range routes {
+		if route == nil {
+			return fmt.Errorf("router: registering %T: a nil Route; make one with Always or WhenFocused", owner)
+		}
+		if route.err != nil {
+			return fmt.Errorf("router: registering %T: %w", owner, route.err)
+		}
+		if route.id.typ == nil {
+			return fmt.Errorf("router: registering %T: a zero Route; make one with Always or WhenFocused", owner)
+		}
+		r := *route
+		r.owner = owner
+		owned = append(owned, &r)
+	}
+
+	for _, r := range owned {
+		mr.routes[r.id] = append(mr.routes[r.id], r)
+	}
+	return nil
+}
+
+// Deregister removes every route owner registered.
+func (mr *MsgRouter) Deregister(owner Routable) error {
+	if owner == nil {
+		return fmt.Errorf("router: cannot deregister a nil owner")
+	}
+
+	// A new map and slices, never edited in place: a Dispatch already
+	// running still walks the old ones.
+	next := make(map[RouteID][]*Route, len(mr.routes))
+	removed := false
+	for id, routes := range mr.routes {
+		for _, r := range routes {
+			if r.owner == owner {
+				removed = true
+				continue
+			}
+			next[id] = append(next[id], r)
+		}
+	}
+
+	if !removed {
+		return fmt.Errorf("router: deregistering %T: it has no routes registered", owner)
+	}
+
+	mr.routes = next
 	return nil
 }
 
 func (mr *MsgRouter) Dispatch(msg tea.Msg) tea.Cmd {
-	mr.mu.RLock()
 	id := RouteIDOf(msg)
 	routes, exists := mr.routes[id]
-	mr.mu.RUnlock()
 
 	if !exists {
 		return nil
@@ -91,11 +126,13 @@ type Focusable interface {
 	Focused() bool
 }
 
-// Route is one handler and when it gets its messages. Its fields are
-// unexported so Always and WhenFocused are the only ways to make one.
+// Route is one handler, when it gets its messages, and, once registered,
+// its owner. Its fields are unexported so Always and WhenFocused are the
+// only ways to make one.
 type Route struct {
 	id     RouteID
 	handle func(tea.Msg) tea.Cmd
+	owner  Routable
 	err    error
 }
 

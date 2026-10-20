@@ -13,28 +13,29 @@ import (
 	"github.com/dklassen/swamp/tui/model"
 )
 
-// fakeRouter records what's registered, by message type.
-type fakeRouter struct {
-	routes map[model.RouteID]*model.Route
+// routesOf is m's routes by message type, failing t if the router
+// refuses them.
+func routesOf(t *testing.T, m *model.Syncing) map[model.RouteID]*model.Route {
+	t.Helper()
+	if err := model.NewMsgRouter().Register(m); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	routes := map[model.RouteID]*model.Route{}
+	for _, route := range m.Routes() {
+		routes[route.ID()] = route
+	}
+	return routes
 }
 
-func (r *fakeRouter) Register(route *model.Route) error {
-	r.routes[route.ID()] = route
-	return nil
-}
-
-// newSyncing is a Syncing with its routes registered, and send, which
-// delivers a message as the router would.
+// newSyncing is a Syncing whose routes the router accepts, and send,
+// which delivers a message as the router would.
 func newSyncing(t *testing.T) (*model.Syncing, func(tea.Msg) tea.Cmd) {
 	t.Helper()
 	m := model.NewSyncing(nil)
-	r := &fakeRouter{routes: map[model.RouteID]*model.Route{}}
-	if err := m.RegisterRoutes(r); err != nil {
-		t.Fatalf("RegisterRoutes: %v", err)
-	}
+	routes := routesOf(t, m)
 	return m, func(msg tea.Msg) tea.Cmd {
 		t.Helper()
-		route, ok := r.routes[model.RouteIDOf(msg)]
+		route, ok := routes[model.RouteIDOf(msg)]
 		if !ok {
 			t.Fatalf("nothing registered for %T", msg)
 		}
@@ -148,12 +149,7 @@ type wrongMsg struct{}
 // sends an ErrMsg instead of panicking or ignoring it.
 func TestSyncing_Handlers_FailOnTheWrongMessage(t *testing.T) {
 	t.Parallel()
-	m := model.NewSyncing(nil)
-	r := &fakeRouter{routes: map[model.RouteID]*model.Route{}}
-	if err := m.RegisterRoutes(r); err != nil {
-		t.Fatalf("RegisterRoutes: %v", err)
-	}
-	for id, route := range r.routes {
+	for id, route := range routesOf(t, model.NewSyncing(nil)) {
 		t.Run(id.String(), func(t *testing.T) {
 			cmd := route.Handle(wrongMsg{})
 			if cmd == nil {
