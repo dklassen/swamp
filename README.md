@@ -15,7 +15,7 @@ stay local.
 ## Features
 
 - **Fetch** postings from every company you track on Ashby, Greenhouse
-  and Lever, on demand or on a schedule.
+  and Lever, right from the TUI.
 - **Triage** them in a keyboard-driven TUI: search, mark interested,
   archive, and track each application from first look to final answer.
 - **Score** how well each posting fits you, 1 (no fit) to 5 (apply now),
@@ -116,15 +116,11 @@ everyone gets the same version. Tasks that read the database use
 ```text
 swamp [--mcp]                  run the TUI, optionally with the MCP server in-process
 swamp migrate up|down          apply pending migrations, or roll back the newest
-swamp fetch                    sync every active company
 swamp stage list               print postings eligible for hand-off
 swamp stage prepare <posting-id>
 swamp export <application-id>  convert an application's documents to PDF
 swamp mcp-serve                run the MCP server alone
 ```
-
-`fetch` exits non-zero if any company fails to sync, so it's safe to drop
-into cron or a launchd job.
 
 ## Your profile and canonical resume
 
@@ -165,7 +161,7 @@ anything left out of both won't appear in a draft.
 Only `swamp migrate up` and `swamp migrate down` change the database's
 schema. To upgrade:
 
-1. Stop the TUI, `mcp-serve` and any scheduled `fetch`. When the last one
+1. Stop the TUI and `mcp-serve`. When the last one
    closes cleanly, SQLite folds its write-ahead log (`swamp.db-wal`) back
    into the database file, so a copy of that file is a complete backup.
    If a `-wal` file is still there, something is running or crashed:
@@ -180,7 +176,7 @@ schema. To upgrade:
 
 3. Start them again.
 
-Until the database is migrated, the TUI, `mcp-serve` and `fetch` refuse to
+Until the database is migrated, the TUI and `mcp-serve` refuse to
 start and say so. They also refuse a database migrated by a newer binary
 than themselves.
 
