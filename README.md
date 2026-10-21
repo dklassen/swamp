@@ -63,11 +63,6 @@ go tool task build          # -> ./bin/swamp
 ./bin/swamp                 # or: go tool task run (adds the MCP server)
 ```
 
-In the seed file, `source` is the job board (`ashby`, `greenhouse` or
-`lever`) and `source_ref` is the company's slug on it: `acme` in
-`jobs.ashbyhq.com/acme`. `seed/data/companies.yaml` is gitignored, so your
-list stays yours.
-
 ### Hooking up an agent
 
 Scoring and drafting go through Swamp's MCP server. Run it alongside the
@@ -125,7 +120,6 @@ swamp fetch                    sync every active company
 swamp stage list               print postings eligible for hand-off
 swamp stage prepare <posting-id>
 swamp export <application-id>  convert an application's documents to PDF
-swamp import <seed-file.yaml>  bulk-create companies
 swamp mcp-serve                run the MCP server alone
 ```
 
