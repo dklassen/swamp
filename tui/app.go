@@ -158,7 +158,7 @@ type App struct {
 	activeFilterLocations   []string
 
 	// router is a message router for Dispatching bubbletea tea.Msg's
-	router *model.MsgRouter
+	router model.Router
 
 	// sized is the last size sent to the screens.
 	sized message.ContentSizeMsg

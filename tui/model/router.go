@@ -18,6 +18,8 @@ type Router interface {
 	// Register calls each of owner's routes for every message of its type
 	// that the route lets through.
 	Register(owner Routable) error
+	Deregister(owner Routable) error
+	Dispatch(msg tea.Msg) tea.Cmd
 }
 
 // Routable is a component with routes for a Router.
