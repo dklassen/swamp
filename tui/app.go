@@ -109,7 +109,7 @@ type App struct {
 	// per transition keeps a new entry point from needing its own field.
 	// See issue #89.
 	returnStack        []screen
-	lastScreenInstance screenInstance
+	lastScreenInstance message.ScreenInstance
 	// activeApplications backs the home screen: every application not at
 	// a terminal dead-end status, across every company (see
 	// ApplicationService.Active).
@@ -419,13 +419,11 @@ func postingDetailContent(p posting.Posting, application application.Application
 	return b.String()
 }
 
-// screenInstance tells apart two openings of the same screen (#115).
-// Bubble Tea doesn't say which screen a Cmd's result is for, so without
-// it a save from a screen the user closed and reopened would act on the
-// new one. Zero is never handed out, so it never matches a real result.
-type screenInstance int
-
-func (a *App) newScreenInstance() screenInstance {
+// newScreenInstance tells apart two openings of the same screen. Bubble
+// Tea doesn't say which screen a Cmd's result is for, so without it a
+// save from a screen the user closed and reopened would act on the new
+// one. Zero is never handed out, so it never matches a real result.
+func (a *App) newScreenInstance() message.ScreenInstance {
 	a.lastScreenInstance++
 	return a.lastScreenInstance
 }
@@ -768,11 +766,11 @@ func maybeLoadDocumentReviews(documentService *service.DocumentService, docs *do
 
 type applicationStatusUpdatedMsg struct {
 	application application.Application
-	from        screenInstance
+	from        message.ScreenInstance
 	err         error
 }
 
-func updateApplicationStatus(applications *service.ApplicationService, applicationID int64, status application.Status, from screenInstance) tea.Cmd {
+func updateApplicationStatus(applications *service.ApplicationService, applicationID int64, status application.Status, from message.ScreenInstance) tea.Cmd {
 	return func() tea.Msg {
 		app, err := applications.SetStatus(context.Background(), applicationID, status)
 		if err != nil {
@@ -784,11 +782,11 @@ func updateApplicationStatus(applications *service.ApplicationService, applicati
 
 type applicationNotesUpdatedMsg struct {
 	application application.Application
-	from        screenInstance
+	from        message.ScreenInstance
 	err         error
 }
 
-func updateApplicationNotes(applications *service.ApplicationService, applicationID int64, notes string, from screenInstance) tea.Cmd {
+func updateApplicationNotes(applications *service.ApplicationService, applicationID int64, notes string, from message.ScreenInstance) tea.Cmd {
 	return func() tea.Msg {
 		app, err := applications.SetNotes(context.Background(), applicationID, notes)
 		if err != nil {

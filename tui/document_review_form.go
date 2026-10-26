@@ -18,6 +18,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -36,7 +37,7 @@ type documentReviewFormModel struct {
 	documentType    document.Type
 	content         string
 	textarea        textarea.Model
-	instance        screenInstance
+	instance        message.ScreenInstance
 	// changes is set when a save found the document rewritten since the
 	// form read it: the diff from that version to content, which is now
 	// the current one.
@@ -50,7 +51,7 @@ type documentReviewFormModel struct {
 // leaves under its status/error banner (App.screenRows). App refits the
 // height with setHeight whenever that changes; the width is fixed at
 // construction.
-func newDocumentReviewFormModel(documentService *service.DocumentService, docs *documents.Store, applicationID int64, documentType document.Type, content string, width, height int, instance screenInstance) documentReviewFormModel {
+func newDocumentReviewFormModel(documentService *service.DocumentService, docs *documents.Store, applicationID int64, documentType document.Type, content string, width, height int, instance message.ScreenInstance) documentReviewFormModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	ta.Focus()
@@ -114,7 +115,7 @@ type cancelDocumentReviewFormMsg struct{}
 
 type documentReviewCreatedMsg struct {
 	review document.Review
-	from   screenInstance
+	from   message.ScreenInstance
 	err    error
 }
 
@@ -125,7 +126,7 @@ type documentChangedDuringReviewMsg struct {
 	// who is empty when Swamp didn't record the write (an edit made
 	// outside Swamp).
 	who  string
-	from screenInstance
+	from message.ScreenInstance
 }
 
 // createDocumentReview saves a review of content, unless the file no
@@ -133,7 +134,7 @@ type documentChangedDuringReviewMsg struct {
 // form was open. A review of a version that's gone would
 // never count as current, and an agent would never see its notes, so
 // instead it reports the current content for the form to show.
-func createDocumentReview(documentService *service.DocumentService, docs *documents.Store, applicationID int64, documentType document.Type, content string, outcome document.Outcome, notes string, from screenInstance) tea.Cmd {
+func createDocumentReview(documentService *service.DocumentService, docs *documents.Store, applicationID int64, documentType document.Type, content string, outcome document.Outcome, notes string, from message.ScreenInstance) tea.Cmd {
 	return func() tea.Msg {
 		path, err := docs.Path(applicationID, documentType)
 		if err != nil {

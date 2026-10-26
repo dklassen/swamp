@@ -7,6 +7,7 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -28,7 +29,7 @@ type applicationSubmitModel struct {
 	// confirmed is set once y is pressed, so a second y while the status
 	// save is in flight doesn't save it twice.
 	confirmed bool
-	instance  screenInstance
+	instance  message.ScreenInstance
 }
 
 // applyURL is where a posting's application form is: ApplicationURL,
@@ -40,7 +41,7 @@ func applyURL(posting posting.Posting) string {
 	return posting.JobURL
 }
 
-func newApplicationSubmitModel(application posting.ActiveApplication, instance screenInstance) applicationSubmitModel {
+func newApplicationSubmitModel(application posting.ActiveApplication, instance message.ScreenInstance) applicationSubmitModel {
 	return applicationSubmitModel{application: application, url: applyURL(application.Posting), instance: instance}
 }
 

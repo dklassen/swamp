@@ -8,6 +8,7 @@ import (
 	"charm.land/lipgloss/v2"
 
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -19,7 +20,7 @@ type applicationNotesModel struct {
 	applications  *service.ApplicationService
 	applicationID int64
 	textarea      textarea.Model
-	instance      screenInstance
+	instance      message.ScreenInstance
 	// seed is the notes the screen opened with, to tell whether esc would
 	// lose edits.
 	seed              string
@@ -34,7 +35,7 @@ type applicationNotesModel struct {
 // under its status/error banner (App.screenRows). App refits the height
 // with setHeight whenever that changes; the width is fixed at
 // construction.
-func newApplicationNotesModel(applications *service.ApplicationService, applicationID int64, notes string, width, height int, instance screenInstance) applicationNotesModel {
+func newApplicationNotesModel(applications *service.ApplicationService, applicationID int64, notes string, width, height int, instance message.ScreenInstance) applicationNotesModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	ta.SetValue(notes)
