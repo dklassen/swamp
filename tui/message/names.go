@@ -10,7 +10,8 @@ import "fmt"
 type Kind int
 
 const (
-	KindChanged Kind = iota + 1
+	_ Kind = iota
+	KindChanged
 	KindRead
 	KindRun
 	KindRan
@@ -39,7 +40,8 @@ func (k *Kind) UnmarshalText(b []byte) error { return unmarshalName(k, b, kindNa
 type Type int
 
 const (
-	TypeCompany Type = iota + 1
+	_ Type = iota
+	TypeCompany
 	TypeContentSize
 	TypeStatus
 	TypeError
@@ -83,7 +85,8 @@ func (o *Op) UnmarshalText(b []byte) error { return unmarshalName(o, b, opNames[
 type NavOp int
 
 const (
-	NavPush NavOp = iota + 1
+	_ NavOp = iota
+	NavPush
 	NavPop
 	NavReplace
 )
@@ -101,7 +104,8 @@ func (o *NavOp) UnmarshalText(b []byte) error { return unmarshalName(o, b, navOp
 type ErrorCode int
 
 const (
-	ErrNotFound ErrorCode = iota + 1
+	_ ErrorCode = iota
+	ErrNotFound
 	ErrSyncInProgress
 	ErrOther
 )

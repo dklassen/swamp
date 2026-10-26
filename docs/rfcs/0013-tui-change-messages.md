@@ -128,7 +128,8 @@ type ScreenInstance int
 type Kind int
 
 const (
- KindChanged Kind = iota + 1
+ _ Kind = iota
+ KindChanged
  KindRead
  // …
 )
@@ -147,7 +148,8 @@ const (
 type Type int
 
 const (
- TypeCompany Type = iota + 1 // "company"
+ _ Type = iota
+ TypeCompany // "company"
  TypeContentSize             // "content_size"
  TypeFocusChanged            // "focus_changed"
  TypeStatus                  // "status"
@@ -268,7 +270,8 @@ func (FocusChanged) Type() Type { return TypeFocusChanged }
 type ErrorCode int
 
 const (
- ErrNotFound ErrorCode = iota + 1 // "not_found"
+ _ ErrorCode = iota
+ ErrNotFound // "not_found"
  ErrSyncInProgress                 // "sync_in_progress"
  ErrOther                          // "other"
 )
