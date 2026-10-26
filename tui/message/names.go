@@ -2,7 +2,7 @@ package message
 
 import "fmt"
 
-// Kind, Op, NavOp, ErrorCode and Screen are switched on, so Go code
+// Kind, Type, Op, NavOp, ErrorCode and Screen are decided on, so Go code
 // compares constants; each encodes as its name from one table, so
 // reordering the constants can't change what a stored event means. A
 // zero value is in its table only where "none" is legal.
@@ -34,6 +34,29 @@ var kindNames = [...]string{
 func (k Kind) String() string                { return nameOf(k, kindNames[:]) }
 func (k Kind) MarshalText() ([]byte, error)  { return marshalName(k, kindNames[:]) }
 func (k *Kind) UnmarshalText(b []byte) error { return unmarshalName(k, b, kindNames[:]) }
+
+// Type is what a payload is about within its kind.
+type Type int
+
+const (
+	TypeCompany Type = iota + 1
+	TypeContentSize
+	TypeStatus
+	TypeError
+	TypeNav
+)
+
+var typeNames = [...]string{
+	TypeCompany:     "company",
+	TypeContentSize: "content_size",
+	TypeStatus:      "status",
+	TypeError:       "error",
+	TypeNav:         "nav",
+}
+
+func (t Type) String() string                { return nameOf(t, typeNames[:]) }
+func (t Type) MarshalText() ([]byte, error)  { return marshalName(t, typeNames[:]) }
+func (t *Type) UnmarshalText(b []byte) error { return unmarshalName(t, b, typeNames[:]) }
 
 // Op is what a changed event wrote, or what an error event didn't. A
 // request has OpNone.

@@ -6,12 +6,6 @@ import (
 	"time"
 )
 
-// Type is what a payload is about within its kind. It's a string since
-// each body names its own, and nothing switches on it.
-type Type string
-
-const TypeStatus Type = "status"
-
 // Meta is what every event carries, and all that routing and filtering read.
 type Meta struct {
 	ID      string    `json:"id"`
@@ -132,8 +126,8 @@ type Error struct {
 	Text string    `json:"text"`
 }
 
-func (Error) Kind() Kind   { return KindError }
-func (e Error) Type() Type { return Type(e.Code.String()) }
+func (Error) Kind() Kind { return KindError }
+func (Error) Type() Type { return TypeError }
 
 // Nav is a request to the screen stack. The entity to open on is the
 // event's Subject.
@@ -142,8 +136,8 @@ type Nav struct {
 	Screen Screen `json:"screen,omitzero"`
 }
 
-func (Nav) Kind() Kind   { return KindNav }
-func (n Nav) Type() Type { return Type(n.Screen.String()) }
+func (Nav) Kind() Kind { return KindNav }
+func (Nav) Type() Type { return TypeNav }
 
 // Notify is a status line for the banner.
 type Notify struct {

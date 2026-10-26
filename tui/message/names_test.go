@@ -17,6 +17,7 @@ func TestEnums_FailOnAValueOrNameWithoutAnEntry(t *testing.T) {
 		decode  func([]byte) error
 	}{
 		{name: "kind", invalid: message.Kind(0), decode: decodeInto[message.Kind]},
+		{name: "type", invalid: message.Type(0), decode: decodeInto[message.Type]},
 		{name: "op", invalid: message.Op(99), decode: decodeInto[message.Op]},
 		{name: "nav op", invalid: message.NavOp(0), decode: decodeInto[message.NavOp]},
 		{name: "error code", invalid: message.ErrorCode(0), decode: decodeInto[message.ErrorCode]},
@@ -43,6 +44,7 @@ func TestEnums_EncodeAsTheirNames(t *testing.T) {
 		value fmt.Stringer
 	}{
 		{name: "kind", value: message.KindChanged},
+		{name: "type", value: message.TypeCompany},
 		{name: "op", value: message.OpDeleted},
 		{name: "nav op", value: message.NavReplace},
 		{name: "error code", value: message.ErrSyncInProgress},

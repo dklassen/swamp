@@ -12,27 +12,6 @@ import (
 	"github.com/dklassen/swamp/tui/message"
 )
 
-const (
-	entityType message.Type = "entity"
-	reportType message.Type = "report"
-)
-
-// entity stands in for a snapshot such as message.Company.
-type entity struct {
-	ID   int64  `json:"id"`
-	Name string `json:"name"`
-}
-
-func (entity) Type() message.Type { return entityType }
-
-// report stands in for a query's result, a job or a signal's content.
-type report struct {
-	Count int       `json:"count"`
-	At    time.Time `json:"at"`
-}
-
-func (report) Type() message.Type { return reportType }
-
 var (
 	src = message.Source{Process: "tui:42", Instance: 7}
 	at  = time.Date(2026, 10, 26, 9, 30, 0, 0, time.UTC)
@@ -47,14 +26,14 @@ func TestNew_SetsKindAndTypeFromThePayload(t *testing.T) {
 		wantKind message.Kind
 		wantType message.Type
 	}{
-		{name: "changed", meta: message.New(src, message.Subject{}, message.OpUpdated, at, message.Changed[entity]{}).Meta, wantKind: message.KindChanged, wantType: entityType},
-		{name: "read", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Read[report]{}).Meta, wantKind: message.KindRead, wantType: reportType},
-		{name: "run", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Run[report]{}).Meta, wantKind: message.KindRun, wantType: reportType},
-		{name: "ran", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Ran[report]{}).Meta, wantKind: message.KindRan, wantType: reportType},
-		{name: "error", meta: message.New(src, message.Subject{}, message.OpDeleted, at, message.Error{Code: message.ErrNotFound}).Meta, wantKind: message.KindError, wantType: message.Type(message.ErrNotFound.String())},
-		{name: "nav", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Nav{Op: message.NavPush, Screen: message.ScreenCompanyEdit}).Meta, wantKind: message.KindNav, wantType: message.Type(message.ScreenCompanyEdit.String())},
+		{name: "changed", meta: message.New(src, message.Subject{}, message.OpUpdated, at, message.Changed[message.Company]{}).Meta, wantKind: message.KindChanged, wantType: message.TypeCompany},
+		{name: "read", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Read[message.ContentSize]{}).Meta, wantKind: message.KindRead, wantType: message.TypeContentSize},
+		{name: "run", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Run[message.ContentSize]{}).Meta, wantKind: message.KindRun, wantType: message.TypeContentSize},
+		{name: "ran", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Ran[message.ContentSize]{}).Meta, wantKind: message.KindRan, wantType: message.TypeContentSize},
+		{name: "error", meta: message.New(src, message.Subject{}, message.OpDeleted, at, message.Error{Code: message.ErrNotFound}).Meta, wantKind: message.KindError, wantType: message.TypeError},
+		{name: "nav", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Nav{Op: message.NavPush, Screen: message.ScreenCompanyEdit}).Meta, wantKind: message.KindNav, wantType: message.TypeNav},
 		{name: "notify", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Notify{Status: "saved"}).Meta, wantKind: message.KindNotify, wantType: message.TypeStatus},
-		{name: "signal", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Signal[report]{}).Meta, wantKind: message.KindSignal, wantType: reportType},
+		{name: "signal", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.ContentSize]{}).Meta, wantKind: message.KindSignal, wantType: message.TypeContentSize},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -100,35 +79,35 @@ func TestNew_GivesEachEventItsOwnID(t *testing.T) {
 func TestCreatedUpdatedDeleted_SetOpAndLeaveTheMissingSideZero(t *testing.T) {
 	t.Parallel()
 
-	before, after := entity{ID: 3, Name: "Acme"}, entity{ID: 3, Name: "Acme Corp"}
-	subject := message.Subject{Type: entityType, ID: 3}
+	before, after := message.Company{ID: 3, Name: "Acme"}, message.Company{ID: 3, Name: "Acme Corp"}
+	subject := message.Subject{Type: message.TypeCompany, ID: 3}
 	tests := []struct {
 		name string
-		got  message.Event[message.Changed[entity]]
-		want message.Event[message.Changed[entity]]
+		got  message.Event[message.Changed[message.Company]]
+		want message.Event[message.Changed[message.Company]]
 	}{
 		{
 			name: "created",
 			got:  message.Created(src, 3, at, after),
-			want: message.Event[message.Changed[entity]]{
-				Meta:    message.Meta{Kind: message.KindChanged, Type: entityType, Source: src, Subject: subject, Op: message.OpCreated, At: at},
-				Payload: message.Changed[entity]{After: after},
+			want: message.Event[message.Changed[message.Company]]{
+				Meta:    message.Meta{Kind: message.KindChanged, Type: message.TypeCompany, Source: src, Subject: subject, Op: message.OpCreated, At: at},
+				Payload: message.Changed[message.Company]{After: after},
 			},
 		},
 		{
 			name: "updated",
 			got:  message.Updated(src, 3, at, before, after),
-			want: message.Event[message.Changed[entity]]{
-				Meta:    message.Meta{Kind: message.KindChanged, Type: entityType, Source: src, Subject: subject, Op: message.OpUpdated, At: at},
-				Payload: message.Changed[entity]{Before: before, After: after},
+			want: message.Event[message.Changed[message.Company]]{
+				Meta:    message.Meta{Kind: message.KindChanged, Type: message.TypeCompany, Source: src, Subject: subject, Op: message.OpUpdated, At: at},
+				Payload: message.Changed[message.Company]{Before: before, After: after},
 			},
 		},
 		{
 			name: "deleted",
 			got:  message.Deleted(src, 3, at, before),
-			want: message.Event[message.Changed[entity]]{
-				Meta:    message.Meta{Kind: message.KindChanged, Type: entityType, Source: src, Subject: subject, Op: message.OpDeleted, At: at},
-				Payload: message.Changed[entity]{Before: before},
+			want: message.Event[message.Changed[message.Company]]{
+				Meta:    message.Meta{Kind: message.KindChanged, Type: message.TypeCompany, Source: src, Subject: subject, Op: message.OpDeleted, At: at},
+				Payload: message.Changed[message.Company]{Before: before},
 			},
 		},
 	}
@@ -145,10 +124,10 @@ func TestCreatedUpdatedDeleted_SetOpAndLeaveTheMissingSideZero(t *testing.T) {
 func TestChanged_JSONLeavesOutTheMissingSide(t *testing.T) {
 	t.Parallel()
 
-	e := entity{ID: 3, Name: "Acme"}
+	e := message.Company{ID: 3, Name: "Acme"}
 	tests := []struct {
 		name    string
-		changed message.Changed[entity]
+		changed message.Changed[message.Company]
 	}{
 		{name: "created", changed: message.Created(src, 3, at, e).Payload},
 		{name: "deleted", changed: message.Deleted(src, 3, at, e).Payload},
@@ -168,7 +147,7 @@ func TestChanged_JSONLeavesOutTheMissingSide(t *testing.T) {
 				t.Fatalf("%s has %d fields, want only the side that's set", b, len(fields))
 			}
 			for _, raw := range fields {
-				var got entity
+				var got message.Company
 				if err := json.Unmarshal(raw, &got); err != nil {
 					t.Fatalf("Unmarshal %s: %v", raw, err)
 				}
@@ -183,20 +162,22 @@ func TestChanged_JSONLeavesOutTheMissingSide(t *testing.T) {
 func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 	t.Parallel()
 
-	subject := message.Subject{Type: entityType, ID: 3}
-	r := report{Count: 2, At: at}
+	subject := message.Subject{Type: message.TypeCompany, ID: 3}
+	r := message.ContentSize{Width: 80, Rows: 24}
 	tests := []struct {
 		name  string
 		check func(t *testing.T)
 	}{
-		{name: "changed", check: roundTrip(message.Updated(src, 3, at, entity{ID: 3, Name: "Acme"}, entity{ID: 3, Name: "Acme Corp"}))},
-		{name: "read", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Read[report]{Value: r}))},
-		{name: "run", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Run[report]{Value: r}))},
-		{name: "ran", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Ran[report]{Value: r}))},
+		{name: "changed", check: roundTrip(message.Updated(src, 3, at,
+			message.Company{ID: 3, Name: "Acme", Description: "Makes anvils", CreatedAt: at.Add(-time.Hour), UpdatedAt: at.Add(-time.Hour)},
+			message.Company{ID: 3, Name: "Acme Corp", Description: "Makes anvils", CreatedAt: at.Add(-time.Hour), UpdatedAt: at}))},
+		{name: "read", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Read[message.ContentSize]{Value: r}))},
+		{name: "run", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Run[message.ContentSize]{Value: r}))},
+		{name: "ran", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Ran[message.ContentSize]{Value: r}))},
 		{name: "error", check: roundTrip(message.New(src, subject, message.OpUpdated, at, message.Error{Code: message.ErrSyncInProgress, Text: "a sync is already running"}))},
 		{name: "nav", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Nav{Op: message.NavReplace, Screen: message.ScreenCompanyEdit}))},
 		{name: "notify", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Notify{Status: "saved"}))},
-		{name: "signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[report]{Value: r}))},
+		{name: "signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.ContentSize]{Value: r}))},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
