@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
@@ -122,9 +123,15 @@ func (service *CompanyService) Add(ctx context.Context, name, source, sourceRef 
 // is never synced, so nothing else would ever close them and they'd count
 // as open for good. Applications are left alone: they're the user's, not
 // the board's. Re-adding the company restores it (see Add), and its next
-// sync reopens whatever is still listed.
-func (service *CompanyService) Delete(ctx context.Context, id int64) error {
-	return store.InTx(ctx, service.db, func(tx store.Tx) error {
+// sync reopens whatever is still listed. A company that's missing or
+// already deleted is store.ErrNotFound.
+func (service *CompanyService) Delete(ctx context.Context, id int64) (*change.Of[company.Company], error) {
+	var deleted *change.Of[company.Company]
+	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
+		before, err := service.companyViewer.Get(ctx, tx, id)
+		if err != nil {
+			return err
+		}
 		if err := service.companyWriter.SoftDelete(ctx, tx, id); err != nil {
 			return err
 		}
@@ -133,7 +140,7 @@ func (service *CompanyService) Delete(ctx context.Context, id int64) error {
 			return fmt.Errorf("company: list open postings of deleted company: %w", err)
 		}
 		for _, postingID := range postingIDs {
-			before, err := service.postingViewer.Get(ctx, tx, postingID)
+			open, err := service.postingViewer.Get(ctx, tx, postingID)
 			if err != nil {
 				return fmt.Errorf("posting: get posting to close: %w", err)
 			}
@@ -144,12 +151,24 @@ func (service *CompanyService) Delete(ctx context.Context, id int64) error {
 			if !closed {
 				continue
 			}
-			if _, err := service.postingHistoryWriter.Insert(ctx, tx, *before, posting.ChangeClosed); err != nil {
+			if _, err := service.postingHistoryWriter.Insert(ctx, tx, *open, posting.ChangeClosed); err != nil {
 				return err
 			}
 		}
+		after, err := service.companyViewer.GetIncludingDeleted(ctx, tx, id)
+		if err != nil {
+			return fmt.Errorf("company: get deleted company: %w", err)
+		}
+		if after.DeletedAt == nil {
+			return fmt.Errorf("company: %d has no deleted_at after its delete", id)
+		}
+		deleted = &change.Of[company.Company]{Before: *before, After: *after, At: *after.DeletedAt}
 		return nil
 	})
+	if err != nil {
+		return nil, err
+	}
+	return deleted, nil
 }
 
 // Filters returns the filters that decide which of the company's postings
@@ -211,8 +230,25 @@ func (service *CompanyService) ListActive(ctx context.Context) ([]company.Compan
 	return service.companyViewer.ListActive(ctx, service.db)
 }
 
-func (service *CompanyService) SetName(ctx context.Context, id int64, name string) (*company.Company, error) {
-	return service.companyWriter.SetName(ctx, service.db, id, name)
+// SetName renames an active company, or returns store.ErrNotFound.
+func (service *CompanyService) SetName(ctx context.Context, id int64, name string) (*change.Of[company.Company], error) {
+	var renamed *change.Of[company.Company]
+	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
+		before, err := service.companyViewer.Get(ctx, tx, id)
+		if err != nil {
+			return err
+		}
+		after, err := service.companyWriter.SetName(ctx, tx, id, name)
+		if err != nil {
+			return err
+		}
+		renamed = &change.Of[company.Company]{Before: *before, After: *after, At: after.UpdatedAt}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return renamed, nil
 }
 
 func (service *CompanyService) SetDescription(ctx context.Context, id int64, description string) (*company.Company, error) {

@@ -127,7 +127,8 @@ func TestChangeLog_EachLoggedTable(t *testing.T) {
 			return err
 		}, "companies", "update"},
 		{"company deleted", func(ctx context.Context, f fixture) error {
-			return service.NewCompanyService(f.db).Delete(ctx, f.companyID)
+			_, err := service.NewCompanyService(f.db).Delete(ctx, f.companyID)
+			return err
 		}, "companies", "update"},
 		{"posting found", func(ctx context.Context, f fixture) error {
 			_, err := service.NewPostingService(f.db).Ingest(ctx, f.companyID, jobboard.Ashby, "job-2", posting.IngestedFields{Title: "Designer", RawPayload: "{}"})

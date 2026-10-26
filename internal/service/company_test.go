@@ -2,14 +2,20 @@ package service_test
 
 import (
 	"context"
+	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"github.com/dklassen/swamp/internal/domain/change"
+	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/store"
 )
 
 // SetFilters replaces the company's filters, in order, and touches no
@@ -132,7 +138,7 @@ func TestCompanyService_Delete_ClosesItsOpenPostings(t *testing.T) {
 	}
 	closedBefore, otherBefore := stateOf(alreadyClosed.ID), stateOf(otherCompany.ID)
 
-	if err := s.Companies.Delete(ctx, acme.ID); err != nil {
+	if _, err := s.Companies.Delete(ctx, acme.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 
@@ -155,5 +161,116 @@ func TestCompanyService_Delete_ClosesItsOpenPostings(t *testing.T) {
 	}
 	if diff := cmp.Diff(app, *appAfter); diff != "" {
 		t.Errorf("application changed (-before +after):\n%s", diff)
+	}
+}
+
+// Before is read in SetName's transaction, so it's what the last writer
+// left, not what the caller last saw.
+func TestCompanyService_SetName_ReturnsTheCompanyBeforeAndAfter(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	acme := testutil.MustAddCompany(t, s, "acme")
+	described, err := s.Companies.SetDescription(ctx, acme.ID, "Makes anvils")
+	if err != nil {
+		t.Fatalf("SetDescription: %v", err)
+	}
+
+	got, err := s.Companies.SetName(ctx, acme.ID, "Acme Corp")
+	if err != nil {
+		t.Fatalf("SetName: %v", err)
+	}
+
+	if diff := cmp.Diff(*described, got.Before); diff != "" {
+		t.Errorf("Before (-want +got):\n%s", diff)
+	}
+	after, err := s.Companies.Get(ctx, acme.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if diff := cmp.Diff(*after, got.After); diff != "" {
+		t.Errorf("After (-want +got):\n%s", diff)
+	}
+	if !got.At.Equal(got.After.UpdatedAt) || got.At.Location() != time.UTC {
+		t.Errorf("At = %v, want After.UpdatedAt %v, in UTC", got.At, got.After.UpdatedAt)
+	}
+}
+
+func TestCompanyService_Writes_ReturnNotFoundForACompanyNotThere(t *testing.T) {
+	t.Parallel()
+	writes := []struct {
+		name  string
+		write func(*service.CompanyService, context.Context, int64) (*change.Of[company.Company], error)
+	}{
+		{"SetName", func(s *service.CompanyService, ctx context.Context, id int64) (*change.Of[company.Company], error) {
+			return s.SetName(ctx, id, "Acme Corp")
+		}},
+		{"Delete", (*service.CompanyService).Delete},
+	}
+	companies := []struct {
+		name    string
+		arrange func(*testing.T, testutil.TestApp) int64
+	}{
+		{"missing", func(*testing.T, testutil.TestApp) int64 { return 999 }},
+		{"already deleted", func(t *testing.T, s testutil.TestApp) int64 {
+			t.Helper()
+			acme := testutil.MustAddCompany(t, s, "acme")
+			if _, err := s.Companies.Delete(context.Background(), acme.ID); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			return acme.ID
+		}},
+	}
+	for _, w := range writes {
+		for _, c := range companies {
+			t.Run(w.name+", "+c.name, func(t *testing.T) {
+				t.Parallel()
+				s := testutil.NewTestApp(t)
+				id := c.arrange(t, s)
+
+				got, err := w.write(s.Companies, context.Background(), id)
+
+				if !errors.Is(err, store.ErrNotFound) {
+					t.Errorf("err = %v, want store.ErrNotFound", err)
+				}
+				if got != nil {
+					t.Errorf("change = %+v, want nil", got)
+				}
+			})
+		}
+	}
+}
+
+// After is the soft-deleted row, and At when it was deleted.
+func TestCompanyService_Delete_ReturnsTheCompanyBeforeAndAfter(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	acme := testutil.MustAddCompany(t, s, "acme")
+	described, err := s.Companies.SetDescription(ctx, acme.ID, "Makes anvils")
+	if err != nil {
+		t.Fatalf("SetDescription: %v", err)
+	}
+
+	got, err := s.Companies.Delete(ctx, acme.ID)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	if diff := cmp.Diff(*described, got.Before); diff != "" {
+		t.Errorf("Before (-want +got):\n%s", diff)
+	}
+	after, err := s.Companies.GetIncludingDeleted(ctx, acme.ID)
+	if err != nil {
+		t.Fatalf("GetIncludingDeleted: %v", err)
+	}
+	if diff := cmp.Diff(*after, got.After); diff != "" {
+		t.Errorf("After (-want +got):\n%s", diff)
+	}
+	if got.After.DeletedAt == nil {
+		t.Fatal("After.DeletedAt = nil, want when it was deleted")
+	}
+	if !got.At.Equal(*got.After.DeletedAt) || got.At.Location() != time.UTC {
+		t.Errorf("At = %v, want After.DeletedAt %v, in UTC", got.At, *got.After.DeletedAt)
 	}
 }
