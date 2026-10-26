@@ -355,7 +355,7 @@ func TestApp_CompanyDeleteConfirmation_ReopeningGetsANewInstance(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 	app = sendKeyAndApply(t, app, runeKey('d'))
-	first := app.companyDelete.instance
+	first := app.companyDelete.Instance()
 	app = sendKeyAndApply(t, app, runeKey('n'))
 
 	app = sendKeyAndApply(t, app, runeKey('d'))
@@ -363,7 +363,7 @@ func TestApp_CompanyDeleteConfirmation_ReopeningGetsANewInstance(t *testing.T) {
 	if app.currentScreen != screenCompanyDelete {
 		t.Fatalf("screen after the second d = %v, want the delete confirmation", app.currentScreen)
 	}
-	if second := app.companyDelete.instance; second == first || first == 0 || second == 0 {
+	if second := app.companyDelete.Instance(); second == first || first == 0 || second == 0 {
 		t.Errorf("instances of the two openings = %d and %d, want two different nonzero numbers", first, second)
 	}
 }
@@ -380,9 +380,9 @@ func TestApp_RegisteredModels_HaveDistinctInstances(t *testing.T) {
 	app = sendKeyAndApply(t, app, runeKey('d'))
 
 	instances := map[string]message.ScreenInstance{
-		"company list":        app.companyList.instance,
+		"company list":        app.companyList.Instance(),
 		"syncing":             app.syncing.Instance(),
-		"delete confirmation": app.companyDelete.instance,
+		"delete confirmation": app.companyDelete.Instance(),
 	}
 	seen := map[message.ScreenInstance]string{}
 	for name, instance := range instances {

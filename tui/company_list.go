@@ -43,13 +43,15 @@ type companyListModel struct {
 	instance message.ScreenInstance
 }
 
-func newCompanyListModel(companies *service.CompanyService, postings *service.PostingService, instance message.ScreenInstance) *companyListModel {
+func newCompanyListModel(companies *service.CompanyService, postings *service.PostingService) *companyListModel {
 	return &companyListModel{
 		companyService: companies,
 		postingService: postings,
-		instance:       instance,
+		instance:       message.NewScreenInstance(),
 	}
 }
+
+func (m *companyListModel) Instance() message.ScreenInstance { return m.instance }
 
 func (m *companyListModel) Focused() bool { return m.focused }
 

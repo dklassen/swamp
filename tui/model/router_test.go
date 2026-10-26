@@ -58,10 +58,19 @@ func TestRouteIDOf_EqualExactlyForTheSameConcreteType(t *testing.T) {
 	}
 }
 
-// component is a SubComponent that does nothing, to own routes.
+// component is a SubComponent that does nothing, to own routes. It draws
+// its instance, as a model does, unless the test sets one.
 type component struct {
-	name   string
-	routes []*model.Route
+	name     string
+	routes   []*model.Route
+	instance message.ScreenInstance
+}
+
+func (c *component) Instance() message.ScreenInstance {
+	if c.instance == 0 {
+		c.instance = message.NewScreenInstance()
+	}
+	return c.instance
 }
 
 func (c *component) Init() tea.Cmd                       { return nil }
@@ -193,6 +202,62 @@ func TestMsgRouter_Register_RefusesANilOwner(t *testing.T) {
 
 	if err := model.NewMsgRouter().Register(nil); err == nil {
 		t.Error("Register(nil) returned no error, want one")
+	}
+}
+
+// unnamed is a component that never drew an instance.
+type unnamed struct{ component }
+
+func (*unnamed) Instance() message.ScreenInstance { return 0 }
+
+// 0 is an event's "no instance", so an owner with it couldn't be named.
+func TestMsgRouter_Register_RefusesInstanceZero(t *testing.T) {
+	t.Parallel()
+	owner := &unnamed{component{routes: []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd { return nil })}}}
+
+	if err := model.NewMsgRouter().Register(owner); err == nil {
+		t.Error("Register of an owner with instance 0 returned no error, want one")
+	}
+}
+
+// An event names its model by instance, so two models with one number, or
+// a new model with a closed one's, would each hear the other's events.
+func TestMsgRouter_Register_RefusesAnInstanceItHasSeen(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		deregister bool
+	}{
+		{name: "still registered", deregister: false},
+		{name: "deregistered since", deregister: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			r := model.NewMsgRouter()
+			first := &component{name: "first", instance: 5, routes: []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd { return nil })}}
+			if err := r.Register(first); err != nil {
+				t.Fatalf("Register first: %v", err)
+			}
+			if tt.deregister {
+				if err := r.Deregister(first); err != nil {
+					t.Fatalf("Deregister first: %v", err)
+				}
+			}
+			got := 0
+			second := &component{name: "second", instance: 5, routes: []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd { got++; return nil })}}
+
+			err := r.Register(second)
+
+			if err == nil || !strings.Contains(err.Error(), "5") {
+				t.Errorf("Register of a second owner with instance 5 = %v, want an error naming the instance", err)
+			}
+			r.Dispatch(message.CompanyDeletedMsg{})
+			if got != 0 {
+				t.Errorf("deliveries to the refused owner = %d, want 0", got)
+			}
+		})
 	}
 }
 

@@ -51,7 +51,7 @@ type documentReviewFormModel struct {
 // leaves under its status/error banner (App.screenRows). App refits the
 // height with setHeight whenever that changes; the width is fixed at
 // construction.
-func newDocumentReviewFormModel(documentService *service.DocumentService, docs *documents.Store, applicationID int64, documentType document.Type, content string, width, height int, instance message.ScreenInstance) documentReviewFormModel {
+func newDocumentReviewFormModel(documentService *service.DocumentService, docs *documents.Store, applicationID int64, documentType document.Type, content string, width, height int) documentReviewFormModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	ta.Focus()
@@ -62,7 +62,7 @@ func newDocumentReviewFormModel(documentService *service.DocumentService, docs *
 		documentType:    documentType,
 		content:         content,
 		textarea:        ta,
-		instance:        instance,
+		instance:        message.NewScreenInstance(),
 	}
 	m.setHeight(height)
 	return m

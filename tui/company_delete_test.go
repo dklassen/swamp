@@ -24,7 +24,7 @@ func TestCompanyDeleteModel_KeepKeys_AskToClose(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newCompanyDeleteModel(nil, company.Company{ID: 1, Name: "Acme"}, 0, 80, 1)
+			m := newCompanyDeleteModel(nil, company.Company{ID: 1, Name: "Acme"}, 0, 80)
 
 			cmd := m.keyPressed(tt.key)
 			if cmd == nil {
@@ -52,7 +52,7 @@ func TestCompanyDeleteModel_CompanyDeleted_AsksToCloseForItsCompanyOnly(t *testi
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newCompanyDeleteModel(nil, company.Company{ID: 1, Name: "Acme"}, 0, 80, 1)
+			m := newCompanyDeleteModel(nil, company.Company{ID: 1, Name: "Acme"}, 0, 80)
 
 			var got tea.Msg
 			if cmd := m.companyDeleted(tt.deleted); cmd != nil {

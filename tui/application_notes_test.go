@@ -9,7 +9,7 @@ import (
 func TestApplicationNotesModel_New_SeedsTextareaWithNotes(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationNotesModel(nil, 7, "existing notes", 80, 10, 0)
+	m := newApplicationNotesModel(nil, 7, "existing notes", 80, 10)
 	if got := m.textarea.Value(); got != "existing notes" {
 		t.Fatalf("textarea.Value() = %q, want %q", got, "existing notes")
 	}
@@ -21,7 +21,7 @@ func TestApplicationNotesModel_New_SeedsTextareaWithNotes(t *testing.T) {
 func TestApplicationNotesModel_Esc_ReturnsCancelMsg(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationNotesModel(nil, 7, "", 80, 10, 0)
+	m := newApplicationNotesModel(nil, 7, "", 80, 10)
 	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
@@ -34,7 +34,7 @@ func TestApplicationNotesModel_Esc_ReturnsCancelMsg(t *testing.T) {
 func TestApplicationNotesModel_CtrlS_ReturnsSaveCmd(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationNotesModel(nil, 7, "notes", 80, 10, 0)
+	m := newApplicationNotesModel(nil, 7, "notes", 80, 10)
 	cmd, intent := m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that saves application notes")
@@ -47,7 +47,7 @@ func TestApplicationNotesModel_CtrlS_ReturnsSaveCmd(t *testing.T) {
 func TestApplicationNotesModel_TypingKey_UpdatesTextareaValue(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationNotesModel(nil, 7, "", 80, 10, 0)
+	m := newApplicationNotesModel(nil, 7, "", 80, 10)
 	m.Update(runeKey([]rune("hi")...))
 	if got := m.textarea.Value(); got != "hi" {
 		t.Fatalf("textarea.Value() = %q, want %q", got, "hi")
@@ -57,7 +57,7 @@ func TestApplicationNotesModel_TypingKey_UpdatesTextareaValue(t *testing.T) {
 func TestApplicationNotesModel_EscWithUnsavedEdits_AsksBeforeDiscarding(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationNotesModel(nil, 7, "notes", 80, 10, 0)
+	m := newApplicationNotesModel(nil, 7, "notes", 80, 10)
 	m.textarea.InsertString(" and more")
 	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
 	if cmd != nil || intent != nil {
@@ -88,7 +88,7 @@ func TestApplicationNotesModel_DiscardPrompt(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			m := newApplicationNotesModel(nil, 7, "notes", 80, 10, 0)
+			m := newApplicationNotesModel(nil, 7, "notes", 80, 10)
 			m.textarea.InsertString(" and more")
 			typed := m.textarea.Value()
 			m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
@@ -116,7 +116,7 @@ func TestApplicationNotesModel_DiscardPrompt(t *testing.T) {
 func TestApplicationNotesModel_WhileSaving_IgnoresKeys(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationNotesModel(nil, 7, "notes", 80, 10, 0)
+	m := newApplicationNotesModel(nil, 7, "notes", 80, 10)
 	m.textarea.InsertString(" and more")
 	m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 

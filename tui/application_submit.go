@@ -41,8 +41,8 @@ func applyURL(posting posting.Posting) string {
 	return posting.JobURL
 }
 
-func newApplicationSubmitModel(application posting.ActiveApplication, instance message.ScreenInstance) applicationSubmitModel {
-	return applicationSubmitModel{application: application, url: applyURL(application.Posting), instance: instance}
+func newApplicationSubmitModel(application posting.ActiveApplication) applicationSubmitModel {
+	return applicationSubmitModel{application: application, url: applyURL(application.Posting), instance: message.NewScreenInstance()}
 }
 
 // enterApplicationSubmitMsg signals that App should open the submit
@@ -119,7 +119,7 @@ func (m *applicationSubmitModel) View() string {
 // exporting the documents to the last-used export directory, recorded
 // like any other export (#188).
 func (a *App) startApplicationSubmit(application posting.ActiveApplication) tea.Cmd {
-	a.applicationSubmit = newApplicationSubmitModel(application, a.newScreenInstance())
+	a.applicationSubmit = newApplicationSubmitModel(application)
 	a.currentScreen = screenApplicationSubmit
 	export := exportApplicationDocuments(a.documentService, a.documents, application, a.exportDir)
 	if a.applicationSubmit.url == "" {

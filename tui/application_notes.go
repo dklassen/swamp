@@ -35,12 +35,12 @@ type applicationNotesModel struct {
 // under its status/error banner (App.screenRows). App refits the height
 // with setHeight whenever that changes; the width is fixed at
 // construction.
-func newApplicationNotesModel(applications *service.ApplicationService, applicationID int64, notes string, width, height int, instance message.ScreenInstance) applicationNotesModel {
+func newApplicationNotesModel(applications *service.ApplicationService, applicationID int64, notes string, width, height int) applicationNotesModel {
 	ta := textarea.New()
 	ta.SetWidth(width)
 	ta.SetValue(notes)
 	ta.Focus()
-	m := applicationNotesModel{applications: applications, applicationID: applicationID, textarea: ta, instance: instance, seed: ta.Value()}
+	m := applicationNotesModel{applications: applications, applicationID: applicationID, textarea: ta, instance: message.NewScreenInstance(), seed: ta.Value()}
 	m.setHeight(height)
 	return m
 }

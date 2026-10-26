@@ -29,9 +29,11 @@ type companyDeleteModel struct {
 	instance message.ScreenInstance
 }
 
-func newCompanyDeleteModel(companies *service.CompanyService, company company.Company, openPostings, width int, instance message.ScreenInstance) *companyDeleteModel {
-	return &companyDeleteModel{companyService: companies, company: company, openPostings: openPostings, width: width, instance: instance}
+func newCompanyDeleteModel(companies *service.CompanyService, company company.Company, openPostings, width int) *companyDeleteModel {
+	return &companyDeleteModel{companyService: companies, company: company, openPostings: openPostings, width: width, instance: message.NewScreenInstance()}
 }
+
+func (m *companyDeleteModel) Instance() message.ScreenInstance { return m.instance }
 
 func (m *companyDeleteModel) Focused() bool { return m.focused }
 

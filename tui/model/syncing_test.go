@@ -31,7 +31,7 @@ func routesOf(t *testing.T, m *model.Syncing) map[model.RouteID]*model.Route {
 // which delivers a message as the router would.
 func newSyncing(t *testing.T) (*model.Syncing, func(tea.Msg) tea.Cmd) {
 	t.Helper()
-	m := model.NewSyncing(nil, 1)
+	m := model.NewSyncing(nil)
 	routes := routesOf(t, m)
 	return m, func(msg tea.Msg) tea.Cmd {
 		t.Helper()
@@ -149,7 +149,7 @@ type wrongMsg struct{}
 // sends an ErrMsg instead of panicking or ignoring it.
 func TestSyncing_Handlers_FailOnTheWrongMessage(t *testing.T) {
 	t.Parallel()
-	for id, route := range routesOf(t, model.NewSyncing(nil, 1)) {
+	for id, route := range routesOf(t, model.NewSyncing(nil)) {
 		t.Run(id.String(), func(t *testing.T) {
 			cmd := route.Handle(wrongMsg{})
 			if cmd == nil {

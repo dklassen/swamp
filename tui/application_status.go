@@ -49,8 +49,8 @@ type applicationStatusModel struct {
 
 // newApplicationStatusModel returns a status-select screen for
 // applicationID, with the cursor seeded at currentStatus's position.
-func newApplicationStatusModel(applications *service.ApplicationService, applicationID int64, currentStatus application.Status, instance message.ScreenInstance) applicationStatusModel {
-	return applicationStatusModel{applications: applications, applicationID: applicationID, cursor: applicationStatusIndex(currentStatus), instance: instance}
+func newApplicationStatusModel(applications *service.ApplicationService, applicationID int64, currentStatus application.Status) applicationStatusModel {
+	return applicationStatusModel{applications: applications, applicationID: applicationID, cursor: applicationStatusIndex(currentStatus), instance: message.NewScreenInstance()}
 }
 
 // cancelApplicationStatusMsg signals that App should switch back to the

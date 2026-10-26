@@ -23,26 +23,40 @@ type Router interface {
 	Dispatch(msg tea.Msg) tea.Cmd
 }
 
-// Routable is a component with routes for a Router.
+// Routable is a component with routes for a Router. Instance is the
+// number events name it by, which it draws itself.
 type Routable interface {
 	Routes() []*Route
+	Instance() message.ScreenInstance
 }
 
 type MsgRouter struct {
 	// Keyed by RouteID (the reflect.Type of the message)
 	routes map[RouteID][]*Route
+	// Never forgotten on Deregister: a late event for a closed owner still
+	// names its instance, so a new owner with it would hear that event.
+	seen map[message.ScreenInstance]bool
 }
 
 func NewMsgRouter() *MsgRouter {
 	return &MsgRouter{
 		routes: make(map[RouteID][]*Route),
+		seen:   make(map[message.ScreenInstance]bool),
 	}
 }
 
-// Register adds owner's routes, or none of them if any is invalid.
+// Register adds owner's routes, or none of them if any is invalid or its
+// instance is 0 or one Register has seen before.
 func (mr *MsgRouter) Register(owner Routable) error {
 	if owner == nil {
 		return fmt.Errorf("router: cannot register a nil owner")
+	}
+	instance := owner.Instance()
+	if instance == 0 {
+		return fmt.Errorf("router: registering %T: instance 0 names nothing; draw one with message.NewScreenInstance", owner)
+	}
+	if mr.seen[instance] {
+		return fmt.Errorf("router: registering %T: instance %d was already registered; each model draws its own", owner, instance)
 	}
 
 	routes := owner.Routes()
@@ -66,6 +80,7 @@ func (mr *MsgRouter) Register(owner Routable) error {
 	for _, r := range owned {
 		mr.routes[r.id] = append(mr.routes[r.id], r)
 	}
+	mr.seen[instance] = true
 	return nil
 }
 
