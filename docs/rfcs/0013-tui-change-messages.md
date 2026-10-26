@@ -46,13 +46,13 @@ The rest go, since a model does the work itself: the write requests (`confirmApp
 | What every event shares | `Meta`: `ID`, `Kind`, `Type`, `Source`, `Subject`, `Op` and `At`. It's the same struct for every event, so the router, a log line or a Kafka producer can read it without knowing the payload. |
 | `ID` | Unique per event, so a consumer that sees one twice can drop the second. 128 random bits from `crypto/rand`, as hex, set by the constructor. An event made from a `change_events` row takes its ID from that row instead, so the same row read twice gives the same ID. |
 | `Kind` | Which primitive the payload is. A consumer that wants every write, or every failure, reads `Kind` alone. |
-| `Type` | What the payload is about within its kind: `company`, `company_list`, `sync_company`, `content_size`, …, from constants in `tui/message`. `Kind` and `Type` together name the payload's schema off the wire. For `error`, `Type` is its `Code`; for `nav`, the `Screen` it opens (a string, like `Kind`); for `notify`, `status`. |
+| `Type` | What the payload is about within its kind: `company`, `company_list`, `sync_company`, `content_size`, …, from constants in `tui/message`. `Kind` and `Type` together name the payload's schema off the wire. For `error`, `Type` is its `Code`'s name; for `nav`, the name of the `Screen` it opens; for `notify`, `status`. |
 | How `Kind` and `Type` stay right | Each primitive has `Kind()`, and its content has `Type()`. `New` sets both from the payload, so neither can disagree with it, and every constructor goes through `New`. |
 | `Source` | Who: `Process`, the writer's `"kind:pid"` as `change.Event.Origin` records it, and `Instance`, the `ScreenInstance` that asked, 0 for none. A late result for a dialog that was closed and opened again carries the old number, so it doesn't match. A number is used rather than the model because it serialises, and a command can carry it without capturing the model. |
 | `Subject` | Which entity the event is about: its `Type` and `ID`. Zero for an event about no one entity. On Kafka it's the record key, so one entity's events stay in order in one partition. An outcome carries its request's subject. |
-| `Op` | `"created"`, `"updated"` or `"deleted"`: what was written, on `changed`, or what wasn't, on `error`. Zero on every other kind, so a request can never pass `OnOp`. |
+| `Op` | `"created"`, `"updated"` or `"deleted"`: what was written, on `changed`, or what wasn't, on `error`. `OpNone`, the zero, on every other kind, so a request can never pass `OnOp`. |
 | `At` | When it happened. For a write, the database's time for it: `UpdatedAt`, `CreatedAt` or `DeletedAt` (`SoftDeleteApplication` sets no `updated_at`), UTC with one-second resolution, so it says when, not in what order. For anything else, `time.Now().UTC()` when the event was made. |
-| Strings, not `iota`s or Go type names | `Kind`, `Type` and `Op` are strings, so reordering constants or moving a package can't change what a stored event means. |
+| Constants in Go, names on the wire | What code switches on (`Kind`, `Op`, `NavOp`, `ErrorCode`, `Screen`) is an `iota` constant, encoded as its name from one table, so reordering constants or moving a package can't change what a stored event means. A zero is in the table only where "none" is legal (`OpNone`, `ScreenNone`); any other value without a name fails to encode, and an unknown name fails to decode. `Type` is a string, since each body names its own and nothing switches on it. |
 | Which messages are events | Every message type in `tui/message`, including the UI's own (`Signal`, `Notify`, `Nav`). One rule, one test, and filters work on all of them. Bubble Tea's messages (`tea.KeyPressMsg`, `tea.PasteMsg`, `spinner.TickMsg`, `tea.BatchMsg`) aren't ours and stay as they are. |
 | How an event is sent | As a value, never a pointer. `RouteIDOf` already treats a value and a pointer to it as different routes. |
 
@@ -123,29 +123,33 @@ RFC 0012's `NavMsg` carries `Next tea.Model`. As a primitive, `Nav` carries its 
 
 type ScreenInstance int
 
-type (
- Kind string
- Type string
- Op   string
-)
+// Kind, Op, NavOp, ErrorCode and Screen have the same shape: an iota,
+// a name table, and String, MarshalText and UnmarshalText through it.
+type Kind int
 
 const (
- KindChanged Kind = "changed"
- KindRead    Kind = "read"
- KindRun     Kind = "run"
- KindRan     Kind = "ran"
- KindError   Kind = "error"
- KindNav     Kind = "nav"
- KindNotify  Kind = "notify"
- KindSignal  Kind = "signal"
+ KindChanged Kind = iota + 1
+ KindRead
+ // …
+)
 
+var kindNames = [...]string{KindChanged: "changed", KindRead: "read" /* … */}
+
+type Op int
+
+const (
+ OpNone Op = iota
+ OpCreated
+ OpUpdated
+ OpDeleted
+)
+
+type Type string
+
+const (
  TypeCompany      Type = "company"
  TypeContentSize  Type = "content_size"
  TypeFocusChanged Type = "focus_changed"
-
- OpCreated Op = "created"
- OpUpdated Op = "updated"
- OpDeleted Op = "deleted"
 )
 
 // Meta is what every event carries, and all that routing and filtering read.
@@ -258,12 +262,12 @@ type FocusChanged struct {
 
 func (FocusChanged) Type() Type { return TypeFocusChanged }
 
-type ErrorCode string
+type ErrorCode int
 
 const (
- ErrNotFound       ErrorCode = "not_found"
- ErrSyncInProgress ErrorCode = "sync_in_progress"
- ErrOther          ErrorCode = "other"
+ ErrNotFound ErrorCode = iota + 1 // "not_found"
+ ErrSyncInProgress                 // "sync_in_progress"
+ ErrOther                          // "other"
 )
 
 // Error is a write, load or run that didn't happen, or a fault. Meta says
@@ -274,7 +278,7 @@ type Error struct {
 }
 
 func (Error) Kind() Kind   { return KindError }
-func (e Error) Type() Type { return Type(e.Code) }
+func (e Error) Type() Type { return Type(e.Code.String()) }
 ```
 
 ```go

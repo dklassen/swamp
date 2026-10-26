@@ -6,10 +6,7 @@ import (
 	"github.com/dklassen/swamp/sync"
 )
 
-type (
-	Screen         string
-	ScreenInstance int
-)
+type ScreenInstance int
 
 type CompaniesLoadedMsg struct {
 	Companies []company.Company

@@ -13,9 +13,8 @@ import (
 )
 
 const (
-	entityType message.Type   = "entity"
-	reportType message.Type   = "report"
-	testScreen message.Screen = "entity_detail"
+	entityType message.Type = "entity"
+	reportType message.Type = "report"
 )
 
 // entity stands in for a snapshot such as message.Company.
@@ -37,8 +36,6 @@ func (report) Type() message.Type { return reportType }
 var (
 	src = message.Source{Process: "tui:42", Instance: 7}
 	at  = time.Date(2026, 10, 26, 9, 30, 0, 0, time.UTC)
-
-	noOp message.Op
 )
 
 func TestNew_SetsKindAndTypeFromThePayload(t *testing.T) {
@@ -51,13 +48,13 @@ func TestNew_SetsKindAndTypeFromThePayload(t *testing.T) {
 		wantType message.Type
 	}{
 		{name: "changed", meta: message.New(src, message.Subject{}, message.OpUpdated, at, message.Changed[entity]{}).Meta, wantKind: message.KindChanged, wantType: entityType},
-		{name: "read", meta: message.New(src, message.Subject{}, noOp, at, message.Read[report]{}).Meta, wantKind: message.KindRead, wantType: reportType},
-		{name: "run", meta: message.New(src, message.Subject{}, noOp, at, message.Run[report]{}).Meta, wantKind: message.KindRun, wantType: reportType},
-		{name: "ran", meta: message.New(src, message.Subject{}, noOp, at, message.Ran[report]{}).Meta, wantKind: message.KindRan, wantType: reportType},
-		{name: "error", meta: message.New(src, message.Subject{}, message.OpDeleted, at, message.Error{Code: message.ErrNotFound}).Meta, wantKind: message.KindError, wantType: message.Type(message.ErrNotFound)},
-		{name: "nav", meta: message.New(src, message.Subject{}, noOp, at, message.Nav{Op: message.NavPush, Screen: testScreen}).Meta, wantKind: message.KindNav, wantType: message.Type(testScreen)},
-		{name: "notify", meta: message.New(src, message.Subject{}, noOp, at, message.Notify{Status: "saved"}).Meta, wantKind: message.KindNotify, wantType: message.TypeStatus},
-		{name: "signal", meta: message.New(src, message.Subject{}, noOp, at, message.Signal[report]{}).Meta, wantKind: message.KindSignal, wantType: reportType},
+		{name: "read", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Read[report]{}).Meta, wantKind: message.KindRead, wantType: reportType},
+		{name: "run", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Run[report]{}).Meta, wantKind: message.KindRun, wantType: reportType},
+		{name: "ran", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Ran[report]{}).Meta, wantKind: message.KindRan, wantType: reportType},
+		{name: "error", meta: message.New(src, message.Subject{}, message.OpDeleted, at, message.Error{Code: message.ErrNotFound}).Meta, wantKind: message.KindError, wantType: message.Type(message.ErrNotFound.String())},
+		{name: "nav", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Nav{Op: message.NavPush, Screen: message.ScreenCompanyEdit}).Meta, wantKind: message.KindNav, wantType: message.Type(message.ScreenCompanyEdit.String())},
+		{name: "notify", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Notify{Status: "saved"}).Meta, wantKind: message.KindNotify, wantType: message.TypeStatus},
+		{name: "signal", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Signal[report]{}).Meta, wantKind: message.KindSignal, wantType: reportType},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -93,8 +90,8 @@ func TestNewID_Is128RandomBitsAsHex(t *testing.T) {
 func TestNew_GivesEachEventItsOwnID(t *testing.T) {
 	t.Parallel()
 
-	a := message.New(src, message.Subject{}, noOp, at, message.Notify{})
-	b := message.New(src, message.Subject{}, noOp, at, message.Notify{})
+	a := message.New(src, message.Subject{}, message.OpNone, at, message.Notify{})
+	b := message.New(src, message.Subject{}, message.OpNone, at, message.Notify{})
 	if a.Meta.ID == "" || a.Meta.ID == b.Meta.ID {
 		t.Errorf("IDs %q and %q, want two different non-empty IDs", a.Meta.ID, b.Meta.ID)
 	}
@@ -193,13 +190,13 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		check func(t *testing.T)
 	}{
 		{name: "changed", check: roundTrip(message.Updated(src, 3, at, entity{ID: 3, Name: "Acme"}, entity{ID: 3, Name: "Acme Corp"}))},
-		{name: "read", check: roundTrip(message.New(src, subject, noOp, at, message.Read[report]{Value: r}))},
-		{name: "run", check: roundTrip(message.New(src, subject, noOp, at, message.Run[report]{Value: r}))},
-		{name: "ran", check: roundTrip(message.New(src, subject, noOp, at, message.Ran[report]{Value: r}))},
+		{name: "read", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Read[report]{Value: r}))},
+		{name: "run", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Run[report]{Value: r}))},
+		{name: "ran", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Ran[report]{Value: r}))},
 		{name: "error", check: roundTrip(message.New(src, subject, message.OpUpdated, at, message.Error{Code: message.ErrSyncInProgress, Text: "a sync is already running"}))},
-		{name: "nav", check: roundTrip(message.New(src, subject, noOp, at, message.Nav{Op: message.NavReplace, Screen: testScreen}))},
-		{name: "notify", check: roundTrip(message.New(src, message.Subject{}, noOp, at, message.Notify{Status: "saved"}))},
-		{name: "signal", check: roundTrip(message.New(src, message.Subject{}, noOp, at, message.Signal[report]{Value: r}))},
+		{name: "nav", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Nav{Op: message.NavReplace, Screen: message.ScreenCompanyEdit}))},
+		{name: "notify", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Notify{Status: "saved"}))},
+		{name: "signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[report]{Value: r}))},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

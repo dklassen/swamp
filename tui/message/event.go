@@ -6,30 +6,11 @@ import (
 	"time"
 )
 
-// Strings, not iotas, so reordering the constants can't change what a
-// stored event means.
-type (
-	Kind string
-	Type string
-	Op   string
-)
+// Type is what a payload is about within its kind. It's a string since
+// each body names its own, and nothing switches on it.
+type Type string
 
-const (
-	KindChanged Kind = "changed"
-	KindRead    Kind = "read"
-	KindRun     Kind = "run"
-	KindRan     Kind = "ran"
-	KindError   Kind = "error"
-	KindNav     Kind = "nav"
-	KindNotify  Kind = "notify"
-	KindSignal  Kind = "signal"
-
-	TypeStatus Type = "status"
-
-	OpCreated Op = "created"
-	OpUpdated Op = "updated"
-	OpDeleted Op = "deleted"
-)
+const TypeStatus Type = "status"
 
 // Meta is what every event carries, and all that routing and filtering read.
 type Meta struct {
@@ -144,14 +125,6 @@ type Ran[T Body] struct {
 func (Ran[T]) Kind() Kind { return KindRan }
 func (Ran[T]) Type() Type { var t T; return t.Type() }
 
-type ErrorCode string
-
-const (
-	ErrNotFound       ErrorCode = "not_found"
-	ErrSyncInProgress ErrorCode = "sync_in_progress"
-	ErrOther          ErrorCode = "other"
-)
-
 // Error is a write, load or run that didn't happen, or a fault. Meta says
 // by whom, of which entity, and the op.
 type Error struct {
@@ -160,15 +133,7 @@ type Error struct {
 }
 
 func (Error) Kind() Kind   { return KindError }
-func (e Error) Type() Type { return Type(e.Code) }
-
-type NavOp string
-
-const (
-	NavPush    NavOp = "push"
-	NavPop     NavOp = "pop"
-	NavReplace NavOp = "replace"
-)
+func (e Error) Type() Type { return Type(e.Code.String()) }
 
 // Nav is a request to the screen stack. The entity to open on is the
 // event's Subject.
@@ -178,7 +143,7 @@ type Nav struct {
 }
 
 func (Nav) Kind() Kind   { return KindNav }
-func (n Nav) Type() Type { return Type(n.Screen) }
+func (n Nav) Type() Type { return Type(n.Screen.String()) }
 
 // Notify is a status line for the banner.
 type Notify struct {
