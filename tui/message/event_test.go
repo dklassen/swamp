@@ -66,6 +66,24 @@ func TestNewID_Is128RandomBitsAsHex(t *testing.T) {
 	}
 }
 
+// A model draws its own instance, so with no counter to share, draws must
+// not repeat, and none may be 0, which is none.
+func TestNewScreenInstance_IsNonzeroAndDoesNotRepeat(t *testing.T) {
+	t.Parallel()
+
+	seen := map[message.ScreenInstance]bool{}
+	for range 1000 {
+		got := message.NewScreenInstance()
+		if got == 0 {
+			t.Fatal("NewScreenInstance() = 0, want a number: 0 is none")
+		}
+		if seen[got] {
+			t.Fatalf("NewScreenInstance() gave %d twice", got)
+		}
+		seen[got] = true
+	}
+}
+
 func TestNew_GivesEachEventItsOwnID(t *testing.T) {
 	t.Parallel()
 

@@ -2,6 +2,7 @@ package message
 
 import (
 	"crypto/rand"
+	"encoding/binary"
 	"encoding/hex"
 	"time"
 )
@@ -66,6 +67,18 @@ func NewID() string {
 	// crypto/rand.Read never returns an error; it crashes the program instead.
 	_, _ = rand.Read(b[:])
 	return hex.EncodeToString(b[:])
+}
+
+// NewScreenInstance is 63 random bits, never 0, so a model can name itself
+// without a counter shared with every other model.
+func NewScreenInstance() ScreenInstance {
+	for {
+		var b [8]byte
+		_, _ = rand.Read(b[:])
+		if n := ScreenInstance(binary.BigEndian.Uint64(b[:]) >> 1); n != 0 {
+			return n
+		}
+	}
 }
 
 // Changed is a write that has happened. Before is zero for OpCreated and
