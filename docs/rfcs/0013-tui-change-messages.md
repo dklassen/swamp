@@ -46,13 +46,13 @@ The rest go, since a model does the work itself: the write requests (`confirmApp
 | What every event shares | `Meta`: `ID`, `Kind`, `Type`, `Source`, `Subject`, `Op` and `At`. It's the same struct for every event, so the router, a log line or a Kafka producer can read it without knowing the payload. |
 | `ID` | Unique per event, so a consumer that sees one twice can drop the second. 128 random bits from `crypto/rand`, as hex, set by the constructor. An event made from a `change_events` row takes its ID from that row instead, so the same row read twice gives the same ID. |
 | `Kind` | Which primitive the payload is. A consumer that wants every write, or every failure, reads `Kind` alone. |
-| `Type` | What the payload is about within its kind: `company`, `company_list`, `sync_company`, `content_size`, …, from constants in `tui/message`. `Kind` and `Type` together name the payload's schema off the wire. For `error`, `Type` is its `Code`. |
+| `Type` | What the payload is about within its kind: `company`, `company_list`, `sync_company`, `content_size`, …, one closed set of constants in `tui/message`. `Kind` and `Type` together name the payload's schema off the wire. `error`, `nav` and `notify` have one `Type` each (`error`, `nav`, `status`); a route picks out an error or a nav by `From` or `About`, not by its code or screen. |
 | How `Kind` and `Type` stay right | Each primitive has `Kind()`, and its content has `Type()`. `New` sets both from the payload, so neither can disagree with it, and every constructor goes through `New`. |
 | `Source` | Who: `Process`, the writer's `"kind:pid"` as `change.Event.Origin` records it, and `Instance`, the `ScreenInstance` that asked, 0 for none. A late result for a dialog that was closed and opened again carries the old number, so it doesn't match. A number is used rather than the model because it serialises, and a command can carry it without capturing the model. |
 | `Subject` | Which entity the event is about: its `Type` and `ID`. Zero for an event about no one entity. On Kafka it's the record key, so one entity's events stay in order in one partition. An outcome carries its request's subject. |
-| `Op` | `"created"`, `"updated"` or `"deleted"`: what was written, on `changed`, or what wasn't, on `error`. Zero on every other kind, so a request can never pass `OnOp`. |
+| `Op` | `"created"`, `"updated"` or `"deleted"`: what was written, on `changed`, or what wasn't, on `error`. `OpNone`, the zero, on every other kind, so a request can never pass `OnOp`. |
 | `At` | When it happened. For a write, the database's time for it: `UpdatedAt`, `CreatedAt` or `DeletedAt` (`SoftDeleteApplication` sets no `updated_at`), UTC with one-second resolution, so it says when, not in what order. For anything else, `time.Now().UTC()` when the event was made. |
-| Strings, not `iota`s or Go type names | `Kind`, `Type` and `Op` are strings, so reordering constants or moving a package can't change what a stored event means. |
+| Constants in Go, names on the wire | Anything code decides on (`Kind`, `Type`, `Op`, `NavOp`, `ErrorCode`, `Screen`) is an `iota` constant, encoded as its name from one table, so reordering constants or moving a package can't change what a stored event means. A zero is in the table only where "none" is legal (`OpNone`, `ScreenNone`); any other value without a name fails to encode, and an unknown name fails to decode. Text for people (`Notify.Status`, `Error.Text`) and values compared only for equality (`ID`, `Source.Process`) stay strings. |
 | Which messages are events | Every message type in `tui/message`, including the UI's own (`Signal`, `Notify`, `Nav`). One rule, one test, and filters work on all of them. Bubble Tea's messages (`tea.KeyPressMsg`, `tea.PasteMsg`, `spinner.TickMsg`, `tea.BatchMsg`) aren't ours and stay as they are. |
 | How an event is sent | As a value, never a pointer. `RouteIDOf` already treats a value and a pointer to it as different routes. |
 
@@ -68,14 +68,14 @@ The rest go, since a model does the work itself: the write requests (`confirmApp
 
 | Question | Decision |
 | --- | --- |
-| What a payload may hold | Strings, numbers, bools, `time.Time`, and structs, arrays, slices and maps of those. Never a pointer, interface (`error`, `tea.Model`, `any`), function or channel. A test walks every event type with `reflect` and names any field that breaks this. |
+| What a payload may hold | Strings, numbers, bools, `time.Time`, and structs, arrays, slices and maps of those. Never a pointer, interface (`error`, `tea.Model`, `any`), function or channel. |
 | What `tui/message` may import | The standard library for its types. Its command constructors (`ReportStatus`, `Fail`, `Pop`, …) return `tea.Cmd` and still import Bubble Tea, but no event holds anything from it. It stops importing `company` and `sync`. |
 | How an event is serialised | No one format is fixed. Field names are given explicitly in the encoding (JSON tags now, a `.proto` if one is written), so renaming a Go field doesn't change the wire; `time.Time` maps to RFC 3339 or `google.protobuf.Timestamp`. On Kafka, `Meta` is the record headers, `Subject` the key and `Payload` the value. Protobuf has no generics, so each instantiation is its own wire message (`ChangedCompany`, `ReadCompanyList`). A test round-trips one of each event through JSON as the stand-in. |
 | What a payload carries for an entity | A snapshot: a comparable struct in `tui/message` with the fields models read, as plain values. `company.Company.DeletedAt *time.Time` becomes `DeletedAt time.Time`, zero while not deleted. A command in `tui/model` builds it, since `tui/message` can't import the domain. |
 | `Changed[T]` | `Before` and `After`, the snapshot on each side. The zero snapshot is a missing side (`Before` for `created`, `After` for `deleted`), left out when serialised. `Op` says which sides are set, and the `Created`, `Updated` and `Deleted` constructors set the right ones. A handler that cares about one field compares it across the two; no event names a field, since that would bring back a type per action. |
 | `Read[T]`, `Run[T]`, `Ran[T]`, `Signal[T]` | One field of the content type `T`, which is one struct per query, job or signal (`CompanyList`, `SyncCompany`, `SyncReport`, `ContentSize`). The kind says how to treat it; `T` says what it holds. |
 | What a `Ran[T]` reports | A summary a responding model can act on: counts of what succeeded and failed, and values such as `SyncReport.FetchedAt`, which the company list shows. Never the rows the job wrote: a sync can write hundreds, and another process's sync of the same company reaches the TUI only through the change log, so a model that shows those rows filters the `Ran` with `About` and reloads. Messages for the user go to the banner as a `Notify`. |
-| `Error` | `Code` and `Text`. `Meta` says who asked, which entity and which op, and its `Type` is the `Code`. It's one Go type for every failure, since a route picks out the ones it cares about with `From` or `About`. `At` is when the command saw the error. |
+| `Error` | `Code` and `Text`. `Meta` says who asked, which entity and which op, and its `Type` is `error`. It's one Go type for every failure, since a route picks out the ones it cares about with `From` or `About`. `At` is when the command saw the error. |
 | How an error is carried | `Code` is a string from a closed set in `tui/message` (`not_found`, `sync_in_progress`, …, `other`), and `Text` is `err.Error()`. The command maps a Go error to a code with `errors.Is`, outside `tui/message`, which can't import the errors it names. A code keeps what `Syncing.companyRefreshed` does today, `errors.Is(refreshed.Err, sync.ErrSyncInProgress)`, which text alone would lose. |
 | How an error reaches the user | There is one error event, `Error`, and the command that saw the error sends it and decides nothing else. The banner has a route for every `Error` and shows a line when its `Code` is one it has text for; the rest aren't for the user, and it logs them. A requester that has closed has been `Deregister`ed and gets nothing, but the banner still hears the failure. |
 | Where `Before`, `After` and `At` come from | For an update or delete, the service: it reads the row, writes, and reads again in one `store.InTx` transaction, and returns `change.Of[T]` (domain types, `internal/domain/change`). A `Before` taken from what a model last showed would be wrong whenever another process wrote in between. A create needs no service change. |
@@ -123,29 +123,38 @@ RFC 0012's `NavMsg` carries `Next tea.Model`. As a primitive, `Nav` carries its 
 
 type ScreenInstance int
 
-type (
- Kind string
- Type string
- Op   string
-)
+// Kind, Op, NavOp, ErrorCode and Screen have the same shape: an iota,
+// a name table, and String, MarshalText and UnmarshalText through it.
+type Kind int
 
 const (
- KindChanged Kind = "changed"
- KindRead    Kind = "read"
- KindRun     Kind = "run"
- KindRan     Kind = "ran"
- KindError   Kind = "error"
- KindNav     Kind = "nav"
- KindNotify  Kind = "notify"
- KindSignal  Kind = "signal"
+ _ Kind = iota
+ KindChanged
+ KindRead
+ // …
+)
 
- TypeCompany      Type = "company"
- TypeContentSize  Type = "content_size"
- TypeFocusChanged Type = "focus_changed"
+var kindNames = [...]string{KindChanged: "changed", KindRead: "read" /* … */}
 
- OpCreated Op = "created"
- OpUpdated Op = "updated"
- OpDeleted Op = "deleted"
+type Op int
+
+const (
+ OpNone Op = iota
+ OpCreated
+ OpUpdated
+ OpDeleted
+)
+
+type Type int
+
+const (
+ _ Type = iota
+ TypeCompany // "company"
+ TypeContentSize             // "content_size"
+ TypeFocusChanged            // "focus_changed"
+ TypeStatus                  // "status"
+ TypeError                   // "error"
+ TypeNav                     // "nav"
 )
 
 // Meta is what every event carries, and all that routing and filtering read.
@@ -258,12 +267,13 @@ type FocusChanged struct {
 
 func (FocusChanged) Type() Type { return TypeFocusChanged }
 
-type ErrorCode string
+type ErrorCode int
 
 const (
- ErrNotFound       ErrorCode = "not_found"
- ErrSyncInProgress ErrorCode = "sync_in_progress"
- ErrOther          ErrorCode = "other"
+ _ ErrorCode = iota
+ ErrNotFound // "not_found"
+ ErrSyncInProgress                 // "sync_in_progress"
+ ErrOther                          // "other"
 )
 
 // Error is a write, load or run that didn't happen, or a fault. Meta says
@@ -273,8 +283,8 @@ type Error struct {
  Text string    `json:"text"`
 }
 
-func (Error) Kind() Kind   { return KindError }
-func (e Error) Type() Type { return Type(e.Code) }
+func (Error) Kind() Kind { return KindError }
+func (Error) Type() Type { return TypeError }
 ```
 
 ```go
@@ -388,7 +398,7 @@ func (m *companyDeleteModel) focusChanged(e message.Event[message.Signal[message
 
 Each step keeps `go build`, `go test`, the linter and `gofmt` clean.
 
-1. **The envelope, the primitives and the rule's tests.** Add `Event`, `Meta`, `New`, `NewID` and the eight primitives. A test in `tui/message` lists every message type, checks each is an `Event[P]` whose payload holds no pointer, interface, function or channel, and round-trips each through JSON. It starts with an allow-list of today's structs, and every later step shortens it. A failure names the type and field.
+1. **The envelope and the primitives.** Add `Event`, `Meta`, `New`, `NewID` and the eight primitives. A test round-trips one event of each primitive through JSON. Today's structs aren't checked; each later step replaces the ones it touches.
 2. **Filters on routes.** `Always` and `WhenFocused` take `...Filter`; `About`, `From` and `OnOp`. Tests show a filtered-out event never reaches the handler, and that a filter on a type without `Metadata()` fails `Register`.
 3. **`change.Of` and the company service.** `CompanyService.SetName` and `Delete` return `change.Of[company.Company]`, read in one transaction. Their tests show that `Before` is the row as another writer left it just before this write, and that `At` is `UpdatedAt`, or `DeletedAt` for a delete.
 4. **The migrated company models.** Add `Company` and instance numbering. The company list, delete and edit register `Event[Changed[Company]]` and `Event[Error]`, the three company result structs go, and the rest of the structs in `tui/message` become events. `tui/message` stops importing `company` and `sync`.
