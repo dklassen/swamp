@@ -7,6 +7,7 @@ package model
 import (
 	"fmt"
 	"reflect"
+	"slices"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -141,20 +142,46 @@ type Route struct {
 // Always is a route to handle for every T, whether or not its owner is in
 // focus, such as a load's result. The route is T itself, so a handler
 // can't be registered for a message it doesn't take.
-func Always[T tea.Msg](handle func(T) tea.Cmd) *Route {
-	return newRoute(func() bool { return true }, handle)
+func Always[T tea.Msg](handle func(T) tea.Cmd, filters ...Filter) *Route {
+	return newRoute(func() bool { return true }, handle, filters)
 }
 
 // WhenFocused is a route to handle for every T that arrives while owner is
 // in focus, such as typed input.
-func WhenFocused[T tea.Msg](owner Focusable, handle func(T) tea.Cmd) *Route {
-	return newRoute(owner.Focused, handle)
+func WhenFocused[T tea.Msg](owner Focusable, handle func(T) tea.Cmd, filters ...Filter) *Route {
+	return newRoute(owner.Focused, handle, filters)
 }
 
-func newRoute[T tea.Msg](accepts func() bool, handle func(T) tea.Cmd) *Route {
+// Filter is whether a route's handler gets an event, from its Meta.
+type Filter func(message.Meta) bool
+
+// About passes events whose Subject is that entity.
+func About(typ message.Type, id int64) Filter {
+	return func(m message.Meta) bool { return m.Subject == message.Subject{Type: typ, ID: id} }
+}
+
+// From passes events that screen instance asked for.
+func From(instance message.ScreenInstance) Filter {
+	return func(m message.Meta) bool { return m.Source.Instance == instance }
+}
+
+// OnOp passes events with one of ops, never one with OpNone, since that's
+// a request rather than something that happened.
+func OnOp(ops ...message.Op) Filter {
+	return func(m message.Meta) bool {
+		return m.Op != message.OpNone && slices.Contains(ops, m.Op)
+	}
+}
+
+type event interface{ Metadata() message.Meta }
+
+func newRoute[T tea.Msg](accepts func() bool, handle func(T) tea.Cmd, filters []Filter) *Route {
 	var zero T
 	if any(zero) == nil {
 		return &Route{err: fmt.Errorf("model: the handler takes %v, an interface, which has no type to route by; take a concrete message type", reflect.TypeFor[T]())}
+	}
+	if _, ok := any(zero).(event); len(filters) > 0 && !ok {
+		return &Route{err: fmt.Errorf("model: the route for %T has filters, but %T has no Metadata() for them to read; filter only an event", zero, zero)}
 	}
 	return &Route{
 		id: RouteIDOf(zero),
@@ -165,6 +192,11 @@ func newRoute[T tea.Msg](accepts func() bool, handle func(T) tea.Cmd) *Route {
 			}
 			if !accepts() {
 				return nil
+			}
+			for _, f := range filters {
+				if !f(any(m).(event).Metadata()) {
+					return nil
+				}
 			}
 			return handle(m)
 		},

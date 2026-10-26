@@ -3,7 +3,9 @@ package model_test
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -291,5 +293,148 @@ func TestMsgRouter_Deregister_DuringDispatchStillDeliversToOthers(t *testing.T) 
 
 	if got != 1 {
 		t.Errorf("deliveries to the other owner = %d, want 1", got)
+	}
+}
+
+type companyChanged = message.Event[message.Changed[message.Company]]
+
+// A route's filters read the event's Meta, and an event one rejects never
+// reaches the handler.
+func TestRoute_About_PassesOnlyThatSubject(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		event companyChanged
+		want  int
+	}{
+		{name: "that company", event: message.Created(message.Source{}, 7, time.Time{}, message.Company{ID: 7}), want: 1},
+		{name: "another company", event: message.Created(message.Source{}, 8, time.Time{}, message.Company{ID: 8}), want: 0},
+		{name: "no subject", event: message.New(message.Source{}, message.Subject{}, message.OpNone, time.Time{}, message.Changed[message.Company]{}), want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := 0
+			route := model.Always(func(companyChanged) tea.Cmd { got++; return nil }, model.About(message.TypeCompany, 7))
+
+			route.Handle(tt.event)
+
+			if got != tt.want {
+				t.Errorf("deliveries = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRoute_From_PassesOnlyThatInstance(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		instance message.ScreenInstance
+		want     int
+	}{
+		{name: "that instance", instance: 3, want: 1},
+		{name: "an earlier instance", instance: 2, want: 0},
+		{name: "no instance", instance: 0, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := 0
+			route := model.Always(func(companyChanged) tea.Cmd { got++; return nil }, model.From(3))
+
+			route.Handle(message.Created(message.Source{Instance: tt.instance}, 7, time.Time{}, message.Company{ID: 7}))
+
+			if got != tt.want {
+				t.Errorf("deliveries = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRoute_TwoFilters_BothMustPass(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		event companyChanged
+		want  int
+	}{
+		{name: "both pass", event: message.Deleted(message.Source{}, 7, time.Time{}, message.Company{ID: 7}), want: 1},
+		{name: "only About passes", event: message.Created(message.Source{}, 7, time.Time{}, message.Company{ID: 7}), want: 0},
+		{name: "only OnOp passes", event: message.Deleted(message.Source{}, 8, time.Time{}, message.Company{ID: 8}), want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := 0
+			route := model.Always(func(companyChanged) tea.Cmd { got++; return nil }, model.About(message.TypeCompany, 7), model.OnOp(message.OpDeleted))
+
+			route.Handle(tt.event)
+
+			if got != tt.want {
+				t.Errorf("deliveries = %d, want %d", got, tt.want)
+			}
+		})
+	}
+}
+
+// A filter reads Meta, which only an event has, so a filter on any other
+// message would never pass; Register refuses it rather than drop them all.
+func TestMsgRouter_Register_RefusesAFilterOnAMessageWithoutMeta(t *testing.T) {
+	t.Parallel()
+	got := 0
+	owner := &component{routes: []*model.Route{
+		model.Always(func(companyChanged) tea.Cmd { got++; return nil }),
+		model.Always(func(tea.KeyPressMsg) tea.Cmd { return nil }, model.From(1)),
+	}}
+	r := model.NewMsgRouter()
+
+	err := r.Register(owner)
+
+	if err == nil {
+		t.Fatal("Register of a filtered tea.KeyPressMsg route returned no error, want one")
+	}
+	for _, want := range []string{fmt.Sprintf("%T", owner), fmt.Sprintf("%T", tea.KeyPressMsg{})} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("Register error %q doesn't name %s", err, want)
+		}
+	}
+	r.Dispatch(message.Created(message.Source{}, 7, time.Time{}, message.Company{ID: 7}))
+	if got != 0 {
+		t.Errorf("deliveries to the owner's other route = %d, want 0: Register should register none of its routes", got)
+	}
+}
+
+// A request has no Op, so OnOp never passes one, even when asked for
+// OpNone.
+func TestRoute_OnOp_PassesOnlyThoseOps(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		ops  []message.Op
+		op   message.Op
+		want int
+	}{
+		{name: "one of them", ops: []message.Op{message.OpCreated, message.OpDeleted}, op: message.OpDeleted, want: 1},
+		{name: "another op", ops: []message.Op{message.OpCreated, message.OpDeleted}, op: message.OpUpdated, want: 0},
+		{name: "no op", ops: []message.Op{message.OpCreated}, op: message.OpNone, want: 0},
+		{name: "no op, asked for", ops: []message.Op{message.OpNone}, op: message.OpNone, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := 0
+			route := model.Always(func(companyChanged) tea.Cmd { got++; return nil }, model.OnOp(tt.ops...))
+
+			route.Handle(message.New(message.Source{}, message.Subject{}, tt.op, time.Time{}, message.Changed[message.Company]{}))
+
+			if got != tt.want {
+				t.Errorf("deliveries of a %v event to OnOp(%v) = %d, want %d", tt.op, tt.ops, got, tt.want)
+			}
+		})
 	}
 }
