@@ -68,8 +68,8 @@ func (m *companyListModel) Routes() []*model.Route {
 	}
 }
 
-func (m *companyListModel) focusChanged(msg message.FocusChangedMsg) tea.Cmd {
-	m.focused = msg.Focused == m
+func (m *companyListModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
+	m.focused = e.Payload.Value.Focused == m.instance
 	return nil
 }
 

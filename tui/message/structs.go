@@ -22,9 +22,6 @@ type ContentSizeMsg struct {
 	Rows  int
 }
 
-// FocusChangedMsg names the component now in focus, nil when none is.
-type FocusChangedMsg struct{ Focused tea.Model }
-
 // BannerMsg is how a screen reports to the banner.
 type BannerMsg struct {
 	Err    error

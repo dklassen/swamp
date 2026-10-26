@@ -240,16 +240,16 @@ func New(
 	return a
 }
 
-// focused is the converted screen on screen, or nil when the screen up
-// hasn't registered routes yet.
-func (a *App) focused() model.SubComponent {
+// focused is the instance of the converted screen on screen, or 0 when
+// the screen up hasn't registered routes yet.
+func (a *App) focused() message.ScreenInstance {
 	switch a.currentScreen {
 	case screenCompanyList:
-		return a.companyList
+		return a.companyList.Instance()
 	case screenCompanyDelete:
-		return a.companyDelete
+		return a.companyDelete.Instance()
 	}
-	return nil
+	return 0
 }
 
 // closeCompanyDelete takes the delete confirmation down, back to the
@@ -1033,7 +1033,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmd = tea.Batch(routed, cmd)
 	if a.currentScreen != before {
 		// Dispatched now, not as a Cmd, so keys already queued see it.
-		focused := a.router.Dispatch(message.FocusChangedMsg{Focused: a.focused()})
+		focused := a.router.Dispatch(message.New(message.Source{Process: a.origin}, message.Subject{}, message.OpNone, time.Now().UTC(),
+			message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: a.focused()}}))
 		cmd = tea.Batch(cmd, focused, a.activate())
 	}
 	// The window or the banner may have changed size, on any message.

@@ -46,8 +46,8 @@ func (m *companyDeleteModel) Routes() []*model.Route {
 	}
 }
 
-func (m *companyDeleteModel) focusChanged(msg message.FocusChangedMsg) tea.Cmd {
-	m.focused = msg.Focused == m
+func (m *companyDeleteModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
+	m.focused = e.Payload.Value.Focused == m.instance
 	return nil
 }
 
