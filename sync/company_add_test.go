@@ -83,7 +83,7 @@ func TestAddCompany_PreviouslyDeletedCompany_SkippedAndStaysDeleted(t *testing.T
 	ctx := context.Background()
 
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	if err := s.Companies.Delete(ctx, acme.ID); err != nil {
+	if _, err := s.Companies.Delete(ctx, acme.ID); err != nil {
 		t.Fatalf("SoftDeleteCompany: %v", err)
 	}
 	fetcher := &perBoardFetcher{postings: map[string][]jobboard.Posting{"acme": nil}}

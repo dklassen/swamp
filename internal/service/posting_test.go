@@ -451,7 +451,7 @@ func TestPostingService_Interested_ExcludesClosedDeletedAndFilteredOut(t *testin
 			}
 		}},
 		{"deleted company", func(t *testing.T, s testutil.TestApp, companyID, _ int64) {
-			if err := s.Companies.Delete(context.Background(), companyID); err != nil {
+			if _, err := s.Companies.Delete(context.Background(), companyID); err != nil {
 				t.Fatalf("delete company: %v", err)
 			}
 		}},

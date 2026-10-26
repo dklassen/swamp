@@ -625,18 +625,18 @@ func createCompany(syncer *sync.Syncer, name, source, sourceRef string) tea.Cmd 
 
 func deleteCompany(companies *service.CompanyService, companyID int64) tea.Cmd {
 	return func() tea.Msg {
-		err := companies.Delete(context.Background(), companyID)
+		_, err := companies.Delete(context.Background(), companyID)
 		return message.CompanyDeletedMsg{CompanyID: companyID, Err: err}
 	}
 }
 
 func updateCompanyName(companies *service.CompanyService, companyID int64, name string) tea.Cmd {
 	return func() tea.Msg {
-		company, err := companies.SetName(context.Background(), companyID, name)
+		renamed, err := companies.SetName(context.Background(), companyID, name)
 		if err != nil {
 			return message.CompanyNameUpdatedMsg{Err: err}
 		}
-		return message.CompanyNameUpdatedMsg{Company: *company}
+		return message.CompanyNameUpdatedMsg{Company: renamed.After}
 	}
 }
 

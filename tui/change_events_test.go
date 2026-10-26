@@ -149,7 +149,7 @@ func TestApp_CompanyListReload_KeepsTheCursorOnTheSameCompany(t *testing.T) {
 	app, _ = sendKey(app, runeKey('j'))
 	onLast := companies[2].ID
 
-	if err := s.Companies.Delete(context.Background(), companies[0].ID); err != nil {
+	if _, err := s.Companies.Delete(context.Background(), companies[0].ID); err != nil {
 		t.Fatalf("SoftDeleteCompany: %v", err)
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "companies", RowID: companies[0].ID, Op: "update", Origin: "tui:2"}}})

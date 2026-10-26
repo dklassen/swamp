@@ -182,7 +182,7 @@ func TestScoringService_Pending(t *testing.T) {
 		t.Fatalf("SetInterested: %v", err)
 	}
 	testutil.MustApplyTo(t, s, applied.ID)
-	if err := s.Companies.Delete(ctx, gone.ID); err != nil {
+	if _, err := s.Companies.Delete(ctx, gone.ID); err != nil {
 		t.Fatalf("delete company: %v", err)
 	}
 	mustRecordScore(t, s, changed, "old profile")

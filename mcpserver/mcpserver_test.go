@@ -399,7 +399,7 @@ func TestAddCompany_ExistingCompany_ReportsOutcome(t *testing.T) {
 				t.Fatalf("CreateCompany: %v", err)
 			}
 			if tc.softDelete {
-				if err := s.Companies.Delete(context.Background(), acme.ID); err != nil {
+				if _, err := s.Companies.Delete(context.Background(), acme.ID); err != nil {
 					t.Fatalf("SoftDeleteCompany: %v", err)
 				}
 			}
@@ -739,7 +739,7 @@ func TestListCompanies_LiveCompaniesByNameWithOpenCounts(t *testing.T) {
 	if err := s.Postings.Close(ctx, closed.ID, nil); err != nil {
 		t.Fatalf("Close: %v", err)
 	}
-	if err := s.Companies.Delete(ctx, gone.ID); err != nil {
+	if _, err := s.Companies.Delete(ctx, gone.ID); err != nil {
 		t.Fatalf("SoftDeleteCompany: %v", err)
 	}
 	cs := connectClient(t, srv)
@@ -1191,7 +1191,7 @@ func TestReadPosting_RefusesWhatItCantShow(t *testing.T) {
 	srv, s, _ := newTestServer(t)
 	gone := mustCreateCompany(t, s, "Gone")
 	atGone := mustUpsertPosting(t, s, gone.ID, "job-1", "Engineer")
-	if err := s.Companies.Delete(context.Background(), gone.ID); err != nil {
+	if _, err := s.Companies.Delete(context.Background(), gone.ID); err != nil {
 		t.Fatalf("SoftDeleteCompany: %v", err)
 	}
 	cs := connectClient(t, srv)
