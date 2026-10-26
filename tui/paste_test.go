@@ -69,13 +69,13 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 			app.currentScreen, app.applicationExport = screenApplicationExport, newApplicationExportModel(nil, app.documents, posting.ActiveApplication{}, "", 80)
 		}},
 		{name: "notes", open: func(app *App) {
-			app.currentScreen, app.applicationNotes = screenApplicationNotesEdit, newApplicationNotesModel(nil, 1, "", 80, 20, 0)
+			app.currentScreen, app.applicationNotes = screenApplicationNotesEdit, newApplicationNotesModel(nil, 1, "", 80, 20)
 		}},
 		{name: "application form", open: func(app *App) {
 			app.currentScreen, app.applicationForm = screenApplicationForm, newApplicationFormModel(nil, 1, nil, 80, 20)
 		}},
 		{name: "document review", open: func(app *App) {
-			app.currentScreen, app.documentReviewForm = screenDocumentReviewForm, newDocumentReviewFormModel(nil, app.documents, 1, document.CoverLetter, "", 80, 20, 0)
+			app.currentScreen, app.documentReviewForm = screenDocumentReviewForm, newDocumentReviewFormModel(nil, app.documents, 1, document.CoverLetter, "", 80, 20)
 		}},
 	}
 	for _, tt := range tests {

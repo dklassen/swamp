@@ -24,13 +24,16 @@ type companyDeleteModel struct {
 	// is in flight doesn't send another.
 	confirmed bool
 
-	focused bool
-	width   int
+	focused  bool
+	width    int
+	instance message.ScreenInstance
 }
 
 func newCompanyDeleteModel(companies *service.CompanyService, company company.Company, openPostings, width int) *companyDeleteModel {
-	return &companyDeleteModel{companyService: companies, company: company, openPostings: openPostings, width: width}
+	return &companyDeleteModel{companyService: companies, company: company, openPostings: openPostings, width: width, instance: message.NewScreenInstance()}
 }
+
+func (m *companyDeleteModel) Instance() message.ScreenInstance { return m.instance }
 
 func (m *companyDeleteModel) Focused() bool { return m.focused }
 

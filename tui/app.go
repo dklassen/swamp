@@ -108,8 +108,7 @@ type App struct {
 	// list -> posting detail -> status select), and one push/pop pair
 	// per transition keeps a new entry point from needing its own field.
 	// See issue #89.
-	returnStack        []screen
-	lastScreenInstance screenInstance
+	returnStack []screen
 	// activeApplications backs the home screen: every application not at
 	// a terminal dead-end status, across every company (see
 	// ApplicationService.Active).
@@ -214,7 +213,6 @@ func New(
 		seen:                  map[screen]int64{},
 		syncer:                syncer,
 		currentScreen:         screenActiveApplications,
-		companyList:           newCompanyListModel(companies, postings),
 		allPostings:           newAllPostingsModel(postings),
 		companyForm:           newCompanyFormModel(syncer),
 		postingList:           newPostingListModel(postings),
@@ -223,6 +221,7 @@ func New(
 		documents:             docs,
 		exportDir:             defaultExportDir,
 		openURL:               openInBrowser,
+		companyList:           newCompanyListModel(companies, postings),
 		syncing:               model.NewSyncing(syncer),
 		router:                model.NewMsgRouter(),
 	}
@@ -419,17 +418,6 @@ func postingDetailContent(p posting.Posting, application application.Application
 	return b.String()
 }
 
-// screenInstance tells apart two openings of the same screen (#115).
-// Bubble Tea doesn't say which screen a Cmd's result is for, so without
-// it a save from a screen the user closed and reopened would act on the
-// new one. Zero is never handed out, so it never matches a real result.
-type screenInstance int
-
-func (a *App) newScreenInstance() screenInstance {
-	a.lastScreenInstance++
-	return a.lastScreenInstance
-}
-
 // enterFrom switches to next, pushing the current screen onto
 // returnStack so returnBack can come back to it.
 func (a *App) enterFrom(next screen) {
@@ -446,7 +434,7 @@ func (a *App) openDocumentReviewForm(msg enterDocumentReviewFormMsg) bool {
 	if msg.err != nil {
 		return false
 	}
-	a.documentReviewForm = newDocumentReviewFormModel(a.documentService, a.documents, msg.applicationID, msg.documentType, msg.content, a.width, a.screenRows(), a.newScreenInstance())
+	a.documentReviewForm = newDocumentReviewFormModel(a.documentService, a.documents, msg.applicationID, msg.documentType, msg.content, a.width, a.screenRows())
 	return true
 }
 
@@ -768,11 +756,11 @@ func maybeLoadDocumentReviews(documentService *service.DocumentService, docs *do
 
 type applicationStatusUpdatedMsg struct {
 	application application.Application
-	from        screenInstance
+	from        message.ScreenInstance
 	err         error
 }
 
-func updateApplicationStatus(applications *service.ApplicationService, applicationID int64, status application.Status, from screenInstance) tea.Cmd {
+func updateApplicationStatus(applications *service.ApplicationService, applicationID int64, status application.Status, from message.ScreenInstance) tea.Cmd {
 	return func() tea.Msg {
 		app, err := applications.SetStatus(context.Background(), applicationID, status)
 		if err != nil {
@@ -784,11 +772,11 @@ func updateApplicationStatus(applications *service.ApplicationService, applicati
 
 type applicationNotesUpdatedMsg struct {
 	application application.Application
-	from        screenInstance
+	from        message.ScreenInstance
 	err         error
 }
 
-func updateApplicationNotes(applications *service.ApplicationService, applicationID int64, notes string, from screenInstance) tea.Cmd {
+func updateApplicationNotes(applications *service.ApplicationService, applicationID int64, notes string, from message.ScreenInstance) tea.Cmd {
 	return func() tea.Msg {
 		app, err := applications.SetNotes(context.Background(), applicationID, notes)
 		if err != nil {
@@ -1316,7 +1304,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// Open the form only if the user is still where they asked for it.
 		if msg.err == nil && a.currentScreen == msg.from {
 			a.enterFrom(screenApplicationStatusSelect)
-			a.applicationStatus = newApplicationStatusModel(a.applicationService, msg.applicationID, msg.status, a.newScreenInstance())
+			a.applicationStatus = newApplicationStatusModel(a.applicationService, msg.applicationID, msg.status)
 		}
 	case applicationFormLoadedMsg:
 		a.err = msg.err
@@ -1649,7 +1637,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return a, loadApplicationStatus(a.applicationService, v.applicationID, a.currentScreen)
 		case enterApplicationNotesMsg:
 			a.currentScreen = screenApplicationNotesEdit
-			a.applicationNotes = newApplicationNotesModel(a.applicationService, v.applicationID, v.currentNotes, a.width, a.screenRows(), a.newScreenInstance())
+			a.applicationNotes = newApplicationNotesModel(a.applicationService, v.applicationID, v.currentNotes, a.width, a.screenRows())
 		case enterDocumentReviewSelectMsg:
 			a.enterFrom(screenDocumentReviewSelect)
 			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, v.applicationID)

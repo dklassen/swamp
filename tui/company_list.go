@@ -38,16 +38,20 @@ type companyListModel struct {
 	// openPostings is each company's open, unarchived posting count.
 	openPostings map[int64]int
 
-	width  int
-	height int
+	width    int
+	height   int
+	instance message.ScreenInstance
 }
 
 func newCompanyListModel(companies *service.CompanyService, postings *service.PostingService) *companyListModel {
 	return &companyListModel{
 		companyService: companies,
 		postingService: postings,
+		instance:       message.NewScreenInstance(),
 	}
 }
+
+func (m *companyListModel) Instance() message.ScreenInstance { return m.instance }
 
 func (m *companyListModel) Focused() bool { return m.focused }
 

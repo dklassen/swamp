@@ -7,6 +7,7 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -28,7 +29,7 @@ type applicationSubmitModel struct {
 	// confirmed is set once y is pressed, so a second y while the status
 	// save is in flight doesn't save it twice.
 	confirmed bool
-	instance  screenInstance
+	instance  message.ScreenInstance
 }
 
 // applyURL is where a posting's application form is: ApplicationURL,
@@ -40,8 +41,8 @@ func applyURL(posting posting.Posting) string {
 	return posting.JobURL
 }
 
-func newApplicationSubmitModel(application posting.ActiveApplication, instance screenInstance) applicationSubmitModel {
-	return applicationSubmitModel{application: application, url: applyURL(application.Posting), instance: instance}
+func newApplicationSubmitModel(application posting.ActiveApplication) applicationSubmitModel {
+	return applicationSubmitModel{application: application, url: applyURL(application.Posting), instance: message.NewScreenInstance()}
 }
 
 // enterApplicationSubmitMsg signals that App should open the submit
@@ -118,7 +119,7 @@ func (m *applicationSubmitModel) View() string {
 // exporting the documents to the last-used export directory, recorded
 // like any other export (#188).
 func (a *App) startApplicationSubmit(application posting.ActiveApplication) tea.Cmd {
-	a.applicationSubmit = newApplicationSubmitModel(application, a.newScreenInstance())
+	a.applicationSubmit = newApplicationSubmitModel(application)
 	a.currentScreen = screenApplicationSubmit
 	export := exportApplicationDocuments(a.documentService, a.documents, application, a.exportDir)
 	if a.applicationSubmit.url == "" {
