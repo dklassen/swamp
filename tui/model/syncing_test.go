@@ -146,17 +146,17 @@ func TestSyncing_ResultFromAnEarlierRun_IsIgnored(t *testing.T) {
 type wrongMsg struct{}
 
 // Every handler, handed a message of a type it wasn't registered for,
-// sends an ErrMsg instead of panicking or ignoring it.
+// sends a fault instead of panicking or ignoring it.
 func TestSyncing_Handlers_FailOnTheWrongMessage(t *testing.T) {
 	t.Parallel()
 	for id, route := range routesOf(t, model.NewSyncing(nil)) {
 		t.Run(id.String(), func(t *testing.T) {
 			cmd := route.Handle(wrongMsg{})
 			if cmd == nil {
-				t.Fatal("handler given wrongMsg returned no command, want one sending message.ErrMsg")
+				t.Fatal("handler given wrongMsg returned no command, want one sending a fault")
 			}
-			if got, ok := cmd().(message.ErrMsg); !ok || got.Err == nil {
-				t.Errorf("handler given wrongMsg sent %#v, want a message.ErrMsg with an Err", got)
+			if got, ok := cmd().(message.Event[message.Error]); !ok || got.Payload.Code != message.ErrFault || got.Payload.Text == "" {
+				t.Errorf("handler given wrongMsg sent %#v, want an Event[Error] with code %v and a Text", got, message.ErrFault)
 			}
 		})
 	}

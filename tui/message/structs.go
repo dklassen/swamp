@@ -1,6 +1,8 @@
 package message
 
 import (
+	"time"
+
 	tea "charm.land/bubbletea/v2"
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/sync"
@@ -24,13 +26,13 @@ type BannerMsg struct {
 	Load bool
 }
 
-// ErrMsg is a fault in the program, such as a handler given a message it
-// wasn't registered for, which nothing the user does can fix. It isn't
-// meant to be shown; the router logs it.
-type ErrMsg struct{ Err error }
-
-// Fail sends err as an ErrMsg.
-func Fail(err error) tea.Cmd { return func() tea.Msg { return ErrMsg{Err: err} } }
+// Fail reports err as a fault in the program, such as a handler given a
+// message it wasn't registered for, which nothing the user does can fix.
+func Fail(src Source, err error) tea.Cmd {
+	return func() tea.Msg {
+		return New(src, Subject{}, OpNone, time.Now().UTC(), Error{Code: ErrFault, Text: err.Error()})
+	}
+}
 
 func ReportErr(err error) tea.Cmd   { return func() tea.Msg { return BannerMsg{Err: err} } }
 func ReportLoad(err error) tea.Cmd  { return func() tea.Msg { return BannerMsg{Err: err, Load: true} } }
