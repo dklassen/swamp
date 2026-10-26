@@ -7,7 +7,7 @@ import (
 )
 
 type (
-	Screen         int
+	Screen         string
 	ScreenInstance int
 )
 
