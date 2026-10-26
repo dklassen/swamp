@@ -15,13 +15,6 @@ type CompaniesLoadedMsg struct {
 	Err          error
 }
 
-// ContentSizeMsg is the area a screen draws in: the terminal less the
-// header and banner, which grow and shrink without the terminal resizing.
-type ContentSizeMsg struct {
-	Width int
-	Rows  int
-}
-
 // BannerMsg is how a screen reports to the banner.
 type BannerMsg struct {
 	Err    error

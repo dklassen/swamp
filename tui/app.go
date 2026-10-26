@@ -160,7 +160,7 @@ type App struct {
 	router model.Router
 
 	// sized is the last size sent to the screens.
-	sized message.ContentSizeMsg
+	sized message.ContentSize
 }
 
 // defaultExportDir is where the export screen points before anything has
@@ -1038,9 +1038,10 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = tea.Batch(cmd, focused, a.activate())
 	}
 	// The window or the banner may have changed size, on any message.
-	if size := (message.ContentSizeMsg{Width: a.width, Rows: a.screenRows()}); size != a.sized {
+	if size := (message.ContentSize{Width: a.width, Rows: a.screenRows()}); size != a.sized {
 		a.sized = size
-		cmd = tea.Batch(cmd, a.router.Dispatch(size))
+		cmd = tea.Batch(cmd, a.router.Dispatch(message.New(message.Source{Process: a.origin}, message.Subject{}, message.OpNone, time.Now().UTC(),
+			message.Signal[message.ContentSize]{Value: size})))
 	}
 
 	// The banner above the screen can appear, change, or clear on any

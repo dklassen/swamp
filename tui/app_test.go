@@ -26,6 +26,7 @@ import (
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // newTestApp creates an App and drives it through Init, returning the
@@ -393,6 +394,45 @@ func TestApp_RegisteredModels_HaveDistinctInstances(t *testing.T) {
 			t.Errorf("%s and %s share instance %d", name, other, instance)
 		}
 		seen[instance] = name
+	}
+}
+
+// sizeRecorder keeps every content size it's sent.
+type sizeRecorder struct {
+	instance message.ScreenInstance
+	sizes    []message.ContentSize
+}
+
+func (r *sizeRecorder) Instance() message.ScreenInstance { return r.instance }
+
+func (r *sizeRecorder) Routes() []*model.Route { return []*model.Route{model.Always(r.resize)} }
+
+func (r *sizeRecorder) resize(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {
+	r.sizes = append(r.sizes, e.Payload.Value)
+	return nil
+}
+
+// unrelatedMsg is a message no screen handles.
+type unrelatedMsg struct{}
+
+// The size is checked on every message, since the banner can change on
+// any, but sent only when it differs from the last one sent.
+func TestApp_ContentSize_SentOnlyWhenItChanges(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	recorder := &sizeRecorder{instance: message.NewScreenInstance()}
+	if err := app.router.Register(recorder); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 100, Height: 30})
+	app, _ = sendKey(app, unrelatedMsg{})
+	app, _ = sendKey(app, unrelatedMsg{})
+
+	want := []message.ContentSize{{Width: 100, Rows: app.screenRows()}}
+	if diff := cmp.Diff(want, recorder.sizes); diff != "" {
+		t.Errorf("sizes sent (-want +got):\n%s", diff)
 	}
 }
 

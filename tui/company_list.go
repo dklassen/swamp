@@ -119,8 +119,8 @@ type backToActiveApplicationsMsg struct{}
 
 // resize keeps the size it draws in, so it's right when the list is next
 // shown.
-func (m *companyListModel) resize(size message.ContentSizeMsg) tea.Cmd {
-	m.width, m.height = size.Width, size.Rows
+func (m *companyListModel) resize(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {
+	m.width, m.height = e.Payload.Value.Width, e.Payload.Value.Rows
 	return nil
 }
 
@@ -255,7 +255,7 @@ func (m *companyListModel) visible() []company.Company {
 	return matches
 }
 
-// View renders the list in the rows of the last ContentSizeMsg.
+// View renders the list in the rows of the last content size.
 func (m *companyListModel) View() tea.View {
 	var b strings.Builder
 	help := model.HelpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  tab: applications  q: quit")

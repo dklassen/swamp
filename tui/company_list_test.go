@@ -22,7 +22,8 @@ func companyListOf(t *testing.T, companies []company.Company, openPostings map[i
 	t.Helper()
 	m := newCompanyListModel(nil, nil)
 	m.companiesLoaded(message.CompaniesLoadedMsg{Companies: companies, OpenPostings: openPostings})
-	m.resize(message.ContentSizeMsg{Width: width, Rows: rows})
+	m.resize(message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(),
+		message.Signal[message.ContentSize]{Value: message.ContentSize{Width: width, Rows: rows}}))
 	return m
 }
 

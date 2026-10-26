@@ -60,8 +60,8 @@ func (m *companyDeleteModel) companyDeleted(deleted message.CompanyDeletedMsg) t
 	return func() tea.Msg { return message.CloseCompanyDeleteMsg{} }
 }
 
-func (m *companyDeleteModel) resize(size message.ContentSizeMsg) tea.Cmd {
-	m.width = size.Width
+func (m *companyDeleteModel) resize(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {
+	m.width = e.Payload.Value.Width
 	return nil
 }
 
