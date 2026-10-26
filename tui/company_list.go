@@ -82,7 +82,10 @@ func (m *companyListModel) companiesLoaded(loaded message.CompaniesLoadedMsg) te
 	m.companies = loaded.Companies
 	m.openPostings = loaded.OpenPostings
 	m.keepCursorOn(previous)
-	return message.ReportLoad(loaded.Err)
+	if loaded.Err != nil {
+		return model.ReportErr(message.Source{Instance: m.instance}, loaded.Err)
+	}
+	return nil
 }
 
 func (m *companyListModel) companyCreated(created message.CompanyCreatedMsg) tea.Cmd {
@@ -94,13 +97,15 @@ func (m *companyListModel) companyCreated(created message.CompanyCreatedMsg) tea
 }
 
 func (m *companyListModel) companyDeleted(deleted message.CompanyDeletedMsg) tea.Cmd {
-	if deleted.Err == nil {
-		if i := indexOfCompany(m.companies, deleted.CompanyID); i != -1 {
-			m.companies = append(m.companies[:i], m.companies[i+1:]...)
-		}
-		m.clampCursor(len(m.companies))
+	src := message.Source{Instance: m.instance}
+	if deleted.Err != nil {
+		return model.ReportErr(src, deleted.Err)
 	}
-	return message.ReportErr(deleted.Err)
+	if i := indexOfCompany(m.companies, deleted.CompanyID); i != -1 {
+		m.companies = append(m.companies[:i], m.companies[i+1:]...)
+	}
+	m.clampCursor(len(m.companies))
+	return message.ReportStatus(src, "")
 }
 
 func (m *companyListModel) companyNameUpdated(updated message.CompanyNameUpdatedMsg) tea.Cmd {

@@ -1003,17 +1003,17 @@ func (a *App) handle(msg tea.Msg) (tea.Cmd, bool) {
 		if msg.String() == "ctrl+c" {
 			return tea.Quit, true
 		}
-	case message.BannerMsg:
-		a.setBanner(msg)
-		return nil, true
 	}
 	return nil, false
 }
 
-// Routes are the banner's, which hears every error whoever it's for.
+// Routes are the banner's, which hears every error whoever it's for. An
+// error stays up until the next error or notice, since a load that
+// succeeds sends neither and loads finish in any order.
 func (a *App) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(a.errorReported),
+		model.Always(a.notified),
 	}
 }
 
@@ -1030,13 +1030,9 @@ func (a *App) errorReported(e message.Event[message.Error]) tea.Cmd {
 	return nil
 }
 
-// setBanner shows what a screen reported.
-func (a *App) setBanner(msg message.BannerMsg) {
-	if msg.Load {
-		a.setLoadErr(msg.Err)
-		return
-	}
-	a.err, a.status = msg.Err, msg.Status
+func (a *App) notified(e message.Event[message.Notify]) tea.Cmd {
+	a.err, a.status = nil, e.Payload.Status
+	return nil
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {

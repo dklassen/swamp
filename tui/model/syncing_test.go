@@ -109,8 +109,11 @@ func TestSyncing_LastCompany_ReportsTheSummaryAndAnnouncesTheResults(t *testing.
 	var finished *message.SyncAllFinishedMsg
 	for _, msg := range msgs {
 		switch msg := msg.(type) {
-		case message.BannerMsg:
-			summary = msg.Status
+		case message.Event[message.Notify]:
+			if msg.Meta.Source.Instance != m.Instance() {
+				t.Errorf("status sent from instance %d, want Syncing's, %d", msg.Meta.Source.Instance, m.Instance())
+			}
+			summary = msg.Payload.Status
 		case message.SyncAllFinishedMsg:
 			finished = &msg
 		}

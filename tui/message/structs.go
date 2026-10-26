@@ -17,15 +17,6 @@ type CompaniesLoadedMsg struct {
 	Err          error
 }
 
-// BannerMsg is how a screen reports to the banner.
-type BannerMsg struct {
-	Err    error
-	Status string
-	// Load: a load's result. Loads finish in any order, so a successful
-	// one leaves another load's error in place.
-	Load bool
-}
-
 // Fail reports err as a fault in the program, such as a handler given a
 // message it wasn't registered for, which nothing the user does can fix.
 func Fail(src Source, err error) tea.Cmd {
@@ -34,9 +25,12 @@ func Fail(src Source, err error) tea.Cmd {
 	}
 }
 
-func ReportErr(err error) tea.Cmd   { return func() tea.Msg { return BannerMsg{Err: err} } }
-func ReportLoad(err error) tea.Cmd  { return func() tea.Msg { return BannerMsg{Err: err, Load: true} } }
-func ReportStatus(s string) tea.Cmd { return func() tea.Msg { return BannerMsg{Status: s} } }
+// ReportStatus puts s in the banner, or clears it if s is "".
+func ReportStatus(src Source, s string) tea.Cmd {
+	return func() tea.Msg {
+		return New(src, Subject{}, OpNone, time.Now().UTC(), Notify{Status: s})
+	}
+}
 
 // RefreshCompanyMsg asks for Company to be refreshed, by whatever knows
 // whether another sync (e.g. a sync-all run) is already under way.
