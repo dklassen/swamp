@@ -18,11 +18,10 @@ RFC 0013, step 4 (the company list's load). See `docs/rfcs/0013-tui-change-messa
 - `loadCompanies` sends `Event[Read[CompanyList]]`, or `Event[Error]` with no `Op` on failure.
 - The company list's `companiesRead` takes it and keeps the cursor as it does today.
 - Decide what the list does with a load's `Error`, given step 6's decision on open question 7.
-- Remove `CompaniesLoadedMsg` and take it off the allow-list.
+- Remove `CompaniesLoadedMsg`.
 
 ## Acceptance criteria
 
 - [ ] The list shows the companies and open counts it loaded (existing tests).
 - [ ] A failed load shows its error in the banner.
-- [ ] The allow-list is down to 10.
 - [ ] Verification checklist clean.

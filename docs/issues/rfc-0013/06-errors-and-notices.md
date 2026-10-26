@@ -18,7 +18,7 @@ RFC 0013, step 4 (the banner's messages). See `docs/rfcs/0013-tui-change-message
 - `errorOf(err) message.Error` outside `tui/message` (it can't import the errors it names), mapping with `errors.Is`: `store.ErrNotFound` to `not_found`, `sync.ErrSyncInProgress` to `sync_in_progress`, anything else to `other`.
 - `message.Fail(src, err)` sends `Event[Error]` with `Code` `other`. `ReportErr` sends `Event[Error]`. `ReportStatus` sends `Event[Notify]`.
 - `App` routes both events to the banner instead of switching on them in `handle`. The banner shows the line for a code it has text for. A code it has no text for (`other`, a fault) it logs to `swamp.log` and shows "internal error, see swamp.log", as `ErrMsg` does today.
-- Remove `ErrMsg` and `BannerMsg`, and take them off the allow-list.
+- Remove `ErrMsg` and `BannerMsg`.
 
 ## Decide before starting
 
@@ -30,6 +30,5 @@ RFC 0013, step 4 (the banner's messages). See `docs/rfcs/0013-tui-change-message
 - [ ] A failed save the user can act on still shows its message in the banner (existing banner tests).
 - [ ] A fault from a mistyped route is logged and shows "internal error, see swamp.log" (`TestApp_ErrMsg_ShowsTheInternalErrorBanner`, renamed).
 - [ ] `errorOf` table test: each mapped error, a wrapped one, and an unmapped one.
-- [ ] The allow-list is down to 14.
 - [ ] Open question 7's decision recorded in RFC 0013.
 - [ ] Verification checklist clean.

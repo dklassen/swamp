@@ -20,7 +20,7 @@ The company list has a route for each of `CompanyCreatedMsg`, `CompanyDeletedMsg
 - The company list: one `companyChanged` route, switching on `Op`, as in the Template.
 - The delete confirmation: `companyDeleted` with `About(TypeCompany, id), OnOp(OpDeleted)`, and `deleteFailed` with `From(instance)`. Neither handler reads the payload.
 - The form and edit (step 7): their result route filters `From(instance)`, and so does their `Error` route.
-- Remove the three structs and take them off the allow-list.
+- Remove the three structs.
 
 ## Acceptance criteria
 
@@ -28,6 +28,5 @@ The company list has a route for each of `CompanyCreatedMsg`, `CompanyDeletedMsg
 - [ ] The delete confirmation closes when its company is deleted, whoever deleted it, and when its own delete fails. A delete of another company doesn't close it (test).
 - [ ] A failed rename shows its error and leaves the edit open.
 - [ ] Every event the commands send has a nonzero `ID`, `At` in UTC, and `Source.Instance` of the model that asked.
-- [ ] The allow-list is down to 11.
 - [ ] Manual check against real data: add, rename, delete, and a failed rename.
 - [ ] Verification checklist clean.

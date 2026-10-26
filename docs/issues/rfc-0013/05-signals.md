@@ -17,11 +17,10 @@ RFC 0013, step 4 (the size and focus messages). See `docs/rfcs/0013-tui-change-m
 - `ContentSize` and `FocusChanged{Focused ScreenInstance}` bodies with `TypeContentSize` and `TypeFocusChanged`.
 - `App` dispatches `Event[Signal[ContentSize]]` where it sends `ContentSizeMsg` today, and `Event[Signal[FocusChanged]]` with the focused model's instance from step 4 (`tui/app.go:1048`, `:1052`). It still compares sizes to decide whether to resend: compare the body, not the event, since each event has its own `ID`.
 - The company list's and delete confirmation's `resize` and `focusChanged` take the events. `focusChanged` compares the instance with its own.
-- Remove `ContentSizeMsg` and `FocusChangedMsg`, and take them off step 1's allow-list.
+- Remove `ContentSizeMsg` and `FocusChangedMsg`.
 
 ## Acceptance criteria
 
 - [ ] `TestApp_Screens_FitTheTerminalUnderTheBanner` and the focus tests pass unchanged in what they assert.
 - [ ] The size is resent only when the width or rows change, not on every message (test: two messages with the banner unchanged dispatch one size).
-- [ ] The rule's allow-list is down to 16.
 - [ ] Verification checklist clean.

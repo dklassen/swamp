@@ -17,7 +17,7 @@ RFC 0013, step 4 (navigation). See `docs/rfcs/0013-tui-change-messages.md`.
 
 - `Event[Nav]`: a `NavOp` (push, pop, replace) and the `Screen` kind to open, with the company as `Subject` and the asking model as `Source.Instance`.
 - `App` acts on `Event[Nav]` in one place: it builds the screen's model for that kind, numbers it, registers it, and drops a request whose `Source.Instance` isn't the model on top. That last check replaces the `currentScreen == screenCompanyDelete` guard at `:1109`.
-- Remove the five structs, and the cancel request, and take them off the allow-list.
+- Remove the five structs and the cancel request.
 
 ## Decide before starting
 
@@ -33,7 +33,6 @@ RFC 0013, step 4 (navigation). See `docs/rfcs/0013-tui-change-messages.md`.
 - [ ] Every company screen opens and closes as before from the user's side (existing App tests).
 - [ ] Two quick `n`s on the delete confirmation close it once (`TestApp_CompanyDeleteConfirmation_TwoQuickNs_CloseItOnce`).
 - [ ] A `Nav` from a model no longer on top is dropped (test).
-- [ ] The allow-list is down to 0, apart from the cancel request if step 7 added it to the list.
 - [ ] The decision recorded in RFC 0013 and RFC 0012.
 - [ ] Manual check against real data: open and leave each company screen.
 - [ ] Verification checklist clean.

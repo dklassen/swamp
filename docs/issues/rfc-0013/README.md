@@ -6,7 +6,7 @@ Each step is one PR and keeps the verification checklist clean. Do them in order
 
 | Step | Issue | RFC step | Depends on |
 | --- | --- | --- | --- |
-| 1 | [The envelope, the primitives and the rule's test](01-envelope-and-primitives.md) | 1 | none |
+| 1 | [The envelope and the primitives](01-envelope-and-primitives.md) | 1 | none |
 | 2 | [Filters on routes](02-route-filters.md) | 2 | 1 |
 | 3 | [`change.Of` from the company service](03-change-of-company-service.md) | 3 | none |
 | 4 | [Instance numbering](04-instance-numbering.md) | 4 | 1 |
