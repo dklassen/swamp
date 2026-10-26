@@ -15,16 +15,6 @@ type CompaniesLoadedMsg struct {
 	Err          error
 }
 
-// ContentSizeMsg is the area a screen draws in: the terminal less the
-// header and banner, which grow and shrink without the terminal resizing.
-type ContentSizeMsg struct {
-	Width int
-	Rows  int
-}
-
-// FocusChangedMsg names the component now in focus, nil when none is.
-type FocusChangedMsg struct{ Focused tea.Model }
-
 // BannerMsg is how a screen reports to the banner.
 type BannerMsg struct {
 	Err    error

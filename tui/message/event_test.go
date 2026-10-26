@@ -196,6 +196,7 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "nav", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Nav{Op: message.NavReplace, Screen: message.ScreenCompanyEdit}))},
 		{name: "notify", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Notify{Status: "saved"}))},
 		{name: "signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.ContentSize]{Value: r}))},
+		{name: "focus signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: 7}}))},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

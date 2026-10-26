@@ -23,3 +23,10 @@ type ContentSize struct {
 }
 
 func (ContentSize) Type() Type { return TypeContentSize }
+
+// FocusChanged names the model now in focus, 0 when none is.
+type FocusChanged struct {
+	Focused ScreenInstance `json:"focused"`
+}
+
+func (FocusChanged) Type() Type { return TypeFocusChanged }

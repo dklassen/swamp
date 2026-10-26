@@ -46,8 +46,8 @@ func (m *companyDeleteModel) Routes() []*model.Route {
 	}
 }
 
-func (m *companyDeleteModel) focusChanged(msg message.FocusChangedMsg) tea.Cmd {
-	m.focused = msg.Focused == m
+func (m *companyDeleteModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
+	m.focused = e.Payload.Value.Focused == m.instance
 	return nil
 }
 
@@ -60,8 +60,8 @@ func (m *companyDeleteModel) companyDeleted(deleted message.CompanyDeletedMsg) t
 	return func() tea.Msg { return message.CloseCompanyDeleteMsg{} }
 }
 
-func (m *companyDeleteModel) resize(size message.ContentSizeMsg) tea.Cmd {
-	m.width = size.Width
+func (m *companyDeleteModel) resize(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {
+	m.width = e.Payload.Value.Width
 	return nil
 }
 

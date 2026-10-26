@@ -22,7 +22,8 @@ func companyListOf(t *testing.T, companies []company.Company, openPostings map[i
 	t.Helper()
 	m := newCompanyListModel(nil, nil)
 	m.companiesLoaded(message.CompaniesLoadedMsg{Companies: companies, OpenPostings: openPostings})
-	m.resize(message.ContentSizeMsg{Width: width, Rows: rows})
+	m.resize(message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(),
+		message.Signal[message.ContentSize]{Value: message.ContentSize{Width: width, Rows: rows}}))
 	return m
 }
 
@@ -35,6 +36,12 @@ func press(t *testing.T, m *companyListModel, key tea.KeyPressMsg) tea.Msg {
 		return nil
 	}
 	return cmd()
+}
+
+// focusOn is the signal App sends when instance comes into focus.
+func focusOn(instance message.ScreenInstance) message.Event[message.Signal[message.FocusChanged]] {
+	return message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(),
+		message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: instance}})
 }
 
 func companyListView(m *companyListModel) string {
@@ -771,18 +778,18 @@ func TestCompanyListModel_View_InfoBoxIsAsWideAsTheTable(t *testing.T) {
 	}
 }
 
-// The list takes keys only while the last FocusChangedMsg named it.
+// The list takes keys only while the last focus signal named it.
 func TestCompanyListModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		name       string
-		focused    func(m *companyListModel) tea.Model
+		focused    func(m *companyListModel) message.ScreenInstance
 		wantCursor int
 	}{
-		{name: "the list in focus", focused: func(m *companyListModel) tea.Model { return m }, wantCursor: 1},
-		{name: "another component in focus", focused: func(*companyListModel) tea.Model { return newCompanyListModel(nil, nil) }, wantCursor: 0},
-		{name: "nothing in focus", focused: func(*companyListModel) tea.Model { return nil }, wantCursor: 0},
+		{name: "the list in focus", focused: func(m *companyListModel) message.ScreenInstance { return m.Instance() }, wantCursor: 1},
+		{name: "another component in focus", focused: func(*companyListModel) message.ScreenInstance { return newCompanyListModel(nil, nil).Instance() }, wantCursor: 0},
+		{name: "nothing in focus", focused: func(*companyListModel) message.ScreenInstance { return 0 }, wantCursor: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -793,7 +800,7 @@ func TestCompanyListModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 				t.Fatalf("Register: %v", err)
 			}
 
-			r.Dispatch(message.FocusChangedMsg{Focused: tt.focused(m)})
+			r.Dispatch(focusOn(tt.focused(m)))
 			r.Dispatch(tea.KeyPressMsg{Code: tea.KeyDown})
 
 			if m.cursor != tt.wantCursor {
