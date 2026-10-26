@@ -76,8 +76,8 @@ The rest go, since a model does the work itself: the write requests (`confirmApp
 | `Read[T]`, `Run[T]`, `Ran[T]`, `Signal[T]` | One field of the content type `T`, which is one struct per query, job or signal (`CompanyList`, `SyncCompany`, `SyncReport`, `ContentSize`). The kind says how to treat it; `T` says what it holds. |
 | What a `Ran[T]` reports | A summary a responding model can act on: counts of what succeeded and failed, and values such as `SyncReport.FetchedAt`, which the company list shows. Never the rows the job wrote: a sync can write hundreds, and another process's sync of the same company reaches the TUI only through the change log, so a model that shows those rows filters the `Ran` with `About` and reloads. Messages for the user go to the banner as a `Notify`. |
 | `Error` | `Code` and `Text`. `Meta` says who asked, which entity and which op, and its `Type` is `error`. It's one Go type for every failure, since a route picks out the ones it cares about with `From` or `About`. `At` is when the command saw the error. |
-| How an error is carried | `Code` is a string from a closed set in `tui/message` (`not_found`, `sync_in_progress`, …, `other`), and `Text` is `err.Error()`. The command maps a Go error to a code with `errors.Is`, outside `tui/message`, which can't import the errors it names. A code keeps what `Syncing.companyRefreshed` does today, `errors.Is(refreshed.Err, sync.ErrSyncInProgress)`, which text alone would lose. |
-| How an error reaches the user | There is one error event, `Error`, and the command that saw the error sends it and decides nothing else. The banner has a route for every `Error` and shows a line when its `Code` is one it has text for; the rest aren't for the user, and it logs them. A requester that has closed has been `Deregister`ed and gets nothing, but the banner still hears the failure. |
+| How an error is carried | `Code` is a string from a closed set in `tui/message` (`not_found`, `sync_in_progress`, …, `other`, and `fault` for a fault in the program, which only `Fail` sends), and `Text` is `err.Error()`. The command maps a Go error to a code with `errors.Is`, outside `tui/message`, which can't import the errors it names. A code keeps what `Syncing.companyRefreshed` does today, `errors.Is(refreshed.Err, sync.ErrSyncInProgress)`, which text alone would lose. |
+| How an error reaches the user | There is one error event, `Error`, and the command that saw the error sends it and decides nothing else. The banner has a route for every `Error` and shows its `Text`, except for `fault`, which means nothing to the user: it logs that and shows "internal error, see swamp.log". It keeps an error up until its next `Error` or `Notify` (open question 7). A requester that has closed has been `Deregister`ed and gets nothing, but the banner still hears the failure. |
 | Where `Before`, `After` and `At` come from | For an update or delete, the service: it reads the row, writes, and reads again in one `store.InTx` transaction, and returns `change.Of[T]` (domain types, `internal/domain/change`). A `Before` taken from what a model last showed would be wrong whenever another process wrote in between. With no active row to read, missing or already deleted, it's `store.ErrNotFound` and a nil `Of`, so a delete is never a `Changed` twice. A create needs no service change. |
 | Which writes are `Changed[T]` | Those that a model other than the one asking may show. A write only the asking model hears is a `Ran` (open question 1). |
 
@@ -95,7 +95,7 @@ Each struct becomes an event when the model that sends or handles it migrates (R
 | `ToggleSyncAllMsg` | `Event[Run[SyncAll]]`: the company IDs, or stop |
 | `CompanyRefreshedMsg`, `SyncAllStepMsg`, `SyncAllFinishedMsg` | `Event[Ran[SyncReport]]` for each company synced, by a refresh or a sync-all step, with the company as `Subject` and `RunID` for `Syncing` to match a step to its run; `Event[Ran[SyncAllReport]]`, the run's totals, when it ends. A refused or failed sync is `Event[Error]`, `Code` `sync_in_progress`, with the company as `Subject` |
 | `BannerMsg` | `Event[Notify]`: `Status`; its errors are `Event[Error]` |
-| `ErrMsg` | `Event[Error]`, `Code` `other`, sent by `Fail` |
+| `ErrMsg` | `Event[Error]`, `Code` `fault`, sent by `Fail` |
 | `FocusChangedMsg`, `ContentSizeMsg` | `Event[Signal[FocusChanged]]` (`Focused ScreenInstance`), `Event[Signal[ContentSize]]` |
 | `OpenCompanyFormMsg`, `OpenCompanyEditMsg`, `OpenCompanyDeleteMsg`, `OpenCompanyPostingsMsg`, `CloseCompanyDeleteMsg`, `CancelCompanyEditMsg` | `Event[Nav]` |
 
@@ -274,6 +274,7 @@ const (
  ErrNotFound // "not_found"
  ErrSyncInProgress                 // "sync_in_progress"
  ErrOther                          // "other"
+ ErrFault                          // "fault"
 )
 
 // Error is a write, load or run that didn't happen, or a fault. Meta says
@@ -414,7 +415,7 @@ When step 4 lands, RFC 0012 changes in three places: its naming rule (messages a
 4. **Should `Subject.ID` be `int64` for every entity?** A composite key would need it to be a string.
 5. **How does a payload's schema change?** `Kind` and `Type` name a payload, not a version of it. By default a payload only gains fields that are optional, and a breaking change is a new `Type`.
 6. **Where do the event types live once something other than the TUI produces them?** A producer in `sync` or `mcpserver` shouldn't import `tui/message`. Since they import only the standard library, moving them to their own package is a rename. By default that waits for the producer.
-7. **How does the banner keep a load's error?** `BannerMsg.Load` lets a failed load's error stay until a later load succeeds, since loads finish in any order. With errors as `Error`, the banner would need to hear the loads that succeed. By default it clears the error on its next `Error` or `Notify`.
+7. **How does the banner keep a load's error?** `BannerMsg.Load` lets a failed load's error stay until a later load succeeds, since loads finish in any order. With errors as `Error`, the banner would need to hear the loads that succeed. Decided: it keeps the error until its next `Error` or `Notify`. A load that succeeds sends neither, so another load's failure stays up as before. `App`'s old paths keep `setLoadErr` until they migrate.
 
 ## Out of scope
 
