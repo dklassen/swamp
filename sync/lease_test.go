@@ -241,10 +241,11 @@ func TestSyncer_ReleaseHeldLeases_FreesInFlightSyncsLeases(t *testing.T) {
 	gated := &gatedFetcher{started: make(chan struct{}, 1), release: make(chan struct{})}
 	exiting := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: gated}, DefaultConfig())
 
-	inFlight := make(chan error, 1)
+	inFlight := make(chan struct{})
 	go func() {
-		_, err := exiting.SyncCompany(ctx, acme.ID)
-		inFlight <- err
+		defer close(inFlight)
+		// The abandoned sync's outcome isn't what this test is about; only that it ends.
+		_, _ = exiting.SyncCompany(ctx, acme.ID)
 	}()
 	<-gated.started
 	if err := exiting.ReleaseHeldLeases(ctx); err != nil {
