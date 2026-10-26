@@ -214,7 +214,6 @@ func New(
 		seen:                  map[screen]int64{},
 		syncer:                syncer,
 		currentScreen:         screenActiveApplications,
-		companyList:           newCompanyListModel(companies, postings),
 		allPostings:           newAllPostingsModel(postings),
 		companyForm:           newCompanyFormModel(syncer),
 		postingList:           newPostingListModel(postings),
@@ -223,9 +222,10 @@ func New(
 		documents:             docs,
 		exportDir:             defaultExportDir,
 		openURL:               openInBrowser,
-		syncing:               model.NewSyncing(syncer),
 		router:                model.NewMsgRouter(),
 	}
+	a.companyList = newCompanyListModel(companies, postings, a.newScreenInstance())
+	a.syncing = model.NewSyncing(syncer, a.newScreenInstance())
 
 	modules := []model.Routable{
 		a.companyList,
@@ -1098,7 +1098,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.currentScreen = screenCompanyEdit
 		a.companyEdit = newCompanyEditModel(a.companyService, msg.Company.ID, msg.Company.Name)
 	case message.OpenCompanyDeleteMsg:
-		dialog := newCompanyDeleteModel(a.companyService, msg.Company, msg.OpenPostings, a.sized.Width)
+		dialog := newCompanyDeleteModel(a.companyService, msg.Company, msg.OpenPostings, a.sized.Width, a.newScreenInstance())
 		if err := a.router.Register(dialog); err != nil {
 			return a, message.Fail(err)
 		}

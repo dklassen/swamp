@@ -38,14 +38,16 @@ type companyListModel struct {
 	// openPostings is each company's open, unarchived posting count.
 	openPostings map[int64]int
 
-	width  int
-	height int
+	width    int
+	height   int
+	instance message.ScreenInstance
 }
 
-func newCompanyListModel(companies *service.CompanyService, postings *service.PostingService) *companyListModel {
+func newCompanyListModel(companies *service.CompanyService, postings *service.PostingService, instance message.ScreenInstance) *companyListModel {
 	return &companyListModel{
 		companyService: companies,
 		postingService: postings,
+		instance:       instance,
 	}
 }
 

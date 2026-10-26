@@ -30,14 +30,20 @@ type Syncing struct {
 	refreshing     int
 	refreshingName string
 	spinner        spinner.Model
+
+	instance message.ScreenInstance
 }
 
-func NewSyncing(syncer *sync.Syncer) *Syncing {
+func NewSyncing(syncer *sync.Syncer, instance message.ScreenInstance) *Syncing {
 	return &Syncing{
-		syncer:  syncer,
-		spinner: spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(CursorStyle)),
+		syncer:   syncer,
+		spinner:  spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(CursorStyle)),
+		instance: instance,
 	}
 }
+
+// Instance is the number that names m as an event's Source.
+func (m *Syncing) Instance() message.ScreenInstance { return m.instance }
 
 func (m *Syncing) Routes() []*Route {
 	return []*Route{

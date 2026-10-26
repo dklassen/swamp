@@ -346,6 +346,56 @@ func TestApp_PressD_AsksBeforeDeletingACompany(t *testing.T) {
 	}
 }
 
+// A result for a confirmation the user closed must not reach the one they
+// opened next, so each opening is numbered anew.
+func TestApp_CompanyDeleteConfirmation_ReopeningGetsANewInstance(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
+	app = sendKeyAndApply(t, app, runeKey('d'))
+	first := app.companyDelete.instance
+	app = sendKeyAndApply(t, app, runeKey('n'))
+
+	app = sendKeyAndApply(t, app, runeKey('d'))
+
+	if app.currentScreen != screenCompanyDelete {
+		t.Fatalf("screen after the second d = %v, want the delete confirmation", app.currentScreen)
+	}
+	if second := app.companyDelete.instance; second == first || first == 0 || second == 0 {
+		t.Errorf("instances of the two openings = %d and %d, want two different nonzero numbers", first, second)
+	}
+}
+
+// Every model App registers has its own number, so an event's Source
+// names exactly one of them.
+func TestApp_RegisteredModels_HaveDistinctInstances(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
+
+	app = sendKeyAndApply(t, app, runeKey('d'))
+
+	instances := map[string]message.ScreenInstance{
+		"company list":        app.companyList.instance,
+		"syncing":             app.syncing.Instance(),
+		"delete confirmation": app.companyDelete.instance,
+	}
+	seen := map[message.ScreenInstance]string{}
+	for name, instance := range instances {
+		if instance == 0 {
+			t.Errorf("%s's instance = 0, want a number: 0 is none", name)
+		}
+		if other, ok := seen[instance]; ok {
+			t.Errorf("%s and %s share instance %d", name, other, instance)
+		}
+		seen[instance] = name
+	}
+}
+
 // TestApp_CompanyDeleteConfirmation_AnythingButYKeepsIt: keeping is the
 // default, so enter can't delete by habit.
 func TestApp_CompanyDeleteConfirmation_AnythingButYKeepsIt(t *testing.T) {

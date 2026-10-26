@@ -20,7 +20,7 @@ import (
 // width by rows.
 func companyListOf(t *testing.T, companies []company.Company, openPostings map[int64]int, width, rows int) *companyListModel {
 	t.Helper()
-	m := newCompanyListModel(nil, nil)
+	m := newCompanyListModel(nil, nil, 1)
 	m.companiesLoaded(message.CompaniesLoadedMsg{Companies: companies, OpenPostings: openPostings})
 	m.resize(message.ContentSizeMsg{Width: width, Rows: rows})
 	return m
@@ -234,7 +234,7 @@ func assertHandlersFailOnWrongMessage(t *testing.T, c model.Routable) {
 
 func TestCompanyListModel_Handlers_FailOnTheWrongMessage(t *testing.T) {
 	t.Parallel()
-	assertHandlersFailOnWrongMessage(t, newCompanyListModel(nil, nil))
+	assertHandlersFailOnWrongMessage(t, newCompanyListModel(nil, nil, 1))
 }
 
 func TestCompanyListModel_ClampCursor(t *testing.T) {
@@ -781,7 +781,7 @@ func TestCompanyListModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 		wantCursor int
 	}{
 		{name: "the list in focus", focused: func(m *companyListModel) tea.Model { return m }, wantCursor: 1},
-		{name: "another component in focus", focused: func(*companyListModel) tea.Model { return newCompanyListModel(nil, nil) }, wantCursor: 0},
+		{name: "another component in focus", focused: func(*companyListModel) tea.Model { return newCompanyListModel(nil, nil, 1) }, wantCursor: 0},
 		{name: "nothing in focus", focused: func(*companyListModel) tea.Model { return nil }, wantCursor: 0},
 	}
 	for _, tt := range tests {
