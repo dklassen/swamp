@@ -11,13 +11,13 @@ RFC 0013, step 4 (navigation). See `docs/rfcs/0013-tui-change-messages.md`.
 
 ## Problem
 
-`OpenCompanyFormMsg`, `OpenCompanyEditMsg`, `OpenCompanyDeleteMsg`, `OpenCompanyPostingsMsg` and `CloseCompanyDeleteMsg`, plus the edit's cancel from step 7, are each a type of their own. `App.update` switches on all of them (`tui/app.go:1096` to `:1114`). Three carry `company.Company`, and `OpenCompanyDeleteMsg` also carries `OpenPostings`.
+`OpenCompanyFormMsg`, `OpenCompanyEditMsg`, `OpenCompanyDeleteMsg`, `OpenCompanyPostingsMsg` and `CloseCompanyDeleteMsg`, plus `CloseCompanyFormMsg` and `CloseCompanyEditMsg` from step 7, are each a type of their own. `App.update` switches on all of them (`tui/app.go:1096` to `:1114`). Three carry `company.Company`, and `OpenCompanyDeleteMsg` also carries `OpenPostings`.
 
 ## Change
 
 - `Event[Nav]`: a `NavOp` (push, pop, replace) and the `Screen` kind to open, with the company as `Subject` and the asking model as `Source.Instance`.
 - `App` acts on `Event[Nav]` in one place: it builds the screen's model for that kind, numbers it, registers it, and drops a request whose `Source.Instance` isn't the model on top. That last check replaces the `currentScreen == screenCompanyDelete` guard at `:1109`.
-- Remove the five structs and the cancel request.
+- Remove the seven structs.
 
 ## Decide before starting
 
