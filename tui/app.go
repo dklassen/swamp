@@ -550,27 +550,6 @@ func indexOfCompany(companies []message.Company, id int64) int {
 	return -1
 }
 
-// loadCompanies loads the active companies along with each one's open posting
-// count for the company list's Open column.
-func loadCompanies(companies *service.CompanyService, postings *service.PostingService, src message.Source) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
-		active, err := companies.ListActive(ctx)
-		if err != nil {
-			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
-		}
-		openPostings, err := postings.CountOpenByCompany(ctx)
-		if err != nil {
-			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
-		}
-		list := message.CompanyList{Companies: make([]message.Company, len(active)), OpenPostings: openPostings}
-		for i, c := range active {
-			list.Companies[i] = companySnapshot(c)
-		}
-		return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Read[message.CompanyList]{Value: list})
-	}
-}
-
 // sortCompaniesByName keeps an in-memory companies slice in the same
 // order ListActiveCompanies' `ORDER BY name` would return -- called after
 // any in-place mutation (create, rename) that could change where an
@@ -1163,7 +1142,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case message.SyncAllFinishedMsg:
 		// The company list once (open counts, last fetched), and the
 		// posting list if its company was synced.
-		cmds := []tea.Cmd{loadCompanies(a.companyService, a.postingService, message.Source{Instance: a.instance})}
+		cmds := []tea.Cmd{a.companyList.load()}
 		for _, r := range msg.Results {
 			if r.Err == nil && r.CompanyID == a.selectedCompany.ID {
 				cmds = append(cmds, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived))
@@ -1175,7 +1154,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.Err == nil {
 			r := msg.Result
 			// The company list's Open and Last fetched columns just changed.
-			reload := loadCompanies(a.companyService, a.postingService, message.Source{Instance: a.instance})
+			reload := a.companyList.load()
 			if r.CompanyID == a.selectedCompany.ID {
 				// The company whose postings are currently being viewed
 				// just finished a re-sync (r on its posting list): reload
@@ -1553,7 +1532,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case screenActiveApplications:
 			a.currentScreen = screenCompanyList
 			// Archiving or unarchiving may have changed open counts.
-			return a, loadCompanies(a.companyService, a.postingService, message.Source{Instance: a.instance})
+			return a, a.companyList.load()
 		case screenCompanyList:
 			a.currentScreen = screenAllPostings
 			return a, a.allPostings.load(a.allPostings.pageSize(a.screenRows()))
@@ -1652,7 +1631,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case backToCompanyListMsg:
 			a.currentScreen = screenCompanyList
 			// Archiving or unarchiving may have changed open counts.
-			return a, loadCompanies(a.companyService, a.postingService, message.Source{Instance: a.instance})
+			return a, a.companyList.load()
 		case enterPostingDetailMsg:
 			a.postingDetailFrom = screenPostingList
 			p, app, hasApp := a.lookupPosting(v.postingID)

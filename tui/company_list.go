@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
 	"time"
@@ -71,7 +72,29 @@ func (m *companyListModel) focusChanged(e message.Event[message.Signal[message.F
 }
 
 func (m *companyListModel) Init() tea.Cmd {
-	return loadCompanies(m.companyService, m.postingService, message.Source{Instance: m.instance})
+	return m.load()
+}
+
+// load reads the active companies along with each one's open posting count
+// for the Open column.
+func (m *companyListModel) load() tea.Cmd {
+	companies, postings, src := m.companyService, m.postingService, message.Source{Instance: m.instance}
+	return func() tea.Msg {
+		ctx := context.Background()
+		active, err := companies.ListActive(ctx)
+		if err != nil {
+			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
+		}
+		openPostings, err := postings.CountOpenByCompany(ctx)
+		if err != nil {
+			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
+		}
+		list := message.CompanyList{Companies: make([]message.Company, len(active)), OpenPostings: openPostings}
+		for i, c := range active {
+			list.Companies[i] = companySnapshot(c)
+		}
+		return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Read[message.CompanyList]{Value: list})
+	}
 }
 
 func (m *companyListModel) companiesRead(e message.Event[message.Read[message.CompanyList]]) tea.Cmd {

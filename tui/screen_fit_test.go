@@ -129,7 +129,7 @@ func sizedScreens() []sizedScreen {
 			if err := app.companyService.SetFilters(ctx, acme.ID, filters); err != nil {
 				t.Fatalf("SetFilters: %v", err)
 			}
-			app = applyCmd(t, app, loadCompanies(app.companyService, app.postingService, message.Source{Instance: app.Instance()}))
+			app = applyCmd(t, app, app.companyList.load())
 			app = openPostingList(t, app)
 			if app.selectedCompany.Description == "" || len(app.activeFilterDepartments) == 0 {
 				t.Fatalf("posting list isn't showing the description and filters (description %q, %d department filters)", app.selectedCompany.Description, len(app.activeFilterDepartments))

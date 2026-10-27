@@ -3911,6 +3911,37 @@ func TestApp_PressR_UpdatesCompanyListOpenCountAndLastFetched(t *testing.T) {
 	}
 }
 
+func TestApp_CompanyReloadsComeFromTheCompanyList(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		msg  tea.Msg
+	}{
+		{name: "sync-all finished", msg: message.SyncAllFinishedMsg{}},
+		{name: "company refreshed", msg: message.CompanyRefreshedMsg{Result: sync.Result{CompanyID: 999999, Name: "SomeOtherCompany"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app := newTestApp(t, testutil.NewTestApp(t), nil)
+
+			_, cmd := sendKey(app, tt.msg)
+
+			var sources []message.Source
+			for _, msg := range runCmd(t, cmd) {
+				if read, ok := msg.(message.Event[message.Read[message.CompanyList]]); ok {
+					sources = append(sources, read.Meta.Source)
+				}
+			}
+			want := []message.Source{{Instance: app.companyList.Instance()}}
+			if diff := cmp.Diff(want, sources); diff != "" {
+				t.Errorf("sources of the company reads (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func isCompaniesRead(msg tea.Msg) bool {
 	_, ok := msg.(message.Event[message.Read[message.CompanyList]])
 	return ok

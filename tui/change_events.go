@@ -15,7 +15,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
-	"github.com/dklassen/swamp/tui/message"
 )
 
 // changePollInterval is how often the TUI reads the change log. Nothing is
@@ -168,7 +167,7 @@ func (a *App) reloadFor(events []change.Event) tea.Cmd {
 	case screenCompanyList:
 		// postings too: the list shows each company's open postings.
 		if touches(events, "companies", "postings") {
-			return loadCompanies(a.companyService, a.postingService, message.Source{Instance: a.instance})
+			return a.companyList.load()
 		}
 	}
 	return nil
