@@ -4,6 +4,7 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/dklassen/swamp/internal/testutil"
@@ -82,15 +83,22 @@ func TestCompanyEditModel_Enter_TrimsSavedName(t *testing.T) {
 		t.Fatal("cmd = nil, want a command that saves the company name")
 	}
 	msg := cmd()
-	updated, ok := msg.(message.CompanyNameUpdatedMsg)
+	updated, ok := msg.(message.Event[message.Changed[message.Company]])
 	if !ok {
-		t.Fatalf("msg = %T, want message.CompanyNameUpdatedMsg", msg)
+		t.Fatalf("msg = %T, want message.Event[message.Changed[message.Company]]", msg)
 	}
-	if updated.Err != nil {
-		t.Fatalf("updateCompanyName error = %v", updated.Err)
+	assertEventFrom(t, updated.Meta, message.Source{Instance: m.Instance()})
+	if updated.Meta.Op != message.OpUpdated || updated.Meta.Subject != (message.Subject{Type: message.TypeCompany, ID: created.ID}) {
+		t.Errorf("Meta = %+v, want %v of company %d", updated.Meta, message.OpUpdated, created.ID)
 	}
-	if updated.Company.Name != "Acme Corp" {
-		t.Fatalf("company.Name = %q, want %q (trimmed)", updated.Company.Name, "Acme Corp")
+	if got, want := updated.Payload.Before, companySnapshot(*created); got != want {
+		t.Errorf("Before = %+v, want %+v", got, want)
+	}
+	if got := updated.Payload.After.Name; got != "Acme Corp" {
+		t.Errorf("After.Name = %q, want %q (trimmed)", got, "Acme Corp")
+	}
+	if !updated.Meta.At.Equal(updated.Payload.After.UpdatedAt) {
+		t.Errorf("Meta.At = %v, want After.UpdatedAt %v", updated.Meta.At, updated.Payload.After.UpdatedAt)
 	}
 }
 
@@ -146,40 +154,45 @@ func TestCompanyEditModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 
 // A result from an earlier opening of the edit leaves this one as it is:
 // still saving, so esc stays blocked, and open.
-func TestCompanyEditModel_CompanyNameUpdated_ActsOnItsOwnResultOnly(t *testing.T) {
+func TestCompanyEditModel_ActsOnItsOwnResultOnly(t *testing.T) {
 	t.Parallel()
 
+	before := message.Company{ID: 7, Name: "Acme"}
+	after := message.Company{ID: 7, Name: "Acme Corp"}
+	renamed := func(instance message.ScreenInstance) tea.Msg {
+		return message.Updated(message.Source{Instance: instance}, 7, time.Now().UTC(), before, after)
+	}
 	tests := []struct {
 		name       string
-		updated    func(m *companyEditModel) message.CompanyNameUpdatedMsg
+		result     func(m *companyEditModel) tea.Msg
 		wantClose  bool
 		wantSaving bool
 	}{
-		{name: "its own, saved", updated: func(m *companyEditModel) message.CompanyNameUpdatedMsg {
-			return message.CompanyNameUpdatedMsg{From: m.Instance()}
-		}, wantClose: true},
-		{name: "its own, failed", updated: func(m *companyEditModel) message.CompanyNameUpdatedMsg {
-			return message.CompanyNameUpdatedMsg{From: m.Instance(), Err: errors.New("disk full")}
+		{name: "its own, saved", result: func(m *companyEditModel) tea.Msg { return renamed(m.Instance()) }, wantClose: true},
+		{name: "its own, failed", result: func(m *companyEditModel) tea.Msg {
+			return message.New(message.Source{Instance: m.Instance()}, message.Subject{Type: message.TypeCompany, ID: 7},
+				message.OpUpdated, time.Now().UTC(), model.ErrorOf(errors.New("disk full")))
 		}},
-		{name: "an earlier edit's", updated: func(*companyEditModel) message.CompanyNameUpdatedMsg {
-			return message.CompanyNameUpdatedMsg{From: newCompanyEditModel(nil, 7, "Acme").Instance()}
+		{name: "an earlier edit's", result: func(*companyEditModel) tea.Msg {
+			return renamed(newCompanyEditModel(nil, 7, "Acme").Instance())
 		}, wantSaving: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m := newCompanyEditModel(nil, 7, "Acme")
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
 			if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
 				t.Fatal("enter: cmd = nil, want the save")
 			}
 
-			var got tea.Msg
-			if cmd := m.companyNameUpdated(tt.updated(m)); cmd != nil {
-				got = cmd()
-			}
+			closed := slices.Contains(runCmd(t, r.Dispatch(tt.result(m))), tea.Msg(message.CloseCompanyEditMsg{}))
 
-			if closed := got == (message.CloseCompanyEditMsg{}); closed != tt.wantClose {
-				t.Errorf("companyNameUpdated sent %#v, want close = %v", got, tt.wantClose)
+			if closed != tt.wantClose {
+				t.Errorf("asked to close = %v, want %v", closed, tt.wantClose)
 			}
 			if blocked := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEsc}) == nil; blocked != tt.wantSaving {
 				t.Errorf("esc blocked = %v, want %v", blocked, tt.wantSaving)

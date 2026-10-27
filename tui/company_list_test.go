@@ -9,6 +9,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/jobboard"
@@ -46,6 +47,41 @@ func focusOn(instance message.ScreenInstance) message.Event[message.Signal[messa
 
 func companyListView(m *companyListModel) string {
 	return m.View().Content
+}
+
+func TestCompanyListModel_CompanyChanged_KeepsTheRowsInStep(t *testing.T) {
+	t.Parallel()
+
+	acme := company.Company{ID: 1, Name: "Acme"}
+	globex := company.Company{ID: 2, Name: "Globex"}
+	src := message.Source{Instance: message.NewScreenInstance()}
+	at := time.Now().UTC()
+	tests := []struct {
+		name  string
+		event message.Event[message.Changed[message.Company]]
+		want  []string
+	}{
+		{name: "deleted", event: message.Deleted(src, acme.ID, at, companySnapshot(acme)), want: []string{"Globex"}},
+		{name: "created", event: message.Created(src, 3, at, message.Company{ID: 3, Name: "Bluth"}), want: []string{"Acme", "Bluth", "Globex"}},
+		{name: "renamed", event: message.Updated(src, acme.ID, at, companySnapshot(acme), message.Company{ID: acme.ID, Name: "Zeta"}), want: []string{"Globex", "Zeta"}},
+		{name: "deleted, not shown", event: message.Deleted(src, 3, at, message.Company{ID: 3, Name: "Initech"}), want: []string{"Acme", "Globex"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := companyListOf(t, []company.Company{acme, globex}, nil, 80, 20)
+
+			m.companyChanged(tt.event)
+
+			var got []string
+			for _, c := range m.companies {
+				got = append(got, c.Name)
+			}
+			if diff := cmp.Diff(tt.want, got); diff != "" {
+				t.Errorf("companies after the event (-want +got):\n%s", diff)
+			}
+		})
+	}
 }
 
 func TestCompanyListModel_CursorMovement(t *testing.T) {

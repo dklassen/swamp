@@ -71,13 +71,13 @@ The rest go, since a model does the work itself: the write requests (`confirmApp
 | What a payload may hold | Strings, numbers, bools, `time.Time`, and structs, arrays, slices and maps of those. Never a pointer, interface (`error`, `tea.Model`, `any`), function or channel. |
 | What `tui/message` may import | The standard library for its types. Its command constructors (`ReportStatus`, `Fail`, `Pop`, …) return `tea.Cmd` and still import Bubble Tea, but no event holds anything from it. It stops importing `company` and `sync`. |
 | How an event is serialised | No one format is fixed. Field names are given explicitly in the encoding (JSON tags now, a `.proto` if one is written), so renaming a Go field doesn't change the wire; `time.Time` maps to RFC 3339 or `google.protobuf.Timestamp`. On Kafka, `Meta` is the record headers, `Subject` the key and `Payload` the value. Protobuf has no generics, so each instantiation is its own wire message (`ChangedCompany`, `ReadCompanyList`). A test round-trips one of each event through JSON as the stand-in. |
-| What a payload carries for an entity | A snapshot: a comparable struct in `tui/message` with the fields models read, as plain values. `company.Company.DeletedAt *time.Time` becomes `DeletedAt time.Time`, zero while not deleted. A command in `tui/model` builds it, since `tui/message` can't import the domain. |
+| What a payload carries for an entity | A snapshot: a comparable struct in `tui/message` with the fields models read, as plain values. `company.Company.DeletedAt *time.Time` becomes `DeletedAt time.Time`, zero while not deleted. A command outside `tui/message` builds it, since `tui/message` can't import the domain. A model that still holds the domain type converts the snapshot back until its load is a `Read`. |
 | `Changed[T]` | `Before` and `After`, the snapshot on each side. The zero snapshot is a missing side (`Before` for `created`, `After` for `deleted`), left out when serialised. `Op` says which sides are set, and the `Created`, `Updated` and `Deleted` constructors set the right ones. A handler that cares about one field compares it across the two; no event names a field, since that would bring back a type per action. |
 | `Read[T]`, `Run[T]`, `Ran[T]`, `Signal[T]` | One field of the content type `T`, which is one struct per query, job or signal (`CompanyList`, `SyncCompany`, `SyncReport`, `ContentSize`). The kind says how to treat it; `T` says what it holds. |
 | What a `Ran[T]` reports | A summary a responding model can act on: counts of what succeeded and failed, and values such as `SyncReport.FetchedAt`, which the company list shows. Never the rows the job wrote: a sync can write hundreds, and another process's sync of the same company reaches the TUI only through the change log, so a model that shows those rows filters the `Ran` with `About` and reloads. Messages for the user go to the banner as a `Notify`. |
-| `Error` | `Code` and `Text`. `Meta` says who asked, which entity and which op, and its `Type` is `error`. It's one Go type for every failure, since a route picks out the ones it cares about with `From` or `About`. `At` is when the command saw the error. |
+| `Error` | `Code` and `Text`. `Meta` says who asked, which entity and which op, and its `Type` is `error`. It's one Go type for every failure, since a route picks out the ones it cares about with `From` or `About`. `At` is when the command saw the error. A failed create has no `Subject`, since nothing was made. |
 | How an error is carried | `Code` is a string from a closed set in `tui/message` (`not_found`, `sync_in_progress`, …, `other`, and `fault` for a fault in the program, which only `Fail` sends), and `Text` is `err.Error()`. The command maps a Go error to a code with `errors.Is`, outside `tui/message`, which can't import the errors it names. A code keeps what `Syncing.companyRefreshed` does today, `errors.Is(refreshed.Err, sync.ErrSyncInProgress)`, which text alone would lose. |
-| How an error reaches the user | There is one error event, `Error`, and the command that saw the error sends it and decides nothing else. The banner has a route for every `Error` and shows its `Text`, except for `fault`, which means nothing to the user: it logs that and shows "internal error, see swamp.log". It keeps an error up until its next `Error` or `Notify` (open question 7). A requester that has closed has been `Deregister`ed and gets nothing, but the banner still hears the failure. |
+| How an error reaches the user | There is one error event, `Error`, and the command that saw the error sends it and decides nothing else. The banner has a route for every `Error` and shows its `Text`, except for `fault`, which means nothing to the user: it logs that and shows "internal error, see swamp.log". It keeps an error up until its next `Error` or `Notify` (open question 7). The model that asked clears it with an empty `Notify` when its write succeeds or it closes; a `Changed` it didn't ask for leaves the banner alone. A requester that has closed has been `Deregister`ed and gets nothing, but the banner still hears the failure. |
 | Where `Before`, `After` and `At` come from | For an update or delete, the service: it reads the row, writes, and reads again in one `store.InTx` transaction, and returns `change.Of[T]` (domain types, `internal/domain/change`). A `Before` taken from what a model last showed would be wrong whenever another process wrote in between. With no active row to read, missing or already deleted, it's `store.ErrNotFound` and a nil `Of`, so a delete is never a `Changed` twice. A create needs no service change. |
 | Which writes are `Changed[T]` | Those that a model other than the one asking may show. A write only the asking model hears is a `Ran` (open question 1). |
 
@@ -207,15 +207,19 @@ type Snapshot interface {
  Body
 }
 
-// Company is what an event carries for a company. DeletedAt is zero
-// while it isn't deleted.
+// Company is what an event carries for a company. LastFetchedAt is zero
+// until its postings are first fetched, and DeletedAt while it isn't
+// deleted.
 type Company struct {
- ID          int64     `json:"id"`
- Name        string    `json:"name"`
- Description string    `json:"description"`
- CreatedAt   time.Time `json:"created_at"`
- UpdatedAt   time.Time `json:"updated_at"`
- DeletedAt   time.Time `json:"deleted_at,omitzero"`
+ ID            int64     `json:"id"`
+ Name          string    `json:"name"`
+ Source        string    `json:"source"`
+ SourceRef     string    `json:"source_ref"`
+ Description   string    `json:"description"`
+ LastFetchedAt time.Time `json:"last_fetched_at,omitzero"`
+ CreatedAt     time.Time `json:"created_at"`
+ UpdatedAt     time.Time `json:"updated_at"`
+ DeletedAt     time.Time `json:"deleted_at,omitzero"`
 }
 
 func (Company) Type() Type { return TypeCompany }

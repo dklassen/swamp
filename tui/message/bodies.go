@@ -2,15 +2,19 @@ package message
 
 import "time"
 
-// Company is what an event carries for a company. DeletedAt is zero
-// while it isn't deleted.
+// Company is what an event carries for a company. LastFetchedAt is zero
+// until its postings are first fetched, and DeletedAt while it isn't
+// deleted.
 type Company struct {
-	ID          int64     `json:"id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description"`
-	CreatedAt   time.Time `json:"created_at"`
-	UpdatedAt   time.Time `json:"updated_at"`
-	DeletedAt   time.Time `json:"deleted_at,omitzero"`
+	ID            int64     `json:"id"`
+	Name          string    `json:"name"`
+	Source        string    `json:"source"`
+	SourceRef     string    `json:"source_ref"`
+	Description   string    `json:"description"`
+	LastFetchedAt time.Time `json:"last_fetched_at,omitzero"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+	DeletedAt     time.Time `json:"deleted_at,omitzero"`
 }
 
 func (Company) Type() Type { return TypeCompany }

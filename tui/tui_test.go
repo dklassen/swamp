@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
@@ -14,7 +15,23 @@ import (
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/sync"
+	"github.com/dklassen/swamp/tui/message"
 )
+
+// assertEventFrom checks what every event a command sends has: an ID, a
+// time in UTC, and src as its source.
+func assertEventFrom(t *testing.T, meta message.Meta, src message.Source) {
+	t.Helper()
+	if meta.ID == "" {
+		t.Error("Meta.ID is empty, want one")
+	}
+	if meta.At.IsZero() || meta.At.Location() != time.UTC {
+		t.Errorf("Meta.At = %v, want a time in UTC", meta.At)
+	}
+	if meta.Source != src {
+		t.Errorf("Meta.Source = %+v, want %+v", meta.Source, src)
+	}
+}
 
 func mustCreateCompany(t *testing.T, s testutil.TestApp, name, source, sourceRef string) company.Company {
 	t.Helper()

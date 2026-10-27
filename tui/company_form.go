@@ -68,6 +68,10 @@ func newCompanyFormModel(syncer *sync.Syncer) *companyFormModel {
 	return &companyFormModel{syncer: syncer, inputs: inputs, instance: message.NewScreenInstance()}
 }
 
+func (m *companyFormModel) source() message.Source {
+	return message.Source{Instance: m.instance}
+}
+
 func (m *companyFormModel) Instance() message.ScreenInstance { return m.instance }
 
 func (m *companyFormModel) Focused() bool { return m.focused }
@@ -76,7 +80,8 @@ func (m *companyFormModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.WhenFocused(m, m.keyPressed),
 		model.WhenFocused(m, m.paste),
-		model.Always(m.companyCreated),
+		model.Always(m.companyCreated, model.From(m.instance)),
+		model.Always(m.createFailed, model.From(m.instance)),
 		model.Always(m.focusChanged),
 	}
 }
@@ -116,11 +121,7 @@ func (m *companyFormModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	switch {
 	case msg.String() == "esc":
-		// A failed save's error goes with the form.
-		return tea.Batch(
-			func() tea.Msg { return message.CloseCompanyFormMsg{} },
-			message.ReportStatus(message.Source{Instance: m.instance}, ""),
-		)
+		return m.close()
 	case msg.String() == "tab":
 		m.blurFocused()
 		m.focus = (m.focus + 1) % formFieldCount
@@ -139,7 +140,7 @@ func (m *companyFormModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		m.checking = true
-		return createCompany(m.syncer, name, companySources[m.sourceIndex], sourceRef, m.instance)
+		return createCompany(m.syncer, m.source(), name, companySources[m.sourceIndex], sourceRef)
 	}
 	if m.focus == formFieldSource {
 		return nil
@@ -149,17 +150,24 @@ func (m *companyFormModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	return cmd
 }
 
-// companyCreated ends its own board check. On failure the form stays open
-// with its inputs intact so a typo can be fixed.
-func (m *companyFormModel) companyCreated(created message.CompanyCreatedMsg) tea.Cmd {
-	if created.From != m.instance {
-		return nil
-	}
+// close takes a failed save's error from the banner with the form.
+func (m *companyFormModel) close() tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg { return message.CloseCompanyFormMsg{} },
+		message.ReportStatus(m.source(), ""),
+	)
+}
+
+func (m *companyFormModel) companyCreated(message.Event[message.Changed[message.Company]]) tea.Cmd {
 	m.checking = false
-	if created.Err != nil {
-		return nil
-	}
-	return func() tea.Msg { return message.CloseCompanyFormMsg{} }
+	return m.close()
+}
+
+// createFailed ends the board check and leaves the form open with its
+// inputs intact, so a typo can be fixed.
+func (m *companyFormModel) createFailed(message.Event[message.Error]) tea.Cmd {
+	m.checking = false
+	return nil
 }
 
 // renderSourcePicker shows every source with the selected one boxed and

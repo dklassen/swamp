@@ -627,32 +627,35 @@ const boardCheckTimeout = 15 * time.Second
 
 // createCompany saves a company only once its source ref resolves to a
 // real board (see sync.Syncer.CreateCompany).
-func createCompany(syncer *sync.Syncer, name, source, sourceRef string, from message.ScreenInstance) tea.Cmd {
+func createCompany(syncer *sync.Syncer, src message.Source, name, source, sourceRef string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), boardCheckTimeout)
 		defer cancel()
 		company, err := syncer.CreateCompany(ctx, name, source, sourceRef)
 		if err != nil {
-			return message.CompanyCreatedMsg{From: from, Err: err}
+			return message.New(src, message.Subject{}, message.OpCreated, time.Now().UTC(), model.ErrorOf(err))
 		}
-		return message.CompanyCreatedMsg{Company: *company, From: from}
+		return message.Created(src, company.ID, company.CreatedAt, companySnapshot(*company))
 	}
 }
 
-func deleteCompany(companies *service.CompanyService, companyID int64) tea.Cmd {
+func deleteCompany(companies *service.CompanyService, src message.Source, companyID int64) tea.Cmd {
 	return func() tea.Msg {
-		_, err := companies.Delete(context.Background(), companyID)
-		return message.CompanyDeletedMsg{CompanyID: companyID, Err: err}
+		deleted, err := companies.Delete(context.Background(), companyID)
+		if err != nil {
+			return message.New(src, message.Subject{Type: message.TypeCompany, ID: companyID}, message.OpDeleted, time.Now().UTC(), model.ErrorOf(err))
+		}
+		return message.Deleted(src, companyID, deleted.At, companySnapshot(deleted.Before))
 	}
 }
 
-func updateCompanyName(companies *service.CompanyService, companyID int64, name string, from message.ScreenInstance) tea.Cmd {
+func updateCompanyName(companies *service.CompanyService, src message.Source, companyID int64, name string) tea.Cmd {
 	return func() tea.Msg {
 		renamed, err := companies.SetName(context.Background(), companyID, name)
 		if err != nil {
-			return message.CompanyNameUpdatedMsg{From: from, Err: err}
+			return message.New(src, message.Subject{Type: message.TypeCompany, ID: companyID}, message.OpUpdated, time.Now().UTC(), model.ErrorOf(err))
 		}
-		return message.CompanyNameUpdatedMsg{Company: renamed.After, From: from}
+		return message.Updated(src, companyID, renamed.At, companySnapshot(renamed.Before), companySnapshot(renamed.After))
 	}
 }
 

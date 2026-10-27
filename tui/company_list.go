@@ -58,9 +58,7 @@ func (m *companyListModel) Focused() bool { return m.focused }
 func (m *companyListModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(m.companiesLoaded),
-		model.Always(m.companyCreated),
-		model.Always(m.companyDeleted),
-		model.Always(m.companyNameUpdated),
+		model.Always(m.companyChanged),
 		model.WhenFocused(m, m.keyPressed),
 		model.WhenFocused(m, m.paste),
 		model.Always(m.resize),
@@ -88,38 +86,23 @@ func (m *companyListModel) companiesLoaded(loaded message.CompaniesLoadedMsg) te
 	return nil
 }
 
-func (m *companyListModel) companyCreated(created message.CompanyCreatedMsg) tea.Cmd {
-	src := message.Source{Instance: m.instance}
-	if created.Err != nil {
-		return model.ReportErr(src, created.Err)
-	}
-	m.companies = append(m.companies, created.Company)
-	sortCompaniesByName(m.companies)
-	return message.ReportStatus(src, "")
-}
-
-func (m *companyListModel) companyDeleted(deleted message.CompanyDeletedMsg) tea.Cmd {
-	src := message.Source{Instance: m.instance}
-	if deleted.Err != nil {
-		return model.ReportErr(src, deleted.Err)
-	}
-	if i := indexOfCompany(m.companies, deleted.CompanyID); i != -1 {
-		m.companies = append(m.companies[:i], m.companies[i+1:]...)
-	}
-	m.clampCursor(len(m.companies))
-	return message.ReportStatus(src, "")
-}
-
-func (m *companyListModel) companyNameUpdated(updated message.CompanyNameUpdatedMsg) tea.Cmd {
-	src := message.Source{Instance: m.instance}
-	if updated.Err != nil {
-		return model.ReportErr(src, updated.Err)
-	}
-	if i := indexOfCompany(m.companies, updated.Company.ID); i != -1 {
-		m.companies[i] = updated.Company
+func (m *companyListModel) companyChanged(e message.Event[message.Changed[message.Company]]) tea.Cmd {
+	switch e.Meta.Op {
+	case message.OpCreated:
+		m.companies = append(m.companies, companyOf(e.Payload.After))
+	case message.OpUpdated:
+		if i := indexOfCompany(m.companies, e.Meta.Subject.ID); i != -1 {
+			m.companies[i] = companyOf(e.Payload.After)
+		}
+	case message.OpDeleted:
+		if i := indexOfCompany(m.companies, e.Meta.Subject.ID); i != -1 {
+			m.companies = append(m.companies[:i], m.companies[i+1:]...)
+		}
+		m.clampCursor(len(m.companies))
+		return nil
 	}
 	sortCompaniesByName(m.companies)
-	return message.ReportStatus(src, "")
+	return nil
 }
 
 // backToActiveApplicationsMsg signals that App should switch back to the
