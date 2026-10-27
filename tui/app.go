@@ -550,6 +550,14 @@ func indexOfCompany(companies []message.Company, id int64) int {
 	return -1
 }
 
+// reloadCompanies asks the company list to read its companies again.
+func (a *App) reloadCompanies() tea.Cmd {
+	src := message.Source{Instance: a.instance}
+	return func() tea.Msg {
+		return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.CompanyList]{})
+	}
+}
+
 // sortCompaniesByName keeps an in-memory companies slice in the same
 // order ListActiveCompanies' `ORDER BY name` would return -- called after
 // any in-place mutation (create, rename) that could change where an
@@ -1140,29 +1148,19 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.currentScreen = screenPostingList
 		return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
 	case message.SyncAllFinishedMsg:
-		// The company list once (open counts, last fetched), and the
-		// posting list if its company was synced.
-		cmds := []tea.Cmd{a.companyList.load()}
+		// The posting list, if its company was synced.
 		for _, r := range msg.Results {
 			if r.Err == nil && r.CompanyID == a.selectedCompany.ID {
-				cmds = append(cmds, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived))
-				break
+				return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
 			}
 		}
-		return a, tea.Batch(cmds...)
 	case message.CompanyRefreshedMsg:
-		if msg.Err == nil {
-			r := msg.Result
-			// The company list's Open and Last fetched columns just changed.
-			reload := a.companyList.load()
-			if r.CompanyID == a.selectedCompany.ID {
-				// The company whose postings are currently being viewed
-				// just finished a re-sync (r on its posting list): reload
-				// them from the DB. The cursor stays on its posting: the
-				// sync can add some ahead of it.
-				return a, tea.Batch(reload, reloadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived))
-			}
-			return a, reload
+		if msg.Err == nil && msg.Result.CompanyID == a.selectedCompany.ID {
+			// The company whose postings are currently being viewed
+			// just finished a re-sync (r on its posting list): reload
+			// them from the DB. The cursor stays on its posting: the
+			// sync can add some ahead of it.
+			return a, reloadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
 		}
 	case postingsLoadedMsg:
 		a.setLoadErr(msg.err)
@@ -1531,8 +1529,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch a.currentScreen {
 		case screenActiveApplications:
 			a.currentScreen = screenCompanyList
-			// Archiving or unarchiving may have changed open counts.
-			return a, a.companyList.load()
+			return a, nil
 		case screenCompanyList:
 			a.currentScreen = screenAllPostings
 			return a, a.allPostings.load(a.allPostings.pageSize(a.screenRows()))
@@ -1630,8 +1627,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch v := intent.(type) {
 		case backToCompanyListMsg:
 			a.currentScreen = screenCompanyList
-			// Archiving or unarchiving may have changed open counts.
-			return a, a.companyList.load()
+			return a, nil
 		case enterPostingDetailMsg:
 			a.postingDetailFrom = screenPostingList
 			p, app, hasApp := a.lookupPosting(v.postingID)

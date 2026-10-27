@@ -3911,7 +3911,7 @@ func TestApp_PressR_UpdatesCompanyListOpenCountAndLastFetched(t *testing.T) {
 	}
 }
 
-func TestApp_CompanyReloadsComeFromTheCompanyList(t *testing.T) {
+func TestApp_TheCompanyListReloadsItselfAfterASync(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -3930,8 +3930,11 @@ func TestApp_CompanyReloadsComeFromTheCompanyList(t *testing.T) {
 
 			var sources []message.Source
 			for _, msg := range runCmd(t, cmd) {
-				if read, ok := msg.(message.Event[message.Read[message.CompanyList]]); ok {
-					sources = append(sources, read.Meta.Source)
+				switch msg := msg.(type) {
+				case message.Event[message.Load[message.CompanyList]]:
+					t.Errorf("App asked the list to reload, want the list to decide")
+				case message.Event[message.Read[message.CompanyList]]:
+					sources = append(sources, msg.Meta.Source)
 				}
 			}
 			want := []message.Source{{Instance: app.companyList.Instance()}}
@@ -3968,7 +3971,7 @@ func TestApp_BackToCompanyList_AfterArchiving_ShowsUpdatedOpenCount(t *testing.T
 	if cmd == nil {
 		t.Fatal("Update on esc back to the company list returned nil Cmd, want one that reloads companies")
 	}
-	app, _ = sendKey(app, cmd())
+	app = applyCmd(t, app, cmd)
 
 	if app.currentScreen != screenCompanyList {
 		t.Fatalf("screen = %v, want screenCompanyList", app.currentScreen)

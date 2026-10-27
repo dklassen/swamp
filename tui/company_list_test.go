@@ -14,6 +14,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
@@ -87,6 +88,32 @@ func TestCompanyListModel_Init_ReadsTheCompaniesAndTheirOpenPostings(t *testing.
 		OpenPostings: map[int64]int{acme.ID: 1},
 	}
 	if diff := cmp.Diff(want, got.Payload.Value); diff != "" {
+		t.Errorf("companies read (-want +got):\n%s", diff)
+	}
+}
+
+func TestCompanyListModel_LoadRequest_SendsItsRead(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	m := newCompanyListModel(s.Companies, s.Postings)
+	r := model.NewMsgRouter()
+	if err := r.Register(m); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	cmd := r.Dispatch(message.New(message.Source{Instance: message.NewScreenInstance()}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.CompanyList]{}))
+	if cmd == nil {
+		t.Fatal("a load request sent nothing, want the companies read")
+	}
+
+	got, ok := cmd().(message.Event[message.Read[message.CompanyList]])
+	if !ok {
+		t.Fatalf("a load request sent %T, want message.Event[message.Read[message.CompanyList]]", got)
+	}
+	assertEventFrom(t, got.Meta, message.Source{Instance: m.Instance()})
+	if diff := cmp.Diff([]message.Company{companySnapshot(acme)}, got.Payload.Value.Companies); diff != "" {
 		t.Errorf("companies read (-want +got):\n%s", diff)
 	}
 }
@@ -857,6 +884,87 @@ func TestCompanyListModel_View_InfoBoxIsAsWideAsTheTable(t *testing.T) {
 }
 
 // The list takes keys only while the last focus signal named it.
+// What changed while another screen was up, such as an archived posting's
+// open count, shows when the list is back.
+func TestCompanyListModel_ReloadsOnGainingFocus(t *testing.T) {
+	t.Parallel()
+
+	other := newCompanyListModel(nil, nil).Instance()
+	tests := []struct {
+		name       string
+		before     func(m *companyListModel) message.ScreenInstance
+		after      func(m *companyListModel) message.ScreenInstance
+		wantReload bool
+	}{
+		{name: "comes into focus", before: func(*companyListModel) message.ScreenInstance { return other }, after: (*companyListModel).Instance, wantReload: true},
+		{name: "stays in focus", before: (*companyListModel).Instance, after: (*companyListModel).Instance, wantReload: false},
+		{name: "loses focus", before: (*companyListModel).Instance, after: func(*companyListModel) message.ScreenInstance { return other }, wantReload: false},
+		{name: "stays out of focus", before: func(*companyListModel) message.ScreenInstance { return other }, after: func(*companyListModel) message.ScreenInstance { return 0 }, wantReload: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			m := newCompanyListModel(s.Companies, s.Postings)
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+			r.Dispatch(focusOn(tt.before(m)))
+
+			cmd := r.Dispatch(focusOn(tt.after(m)))
+
+			reloaded := false
+			for _, msg := range runCmd(t, cmd) {
+				if read, ok := msg.(message.Event[message.Read[message.CompanyList]]); ok {
+					assertEventFrom(t, read.Meta, message.Source{Instance: m.Instance()})
+					reloaded = true
+				}
+			}
+			if reloaded != tt.wantReload {
+				t.Errorf("reloaded = %v, want %v", reloaded, tt.wantReload)
+			}
+		})
+	}
+}
+
+// A sync changes the Open and Last fetched columns.
+func TestCompanyListModel_ReloadsAfterASync(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		msg        tea.Msg
+		wantReload bool
+	}{
+		{name: "a refresh", msg: message.CompanyRefreshedMsg{Name: "Acme", Result: sync.Result{CompanyID: 1, Name: "Acme"}}, wantReload: true},
+		{name: "a refused refresh", msg: message.CompanyRefreshedMsg{Name: "Acme", Err: sync.ErrSyncInProgress}, wantReload: false},
+		{name: "a sync-all run ending", msg: message.SyncAllFinishedMsg{}, wantReload: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			m := newCompanyListModel(s.Companies, s.Postings)
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+
+			reloaded := false
+			for _, msg := range runCmd(t, r.Dispatch(tt.msg)) {
+				if read, ok := msg.(message.Event[message.Read[message.CompanyList]]); ok {
+					assertEventFrom(t, read.Meta, message.Source{Instance: m.Instance()})
+					reloaded = true
+				}
+			}
+			if reloaded != tt.wantReload {
+				t.Errorf("reloaded = %v, want %v", reloaded, tt.wantReload)
+			}
+		})
+	}
+}
+
 func TestCompanyListModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 	t.Parallel()
 

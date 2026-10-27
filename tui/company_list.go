@@ -57,7 +57,10 @@ func (m *companyListModel) Focused() bool { return m.focused }
 
 func (m *companyListModel) Routes() []*model.Route {
 	return []*model.Route{
+		model.Always(m.loadRequested),
 		model.Always(m.companiesRead),
+		model.Always(m.companyRefreshed),
+		model.Always(m.syncAllFinished),
 		model.Always(m.companyChanged),
 		model.WhenFocused(m, m.keyPressed),
 		model.WhenFocused(m, m.paste),
@@ -66,12 +69,35 @@ func (m *companyListModel) Routes() []*model.Route {
 	}
 }
 
+// focusChanged reloads when the list comes back, since its open counts can
+// change while another screen is up.
 func (m *companyListModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
+	gained := !m.focused && e.Payload.Value.Focused == m.instance
 	m.focused = e.Payload.Value.Focused == m.instance
+	if gained {
+		return m.load()
+	}
 	return nil
 }
 
 func (m *companyListModel) Init() tea.Cmd {
+	return m.load()
+}
+
+func (m *companyListModel) loadRequested(message.Event[message.Load[message.CompanyList]]) tea.Cmd {
+	return m.load()
+}
+
+// companyRefreshed and syncAllFinished reload, since a sync changes the Open
+// and Last fetched columns.
+func (m *companyListModel) companyRefreshed(refreshed message.CompanyRefreshedMsg) tea.Cmd {
+	if refreshed.Err != nil {
+		return nil
+	}
+	return m.load()
+}
+
+func (m *companyListModel) syncAllFinished(message.SyncAllFinishedMsg) tea.Cmd {
 	return m.load()
 }
 
