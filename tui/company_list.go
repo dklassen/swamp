@@ -57,7 +57,7 @@ func (m *companyListModel) Focused() bool { return m.focused }
 
 func (m *companyListModel) Routes() []*model.Route {
 	return []*model.Route{
-		model.Always(m.companiesLoaded),
+		model.Always(m.companiesRead),
 		model.Always(m.companyChanged),
 		model.WhenFocused(m, m.keyPressed),
 		model.WhenFocused(m, m.paste),
@@ -72,17 +72,17 @@ func (m *companyListModel) focusChanged(e message.Event[message.Signal[message.F
 }
 
 func (m *companyListModel) Init() tea.Cmd {
-	return loadCompanies(m.companyService, m.postingService)
+	return loadCompanies(m.companyService, m.postingService, message.Source{Instance: m.instance})
 }
 
-func (m *companyListModel) companiesLoaded(loaded message.CompaniesLoadedMsg) tea.Cmd {
+func (m *companyListModel) companiesRead(e message.Event[message.Read[message.CompanyList]]) tea.Cmd {
 	previous := m.selected()
-	m.companies = loaded.Companies
-	m.openPostings = loaded.OpenPostings
-	m.keepCursorOn(previous)
-	if loaded.Err != nil {
-		return model.ReportErr(message.Source{Instance: m.instance}, loaded.Err)
+	m.companies = make([]company.Company, len(e.Payload.Value.Companies))
+	for i, c := range e.Payload.Value.Companies {
+		m.companies[i] = companyOf(c)
 	}
+	m.openPostings = e.Payload.Value.OpenPostings
+	m.keepCursorOn(previous)
 	return nil
 }
 

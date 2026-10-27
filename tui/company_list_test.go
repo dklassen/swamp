@@ -12,6 +12,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
@@ -22,10 +23,26 @@ import (
 func companyListOf(t *testing.T, companies []company.Company, openPostings map[int64]int, width, rows int) *companyListModel {
 	t.Helper()
 	m := newCompanyListModel(nil, nil)
-	m.companiesLoaded(message.CompaniesLoadedMsg{Companies: companies, OpenPostings: openPostings})
+	m.companiesRead(companiesReadOf(companies, openPostings))
 	m.resize(message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(),
 		message.Signal[message.ContentSize]{Value: message.ContentSize{Width: width, Rows: rows}}))
 	return m
+}
+
+// companiesReadOf is the read of companies, with openPostings open
+// postings each.
+func companiesReadOf(companies []company.Company, openPostings map[int64]int) message.Event[message.Read[message.CompanyList]] {
+	list := message.CompanyList{OpenPostings: openPostings}
+	for _, c := range companies {
+		list.Companies = append(list.Companies, companySnapshot(c))
+	}
+	return message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Read[message.CompanyList]{Value: list})
+}
+
+// companiesLoadFailed is what loading the companies sends when it fails
+// with err.
+func companiesLoadFailed(err error) message.Event[message.Error] {
+	return message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
 }
 
 // press sends key to m and returns the message its command produces, or
@@ -47,6 +64,31 @@ func focusOn(instance message.ScreenInstance) message.Event[message.Signal[messa
 
 func companyListView(m *companyListModel) string {
 	return m.View().Content
+}
+
+func TestCompanyListModel_Init_ReadsTheCompaniesAndTheirOpenPostings(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	globex := mustCreateCompany(t, s, "Globex", jobboard.Ashby, "globex")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	m := newCompanyListModel(s.Companies, s.Postings)
+
+	msg := m.Init()()
+
+	got, ok := msg.(message.Event[message.Read[message.CompanyList]])
+	if !ok {
+		t.Fatalf("Init sent %T, want message.Event[message.Read[message.CompanyList]]", msg)
+	}
+	assertEventFrom(t, got.Meta, message.Source{Instance: m.Instance()})
+	want := message.CompanyList{
+		Companies:    []message.Company{companySnapshot(acme), companySnapshot(globex)},
+		OpenPostings: map[int64]int{acme.ID: 1},
+	}
+	if diff := cmp.Diff(want, got.Payload.Value); diff != "" {
+		t.Errorf("companies read (-want +got):\n%s", diff)
+	}
 }
 
 func TestCompanyListModel_CompanyChanged_KeepsTheRowsInStep(t *testing.T) {
@@ -637,7 +679,7 @@ func TestCompanyListModel_Search_ReloadWhileTypingIsKept(t *testing.T) {
 	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}}, nil, 80, 40)
 	typeKeys(t, m, "/")
 
-	m.companiesLoaded(message.CompaniesLoadedMsg{Companies: []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}})
+	m.companiesRead(companiesReadOf([]company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}, nil))
 
 	if got := companyListView(m); !strings.Contains(got, "Globex") {
 		t.Errorf("View after a reload with the prompt open is missing Globex:\n%s", got)

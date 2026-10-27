@@ -10,13 +10,6 @@ import (
 
 type ScreenInstance int
 
-type CompaniesLoadedMsg struct {
-	Companies []company.Company
-	// OpenPostings is each company's open, unarchived posting count.
-	OpenPostings map[int64]int
-	Err          error
-}
-
 // Fail reports err as a fault in the program, such as a handler given a
 // message it wasn't registered for, which nothing the user does can fix.
 func Fail(src Source, err error) tea.Cmd {
