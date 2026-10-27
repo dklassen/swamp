@@ -46,12 +46,13 @@ type companyFormModel struct {
 	inputs      []textinput.Model
 	focus       int
 	// checking is true from the moment Enter dispatches createCompany
-	// until checkResolved is called with its result. The form ignores
-	// keys meanwhile: bubbletea can't cancel a dispatched command, so Esc
-	// would race the save (as on the edit screen, #37) and a
-	// second Enter would start a duplicate check.
+	// until its result arrives. The form ignores keys meanwhile: bubbletea
+	// can't cancel a dispatched command, so Esc would race the save (as on
+	// the edit screen, #37) and a second Enter would start a duplicate
+	// check.
 	checking bool
 
+	focused  bool
 	instance message.ScreenInstance
 }
 
@@ -69,9 +70,26 @@ func newCompanyFormModel(syncer *sync.Syncer) *companyFormModel {
 
 func (m *companyFormModel) Instance() message.ScreenInstance { return m.instance }
 
-// cancelCompanyFormMsg signals that App should switch back to the
-// company-list screen without creating anything.
-type cancelCompanyFormMsg struct{}
+func (m *companyFormModel) Focused() bool { return m.focused }
+
+func (m *companyFormModel) Routes() []*model.Route {
+	return []*model.Route{
+		model.WhenFocused(m, m.keyPressed),
+		model.WhenFocused(m, m.paste),
+		model.Always(m.companyCreated),
+		model.Always(m.focusChanged),
+	}
+}
+
+func (m *companyFormModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
+	m.focused = e.Payload.Value.Focused == m.instance
+	return nil
+}
+
+func (m *companyFormModel) Init() tea.Cmd { return nil }
+
+// Update has nothing to do: everything the form handles is registered.
+func (m *companyFormModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
 
 // blurFocused/focusFocused are no-ops when the source picker is focused
 // -- it has no textinput of its own to blur/focus.
@@ -92,39 +110,43 @@ func (m *companyFormModel) cycleSource(direction int) {
 	m.sourceIndex = ((m.sourceIndex+direction)%n + n) % n
 }
 
-func (m *companyFormModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
+func (m *companyFormModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	if m.checking {
-		return nil, nil
+		return nil
 	}
 	switch {
 	case msg.String() == "esc":
-		return nil, cancelCompanyFormMsg{}
+		// A failed save's error goes with the form.
+		return tea.Batch(
+			func() tea.Msg { return message.CloseCompanyFormMsg{} },
+			message.ReportStatus(message.Source{Instance: m.instance}, ""),
+		)
 	case msg.String() == "tab":
 		m.blurFocused()
 		m.focus = (m.focus + 1) % formFieldCount
 		m.focusFocused()
-		return nil, nil
+		return nil
 	case m.focus == formFieldSource && msg.String() == "right":
 		m.cycleSource(1)
-		return nil, nil
+		return nil
 	case m.focus == formFieldSource && msg.String() == "left":
 		m.cycleSource(-1)
-		return nil, nil
+		return nil
 	case msg.String() == "enter":
 		name := strings.TrimSpace(m.inputs[formFieldName].Value())
 		sourceRef := m.inputs[formFieldSourceRef].Value()
 		if name == "" || sourceRef == "" {
-			return nil, nil
+			return nil
 		}
 		m.checking = true
-		return createCompany(m.syncer, name, companySources[m.sourceIndex], sourceRef, m.instance), nil
+		return createCompany(m.syncer, name, companySources[m.sourceIndex], sourceRef, m.instance)
 	}
 	if m.focus == formFieldSource {
-		return nil, nil
+		return nil
 	}
 	var cmd tea.Cmd
 	m.inputs[m.focus], cmd = m.inputs[m.focus].Update(msg)
-	return cmd, nil
+	return cmd
 }
 
 // companyCreated ends its own board check. On failure the form stays open
@@ -155,7 +177,7 @@ func renderSourcePicker(selected int) string {
 	return strings.Join(parts, "  ")
 }
 
-func (m *companyFormModel) View() string {
+func (m *companyFormModel) View() tea.View {
 	var b strings.Builder
 
 	sourceLabel := model.FieldLabel
@@ -180,7 +202,7 @@ func (m *companyFormModel) View() string {
 		b.WriteString(model.HelpStyle.Render("Checking board...") + "\n")
 	}
 	b.WriteString(model.HelpStyle.Render("tab: next field  ←/→: change source  enter: save  esc: cancel"))
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 func (m *companyFormModel) paste(msg tea.PasteMsg) tea.Cmd {

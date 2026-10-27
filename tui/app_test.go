@@ -1638,7 +1638,7 @@ func TestApp_CancellingAScreen_ClearsStaleError(t *testing.T) {
 	// next screen transition, not how it got set.
 	app.err = errors.New("boom")
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
 	if app.currentScreen != screenCompanyList {
 		t.Fatalf("screen after esc = %v, want screenCompanyList", app.currentScreen)

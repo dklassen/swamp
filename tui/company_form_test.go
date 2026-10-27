@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"slices"
 	"strings"
 	"testing"
 
@@ -12,6 +13,7 @@ import (
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 func TestCompanyFormModel_New_FocusesSourceFieldFirst(t *testing.T) {
@@ -31,7 +33,7 @@ func TestCompanyFormModel_Tab_CyclesThroughAllThreeFields(t *testing.T) {
 
 	m := newCompanyFormModel(nil)
 
-	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.focus != formFieldName {
 		t.Fatalf("focus after 1 tab = %d, want formFieldName", m.focus)
 	}
@@ -39,7 +41,7 @@ func TestCompanyFormModel_Tab_CyclesThroughAllThreeFields(t *testing.T) {
 		t.Fatal("name field should be focused")
 	}
 
-	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.focus != formFieldSourceRef {
 		t.Fatalf("focus after 2 tabs = %d, want formFieldSourceRef", m.focus)
 	}
@@ -50,7 +52,7 @@ func TestCompanyFormModel_Tab_CyclesThroughAllThreeFields(t *testing.T) {
 		t.Fatal("sourceRef field should be focused")
 	}
 
-	m.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.focus != formFieldSource {
 		t.Fatalf("focus after 3 tabs = %d, want formFieldSource (wrapped around)", m.focus)
 	}
@@ -67,18 +69,18 @@ func TestCompanyFormModel_RightArrow_OnSourceField_CyclesSource(t *testing.T) {
 		t.Fatalf("starting source = %q, want ashby", companySources[m.sourceIndex])
 	}
 
-	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyRight})
 	if companySources[m.sourceIndex] != jobboard.Greenhouse {
 		t.Fatalf("source after right = %q, want greenhouse", companySources[m.sourceIndex])
 	}
 
-	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyRight})
 	if companySources[m.sourceIndex] != jobboard.Lever {
 		t.Fatalf("source after second right = %q, want lever", companySources[m.sourceIndex])
 	}
 
 	// Wraps back around rather than clamping.
-	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyRight})
 	if companySources[m.sourceIndex] != jobboard.Ashby {
 		t.Fatalf("source after third right = %q, want ashby (wrapped)", companySources[m.sourceIndex])
 	}
@@ -88,7 +90,7 @@ func TestCompanyFormModel_LeftArrow_OnSourceField_CyclesSourceBackward(t *testin
 	t.Parallel()
 
 	m := newCompanyFormModel(nil)
-	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
+	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if companySources[m.sourceIndex] != jobboard.Lever {
 		t.Fatalf("source after left = %q, want lever (wrapped backward to the last source)", companySources[m.sourceIndex])
 	}
@@ -98,24 +100,11 @@ func TestCompanyFormModel_LeftRightArrow_OffSourceField_DoesNotChangeSource(t *t
 	t.Parallel()
 
 	m := newCompanyFormModel(nil)
-	m.Update(tea.KeyPressMsg{Code: tea.KeyTab}) // move focus to name field
-	m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
+	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyTab}) // move focus to name field
+	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyRight})
 
 	if companySources[m.sourceIndex] != jobboard.Ashby {
 		t.Fatalf("source = %q, want ashby unchanged (arrow keys should edit the name field's cursor position, not the source)", companySources[m.sourceIndex])
-	}
-}
-
-func TestCompanyFormModel_Esc_ReturnsCancelMsg(t *testing.T) {
-	t.Parallel()
-
-	m := newCompanyFormModel(nil)
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	if _, ok := intent.(cancelCompanyFormMsg); !ok {
-		t.Fatalf("intent = %T, want cancelCompanyFormMsg", intent)
 	}
 }
 
@@ -123,9 +112,8 @@ func TestCompanyFormModel_Enter_EmptyFields_NoOp(t *testing.T) {
 	t.Parallel()
 
 	m := newCompanyFormModel(nil)
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if cmd != nil || intent != nil {
-		t.Fatalf("cmd, intent = %v, %v, want nil, nil (empty fields)", cmd, intent)
+	if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {
+		t.Fatalf("cmd = %v, want nil (empty fields)", cmd)
 	}
 }
 
@@ -136,12 +124,8 @@ func TestCompanyFormModel_Enter_ValidFields_ReturnsCreateCompanyCmd(t *testing.T
 	m.inputs[formFieldName].SetValue("Acme")
 	m.inputs[formFieldSourceRef].SetValue("acme")
 
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if cmd == nil {
+	if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
 		t.Fatal("cmd = nil, want a command that creates the company")
-	}
-	if intent != nil {
-		t.Fatalf("intent = %v, want nil", intent)
 	}
 }
 
@@ -150,11 +134,11 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithSelectedSource(t *testing.T) {
 
 	s := testutil.NewTestApp(t)
 	m := newCompanyFormModel(newFormTestSyncer(s))
-	m.Update(tea.KeyPressMsg{Code: tea.KeyRight}) // switch source to greenhouse
+	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyRight}) // switch source to greenhouse
 	m.inputs[formFieldName].SetValue("Acme")
 	m.inputs[formFieldSourceRef].SetValue("acme-token")
 
-	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that creates the company")
 	}
@@ -185,14 +169,14 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithLeverSource(t *testing.T) {
 
 	s := testutil.NewTestApp(t)
 	m := newCompanyFormModel(newFormTestSyncer(s))
-	m.Update(tea.KeyPressMsg{Code: tea.KeyLeft}) // wraps backward to lever, the last source
+	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyLeft}) // wraps backward to lever, the last source
 	if companySources[m.sourceIndex] != jobboard.Lever {
 		t.Fatalf("source after left = %q, want lever", companySources[m.sourceIndex])
 	}
 	m.inputs[formFieldName].SetValue("Acme")
 	m.inputs[formFieldSourceRef].SetValue("acme")
 
-	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that creates the company")
 	}
@@ -225,9 +209,8 @@ func TestCompanyFormModel_Enter_WhitespaceOnlyName_NoOp(t *testing.T) {
 	m.inputs[formFieldName].SetValue("   ")
 	m.inputs[formFieldSourceRef].SetValue("acme")
 
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if cmd != nil || intent != nil {
-		t.Fatalf("cmd, intent = %v, %v, want nil, nil (whitespace-only name)", cmd, intent)
+	if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {
+		t.Fatalf("cmd = %v, want nil (whitespace-only name)", cmd)
 	}
 }
 
@@ -239,7 +222,7 @@ func TestCompanyFormModel_Enter_TrimsSavedName(t *testing.T) {
 	m.inputs[formFieldName].SetValue("  Acme  ")
 	m.inputs[formFieldSourceRef].SetValue("acme")
 
-	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that creates the company")
 	}
@@ -267,7 +250,7 @@ func TestCompanyFormModel_Enter_BoardRejectsSourceRef_NoCompanyCreated(t *testin
 	m.inputs[formFieldName].SetValue("Acme")
 	m.inputs[formFieldSourceRef].SetValue("acmee")
 
-	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that checks the board and creates the company")
 	}
@@ -314,13 +297,44 @@ func TestCompanyFormModel_WhileBoardCheckInFlight(t *testing.T) {
 			m := newCompanyFormModel(nil)
 			m.inputs[formFieldName].SetValue("Acme")
 			m.inputs[formFieldSourceRef].SetValue("acme")
-			if cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
+			if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
 				t.Fatal("first enter: cmd = nil, want the board check")
 			}
 
-			cmd, intent := m.Update(tea.KeyPressMsg{Code: tt.key})
-			if cmd != nil || intent != nil {
-				t.Fatalf("cmd, intent = %v, %v, want nil, nil while the check is in flight", cmd, intent)
+			if cmd := m.keyPressed(tea.KeyPressMsg{Code: tt.key}); cmd != nil {
+				t.Fatalf("cmd = %v, want nil while the check is in flight", cmd)
+			}
+		})
+	}
+}
+
+// The form takes keys only while the last focus signal named it.
+func TestCompanyFormModel_TakesKeysOnlyWhileFocused(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		focused   func(m *companyFormModel) message.ScreenInstance
+		wantClose bool
+	}{
+		{name: "the form in focus", focused: func(m *companyFormModel) message.ScreenInstance { return m.Instance() }, wantClose: true},
+		{name: "another component in focus", focused: func(*companyFormModel) message.ScreenInstance { return newCompanyListModel(nil, nil).Instance() }, wantClose: false},
+		{name: "nothing in focus", focused: func(*companyFormModel) message.ScreenInstance { return 0 }, wantClose: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := newCompanyFormModel(nil)
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+
+			r.Dispatch(focusOn(tt.focused(m)))
+			cmd := r.Dispatch(tea.KeyPressMsg{Code: tea.KeyEsc})
+
+			if closed := slices.Contains(runCmd(t, cmd), tea.Msg(message.CloseCompanyFormMsg{})); closed != tt.wantClose {
+				t.Errorf("esc asked to close = %v, want %v", closed, tt.wantClose)
 			}
 		})
 	}
@@ -353,7 +367,7 @@ func TestCompanyFormModel_CompanyCreated_ActsOnItsOwnResultOnly(t *testing.T) {
 			m := newCompanyFormModel(nil)
 			m.inputs[formFieldName].SetValue("Acme")
 			m.inputs[formFieldSourceRef].SetValue("acme")
-			if cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
+			if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
 				t.Fatal("enter: cmd = nil, want the board check")
 			}
 
@@ -365,7 +379,7 @@ func TestCompanyFormModel_CompanyCreated_ActsOnItsOwnResultOnly(t *testing.T) {
 			if closed := got == (message.CloseCompanyFormMsg{}); closed != tt.wantClose {
 				t.Errorf("companyCreated sent %#v, want close = %v", got, tt.wantClose)
 			}
-			if checking := strings.Contains(m.View(), "Checking board"); checking != tt.wantChecking {
+			if checking := strings.Contains(m.View().Content, "Checking board"); checking != tt.wantChecking {
 				t.Errorf("view shows checking = %v, want %v", checking, tt.wantChecking)
 			}
 		})

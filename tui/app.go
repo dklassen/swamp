@@ -216,7 +216,6 @@ func New(
 		syncer:                syncer,
 		currentScreen:         screenActiveApplications,
 		allPostings:           newAllPostingsModel(postings),
-		companyForm:           newCompanyFormModel(syncer),
 		postingList:           newPostingListModel(postings),
 		activeApplicationList: newActiveApplicationListModel(),
 		hideArchived:          true,
@@ -252,8 +251,21 @@ func (a *App) focused() message.ScreenInstance {
 		return a.companyList.Instance()
 	case screenCompanyDelete:
 		return a.companyDelete.Instance()
+	case screenCompanyForm:
+		return a.companyForm.Instance()
 	}
 	return 0
+}
+
+// closeCompanyForm takes the add-company form down, back to the company
+// list.
+func (a *App) closeCompanyForm() tea.Cmd {
+	if err := a.router.Deregister(a.companyForm); err != nil {
+		return message.Fail(message.Source{Process: a.origin}, err)
+	}
+	a.companyForm = nil
+	a.currentScreen = screenCompanyList
+	return nil
 }
 
 // closeCompanyDelete takes the delete confirmation down, back to the
@@ -1088,17 +1100,23 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.activeApplicationList.keepCursorOn(previous, a.activeApplications)
 	case message.CompanyCreatedMsg:
 		a.err = msg.Err
-		return a, a.companyForm.companyCreated(msg)
 	case message.CloseCompanyFormMsg:
-		a.currentScreen = screenCompanyList
+		// A second esc, typed before the first one's close arrived.
+		if a.currentScreen == screenCompanyForm {
+			return a, a.closeCompanyForm()
+		}
 	case message.CompanyNameUpdatedMsg:
 		a.err = msg.Err
 		return a, a.companyEdit.companyNameUpdated(msg)
 	case message.CloseCompanyEditMsg:
 		a.currentScreen = screenCompanyList
 	case message.OpenCompanyFormMsg:
+		form := newCompanyFormModel(a.syncer)
+		if err := a.router.Register(form); err != nil {
+			return a, message.Fail(message.Source{Process: a.origin}, err)
+		}
+		a.companyForm = form
 		a.currentScreen = screenCompanyForm
-		a.companyForm = newCompanyFormModel(a.syncer)
 	case message.OpenCompanyEditMsg:
 		a.currentScreen = screenCompanyEdit
 		a.companyEdit = newCompanyEditModel(a.companyService, msg.Company.ID, msg.Company.Name)
@@ -1491,8 +1509,6 @@ func (a *App) paste(msg tea.PasteMsg) tea.Cmd {
 		return a.allPostings.paste(msg)
 	case screenActiveApplications:
 		a.activeApplicationList.paste(msg)
-	case screenCompanyForm:
-		return a.companyForm.paste(msg)
 	case screenCompanyEdit:
 		return a.companyEdit.paste(msg)
 	case screenApplicationExport:
@@ -1738,12 +1754,6 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return a, saveCompanyFilters(a.companyService, a.selectedCompany.ID, v.departments, v.locations)
 		}
 		return a, cmd
-	case screenCompanyForm:
-		cmd, intent := a.companyForm.Update(msg)
-		if _, ok := intent.(cancelCompanyFormMsg); ok {
-			a.currentScreen = screenCompanyList
-		}
-		return a, cmd
 	case screenCompanyEdit:
 		cmd, intent := a.companyEdit.Update(msg)
 		if _, ok := intent.(cancelCompanyEditMsg); ok {
@@ -1826,7 +1836,7 @@ func (a *App) body(s screen) string {
 	case screenCompanyList:
 		b.WriteString(a.companyList.View().Content)
 	case screenCompanyForm:
-		b.WriteString(a.companyForm.View())
+		b.WriteString(a.companyForm.View().Content)
 	case screenCompanyEdit:
 		b.WriteString(a.companyEdit.View())
 	case screenPostingList:
