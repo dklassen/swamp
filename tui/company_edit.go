@@ -17,6 +17,7 @@ import (
 // screen to do with them.
 type companyEditModel struct {
 	companies *service.CompanyService
+	process   string
 	companyID int64
 	nameInput textinput.Model
 	// saving is true from the moment Enter dispatches updateCompanyName
@@ -31,12 +32,17 @@ type companyEditModel struct {
 }
 
 // newCompanyEditModel returns an edit screen for companyID, seeded with
-// its current name.
-func newCompanyEditModel(companies *service.CompanyService, companyID int64, name string) *companyEditModel {
+// its current name. process is the TUI's "kind:pid", the source of the
+// rename's events.
+func newCompanyEditModel(companies *service.CompanyService, process string, companyID int64, name string) *companyEditModel {
 	input := textinput.New()
 	input.SetValue(name)
 	input.Focus()
-	return &companyEditModel{companies: companies, companyID: companyID, nameInput: input, instance: message.NewScreenInstance()}
+	return &companyEditModel{companies: companies, process: process, companyID: companyID, nameInput: input, instance: message.NewScreenInstance()}
+}
+
+func (m *companyEditModel) source() message.Source {
+	return message.Source{Process: m.process, Instance: m.instance}
 }
 
 func (m *companyEditModel) Instance() message.ScreenInstance { return m.instance }
@@ -47,7 +53,8 @@ func (m *companyEditModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.WhenFocused(m, m.keyPressed),
 		model.WhenFocused(m, m.paste),
-		model.Always(m.companyNameUpdated),
+		model.Always(m.companyRenamed, model.From(m.instance)),
+		model.Always(m.renameFailed, model.From(m.instance)),
 		model.Always(m.focusChanged),
 	}
 }
@@ -68,35 +75,38 @@ func (m *companyEditModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 		if m.saving {
 			return nil
 		}
-		// A failed save's error goes with the edit.
-		return tea.Batch(
-			func() tea.Msg { return message.CloseCompanyEditMsg{} },
-			message.ReportStatus(message.Source{Instance: m.instance}, ""),
-		)
+		return m.close()
 	case "enter":
 		name := strings.TrimSpace(m.nameInput.Value())
 		if name == "" {
 			return nil
 		}
 		m.saving = true
-		return updateCompanyName(m.companies, m.companyID, name, m.instance)
+		return updateCompanyName(m.companies, m.source(), m.companyID, name)
 	}
 	var cmd tea.Cmd
 	m.nameInput, cmd = m.nameInput.Update(msg)
 	return cmd
 }
 
-// companyNameUpdated ends its own save, letting Esc cancel again. On
-// failure the edit stays open with the name as typed.
-func (m *companyEditModel) companyNameUpdated(updated message.CompanyNameUpdatedMsg) tea.Cmd {
-	if updated.From != m.instance {
-		return nil
-	}
+// close takes a failed save's error from the banner with the edit.
+func (m *companyEditModel) close() tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg { return message.CloseCompanyEditMsg{} },
+		message.ReportStatus(m.source(), ""),
+	)
+}
+
+func (m *companyEditModel) companyRenamed(message.Event[message.Changed[message.Company]]) tea.Cmd {
 	m.saving = false
-	if updated.Err != nil {
-		return nil
-	}
-	return func() tea.Msg { return message.CloseCompanyEditMsg{} }
+	return m.close()
+}
+
+// renameFailed lets Esc cancel again, and leaves the edit open with the
+// name as typed.
+func (m *companyEditModel) renameFailed(message.Event[message.Error]) tea.Cmd {
+	m.saving = false
+	return nil
 }
 
 func (m *companyEditModel) View() tea.View {

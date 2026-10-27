@@ -649,13 +649,13 @@ func deleteCompany(companies *service.CompanyService, src message.Source, compan
 	}
 }
 
-func updateCompanyName(companies *service.CompanyService, companyID int64, name string, from message.ScreenInstance) tea.Cmd {
+func updateCompanyName(companies *service.CompanyService, src message.Source, companyID int64, name string) tea.Cmd {
 	return func() tea.Msg {
 		renamed, err := companies.SetName(context.Background(), companyID, name)
 		if err != nil {
-			return message.CompanyNameUpdatedMsg{From: from, Err: err}
+			return message.New(src, message.Subject{Type: message.TypeCompany, ID: companyID}, message.OpUpdated, time.Now().UTC(), model.ErrorOf(err))
 		}
-		return message.CompanyNameUpdatedMsg{Company: renamed.After, From: from}
+		return message.Updated(src, companyID, renamed.At, companySnapshot(renamed.Before), companySnapshot(renamed.After))
 	}
 }
 
@@ -1131,7 +1131,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.companyForm = form
 		a.currentScreen = screenCompanyForm
 	case message.OpenCompanyEditMsg:
-		edit := newCompanyEditModel(a.companyService, msg.Company.ID, msg.Company.Name)
+		edit := newCompanyEditModel(a.companyService, a.origin, msg.Company.ID, msg.Company.Name)
 		if err := a.router.Register(edit); err != nil {
 			return a, message.Fail(message.Source{Process: a.origin}, err)
 		}

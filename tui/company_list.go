@@ -60,7 +60,6 @@ func (m *companyListModel) Routes() []*model.Route {
 		model.Always(m.companiesLoaded),
 		model.Always(m.companyCreated),
 		model.Always(m.companyChanged),
-		model.Always(m.companyNameUpdated),
 		model.WhenFocused(m, m.keyPressed),
 		model.WhenFocused(m, m.paste),
 		model.Always(m.resize),
@@ -100,25 +99,19 @@ func (m *companyListModel) companyCreated(created message.CompanyCreatedMsg) tea
 
 func (m *companyListModel) companyChanged(e message.Event[message.Changed[message.Company]]) tea.Cmd {
 	switch e.Meta.Op {
+	case message.OpUpdated:
+		if i := indexOfCompany(m.companies, e.Meta.Subject.ID); i != -1 {
+			m.companies[i] = companyOf(e.Payload.After)
+		}
 	case message.OpDeleted:
 		if i := indexOfCompany(m.companies, e.Meta.Subject.ID); i != -1 {
 			m.companies = append(m.companies[:i], m.companies[i+1:]...)
 		}
 		m.clampCursor(len(m.companies))
-	}
-	return nil
-}
-
-func (m *companyListModel) companyNameUpdated(updated message.CompanyNameUpdatedMsg) tea.Cmd {
-	src := message.Source{Instance: m.instance}
-	if updated.Err != nil {
-		return model.ReportErr(src, updated.Err)
-	}
-	if i := indexOfCompany(m.companies, updated.Company.ID); i != -1 {
-		m.companies[i] = updated.Company
+		return nil
 	}
 	sortCompaniesByName(m.companies)
-	return message.ReportStatus(src, "")
+	return nil
 }
 
 // backToActiveApplicationsMsg signals that App should switch back to the

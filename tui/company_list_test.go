@@ -62,6 +62,7 @@ func TestCompanyListModel_CompanyChanged_KeepsTheRowsInStep(t *testing.T) {
 		want  []string
 	}{
 		{name: "deleted", event: message.Deleted(src, acme.ID, at, companySnapshot(acme)), want: []string{"Globex"}},
+		{name: "renamed", event: message.Updated(src, acme.ID, at, companySnapshot(acme), message.Company{ID: acme.ID, Name: "Zeta"}), want: []string{"Globex", "Zeta"}},
 		{name: "deleted, not shown", event: message.Deleted(src, 3, at, message.Company{ID: 3, Name: "Initech"}), want: []string{"Acme", "Globex"}},
 	}
 	for _, tt := range tests {

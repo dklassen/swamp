@@ -553,14 +553,16 @@ func TestApp_CompanyRenameFails_ShowsTheErrorAndKeepsTheEditOpen(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 	app = sendKeyAndApply(t, app, runeKey('e'))
 
 	failure := errors.New("disk full")
-	from := app.companyEdit.Instance()
-	app = applyCmd(t, app, func() tea.Msg { return message.CompanyNameUpdatedMsg{From: from, Err: failure} })
+	from := message.Source{Instance: app.companyEdit.Instance()}
+	app = applyCmd(t, app, func() tea.Msg {
+		return message.New(from, message.Subject{Type: message.TypeCompany, ID: acme.ID}, message.OpUpdated, time.Now().UTC(), model.ErrorOf(failure))
+	})
 
 	if app.currentScreen != screenCompanyEdit {
 		t.Errorf("screen after a failed rename = %v, want the edit", app.currentScreen)
