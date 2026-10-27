@@ -1110,15 +1110,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.activeApplications = msg.applications
 		a.activeApplicationProgress = msg.progress
 		a.activeApplicationList.keepCursorOn(previous, a.activeApplications)
-	case message.CompanyCreatedMsg:
-		a.err = msg.Err
 	case message.CloseCompanyFormMsg:
 		// A second esc, typed before the first one's close arrived.
 		if a.currentScreen == screenCompanyForm {
 			return a, a.closeCompanyForm()
 		}
-	case message.CompanyNameUpdatedMsg:
-		a.err = msg.Err
 	case message.CloseCompanyEditMsg:
 		// A second esc, typed before the first one's close arrived.
 		if a.currentScreen == screenCompanyEdit {

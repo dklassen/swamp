@@ -546,6 +546,27 @@ func TestApp_CompanyDeleteFails_ShowsTheErrorOnTheList(t *testing.T) {
 	}
 }
 
+func TestApp_CompanyRenameFails_ShowsTheErrorAndKeepsTheEditOpen(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
+	app = sendKeyAndApply(t, app, runeKey('e'))
+
+	failure := errors.New("disk full")
+	from := app.companyEdit.Instance()
+	app = applyCmd(t, app, func() tea.Msg { return message.CompanyNameUpdatedMsg{From: from, Err: failure} })
+
+	if app.currentScreen != screenCompanyEdit {
+		t.Errorf("screen after a failed rename = %v, want the edit", app.currentScreen)
+	}
+	if !strings.Contains(app.banner(), failure.Error()) {
+		t.Errorf("banner after a failed rename = %q, want it to show %q", app.banner(), failure)
+	}
+}
+
 func TestApp_PressDThenY_DeletesSelectedCompany(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
