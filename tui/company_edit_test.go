@@ -2,12 +2,14 @@ package tui
 
 import (
 	"errors"
+	"slices"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 func TestCompanyEditModel_New_SeedsInputWithName(t *testing.T) {
@@ -22,28 +24,14 @@ func TestCompanyEditModel_New_SeedsInputWithName(t *testing.T) {
 	}
 }
 
-func TestCompanyEditModel_Esc_ReturnsCancelMsg(t *testing.T) {
-	t.Parallel()
-
-	m := newCompanyEditModel(nil, 7, "Acme")
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	if _, ok := intent.(cancelCompanyEditMsg); !ok {
-		t.Fatalf("intent = %T, want cancelCompanyEditMsg", intent)
-	}
-}
-
 func TestCompanyEditModel_Enter_EmptyName_NoOp(t *testing.T) {
 	t.Parallel()
 
 	m := newCompanyEditModel(nil, 7, "Acme")
 	m.nameInput.SetValue("")
 
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if cmd != nil || intent != nil {
-		t.Fatalf("cmd, intent = %v, %v, want nil, nil (empty name)", cmd, intent)
+	if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {
+		t.Fatalf("cmd = %v, want nil (empty name)", cmd)
 	}
 }
 
@@ -51,12 +39,8 @@ func TestCompanyEditModel_Enter_ReturnsSaveCmd(t *testing.T) {
 	t.Parallel()
 
 	m := newCompanyEditModel(nil, 7, "Acme")
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if cmd == nil {
+	if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
 		t.Fatal("cmd = nil, want a command that saves the company name")
-	}
-	if intent != nil {
-		t.Fatalf("intent = %v, want nil", intent)
 	}
 }
 
@@ -64,7 +48,7 @@ func TestCompanyEditModel_TypingKey_UpdatesInputValue(t *testing.T) {
 	t.Parallel()
 
 	m := newCompanyEditModel(nil, 7, "Acme")
-	m.Update(runeKey([]rune(" Corp")...))
+	m.keyPressed(runeKey([]rune(" Corp")...))
 	if got := m.nameInput.Value(); got != "Acme Corp" {
 		t.Fatalf("nameInput.Value() = %q, want %q", got, "Acme Corp")
 	}
@@ -76,9 +60,8 @@ func TestCompanyEditModel_Enter_WhitespaceOnlyName_NoOp(t *testing.T) {
 	m := newCompanyEditModel(nil, 7, "Acme")
 	m.nameInput.SetValue("   ")
 
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if cmd != nil || intent != nil {
-		t.Fatalf("cmd, intent = %v, %v, want nil, nil (whitespace-only name)", cmd, intent)
+	if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {
+		t.Fatalf("cmd = %v, want nil (whitespace-only name)", cmd)
 	}
 }
 
@@ -94,7 +77,7 @@ func TestCompanyEditModel_Enter_TrimsSavedName(t *testing.T) {
 	m := newCompanyEditModel(s.Companies, created.ID, created.Name)
 	m.nameInput.SetValue("  Acme Corp  ")
 
-	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
+	cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that saves the company name")
 	}
@@ -120,13 +103,44 @@ func TestCompanyEditModel_Esc_WhileSavePending_NoOp(t *testing.T) {
 	// Enter dispatches the save command but doesn't run it -- bubbletea
 	// runs commands async, so at this point the save is "in flight" from
 	// the model's perspective even though nothing has executed yet.
-	if cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
+	if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
 		t.Fatal("cmd = nil, want a command that saves the company name")
 	}
 
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
-	if cmd != nil || intent != nil {
-		t.Fatalf("cmd, intent = %v, %v, want nil, nil (esc while save pending)", cmd, intent)
+	if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEsc}); cmd != nil {
+		t.Fatalf("cmd = %v, want nil (esc while save pending)", cmd)
+	}
+}
+
+// The edit takes keys only while the last focus signal named it.
+func TestCompanyEditModel_TakesKeysOnlyWhileFocused(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		focused   func(m *companyEditModel) message.ScreenInstance
+		wantClose bool
+	}{
+		{name: "the edit in focus", focused: func(m *companyEditModel) message.ScreenInstance { return m.Instance() }, wantClose: true},
+		{name: "another component in focus", focused: func(*companyEditModel) message.ScreenInstance { return newCompanyListModel(nil, nil).Instance() }, wantClose: false},
+		{name: "nothing in focus", focused: func(*companyEditModel) message.ScreenInstance { return 0 }, wantClose: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := newCompanyEditModel(nil, 7, "Acme")
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+
+			r.Dispatch(focusOn(tt.focused(m)))
+			cmd := r.Dispatch(tea.KeyPressMsg{Code: tea.KeyEsc})
+
+			if closed := slices.Contains(runCmd(t, cmd), tea.Msg(message.CloseCompanyEditMsg{})); closed != tt.wantClose {
+				t.Errorf("esc asked to close = %v, want %v", closed, tt.wantClose)
+			}
+		})
 	}
 }
 
@@ -155,7 +169,7 @@ func TestCompanyEditModel_CompanyNameUpdated_ActsOnItsOwnResultOnly(t *testing.T
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m := newCompanyEditModel(nil, 7, "Acme")
-			if cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
+			if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
 				t.Fatal("enter: cmd = nil, want the save")
 			}
 
@@ -167,8 +181,7 @@ func TestCompanyEditModel_CompanyNameUpdated_ActsOnItsOwnResultOnly(t *testing.T
 			if closed := got == (message.CloseCompanyEditMsg{}); closed != tt.wantClose {
 				t.Errorf("companyNameUpdated sent %#v, want close = %v", got, tt.wantClose)
 			}
-			_, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
-			if blocked := intent == nil; blocked != tt.wantSaving {
+			if blocked := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEsc}) == nil; blocked != tt.wantSaving {
 				t.Errorf("esc blocked = %v, want %v", blocked, tt.wantSaving)
 			}
 		})

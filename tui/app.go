@@ -253,8 +253,20 @@ func (a *App) focused() message.ScreenInstance {
 		return a.companyDelete.Instance()
 	case screenCompanyForm:
 		return a.companyForm.Instance()
+	case screenCompanyEdit:
+		return a.companyEdit.Instance()
 	}
 	return 0
+}
+
+// closeCompanyEdit takes the company edit down, back to the company list.
+func (a *App) closeCompanyEdit() tea.Cmd {
+	if err := a.router.Deregister(a.companyEdit); err != nil {
+		return message.Fail(message.Source{Process: a.origin}, err)
+	}
+	a.companyEdit = nil
+	a.currentScreen = screenCompanyList
+	return nil
 }
 
 // closeCompanyForm takes the add-company form down, back to the company
@@ -1107,9 +1119,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case message.CompanyNameUpdatedMsg:
 		a.err = msg.Err
-		return a, a.companyEdit.companyNameUpdated(msg)
 	case message.CloseCompanyEditMsg:
-		a.currentScreen = screenCompanyList
+		// A second esc, typed before the first one's close arrived.
+		if a.currentScreen == screenCompanyEdit {
+			return a, a.closeCompanyEdit()
+		}
 	case message.OpenCompanyFormMsg:
 		form := newCompanyFormModel(a.syncer)
 		if err := a.router.Register(form); err != nil {
@@ -1118,8 +1132,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.companyForm = form
 		a.currentScreen = screenCompanyForm
 	case message.OpenCompanyEditMsg:
+		edit := newCompanyEditModel(a.companyService, msg.Company.ID, msg.Company.Name)
+		if err := a.router.Register(edit); err != nil {
+			return a, message.Fail(message.Source{Process: a.origin}, err)
+		}
+		a.companyEdit = edit
 		a.currentScreen = screenCompanyEdit
-		a.companyEdit = newCompanyEditModel(a.companyService, msg.Company.ID, msg.Company.Name)
 	case message.OpenCompanyDeleteMsg:
 		dialog := newCompanyDeleteModel(a.companyService, msg.Company, msg.OpenPostings, a.sized.Width)
 		if err := a.router.Register(dialog); err != nil {
@@ -1509,8 +1527,6 @@ func (a *App) paste(msg tea.PasteMsg) tea.Cmd {
 		return a.allPostings.paste(msg)
 	case screenActiveApplications:
 		a.activeApplicationList.paste(msg)
-	case screenCompanyEdit:
-		return a.companyEdit.paste(msg)
 	case screenApplicationExport:
 		return a.applicationExport.paste(msg)
 	case screenApplicationNotesEdit:
@@ -1754,12 +1770,6 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return a, saveCompanyFilters(a.companyService, a.selectedCompany.ID, v.departments, v.locations)
 		}
 		return a, cmd
-	case screenCompanyEdit:
-		cmd, intent := a.companyEdit.Update(msg)
-		if _, ok := intent.(cancelCompanyEditMsg); ok {
-			a.currentScreen = screenCompanyList
-		}
-		return a, cmd
 	}
 	return a, nil
 }
@@ -1838,7 +1848,7 @@ func (a *App) body(s screen) string {
 	case screenCompanyForm:
 		b.WriteString(a.companyForm.View().Content)
 	case screenCompanyEdit:
-		b.WriteString(a.companyEdit.View())
+		b.WriteString(a.companyEdit.View().Content)
 	case screenPostingList:
 		snap := postingListSnapshot{
 			companyDescription:      a.selectedCompany.Description,

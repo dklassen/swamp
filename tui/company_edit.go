@@ -20,12 +20,13 @@ type companyEditModel struct {
 	companyID int64
 	nameInput textinput.Model
 	// saving is true from the moment Enter dispatches updateCompanyName
-	// until saveResolved is called with its result. bubbletea has no way
-	// to cancel an already-dispatched command, so Esc can't actually stop
-	// an in-flight save -- it's blocked instead, so "esc: cancel" stays
-	// true rather than racing the save (#37).
+	// until its result arrives. bubbletea has no way to cancel an
+	// already-dispatched command, so Esc can't actually stop an in-flight
+	// save -- it's blocked instead, so "esc: cancel" stays true rather
+	// than racing the save (#37).
 	saving bool
 
+	focused  bool
 	instance message.ScreenInstance
 }
 
@@ -40,28 +41,49 @@ func newCompanyEditModel(companies *service.CompanyService, companyID int64, nam
 
 func (m *companyEditModel) Instance() message.ScreenInstance { return m.instance }
 
-// cancelCompanyEditMsg signals that App should switch back to the
-// company-list screen without saving.
-type cancelCompanyEditMsg struct{}
+func (m *companyEditModel) Focused() bool { return m.focused }
 
-func (m *companyEditModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
+func (m *companyEditModel) Routes() []*model.Route {
+	return []*model.Route{
+		model.WhenFocused(m, m.keyPressed),
+		model.WhenFocused(m, m.paste),
+		model.Always(m.companyNameUpdated),
+		model.Always(m.focusChanged),
+	}
+}
+
+func (m *companyEditModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
+	m.focused = e.Payload.Value.Focused == m.instance
+	return nil
+}
+
+func (m *companyEditModel) Init() tea.Cmd { return nil }
+
+// Update has nothing to do: everything the edit handles is registered.
+func (m *companyEditModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
+
+func (m *companyEditModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	case "esc":
 		if m.saving {
-			return nil, nil
+			return nil
 		}
-		return nil, cancelCompanyEditMsg{}
+		// A failed save's error goes with the edit.
+		return tea.Batch(
+			func() tea.Msg { return message.CloseCompanyEditMsg{} },
+			message.ReportStatus(message.Source{Instance: m.instance}, ""),
+		)
 	case "enter":
 		name := strings.TrimSpace(m.nameInput.Value())
 		if name == "" {
-			return nil, nil
+			return nil
 		}
 		m.saving = true
-		return updateCompanyName(m.companies, m.companyID, name, m.instance), nil
+		return updateCompanyName(m.companies, m.companyID, name, m.instance)
 	}
 	var cmd tea.Cmd
 	m.nameInput, cmd = m.nameInput.Update(msg)
-	return cmd, nil
+	return cmd
 }
 
 // companyNameUpdated ends its own save, letting Esc cancel again. On
@@ -77,11 +99,11 @@ func (m *companyEditModel) companyNameUpdated(updated message.CompanyNameUpdated
 	return func() tea.Msg { return message.CloseCompanyEditMsg{} }
 }
 
-func (m *companyEditModel) View() string {
+func (m *companyEditModel) View() tea.View {
 	var b strings.Builder
 	b.WriteString(model.FocusedLabel.Render("Name:") + " " + m.nameInput.View() + "\n")
 	b.WriteString(model.HelpStyle.Render("enter: save  esc: cancel"))
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 func (m *companyEditModel) paste(msg tea.PasteMsg) tea.Cmd {
