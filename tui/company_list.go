@@ -10,7 +10,6 @@ import (
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
 
-	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
@@ -99,6 +98,14 @@ func (m *companyListModel) companyRefreshed(refreshed message.CompanyRefreshedMs
 
 func (m *companyListModel) syncAllFinished(message.SyncAllFinishedMsg) tea.Cmd {
 	return m.load()
+}
+
+// syncCompany asks for c's postings to be fetched from its job board.
+func syncCompany(src message.Source, c message.Company) tea.Cmd {
+	return func() tea.Msg {
+		return message.New(src, message.Subject{Type: message.TypeCompany, ID: c.ID}, message.OpNone, time.Now().UTC(),
+			message.Run[message.SyncCompany]{Value: message.SyncCompany{Company: c}})
+	}
 }
 
 // load reads the active companies along with each one's open posting count
@@ -199,14 +206,14 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 		}
 	case "r":
 		if onCompany {
-			return func() tea.Msg { return message.RefreshCompanyMsg{Company: companyOf(current)} }
+			return syncCompany(message.Source{Instance: m.instance}, current)
 		}
 	case "R":
-		companies := make([]company.Company, len(m.companies))
-		for i, c := range m.companies {
-			companies[i] = companyOf(c)
+		src, companies := message.Source{Instance: m.instance}, append([]message.Company(nil), m.companies...)
+		return func() tea.Msg {
+			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(),
+				message.Run[message.SyncAll]{Value: message.SyncAll{Companies: companies}})
 		}
-		return func() tea.Msg { return message.ToggleSyncAllMsg{Companies: companies} }
 	case "i":
 		m.showInfo = !m.showInfo
 	case "a":

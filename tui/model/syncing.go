@@ -9,7 +9,6 @@ import (
 	"charm.land/bubbles/v2/spinner"
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
 )
@@ -82,7 +81,7 @@ type syncAllState struct {
 	// run is recognised and dropped.
 	runID int
 	// companies is a snapshot of the company list when the run started.
-	companies []company.Company
+	companies []message.Company
 	// next is the index of the company in flight.
 	next    int
 	results []sync.Result
@@ -107,7 +106,7 @@ func (r *syncAllState) bar() string {
 }
 
 // syncAllStep syncs one company as a Cmd.
-func syncAllStep(syncer *sync.Syncer, runID int, company company.Company) tea.Cmd {
+func syncAllStep(syncer *sync.Syncer, runID int, company message.Company) tea.Cmd {
 	return func() tea.Msg {
 		result, err := syncer.SyncCompany(context.Background(), company.ID)
 		if err != nil {
@@ -121,11 +120,11 @@ func syncAllStep(syncer *sync.Syncer, runID int, company company.Company) tea.Cm
 // lets the company in flight finish -- SyncCompany isn't cancelled
 // mid-company -- and 'R' does nothing more until it has reported back, so
 // two runs never overlap.
-func (m *Syncing) syncAllKey(toggle message.ToggleSyncAllMsg) tea.Cmd {
+func (m *Syncing) syncAllKey(e message.Event[message.Run[message.SyncAll]]) tea.Cmd {
 	run := &m.run
 	switch {
 	case !run.running:
-		return m.startSyncAll(toggle.Companies)
+		return m.startSyncAll(e.Payload.Value.Companies)
 	case !run.stopping:
 		run.stopping = true
 		m.line = fmt.Sprintf("Stopping after %s…", run.companies[run.next].Name)
@@ -135,7 +134,7 @@ func (m *Syncing) syncAllKey(toggle message.ToggleSyncAllMsg) tea.Cmd {
 
 // startSyncAll starts a run over companies and returns the first
 // company's Cmd.
-func (m *Syncing) startSyncAll(companies []company.Company) tea.Cmd {
+func (m *Syncing) startSyncAll(companies []message.Company) tea.Cmd {
 	m.run = syncAllState{
 		runID:     m.run.runID + 1,
 		companies: companies,
@@ -186,7 +185,7 @@ func (m *Syncing) finishSyncAll() tea.Cmd {
 	return tea.Batch(message.ReportStatus(message.Source{Instance: m.instance}, summary), func() tea.Msg { return message.SyncAllFinishedMsg{Results: results} })
 }
 
-func refreshCompany(syncer *sync.Syncer, company company.Company) tea.Cmd {
+func refreshCompany(syncer *sync.Syncer, company message.Company) tea.Cmd {
 	return func() tea.Msg {
 		result, err := syncer.SyncCompany(context.Background(), company.ID)
 		if err != nil {
@@ -196,15 +195,15 @@ func refreshCompany(syncer *sync.Syncer, company company.Company) tea.Cmd {
 	}
 }
 
-func (m *Syncing) startRefresh(req message.RefreshCompanyMsg) tea.Cmd {
-	return m.refresh(req.Company)
+func (m *Syncing) startRefresh(e message.Event[message.Run[message.SyncCompany]]) tea.Cmd {
+	return m.refresh(e.Payload.Value.Company)
 }
 
 // refresh re-syncs company with the spinner turning until it reports, or
 // refuses while a run may be syncing it right now (#150). The refresh goes
 // first in the batch so a fast one has already finished when the
 // spinner's first tick arrives, which then stops it.
-func (m *Syncing) refresh(company company.Company) tea.Cmd {
+func (m *Syncing) refresh(company message.Company) tea.Cmd {
 	if m.run.running {
 		m.line = "Sync all in progress: refresh unavailable"
 		return nil

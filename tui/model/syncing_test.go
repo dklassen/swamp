@@ -3,11 +3,11 @@ package model_test
 import (
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
@@ -43,18 +43,30 @@ func newSyncing(t *testing.T) (*model.Syncing, func(tea.Msg) tea.Cmd) {
 	}
 }
 
+// syncAll asks for a run over companies, or for the run under way to stop.
+func syncAll(companies []message.Company) tea.Msg {
+	return message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(),
+		message.Run[message.SyncAll]{Value: message.SyncAll{Companies: companies}})
+}
+
+// syncCompany asks for c to be refreshed.
+func syncCompany(c message.Company) tea.Msg {
+	return message.New(message.Source{}, message.Subject{Type: message.TypeCompany, ID: c.ID}, message.OpNone, time.Now().UTC(),
+		message.Run[message.SyncCompany]{Value: message.SyncCompany{Company: c}})
+}
+
 func viewOf(m *model.Syncing) string {
 	return ansi.Strip(m.View().Content)
 }
 
-var acmeAndGlobex = []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
+var acmeAndGlobex = []message.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}
 
-func TestSyncing_ToggleSyncAll_StartsWithTheFirstCompany(t *testing.T) {
+func TestSyncing_RunSyncAll_StartsWithTheFirstCompany(t *testing.T) {
 	t.Parallel()
 	m, send := newSyncing(t)
 
-	if cmd := send(message.ToggleSyncAllMsg{Companies: acmeAndGlobex}); cmd == nil {
-		t.Fatal("ToggleSyncAllMsg returned nil Cmd, want the first company's sync")
+	if cmd := send(syncAll(acmeAndGlobex)); cmd == nil {
+		t.Fatal("Run[SyncAll] returned nil Cmd, want the first company's sync")
 	}
 
 	view := viewOf(m)
@@ -67,10 +79,10 @@ func TestSyncing_ToggleSyncAll_StartsWithTheFirstCompany(t *testing.T) {
 func TestSyncing_RefreshDuringARun_IsRefused(t *testing.T) {
 	t.Parallel()
 	m, send := newSyncing(t)
-	send(message.ToggleSyncAllMsg{Companies: acmeAndGlobex})
+	send(syncAll(acmeAndGlobex))
 
-	if cmd := send(message.RefreshCompanyMsg{Company: acmeAndGlobex[1]}); cmd != nil {
-		t.Error("RefreshCompanyMsg during a run returned a Cmd, want nil")
+	if cmd := send(syncCompany(acmeAndGlobex[1])); cmd != nil {
+		t.Error("Run[SyncCompany] during a run returned a Cmd, want nil")
 	}
 	if view := viewOf(m); !strings.HasSuffix(view, "Sync all in progress: refresh unavailable") {
 		t.Errorf("View = %q, want it to end with the refusal", view)
@@ -97,7 +109,7 @@ func messagesOf(cmd tea.Cmd) []tea.Msg {
 func TestSyncing_LastCompany_ReportsTheSummaryAndAnnouncesTheResults(t *testing.T) {
 	t.Parallel()
 	m, send := newSyncing(t)
-	send(message.ToggleSyncAllMsg{Companies: acmeAndGlobex})
+	send(syncAll(acmeAndGlobex))
 	send(message.SyncAllStepMsg{RunID: 1, Result: sync.Result{CompanyID: 1, Name: "Acme"}})
 
 	msgs := messagesOf(send(message.SyncAllStepMsg{RunID: 1, Result: sync.Result{CompanyID: 2, Name: "Globex"}}))
@@ -131,10 +143,10 @@ func TestSyncing_LastCompany_ReportsTheSummaryAndAnnouncesTheResults(t *testing.
 func TestSyncing_ResultFromAnEarlierRun_IsIgnored(t *testing.T) {
 	t.Parallel()
 	m, send := newSyncing(t)
-	send(message.ToggleSyncAllMsg{Companies: acmeAndGlobex})
-	send(message.ToggleSyncAllMsg{}) // stop after Acme
+	send(syncAll(acmeAndGlobex))
+	send(syncAll(nil)) // stop after Acme
 	send(message.SyncAllStepMsg{RunID: 1, Result: sync.Result{CompanyID: 1, Name: "Acme"}})
-	send(message.ToggleSyncAllMsg{Companies: acmeAndGlobex}) // run 2
+	send(syncAll(acmeAndGlobex)) // run 2
 	before := viewOf(m)
 
 	if cmd := send(message.SyncAllStepMsg{RunID: 1, Result: sync.Result{CompanyID: 2, Name: "Globex"}}); cmd != nil {

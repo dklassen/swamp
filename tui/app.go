@@ -1638,8 +1638,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			a.currentScreen = screenFilterSelect
 			return a, loadFilterOptions(a.companyService, a.selectedCompany.ID)
 		case refreshSelectedCompanyMsg:
-			c := a.selectedCompany
-			return a, func() tea.Msg { return message.RefreshCompanyMsg{Company: c} }
+			return a, syncCompany(message.Source{Instance: a.instance}, companySnapshot(a.selectedCompany))
 		case toggleHideArchivedMsg:
 			a.hideArchived = !a.hideArchived
 			return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
