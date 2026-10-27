@@ -1,7 +1,6 @@
 package model_test
 
 import (
-	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -13,6 +12,10 @@ import (
 	"github.com/dklassen/swamp/tui/model"
 )
 
+// pinged and ponged are two message types, for routes to tell apart.
+type pinged struct{ n int }
+type ponged struct{ n int }
+
 func TestRouteID_String_IsTheMessagesTypeName(t *testing.T) {
 	t.Parallel()
 
@@ -20,8 +23,8 @@ func TestRouteID_String_IsTheMessagesTypeName(t *testing.T) {
 		name string
 		msg  tea.Msg
 	}{
-		{name: "value", msg: message.CompanyCreatedMsg{}},
-		{name: "pointer", msg: &message.CompanyCreatedMsg{}},
+		{name: "value", msg: ponged{}},
+		{name: "pointer", msg: &ponged{}},
 		{name: "bubble tea message", msg: tea.WindowSizeMsg{}},
 	}
 	for _, tt := range tests {
@@ -44,9 +47,9 @@ func TestRouteIDOf_EqualExactlyForTheSameConcreteType(t *testing.T) {
 		a, b tea.Msg
 		want bool
 	}{
-		{name: "same type, different values", a: message.CompanyCreatedMsg{}, b: message.CompanyCreatedMsg{Err: errors.New("boom")}, want: true},
-		{name: "different types", a: message.CompanyCreatedMsg{}, b: message.CompanyDeletedMsg{}, want: false},
-		{name: "a value and a pointer to it", a: message.CompanyCreatedMsg{}, b: &message.CompanyCreatedMsg{}, want: false},
+		{name: "same type, different values", a: ponged{}, b: ponged{n: 1}, want: true},
+		{name: "different types", a: ponged{}, b: pinged{}, want: false},
+		{name: "a value and a pointer to it", a: ponged{}, b: &ponged{}, want: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -82,16 +85,16 @@ func (c *component) Routes() []*model.Route              { return c.routes }
 // that type.
 func TestAlways_RoutesByTheHandlersMessageType(t *testing.T) {
 	t.Parallel()
-	var got message.CompanyDeletedMsg
+	var got pinged
 
-	route := model.Always(func(msg message.CompanyDeletedMsg) tea.Cmd { got = msg; return nil })
+	route := model.Always(func(msg pinged) tea.Cmd { got = msg; return nil })
 
-	if want := model.RouteIDOf(message.CompanyDeletedMsg{}); route.ID() != want {
+	if want := model.RouteIDOf(pinged{}); route.ID() != want {
 		t.Fatalf("route.ID() = %v, want %v", route.ID(), want)
 	}
-	route.Handle(message.CompanyDeletedMsg{CompanyID: 7})
-	if got.CompanyID != 7 {
-		t.Errorf("handler got %+v, want CompanyID 7", got)
+	route.Handle(pinged{n: 7})
+	if got.n != 7 {
+		t.Errorf("handler got %+v, want n 7", got)
 	}
 }
 
@@ -99,9 +102,9 @@ func TestAlways_RoutesByTheHandlersMessageType(t *testing.T) {
 // router's fault; it's reported as a fault, not a panic.
 func TestRoute_WrongMessageSendsAFault(t *testing.T) {
 	t.Parallel()
-	route := model.Always(func(message.CompanyDeletedMsg) tea.Cmd { return nil })
+	route := model.Always(func(pinged) tea.Cmd { return nil })
 
-	cmd := route.Handle(message.CompanyCreatedMsg{})
+	cmd := route.Handle(ponged{})
 
 	if cmd == nil {
 		t.Fatal("handler given the wrong message returned no command, want one sending a fault")
@@ -140,7 +143,7 @@ func TestMsgRouter_Dispatch_DeliversByScope(t *testing.T) {
 
 	tests := []struct {
 		name    string
-		route   func(*focusable, func(message.CompanyDeletedMsg) tea.Cmd) *model.Route
+		route   func(*focusable, func(pinged) tea.Cmd) *model.Route
 		focused bool
 		want    int
 	}{
@@ -155,12 +158,12 @@ func TestMsgRouter_Dispatch_DeliversByScope(t *testing.T) {
 			owner := &focusable{component: component{name: "owner"}, focused: tt.focused}
 			r := model.NewMsgRouter()
 			got := 0
-			owner.routes = []*model.Route{tt.route(owner, func(message.CompanyDeletedMsg) tea.Cmd { got++; return nil })}
+			owner.routes = []*model.Route{tt.route(owner, func(pinged) tea.Cmd { got++; return nil })}
 			if err := r.Register(owner); err != nil {
 				t.Fatalf("Register: %v", err)
 			}
 
-			r.Dispatch(message.CompanyDeletedMsg{})
+			r.Dispatch(pinged{})
 
 			if got != tt.want {
 				t.Errorf("deliveries = %d, want %d", got, tt.want)
@@ -169,11 +172,11 @@ func TestMsgRouter_Dispatch_DeliversByScope(t *testing.T) {
 	}
 }
 
-func always(_ *focusable, h func(message.CompanyDeletedMsg) tea.Cmd) *model.Route {
+func always(_ *focusable, h func(pinged) tea.Cmd) *model.Route {
 	return model.Always(h)
 }
 
-func whenFocused(owner *focusable, h func(message.CompanyDeletedMsg) tea.Cmd) *model.Route {
+func whenFocused(owner *focusable, h func(pinged) tea.Cmd) *model.Route {
 	return model.WhenFocused(owner, h)
 }
 
@@ -213,7 +216,7 @@ func (*unnamed) Instance() message.ScreenInstance { return 0 }
 // 0 is an event's "no instance", so an owner with it couldn't be named.
 func TestMsgRouter_Register_RefusesInstanceZero(t *testing.T) {
 	t.Parallel()
-	owner := &unnamed{component{routes: []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd { return nil })}}}
+	owner := &unnamed{component{routes: []*model.Route{model.Always(func(pinged) tea.Cmd { return nil })}}}
 
 	if err := model.NewMsgRouter().Register(owner); err == nil {
 		t.Error("Register of an owner with instance 0 returned no error, want one")
@@ -236,7 +239,7 @@ func TestMsgRouter_Register_RefusesAnInstanceItHasSeen(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			r := model.NewMsgRouter()
-			first := &component{name: "first", instance: 5, routes: []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd { return nil })}}
+			first := &component{name: "first", instance: 5, routes: []*model.Route{model.Always(func(pinged) tea.Cmd { return nil })}}
 			if err := r.Register(first); err != nil {
 				t.Fatalf("Register first: %v", err)
 			}
@@ -246,14 +249,14 @@ func TestMsgRouter_Register_RefusesAnInstanceItHasSeen(t *testing.T) {
 				}
 			}
 			got := 0
-			second := &component{name: "second", instance: 5, routes: []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd { got++; return nil })}}
+			second := &component{name: "second", instance: 5, routes: []*model.Route{model.Always(func(pinged) tea.Cmd { got++; return nil })}}
 
 			err := r.Register(second)
 
 			if err == nil || !strings.Contains(err.Error(), "5") {
 				t.Errorf("Register of a second owner with instance 5 = %v, want an error naming the instance", err)
 			}
-			r.Dispatch(message.CompanyDeletedMsg{})
+			r.Dispatch(pinged{})
 			if got != 0 {
 				t.Errorf("deliveries to the refused owner = %d, want 0", got)
 			}
@@ -265,12 +268,12 @@ func TestMsgRouter_Register_RefusesAnInstanceItHasSeen(t *testing.T) {
 func TestMsgRouter_Deregister_StopsTheOwnersRoutes(t *testing.T) {
 	t.Parallel()
 	got := 0
-	owner := &component{routes: []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd { got++; return nil })}}
+	owner := &component{routes: []*model.Route{model.Always(func(pinged) tea.Cmd { got++; return nil })}}
 	r := model.NewMsgRouter()
 	if err := r.Register(owner); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
-	r.Dispatch(message.CompanyDeletedMsg{})
+	r.Dispatch(pinged{})
 	if got != 1 {
 		t.Fatalf("deliveries before Deregister = %d, want 1", got)
 	}
@@ -278,7 +281,7 @@ func TestMsgRouter_Deregister_StopsTheOwnersRoutes(t *testing.T) {
 	if err := r.Deregister(owner); err != nil {
 		t.Fatalf("Deregister: %v", err)
 	}
-	r.Dispatch(message.CompanyDeletedMsg{})
+	r.Dispatch(pinged{})
 
 	if got != 1 {
 		t.Errorf("deliveries after Deregister = %d, want still 1", got)
@@ -290,15 +293,15 @@ func TestMsgRouter_Deregister_StopsTheOwnersRoutes(t *testing.T) {
 func TestMsgRouter_Deregister_LeavesOtherInstancesOfTheSameType(t *testing.T) {
 	t.Parallel()
 	gone, kept := 0, 0
-	leaving := &component{routes: []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd { gone++; return nil })}}
-	staying := &component{routes: []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd { kept++; return nil })}}
+	leaving := &component{routes: []*model.Route{model.Always(func(pinged) tea.Cmd { gone++; return nil })}}
+	staying := &component{routes: []*model.Route{model.Always(func(pinged) tea.Cmd { kept++; return nil })}}
 	r := model.NewMsgRouter()
 	for _, owner := range []*component{leaving, staying} {
 		if err := r.Register(owner); err != nil {
 			t.Fatalf("Register: %v", err)
 		}
 	}
-	r.Dispatch(message.CompanyDeletedMsg{})
+	r.Dispatch(pinged{})
 	if gone != 1 || kept != 1 {
 		t.Fatalf("deliveries before Deregister: leaving = %d, staying = %d, want 1 and 1", gone, kept)
 	}
@@ -306,7 +309,7 @@ func TestMsgRouter_Deregister_LeavesOtherInstancesOfTheSameType(t *testing.T) {
 	if err := r.Deregister(leaving); err != nil {
 		t.Fatalf("Deregister: %v", err)
 	}
-	r.Dispatch(message.CompanyDeletedMsg{})
+	r.Dispatch(pinged{})
 
 	if gone != 1 || kept != 2 {
 		t.Errorf("deliveries after Deregister: leaving = %d, staying = %d, want 1 and 2", gone, kept)
@@ -340,21 +343,21 @@ func TestMsgRouter_Deregister_DuringDispatchStillDeliversToOthers(t *testing.T) 
 	t.Parallel()
 	r := model.NewMsgRouter()
 	closing := &component{name: "closing"}
-	closing.routes = []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd {
+	closing.routes = []*model.Route{model.Always(func(pinged) tea.Cmd {
 		if err := r.Deregister(closing); err != nil {
 			t.Errorf("Deregister: %v", err)
 		}
 		return nil
 	})}
 	got := 0
-	other := &component{name: "other", routes: []*model.Route{model.Always(func(message.CompanyDeletedMsg) tea.Cmd { got++; return nil })}}
+	other := &component{name: "other", routes: []*model.Route{model.Always(func(pinged) tea.Cmd { got++; return nil })}}
 	for _, owner := range []*component{closing, other} {
 		if err := r.Register(owner); err != nil {
 			t.Fatalf("Register: %v", err)
 		}
 	}
 
-	r.Dispatch(message.CompanyDeletedMsg{})
+	r.Dispatch(pinged{})
 
 	if got != 1 {
 		t.Errorf("deliveries to the other owner = %d, want 1", got)

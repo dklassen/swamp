@@ -239,7 +239,7 @@ func RouteIDOf(msg tea.Msg) RouteID {
 }
 
 // String is the type's name as %T prints it, such as
-// "message.CompanyCreatedMsg".
+// "message.CloseCompanyFormMsg".
 func (id RouteID) String() string {
 	if id.typ == nil {
 		return "<nil>"

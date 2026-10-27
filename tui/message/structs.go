@@ -82,23 +82,3 @@ type CloseCompanyDeleteMsg struct{}
 
 // OpenCompanyPostingsMsg asks for Company's postings.
 type OpenCompanyPostingsMsg struct{ Company company.Company }
-
-// CompanyCreatedMsg is a create's result. From is the form that asked.
-type CompanyCreatedMsg struct {
-	Company company.Company
-	From    ScreenInstance
-	Err     error
-}
-
-type CompanyDeletedMsg struct {
-	CompanyID int64
-	Err       error
-}
-
-// CompanyNameUpdatedMsg is a rename's result. From is the edit that
-// asked.
-type CompanyNameUpdatedMsg struct {
-	Company company.Company
-	From    ScreenInstance
-	Err     error
-}
