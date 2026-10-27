@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -34,7 +33,7 @@ type companyListModel struct {
 	companyService *service.CompanyService
 	postingService *service.PostingService
 
-	companies []company.Company
+	companies []message.Company
 	// openPostings is each company's open, unarchived posting count.
 	openPostings map[int64]int
 
@@ -77,10 +76,7 @@ func (m *companyListModel) Init() tea.Cmd {
 
 func (m *companyListModel) companiesRead(e message.Event[message.Read[message.CompanyList]]) tea.Cmd {
 	previous := m.selected()
-	m.companies = make([]company.Company, len(e.Payload.Value.Companies))
-	for i, c := range e.Payload.Value.Companies {
-		m.companies[i] = companyOf(c)
-	}
+	m.companies = e.Payload.Value.Companies
 	m.openPostings = e.Payload.Value.OpenPostings
 	m.keepCursorOn(previous)
 	return nil
@@ -89,10 +85,10 @@ func (m *companyListModel) companiesRead(e message.Event[message.Read[message.Co
 func (m *companyListModel) companyChanged(e message.Event[message.Changed[message.Company]]) tea.Cmd {
 	switch e.Meta.Op {
 	case message.OpCreated:
-		m.companies = append(m.companies, companyOf(e.Payload.After))
+		m.companies = append(m.companies, e.Payload.After)
 	case message.OpUpdated:
 		if i := indexOfCompany(m.companies, e.Meta.Subject.ID); i != -1 {
-			m.companies[i] = companyOf(e.Payload.After)
+			m.companies[i] = e.Payload.After
 		}
 	case message.OpDeleted:
 		if i := indexOfCompany(m.companies, e.Meta.Subject.ID); i != -1 {
@@ -129,7 +125,7 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 
 	// Commands act on the matches a kept search shows, not the whole list.
 	visible := m.visible()
-	var current company.Company
+	var current message.Company
 	onCompany := m.cursor < len(visible)
 	if onCompany {
 		current = visible[m.cursor]
@@ -148,14 +144,19 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	case "d":
 		if onCompany {
 			openPostings := m.openPostings[current.ID]
-			return func() tea.Msg { return message.OpenCompanyDeleteMsg{Company: current, OpenPostings: openPostings} }
+			return func() tea.Msg {
+				return message.OpenCompanyDeleteMsg{Company: companyOf(current), OpenPostings: openPostings}
+			}
 		}
 	case "r":
 		if onCompany {
-			return func() tea.Msg { return message.RefreshCompanyMsg{Company: current} }
+			return func() tea.Msg { return message.RefreshCompanyMsg{Company: companyOf(current)} }
 		}
 	case "R":
-		companies := slices.Clone(m.companies)
+		companies := make([]company.Company, len(m.companies))
+		for i, c := range m.companies {
+			companies[i] = companyOf(c)
+		}
 		return func() tea.Msg { return message.ToggleSyncAllMsg{Companies: companies} }
 	case "i":
 		m.showInfo = !m.showInfo
@@ -167,11 +168,11 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 		m.clearSearch()
 	case "e":
 		if onCompany {
-			return func() tea.Msg { return message.OpenCompanyEditMsg{Company: current} }
+			return func() tea.Msg { return message.OpenCompanyEditMsg{Company: companyOf(current)} }
 		}
 	case "enter":
 		if onCompany {
-			return func() tea.Msg { return message.OpenCompanyPostingsMsg{Company: current} }
+			return func() tea.Msg { return message.OpenCompanyPostingsMsg{Company: companyOf(current)} }
 		}
 	}
 	return nil
@@ -233,12 +234,12 @@ func (m *companyListModel) clearSearch() {
 // visible is the part of the companies the query matches: a
 // case-insensitive substring of the name, in list order. With no query,
 // it's all of them.
-func (m *companyListModel) visible() []company.Company {
+func (m *companyListModel) visible() []message.Company {
 	if m.query == "" {
 		return m.companies
 	}
 	q := strings.ToLower(m.query)
-	var matches []company.Company
+	var matches []message.Company
 	for _, c := range m.companies {
 		if strings.Contains(strings.ToLower(c.Name), q) {
 			matches = append(matches, c)
@@ -353,7 +354,7 @@ const (
 // and slug, then its description word-wrapped. It's always the same height
 // -- top and bottom border, the header, and companyInfoDescriptionLines --
 // so moving the cursor with the box open never shifts the table.
-func companyInfoBox(c company.Company, width int) string {
+func companyInfoBox(c message.Company, width int) string {
 	// As wide as the table above it, less two border columns and one
 	// column of padding on each side.
 	textWidth := max(tableWidth(width)-4, 20)

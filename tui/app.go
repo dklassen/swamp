@@ -541,7 +541,7 @@ func indexOfApplication(apps []posting.ActiveApplication, id int64) int {
 }
 
 // indexOfCompany returns id's index in companies, or -1 if not present.
-func indexOfCompany(companies []company.Company, id int64) int {
+func indexOfCompany(companies []message.Company, id int64) int {
 	for i, c := range companies {
 		if c.ID == id {
 			return i
@@ -576,7 +576,7 @@ func loadCompanies(companies *service.CompanyService, postings *service.PostingS
 // any in-place mutation (create, rename) that could change where an
 // entry belongs, since Go's string `<` matches SQLite's default byte-wise
 // collation.
-func sortCompaniesByName(companies []company.Company) {
+func sortCompaniesByName(companies []message.Company) {
 	sort.Slice(companies, func(i, j int) bool {
 		return companies[i].Name < companies[j].Name
 	})
