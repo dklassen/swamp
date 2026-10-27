@@ -158,6 +158,8 @@ type App struct {
 
 	// router is a message router for Dispatching bubbletea tea.Msg's
 	router model.Router
+	// instance is the banner's, which App registers routes for.
+	instance message.ScreenInstance
 
 	// sized is the last size sent to the screens.
 	sized message.ContentSize
@@ -224,9 +226,11 @@ func New(
 		companyList:           newCompanyListModel(companies, postings),
 		syncing:               model.NewSyncing(syncer),
 		router:                model.NewMsgRouter(),
+		instance:              message.NewScreenInstance(),
 	}
 
 	modules := []model.Routable{
+		a,
 		a.companyList,
 		a.syncing,
 	}
@@ -256,7 +260,7 @@ func (a *App) focused() message.ScreenInstance {
 // company list.
 func (a *App) closeCompanyDelete() tea.Cmd {
 	if err := a.router.Deregister(a.companyDelete); err != nil {
-		return message.Fail(err)
+		return message.Fail(message.Source{Process: a.origin}, err)
 	}
 	a.companyDelete = nil
 	a.currentScreen = screenCompanyList
@@ -988,7 +992,7 @@ func narrowPostingsToFilters(postings []posting.Posting, departments, locations 
 	return narrowed
 }
 
-// errInternal is the banner for an ErrMsg: the error itself means nothing
+// errInternal is the banner for a fault: the error itself means nothing
 // to the user, so it says where the details went.
 var errInternal = errors.New("internal error, see swamp.log")
 
@@ -999,25 +1003,36 @@ func (a *App) handle(msg tea.Msg) (tea.Cmd, bool) {
 		if msg.String() == "ctrl+c" {
 			return tea.Quit, true
 		}
-	case message.BannerMsg:
-		a.setBanner(msg)
-		return nil, true
-	case message.ErrMsg:
-		// The TUI owns the terminal, so cmd/swamp points log at swamp.log.
-		log.Printf("tui: %v", msg.Err)
-		a.err = errInternal
-		return nil, true
 	}
 	return nil, false
 }
 
-// setBanner shows what a screen reported.
-func (a *App) setBanner(msg message.BannerMsg) {
-	if msg.Load {
-		a.setLoadErr(msg.Err)
-		return
+// Routes are the banner's, which hears every error whoever it's for. An
+// error stays up until the next error or notice, since a load that
+// succeeds sends neither and loads finish in any order.
+func (a *App) Routes() []*model.Route {
+	return []*model.Route{
+		model.Always(a.errorReported),
+		model.Always(a.notified),
 	}
-	a.err, a.status = msg.Err, msg.Status
+}
+
+func (a *App) Instance() message.ScreenInstance { return a.instance }
+
+func (a *App) errorReported(e message.Event[message.Error]) tea.Cmd {
+	if e.Payload.Code == message.ErrFault {
+		// The TUI owns the terminal, so cmd/swamp points log at swamp.log.
+		log.Printf("tui: %s", e.Payload.Text)
+		a.err = errInternal
+		return nil
+	}
+	a.err, a.status = errors.New(e.Payload.Text), ""
+	return nil
+}
+
+func (a *App) notified(e message.Event[message.Notify]) tea.Cmd {
+	a.err, a.status = nil, e.Payload.Status
+	return nil
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
@@ -1092,7 +1107,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case message.OpenCompanyDeleteMsg:
 		dialog := newCompanyDeleteModel(a.companyService, msg.Company, msg.OpenPostings, a.sized.Width)
 		if err := a.router.Register(dialog); err != nil {
-			return a, message.Fail(err)
+			return a, message.Fail(message.Source{Process: a.origin}, err)
 		}
 		a.companyDelete = dialog
 		a.currentScreen = screenCompanyDelete

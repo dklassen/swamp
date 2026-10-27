@@ -38,19 +38,19 @@ func TestApp_CompanyList_GetsEachKeyOnce(t *testing.T) {
 	}
 }
 
-// An ErrMsg is the program's fault, not something the user can act on:
-// the banner says where to look, not what went wrong.
-func TestApp_ErrMsg_ShowsTheInternalErrorBanner(t *testing.T) {
+// A fault is the program's, not something the user can act on: the
+// banner says where to look, not what went wrong.
+func TestApp_Fault_ShowsTheInternalErrorBanner(t *testing.T) {
 	t.Parallel()
 	app := newTestApp(t, testutil.NewTestApp(t), nil)
 
-	app, _ = sendKey(app, message.ErrMsg{Err: errors.New("handler wiring broke")})
+	app, _ = sendKey(app, message.Fail(message.Source{}, errors.New("handler wiring broke"))())
 
 	view := viewText(app)
 	if !strings.Contains(view, errInternal.Error()) {
-		t.Errorf("view after ErrMsg doesn't show %q:\n%s", errInternal.Error(), view)
+		t.Errorf("view after a fault doesn't show %q:\n%s", errInternal.Error(), view)
 	}
 	if strings.Contains(view, "handler wiring broke") {
-		t.Errorf("view after ErrMsg shows the wrapped error:\n%s", view)
+		t.Errorf("view after a fault shows the wrapped error:\n%s", view)
 	}
 }

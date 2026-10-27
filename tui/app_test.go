@@ -541,8 +541,8 @@ func TestApp_CompanyDeleteFails_ShowsTheErrorOnTheList(t *testing.T) {
 	if app.currentScreen != screenCompanyList {
 		t.Errorf("screen after a failed delete = %v, want the company list", app.currentScreen)
 	}
-	if !errors.Is(app.err, failure) {
-		t.Errorf("err after a failed delete = %v, want %v", app.err, failure)
+	if !strings.Contains(app.banner(), failure.Error()) {
+		t.Errorf("banner after a failed delete = %q, want it to show %q", app.banner(), failure)
 	}
 }
 
@@ -2102,8 +2102,8 @@ func TestApp_LoadSucceedsAfterAnotherFails_KeepsTheError(t *testing.T) {
 			app := newTestApp(t, testutil.NewTestApp(t), nil)
 			app = sendKeyAndApply(t, app, tt.failed)
 			app, _ = sendKey(app, tt.succeed)
-			if !errors.Is(app.err, loadErr) {
-				t.Errorf("app.err = %v, want %v", app.err, loadErr)
+			if !strings.Contains(app.banner(), loadErr.Error()) {
+				t.Errorf("banner = %q, want it to show %q", app.banner(), loadErr)
 			}
 		})
 	}
@@ -2124,8 +2124,8 @@ func TestApp_ApplicationDetailReloadSucceedsAfterAnotherLoadFails_KeepsTheError(
 	app = sendKeyAndApply(t, app, message.CompaniesLoadedMsg{Err: loadErr})
 	app, _ = sendKey(app, applicationDetailReloadedMsg{id: application.ID, application: application})
 
-	if !errors.Is(app.err, loadErr) {
-		t.Errorf("app.err = %v, want %v", app.err, loadErr)
+	if !strings.Contains(app.banner(), loadErr.Error()) {
+		t.Errorf("banner = %q, want it to show %q", app.banner(), loadErr)
 	}
 }
 

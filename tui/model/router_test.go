@@ -96,18 +96,18 @@ func TestAlways_RoutesByTheHandlersMessageType(t *testing.T) {
 }
 
 // The router only calls a route with its own type, so a mismatch is the
-// router's fault; it's reported as an ErrMsg, not a panic.
-func TestRoute_WrongMessageSendsAnErrMsg(t *testing.T) {
+// router's fault; it's reported as a fault, not a panic.
+func TestRoute_WrongMessageSendsAFault(t *testing.T) {
 	t.Parallel()
 	route := model.Always(func(message.CompanyDeletedMsg) tea.Cmd { return nil })
 
 	cmd := route.Handle(message.CompanyCreatedMsg{})
 
 	if cmd == nil {
-		t.Fatal("handler given the wrong message returned no command, want one sending message.ErrMsg")
+		t.Fatal("handler given the wrong message returned no command, want one sending a fault")
 	}
-	if got, ok := cmd().(message.ErrMsg); !ok || got.Err == nil {
-		t.Errorf("handler given the wrong message sent %#v, want a message.ErrMsg with an Err", got)
+	if got, ok := cmd().(message.Event[message.Error]); !ok || got.Payload.Code != message.ErrFault || got.Payload.Text == "" {
+		t.Errorf("handler given the wrong message sent %#v, want an Event[Error] with code %v and a Text", got, message.ErrFault)
 	}
 }
 

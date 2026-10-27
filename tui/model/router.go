@@ -203,7 +203,7 @@ func newRoute[T tea.Msg](accepts func() bool, handle func(T) tea.Cmd, filters []
 		handle: func(msg tea.Msg) tea.Cmd {
 			m, ok := msg.(T)
 			if !ok {
-				return message.Fail(fmt.Errorf("handler for %T got %T", zero, msg))
+				return message.Fail(message.Source{}, fmt.Errorf("handler for %T got %T", zero, msg))
 			}
 			if !accepts() {
 				return nil

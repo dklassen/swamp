@@ -220,7 +220,7 @@ func TestCompanyListModel_A_ReturnsOpenCompanyFormMsg(t *testing.T) {
 }
 
 // assertHandlersFailOnWrongMessage checks every one of c's routes sends
-// an ErrMsg when handed a message of another type, rather than panicking.
+// a fault when handed a message of another type, rather than panicking.
 func assertHandlersFailOnWrongMessage(t *testing.T, c model.Routable) {
 	t.Helper()
 	if err := model.NewMsgRouter().Register(c); err != nil {
@@ -230,10 +230,10 @@ func assertHandlersFailOnWrongMessage(t *testing.T, c model.Routable) {
 		t.Run(route.ID().String(), func(t *testing.T) {
 			cmd := route.Handle(probeMsg{})
 			if cmd == nil {
-				t.Fatal("handler given probeMsg returned no command, want one sending message.ErrMsg")
+				t.Fatal("handler given probeMsg returned no command, want one sending a fault")
 			}
-			if got, ok := cmd().(message.ErrMsg); !ok || got.Err == nil {
-				t.Errorf("handler given probeMsg sent %#v, want a message.ErrMsg with an Err", got)
+			if got, ok := cmd().(message.Event[message.Error]); !ok || got.Payload.Code != message.ErrFault || got.Payload.Text == "" {
+				t.Errorf("handler given probeMsg sent %#v, want an Event[Error] with code %v and a Text", got, message.ErrFault)
 			}
 		})
 	}

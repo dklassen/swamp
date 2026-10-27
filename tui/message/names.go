@@ -110,12 +110,14 @@ const (
 	ErrNotFound
 	ErrSyncInProgress
 	ErrOther
+	ErrFault
 )
 
 var errorCodeNames = [...]string{
 	ErrNotFound:       "not_found",
 	ErrSyncInProgress: "sync_in_progress",
 	ErrOther:          "other",
+	ErrFault:          "fault",
 }
 
 func (c ErrorCode) String() string                { return nameOf(c, errorCodeNames[:]) }

@@ -143,7 +143,7 @@ func (m *Syncing) startSyncAll(companies []company.Company) tea.Cmd {
 	}
 	// An error from an earlier action takes priority over the run's
 	// progress in the banner and would hide it.
-	return tea.Batch(message.ReportStatus(""), m.issueSyncAllStep())
+	return tea.Batch(message.ReportStatus(message.Source{Instance: m.instance}, ""), m.issueSyncAllStep())
 }
 
 // issueSyncAllStep shows progress for the company about to be fetched
@@ -183,7 +183,7 @@ func (m *Syncing) finishSyncAll() tea.Cmd {
 		summary = fmt.Sprintf("Stopped after %d/%d: %s", run.next, len(run.companies), summary)
 	}
 	results := append([]sync.Result(nil), run.results...)
-	return tea.Batch(message.ReportStatus(summary), func() tea.Msg { return message.SyncAllFinishedMsg{Results: results} })
+	return tea.Batch(message.ReportStatus(message.Source{Instance: m.instance}, summary), func() tea.Msg { return message.SyncAllFinishedMsg{Results: results} })
 }
 
 func refreshCompany(syncer *sync.Syncer, company company.Company) tea.Cmd {
@@ -220,12 +220,12 @@ func (m *Syncing) companyRefreshed(refreshed message.CompanyRefreshedMsg) tea.Cm
 	case errors.Is(refreshed.Err, sync.ErrSyncInProgress):
 		// Another sync of this company (e.g. a scheduled `swamp fetch`) is
 		// running; this one fetched and wrote nothing.
-		return message.ReportStatus(refreshed.Name + " is already syncing elsewhere; try again in a moment")
+		return message.ReportStatus(message.Source{Instance: m.instance}, refreshed.Name+" is already syncing elsewhere; try again in a moment")
 	case refreshed.Err != nil:
-		return message.ReportErr(refreshed.Err)
+		return ReportErr(message.Source{Instance: m.instance}, refreshed.Err)
 	}
 	r := refreshed.Result
-	return message.ReportStatus(fmt.Sprintf("%s: fetched %d, created %d, updated %d, closed %d, reopened %d",
+	return message.ReportStatus(message.Source{Instance: m.instance}, fmt.Sprintf("%s: fetched %d, created %d, updated %d, closed %d, reopened %d",
 		r.Name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened))
 }
 
