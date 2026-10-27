@@ -89,11 +89,13 @@ func (m *companyListModel) companiesLoaded(loaded message.CompaniesLoadedMsg) te
 }
 
 func (m *companyListModel) companyCreated(created message.CompanyCreatedMsg) tea.Cmd {
-	if created.Err == nil {
-		m.companies = append(m.companies, created.Company)
-		sortCompaniesByName(m.companies)
+	src := message.Source{Instance: m.instance}
+	if created.Err != nil {
+		return model.ReportErr(src, created.Err)
 	}
-	return nil
+	m.companies = append(m.companies, created.Company)
+	sortCompaniesByName(m.companies)
+	return message.ReportStatus(src, "")
 }
 
 func (m *companyListModel) companyDeleted(deleted message.CompanyDeletedMsg) tea.Cmd {
@@ -109,13 +111,15 @@ func (m *companyListModel) companyDeleted(deleted message.CompanyDeletedMsg) tea
 }
 
 func (m *companyListModel) companyNameUpdated(updated message.CompanyNameUpdatedMsg) tea.Cmd {
-	if updated.Err == nil {
-		if i := indexOfCompany(m.companies, updated.Company.ID); i != -1 {
-			m.companies[i] = updated.Company
-		}
-		sortCompaniesByName(m.companies)
+	src := message.Source{Instance: m.instance}
+	if updated.Err != nil {
+		return model.ReportErr(src, updated.Err)
 	}
-	return nil
+	if i := indexOfCompany(m.companies, updated.Company.ID); i != -1 {
+		m.companies[i] = updated.Company
+	}
+	sortCompaniesByName(m.companies)
+	return message.ReportStatus(src, "")
 }
 
 // backToActiveApplicationsMsg signals that App should switch back to the

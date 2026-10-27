@@ -97,7 +97,7 @@ Each struct becomes an event when the model that sends or handles it migrates (R
 | `BannerMsg` | `Event[Notify]`: `Status`; its errors are `Event[Error]` |
 | `ErrMsg` | `Event[Error]`, `Code` `fault`, sent by `Fail` |
 | `FocusChangedMsg`, `ContentSizeMsg` | `Event[Signal[FocusChanged]]` (`Focused ScreenInstance`), `Event[Signal[ContentSize]]` |
-| `OpenCompanyFormMsg`, `OpenCompanyEditMsg`, `OpenCompanyDeleteMsg`, `OpenCompanyPostingsMsg`, `CloseCompanyDeleteMsg`, `CancelCompanyEditMsg` | `Event[Nav]` |
+| `OpenCompanyFormMsg`, `OpenCompanyEditMsg`, `OpenCompanyDeleteMsg`, `OpenCompanyPostingsMsg`, `CloseCompanyDeleteMsg`, `CloseCompanyFormMsg`, `CloseCompanyEditMsg` | `Event[Nav]` |
 
 ### Still in `tui`
 

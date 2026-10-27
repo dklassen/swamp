@@ -75,8 +75,8 @@ type App struct {
 	companyList   *companyListModel
 	allPostings   allPostingsModel
 	currentScreen screen
-	companyForm   companyFormModel
-	companyEdit   companyEditModel
+	companyForm   *companyFormModel
+	companyEdit   *companyEditModel
 	status        string
 	err           error
 	// syncing runs sync all and refreshes, and draws their progress in the
@@ -216,7 +216,6 @@ func New(
 		syncer:                syncer,
 		currentScreen:         screenActiveApplications,
 		allPostings:           newAllPostingsModel(postings),
-		companyForm:           newCompanyFormModel(syncer),
 		postingList:           newPostingListModel(postings),
 		activeApplicationList: newActiveApplicationListModel(),
 		hideArchived:          true,
@@ -252,8 +251,33 @@ func (a *App) focused() message.ScreenInstance {
 		return a.companyList.Instance()
 	case screenCompanyDelete:
 		return a.companyDelete.Instance()
+	case screenCompanyForm:
+		return a.companyForm.Instance()
+	case screenCompanyEdit:
+		return a.companyEdit.Instance()
 	}
 	return 0
+}
+
+// closeCompanyEdit takes the company edit down, back to the company list.
+func (a *App) closeCompanyEdit() tea.Cmd {
+	if err := a.router.Deregister(a.companyEdit); err != nil {
+		return message.Fail(message.Source{Process: a.origin}, err)
+	}
+	a.companyEdit = nil
+	a.currentScreen = screenCompanyList
+	return nil
+}
+
+// closeCompanyForm takes the add-company form down, back to the company
+// list.
+func (a *App) closeCompanyForm() tea.Cmd {
+	if err := a.router.Deregister(a.companyForm); err != nil {
+		return message.Fail(message.Source{Process: a.origin}, err)
+	}
+	a.companyForm = nil
+	a.currentScreen = screenCompanyList
+	return nil
 }
 
 // closeCompanyDelete takes the delete confirmation down, back to the
@@ -603,15 +627,15 @@ const boardCheckTimeout = 15 * time.Second
 
 // createCompany saves a company only once its source ref resolves to a
 // real board (see sync.Syncer.CreateCompany).
-func createCompany(syncer *sync.Syncer, name, source, sourceRef string) tea.Cmd {
+func createCompany(syncer *sync.Syncer, name, source, sourceRef string, from message.ScreenInstance) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), boardCheckTimeout)
 		defer cancel()
 		company, err := syncer.CreateCompany(ctx, name, source, sourceRef)
 		if err != nil {
-			return message.CompanyCreatedMsg{Err: err}
+			return message.CompanyCreatedMsg{From: from, Err: err}
 		}
-		return message.CompanyCreatedMsg{Company: *company}
+		return message.CompanyCreatedMsg{Company: *company, From: from}
 	}
 }
 
@@ -622,13 +646,13 @@ func deleteCompany(companies *service.CompanyService, companyID int64) tea.Cmd {
 	}
 }
 
-func updateCompanyName(companies *service.CompanyService, companyID int64, name string) tea.Cmd {
+func updateCompanyName(companies *service.CompanyService, companyID int64, name string, from message.ScreenInstance) tea.Cmd {
 	return func() tea.Msg {
 		renamed, err := companies.SetName(context.Background(), companyID, name)
 		if err != nil {
-			return message.CompanyNameUpdatedMsg{Err: err}
+			return message.CompanyNameUpdatedMsg{From: from, Err: err}
 		}
-		return message.CompanyNameUpdatedMsg{Company: renamed.After}
+		return message.CompanyNameUpdatedMsg{Company: renamed.After, From: from}
 	}
 }
 
@@ -1086,24 +1110,30 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.activeApplications = msg.applications
 		a.activeApplicationProgress = msg.progress
 		a.activeApplicationList.keepCursorOn(previous, a.activeApplications)
-	case message.CompanyCreatedMsg:
-		a.err = msg.Err
-		a.companyForm.checkResolved()
-		if msg.Err == nil {
-			a.currentScreen = screenCompanyList
+	case message.CloseCompanyFormMsg:
+		// A second esc, typed before the first one's close arrived.
+		if a.currentScreen == screenCompanyForm {
+			return a, a.closeCompanyForm()
 		}
-	case message.CompanyNameUpdatedMsg:
-		a.err = msg.Err
-		a.companyEdit.saveResolved()
-		if msg.Err == nil {
-			a.currentScreen = screenCompanyList
+	case message.CloseCompanyEditMsg:
+		// A second esc, typed before the first one's close arrived.
+		if a.currentScreen == screenCompanyEdit {
+			return a, a.closeCompanyEdit()
 		}
 	case message.OpenCompanyFormMsg:
+		form := newCompanyFormModel(a.syncer)
+		if err := a.router.Register(form); err != nil {
+			return a, message.Fail(message.Source{Process: a.origin}, err)
+		}
+		a.companyForm = form
 		a.currentScreen = screenCompanyForm
-		a.companyForm = newCompanyFormModel(a.syncer)
 	case message.OpenCompanyEditMsg:
+		edit := newCompanyEditModel(a.companyService, msg.Company.ID, msg.Company.Name)
+		if err := a.router.Register(edit); err != nil {
+			return a, message.Fail(message.Source{Process: a.origin}, err)
+		}
+		a.companyEdit = edit
 		a.currentScreen = screenCompanyEdit
-		a.companyEdit = newCompanyEditModel(a.companyService, msg.Company.ID, msg.Company.Name)
 	case message.OpenCompanyDeleteMsg:
 		dialog := newCompanyDeleteModel(a.companyService, msg.Company, msg.OpenPostings, a.sized.Width)
 		if err := a.router.Register(dialog); err != nil {
@@ -1493,10 +1523,6 @@ func (a *App) paste(msg tea.PasteMsg) tea.Cmd {
 		return a.allPostings.paste(msg)
 	case screenActiveApplications:
 		a.activeApplicationList.paste(msg)
-	case screenCompanyForm:
-		return a.companyForm.paste(msg)
-	case screenCompanyEdit:
-		return a.companyEdit.paste(msg)
 	case screenApplicationExport:
 		return a.applicationExport.paste(msg)
 	case screenApplicationNotesEdit:
@@ -1740,18 +1766,6 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return a, saveCompanyFilters(a.companyService, a.selectedCompany.ID, v.departments, v.locations)
 		}
 		return a, cmd
-	case screenCompanyForm:
-		cmd, intent := a.companyForm.Update(msg)
-		if _, ok := intent.(cancelCompanyFormMsg); ok {
-			a.currentScreen = screenCompanyList
-		}
-		return a, cmd
-	case screenCompanyEdit:
-		cmd, intent := a.companyEdit.Update(msg)
-		if _, ok := intent.(cancelCompanyEditMsg); ok {
-			a.currentScreen = screenCompanyList
-		}
-		return a, cmd
 	}
 	return a, nil
 }
@@ -1828,9 +1842,9 @@ func (a *App) body(s screen) string {
 	case screenCompanyList:
 		b.WriteString(a.companyList.View().Content)
 	case screenCompanyForm:
-		b.WriteString(a.companyForm.View())
+		b.WriteString(a.companyForm.View().Content)
 	case screenCompanyEdit:
-		b.WriteString(a.companyEdit.View())
+		b.WriteString(a.companyEdit.View().Content)
 	case screenPostingList:
 		snap := postingListSnapshot{
 			companyDescription:      a.selectedCompany.Description,
