@@ -167,7 +167,7 @@ func (a *App) reloadFor(events []change.Event) tea.Cmd {
 	case screenCompanyList:
 		// postings too: the list shows each company's open postings.
 		if touches(events, "companies", "postings") {
-			return loadCompanies(a.companyService, a.postingService)
+			return a.reloadCompanies()
 		}
 	}
 	return nil

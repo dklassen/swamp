@@ -1,8 +1,8 @@
 package tui
 
 import (
+	"context"
 	"fmt"
-	"slices"
 	"strings"
 	"time"
 
@@ -34,7 +34,7 @@ type companyListModel struct {
 	companyService *service.CompanyService
 	postingService *service.PostingService
 
-	companies []company.Company
+	companies []message.Company
 	// openPostings is each company's open, unarchived posting count.
 	openPostings map[int64]int
 
@@ -57,7 +57,10 @@ func (m *companyListModel) Focused() bool { return m.focused }
 
 func (m *companyListModel) Routes() []*model.Route {
 	return []*model.Route{
-		model.Always(m.companiesLoaded),
+		model.Always(m.loadRequested),
+		model.Always(m.companiesRead),
+		model.Always(m.companyRefreshed),
+		model.Always(m.syncAllFinished),
 		model.Always(m.companyChanged),
 		model.WhenFocused(m, m.keyPressed),
 		model.WhenFocused(m, m.paste),
@@ -66,33 +69,75 @@ func (m *companyListModel) Routes() []*model.Route {
 	}
 }
 
+// focusChanged reloads when the list comes back, since its open counts can
+// change while another screen is up.
 func (m *companyListModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
+	gained := !m.focused && e.Payload.Value.Focused == m.instance
 	m.focused = e.Payload.Value.Focused == m.instance
+	if gained {
+		return m.load()
+	}
 	return nil
 }
 
 func (m *companyListModel) Init() tea.Cmd {
-	return loadCompanies(m.companyService, m.postingService)
+	return m.load()
 }
 
-func (m *companyListModel) companiesLoaded(loaded message.CompaniesLoadedMsg) tea.Cmd {
-	previous := m.selected()
-	m.companies = loaded.Companies
-	m.openPostings = loaded.OpenPostings
-	m.keepCursorOn(previous)
-	if loaded.Err != nil {
-		return model.ReportErr(message.Source{Instance: m.instance}, loaded.Err)
+func (m *companyListModel) loadRequested(message.Event[message.Load[message.CompanyList]]) tea.Cmd {
+	return m.load()
+}
+
+// companyRefreshed and syncAllFinished reload, since a sync changes the Open
+// and Last fetched columns.
+func (m *companyListModel) companyRefreshed(refreshed message.CompanyRefreshedMsg) tea.Cmd {
+	if refreshed.Err != nil {
+		return nil
 	}
+	return m.load()
+}
+
+func (m *companyListModel) syncAllFinished(message.SyncAllFinishedMsg) tea.Cmd {
+	return m.load()
+}
+
+// load reads the active companies along with each one's open posting count
+// for the Open column.
+func (m *companyListModel) load() tea.Cmd {
+	companies, postings, src := m.companyService, m.postingService, message.Source{Instance: m.instance}
+	return func() tea.Msg {
+		ctx := context.Background()
+		active, err := companies.ListActive(ctx)
+		if err != nil {
+			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
+		}
+		openPostings, err := postings.CountOpenByCompany(ctx)
+		if err != nil {
+			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
+		}
+		list := message.CompanyList{Companies: make([]message.Company, len(active)), OpenPostings: openPostings}
+		for i, c := range active {
+			list.Companies[i] = companySnapshot(c)
+		}
+		return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Read[message.CompanyList]{Value: list})
+	}
+}
+
+func (m *companyListModel) companiesRead(e message.Event[message.Read[message.CompanyList]]) tea.Cmd {
+	previous := m.selected()
+	m.companies = e.Payload.Value.Companies
+	m.openPostings = e.Payload.Value.OpenPostings
+	m.keepCursorOn(previous)
 	return nil
 }
 
 func (m *companyListModel) companyChanged(e message.Event[message.Changed[message.Company]]) tea.Cmd {
 	switch e.Meta.Op {
 	case message.OpCreated:
-		m.companies = append(m.companies, companyOf(e.Payload.After))
+		m.companies = append(m.companies, e.Payload.After)
 	case message.OpUpdated:
 		if i := indexOfCompany(m.companies, e.Meta.Subject.ID); i != -1 {
-			m.companies[i] = companyOf(e.Payload.After)
+			m.companies[i] = e.Payload.After
 		}
 	case message.OpDeleted:
 		if i := indexOfCompany(m.companies, e.Meta.Subject.ID); i != -1 {
@@ -129,7 +174,7 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 
 	// Commands act on the matches a kept search shows, not the whole list.
 	visible := m.visible()
-	var current company.Company
+	var current message.Company
 	onCompany := m.cursor < len(visible)
 	if onCompany {
 		current = visible[m.cursor]
@@ -148,14 +193,19 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	case "d":
 		if onCompany {
 			openPostings := m.openPostings[current.ID]
-			return func() tea.Msg { return message.OpenCompanyDeleteMsg{Company: current, OpenPostings: openPostings} }
+			return func() tea.Msg {
+				return message.OpenCompanyDeleteMsg{Company: companyOf(current), OpenPostings: openPostings}
+			}
 		}
 	case "r":
 		if onCompany {
-			return func() tea.Msg { return message.RefreshCompanyMsg{Company: current} }
+			return func() tea.Msg { return message.RefreshCompanyMsg{Company: companyOf(current)} }
 		}
 	case "R":
-		companies := slices.Clone(m.companies)
+		companies := make([]company.Company, len(m.companies))
+		for i, c := range m.companies {
+			companies[i] = companyOf(c)
+		}
 		return func() tea.Msg { return message.ToggleSyncAllMsg{Companies: companies} }
 	case "i":
 		m.showInfo = !m.showInfo
@@ -167,11 +217,11 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 		m.clearSearch()
 	case "e":
 		if onCompany {
-			return func() tea.Msg { return message.OpenCompanyEditMsg{Company: current} }
+			return func() tea.Msg { return message.OpenCompanyEditMsg{Company: companyOf(current)} }
 		}
 	case "enter":
 		if onCompany {
-			return func() tea.Msg { return message.OpenCompanyPostingsMsg{Company: current} }
+			return func() tea.Msg { return message.OpenCompanyPostingsMsg{Company: companyOf(current)} }
 		}
 	}
 	return nil
@@ -233,12 +283,12 @@ func (m *companyListModel) clearSearch() {
 // visible is the part of the companies the query matches: a
 // case-insensitive substring of the name, in list order. With no query,
 // it's all of them.
-func (m *companyListModel) visible() []company.Company {
+func (m *companyListModel) visible() []message.Company {
 	if m.query == "" {
 		return m.companies
 	}
 	q := strings.ToLower(m.query)
-	var matches []company.Company
+	var matches []message.Company
 	for _, c := range m.companies {
 		if strings.Contains(strings.ToLower(c.Name), q) {
 			matches = append(matches, c)
@@ -353,7 +403,7 @@ const (
 // and slug, then its description word-wrapped. It's always the same height
 // -- top and bottom border, the header, and companyInfoDescriptionLines --
 // so moving the cursor with the box open never shifts the table.
-func companyInfoBox(c company.Company, width int) string {
+func companyInfoBox(c message.Company, width int) string {
 	// As wide as the table above it, less two border columns and one
 	// column of padding on each side.
 	textWidth := max(tableWidth(width)-4, 20)

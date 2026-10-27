@@ -13,6 +13,7 @@ const (
 	_ Kind = iota
 	KindChanged
 	KindRead
+	KindLoad
 	KindRun
 	KindRan
 	KindError
@@ -24,6 +25,7 @@ const (
 var kindNames = [...]string{
 	KindChanged: "changed",
 	KindRead:    "read",
+	KindLoad:    "load",
 	KindRun:     "run",
 	KindRan:     "ran",
 	KindError:   "error",
@@ -42,6 +44,7 @@ type Type int
 const (
 	_ Type = iota
 	TypeCompany
+	TypeCompanyList
 	TypeContentSize
 	TypeFocusChanged
 	TypeStatus
@@ -51,6 +54,7 @@ const (
 
 var typeNames = [...]string{
 	TypeCompany:      "company",
+	TypeCompanyList:  "company_list",
 	TypeContentSize:  "content_size",
 	TypeFocusChanged: "focus_changed",
 	TypeStatus:       "status",

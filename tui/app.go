@@ -541,7 +541,7 @@ func indexOfApplication(apps []posting.ActiveApplication, id int64) int {
 }
 
 // indexOfCompany returns id's index in companies, or -1 if not present.
-func indexOfCompany(companies []company.Company, id int64) int {
+func indexOfCompany(companies []message.Company, id int64) int {
 	for i, c := range companies {
 		if c.ID == id {
 			return i
@@ -550,17 +550,11 @@ func indexOfCompany(companies []company.Company, id int64) int {
 	return -1
 }
 
-// loadCompanies loads the active companies along with each one's open posting
-// count for the company list's Open column.
-func loadCompanies(companies *service.CompanyService, postings *service.PostingService) tea.Cmd {
+// reloadCompanies asks the company list to read its companies again.
+func (a *App) reloadCompanies() tea.Cmd {
+	src := message.Source{Instance: a.instance}
 	return func() tea.Msg {
-		ctx := context.Background()
-		active, err := companies.ListActive(ctx)
-		if err != nil {
-			return message.CompaniesLoadedMsg{Err: err}
-		}
-		openPostings, err := postings.CountOpenByCompany(ctx)
-		return message.CompaniesLoadedMsg{Companies: active, OpenPostings: openPostings, Err: err}
+		return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.CompanyList]{})
 	}
 }
 
@@ -569,7 +563,7 @@ func loadCompanies(companies *service.CompanyService, postings *service.PostingS
 // any in-place mutation (create, rename) that could change where an
 // entry belongs, since Go's string `<` matches SQLite's default byte-wise
 // collation.
-func sortCompaniesByName(companies []company.Company) {
+func sortCompaniesByName(companies []message.Company) {
 	sort.Slice(companies, func(i, j int) bool {
 		return companies[i].Name < companies[j].Name
 	})
@@ -1154,29 +1148,19 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.currentScreen = screenPostingList
 		return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
 	case message.SyncAllFinishedMsg:
-		// The company list once (open counts, last fetched), and the
-		// posting list if its company was synced.
-		cmds := []tea.Cmd{loadCompanies(a.companyService, a.postingService)}
+		// The posting list, if its company was synced.
 		for _, r := range msg.Results {
 			if r.Err == nil && r.CompanyID == a.selectedCompany.ID {
-				cmds = append(cmds, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived))
-				break
+				return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
 			}
 		}
-		return a, tea.Batch(cmds...)
 	case message.CompanyRefreshedMsg:
-		if msg.Err == nil {
-			r := msg.Result
-			// The company list's Open and Last fetched columns just changed.
-			reload := loadCompanies(a.companyService, a.postingService)
-			if r.CompanyID == a.selectedCompany.ID {
-				// The company whose postings are currently being viewed
-				// just finished a re-sync (r on its posting list): reload
-				// them from the DB. The cursor stays on its posting: the
-				// sync can add some ahead of it.
-				return a, tea.Batch(reload, reloadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived))
-			}
-			return a, reload
+		if msg.Err == nil && msg.Result.CompanyID == a.selectedCompany.ID {
+			// The company whose postings are currently being viewed
+			// just finished a re-sync (r on its posting list): reload
+			// them from the DB. The cursor stays on its posting: the
+			// sync can add some ahead of it.
+			return a, reloadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
 		}
 	case postingsLoadedMsg:
 		a.setLoadErr(msg.err)
@@ -1545,8 +1529,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch a.currentScreen {
 		case screenActiveApplications:
 			a.currentScreen = screenCompanyList
-			// Archiving or unarchiving may have changed open counts.
-			return a, loadCompanies(a.companyService, a.postingService)
+			return a, nil
 		case screenCompanyList:
 			a.currentScreen = screenAllPostings
 			return a, a.allPostings.load(a.allPostings.pageSize(a.screenRows()))
@@ -1644,8 +1627,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		switch v := intent.(type) {
 		case backToCompanyListMsg:
 			a.currentScreen = screenCompanyList
-			// Archiving or unarchiving may have changed open counts.
-			return a, loadCompanies(a.companyService, a.postingService)
+			return a, nil
 		case enterPostingDetailMsg:
 			a.postingDetailFrom = screenPostingList
 			p, app, hasApp := a.lookupPosting(v.postingID)

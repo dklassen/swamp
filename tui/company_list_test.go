@@ -12,7 +12,9 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
@@ -22,10 +24,26 @@ import (
 func companyListOf(t *testing.T, companies []company.Company, openPostings map[int64]int, width, rows int) *companyListModel {
 	t.Helper()
 	m := newCompanyListModel(nil, nil)
-	m.companiesLoaded(message.CompaniesLoadedMsg{Companies: companies, OpenPostings: openPostings})
+	m.companiesRead(companiesReadOf(companies, openPostings))
 	m.resize(message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(),
 		message.Signal[message.ContentSize]{Value: message.ContentSize{Width: width, Rows: rows}}))
 	return m
+}
+
+// companiesReadOf is the read of companies, with openPostings open
+// postings each.
+func companiesReadOf(companies []company.Company, openPostings map[int64]int) message.Event[message.Read[message.CompanyList]] {
+	list := message.CompanyList{OpenPostings: openPostings}
+	for _, c := range companies {
+		list.Companies = append(list.Companies, companySnapshot(c))
+	}
+	return message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Read[message.CompanyList]{Value: list})
+}
+
+// companiesLoadFailed is what loading the companies sends when it fails
+// with err.
+func companiesLoadFailed(err error) message.Event[message.Error] {
+	return message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
 }
 
 // press sends key to m and returns the message its command produces, or
@@ -47,6 +65,57 @@ func focusOn(instance message.ScreenInstance) message.Event[message.Signal[messa
 
 func companyListView(m *companyListModel) string {
 	return m.View().Content
+}
+
+func TestCompanyListModel_Init_ReadsTheCompaniesAndTheirOpenPostings(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	globex := mustCreateCompany(t, s, "Globex", jobboard.Ashby, "globex")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	m := newCompanyListModel(s.Companies, s.Postings)
+
+	msg := m.Init()()
+
+	got, ok := msg.(message.Event[message.Read[message.CompanyList]])
+	if !ok {
+		t.Fatalf("Init sent %T, want message.Event[message.Read[message.CompanyList]]", msg)
+	}
+	assertEventFrom(t, got.Meta, message.Source{Instance: m.Instance()})
+	want := message.CompanyList{
+		Companies:    []message.Company{companySnapshot(acme), companySnapshot(globex)},
+		OpenPostings: map[int64]int{acme.ID: 1},
+	}
+	if diff := cmp.Diff(want, got.Payload.Value); diff != "" {
+		t.Errorf("companies read (-want +got):\n%s", diff)
+	}
+}
+
+func TestCompanyListModel_LoadRequest_SendsItsRead(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	m := newCompanyListModel(s.Companies, s.Postings)
+	r := model.NewMsgRouter()
+	if err := r.Register(m); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	cmd := r.Dispatch(message.New(message.Source{Instance: message.NewScreenInstance()}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.CompanyList]{}))
+	if cmd == nil {
+		t.Fatal("a load request sent nothing, want the companies read")
+	}
+
+	got, ok := cmd().(message.Event[message.Read[message.CompanyList]])
+	if !ok {
+		t.Fatalf("a load request sent %T, want message.Event[message.Read[message.CompanyList]]", got)
+	}
+	assertEventFrom(t, got.Meta, message.Source{Instance: m.Instance()})
+	if diff := cmp.Diff([]message.Company{companySnapshot(acme)}, got.Payload.Value.Companies); diff != "" {
+		t.Errorf("companies read (-want +got):\n%s", diff)
+	}
 }
 
 func TestCompanyListModel_CompanyChanged_KeepsTheRowsInStep(t *testing.T) {
@@ -637,7 +706,7 @@ func TestCompanyListModel_Search_ReloadWhileTypingIsKept(t *testing.T) {
 	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}}, nil, 80, 40)
 	typeKeys(t, m, "/")
 
-	m.companiesLoaded(message.CompaniesLoadedMsg{Companies: []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}})
+	m.companiesRead(companiesReadOf([]company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}, nil))
 
 	if got := companyListView(m); !strings.Contains(got, "Globex") {
 		t.Errorf("View after a reload with the prompt open is missing Globex:\n%s", got)
@@ -815,6 +884,87 @@ func TestCompanyListModel_View_InfoBoxIsAsWideAsTheTable(t *testing.T) {
 }
 
 // The list takes keys only while the last focus signal named it.
+// What changed while another screen was up, such as an archived posting's
+// open count, shows when the list is back.
+func TestCompanyListModel_ReloadsOnGainingFocus(t *testing.T) {
+	t.Parallel()
+
+	other := newCompanyListModel(nil, nil).Instance()
+	tests := []struct {
+		name       string
+		before     func(m *companyListModel) message.ScreenInstance
+		after      func(m *companyListModel) message.ScreenInstance
+		wantReload bool
+	}{
+		{name: "comes into focus", before: func(*companyListModel) message.ScreenInstance { return other }, after: (*companyListModel).Instance, wantReload: true},
+		{name: "stays in focus", before: (*companyListModel).Instance, after: (*companyListModel).Instance, wantReload: false},
+		{name: "loses focus", before: (*companyListModel).Instance, after: func(*companyListModel) message.ScreenInstance { return other }, wantReload: false},
+		{name: "stays out of focus", before: func(*companyListModel) message.ScreenInstance { return other }, after: func(*companyListModel) message.ScreenInstance { return 0 }, wantReload: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			m := newCompanyListModel(s.Companies, s.Postings)
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+			r.Dispatch(focusOn(tt.before(m)))
+
+			cmd := r.Dispatch(focusOn(tt.after(m)))
+
+			reloaded := false
+			for _, msg := range runCmd(t, cmd) {
+				if read, ok := msg.(message.Event[message.Read[message.CompanyList]]); ok {
+					assertEventFrom(t, read.Meta, message.Source{Instance: m.Instance()})
+					reloaded = true
+				}
+			}
+			if reloaded != tt.wantReload {
+				t.Errorf("reloaded = %v, want %v", reloaded, tt.wantReload)
+			}
+		})
+	}
+}
+
+// A sync changes the Open and Last fetched columns.
+func TestCompanyListModel_ReloadsAfterASync(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		msg        tea.Msg
+		wantReload bool
+	}{
+		{name: "a refresh", msg: message.CompanyRefreshedMsg{Name: "Acme", Result: sync.Result{CompanyID: 1, Name: "Acme"}}, wantReload: true},
+		{name: "a refused refresh", msg: message.CompanyRefreshedMsg{Name: "Acme", Err: sync.ErrSyncInProgress}, wantReload: false},
+		{name: "a sync-all run ending", msg: message.SyncAllFinishedMsg{}, wantReload: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			m := newCompanyListModel(s.Companies, s.Postings)
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+
+			reloaded := false
+			for _, msg := range runCmd(t, r.Dispatch(tt.msg)) {
+				if read, ok := msg.(message.Event[message.Read[message.CompanyList]]); ok {
+					assertEventFrom(t, read.Meta, message.Source{Instance: m.Instance()})
+					reloaded = true
+				}
+			}
+			if reloaded != tt.wantReload {
+				t.Errorf("reloaded = %v, want %v", reloaded, tt.wantReload)
+			}
+		})
+	}
+}
+
 func TestCompanyListModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 	t.Parallel()
 

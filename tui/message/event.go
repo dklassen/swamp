@@ -115,6 +115,12 @@ type Read[T Body] struct {
 func (Read[T]) Kind() Kind { return KindRead }
 func (Read[T]) Type() Type { var t T; return t.Type() }
 
+// Load asks the model that shows T to read it again. Its Read is the reply.
+type Load[T Body] struct{}
+
+func (Load[T]) Kind() Kind { return KindLoad }
+func (Load[T]) Type() Type { var t T; return t.Type() }
+
 // Run asks for a job whose state another model owns.
 type Run[T Body] struct {
 	Value T `json:"value"`

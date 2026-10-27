@@ -2115,12 +2115,12 @@ func TestApp_LoadSucceedsAfterAnotherFails_KeepsTheError(t *testing.T) {
 		failed  tea.Msg
 		succeed tea.Msg
 	}{
-		{"applications fail, companies succeed", activeApplicationsLoadedMsg{err: loadErr}, message.CompaniesLoadedMsg{}},
-		{"companies fail, applications succeed", message.CompaniesLoadedMsg{Err: loadErr}, activeApplicationsLoadedMsg{}},
-		{"companies fail, postings succeed", message.CompaniesLoadedMsg{Err: loadErr}, postingsLoadedMsg{}},
-		{"companies fail, application succeeds", message.CompaniesLoadedMsg{Err: loadErr}, applicationLoadedMsg{}},
-		{"companies fail, document reviews succeed", message.CompaniesLoadedMsg{Err: loadErr}, documentReviewsLoadedMsg{}},
-		{"companies fail, posting reload succeeds", message.CompaniesLoadedMsg{Err: loadErr}, postingReloadedMsg{}},
+		{"applications fail, companies succeed", activeApplicationsLoadedMsg{err: loadErr}, companiesReadOf(nil, nil)},
+		{"companies fail, applications succeed", companiesLoadFailed(loadErr), activeApplicationsLoadedMsg{}},
+		{"companies fail, postings succeed", companiesLoadFailed(loadErr), postingsLoadedMsg{}},
+		{"companies fail, application succeeds", companiesLoadFailed(loadErr), applicationLoadedMsg{}},
+		{"companies fail, document reviews succeed", companiesLoadFailed(loadErr), documentReviewsLoadedMsg{}},
+		{"companies fail, posting reload succeeds", companiesLoadFailed(loadErr), postingReloadedMsg{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -2147,7 +2147,7 @@ func TestApp_ApplicationDetailReloadSucceedsAfterAnotherLoadFails_KeepsTheError(
 	}
 	loadErr := errors.New("disk on fire")
 
-	app = sendKeyAndApply(t, app, message.CompaniesLoadedMsg{Err: loadErr})
+	app = sendKeyAndApply(t, app, companiesLoadFailed(loadErr))
 	app, _ = sendKey(app, applicationDetailReloadedMsg{id: application.ID, application: application})
 
 	if !strings.Contains(app.banner(), loadErr.Error()) {
@@ -3227,10 +3227,10 @@ func TestApp_CompanyRefreshed_ForDifferentCompany_DoesNotReloadPostings(t *testi
 		if _, ok := msg.(postingsLoadedMsg); ok {
 			t.Fatal("refresh of a different company reloaded the postings being viewed")
 		}
-		reloadsCompanies = reloadsCompanies || isCompaniesLoaded(msg)
+		reloadsCompanies = reloadsCompanies || isCompaniesRead(msg)
 	}
 	if !reloadsCompanies {
-		t.Fatalf("refresh of a different company produced %#v, want a message.CompaniesLoadedMsg among them", msgs)
+		t.Fatalf("refresh of a different company produced %#v, want a read of the companies among them", msgs)
 	}
 }
 
@@ -3911,8 +3911,42 @@ func TestApp_PressR_UpdatesCompanyListOpenCountAndLastFetched(t *testing.T) {
 	}
 }
 
-func isCompaniesLoaded(msg tea.Msg) bool {
-	_, ok := msg.(message.CompaniesLoadedMsg)
+func TestApp_TheCompanyListReloadsItselfAfterASync(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		msg  tea.Msg
+	}{
+		{name: "sync-all finished", msg: message.SyncAllFinishedMsg{}},
+		{name: "company refreshed", msg: message.CompanyRefreshedMsg{Result: sync.Result{CompanyID: 999999, Name: "SomeOtherCompany"}}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app := newTestApp(t, testutil.NewTestApp(t), nil)
+
+			_, cmd := sendKey(app, tt.msg)
+
+			var sources []message.Source
+			for _, msg := range runCmd(t, cmd) {
+				switch msg := msg.(type) {
+				case message.Event[message.Load[message.CompanyList]]:
+					t.Errorf("App asked the list to reload, want the list to decide")
+				case message.Event[message.Read[message.CompanyList]]:
+					sources = append(sources, msg.Meta.Source)
+				}
+			}
+			want := []message.Source{{Instance: app.companyList.Instance()}}
+			if diff := cmp.Diff(want, sources); diff != "" {
+				t.Errorf("sources of the company reads (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func isCompaniesRead(msg tea.Msg) bool {
+	_, ok := msg.(message.Event[message.Read[message.CompanyList]])
 	return ok
 }
 
@@ -3937,7 +3971,7 @@ func TestApp_BackToCompanyList_AfterArchiving_ShowsUpdatedOpenCount(t *testing.T
 	if cmd == nil {
 		t.Fatal("Update on esc back to the company list returned nil Cmd, want one that reloads companies")
 	}
-	app, _ = sendKey(app, cmd())
+	app = applyCmd(t, app, cmd)
 
 	if app.currentScreen != screenCompanyList {
 		t.Fatalf("screen = %v, want screenCompanyList", app.currentScreen)
