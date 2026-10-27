@@ -17,7 +17,6 @@ import (
 // screen to do with them.
 type companyEditModel struct {
 	companies *service.CompanyService
-	process   string
 	companyID int64
 	nameInput textinput.Model
 	// saving is true from the moment Enter dispatches updateCompanyName
@@ -32,17 +31,16 @@ type companyEditModel struct {
 }
 
 // newCompanyEditModel returns an edit screen for companyID, seeded with
-// its current name. process is the TUI's "kind:pid", the source of the
-// rename's events.
-func newCompanyEditModel(companies *service.CompanyService, process string, companyID int64, name string) *companyEditModel {
+// its current name.
+func newCompanyEditModel(companies *service.CompanyService, companyID int64, name string) *companyEditModel {
 	input := textinput.New()
 	input.SetValue(name)
 	input.Focus()
-	return &companyEditModel{companies: companies, process: process, companyID: companyID, nameInput: input, instance: message.NewScreenInstance()}
+	return &companyEditModel{companies: companies, companyID: companyID, nameInput: input, instance: message.NewScreenInstance()}
 }
 
 func (m *companyEditModel) source() message.Source {
-	return message.Source{Process: m.process, Instance: m.instance}
+	return message.Source{Instance: m.instance}
 }
 
 func (m *companyEditModel) Instance() message.ScreenInstance { return m.instance }

@@ -16,7 +16,7 @@ import (
 func TestCompanyEditModel_New_SeedsInputWithName(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyEditModel(nil, testProcess, 7, "Acme")
+	m := newCompanyEditModel(nil, 7, "Acme")
 	if got := m.nameInput.Value(); got != "Acme" {
 		t.Fatalf("nameInput.Value() = %q, want %q", got, "Acme")
 	}
@@ -28,7 +28,7 @@ func TestCompanyEditModel_New_SeedsInputWithName(t *testing.T) {
 func TestCompanyEditModel_Enter_EmptyName_NoOp(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyEditModel(nil, testProcess, 7, "Acme")
+	m := newCompanyEditModel(nil, 7, "Acme")
 	m.nameInput.SetValue("")
 
 	if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {
@@ -39,7 +39,7 @@ func TestCompanyEditModel_Enter_EmptyName_NoOp(t *testing.T) {
 func TestCompanyEditModel_Enter_ReturnsSaveCmd(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyEditModel(nil, testProcess, 7, "Acme")
+	m := newCompanyEditModel(nil, 7, "Acme")
 	if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
 		t.Fatal("cmd = nil, want a command that saves the company name")
 	}
@@ -48,7 +48,7 @@ func TestCompanyEditModel_Enter_ReturnsSaveCmd(t *testing.T) {
 func TestCompanyEditModel_TypingKey_UpdatesInputValue(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyEditModel(nil, testProcess, 7, "Acme")
+	m := newCompanyEditModel(nil, 7, "Acme")
 	m.keyPressed(runeKey([]rune(" Corp")...))
 	if got := m.nameInput.Value(); got != "Acme Corp" {
 		t.Fatalf("nameInput.Value() = %q, want %q", got, "Acme Corp")
@@ -58,7 +58,7 @@ func TestCompanyEditModel_TypingKey_UpdatesInputValue(t *testing.T) {
 func TestCompanyEditModel_Enter_WhitespaceOnlyName_NoOp(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyEditModel(nil, testProcess, 7, "Acme")
+	m := newCompanyEditModel(nil, 7, "Acme")
 	m.nameInput.SetValue("   ")
 
 	if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {
@@ -75,7 +75,7 @@ func TestCompanyEditModel_Enter_TrimsSavedName(t *testing.T) {
 		t.Fatalf("CreateCompany() error = %v", err)
 	}
 
-	m := newCompanyEditModel(s.Companies, testProcess, created.ID, created.Name)
+	m := newCompanyEditModel(s.Companies, created.ID, created.Name)
 	m.nameInput.SetValue("  Acme Corp  ")
 
 	cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -87,7 +87,7 @@ func TestCompanyEditModel_Enter_TrimsSavedName(t *testing.T) {
 	if !ok {
 		t.Fatalf("msg = %T, want message.Event[message.Changed[message.Company]]", msg)
 	}
-	assertEventFrom(t, updated.Meta, message.Source{Process: testProcess, Instance: m.Instance()})
+	assertEventFrom(t, updated.Meta, message.Source{Instance: m.Instance()})
 	if updated.Meta.Op != message.OpUpdated || updated.Meta.Subject != (message.Subject{Type: message.TypeCompany, ID: created.ID}) {
 		t.Errorf("Meta = %+v, want %v of company %d", updated.Meta, message.OpUpdated, created.ID)
 	}
@@ -105,7 +105,7 @@ func TestCompanyEditModel_Enter_TrimsSavedName(t *testing.T) {
 func TestCompanyEditModel_Esc_WhileSavePending_NoOp(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyEditModel(nil, testProcess, 7, "Acme")
+	m := newCompanyEditModel(nil, 7, "Acme")
 	m.nameInput.SetValue("Acme Corp")
 
 	// Enter dispatches the save command but doesn't run it -- bubbletea
@@ -136,7 +136,7 @@ func TestCompanyEditModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newCompanyEditModel(nil, testProcess, 7, "Acme")
+			m := newCompanyEditModel(nil, 7, "Acme")
 			r := model.NewMsgRouter()
 			if err := r.Register(m); err != nil {
 				t.Fatalf("Register: %v", err)
@@ -160,7 +160,7 @@ func TestCompanyEditModel_ActsOnItsOwnResultOnly(t *testing.T) {
 	before := message.Company{ID: 7, Name: "Acme"}
 	after := message.Company{ID: 7, Name: "Acme Corp"}
 	renamed := func(instance message.ScreenInstance) tea.Msg {
-		return message.Updated(message.Source{Process: testProcess, Instance: instance}, 7, time.Now().UTC(), before, after)
+		return message.Updated(message.Source{Instance: instance}, 7, time.Now().UTC(), before, after)
 	}
 	tests := []struct {
 		name       string
@@ -170,17 +170,17 @@ func TestCompanyEditModel_ActsOnItsOwnResultOnly(t *testing.T) {
 	}{
 		{name: "its own, saved", result: func(m *companyEditModel) tea.Msg { return renamed(m.Instance()) }, wantClose: true},
 		{name: "its own, failed", result: func(m *companyEditModel) tea.Msg {
-			return message.New(message.Source{Process: testProcess, Instance: m.Instance()}, message.Subject{Type: message.TypeCompany, ID: 7},
+			return message.New(message.Source{Instance: m.Instance()}, message.Subject{Type: message.TypeCompany, ID: 7},
 				message.OpUpdated, time.Now().UTC(), model.ErrorOf(errors.New("disk full")))
 		}},
 		{name: "an earlier edit's", result: func(*companyEditModel) tea.Msg {
-			return renamed(newCompanyEditModel(nil, testProcess, 7, "Acme").Instance())
+			return renamed(newCompanyEditModel(nil, 7, "Acme").Instance())
 		}, wantSaving: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newCompanyEditModel(nil, testProcess, 7, "Acme")
+			m := newCompanyEditModel(nil, 7, "Acme")
 			r := model.NewMsgRouter()
 			if err := r.Register(m); err != nil {
 				t.Fatalf("Register: %v", err)

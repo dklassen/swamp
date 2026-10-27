@@ -1131,7 +1131,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.companyForm = form
 		a.currentScreen = screenCompanyForm
 	case message.OpenCompanyEditMsg:
-		edit := newCompanyEditModel(a.companyService, a.origin, msg.Company.ID, msg.Company.Name)
+		edit := newCompanyEditModel(a.companyService, msg.Company.ID, msg.Company.Name)
 		if err := a.router.Register(edit); err != nil {
 			return a, message.Fail(message.Source{Process: a.origin}, err)
 		}
