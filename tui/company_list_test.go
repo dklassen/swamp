@@ -14,7 +14,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
@@ -937,8 +936,8 @@ func TestCompanyListModel_ReloadsAfterASync(t *testing.T) {
 		msg        tea.Msg
 		wantReload bool
 	}{
-		{name: "a refresh", msg: message.CompanyRefreshedMsg{Name: "Acme", Result: sync.Result{CompanyID: 1, Name: "Acme"}}, wantReload: true},
-		{name: "a refused refresh", msg: message.CompanyRefreshedMsg{Name: "Acme", Err: sync.ErrSyncInProgress}, wantReload: false},
+		{name: "a refresh", msg: synced(message.Source{Instance: 9}, 1, 0, 0), wantReload: true},
+		{name: "a refused refresh", msg: message.New(message.Source{Instance: 9}, message.Subject{Type: message.TypeCompany, ID: 1}, message.OpNone, time.Now().UTC(), message.Error{Code: message.ErrSyncInProgress}), wantReload: false},
 		{name: "a company synced in a run", msg: synced(message.Source{Instance: 9}, 1, 1, 0), wantReload: true},
 		{name: "a company that didn't sync in a run", msg: synced(message.Source{Instance: 9}, 1, 1, message.ErrOther), wantReload: false},
 	}

@@ -1153,14 +1153,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			// ahead of it.
 			return a, reloadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
 		}
-	case message.CompanyRefreshedMsg:
-		if msg.Err == nil && msg.Result.CompanyID == a.selectedCompany.ID {
-			// The company whose postings are currently being viewed
-			// just finished a re-sync (r on its posting list): reload
-			// them from the DB. The cursor stays on its posting: the
-			// sync can add some ahead of it.
-			return a, reloadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
-		}
 	case postingsLoadedMsg:
 		a.setLoadErr(msg.err)
 		previousPosting := a.postingList.selected(a.postings)

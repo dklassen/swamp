@@ -2,7 +2,6 @@ package model
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -25,20 +24,27 @@ type Syncing struct {
 	// line is the run's progress, shown beside its bar.
 	line string
 
-	// refreshing counts refreshes in flight, the spinner turns while it's
-	// above zero, and refreshingName is the latest one's company.
-	refreshing     int
+	// refreshes are those in flight, by company, since an outcome names
+	// only its company's ID; the spinner turns while there are any, and
+	// refreshingName is the latest one's company.
+	refreshes      map[int64]refresh
 	refreshingName string
 	spinner        spinner.Model
 
 	instance message.ScreenInstance
 }
 
+type refresh struct {
+	name     string
+	inFlight int
+}
+
 func NewSyncing(syncer *sync.Syncer) *Syncing {
 	return &Syncing{
-		syncer:   syncer,
-		spinner:  spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(CursorStyle)),
-		instance: message.NewScreenInstance(),
+		syncer:    syncer,
+		refreshes: map[int64]refresh{},
+		spinner:   spinner.New(spinner.WithSpinner(spinner.Dot), spinner.WithStyle(CursorStyle)),
+		instance:  message.NewScreenInstance(),
 	}
 }
 
@@ -49,7 +55,7 @@ func (m *Syncing) Routes() []*Route {
 		Always(m.syncAllKey),
 		Always(m.synced, From(m.instance)),
 		Always(m.startRefresh),
-		Always(m.companyRefreshed),
+		Always(m.refreshFailed, From(m.instance)),
 		Always(m.tick),
 	}
 }
@@ -64,7 +70,7 @@ func (m *Syncing) View() tea.View {
 	switch {
 	case m.run.running:
 		return tea.NewView(m.run.bar() + "  " + DimStyle.Render(m.line))
-	case m.refreshing > 0:
+	case len(m.refreshes) > 0:
 		return tea.NewView(m.spinner.View() + DimStyle.Render("Refreshing "+m.refreshingName+"…"))
 	}
 	return tea.NewView("")
@@ -169,8 +175,11 @@ func (m *Syncing) issueSyncAllStep() tea.Cmd {
 	return syncAllStep(m.syncer, message.Source{Instance: m.instance}, run.runID, company)
 }
 
-// synced is a company's sync reporting back.
+// synced is a company's sync reporting back, a refresh's or a run's.
 func (m *Syncing) synced(e message.Event[message.Ran[message.SyncReport]]) tea.Cmd {
+	if e.Payload.Value.RunID == 0 {
+		return m.refreshSynced(e)
+	}
 	return m.syncAllStep(e.Payload.Value)
 }
 
@@ -209,13 +218,14 @@ func (m *Syncing) finishSyncAll() tea.Cmd {
 	})
 }
 
-func refreshCompany(syncer *sync.Syncer, company message.Company) tea.Cmd {
+func refreshCompany(syncer *sync.Syncer, src message.Source, company message.Company) tea.Cmd {
 	return func() tea.Msg {
+		subject := message.Subject{Type: message.TypeCompany, ID: company.ID}
 		result, err := syncer.SyncCompany(context.Background(), company.ID)
 		if err != nil {
-			return message.CompanyRefreshedMsg{Name: company.Name, Err: err}
+			return message.New(src, subject, message.OpNone, time.Now().UTC(), ErrorOf(err))
 		}
-		return message.CompanyRefreshedMsg{Name: company.Name, Result: *result}
+		return message.New(src, subject, message.OpNone, time.Now().UTC(), message.Ran[message.SyncReport]{Value: reportOf(0, *result)})
 	}
 }
 
@@ -232,28 +242,53 @@ func (m *Syncing) refresh(company message.Company) tea.Cmd {
 		m.line = "Sync all in progress: refresh unavailable"
 		return nil
 	}
-	m.refreshing++
+	r := m.refreshes[company.ID]
+	r.name = company.Name
+	r.inFlight++
+	m.refreshes[company.ID] = r
 	m.refreshingName = company.Name
-	return tea.Batch(refreshCompany(m.syncer, company), m.spinner.Tick)
+	return tea.Batch(refreshCompany(m.syncer, message.Source{Instance: m.instance}, company), m.spinner.Tick)
 }
 
-func (m *Syncing) companyRefreshed(refreshed message.CompanyRefreshedMsg) tea.Cmd {
-	m.refreshing = max(m.refreshing-1, 0)
-	switch {
-	case errors.Is(refreshed.Err, sync.ErrSyncInProgress):
-		// Another sync of this company (e.g. a scheduled `swamp fetch`) is
-		// running; this one fetched and wrote nothing.
-		return message.ReportStatus(message.Source{Instance: m.instance}, refreshed.Name+" is already syncing elsewhere; try again in a moment")
-	case refreshed.Err != nil:
-		return ReportErr(message.Source{Instance: m.instance}, refreshed.Err)
+// refreshed is a refresh of companyID coming back: its company's name, or
+// false if no refresh of it is in flight.
+func (m *Syncing) refreshed(companyID int64) (string, bool) {
+	r, ok := m.refreshes[companyID]
+	if !ok {
+		return "", false
 	}
-	r := refreshed.Result
+	if r.inFlight--; r.inFlight == 0 {
+		delete(m.refreshes, companyID)
+	} else {
+		m.refreshes[companyID] = r
+	}
+	return r.name, true
+}
+
+func (m *Syncing) refreshSynced(e message.Event[message.Ran[message.SyncReport]]) tea.Cmd {
+	name, ok := m.refreshed(e.Meta.Subject.ID)
+	if !ok {
+		return nil
+	}
+	r := e.Payload.Value
 	return message.ReportStatus(message.Source{Instance: m.instance}, fmt.Sprintf("%s: fetched %d, created %d, updated %d, closed %d, reopened %d",
-		r.Name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened))
+		name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened))
+}
+
+// refreshFailed leaves a failure to the banner, which shows every Error,
+// except for a sync elsewhere, which isn't one.
+func (m *Syncing) refreshFailed(e message.Event[message.Error]) tea.Cmd {
+	name, ok := m.refreshed(e.Meta.Subject.ID)
+	if !ok || e.Payload.Code != message.ErrSyncInProgress {
+		return nil
+	}
+	// Another sync of this company (e.g. a scheduled `swamp fetch`) is
+	// running; this one fetched and wrote nothing.
+	return message.ReportStatus(message.Source{Instance: m.instance}, name+" is already syncing elsewhere; try again in a moment")
 }
 
 func (m *Syncing) tick(msg spinner.TickMsg) tea.Cmd {
-	if m.refreshing == 0 {
+	if len(m.refreshes) == 0 {
 		return nil
 	}
 	var cmd tea.Cmd

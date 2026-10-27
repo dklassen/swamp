@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -18,7 +19,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
 )
 
@@ -212,7 +212,7 @@ func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 		text string
 	}{
 		{name: "no banner"},
-		{name: "status", msg: message.CompanyRefreshedMsg{Result: sync.Result{Name: "Acme", Fetched: 40}}, text: "Acme: fetched 40"},
+		{name: "status", msg: message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Notify{Status: "Acme: fetched 40"}), text: "Acme: fetched 40"},
 		{name: "error", msg: browserOpenedMsg{err: errors.New("could not open browser")}, text: "error: could not open browser"},
 	}
 	for _, sc := range sizedScreens() {

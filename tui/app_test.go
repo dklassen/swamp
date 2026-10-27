@@ -3173,46 +3173,36 @@ func TestApp_FilterSelect_Enter_WhileCompanySyncsElsewhere_Saves(t *testing.T) {
 	}
 }
 
-func TestApp_CompanyRefreshed_ForCurrentlyViewedCompany_ReloadsPostings(t *testing.T) {
-	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
-		"acme": {{SourceID: "job-1", Title: "Engineer"}},
-	})
-	app := newTestApp(t, s, syncer)
-	app = openPostingList(t, app)
+// The postings being viewed reload as soon as their company has synced,
+// by a refresh or a run's step, not when the whole run ends.
+func TestApp_CompanySynced_ForCurrentlyViewedCompany_ReloadsPostings(t *testing.T) {
+	t.Parallel()
 
-	// Simulate a background re-sync (r on the posting list)
-	// completing for the company currently being viewed.
-	app, cmd := sendKey(app, message.CompanyRefreshedMsg{
-		Result: sync.Result{CompanyID: acme.ID, Name: acme.Name},
-	})
-	if cmd == nil {
-		t.Fatal("Update on message.CompanyRefreshedMsg for the viewed company returned nil Cmd, want a command that reloads postings")
+	tests := []struct {
+		name  string
+		runID int
+	}{
+		{name: "a refresh", runID: 0},
+		{name: "a run's step", runID: 1},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+			syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+				"acme": {{SourceID: "job-1", Title: "Engineer"}},
+			})
+			app := newTestApp(t, s, syncer)
+			app = openPostingList(t, app)
+			mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
 
-	app, _ = sendKey(app, cmd())
-	if len(app.postings) != 1 {
-		t.Fatalf("postings after reload = %+v, want 1", app.postings)
-	}
-}
+			app = sendKeyAndApply(t, app, synced(message.Source{Instance: app.syncing.Instance()}, acme.ID, tt.runID, 0))
 
-// A run reloads the postings being viewed as soon as their company has
-// synced, not when the whole run ends.
-func TestApp_CompanySyncedInARun_ForCurrentlyViewedCompany_ReloadsPostings(t *testing.T) {
-	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
-		"acme": {{SourceID: "job-1", Title: "Engineer"}},
-	})
-	app := newTestApp(t, s, syncer)
-	app = openPostingList(t, app)
-	mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
-
-	app = sendKeyAndApply(t, app, synced(message.Source{Instance: app.syncing.Instance()}, acme.ID, 1, 0))
-
-	if len(app.postings) != 2 {
-		t.Fatalf("postings after the step = %+v, want both", app.postings)
+			if len(app.postings) != 2 {
+				t.Fatalf("postings after the sync = %+v, want both", app.postings)
+			}
+		})
 	}
 }
 
@@ -3225,14 +3215,12 @@ func TestApp_CompanyRefreshed_ForDifferentCompany_DoesNotReloadPostings(t *testi
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
 
-	_, cmd := sendKey(app, message.CompanyRefreshedMsg{
-		Result: sync.Result{CompanyID: 999999, Name: "SomeOtherCompany"},
-	})
+	_, cmd := sendKey(app, synced(message.Source{Instance: app.syncing.Instance()}, 999999, 0, 0))
 	// The company list still reloads (its Open and Last fetched columns
 	// changed), but the postings being viewed belong to a different company
 	// and must be left alone.
 	if cmd == nil {
-		t.Fatal("Update on message.CompanyRefreshedMsg returned nil Cmd, want one that reloads companies")
+		t.Fatal("Update on the refresh's report returned nil Cmd, want one that reloads companies")
 	}
 	msgs := []tea.Msg{cmd()}
 	if batch, ok := msgs[0].(tea.BatchMsg); ok {
@@ -3257,10 +3245,12 @@ func TestApp_CompanyRefreshed_ForDifferentCompany_DoesNotReloadPostings(t *testi
 // result, so the status names the company the refresh was started for.
 func TestApp_CompanyRefreshed_SyncInProgress_SaysWhichCompany(t *testing.T) {
 	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, syncCompany(message.Source{}, companySnapshot(acme))())
 
-	app = sendKeyAndApply(t, app, message.CompanyRefreshedMsg{Name: "Acme", Err: sync.ErrSyncInProgress})
+	app = sendKeyAndApply(t, app, message.New(message.Source{Instance: app.syncing.Instance()}, message.Subject{Type: message.TypeCompany, ID: acme.ID}, message.OpNone, time.Now().UTC(),
+		model.ErrorOf(sync.ErrSyncInProgress)))
 
 	if app.err != nil {
 		t.Errorf("app.err = %v, want nil: a sync elsewhere isn't a failure", app.err)
@@ -3938,7 +3928,7 @@ func TestApp_TheCompanyListReloadsItselfAfterASync(t *testing.T) {
 		msg  tea.Msg
 	}{
 		{name: "a company synced in a run", msg: synced(message.Source{Instance: 9}, 999999, 1, 0)},
-		{name: "company refreshed", msg: message.CompanyRefreshedMsg{Result: sync.Result{CompanyID: 999999, Name: "SomeOtherCompany"}}},
+		{name: "company refreshed", msg: synced(message.Source{Instance: 9}, 999999, 0, 0)},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -4117,8 +4107,8 @@ func TestApp_Resize_ClearsTheScreen(t *testing.T) {
 	}
 }
 
-// refreshResult runs r's command and returns the refresh's own result,
-// without the spinner tick batched with it.
+// refreshResult runs r's command and returns the refresh's own result, its
+// report or its error, without the spinner tick batched with it.
 func refreshResult(t *testing.T, cmd tea.Cmd) tea.Msg {
 	t.Helper()
 	batch, ok := cmd().(tea.BatchMsg)
@@ -4126,7 +4116,8 @@ func refreshResult(t *testing.T, cmd tea.Cmd) tea.Msg {
 		t.Fatal("r's command isn't a batch of the refresh and the spinner")
 	}
 	for _, c := range batch {
-		if msg, ok := c().(message.CompanyRefreshedMsg); ok {
+		switch msg := c().(type) {
+		case message.Event[message.Ran[message.SyncReport]], message.Event[message.Error]:
 			return msg
 		}
 	}

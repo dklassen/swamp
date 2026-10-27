@@ -75,6 +75,78 @@ func TestSyncing_RunSyncAll_StartsWithTheFirstCompany(t *testing.T) {
 	}
 }
 
+// failed is c's sync failing, from m, with code.
+func failed(m *model.Syncing, c message.Company, code message.ErrorCode) tea.Msg {
+	return message.New(message.Source{Instance: m.Instance()}, message.Subject{Type: message.TypeCompany, ID: c.ID}, message.OpNone, time.Now().UTC(),
+		message.Error{Code: code, Text: "it failed"})
+}
+
+// A refresh's outcome goes to the banner by company name. A failure other
+// than a sync elsewhere is an Error the banner already shows.
+func TestSyncing_RefreshReportingBack_StopsTheSpinnerAndSaysHowItWent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		outcome    func(m *model.Syncing) tea.Msg
+		wantStatus []string
+	}{
+		{
+			name:       "synced",
+			outcome:    func(m *model.Syncing) tea.Msg { return synced(m, 0, acmeAndGlobex[0], 0) },
+			wantStatus: []string{"Acme: fetched 0, created 0, updated 0, closed 0, reopened 0"},
+		},
+		{
+			name:       "syncing elsewhere",
+			outcome:    func(m *model.Syncing) tea.Msg { return failed(m, acmeAndGlobex[0], message.ErrSyncInProgress) },
+			wantStatus: []string{"Acme is already syncing elsewhere; try again in a moment"},
+		},
+		{
+			name:    "failed",
+			outcome: func(m *model.Syncing) tea.Msg { return failed(m, acmeAndGlobex[0], message.ErrOther) },
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, send := newSyncing(t)
+			send(syncCompany(acmeAndGlobex[0]))
+
+			var status []string
+			for _, msg := range messagesOf(send(tt.outcome(m))) {
+				if notify, ok := msg.(message.Event[message.Notify]); ok {
+					status = append(status, notify.Payload.Status)
+				}
+			}
+
+			if diff := cmp.Diff(tt.wantStatus, status); diff != "" {
+				t.Errorf("status (-want +got):\n%s", diff)
+			}
+			if view := viewOf(m); view != "" {
+				t.Errorf("View = %q, want nothing once the refresh is back", view)
+			}
+		})
+	}
+}
+
+// With two refreshes in flight, each outcome names its own company, and
+// the spinner turns until both are back.
+func TestSyncing_TwoRefreshes_EachReportsItsOwnCompany(t *testing.T) {
+	t.Parallel()
+	m, send := newSyncing(t)
+	send(syncCompany(acmeAndGlobex[0]))
+	send(syncCompany(acmeAndGlobex[1]))
+
+	msgs := messagesOf(send(failed(m, acmeAndGlobex[0], message.ErrSyncInProgress)))
+
+	if len(msgs) != 1 || msgs[0].(message.Event[message.Notify]).Payload.Status != "Acme is already syncing elsewhere; try again in a moment" {
+		t.Errorf("Acme's outcome sent %+v, want its status", msgs)
+	}
+	if view := viewOf(m); !strings.Contains(view, "Refreshing Globex…") {
+		t.Errorf("View = %q, want the spinner still turning for Globex", view)
+	}
+}
+
 // A run may be syncing the company right now, so a refresh waits (#150).
 func TestSyncing_RefreshDuringARun_IsRefused(t *testing.T) {
 	t.Parallel()
