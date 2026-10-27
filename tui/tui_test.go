@@ -18,9 +18,6 @@ import (
 	"github.com/dklassen/swamp/tui/message"
 )
 
-// testProcess stands in for the TUI's "kind:pid" in the events it sends.
-const testProcess = "tui:1"
-
 // assertEventFrom checks what every event a command sends has: an ID, a
 // time in UTC, and src as its source.
 func assertEventFrom(t *testing.T, meta message.Meta, src message.Source) {

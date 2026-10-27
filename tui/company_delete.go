@@ -17,7 +17,6 @@ import (
 // stray key.
 type companyDeleteModel struct {
 	companyService *service.CompanyService
-	process        string
 
 	company      company.Company
 	openPostings int
@@ -30,10 +29,8 @@ type companyDeleteModel struct {
 	instance message.ScreenInstance
 }
 
-// newCompanyDeleteModel is the confirmation for deleting company. process
-// is the TUI's "kind:pid", the source of the delete's events.
-func newCompanyDeleteModel(companies *service.CompanyService, process string, company company.Company, openPostings, width int) *companyDeleteModel {
-	return &companyDeleteModel{companyService: companies, process: process, company: company, openPostings: openPostings, width: width, instance: message.NewScreenInstance()}
+func newCompanyDeleteModel(companies *service.CompanyService, company company.Company, openPostings, width int) *companyDeleteModel {
+	return &companyDeleteModel{companyService: companies, company: company, openPostings: openPostings, width: width, instance: message.NewScreenInstance()}
 }
 
 func (m *companyDeleteModel) Instance() message.ScreenInstance { return m.instance }
@@ -60,7 +57,7 @@ func (m *companyDeleteModel) focusChanged(e message.Event[message.Signal[message
 func (m *companyDeleteModel) companyDeleted(message.Event[message.Changed[message.Company]]) tea.Cmd {
 	return tea.Batch(
 		func() tea.Msg { return message.CloseCompanyDeleteMsg{} },
-		message.ReportStatus(message.Source{Process: m.process, Instance: m.instance}, ""),
+		message.ReportStatus(message.Source{Instance: m.instance}, ""),
 	)
 }
 
@@ -88,7 +85,7 @@ func (m *companyDeleteModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	case "y":
 		if !m.confirmed {
 			m.confirmed = true
-			return deleteCompany(m.companyService, message.Source{Process: m.process, Instance: m.instance}, m.company.ID)
+			return deleteCompany(m.companyService, message.Source{Instance: m.instance}, m.company.ID)
 		}
 	}
 	return nil

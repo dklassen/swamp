@@ -54,7 +54,7 @@ func TestCompanyListModel_CompanyChanged_KeepsTheRowsInStep(t *testing.T) {
 
 	acme := company.Company{ID: 1, Name: "Acme"}
 	globex := company.Company{ID: 2, Name: "Globex"}
-	src := message.Source{Process: testProcess, Instance: message.NewScreenInstance()}
+	src := message.Source{Instance: message.NewScreenInstance()}
 	at := time.Now().UTC()
 	tests := []struct {
 		name  string

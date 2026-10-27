@@ -31,7 +31,7 @@ func TestCompanyDeleteModel_KeepKeys_AskToClose(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newCompanyDeleteModel(nil, testProcess, company.Company{ID: 1, Name: "Acme"}, 0, 80)
+			m := newCompanyDeleteModel(nil, company.Company{ID: 1, Name: "Acme"}, 0, 80)
 
 			cmd := m.keyPressed(tt.key)
 			if cmd == nil {
@@ -51,7 +51,7 @@ func TestCompanyDeleteModel_ClosesWhenItsCompanyIsDeletedOrItsDeleteFails(t *tes
 	t.Parallel()
 
 	acme := company.Company{ID: 1, Name: "Acme"}
-	other := message.Source{Process: testProcess, Instance: message.NewScreenInstance()}
+	other := message.Source{Instance: message.NewScreenInstance()}
 	failed := func(src message.Source) tea.Msg {
 		return message.New(src, message.Subject{Type: message.TypeCompany, ID: acme.ID}, message.OpDeleted, time.Now().UTC(),
 			model.ErrorOf(errors.New("disk full")))
@@ -62,13 +62,13 @@ func TestCompanyDeleteModel_ClosesWhenItsCompanyIsDeletedOrItsDeleteFails(t *tes
 		wantClose bool
 	}{
 		{name: "its company, deleted by it", event: func(m *companyDeleteModel) tea.Msg {
-			return message.Deleted(message.Source{Process: testProcess, Instance: m.Instance()}, acme.ID, time.Now().UTC(), companySnapshot(acme))
+			return message.Deleted(message.Source{Instance: m.Instance()}, acme.ID, time.Now().UTC(), companySnapshot(acme))
 		}, wantClose: true},
 		{name: "its company, deleted elsewhere", event: func(*companyDeleteModel) tea.Msg {
 			return message.Deleted(other, acme.ID, time.Now().UTC(), companySnapshot(acme))
 		}, wantClose: true},
 		{name: "its delete, failed", event: func(m *companyDeleteModel) tea.Msg {
-			return failed(message.Source{Process: testProcess, Instance: m.Instance()})
+			return failed(message.Source{Instance: m.Instance()})
 		}, wantClose: true},
 		{name: "another company, deleted", event: func(*companyDeleteModel) tea.Msg {
 			return message.Deleted(other, 2, time.Now().UTC(), message.Company{ID: 2, Name: "Globex"})
@@ -82,7 +82,7 @@ func TestCompanyDeleteModel_ClosesWhenItsCompanyIsDeletedOrItsDeleteFails(t *tes
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newCompanyDeleteModel(nil, testProcess, acme, 0, 80)
+			m := newCompanyDeleteModel(nil, acme, 0, 80)
 			r := model.NewMsgRouter()
 			if err := r.Register(m); err != nil {
 				t.Fatalf("Register: %v", err)
@@ -113,7 +113,7 @@ func TestCompanyDeleteModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newCompanyDeleteModel(nil, testProcess, company.Company{ID: 1, Name: "Acme"}, 0, 80)
+			m := newCompanyDeleteModel(nil, company.Company{ID: 1, Name: "Acme"}, 0, 80)
 			r := model.NewMsgRouter()
 			if err := r.Register(m); err != nil {
 				t.Fatalf("Register: %v", err)
@@ -134,7 +134,7 @@ func TestCompanyDeleteModel_Y_SendsTheCompanyDeleted(t *testing.T) {
 
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	m := newCompanyDeleteModel(s.Companies, testProcess, acme, 0, 80)
+	m := newCompanyDeleteModel(s.Companies, acme, 0, 80)
 
 	msg := m.keyPressed(runeKey('y'))()
 
@@ -142,7 +142,7 @@ func TestCompanyDeleteModel_Y_SendsTheCompanyDeleted(t *testing.T) {
 	if !ok {
 		t.Fatalf("y sent %T, want message.Event[message.Changed[message.Company]]", msg)
 	}
-	assertEventFrom(t, got.Meta, message.Source{Process: testProcess, Instance: m.Instance()})
+	assertEventFrom(t, got.Meta, message.Source{Instance: m.Instance()})
 	want := message.Deleted(got.Meta.Source, acme.ID, got.Meta.At, companySnapshot(acme))
 	if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(message.Meta{}, "ID")); diff != "" {
 		t.Errorf("y sent (-want +got):\n%s", diff)

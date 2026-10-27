@@ -42,7 +42,6 @@ const (
 // screen reads or writes this state.
 type companyFormModel struct {
 	syncer      *sync.Syncer
-	process     string
 	sourceIndex int
 	inputs      []textinput.Model
 	focus       int
@@ -60,18 +59,17 @@ type companyFormModel struct {
 // newCompanyFormModel returns a fresh, blank form with the source picker
 // focused first (defaulting to companySources[0]) -- constructed anew
 // each time the screen is entered, replacing the previous reset-in-place
-// pattern (App.formInputs[i].SetValue("")). process is the TUI's
-// "kind:pid", the source of the create's events.
-func newCompanyFormModel(syncer *sync.Syncer, process string) *companyFormModel {
+// pattern (App.formInputs[i].SetValue("")).
+func newCompanyFormModel(syncer *sync.Syncer) *companyFormModel {
 	inputs := make([]textinput.Model, formFieldCount)
 	for i := range inputs {
 		inputs[i] = textinput.New()
 	}
-	return &companyFormModel{syncer: syncer, process: process, inputs: inputs, instance: message.NewScreenInstance()}
+	return &companyFormModel{syncer: syncer, inputs: inputs, instance: message.NewScreenInstance()}
 }
 
 func (m *companyFormModel) source() message.Source {
-	return message.Source{Process: m.process, Instance: m.instance}
+	return message.Source{Instance: m.instance}
 }
 
 func (m *companyFormModel) Instance() message.ScreenInstance { return m.instance }

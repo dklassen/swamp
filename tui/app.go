@@ -1124,7 +1124,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.closeCompanyEdit()
 		}
 	case message.OpenCompanyFormMsg:
-		form := newCompanyFormModel(a.syncer, a.origin)
+		form := newCompanyFormModel(a.syncer)
 		if err := a.router.Register(form); err != nil {
 			return a, message.Fail(message.Source{Process: a.origin}, err)
 		}
@@ -1138,7 +1138,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.companyEdit = edit
 		a.currentScreen = screenCompanyEdit
 	case message.OpenCompanyDeleteMsg:
-		dialog := newCompanyDeleteModel(a.companyService, a.origin, msg.Company, msg.OpenPostings, a.sized.Width)
+		dialog := newCompanyDeleteModel(a.companyService, msg.Company, msg.OpenPostings, a.sized.Width)
 		if err := a.router.Register(dialog); err != nil {
 			return a, message.Fail(message.Source{Process: a.origin}, err)
 		}
