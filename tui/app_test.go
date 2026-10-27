@@ -3197,6 +3197,25 @@ func TestApp_CompanyRefreshed_ForCurrentlyViewedCompany_ReloadsPostings(t *testi
 	}
 }
 
+// A run reloads the postings being viewed as soon as their company has
+// synced, not when the whole run ends.
+func TestApp_CompanySyncedInARun_ForCurrentlyViewedCompany_ReloadsPostings(t *testing.T) {
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
+
+	app = sendKeyAndApply(t, app, synced(message.Source{Instance: app.syncing.Instance()}, acme.ID, 1, 0))
+
+	if len(app.postings) != 2 {
+		t.Fatalf("postings after the step = %+v, want both", app.postings)
+	}
+}
+
 func TestApp_CompanyRefreshed_ForDifferentCompany_DoesNotReloadPostings(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
@@ -3918,7 +3937,7 @@ func TestApp_TheCompanyListReloadsItselfAfterASync(t *testing.T) {
 		name string
 		msg  tea.Msg
 	}{
-		{name: "sync-all finished", msg: message.SyncAllFinishedMsg{}},
+		{name: "a company synced in a run", msg: synced(message.Source{Instance: 9}, 999999, 1, 0)},
 		{name: "company refreshed", msg: message.CompanyRefreshedMsg{Result: sync.Result{CompanyID: 999999, Name: "SomeOtherCompany"}}},
 	}
 	for _, tt := range tests {

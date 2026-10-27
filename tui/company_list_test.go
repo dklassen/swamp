@@ -939,7 +939,8 @@ func TestCompanyListModel_ReloadsAfterASync(t *testing.T) {
 	}{
 		{name: "a refresh", msg: message.CompanyRefreshedMsg{Name: "Acme", Result: sync.Result{CompanyID: 1, Name: "Acme"}}, wantReload: true},
 		{name: "a refused refresh", msg: message.CompanyRefreshedMsg{Name: "Acme", Err: sync.ErrSyncInProgress}, wantReload: false},
-		{name: "a sync-all run ending", msg: message.SyncAllFinishedMsg{}, wantReload: true},
+		{name: "a company synced in a run", msg: synced(message.Source{Instance: 9}, 1, 1, 0), wantReload: true},
+		{name: "a company that didn't sync in a run", msg: synced(message.Source{Instance: 9}, 1, 1, message.ErrOther), wantReload: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

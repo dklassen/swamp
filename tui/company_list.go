@@ -59,7 +59,7 @@ func (m *companyListModel) Routes() []*model.Route {
 		model.Always(m.loadRequested),
 		model.Always(m.companiesRead),
 		model.Always(m.companyRefreshed),
-		model.Always(m.syncAllFinished),
+		model.Always(m.synced),
 		model.Always(m.companyChanged),
 		model.WhenFocused(m, m.keyPressed),
 		model.WhenFocused(m, m.paste),
@@ -87,8 +87,8 @@ func (m *companyListModel) loadRequested(message.Event[message.Load[message.Comp
 	return m.load()
 }
 
-// companyRefreshed and syncAllFinished reload, since a sync changes the Open
-// and Last fetched columns.
+// companyRefreshed and synced reload, since a sync changes the Open and
+// Last fetched columns.
 func (m *companyListModel) companyRefreshed(refreshed message.CompanyRefreshedMsg) tea.Cmd {
 	if refreshed.Err != nil {
 		return nil
@@ -96,7 +96,10 @@ func (m *companyListModel) companyRefreshed(refreshed message.CompanyRefreshedMs
 	return m.load()
 }
 
-func (m *companyListModel) syncAllFinished(message.SyncAllFinishedMsg) tea.Cmd {
+func (m *companyListModel) synced(e message.Event[message.Ran[message.SyncReport]]) tea.Cmd {
+	if e.Payload.Value.Code != 0 {
+		return nil
+	}
 	return m.load()
 }
 

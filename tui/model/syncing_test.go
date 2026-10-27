@@ -7,8 +7,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
@@ -106,35 +106,68 @@ func messagesOf(cmd tea.Cmd) []tea.Msg {
 	return msgs
 }
 
-func TestSyncing_LastCompany_ReportsTheSummaryAndAnnouncesTheResults(t *testing.T) {
+// synced is c's step in run runID, from m, with code saying why it didn't
+// sync, zero if it did.
+func synced(m *model.Syncing, runID int, c message.Company, code message.ErrorCode) tea.Msg {
+	return message.New(message.Source{Instance: m.Instance()}, message.Subject{Type: message.TypeCompany, ID: c.ID}, message.OpNone, time.Now().UTC(),
+		message.Ran[message.SyncReport]{Value: message.SyncReport{RunID: runID, Code: code}})
+}
+
+// The summary is the line `swamp fetch` prints, and the report has the
+// same totals, with no Error for a company that failed.
+func TestSyncing_LastCompany_ReportsTheRun(t *testing.T) {
 	t.Parallel()
-	m, send := newSyncing(t)
-	send(syncAll(acmeAndGlobex))
-	send(message.SyncAllStepMsg{RunID: 1, Result: sync.Result{CompanyID: 1, Name: "Acme"}})
 
-	msgs := messagesOf(send(message.SyncAllStepMsg{RunID: 1, Result: sync.Result{CompanyID: 2, Name: "Globex"}}))
-
-	if view := viewOf(m); view != "" {
-		t.Errorf("View after the last company = %q, want nothing", view)
+	tests := []struct {
+		name        string
+		codes       [2]message.ErrorCode
+		wantSummary string
+		wantReport  message.SyncAllReport
+	}{
+		{name: "both synced", wantSummary: "2 companies, 0 failed", wantReport: message.SyncAllReport{Companies: 2}},
+		{
+			name: "one failed, one skipped", codes: [2]message.ErrorCode{message.ErrOther, message.ErrSyncInProgress},
+			wantSummary: "2 companies, 1 failed (Acme), 1 skipped (Globex)",
+			wantReport:  message.SyncAllReport{Companies: 2, Failed: []string{"Acme"}, Skipped: []string{"Globex"}},
+		},
 	}
-	var summary string
-	var finished *message.SyncAllFinishedMsg
-	for _, msg := range msgs {
-		switch msg := msg.(type) {
-		case message.Event[message.Notify]:
-			if msg.Meta.Source.Instance != m.Instance() {
-				t.Errorf("status sent from instance %d, want Syncing's, %d", msg.Meta.Source.Instance, m.Instance())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, send := newSyncing(t)
+			send(syncAll(acmeAndGlobex))
+			send(synced(m, 1, acmeAndGlobex[0], tt.codes[0]))
+
+			msgs := messagesOf(send(synced(m, 1, acmeAndGlobex[1], tt.codes[1])))
+
+			if view := viewOf(m); view != "" {
+				t.Errorf("View after the last company = %q, want nothing", view)
 			}
-			summary = msg.Payload.Status
-		case message.SyncAllFinishedMsg:
-			finished = &msg
-		}
-	}
-	if summary != "2 companies, 0 failed" {
-		t.Errorf("reported status = %q, want %q", summary, "2 companies, 0 failed")
-	}
-	if finished == nil || len(finished.Results) != 2 {
-		t.Errorf("announced %+v, want a SyncAllFinishedMsg with both results", finished)
+			var summary string
+			var reports []message.SyncAllReport
+			for _, msg := range msgs {
+				switch msg := msg.(type) {
+				case message.Event[message.Notify]:
+					if msg.Meta.Source.Instance != m.Instance() {
+						t.Errorf("status sent from instance %d, want Syncing's, %d", msg.Meta.Source.Instance, m.Instance())
+					}
+					summary = msg.Payload.Status
+				case message.Event[message.Ran[message.SyncAllReport]]:
+					if msg.Meta.Source.Instance != m.Instance() {
+						t.Errorf("report sent from instance %d, want Syncing's, %d", msg.Meta.Source.Instance, m.Instance())
+					}
+					reports = append(reports, msg.Payload.Value)
+				case message.Event[message.Error]:
+					t.Errorf("sent %+v, want a failed company in the summary, not an Error", msg)
+				}
+			}
+			if summary != tt.wantSummary {
+				t.Errorf("reported status = %q, want %q", summary, tt.wantSummary)
+			}
+			if diff := cmp.Diff([]message.SyncAllReport{tt.wantReport}, reports); diff != "" {
+				t.Errorf("reports (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -145,11 +178,11 @@ func TestSyncing_ResultFromAnEarlierRun_IsIgnored(t *testing.T) {
 	m, send := newSyncing(t)
 	send(syncAll(acmeAndGlobex))
 	send(syncAll(nil)) // stop after Acme
-	send(message.SyncAllStepMsg{RunID: 1, Result: sync.Result{CompanyID: 1, Name: "Acme"}})
+	send(synced(m, 1, acmeAndGlobex[0], 0))
 	send(syncAll(acmeAndGlobex)) // run 2
 	before := viewOf(m)
 
-	if cmd := send(message.SyncAllStepMsg{RunID: 1, Result: sync.Result{CompanyID: 2, Name: "Globex"}}); cmd != nil {
+	if cmd := send(synced(m, 1, acmeAndGlobex[1], 0)); cmd != nil {
 		t.Error("a result from run 1 returned a Cmd during run 2, want nil")
 	}
 	if view := viewOf(m); view != before {

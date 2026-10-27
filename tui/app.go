@@ -1147,12 +1147,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.selectedCompany = msg.Company
 		a.currentScreen = screenPostingList
 		return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
-	case message.SyncAllFinishedMsg:
-		// The posting list, if its company was synced.
-		for _, r := range msg.Results {
-			if r.Err == nil && r.CompanyID == a.selectedCompany.ID {
-				return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
-			}
+	case message.Event[message.Ran[message.SyncReport]]:
+		if msg.Payload.Value.Code == 0 && msg.Meta.Subject.ID == a.selectedCompany.ID {
+			// The cursor stays on its posting: the sync can add some
+			// ahead of it.
+			return a, reloadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
 		}
 	case message.CompanyRefreshedMsg:
 		if msg.Err == nil && msg.Result.CompanyID == a.selectedCompany.ID {
