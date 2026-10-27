@@ -5,7 +5,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/dklassen/swamp/internal/domain/company"
-	"github.com/dklassen/swamp/sync"
 )
 
 type ScreenInstance int
@@ -24,32 +23,6 @@ func ReportStatus(src Source, s string) tea.Cmd {
 		return New(src, Subject{}, OpNone, time.Now().UTC(), Notify{Status: s})
 	}
 }
-
-// RefreshCompanyMsg asks for Company to be refreshed, by whatever knows
-// whether another sync (e.g. a sync-all run) is already under way.
-type RefreshCompanyMsg struct{ Company company.Company }
-
-// CompanyRefreshedMsg is a refresh's result. Name is the company it was
-// started for, since a refused refresh has no Result.
-type CompanyRefreshedMsg struct {
-	Name   string
-	Result sync.Result
-	Err    error
-}
-
-// ToggleSyncAllMsg starts a sync-all run over Companies, or stops the one
-// under way.
-type ToggleSyncAllMsg struct{ Companies []company.Company }
-
-// SyncAllStepMsg is one company's result within run RunID.
-type SyncAllStepMsg struct {
-	RunID  int
-	Result sync.Result
-}
-
-// SyncAllFinishedMsg is a run's results once it has ended, finished or
-// stopped.
-type SyncAllFinishedMsg struct{ Results []sync.Result }
 
 // OpenCompanyFormMsg asks for the form that adds a company.
 type OpenCompanyFormMsg struct{}
