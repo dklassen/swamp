@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -129,19 +130,47 @@ func TestCompanyEditModel_Esc_WhileSavePending_NoOp(t *testing.T) {
 	}
 }
 
-func TestCompanyEditModel_Esc_AfterSaveResolved_ReturnsCancelMsg(t *testing.T) {
+// A result from an earlier opening of the edit leaves this one as it is:
+// still saving, so esc stays blocked, and open.
+func TestCompanyEditModel_CompanyNameUpdated_ActsOnItsOwnResultOnly(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyEditModel(nil, 7, "Acme")
-	m.nameInput.SetValue("Acme Corp")
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m.saveResolved()
-
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
+	tests := []struct {
+		name       string
+		updated    func(m *companyEditModel) message.CompanyNameUpdatedMsg
+		wantClose  bool
+		wantSaving bool
+	}{
+		{name: "its own, saved", updated: func(m *companyEditModel) message.CompanyNameUpdatedMsg {
+			return message.CompanyNameUpdatedMsg{From: m.Instance()}
+		}, wantClose: true},
+		{name: "its own, failed", updated: func(m *companyEditModel) message.CompanyNameUpdatedMsg {
+			return message.CompanyNameUpdatedMsg{From: m.Instance(), Err: errors.New("disk full")}
+		}},
+		{name: "an earlier edit's", updated: func(*companyEditModel) message.CompanyNameUpdatedMsg {
+			return message.CompanyNameUpdatedMsg{From: newCompanyEditModel(nil, 7, "Acme").Instance()}
+		}, wantSaving: true},
 	}
-	if _, ok := intent.(cancelCompanyEditMsg); !ok {
-		t.Fatalf("intent = %T, want cancelCompanyEditMsg (esc after save resolved)", intent)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := newCompanyEditModel(nil, 7, "Acme")
+			if cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
+				t.Fatal("enter: cmd = nil, want the save")
+			}
+
+			var got tea.Msg
+			if cmd := m.companyNameUpdated(tt.updated(m)); cmd != nil {
+				got = cmd()
+			}
+
+			if closed := got == (message.CloseCompanyEditMsg{}); closed != tt.wantClose {
+				t.Errorf("companyNameUpdated sent %#v, want close = %v", got, tt.wantClose)
+			}
+			_, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+			if blocked := intent == nil; blocked != tt.wantSaving {
+				t.Errorf("esc blocked = %v, want %v", blocked, tt.wantSaving)
+			}
+		})
 	}
 }

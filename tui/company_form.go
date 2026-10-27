@@ -8,6 +8,7 @@ import (
 
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/sync"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -50,19 +51,23 @@ type companyFormModel struct {
 	// would race the save (as on the edit screen, #37) and a
 	// second Enter would start a duplicate check.
 	checking bool
+
+	instance message.ScreenInstance
 }
 
 // newCompanyFormModel returns a fresh, blank form with the source picker
 // focused first (defaulting to companySources[0]) -- constructed anew
 // each time the screen is entered, replacing the previous reset-in-place
 // pattern (App.formInputs[i].SetValue("")).
-func newCompanyFormModel(syncer *sync.Syncer) companyFormModel {
+func newCompanyFormModel(syncer *sync.Syncer) *companyFormModel {
 	inputs := make([]textinput.Model, formFieldCount)
 	for i := range inputs {
 		inputs[i] = textinput.New()
 	}
-	return companyFormModel{syncer: syncer, inputs: inputs}
+	return &companyFormModel{syncer: syncer, inputs: inputs, instance: message.NewScreenInstance()}
 }
+
+func (m *companyFormModel) Instance() message.ScreenInstance { return m.instance }
 
 // cancelCompanyFormMsg signals that App should switch back to the
 // company-list screen without creating anything.
@@ -112,7 +117,7 @@ func (m *companyFormModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 			return nil, nil
 		}
 		m.checking = true
-		return createCompany(m.syncer, name, companySources[m.sourceIndex], sourceRef), nil
+		return createCompany(m.syncer, name, companySources[m.sourceIndex], sourceRef, m.instance), nil
 	}
 	if m.focus == formFieldSource {
 		return nil, nil
@@ -122,12 +127,17 @@ func (m *companyFormModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 	return cmd, nil
 }
 
-// checkResolved marks the in-flight board check (if any) as done. Called
-// by App once message.CompanyCreatedMsg arrives, success or failure -- on
-// failure the form stays open with its inputs intact so a typo can be
-// fixed.
-func (m *companyFormModel) checkResolved() {
+// companyCreated ends its own board check. On failure the form stays open
+// with its inputs intact so a typo can be fixed.
+func (m *companyFormModel) companyCreated(created message.CompanyCreatedMsg) tea.Cmd {
+	if created.From != m.instance {
+		return nil
+	}
 	m.checking = false
+	if created.Err != nil {
+		return nil
+	}
+	return func() tea.Msg { return message.CloseCompanyFormMsg{} }
 }
 
 // renderSourcePicker shows every source with the selected one boxed and

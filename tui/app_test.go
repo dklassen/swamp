@@ -291,7 +291,7 @@ func TestApp_SubmitForm_CreatesCompanyAndReturnsToList(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Update on submit returned nil Cmd, want a command that creates the company")
 	}
-	app, _ = sendKey(app, cmd())
+	app = applyCmd(t, app, cmd)
 
 	if app.currentScreen != screenCompanyList {
 		t.Fatalf("screen after submit = %v, want screenCompanyList", app.currentScreen)
@@ -587,7 +587,7 @@ func TestApp_PressE_EditsCompanyName(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Update on submit returned nil Cmd, want a command that saves the company name")
 	}
-	app, _ = sendKey(app, cmd())
+	app = applyCmd(t, app, cmd)
 
 	if app.currentScreen != screenCompanyList {
 		t.Fatalf("screen after submit = %v, want screenCompanyList", app.currentScreen)
@@ -634,7 +634,7 @@ func TestApp_EscWhileCompanyNameSavePending_DoesNotRaceTheSave(t *testing.T) {
 	}
 
 	// The save resolves; screen leaves on its own like a normal submit.
-	app, _ = sendKey(app, cmd())
+	app = applyCmd(t, app, cmd)
 	if app.currentScreen != screenCompanyList {
 		t.Fatalf("screen after save resolved = %v, want screenCompanyList", app.currentScreen)
 	}

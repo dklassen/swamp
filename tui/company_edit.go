@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -24,16 +25,20 @@ type companyEditModel struct {
 	// an in-flight save -- it's blocked instead, so "esc: cancel" stays
 	// true rather than racing the save (#37).
 	saving bool
+
+	instance message.ScreenInstance
 }
 
 // newCompanyEditModel returns an edit screen for companyID, seeded with
 // its current name.
-func newCompanyEditModel(companies *service.CompanyService, companyID int64, name string) companyEditModel {
+func newCompanyEditModel(companies *service.CompanyService, companyID int64, name string) *companyEditModel {
 	input := textinput.New()
 	input.SetValue(name)
 	input.Focus()
-	return companyEditModel{companies: companies, companyID: companyID, nameInput: input}
+	return &companyEditModel{companies: companies, companyID: companyID, nameInput: input, instance: message.NewScreenInstance()}
 }
+
+func (m *companyEditModel) Instance() message.ScreenInstance { return m.instance }
 
 // cancelCompanyEditMsg signals that App should switch back to the
 // company-list screen without saving.
@@ -52,19 +57,24 @@ func (m *companyEditModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 			return nil, nil
 		}
 		m.saving = true
-		return updateCompanyName(m.companies, m.companyID, name), nil
+		return updateCompanyName(m.companies, m.companyID, name, m.instance), nil
 	}
 	var cmd tea.Cmd
 	m.nameInput, cmd = m.nameInput.Update(msg)
 	return cmd, nil
 }
 
-// saveResolved marks the in-flight save (if any) as done, letting Esc
-// cancel normally again. Called by App once message.CompanyNameUpdatedMsg
-// arrives, whether the save succeeded or failed -- either way, there's
-// no longer a save in flight for Esc to race.
-func (m *companyEditModel) saveResolved() {
+// companyNameUpdated ends its own save, letting Esc cancel again. On
+// failure the edit stays open with the name as typed.
+func (m *companyEditModel) companyNameUpdated(updated message.CompanyNameUpdatedMsg) tea.Cmd {
+	if updated.From != m.instance {
+		return nil
+	}
 	m.saving = false
+	if updated.Err != nil {
+		return nil
+	}
+	return func() tea.Msg { return message.CloseCompanyEditMsg{} }
 }
 
 func (m *companyEditModel) View() string {

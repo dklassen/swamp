@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -320,6 +321,52 @@ func TestCompanyFormModel_WhileBoardCheckInFlight(t *testing.T) {
 			cmd, intent := m.Update(tea.KeyPressMsg{Code: tt.key})
 			if cmd != nil || intent != nil {
 				t.Fatalf("cmd, intent = %v, %v, want nil, nil while the check is in flight", cmd, intent)
+			}
+		})
+	}
+}
+
+// A result from an earlier opening of the form leaves this one as it is:
+// still checking, and open.
+func TestCompanyFormModel_CompanyCreated_ActsOnItsOwnResultOnly(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name         string
+		created      func(m *companyFormModel) message.CompanyCreatedMsg
+		wantClose    bool
+		wantChecking bool
+	}{
+		{name: "its own, saved", created: func(m *companyFormModel) message.CompanyCreatedMsg {
+			return message.CompanyCreatedMsg{From: m.Instance()}
+		}, wantClose: true},
+		{name: "its own, failed", created: func(m *companyFormModel) message.CompanyCreatedMsg {
+			return message.CompanyCreatedMsg{From: m.Instance(), Err: errors.New("404 not found")}
+		}},
+		{name: "an earlier form's", created: func(*companyFormModel) message.CompanyCreatedMsg {
+			return message.CompanyCreatedMsg{From: newCompanyFormModel(nil).Instance()}
+		}, wantChecking: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := newCompanyFormModel(nil)
+			m.inputs[formFieldName].SetValue("Acme")
+			m.inputs[formFieldSourceRef].SetValue("acme")
+			if cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
+				t.Fatal("enter: cmd = nil, want the board check")
+			}
+
+			var got tea.Msg
+			if cmd := m.companyCreated(tt.created(m)); cmd != nil {
+				got = cmd()
+			}
+
+			if closed := got == (message.CloseCompanyFormMsg{}); closed != tt.wantClose {
+				t.Errorf("companyCreated sent %#v, want close = %v", got, tt.wantClose)
+			}
+			if checking := strings.Contains(m.View(), "Checking board"); checking != tt.wantChecking {
+				t.Errorf("view shows checking = %v, want %v", checking, tt.wantChecking)
 			}
 		})
 	}

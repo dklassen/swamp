@@ -75,8 +75,8 @@ type App struct {
 	companyList   *companyListModel
 	allPostings   allPostingsModel
 	currentScreen screen
-	companyForm   companyFormModel
-	companyEdit   companyEditModel
+	companyForm   *companyFormModel
+	companyEdit   *companyEditModel
 	status        string
 	err           error
 	// syncing runs sync all and refreshes, and draws their progress in the
@@ -603,15 +603,15 @@ const boardCheckTimeout = 15 * time.Second
 
 // createCompany saves a company only once its source ref resolves to a
 // real board (see sync.Syncer.CreateCompany).
-func createCompany(syncer *sync.Syncer, name, source, sourceRef string) tea.Cmd {
+func createCompany(syncer *sync.Syncer, name, source, sourceRef string, from message.ScreenInstance) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), boardCheckTimeout)
 		defer cancel()
 		company, err := syncer.CreateCompany(ctx, name, source, sourceRef)
 		if err != nil {
-			return message.CompanyCreatedMsg{Err: err}
+			return message.CompanyCreatedMsg{From: from, Err: err}
 		}
-		return message.CompanyCreatedMsg{Company: *company}
+		return message.CompanyCreatedMsg{Company: *company, From: from}
 	}
 }
 
@@ -622,13 +622,13 @@ func deleteCompany(companies *service.CompanyService, companyID int64) tea.Cmd {
 	}
 }
 
-func updateCompanyName(companies *service.CompanyService, companyID int64, name string) tea.Cmd {
+func updateCompanyName(companies *service.CompanyService, companyID int64, name string, from message.ScreenInstance) tea.Cmd {
 	return func() tea.Msg {
 		renamed, err := companies.SetName(context.Background(), companyID, name)
 		if err != nil {
-			return message.CompanyNameUpdatedMsg{Err: err}
+			return message.CompanyNameUpdatedMsg{From: from, Err: err}
 		}
-		return message.CompanyNameUpdatedMsg{Company: renamed.After}
+		return message.CompanyNameUpdatedMsg{Company: renamed.After, From: from}
 	}
 }
 
@@ -1088,16 +1088,14 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.activeApplicationList.keepCursorOn(previous, a.activeApplications)
 	case message.CompanyCreatedMsg:
 		a.err = msg.Err
-		a.companyForm.checkResolved()
-		if msg.Err == nil {
-			a.currentScreen = screenCompanyList
-		}
+		return a, a.companyForm.companyCreated(msg)
+	case message.CloseCompanyFormMsg:
+		a.currentScreen = screenCompanyList
 	case message.CompanyNameUpdatedMsg:
 		a.err = msg.Err
-		a.companyEdit.saveResolved()
-		if msg.Err == nil {
-			a.currentScreen = screenCompanyList
-		}
+		return a, a.companyEdit.companyNameUpdated(msg)
+	case message.CloseCompanyEditMsg:
+		a.currentScreen = screenCompanyList
 	case message.OpenCompanyFormMsg:
 		a.currentScreen = screenCompanyForm
 		a.companyForm = newCompanyFormModel(a.syncer)
