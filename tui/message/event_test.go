@@ -28,6 +28,7 @@ func TestNew_SetsKindAndTypeFromThePayload(t *testing.T) {
 	}{
 		{name: "changed", meta: message.New(src, message.Subject{}, message.OpUpdated, at, message.Changed[message.Company]{}).Meta, wantKind: message.KindChanged, wantType: message.TypeCompany},
 		{name: "read", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Read[message.ContentSize]{}).Meta, wantKind: message.KindRead, wantType: message.TypeContentSize},
+		{name: "load", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Load[message.CompanyList]{}).Meta, wantKind: message.KindLoad, wantType: message.TypeCompanyList},
 		{name: "run", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Run[message.ContentSize]{}).Meta, wantKind: message.KindRun, wantType: message.TypeContentSize},
 		{name: "ran", meta: message.New(src, message.Subject{}, message.OpNone, at, message.Ran[message.ContentSize]{}).Meta, wantKind: message.KindRan, wantType: message.TypeContentSize},
 		{name: "error", meta: message.New(src, message.Subject{}, message.OpDeleted, at, message.Error{Code: message.ErrNotFound}).Meta, wantKind: message.KindError, wantType: message.TypeError},
@@ -194,6 +195,7 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 			Companies:    []message.Company{{ID: 3, Name: "Acme", CreatedAt: at, UpdatedAt: at}},
 			OpenPostings: map[int64]int{3: 2},
 		}}))},
+		{name: "load", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Load[message.CompanyList]{}))},
 		{name: "run", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Run[message.ContentSize]{Value: r}))},
 		{name: "ran", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Ran[message.ContentSize]{Value: r}))},
 		{name: "error", check: roundTrip(message.New(src, subject, message.OpUpdated, at, message.Error{Code: message.ErrSyncInProgress, Text: "a sync is already running"}))},

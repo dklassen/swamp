@@ -13,6 +13,7 @@ const (
 	_ Kind = iota
 	KindChanged
 	KindRead
+	KindLoad
 	KindRun
 	KindRan
 	KindError
@@ -24,6 +25,7 @@ const (
 var kindNames = [...]string{
 	KindChanged: "changed",
 	KindRead:    "read",
+	KindLoad:    "load",
 	KindRun:     "run",
 	KindRan:     "ran",
 	KindError:   "error",
