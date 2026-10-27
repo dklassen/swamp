@@ -6,6 +6,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -19,7 +20,7 @@ import (
 func TestCompanyFormModel_New_FocusesSourceFieldFirst(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyFormModel(nil)
+	m := newCompanyFormModel(nil, testProcess)
 	if m.focus != formFieldSource {
 		t.Fatalf("focus = %d, want formFieldSource", m.focus)
 	}
@@ -31,7 +32,7 @@ func TestCompanyFormModel_New_FocusesSourceFieldFirst(t *testing.T) {
 func TestCompanyFormModel_Tab_CyclesThroughAllThreeFields(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyFormModel(nil)
+	m := newCompanyFormModel(nil, testProcess)
 
 	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyTab})
 	if m.focus != formFieldName {
@@ -64,7 +65,7 @@ func TestCompanyFormModel_Tab_CyclesThroughAllThreeFields(t *testing.T) {
 func TestCompanyFormModel_RightArrow_OnSourceField_CyclesSource(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyFormModel(nil)
+	m := newCompanyFormModel(nil, testProcess)
 	if companySources[m.sourceIndex] != jobboard.Ashby {
 		t.Fatalf("starting source = %q, want ashby", companySources[m.sourceIndex])
 	}
@@ -89,7 +90,7 @@ func TestCompanyFormModel_RightArrow_OnSourceField_CyclesSource(t *testing.T) {
 func TestCompanyFormModel_LeftArrow_OnSourceField_CyclesSourceBackward(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyFormModel(nil)
+	m := newCompanyFormModel(nil, testProcess)
 	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyLeft})
 	if companySources[m.sourceIndex] != jobboard.Lever {
 		t.Fatalf("source after left = %q, want lever (wrapped backward to the last source)", companySources[m.sourceIndex])
@@ -99,7 +100,7 @@ func TestCompanyFormModel_LeftArrow_OnSourceField_CyclesSourceBackward(t *testin
 func TestCompanyFormModel_LeftRightArrow_OffSourceField_DoesNotChangeSource(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyFormModel(nil)
+	m := newCompanyFormModel(nil, testProcess)
 	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyTab}) // move focus to name field
 	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyRight})
 
@@ -111,7 +112,7 @@ func TestCompanyFormModel_LeftRightArrow_OffSourceField_DoesNotChangeSource(t *t
 func TestCompanyFormModel_Enter_EmptyFields_NoOp(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyFormModel(nil)
+	m := newCompanyFormModel(nil, testProcess)
 	if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd != nil {
 		t.Fatalf("cmd = %v, want nil (empty fields)", cmd)
 	}
@@ -120,7 +121,7 @@ func TestCompanyFormModel_Enter_EmptyFields_NoOp(t *testing.T) {
 func TestCompanyFormModel_Enter_ValidFields_ReturnsCreateCompanyCmd(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyFormModel(nil)
+	m := newCompanyFormModel(nil, testProcess)
 	m.inputs[formFieldName].SetValue("Acme")
 	m.inputs[formFieldSourceRef].SetValue("acme")
 
@@ -133,7 +134,7 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithSelectedSource(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	m := newCompanyFormModel(newFormTestSyncer(s))
+	m := newCompanyFormModel(newFormTestSyncer(s), testProcess)
 	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyRight}) // switch source to greenhouse
 	m.inputs[formFieldName].SetValue("Acme")
 	m.inputs[formFieldSourceRef].SetValue("acme-token")
@@ -143,19 +144,12 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithSelectedSource(t *testing.T) {
 		t.Fatal("cmd = nil, want a command that creates the company")
 	}
 
-	msg := cmd()
-	created, ok := msg.(message.CompanyCreatedMsg)
-	if !ok {
-		t.Fatalf("msg = %T, want message.CompanyCreatedMsg", msg)
-	}
-	if created.Err != nil {
-		t.Fatalf("message.CompanyCreatedMsg.Err = %v, want nil", created.Err)
-	}
-	if created.Company.Source != jobboard.Greenhouse {
-		t.Fatalf("created company Source = %q, want %q", created.Company.Source, jobboard.Greenhouse)
+	created := companyCreatedBy(t, m, cmd())
+	if created.Source != jobboard.Greenhouse {
+		t.Fatalf("created company Source = %q, want %q", created.Source, jobboard.Greenhouse)
 	}
 
-	stored, err := s.Companies.Get(context.Background(), created.Company.ID)
+	stored, err := s.Companies.Get(context.Background(), created.ID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
 	}
@@ -168,7 +162,7 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithLeverSource(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	m := newCompanyFormModel(newFormTestSyncer(s))
+	m := newCompanyFormModel(newFormTestSyncer(s), testProcess)
 	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyLeft}) // wraps backward to lever, the last source
 	if companySources[m.sourceIndex] != jobboard.Lever {
 		t.Fatalf("source after left = %q, want lever", companySources[m.sourceIndex])
@@ -181,19 +175,12 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithLeverSource(t *testing.T) {
 		t.Fatal("cmd = nil, want a command that creates the company")
 	}
 
-	msg := cmd()
-	created, ok := msg.(message.CompanyCreatedMsg)
-	if !ok {
-		t.Fatalf("msg = %T, want message.CompanyCreatedMsg", msg)
-	}
-	if created.Err != nil {
-		t.Fatalf("message.CompanyCreatedMsg.Err = %v, want nil", created.Err)
-	}
-	if created.Company.Source != jobboard.Lever {
-		t.Fatalf("created company Source = %q, want %q", created.Company.Source, jobboard.Lever)
+	created := companyCreatedBy(t, m, cmd())
+	if created.Source != jobboard.Lever {
+		t.Fatalf("created company Source = %q, want %q", created.Source, jobboard.Lever)
 	}
 
-	stored, err := s.Companies.Get(context.Background(), created.Company.ID)
+	stored, err := s.Companies.Get(context.Background(), created.ID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
 	}
@@ -205,7 +192,7 @@ func TestCompanyFormModel_Enter_CreatesCompanyWithLeverSource(t *testing.T) {
 func TestCompanyFormModel_Enter_WhitespaceOnlyName_NoOp(t *testing.T) {
 	t.Parallel()
 
-	m := newCompanyFormModel(nil)
+	m := newCompanyFormModel(nil, testProcess)
 	m.inputs[formFieldName].SetValue("   ")
 	m.inputs[formFieldSourceRef].SetValue("acme")
 
@@ -218,7 +205,7 @@ func TestCompanyFormModel_Enter_TrimsSavedName(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	m := newCompanyFormModel(newFormTestSyncer(s))
+	m := newCompanyFormModel(newFormTestSyncer(s), testProcess)
 	m.inputs[formFieldName].SetValue("  Acme  ")
 	m.inputs[formFieldSourceRef].SetValue("acme")
 
@@ -226,17 +213,28 @@ func TestCompanyFormModel_Enter_TrimsSavedName(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that creates the company")
 	}
-	msg := cmd()
-	created, ok := msg.(message.CompanyCreatedMsg)
+	if created := companyCreatedBy(t, m, cmd()); created.Name != "Acme" {
+		t.Fatalf("created company Name = %q, want %q (trimmed)", created.Name, "Acme")
+	}
+}
+
+// companyCreatedBy is the company msg says m created, failing t unless
+// msg is m's create with an ID, a time in UTC and the company's CreatedAt.
+func companyCreatedBy(t *testing.T, m *companyFormModel, msg tea.Msg) message.Company {
+	t.Helper()
+	created, ok := msg.(message.Event[message.Changed[message.Company]])
 	if !ok {
-		t.Fatalf("msg = %T, want message.CompanyCreatedMsg", msg)
+		t.Fatalf("msg = %#v, want message.Event[message.Changed[message.Company]]", msg)
 	}
-	if created.Err != nil {
-		t.Fatalf("message.CompanyCreatedMsg.Err = %v, want nil", created.Err)
+	assertEventFrom(t, created.Meta, message.Source{Process: testProcess, Instance: m.Instance()})
+	after := created.Payload.After
+	if created.Meta.Op != message.OpCreated || created.Meta.Subject != (message.Subject{Type: message.TypeCompany, ID: after.ID}) {
+		t.Errorf("Meta = %+v, want %v of company %d", created.Meta, message.OpCreated, after.ID)
 	}
-	if created.Company.Name != "Acme" {
-		t.Fatalf("created company Name = %q, want %q (trimmed)", created.Company.Name, "Acme")
+	if !created.Meta.At.Equal(after.CreatedAt) {
+		t.Errorf("Meta.At = %v, want After.CreatedAt %v", created.Meta.At, after.CreatedAt)
 	}
+	return after
 }
 
 func TestCompanyFormModel_Enter_BoardRejectsSourceRef_NoCompanyCreated(t *testing.T) {
@@ -246,7 +244,7 @@ func TestCompanyFormModel_Enter_BoardRejectsSourceRef_NoCompanyCreated(t *testin
 	syncer := sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{
 		jobboard.Ashby: &fakeFetcher{errBoards: map[string]error{"acmee": errors.New("404 not found")}},
 	}, sync.DefaultConfig())
-	m := newCompanyFormModel(syncer)
+	m := newCompanyFormModel(syncer, testProcess)
 	m.inputs[formFieldName].SetValue("Acme")
 	m.inputs[formFieldSourceRef].SetValue("acmee")
 
@@ -254,12 +252,13 @@ func TestCompanyFormModel_Enter_BoardRejectsSourceRef_NoCompanyCreated(t *testin
 	if cmd == nil {
 		t.Fatal("cmd = nil, want a command that checks the board and creates the company")
 	}
-	created, ok := cmd().(message.CompanyCreatedMsg)
+	failed, ok := cmd().(message.Event[message.Error])
 	if !ok {
-		t.Fatal("msg is not a message.CompanyCreatedMsg")
+		t.Fatal("msg is not a message.Event[message.Error], want one for a board that doesn't resolve")
 	}
-	if created.Err == nil {
-		t.Fatal("message.CompanyCreatedMsg.Err = nil, want an error for a board that doesn't resolve")
+	assertEventFrom(t, failed.Meta, message.Source{Process: testProcess, Instance: m.Instance()})
+	if failed.Meta.Op != message.OpCreated {
+		t.Errorf("Meta.Op = %v, want %v", failed.Meta.Op, message.OpCreated)
 	}
 
 	companies, err := s.Companies.ListActive(context.Background())
@@ -294,7 +293,7 @@ func TestCompanyFormModel_WhileBoardCheckInFlight(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newCompanyFormModel(nil)
+			m := newCompanyFormModel(nil, testProcess)
 			m.inputs[formFieldName].SetValue("Acme")
 			m.inputs[formFieldSourceRef].SetValue("acme")
 			if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
@@ -324,7 +323,7 @@ func TestCompanyFormModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newCompanyFormModel(nil)
+			m := newCompanyFormModel(nil, testProcess)
 			r := model.NewMsgRouter()
 			if err := r.Register(m); err != nil {
 				t.Fatalf("Register: %v", err)
@@ -342,42 +341,45 @@ func TestCompanyFormModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 
 // A result from an earlier opening of the form leaves this one as it is:
 // still checking, and open.
-func TestCompanyFormModel_CompanyCreated_ActsOnItsOwnResultOnly(t *testing.T) {
+func TestCompanyFormModel_ActsOnItsOwnResultOnly(t *testing.T) {
 	t.Parallel()
 
+	created := func(instance message.ScreenInstance) tea.Msg {
+		return message.Created(message.Source{Process: testProcess, Instance: instance}, 1, time.Now().UTC(), message.Company{ID: 1, Name: "Acme"})
+	}
 	tests := []struct {
 		name         string
-		created      func(m *companyFormModel) message.CompanyCreatedMsg
+		result       func(m *companyFormModel) tea.Msg
 		wantClose    bool
 		wantChecking bool
 	}{
-		{name: "its own, saved", created: func(m *companyFormModel) message.CompanyCreatedMsg {
-			return message.CompanyCreatedMsg{From: m.Instance()}
-		}, wantClose: true},
-		{name: "its own, failed", created: func(m *companyFormModel) message.CompanyCreatedMsg {
-			return message.CompanyCreatedMsg{From: m.Instance(), Err: errors.New("404 not found")}
+		{name: "its own, saved", result: func(m *companyFormModel) tea.Msg { return created(m.Instance()) }, wantClose: true},
+		{name: "its own, failed", result: func(m *companyFormModel) tea.Msg {
+			return message.New(message.Source{Process: testProcess, Instance: m.Instance()}, message.Subject{}, message.OpCreated, time.Now().UTC(),
+				model.ErrorOf(errors.New("404 not found")))
 		}},
-		{name: "an earlier form's", created: func(*companyFormModel) message.CompanyCreatedMsg {
-			return message.CompanyCreatedMsg{From: newCompanyFormModel(nil).Instance()}
+		{name: "an earlier form's", result: func(*companyFormModel) tea.Msg {
+			return created(newCompanyFormModel(nil, testProcess).Instance())
 		}, wantChecking: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newCompanyFormModel(nil)
+			m := newCompanyFormModel(nil, testProcess)
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
 			m.inputs[formFieldName].SetValue("Acme")
 			m.inputs[formFieldSourceRef].SetValue("acme")
 			if cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
 				t.Fatal("enter: cmd = nil, want the board check")
 			}
 
-			var got tea.Msg
-			if cmd := m.companyCreated(tt.created(m)); cmd != nil {
-				got = cmd()
-			}
+			closed := slices.Contains(runCmd(t, r.Dispatch(tt.result(m))), tea.Msg(message.CloseCompanyFormMsg{}))
 
-			if closed := got == (message.CloseCompanyFormMsg{}); closed != tt.wantClose {
-				t.Errorf("companyCreated sent %#v, want close = %v", got, tt.wantClose)
+			if closed != tt.wantClose {
+				t.Errorf("asked to close = %v, want %v", closed, tt.wantClose)
 			}
 			if checking := strings.Contains(m.View().Content, "Checking board"); checking != tt.wantChecking {
 				t.Errorf("view shows checking = %v, want %v", checking, tt.wantChecking)

@@ -627,15 +627,15 @@ const boardCheckTimeout = 15 * time.Second
 
 // createCompany saves a company only once its source ref resolves to a
 // real board (see sync.Syncer.CreateCompany).
-func createCompany(syncer *sync.Syncer, name, source, sourceRef string, from message.ScreenInstance) tea.Cmd {
+func createCompany(syncer *sync.Syncer, src message.Source, name, source, sourceRef string) tea.Cmd {
 	return func() tea.Msg {
 		ctx, cancel := context.WithTimeout(context.Background(), boardCheckTimeout)
 		defer cancel()
 		company, err := syncer.CreateCompany(ctx, name, source, sourceRef)
 		if err != nil {
-			return message.CompanyCreatedMsg{From: from, Err: err}
+			return message.New(src, message.Subject{}, message.OpCreated, time.Now().UTC(), model.ErrorOf(err))
 		}
-		return message.CompanyCreatedMsg{Company: *company, From: from}
+		return message.Created(src, company.ID, company.CreatedAt, companySnapshot(*company))
 	}
 }
 
@@ -1124,7 +1124,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			return a, a.closeCompanyEdit()
 		}
 	case message.OpenCompanyFormMsg:
-		form := newCompanyFormModel(a.syncer)
+		form := newCompanyFormModel(a.syncer, a.origin)
 		if err := a.router.Register(form); err != nil {
 			return a, message.Fail(message.Source{Process: a.origin}, err)
 		}

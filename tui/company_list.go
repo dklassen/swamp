@@ -58,7 +58,6 @@ func (m *companyListModel) Focused() bool { return m.focused }
 func (m *companyListModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(m.companiesLoaded),
-		model.Always(m.companyCreated),
 		model.Always(m.companyChanged),
 		model.WhenFocused(m, m.keyPressed),
 		model.WhenFocused(m, m.paste),
@@ -87,18 +86,10 @@ func (m *companyListModel) companiesLoaded(loaded message.CompaniesLoadedMsg) te
 	return nil
 }
 
-func (m *companyListModel) companyCreated(created message.CompanyCreatedMsg) tea.Cmd {
-	src := message.Source{Instance: m.instance}
-	if created.Err != nil {
-		return model.ReportErr(src, created.Err)
-	}
-	m.companies = append(m.companies, created.Company)
-	sortCompaniesByName(m.companies)
-	return message.ReportStatus(src, "")
-}
-
 func (m *companyListModel) companyChanged(e message.Event[message.Changed[message.Company]]) tea.Cmd {
 	switch e.Meta.Op {
+	case message.OpCreated:
+		m.companies = append(m.companies, companyOf(e.Payload.After))
 	case message.OpUpdated:
 		if i := indexOfCompany(m.companies, e.Meta.Subject.ID); i != -1 {
 			m.companies[i] = companyOf(e.Payload.After)
