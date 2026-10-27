@@ -11,11 +11,11 @@
 This RFC gives every message the shape of an event in an event-driven architecture: an envelope of metadata that every event shares, and a payload particular to it. The metadata is what routing and filtering read; only the handler that gets the event reads the payload.
 
 1. **Every message in `tui/message` is an `Event[P]`**: a `Meta` (`ID`, `Kind`, `Type`, `Source`, `Subject`, `Op`, `At`) and a `Payload P`.
-2. **A payload is one of eight primitives**: `Changed`, `Read`, `Run`, `Ran`, `Error`, `Nav`, `Notify` and `Signal`. The 80 types fold into them.
+2. **A payload is one of nine primitives**: `Changed`, `Read`, `Load`, `Run`, `Ran`, `Error`, `Nav`, `Notify` and `Signal`. The 80 types fold into them.
 3. **Routes filter on `Meta`.** `Always` and `WhenFocused` take filters (`About`, `From`, `OnOp`) that the router applies to `Meta` before the handler runs.
 4. **Events are plain data.** No pointers, interfaces, functions or channels; the standard library only; they round-trip through JSON/protobufs/etc unchanged.
 5. **Payloads carry snapshots, not domain objects.** `message.Company` is a value type that `tui/message` owns.
-6. **A model issues its own writes and loads as commands.** What comes back is routed: `Changed`, `Read` or `Error`. Only work another model owns the state of is a routed request (`Run`).
+6. **A model issues its own writes and loads as commands.** What comes back is routed: `Changed`, `Read` or `Error`. Only work another model owns the state of is a routed request (`Run`). A model decides when it reads again: on coming into focus, or on a `Ran` or `Changed` it hears. App routes and never reloads a model; a `Load` asks for a read only from a path of App's that still decides, the change log, until its rows are events.
 7. **The service gives the before and after.** An update or delete returns `change.Of[T]`, read in the write's transaction.
 
 ## Primitives
@@ -26,6 +26,7 @@ Each primitive is a `Kind`. Requests have no `Op`; only `Changed` says something
 | --- | --- | --- | --- | --- |
 | `changed` | `Changed[T]` | A write that happened: `Before` and `After` of one entity | The company, application, markup and document review write results; the change log's `changesMsg`, as writes by another process | 10 |
 | `read` | `Read[T]` | A read's result, for the model that asked | The 14 `…LoadedMsg` and `…ReloadedMsg` | 14 |
+| `load` | `Load[T]` | A request to the model that shows `T` to read it again; its `Read` is the reply | None: App's change-log path asks the company list | 0 |
 | `run` | `Run[T]` | A request for a job whose state another model owns | `RefreshCompanyMsg`, `refreshSelectedCompanyMsg`, `ToggleSyncAllMsg` | 3 |
 | `ran` | `Ran[T]` | That a job ran, with its report `T`: how many succeeded and failed, and what else a responding model needs to update, never the rows the job wrote | `CompanyRefreshedMsg`, `SyncAllStepMsg`, `SyncAllFinishedMsg`, `applicationExportedMsg`, `browserOpenedMsg`, `editorClosedMsg`, and the saves only the asker hears, `companyFiltersSavedMsg` and `applicationFormSavedMsg` | 8 |
 | `error` | `Error` | An error: a write, load or run that didn't happen, or a fault in the program, and why. The only error event | Every `Err` field, `ErrMsg`, and `documentChangedDuringReviewMsg` (a review refused because the document changed) | 2 |
@@ -33,7 +34,7 @@ Each primitive is a `Kind`. Requests have no `Op`; only `Changed` says something
 | `notify` | `Notify` | A status line for the banner | `BannerMsg` | 1 |
 | `signal` | `Signal[T]` | A UI fact with no entity: size, focus, a timer | `ContentSizeMsg`, `FocusChangedMsg`, `changeTickMsg`, `allPostingsSearchMsg` | 4 |
 
-The rest go, since a model does the work itself: the write requests (`confirmApplicationDeleteMsg`, `confirmApplicationSubmitMsg`, `saveFilterSelectionMsg`), the reload requests (`refreshApplicationDetailMsg`, `refreshPostingDetailMsg`, `toggleHideArchivedMsg`) and `openJobURLMsg`. That's 7, for 80 in all. If one model ever needs to ask another to write or load, an `update` or `load` kind is added then.
+The rest go, since a model does the work itself: the write requests (`confirmApplicationDeleteMsg`, `confirmApplicationSubmitMsg`, `saveFilterSelectionMsg`), the reload requests (`refreshApplicationDetailMsg`, `refreshPostingDetailMsg`, `toggleHideArchivedMsg`) and `openJobURLMsg`. That's 7, for 80 in all. If one model ever needs to ask another to write, an `update` kind is added then.
 
 "Refresh" meant two things, and they land in different kinds. Reading again what's in the database is a load the model issues. Fetching from a job board is a `Run[SyncCompany]` to `Syncing`, which reports a `Ran[SyncReport]` for each company it syncs, with the company as `Subject`, its counts (fetched, created, updated, closed, reopened) and `FetchedAt`. The sync sends no event per posting: a model showing that company's postings reloads on the `Ran`, and the change log carries the rows to other processes.
 
@@ -403,7 +404,7 @@ func (m *companyDeleteModel) focusChanged(e message.Event[message.Signal[message
 
 Each step keeps `go build`, `go test`, the linter and `gofmt` clean.
 
-1. **The envelope and the primitives.** Add `Event`, `Meta`, `New`, `NewID` and the eight primitives. A test round-trips one event of each primitive through JSON. Today's structs aren't checked; each later step replaces the ones it touches.
+1. **The envelope and the primitives.** Add `Event`, `Meta`, `New`, `NewID` and the primitives. A test round-trips one event of each primitive through JSON. Today's structs aren't checked; each later step replaces the ones it touches.
 2. **Filters on routes.** `Always` and `WhenFocused` take `...Filter`; `About`, `From` and `OnOp`. Tests show a filtered-out event never reaches the handler, and that a filter on a type without `Metadata()` fails `Register`.
 3. **`change.Of` and the company service.** `CompanyService.SetName` and `Delete` return `change.Of[company.Company]`, read in one transaction. Their tests show that `Before` is the row as another writer left it just before this write, and that `At` is `UpdatedAt`, or `DeletedAt` for a delete.
 4. **The migrated company models.** Add `Company` and instance numbering. The company list, delete and edit register `Event[Changed[Company]]` and `Event[Error]`, the three company result structs go, and the rest of the structs in `tui/message` become events. `tui/message` stops importing `company` and `sync`.
@@ -424,6 +425,6 @@ When step 4 lands, RFC 0012 changes in three places: its naming rule (messages a
 ## Out of scope
 
 - **Old `App` code paths,** which this RFC doesn't design around. Their message structs are covered only by how they're adopted (above).
-- **Routed write and load requests.** Models issue them as commands. An `update` or `load` kind is added when one model first needs another to do it.
+- **Routed write requests.** Models issue them as commands. An `update` kind is added when one model first needs another to do it.
 - **Choosing a wire format, a transport or topics** (Kafka or otherwise). This RFC keeps events serialisable, and doesn't publish them.
 - **The domain types' own pointers** (`company.Company.DeletedAt`, `posting.Markup`'s times). Snapshots convert them, and changing the domain types is separate.
