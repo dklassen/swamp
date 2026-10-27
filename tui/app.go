@@ -639,10 +639,13 @@ func createCompany(syncer *sync.Syncer, name, source, sourceRef string, from mes
 	}
 }
 
-func deleteCompany(companies *service.CompanyService, companyID int64) tea.Cmd {
+func deleteCompany(companies *service.CompanyService, src message.Source, companyID int64) tea.Cmd {
 	return func() tea.Msg {
-		_, err := companies.Delete(context.Background(), companyID)
-		return message.CompanyDeletedMsg{CompanyID: companyID, Err: err}
+		deleted, err := companies.Delete(context.Background(), companyID)
+		if err != nil {
+			return message.New(src, message.Subject{Type: message.TypeCompany, ID: companyID}, message.OpDeleted, time.Now().UTC(), model.ErrorOf(err))
+		}
+		return message.Deleted(src, companyID, deleted.At, companySnapshot(deleted.Before))
 	}
 }
 
@@ -1135,7 +1138,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.companyEdit = edit
 		a.currentScreen = screenCompanyEdit
 	case message.OpenCompanyDeleteMsg:
-		dialog := newCompanyDeleteModel(a.companyService, msg.Company, msg.OpenPostings, a.sized.Width)
+		dialog := newCompanyDeleteModel(a.companyService, a.origin, msg.Company, msg.OpenPostings, a.sized.Width)
 		if err := a.router.Register(dialog); err != nil {
 			return a, message.Fail(message.Source{Process: a.origin}, err)
 		}

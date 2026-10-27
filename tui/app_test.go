@@ -536,7 +536,10 @@ func TestApp_CompanyDeleteFails_ShowsTheErrorOnTheList(t *testing.T) {
 	app = sendKeyAndApply(t, app, runeKey('d'))
 
 	failure := errors.New("disk full")
-	app = applyCmd(t, app, func() tea.Msg { return message.CompanyDeletedMsg{CompanyID: acme.ID, Err: failure} })
+	from := message.Source{Instance: app.companyDelete.Instance()}
+	app = applyCmd(t, app, func() tea.Msg {
+		return message.New(from, message.Subject{Type: message.TypeCompany, ID: acme.ID}, message.OpDeleted, time.Now().UTC(), model.ErrorOf(failure))
+	})
 
 	if app.currentScreen != screenCompanyList {
 		t.Errorf("screen after a failed delete = %v, want the company list", app.currentScreen)

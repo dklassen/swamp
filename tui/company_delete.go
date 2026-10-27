@@ -17,6 +17,7 @@ import (
 // stray key.
 type companyDeleteModel struct {
 	companyService *service.CompanyService
+	process        string
 
 	company      company.Company
 	openPostings int
@@ -29,8 +30,10 @@ type companyDeleteModel struct {
 	instance message.ScreenInstance
 }
 
-func newCompanyDeleteModel(companies *service.CompanyService, company company.Company, openPostings, width int) *companyDeleteModel {
-	return &companyDeleteModel{companyService: companies, company: company, openPostings: openPostings, width: width, instance: message.NewScreenInstance()}
+// newCompanyDeleteModel is the confirmation for deleting company. process
+// is the TUI's "kind:pid", the source of the delete's events.
+func newCompanyDeleteModel(companies *service.CompanyService, process string, company company.Company, openPostings, width int) *companyDeleteModel {
+	return &companyDeleteModel{companyService: companies, process: process, company: company, openPostings: openPostings, width: width, instance: message.NewScreenInstance()}
 }
 
 func (m *companyDeleteModel) Instance() message.ScreenInstance { return m.instance }
@@ -40,7 +43,8 @@ func (m *companyDeleteModel) Focused() bool { return m.focused }
 func (m *companyDeleteModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.WhenFocused(m, m.keyPressed),
-		model.Always(m.companyDeleted),
+		model.Always(m.companyDeleted, model.About(message.TypeCompany, m.company.ID), model.OnOp(message.OpDeleted)),
+		model.Always(m.deleteFailed, model.From(m.instance)),
 		model.Always(m.resize),
 		model.Always(m.focusChanged),
 	}
@@ -51,12 +55,18 @@ func (m *companyDeleteModel) focusChanged(e message.Event[message.Signal[message
 	return nil
 }
 
-// companyDeleted closes the confirmation either way: a failed delete's y
-// is spent, and the error shows on the list.
-func (m *companyDeleteModel) companyDeleted(deleted message.CompanyDeletedMsg) tea.Cmd {
-	if deleted.CompanyID != m.company.ID {
-		return nil
-	}
+// companyDeleted closes the confirmation, whoever deleted its company, and
+// clears an earlier failure from the banner.
+func (m *companyDeleteModel) companyDeleted(message.Event[message.Changed[message.Company]]) tea.Cmd {
+	return tea.Batch(
+		func() tea.Msg { return message.CloseCompanyDeleteMsg{} },
+		message.ReportStatus(message.Source{Process: m.process, Instance: m.instance}, ""),
+	)
+}
+
+// deleteFailed closes the confirmation too: a failed delete's y is spent,
+// and the banner shows the error.
+func (m *companyDeleteModel) deleteFailed(message.Event[message.Error]) tea.Cmd {
 	return func() tea.Msg { return message.CloseCompanyDeleteMsg{} }
 }
 
@@ -78,7 +88,7 @@ func (m *companyDeleteModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	case "y":
 		if !m.confirmed {
 			m.confirmed = true
-			return deleteCompany(m.companyService, m.company.ID)
+			return deleteCompany(m.companyService, message.Source{Process: m.process, Instance: m.instance}, m.company.ID)
 		}
 	}
 	return nil

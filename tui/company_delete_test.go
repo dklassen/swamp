@@ -2,11 +2,17 @@ package tui
 
 import (
 	"errors"
+	"slices"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
@@ -25,7 +31,7 @@ func TestCompanyDeleteModel_KeepKeys_AskToClose(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newCompanyDeleteModel(nil, company.Company{ID: 1, Name: "Acme"}, 0, 80)
+			m := newCompanyDeleteModel(nil, testProcess, company.Company{ID: 1, Name: "Acme"}, 0, 80)
 
 			cmd := m.keyPressed(tt.key)
 			if cmd == nil {
@@ -38,29 +44,54 @@ func TestCompanyDeleteModel_KeepKeys_AskToClose(t *testing.T) {
 	}
 }
 
-// A late result from an earlier confirmation leaves this one up.
-func TestCompanyDeleteModel_CompanyDeleted_AsksToCloseForItsCompanyOnly(t *testing.T) {
+// The confirmation closes once its company is gone, whoever deleted it,
+// and when its own delete fails. A late result from an earlier
+// confirmation leaves this one up.
+func TestCompanyDeleteModel_ClosesWhenItsCompanyIsDeletedOrItsDeleteFails(t *testing.T) {
 	t.Parallel()
 
+	acme := company.Company{ID: 1, Name: "Acme"}
+	other := message.Source{Process: testProcess, Instance: message.NewScreenInstance()}
+	failed := func(src message.Source) tea.Msg {
+		return message.New(src, message.Subject{Type: message.TypeCompany, ID: acme.ID}, message.OpDeleted, time.Now().UTC(),
+			model.ErrorOf(errors.New("disk full")))
+	}
 	for _, tt := range []struct {
 		name      string
-		deleted   message.CompanyDeletedMsg
+		event     func(m *companyDeleteModel) tea.Msg
 		wantClose bool
 	}{
-		{"its company", message.CompanyDeletedMsg{CompanyID: 1}, true},
-		{"its company, failed", message.CompanyDeletedMsg{CompanyID: 1, Err: errors.New("disk full")}, true},
-		{"another company", message.CompanyDeletedMsg{CompanyID: 2}, false},
+		{name: "its company, deleted by it", event: func(m *companyDeleteModel) tea.Msg {
+			return message.Deleted(message.Source{Process: testProcess, Instance: m.Instance()}, acme.ID, time.Now().UTC(), companySnapshot(acme))
+		}, wantClose: true},
+		{name: "its company, deleted elsewhere", event: func(*companyDeleteModel) tea.Msg {
+			return message.Deleted(other, acme.ID, time.Now().UTC(), companySnapshot(acme))
+		}, wantClose: true},
+		{name: "its delete, failed", event: func(m *companyDeleteModel) tea.Msg {
+			return failed(message.Source{Process: testProcess, Instance: m.Instance()})
+		}, wantClose: true},
+		{name: "another company, deleted", event: func(*companyDeleteModel) tea.Msg {
+			return message.Deleted(other, 2, time.Now().UTC(), message.Company{ID: 2, Name: "Globex"})
+		}},
+		{name: "its company, renamed", event: func(*companyDeleteModel) tea.Msg {
+			return message.Updated(other, acme.ID, time.Now().UTC(), companySnapshot(acme), message.Company{ID: acme.ID, Name: "Acme Corp"})
+		}},
+		{name: "an earlier confirmation's delete, failed", event: func(*companyDeleteModel) tea.Msg {
+			return failed(other)
+		}},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newCompanyDeleteModel(nil, company.Company{ID: 1, Name: "Acme"}, 0, 80)
-
-			var got tea.Msg
-			if cmd := m.companyDeleted(tt.deleted); cmd != nil {
-				got = cmd()
+			m := newCompanyDeleteModel(nil, testProcess, acme, 0, 80)
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
 			}
-			if closed := got == (message.CloseCompanyDeleteMsg{}); closed != tt.wantClose {
-				t.Errorf("companyDeleted(%+v) sent %#v, want close = %v", tt.deleted, got, tt.wantClose)
+
+			closed := slices.Contains(runCmd(t, r.Dispatch(tt.event(m))), tea.Msg(message.CloseCompanyDeleteMsg{}))
+
+			if closed != tt.wantClose {
+				t.Errorf("asked to close = %v, want %v", closed, tt.wantClose)
 			}
 		})
 	}
@@ -82,7 +113,7 @@ func TestCompanyDeleteModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := newCompanyDeleteModel(nil, company.Company{ID: 1, Name: "Acme"}, 0, 80)
+			m := newCompanyDeleteModel(nil, testProcess, company.Company{ID: 1, Name: "Acme"}, 0, 80)
 			r := model.NewMsgRouter()
 			if err := r.Register(m); err != nil {
 				t.Fatalf("Register: %v", err)
@@ -95,5 +126,25 @@ func TestCompanyDeleteModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 				t.Errorf("n asked to close = %v, want %v", closed, tt.wantClose)
 			}
 		})
+	}
+}
+
+func TestCompanyDeleteModel_Y_SendsTheCompanyDeleted(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	m := newCompanyDeleteModel(s.Companies, testProcess, acme, 0, 80)
+
+	msg := m.keyPressed(runeKey('y'))()
+
+	got, ok := msg.(message.Event[message.Changed[message.Company]])
+	if !ok {
+		t.Fatalf("y sent %T, want message.Event[message.Changed[message.Company]]", msg)
+	}
+	assertEventFrom(t, got.Meta, message.Source{Process: testProcess, Instance: m.Instance()})
+	want := message.Deleted(got.Meta.Source, acme.ID, got.Meta.At, companySnapshot(acme))
+	if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(message.Meta{}, "ID")); diff != "" {
+		t.Errorf("y sent (-want +got):\n%s", diff)
 	}
 }
