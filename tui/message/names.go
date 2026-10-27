@@ -42,6 +42,7 @@ type Type int
 const (
 	_ Type = iota
 	TypeCompany
+	TypeCompanyList
 	TypeContentSize
 	TypeFocusChanged
 	TypeStatus
@@ -51,6 +52,7 @@ const (
 
 var typeNames = [...]string{
 	TypeCompany:      "company",
+	TypeCompanyList:  "company_list",
 	TypeContentSize:  "content_size",
 	TypeFocusChanged: "focus_changed",
 	TypeStatus:       "status",

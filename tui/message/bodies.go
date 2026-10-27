@@ -19,6 +19,15 @@ type Company struct {
 
 func (Company) Type() Type { return TypeCompany }
 
+// CompanyList is the active companies, by name, and each one's open,
+// unarchived posting count.
+type CompanyList struct {
+	Companies    []Company     `json:"companies"`
+	OpenPostings map[int64]int `json:"open_postings"`
+}
+
+func (CompanyList) Type() Type { return TypeCompanyList }
+
 // ContentSize is the area a screen draws in: the terminal less the header
 // and banner.
 type ContentSize struct {
