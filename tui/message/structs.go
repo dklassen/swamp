@@ -22,3 +22,17 @@ func ReportStatus(src Source, s string) tea.Cmd {
 		return New(src, Subject{}, OpNone, time.Now().UTC(), Notify{Status: s})
 	}
 }
+
+// Push asks for screen to open, about subject, showing v.
+func Push[T Body](src Source, screen Screen, subject Subject, v T) tea.Cmd {
+	return func() tea.Msg {
+		return New(src, subject, OpNone, time.Now().UTC(), Nav[T]{Op: NavPush, Screen: screen, Value: v})
+	}
+}
+
+// Pop asks for src's screen to close.
+func Pop(src Source) tea.Cmd {
+	return func() tea.Msg {
+		return New(src, Subject{}, OpNone, time.Now().UTC(), Nav[None]{Op: NavPop})
+	}
+}

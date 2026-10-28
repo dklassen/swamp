@@ -153,7 +153,7 @@ func (m *companyFormModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 // close takes a failed save's error from the banner with the form.
 func (m *companyFormModel) close() tea.Cmd {
 	return tea.Batch(
-		closeScreen(m.source()),
+		message.Pop(m.source()),
 		message.ReportStatus(m.source(), ""),
 	)
 }

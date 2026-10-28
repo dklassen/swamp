@@ -60,13 +60,13 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 	}{
 		{name: "company form", open: func(app *App) {
 			app.currentScreen = screenCompanyList
-			app.Update(openScreen(message.Source{Instance: app.companyList.Instance()}, message.ScreenCompanyForm, message.Subject{}, message.None{})())
+			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenCompanyForm, message.Subject{}, message.None{})())
 			// Past the source picker, which takes no text.
 			app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		}},
 		{name: "company edit", open: func(app *App) {
 			app.currentScreen = screenCompanyList
-			app.Update(openScreen(message.Source{Instance: app.companyList.Instance()}, message.ScreenCompanyEdit,
+			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenCompanyEdit,
 				message.Subject{Type: message.TypeCompany, ID: 1}, message.Company{ID: 1})())
 		}},
 		{name: "export", open: func(app *App) {

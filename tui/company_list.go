@@ -192,7 +192,7 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 		return tea.Quit
 	case "d":
 		if onCompany {
-			return openScreen(src, message.ScreenCompanyDelete, about, message.CompanyRow{Company: current, OpenPostings: m.openPostings[current.ID]})
+			return message.Push(src, message.ScreenCompanyDelete, about, message.CompanyRow{Company: current, OpenPostings: m.openPostings[current.ID]})
 		}
 	case "r":
 		if onCompany {
@@ -207,18 +207,18 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	case "i":
 		m.showInfo = !m.showInfo
 	case "a":
-		return openScreen(src, message.ScreenCompanyForm, message.Subject{}, message.None{})
+		return message.Push(src, message.ScreenCompanyForm, message.Subject{}, message.None{})
 	case "/":
 		m.searching = true
 	case "esc":
 		m.clearSearch()
 	case "e":
 		if onCompany {
-			return openScreen(src, message.ScreenCompanyEdit, about, current)
+			return message.Push(src, message.ScreenCompanyEdit, about, current)
 		}
 	case "enter":
 		if onCompany {
-			return openScreen(src, message.ScreenCompanyPostings, about, current)
+			return message.Push(src, message.ScreenCompanyPostings, about, current)
 		}
 	}
 	return nil
