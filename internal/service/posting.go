@@ -9,6 +9,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/repository"
 	"github.com/dklassen/swamp/store"
@@ -251,26 +252,58 @@ func (service *PostingService) Markup(ctx context.Context, postingID int64) (*po
 }
 
 // SetInterested marks the posting interested, which also unarchives it.
-func (service *PostingService) SetInterested(ctx context.Context, postingID int64) (*posting.Markup, error) {
-	return service.markupWriter.SetInterested(ctx, service.db, postingID)
+func (service *PostingService) SetInterested(ctx context.Context, postingID int64) (*change.Of[posting.Markup], error) {
+	return service.writeMarkup(ctx, postingID, func(tx store.Tx) (*posting.Markup, error) {
+		return service.markupWriter.SetInterested(ctx, tx, postingID)
+	})
 }
 
-func (service *PostingService) UnmarkInterested(ctx context.Context, postingID int64) (*posting.Markup, error) {
-	return service.markupWriter.UnmarkInterested(ctx, service.db, postingID)
+func (service *PostingService) UnmarkInterested(ctx context.Context, postingID int64) (*change.Of[posting.Markup], error) {
+	return service.writeMarkup(ctx, postingID, func(tx store.Tx) (*posting.Markup, error) {
+		return service.markupWriter.UnmarkInterested(ctx, tx, postingID)
+	})
 }
 
 // SetArchived archives the posting, which also unmarks it interested.
-func (service *PostingService) SetArchived(ctx context.Context, postingID int64) (*posting.Markup, error) {
-	return service.markupWriter.SetArchived(ctx, service.db, postingID)
+func (service *PostingService) SetArchived(ctx context.Context, postingID int64) (*change.Of[posting.Markup], error) {
+	return service.writeMarkup(ctx, postingID, func(tx store.Tx) (*posting.Markup, error) {
+		return service.markupWriter.SetArchived(ctx, tx, postingID)
+	})
 }
 
-func (service *PostingService) Unarchive(ctx context.Context, postingID int64) (*posting.Markup, error) {
-	return service.markupWriter.Unarchive(ctx, service.db, postingID)
+func (service *PostingService) Unarchive(ctx context.Context, postingID int64) (*change.Of[posting.Markup], error) {
+	return service.writeMarkup(ctx, postingID, func(tx store.Tx) (*posting.Markup, error) {
+		return service.markupWriter.Unarchive(ctx, tx, postingID)
+	})
 }
 
 // SetNotes replaces the user's notes on the posting.
-func (service *PostingService) SetNotes(ctx context.Context, postingID int64, notes string) (*posting.Markup, error) {
-	return service.markupWriter.SetNotes(ctx, service.db, postingID, notes)
+func (service *PostingService) SetNotes(ctx context.Context, postingID int64, notes string) (*change.Of[posting.Markup], error) {
+	return service.writeMarkup(ctx, postingID, func(tx store.Tx) (*posting.Markup, error) {
+		return service.markupWriter.SetNotes(ctx, tx, postingID, notes)
+	})
+}
+
+// writeMarkup reads the posting's markup, runs write, and returns both
+// sides, in one transaction. A posting with no markup is store.ErrNotFound.
+func (service *PostingService) writeMarkup(ctx context.Context, postingID int64, write func(store.Tx) (*posting.Markup, error)) (*change.Of[posting.Markup], error) {
+	var written *change.Of[posting.Markup]
+	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
+		before, err := service.markupViewer.Get(ctx, tx, postingID)
+		if err != nil {
+			return err
+		}
+		after, err := write(tx)
+		if err != nil {
+			return err
+		}
+		written = &change.Of[posting.Markup]{Before: *before, After: *after, At: after.UpdatedAt}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return written, nil
 }
 
 // SaveForm stores what the posting's application form asks for, as JSON,
