@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -75,10 +76,10 @@ type App struct {
 	companyList   *companyListModel
 	allPostings   allPostingsModel
 	currentScreen screen
-	companyForm   *companyFormModel
-	companyEdit   *companyEditModel
-	status        string
-	err           error
+	// stack is the screens pushed by a Nav, over currentScreen's at the time.
+	stack  []stacked
+	status string
+	err    error
 	// syncing runs sync all and refreshes, and draws their progress in the
 	// banner.
 	syncing         *model.Syncing
@@ -133,7 +134,6 @@ type App struct {
 	openURL           func(url string) tea.Cmd
 	applicationSubmit applicationSubmitModel
 	applicationDelete applicationDeleteModel
-	companyDelete     *companyDeleteModel
 	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
 	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
@@ -243,18 +243,79 @@ func New(
 	return a
 }
 
+// stackScreen is a screen a Nav opens: routed while it's open, drawn while
+// it's on top, and closed by a pop.
+type stackScreen interface {
+	model.SubComponent
+	model.Routable
+}
+
+// stacked is a screen pushed over the one under named; popping it puts
+// under back.
+type stacked struct {
+	kind   message.Screen
+	screen stackScreen
+	under  screen
+}
+
+// stackedAs is the screen each kind a Nav pushes shows as, for the paths
+// that still switch on currentScreen.
+var stackedAs = map[message.Screen]screen{
+	message.ScreenCompanyForm:   screenCompanyForm,
+	message.ScreenCompanyEdit:   screenCompanyEdit,
+	message.ScreenCompanyDelete: screenCompanyDelete,
+}
+
+// push puts s on top of the stack: routes, then Init, so nothing Init
+// starts can report before s can hear it.
+func (a *App) push(kind message.Screen, s stackScreen) tea.Cmd {
+	if slices.ContainsFunc(a.stack, func(e stacked) bool { return e.kind == kind }) {
+		panic(fmt.Sprintf("tui: %v is already open", kind))
+	}
+	as, ok := stackedAs[kind]
+	if !ok {
+		return a.fail(fmt.Errorf("tui: %v isn't a screen a Nav pushes", kind))
+	}
+	if err := a.router.Register(s); err != nil {
+		return a.fail(err)
+	}
+	a.stack = append(a.stack, stacked{kind: kind, screen: s, under: a.currentScreen})
+	a.currentScreen = as
+	return s.Init()
+}
+
+// pop closes the screen on top of the stack.
+func (a *App) pop() tea.Cmd {
+	n := len(a.stack)
+	if n == 0 {
+		return a.fail(fmt.Errorf("tui: screen %v can't be popped", a.currentScreen))
+	}
+	top := a.stack[n-1]
+	if err := a.router.Deregister(top.screen); err != nil {
+		return a.fail(err)
+	}
+	a.stack = a.stack[:n-1]
+	a.currentScreen = top.under
+	return nil
+}
+
+// top is the screen pushed last. Only call it while the stack has one.
+func (a *App) top() stackScreen {
+	return a.stack[len(a.stack)-1].screen
+}
+
+func (a *App) fail(err error) tea.Cmd {
+	return message.Fail(message.Source{Process: a.origin}, err)
+}
+
 // focused is the instance of the converted screen on screen, or 0 when
 // the screen up hasn't registered routes yet.
 func (a *App) focused() message.ScreenInstance {
-	switch a.currentScreen {
-	case screenCompanyList:
+	if len(a.stack) > 0 {
+		return a.top().Instance()
+	}
+	if a.currentScreen == screenCompanyList {
 		return a.companyList.Instance()
-	case screenCompanyDelete:
-		return a.companyDelete.Instance()
-	case screenCompanyForm:
-		return a.companyForm.Instance()
-	case screenCompanyEdit:
-		return a.companyEdit.Instance()
 	}
 	return 0
 }
@@ -268,63 +329,46 @@ func (a *App) onTop(meta message.Meta) bool {
 
 // unknownNav reports a Nav for a screen App doesn't open that way.
 func (a *App) unknownNav(nav tea.Msg) tea.Cmd {
-	return message.Fail(message.Source{Process: a.origin}, fmt.Errorf("tui: no screen opens on %+v", nav))
+	return a.fail(fmt.Errorf("tui: no screen opens on %+v", nav))
 }
 
-// closeTop takes the screen on top down, back to the company list.
-func (a *App) closeTop() tea.Cmd {
-	fail := func(err error) tea.Cmd { return message.Fail(message.Source{Process: a.origin}, err) }
-	switch a.currentScreen {
-	case screenCompanyForm:
-		if err := a.router.Deregister(a.companyForm); err != nil {
-			return fail(err)
-		}
-		a.companyForm = nil
-	case screenCompanyEdit:
-		if err := a.router.Deregister(a.companyEdit); err != nil {
-			return fail(err)
-		}
-		a.companyEdit = nil
-	case screenCompanyDelete:
-		if err := a.router.Deregister(a.companyDelete); err != nil {
-			return fail(err)
-		}
-		a.companyDelete = nil
-	default:
-		return fail(fmt.Errorf("tui: screen %v can't be popped", a.currentScreen))
+// navNone pops, or opens a screen that shows nothing yet.
+func (a *App) navNone(e message.Event[message.Nav[message.None]]) tea.Cmd {
+	if !a.onTop(e.Meta) {
+		return nil
 	}
-	a.currentScreen = screenCompanyList
-	return nil
+	switch {
+	case e.Payload.Op == message.NavPop:
+		return a.pop()
+	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenCompanyForm:
+		return a.push(e.Payload.Screen, newCompanyFormModel(a.syncer))
+	}
+	return a.unknownNav(e)
 }
 
-func (a *App) openCompanyForm() tea.Cmd {
-	form := newCompanyFormModel(a.syncer)
-	if err := a.router.Register(form); err != nil {
-		return message.Fail(message.Source{Process: a.origin}, err)
+func (a *App) navCompany(e message.Event[message.Nav[message.Company]]) tea.Cmd {
+	if !a.onTop(e.Meta) {
+		return nil
 	}
-	a.companyForm = form
-	a.currentScreen = screenCompanyForm
-	return nil
+	c := e.Payload.Value
+	switch {
+	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenCompanyEdit:
+		return a.push(e.Payload.Screen, newCompanyEditModel(a.companyService, c.ID, c.Name))
+	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenCompanyPostings:
+		return a.openCompanyPostings(c)
+	}
+	return a.unknownNav(e)
 }
 
-func (a *App) openCompanyEdit(c message.Company) tea.Cmd {
-	edit := newCompanyEditModel(a.companyService, c.ID, c.Name)
-	if err := a.router.Register(edit); err != nil {
-		return message.Fail(message.Source{Process: a.origin}, err)
+func (a *App) navCompanyRow(e message.Event[message.Nav[message.CompanyRow]]) tea.Cmd {
+	if !a.onTop(e.Meta) {
+		return nil
 	}
-	a.companyEdit = edit
-	a.currentScreen = screenCompanyEdit
-	return nil
-}
-
-func (a *App) openCompanyDelete(row message.CompanyRow) tea.Cmd {
-	dialog := newCompanyDeleteModel(a.companyService, companyOf(row.Company), row.OpenPostings, a.sized.Width)
-	if err := a.router.Register(dialog); err != nil {
-		return message.Fail(message.Source{Process: a.origin}, err)
+	row := e.Payload.Value
+	if e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenCompanyDelete {
+		return a.push(e.Payload.Screen, newCompanyDeleteModel(a.companyService, companyOf(row.Company), row.OpenPostings, a.sized.Width))
 	}
-	a.companyDelete = dialog
-	a.currentScreen = screenCompanyDelete
-	return nil
+	return a.unknownNav(e)
 }
 
 func (a *App) openCompanyPostings(c message.Company) tea.Cmd {
@@ -1077,6 +1121,9 @@ func (a *App) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(a.errorReported),
 		model.Always(a.notified),
+		model.Always(a.navNone),
+		model.Always(a.navCompany),
+		model.Always(a.navCompanyRow),
 	}
 }
 
@@ -1104,9 +1151,9 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, cmd
 	}
 
-	routed := a.router.Dispatch(msg)
-
+	// Before Dispatch, since a Nav's route moves the screen.
 	before := a.currentScreen
+	routed := a.router.Dispatch(msg)
 	model, cmd := a.update(msg)
 	cmd = tea.Batch(routed, cmd)
 	if a.currentScreen != before {
@@ -1149,36 +1196,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.activeApplications = msg.applications
 		a.activeApplicationProgress = msg.progress
 		a.activeApplicationList.keepCursorOn(previous, a.activeApplications)
-	case message.Event[message.Nav[message.None]]:
-		if !a.onTop(msg.Meta) {
-			break
-		}
-		switch {
-		case msg.Payload.Op == message.NavPop:
-			return a, a.closeTop()
-		case msg.Payload.Op == message.NavPush && msg.Payload.Screen == message.ScreenCompanyForm:
-			return a, a.openCompanyForm()
-		}
-		return a, a.unknownNav(msg)
-	case message.Event[message.Nav[message.Company]]:
-		if !a.onTop(msg.Meta) {
-			break
-		}
-		switch {
-		case msg.Payload.Op == message.NavPush && msg.Payload.Screen == message.ScreenCompanyEdit:
-			return a, a.openCompanyEdit(msg.Payload.Value)
-		case msg.Payload.Op == message.NavPush && msg.Payload.Screen == message.ScreenCompanyPostings:
-			return a, a.openCompanyPostings(msg.Payload.Value)
-		}
-		return a, a.unknownNav(msg)
-	case message.Event[message.Nav[message.CompanyRow]]:
-		if !a.onTop(msg.Meta) {
-			break
-		}
-		if msg.Payload.Op == message.NavPush && msg.Payload.Screen == message.ScreenCompanyDelete {
-			return a, a.openCompanyDelete(msg.Payload.Value)
-		}
-		return a, a.unknownNav(msg)
 	case message.Event[message.Ran[message.SyncReport]]:
 		if msg.Payload.Value.Code == 0 && msg.Meta.Subject.ID == a.selectedCompany.ID {
 			// The cursor stays on its posting: the sync can add some
@@ -1807,7 +1824,7 @@ func (a *App) View() tea.View {
 	body := a.body(a.beneath())
 	switch a.currentScreen {
 	case screenCompanyDelete:
-		body = overlay(body, a.companyDelete.View().Content, a.width)
+		body = overlay(body, a.top().View().Content, a.width)
 	case screenApplicationDelete:
 		body = overlay(body, a.applicationDelete.View(a.width), a.width)
 	case screenApplicationForm:
@@ -1849,9 +1866,9 @@ func (a *App) body(s screen) string {
 	case screenCompanyList:
 		b.WriteString(a.companyList.View().Content)
 	case screenCompanyForm:
-		b.WriteString(a.companyForm.View().Content)
+		b.WriteString(a.top().View().Content)
 	case screenCompanyEdit:
-		b.WriteString(a.companyEdit.View().Content)
+		b.WriteString(a.top().View().Content)
 	case screenPostingList:
 		snap := postingListSnapshot{
 			companyDescription:      a.selectedCompany.Description,
