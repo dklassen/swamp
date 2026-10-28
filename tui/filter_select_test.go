@@ -2,112 +2,217 @@ package tui
 
 import (
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/internal/domain/filter"
+	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/tui/message"
 )
 
-func newTestFilterSelectModel() *filterSelectModel {
-	m := newFilterSelectModel(1,
-		[]string{"Engineering", "Sales"},
-		[]string{"Remote", "Onsite"},
-		[]filter.Filter{{Field: filter.FieldDepartment, Value: "Sales"}},
-	)
-	return &m
-}
-
-func TestFilterSelectModel_New_SeedsExistingSelections(t *testing.T) {
-	t.Parallel()
-
-	m := newTestFilterSelectModel()
-	if !m.selectedDepartments["Sales"] {
-		t.Fatal("Sales should be pre-selected from existing filters")
-	}
-	if m.selectedDepartments["Engineering"] {
-		t.Fatal("Engineering should not be pre-selected")
+// mustIngestIn ingests a posting in department and location for companyID.
+func mustIngestIn(t *testing.T, s testutil.TestApp, companyID int64, sourceID, department, location string) {
+	t.Helper()
+	if _, err := s.Postings.Ingest(t.Context(), companyID, jobboard.Ashby, sourceID, posting.IngestedFields{Title: sourceID, Department: department, Location: location}); err != nil {
+		t.Fatalf("Ingest: %v", err)
 	}
 }
 
-func TestFilterSelectModel_ItemAtCursor_SpansDepartmentsThenLocations(t *testing.T) {
+func TestFilterSelectModel_Init_ReadsTheCompanysOptions(t *testing.T) {
 	t.Parallel()
 
-	m := newTestFilterSelectModel()
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	mustIngestIn(t, s, acme.ID, "job-1", "Engineering", "Remote")
+	m := newFilterSelectModel(s.Companies, message.FilterSelection{Company: companySnapshot(acme)}, message.ContentSize{})
 
-	field, value, ok := m.itemAtCursor()
-	if !ok || field != filter.FieldDepartment || value != "Engineering" {
-		t.Fatalf("itemAtCursor() at 0 = %q, %q, %v, want department, Engineering, true", field, value, ok)
-	}
-
-	m.cursor = 2 // first location
-	field, value, ok = m.itemAtCursor()
-	if !ok || field != filter.FieldLocation || value != "Remote" {
-		t.Fatalf("itemAtCursor() at 2 = %q, %q, %v, want location, Remote, true", field, value, ok)
-	}
-
-	m.cursor = 4 // out of range
-	if _, _, ok = m.itemAtCursor(); ok {
-		t.Fatal("itemAtCursor() out of range should return ok=false")
-	}
-}
-
-func TestFilterSelectModel_CursorMovement_ClampsToTotal(t *testing.T) {
-	t.Parallel()
-
-	m := newTestFilterSelectModel()
-	for i := 0; i < 10; i++ {
-		m.Update(tea.KeyPressMsg{Code: tea.KeyDown})
-	}
-	if m.cursor != 3 { // 2 departments + 2 locations - 1
-		t.Fatalf("cursor after many downs = %d, want 3 (clamped)", m.cursor)
-	}
-}
-
-func TestFilterSelectModel_Space_TogglesSelection(t *testing.T) {
-	t.Parallel()
-
-	m := newTestFilterSelectModel()
-	m.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}) // cursor 0 = Engineering
-	if !m.selectedDepartments["Engineering"] {
-		t.Fatal("Engineering should be selected after space")
-	}
-	m.Update(tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
-	if m.selectedDepartments["Engineering"] {
-		t.Fatal("Engineering should be unselected after second space")
-	}
-}
-
-func TestFilterSelectModel_Esc_ReturnsCancelMsg(t *testing.T) {
-	t.Parallel()
-
-	m := newTestFilterSelectModel()
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	if _, ok := intent.(cancelFilterSelectMsg); !ok {
-		t.Fatalf("intent = %T, want cancelFilterSelectMsg", intent)
-	}
-}
-
-func TestFilterSelectModel_Enter_ReturnsSaveFilterSelectionMsg(t *testing.T) {
-	t.Parallel()
-
-	m := newTestFilterSelectModel()
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil (saving is App's job, not this model's)", cmd)
-	}
-	got, ok := intent.(saveFilterSelectionMsg)
+	read, ok := m.Init()().(message.Event[message.Read[message.FilterOptions]])
 	if !ok {
-		t.Fatalf("intent = %T, want saveFilterSelectionMsg", intent)
+		t.Fatalf("Init sent %T, want a read of the filter options", m.Init()())
 	}
-	if len(got.departments) != 1 || got.departments[0] != "Sales" {
-		t.Fatalf("departments = %v, want [Sales] (pre-seeded existing filter)", got.departments)
+	assertEventFrom(t, read.Meta, message.Source{Instance: m.Instance()})
+	if want := (message.Subject{Type: message.TypeCompany, ID: acme.ID}); read.Meta.Subject != want {
+		t.Errorf("Subject = %+v, want %+v", read.Meta.Subject, want)
 	}
-	if len(got.locations) != 0 {
-		t.Fatalf("locations = %v, want empty", got.locations)
+	want := message.FilterOptions{Departments: []string{"Engineering"}, Locations: []string{"Remote"}}
+	if diff := cmp.Diff(want, read.Payload.Value); diff != "" {
+		t.Errorf("options (-want +got):\n%s", diff)
 	}
+}
+
+var testFilterCompany = message.Company{ID: 1, Name: "Acme"}
+
+// pickerOf is a picker on companies opened on sel, once it has read
+// Engineering and Sales, Remote and Onsite.
+func pickerOf(companies *service.CompanyService, sel message.FilterSelection) *filterSelectModel {
+	m := newFilterSelectModel(companies, sel, message.ContentSize{Rows: 40})
+	m.optionsRead(message.New(m.source(), message.Subject{Type: message.TypeCompany, ID: sel.Company.ID}, message.OpNone, time.Now().UTC(),
+		message.Read[message.FilterOptions]{Value: message.FilterOptions{Departments: []string{"Engineering", "Sales"}, Locations: []string{"Remote", "Onsite"}}}))
+	return m
+}
+
+func TestFilterSelectModel_OpensWithTheNavsFiltersChecked(t *testing.T) {
+	t.Parallel()
+
+	m := pickerOf(nil, message.FilterSelection{Company: testFilterCompany, Departments: []string{"Sales"}, Locations: []string{"Onsite"}})
+
+	want := message.FilterSelection{Company: testFilterCompany, Departments: []string{"Sales"}, Locations: []string{"Onsite"}}
+	if diff := cmp.Diff(want, m.selection()); diff != "" {
+		t.Errorf("selection (-want +got):\n%s", diff)
+	}
+}
+
+func TestFilterSelectModel_CursorMovement_ClampsToTheOptions(t *testing.T) {
+	t.Parallel()
+
+	m := pickerOf(nil, message.FilterSelection{Company: testFilterCompany})
+	for range 10 {
+		m.keyPressed(tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	if last := len(m.departmentOptions) + len(m.locationOptions) - 1; m.cursor != last {
+		t.Errorf("cursor after many downs = %d, want the last option, %d", m.cursor, last)
+	}
+	for range 10 {
+		m.keyPressed(tea.KeyPressMsg{Code: tea.KeyUp})
+	}
+	if m.cursor != 0 {
+		t.Errorf("cursor after many ups = %d, want 0", m.cursor)
+	}
+}
+
+// The cursor runs through the departments, then the locations.
+func TestFilterSelectModel_Space_TogglesTheOptionUnderTheCursor(t *testing.T) {
+	t.Parallel()
+
+	m := pickerOf(nil, message.FilterSelection{Company: testFilterCompany})
+	space := tea.KeyPressMsg{Code: tea.KeySpace, Text: " "}
+	m.keyPressed(space)
+	for range len(m.departmentOptions) {
+		m.keyPressed(tea.KeyPressMsg{Code: tea.KeyDown})
+	}
+	m.keyPressed(space)
+
+	want := message.FilterSelection{Company: testFilterCompany, Departments: m.departmentOptions[:1], Locations: m.locationOptions[:1]}
+	if diff := cmp.Diff(want, m.selection()); diff != "" {
+		t.Errorf("selection after toggling the first of each (-want +got):\n%s", diff)
+	}
+
+	m.keyPressed(space)
+	want.Locations = nil
+	if diff := cmp.Diff(want, m.selection()); diff != "" {
+		t.Errorf("selection after toggling the location again (-want +got):\n%s", diff)
+	}
+}
+
+// statusIn is the status the first Notify in msgs reports, and whether
+// there is one.
+func statusIn(msgs []tea.Msg) (string, bool) {
+	for _, msg := range msgs {
+		if n, ok := msg.(message.Event[message.Notify]); ok {
+			return n.Payload.Status, true
+		}
+	}
+	return "", false
+}
+
+func TestFilterSelectModel_EscOrB_PopsAndClearsTheBanner(t *testing.T) {
+	t.Parallel()
+
+	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEsc}, runeKey('b')} {
+		t.Run(key.String(), func(t *testing.T) {
+			t.Parallel()
+			m := pickerOf(nil, message.FilterSelection{Company: testFilterCompany})
+
+			got := runCmd(t, m.keyPressed(key))
+			if !popsIn(got, m.Instance()) {
+				t.Errorf("%s sent %#v, want a pop of the picker", key, got)
+			}
+			if status, ok := statusIn(got); !ok || status != "" {
+				t.Errorf("%s sent %#v, want an empty Notify", key, got)
+			}
+		})
+	}
+}
+
+func TestFilterSelectModel_Enter_SavesTheSelectionAndReportsARan(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	acme := companySnapshot(mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme"))
+	m := pickerOf(s.Companies, message.FilterSelection{Company: acme, Departments: []string{"Sales"}, Locations: []string{"Remote"}})
+
+	got := runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}))
+
+	if len(got) != 1 {
+		t.Fatalf("enter sent %#v, want one Ran", got)
+	}
+	ran, ok := got[0].(message.Event[message.Ran[message.FilterSelection]])
+	if !ok {
+		t.Fatalf("enter sent %T, want a Ran of the selection", got[0])
+	}
+	assertEventFrom(t, ran.Meta, message.Source{Instance: m.Instance()})
+	if want := (message.Subject{Type: message.TypeCompany, ID: acme.ID}); ran.Meta.Subject != want {
+		t.Errorf("Subject = %+v, want %+v", ran.Meta.Subject, want)
+	}
+	want := message.FilterSelection{Company: acme, Departments: []string{"Sales"}, Locations: []string{"Remote"}}
+	if diff := cmp.Diff(want, ran.Payload.Value); diff != "" {
+		t.Errorf("Ran (-want +got):\n%s", diff)
+	}
+	saved, err := s.Companies.Filters(t.Context(), acme.ID)
+	if err != nil {
+		t.Fatalf("Filters: %v", err)
+	}
+	if diff := cmp.Diff(companyFiltersFrom(want.Departments, want.Locations), saved); diff != "" {
+		t.Errorf("saved filters (-want +got):\n%s", diff)
+	}
+}
+
+func TestFilterSelectModel_Enter_SaveFails_ReportsAnErrorFromThePicker(t *testing.T) {
+	t.Parallel()
+
+	// A service on no database fails every write.
+	m := pickerOf(service.NewCompanyService(store.Store{}), message.FilterSelection{Company: testFilterCompany, Departments: []string{"Sales"}})
+
+	got := runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}))
+
+	if len(got) != 1 {
+		t.Fatalf("enter sent %#v, want one Error", got)
+	}
+	failed, ok := got[0].(message.Event[message.Error])
+	if !ok {
+		t.Fatalf("enter sent %#v, want an Error", got[0])
+	}
+	assertEventFrom(t, failed.Meta, message.Source{Instance: m.Instance()})
+	if want := (message.Subject{Type: message.TypeCompany, ID: testFilterCompany.ID}); failed.Meta.Subject != want || failed.Meta.Op != message.OpUpdated {
+		t.Errorf("Subject, Op = %+v, %v, want %+v, %v", failed.Meta.Subject, failed.Meta.Op, want, message.OpUpdated)
+	}
+}
+
+func TestFilterSelectModel_Saved_PopsAndSaysWhoseFilters(t *testing.T) {
+	t.Parallel()
+
+	m := pickerOf(nil, message.FilterSelection{Company: testFilterCompany})
+	sel := m.selection()
+
+	got := runCmd(t, m.saved(message.New(m.source(), message.Subject{Type: message.TypeCompany, ID: testFilterCompany.ID}, message.OpNone, time.Now().UTC(),
+		message.Ran[message.FilterSelection]{Value: sel})))
+
+	if !popsIn(got, m.Instance()) {
+		t.Errorf("saved sent %#v, want a pop of the picker", got)
+	}
+	if status, _ := statusIn(got); status != testFilterCompany.Name+" filters saved" {
+		t.Errorf("status = %q, want %q", status, testFilterCompany.Name+" filters saved")
+	}
+}
+
+func TestFilterSelectModel_Handlers_FailOnTheWrongMessage(t *testing.T) {
+	t.Parallel()
+	assertHandlersFailOnWrongMessage(t, newFilterSelectModel(nil, message.FilterSelection{Company: testFilterCompany}, message.ContentSize{}))
 }
 
 func TestFilterWindow(t *testing.T) {

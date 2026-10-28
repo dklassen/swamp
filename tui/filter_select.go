@@ -1,22 +1,24 @@
 package tui
 
 import (
+	"context"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
 	"github.com/dklassen/swamp/internal/domain/filter"
+	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
-// filterSelectModel drives the department/location filter-select screen
-// for a single company. It's pure UI selection state with no I/O
-// dependency of its own -- saving is App's job (see saveFilterSelectionMsg
-// below), not this model's: the store write is App's, and this screen
-// needn't know about it directly.
+// filterSelectModel picks the departments and locations one company's
+// posting list keeps to, and saves them.
 type filterSelectModel struct {
-	companyID int64
+	companies *service.CompanyService
+	company   message.Company
 
 	departmentOptions []string
 	locationOptions   []string
@@ -24,23 +26,74 @@ type filterSelectModel struct {
 
 	selectedDepartments map[string]bool
 	selectedLocations   map[string]bool
+
+	focused  bool
+	height   int
+	instance message.ScreenInstance
 }
 
-// newFilterSelectModel returns a filter-select screen for companyID,
-// seeded from the options and existing saved filters loaded by
-// loadFilterOptions -- see filterOptionsLoadedMsg in App.Update, the one
-// place this is constructed (filter options are loaded async, so this
-// can't be seeded synchronously the way a key-press-triggered screen
-// entry can).
-func newFilterSelectModel(companyID int64, departments, locations []string, existingFilters []filter.Filter) filterSelectModel {
-	existingDepartments, existingLocations := splitCompanyFilters(existingFilters)
-	return filterSelectModel{
-		companyID:           companyID,
-		departmentOptions:   departments,
-		locationOptions:     locations,
-		selectedDepartments: toSet(existingDepartments),
-		selectedLocations:   toSet(existingLocations),
+// newFilterSelectModel opens on sel, the company's filters as its list has
+// them. The options come with Init.
+func newFilterSelectModel(companies *service.CompanyService, sel message.FilterSelection, size message.ContentSize) *filterSelectModel {
+	return &filterSelectModel{
+		companies:           companies,
+		company:             sel.Company,
+		selectedDepartments: toSet(sel.Departments),
+		selectedLocations:   toSet(sel.Locations),
+		height:              size.Rows,
+		instance:            message.NewScreenInstance(),
 	}
+}
+
+func (m *filterSelectModel) source() message.Source {
+	return message.Source{Instance: m.instance}
+}
+
+func (m *filterSelectModel) Instance() message.ScreenInstance { return m.instance }
+
+func (m *filterSelectModel) Focused() bool { return m.focused }
+
+func (m *filterSelectModel) Routes() []*model.Route {
+	return []*model.Route{
+		model.Always(m.optionsRead, model.From(m.instance)),
+		model.Always(m.saved, model.From(m.instance)),
+		model.WhenFocused(m, m.keyPressed),
+		model.Always(m.resize),
+		model.Always(m.focusChanged),
+	}
+}
+
+func (m *filterSelectModel) Init() tea.Cmd {
+	return loadFilterOptions(m.companies, m.source(), m.company.ID)
+}
+
+// Update has nothing to do: everything the picker handles is registered.
+func (m *filterSelectModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
+
+func (m *filterSelectModel) optionsRead(e message.Event[message.Read[message.FilterOptions]]) tea.Cmd {
+	m.departmentOptions, m.locationOptions = e.Payload.Value.Departments, e.Payload.Value.Locations
+	return nil
+}
+
+// saved closes the picker. A failed save sends an Error instead, which
+// leaves it open with the selection as made.
+func (m *filterSelectModel) saved(message.Event[message.Ran[message.FilterSelection]]) tea.Cmd {
+	return m.close(m.company.Name + " filters saved")
+}
+
+func (m *filterSelectModel) resize(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {
+	m.height = e.Payload.Value.Rows
+	return nil
+}
+
+func (m *filterSelectModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
+	m.focused = e.Payload.Value.Focused == m.instance
+	return nil
+}
+
+// close takes a failed save's error from the banner with the picker.
+func (m *filterSelectModel) close(status string) tea.Cmd {
+	return tea.Batch(message.Pop(m.source()), message.ReportStatus(m.source(), status))
 }
 
 // itemAtCursor maps cursor into the combined departments-then-locations
@@ -57,48 +110,35 @@ func (m *filterSelectModel) itemAtCursor() (field, value string, ok bool) {
 	return "", "", false
 }
 
-// selectedValues returns the currently checked department and location
-// values, in the same order as departmentOptions/locationOptions.
-func (m *filterSelectModel) selectedValues() (departments, locations []string) {
+// selection is the company with the currently checked department and
+// location values, in the same order as departmentOptions/locationOptions.
+func (m *filterSelectModel) selection() message.FilterSelection {
+	sel := message.FilterSelection{Company: m.company}
 	for _, d := range m.departmentOptions {
 		if m.selectedDepartments[d] {
-			departments = append(departments, d)
+			sel.Departments = append(sel.Departments, d)
 		}
 	}
 	for _, l := range m.locationOptions {
 		if m.selectedLocations[l] {
-			locations = append(locations, l)
+			sel.Locations = append(sel.Locations, l)
 		}
 	}
-	return departments, locations
+	return sel
 }
 
-// cancelFilterSelectMsg signals that App should switch back to the
-// posting-list screen without saving.
-type cancelFilterSelectMsg struct{}
-
-// saveFilterSelectionMsg signals that App should apply this department/
-// location selection: narrow the currently-displayed postings
-// immediately (a pure in-memory step App does itself), then save it in
-// the background. This model has no store access of its own to do either
-// part (see the struct's own doc comment).
-type saveFilterSelectionMsg struct {
-	departments []string
-	locations   []string
-}
-
-func (m *filterSelectModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
+func (m *filterSelectModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	total := len(m.departmentOptions) + len(m.locationOptions)
-	switch {
-	case msg.String() == "down", msg.String() == "j":
+	switch msg.String() {
+	case "down", "j":
 		if m.cursor < total-1 {
 			m.cursor++
 		}
-	case msg.String() == "up", msg.String() == "k":
+	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case msg.String() == "space":
+	case "space":
 		field, value, ok := m.itemAtCursor()
 		if ok {
 			switch field {
@@ -108,13 +148,41 @@ func (m *filterSelectModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 				m.selectedLocations[value] = !m.selectedLocations[value]
 			}
 		}
-	case msg.String() == "esc", msg.String() == "b":
-		return nil, cancelFilterSelectMsg{}
-	case msg.String() == "enter":
-		departments, locations := m.selectedValues()
-		return nil, saveFilterSelectionMsg{departments: departments, locations: locations}
+	case "esc", "b":
+		return m.close("")
+	case "enter":
+		return saveFilters(m.companies, m.source(), m.selection())
 	}
-	return nil, nil
+	return nil
+}
+
+func loadFilterOptions(companies *service.CompanyService, src message.Source, companyID int64) tea.Cmd {
+	subject := message.Subject{Type: message.TypeCompany, ID: companyID}
+	return func() tea.Msg {
+		ctx := context.Background()
+		var options message.FilterOptions
+		var err error
+		if options.Departments, err = companies.Departments(ctx, companyID); err != nil {
+			return message.New(src, subject, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
+		}
+		if options.Locations, err = companies.Locations(ctx, companyID); err != nil {
+			return message.New(src, subject, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
+		}
+		return message.New(src, subject, message.OpNone, time.Now().UTC(), message.Read[message.FilterOptions]{Value: options})
+	}
+}
+
+// saveFilters reports a Ran rather than a Changed, since the filters
+// aren't an entity other screens show; the posting list hears it about its
+// company.
+func saveFilters(companies *service.CompanyService, src message.Source, sel message.FilterSelection) tea.Cmd {
+	subject := message.Subject{Type: message.TypeCompany, ID: sel.Company.ID}
+	return func() tea.Msg {
+		if err := companies.SetFilters(context.Background(), sel.Company.ID, companyFiltersFrom(sel.Departments, sel.Locations)); err != nil {
+			return message.New(src, subject, message.OpUpdated, time.Now().UTC(), model.ErrorOf(err))
+		}
+		return message.New(src, subject, message.OpNone, time.Now().UTC(), message.Ran[message.FilterSelection]{Value: sel})
+	}
 }
 
 // filterWindow splits a visibleWindow-style combined-cursor window across
@@ -151,16 +219,15 @@ func filterWindow(cursor, deptCount, locCount, rows int) (deptStart, deptEnd, lo
 	return deptStart, deptEnd, locStart, locEnd
 }
 
-// View renders the options in height terminal rows (App.screenRows): what
-// the help line leaves, less a row for each section label in view
-// (issue #138).
-func (m *filterSelectModel) View(height int) string {
+// View renders the options in the rows of the last content size: what
+// the help line leaves, less a row for each section label in view.
+func (m *filterSelectModel) View() tea.View {
 	var b strings.Builder
 	help := model.HelpStyle.Render("↑/↓ (j/k): select  space: toggle  enter: save  esc/b: cancel")
 	if len(m.departmentOptions) == 0 && len(m.locationOptions) == 0 {
 		b.WriteString("No department/location values discovered yet -- refresh the company first.\n")
 	}
-	rows := height - lipgloss.Height(help)
+	rows := m.height - lipgloss.Height(help)
 	// Which labels show depends on the window, so allow for one, and only
 	// if that window spans both sections, make room for the second.
 	deptStart, deptEnd, locStart, locEnd := filterWindow(m.cursor, len(m.departmentOptions), len(m.locationOptions), rows-1)
@@ -182,5 +249,5 @@ func (m *filterSelectModel) View(height int) string {
 		}
 	}
 	b.WriteString(help)
-	return b.String()
+	return tea.NewView(b.String())
 }

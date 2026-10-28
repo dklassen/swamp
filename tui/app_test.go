@@ -3070,7 +3070,15 @@ func TestApp_PressO_OnPostingList_OpensSelectedPostingJobURLInBrowser(t *testing
 	}
 }
 
-func TestApp_PressF_OnPostingList_OpensFilterSelectAndLoadsOptions(t *testing.T) {
+// openFilters presses f on app's posting list and lets the picker read its
+// options.
+func openFilters(t *testing.T, app *App) (*App, *filterSelectModel) {
+	t.Helper()
+	app = sendKeyAndApply(t, app, runeKey('f'))
+	return app, pushed[*filterSelectModel](t, app)
+}
+
+func TestApp_PressF_OnPostingList_OpensThePickerOnTheCompanysOptions(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3079,78 +3087,20 @@ func TestApp_PressF_OnPostingList_OpensFilterSelectAndLoadsOptions(t *testing.T)
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
 
-	app, cmd := sendIntentKey(t, app, runeKey('f'))
-	if cmd == nil {
-		t.Fatal("Update on 'f' returned nil Cmd, want a command that loads filter options")
-	}
+	app, picker := openFilters(t, app)
+
 	if app.currentScreen != screenFilterSelect {
 		t.Fatalf("screen after 'f' = %v, want screenFilterSelect", app.currentScreen)
 	}
-
-	app, _ = sendKey(app, cmd())
-
-	if diff := cmp.Diff([]string{"Engineering"}, app.filterSelect.departmentOptions); diff != "" {
-		t.Fatalf("filterDepartmentOptions mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff([]string{"Engineering"}, picker.departmentOptions); diff != "" {
+		t.Errorf("department options (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff([]string{"Remote"}, app.filterSelect.locationOptions); diff != "" {
-		t.Fatalf("filterLocationOptions mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff([]string{"Remote"}, picker.locationOptions); diff != "" {
+		t.Errorf("location options (-want +got):\n%s", diff)
 	}
 }
 
-func TestApp_FilterSelect_SpaceTogglesSelection(t *testing.T) {
-	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
-		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"}},
-	})
-	app := newTestApp(t, s, syncer)
-	app = openPostingList(t, app)
-	app, cmd := sendIntentKey(t, app, runeKey('f'))
-	app, _ = sendKey(app, cmd())
-
-	if app.filterSelect.selectedDepartments["Engineering"] {
-		t.Fatal("Engineering should not be selected initially")
-	}
-
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
-	if !app.filterSelect.selectedDepartments["Engineering"] {
-		t.Fatal("Engineering should be selected after space")
-	}
-
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
-	if app.filterSelect.selectedDepartments["Engineering"] {
-		t.Fatal("Engineering should be deselected after second space")
-	}
-}
-
-func TestApp_FilterSelect_Esc_CancelsWithoutSaving(t *testing.T) {
-	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
-		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"}},
-	})
-	app := newTestApp(t, s, syncer)
-	app = openPostingList(t, app)
-	app, cmd := sendIntentKey(t, app, runeKey('f'))
-	app, _ = sendKey(app, cmd())
-
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
-
-	if app.currentScreen != screenPostingList {
-		t.Fatalf("screen after esc = %v, want screenPostingList", app.currentScreen)
-	}
-
-	saved, err := s.Companies.Filters(context.Background(), acme.ID)
-	if err != nil {
-		t.Fatalf("companyfilter.List: %v", err)
-	}
-	if len(saved) != 0 {
-		t.Fatalf("saved filters = %+v, want none (esc should not persist selection)", saved)
-	}
-}
-
-func TestApp_FilterSelect_Enter_SavesAndNarrows(t *testing.T) {
+func TestApp_FilterSelect_Enter_ClosesThePickerOnTheFilteredPostings(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3161,92 +3111,105 @@ func TestApp_FilterSelect_Enter_SavesAndNarrows(t *testing.T) {
 	})
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
-	if len(openList(t, app).list.Postings) != 2 {
-		t.Fatalf("initial postings = %+v, want 2", openList(t, app).list.Postings)
-	}
+	app, picker := openFilters(t, app)
+	wantDept := picker.departmentOptions[0]
 
-	app, cmd := sendIntentKey(t, app, runeKey('f'))
-	app, _ = sendKey(app, cmd())
-
-	// Cursor starts at filterDepartmentOptions[0]. Confirm which
-	// department that is before toggling, so the assertion below isn't
-	// order-dependent.
-	wantDept := app.filterSelect.departmentOptions[0]
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	// Enter narrows synchronously (no round trip needed) and returns the
-	// saveCompanyFilters Cmd that persists the selection.
-	app, cmd = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if app.currentScreen != screenPostingList {
 		t.Fatalf("screen after enter = %v, want screenPostingList", app.currentScreen)
 	}
-	if len(openList(t, app).list.Postings) != 1 {
-		t.Fatalf("postings after enter = %+v, want 1 (narrowed to %s, before saveCompanyFilters' Cmd even runs)", openList(t, app).list.Postings, wantDept)
+	l := openList(t, app)
+	if len(l.list.Postings) != 1 || l.list.Postings[0].Department != wantDept {
+		t.Errorf("postings after the save = %+v, want only the one in %s", l.list.Postings, wantDept)
 	}
-	if openList(t, app).list.Postings[0].Department != wantDept {
-		t.Fatalf("remaining posting department = %q, want %q", openList(t, app).list.Postings[0].Department, wantDept)
+	if diff := cmp.Diff([]string{wantDept}, l.list.Departments); diff != "" {
+		t.Errorf("the list's department filters (-want +got):\n%s", diff)
 	}
-	if cmd == nil {
-		t.Fatal("Update on enter returned nil Cmd, want a command that applies the filters")
-	}
-
-	app, cmd = sendKey(app, cmd())
-
 	saved, err := s.Companies.Filters(context.Background(), acme.ID)
 	if err != nil {
-		t.Fatalf("companyfilter.List: %v", err)
+		t.Fatalf("Filters: %v", err)
 	}
-	if len(saved) != 1 || saved[0].Field != filter.FieldDepartment || saved[0].Value != wantDept {
-		t.Fatalf("saved filters = %+v, want one department=%s filter", saved, wantDept)
+	if diff := cmp.Diff([]filter.Filter{{Field: filter.FieldDepartment, Value: wantDept}}, saved); diff != "" {
+		t.Errorf("saved filters (-want +got):\n%s", diff)
 	}
-	if want := "Acme filters saved"; app.status != want {
-		t.Errorf("app.status = %q, want %q", app.status, want)
-	}
-	if cmd == nil {
-		t.Fatal("Update on companyFiltersSavedMsg returned nil Cmd, want a command that reloads postings")
-	}
-
-	// Drive the reload: this must NOT silently undo the narrowing by
-	// loading everything unfiltered -- ListPostingsByCompany itself has
-	// no notion of company_filters, so the reload has to re-apply them,
-	// not just re-fetch.
-	app, _ = sendKey(app, cmd())
-
-	if len(openList(t, app).list.Postings) != 1 {
-		t.Fatalf("postings after post-save reload = %+v, want still 1 (filter should survive the reload)", openList(t, app).list.Postings)
-	}
-	if openList(t, app).list.Postings[0].Department != wantDept {
-		t.Fatalf("posting department after reload = %q, want %q", openList(t, app).list.Postings[0].Department, wantDept)
+	if want := acme.Name + " filters saved"; app.status != want {
+		t.Errorf("status = %q, want %q", app.status, want)
 	}
 }
 
-// TestApp_FilterSelect_Enter_WhileCompanySyncsElsewhere_Saves: saving
-// filters doesn't sync, so another sync holding the company's lease
+func TestApp_FilterSelect_SaveFails_ShowsTheErrorWithThePickerOpen(t *testing.T) {
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	app, picker := openFilters(t, app)
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+
+	app = sendKeyAndApply(t, app, message.New(picker.source(), message.Subject{Type: message.TypeCompany, ID: acme.ID}, message.OpUpdated, time.Now().UTC(),
+		model.ErrorOf(errors.New("disk full"))))
+
+	if app.currentScreen != screenFilterSelect || pushed[*filterSelectModel](t, app) != picker {
+		t.Fatalf("screen after the failed save = %v, want the picker still open", app.currentScreen)
+	}
+	if !strings.Contains(app.banner(), "disk full") {
+		t.Errorf("banner = %q, want the error", app.banner())
+	}
+	if diff := cmp.Diff(picker.departmentOptions, picker.selection().Departments); diff != "" {
+		t.Errorf("selection after the failed save (-want +got):\n%s", diff)
+	}
+}
+
+func TestApp_FilterSelect_Esc_ClosesWithoutSaving(t *testing.T) {
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app = openPostingList(t, app)
+	app, _ = openFilters(t, app)
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
+
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
+
+	if app.currentScreen != screenPostingList {
+		t.Fatalf("screen after esc = %v, want screenPostingList", app.currentScreen)
+	}
+	saved, err := s.Companies.Filters(context.Background(), acme.ID)
+	if err != nil {
+		t.Fatalf("Filters: %v", err)
+	}
+	if len(saved) != 0 {
+		t.Errorf("saved filters = %+v, want none", saved)
+	}
+}
+
+// Saving filters doesn't sync, so another sync holding the company's lease
 // changes nothing about it.
 func TestApp_FilterSelect_Enter_WhileCompanySyncsElsewhere_Saves(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
-		"acme": {
-			{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"},
-			{SourceID: "job-2", Title: "Salesperson", Department: "Sales", Location: "Remote"},
-		},
+		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering", Location: "Remote"}},
 	})
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
 	if taken, err := s.Companies.AcquireSyncLease(context.Background(), acme.ID, "swamp-fetch", time.Minute); err != nil || !taken {
 		t.Fatalf("AcquireSyncLease = %v, %v", taken, err)
 	}
-
-	app, cmd := sendIntentKey(t, app, runeKey('f'))
-	app, _ = sendKey(app, cmd())
+	app, _ = openFilters(t, app)
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
-	app, cmd = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	app, cmd = sendKey(app, cmd())
+
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	saved, err := s.Companies.Filters(context.Background(), acme.ID)
 	if err != nil {
-		t.Fatalf("companyfilter.List: %v", err)
+		t.Fatalf("Filters: %v", err)
 	}
 	if len(saved) != 1 {
 		t.Errorf("saved filters = %+v, want the selection saved", saved)
@@ -3254,11 +3217,8 @@ func TestApp_FilterSelect_Enter_WhileCompanySyncsElsewhere_Saves(t *testing.T) {
 	if app.err != nil {
 		t.Errorf("app.err = %v, want nil", app.err)
 	}
-	if want := "Acme filters saved"; app.status != want {
-		t.Errorf("app.status = %q, want %q", app.status, want)
-	}
-	if cmd == nil {
-		t.Error("Update on the save returned nil Cmd, want a command that reloads postings")
+	if want := acme.Name + " filters saved"; app.status != want {
+		t.Errorf("status = %q, want %q", app.status, want)
 	}
 }
 
@@ -3386,31 +3346,6 @@ func TestApp_OpenPostingList_TracksActiveFiltersFromExisting(t *testing.T) {
 	}
 	if diff := cmp.Diff([]string{"Remote"}, openList(t, app).list.Locations); diff != "" {
 		t.Fatalf("location filters mismatch (-want +got):\n%s", diff)
-	}
-}
-
-func TestApp_FilterSelect_Enter_UpdatesActiveFiltersImmediately(t *testing.T) {
-	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
-		"acme": {{SourceID: "job-1", Title: "Engineer", Department: "Engineering"}},
-	})
-	app := newTestApp(t, s, syncer)
-	app = openPostingList(t, app)
-	if len(openList(t, app).list.Departments) != 0 {
-		t.Fatalf("initial department filters = %+v, want empty", openList(t, app).list.Departments)
-	}
-
-	app, cmd := sendIntentKey(t, app, runeKey('f'))
-	app, _ = sendKey(app, cmd())
-	wantDept := app.filterSelect.departmentOptions[0]
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
-	// Updated synchronously on enter -- no need to run the returned
-	// saveCompanyFilters Cmd to observe it.
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
-
-	if diff := cmp.Diff([]string{wantDept}, openList(t, app).list.Departments); diff != "" {
-		t.Fatalf("department filters after enter mismatch (-want +got):\n%s", diff)
 	}
 }
 
