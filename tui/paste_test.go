@@ -23,7 +23,7 @@ func TestApp_PasteIntoApplicationForm_AddsTheText(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 30})
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	app, loadCmd := sendKey(app, runeKey('f'))
+	app, loadCmd := sendIntentKey(t, app, runeKey('f'))
 	app = applyCmd(t, app, loadCmd)
 
 	app, _ = sendKey(app, tea.PasteMsg{Content: "Why us? *"})
@@ -113,8 +113,8 @@ func TestApp_CompanyList_PasteIntoSearch_FiltersByIt(t *testing.T) {
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = applyCmd(t, app, cmd)
-	if app.selectedCompany.Name != "Globex" {
-		t.Fatalf("selectedCompany = %q, want %q", app.selectedCompany.Name, "Globex")
+	if openList(t, app).company.Name != "Globex" {
+		t.Fatalf("list company = %q, want %q", openList(t, app).company.Name, "Globex")
 	}
 }
 

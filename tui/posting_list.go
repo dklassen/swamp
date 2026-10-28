@@ -1,15 +1,17 @@
 package tui
 
 import (
+	"slices"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -57,11 +59,11 @@ func truncateCol(s string, max int) string {
 // column for the posting list. Archived takes precedence over interested
 // when both are set, matching the same precedence the 00003 migration's
 // Down path uses when collapsing both flags back into one enum value.
-func postingMarker(m posting.Markup) string {
+func postingMarker(m message.Markup) string {
 	switch {
-	case m.ArchivedAt != nil:
+	case !m.ArchivedAt.IsZero():
 		return "✕"
-	case m.InterestedAt != nil:
+	case !m.InterestedAt.IsZero():
 		return "★"
 	default:
 		return " "
@@ -86,34 +88,153 @@ func filterSummaryLine(departments, locations []string) string {
 	return "Filtering: " + strings.Join(parts, " | ")
 }
 
-// postingListModel drives the posting-list screen. It holds only the
-// dependency it needs to dispatch its own commands (postings) and its own
-// private cursor -- postings/markup/hideArchived/active filters are
-// domain data owned by App, passed in as a postingListSnapshot on every
-// call, never cached here.
+// postingListModel is one company's postings, which it loads and keeps.
 type postingListModel struct {
-	postings *service.PostingService
-	cursor   int
+	companyService *service.CompanyService
+	postingService *service.PostingService
+
+	company message.Company
+	list    message.PostingList
+	// hideArchived starts as App's, which it tells when it flips.
+	hideArchived bool
+	cursor       int
+
+	focused  bool
+	width    int
+	height   int
+	instance message.ScreenInstance
 }
 
-func newPostingListModel(postings *service.PostingService) postingListModel {
-	return postingListModel{postings: postings}
+func newPostingListModel(companies *service.CompanyService, postings *service.PostingService, c message.Company, hideArchived bool, size message.ContentSize) *postingListModel {
+	return &postingListModel{
+		companyService: companies,
+		postingService: postings,
+		company:        c,
+		hideArchived:   hideArchived,
+		width:          size.Width,
+		height:         size.Rows,
+		instance:       message.NewScreenInstance(),
+	}
 }
 
-// postingListSnapshot is the read-only domain data App hands in on every
-// call.
-type postingListSnapshot struct {
-	companyDescription      string
-	postings                []posting.Posting
-	markup                  map[int64]posting.Markup
-	hideArchived            bool
-	activeFilterDepartments []string
-	activeFilterLocations   []string
+func (m *postingListModel) Instance() message.ScreenInstance { return m.instance }
+
+func (m *postingListModel) Focused() bool { return m.focused }
+
+func (m *postingListModel) Routes() []*model.Route {
+	return []*model.Route{
+		model.Always(m.postingsRead, model.From(m.instance)),
+		model.Always(m.loadRequested),
+		model.Always(m.synced, model.About(message.TypeCompany, m.company.ID)),
+		model.Always(m.markupUpdated),
+		model.WhenFocused(m, m.keyPressed),
+		model.Always(m.resize),
+		model.Always(m.focusChanged),
+	}
 }
 
-// backToCompanyListMsg signals that App should switch to the
-// company-list screen.
-type backToCompanyListMsg struct{}
+func (m *postingListModel) Init() tea.Cmd { return m.load() }
+
+// Update has nothing to do: everything the list handles is registered.
+func (m *postingListModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
+
+func (m *postingListModel) load() tea.Cmd {
+	return loadPostings(m.companyService, m.postingService, message.Source{Instance: m.instance}, m.company.ID, m.hideArchived)
+}
+
+// postingsRead keeps the cursor on its posting, since a sync can add some
+// ahead of it.
+func (m *postingListModel) postingsRead(e message.Event[message.Read[message.PostingList]]) tea.Cmd {
+	previous := m.selected()
+	m.list = e.Payload.Value
+	m.keepCursorOn(previous)
+	return nil
+}
+
+func (m *postingListModel) loadRequested(message.Event[message.Load[message.PostingList]]) tea.Cmd {
+	return m.load()
+}
+
+// synced reloads even when the sync failed, since one can fail after
+// writing postings.
+func (m *postingListModel) synced(message.Event[message.Ran[message.SyncReport]]) tea.Cmd {
+	return m.load()
+}
+
+// markupUpdated drops a posting archived while archived ones are hidden,
+// since it can't be reached to unarchive until they're shown.
+func (m *postingListModel) markupUpdated(msg postingMarkupUpdatedMsg) tea.Cmd {
+	i := indexOfPosting(m.list.Postings, msg.markup.PostingID)
+	if msg.err != nil || i < 0 {
+		return nil
+	}
+	marked := markupSnapshot(msg.markup)
+	m.list.Markup[marked.PostingID] = marked
+	if m.hideArchived && !marked.ArchivedAt.IsZero() {
+		m.list.Postings = slices.Delete(m.list.Postings, i, i+1)
+		m.clampCursor(len(m.list.Postings))
+	}
+	return nil
+}
+
+func (m *postingListModel) resize(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {
+	m.width, m.height = e.Payload.Value.Width, e.Payload.Value.Rows
+	return nil
+}
+
+func (m *postingListModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
+	m.focused = e.Payload.Value.Focused == m.instance
+	return nil
+}
+
+func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
+	src := message.Source{Instance: m.instance}
+	postings := m.list.Postings
+	onPosting := m.cursor < len(postings)
+	var current message.Posting
+	if onPosting {
+		current = postings[m.cursor]
+	}
+	switch key.String() {
+	case "down", "j":
+		if m.cursor < len(postings)-1 {
+			m.cursor++
+		}
+	case "up", "k":
+		if m.cursor > 0 {
+			m.cursor--
+		}
+	case "esc", "b":
+		return tea.Batch(message.Pop(src), message.ReportStatus(src, ""))
+	case "enter":
+		if onPosting {
+			return send(enterPostingDetailMsg{postingID: current.ID})
+		}
+	case "o":
+		if onPosting && current.JobURL != "" {
+			return openInBrowser(current.JobURL)
+		}
+	case "r":
+		return syncCompany(src, m.company)
+	case "f":
+		return send(enterFilterSelectMsg{})
+	case "i":
+		if onPosting {
+			return toggleInterested(m.postingService, current.ID, !m.list.Markup[current.ID].InterestedAt.IsZero())
+		}
+	case "x":
+		if onPosting {
+			return toggleArchived(m.postingService, current.ID, !m.list.Markup[current.ID].ArchivedAt.IsZero())
+		}
+	case "A":
+		m.hideArchived = !m.hideArchived
+		hidden := message.HideArchived{Hidden: m.hideArchived}
+		return tea.Batch(m.load(), func() tea.Msg {
+			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Signal[message.HideArchived]{Value: hidden})
+		})
+	}
+	return nil
+}
 
 // enterPostingDetailMsg signals that App should switch to the
 // posting-detail screen for the given posting.
@@ -123,74 +244,27 @@ type enterPostingDetailMsg struct{ postingID int64 }
 // filter-select screen.
 type enterFilterSelectMsg struct{}
 
-// refreshSelectedCompanyMsg asks App to re-sync the company whose
-// postings are on screen. App starts the sync, since only it knows whether
-// a sync-all run is already under way.
-type refreshSelectedCompanyMsg struct{}
-
-// toggleHideArchivedMsg signals that App should flip hideArchived and
-// reload postings -- hideArchived is App-owned domain state, not this
-// screen's to mutate directly.
-type toggleHideArchivedMsg struct{}
-
-func (m *postingListModel) Update(msg tea.KeyPressMsg, snap postingListSnapshot) (tea.Cmd, tea.Msg) {
-	switch {
-	case msg.String() == "down", msg.String() == "j":
-		if m.cursor < len(snap.postings)-1 {
-			m.cursor++
-		}
-	case msg.String() == "up", msg.String() == "k":
-		if m.cursor > 0 {
-			m.cursor--
-		}
-	case msg.String() == "esc", msg.String() == "b":
-		return nil, backToCompanyListMsg{}
-	case msg.String() == "enter":
-		if m.cursor < len(snap.postings) {
-			return nil, enterPostingDetailMsg{postingID: snap.postings[m.cursor].ID}
-		}
-	case msg.String() == "o":
-		if m.cursor < len(snap.postings) {
-			if url := snap.postings[m.cursor].JobURL; url != "" {
-				return openInBrowser(url), nil
-			}
-		}
-	case msg.String() == "r":
-		return nil, refreshSelectedCompanyMsg{}
-	case msg.String() == "f":
-		return nil, enterFilterSelectMsg{}
-	case msg.String() == "i":
-		if m.cursor < len(snap.postings) {
-			p := snap.postings[m.cursor]
-			return toggleInterested(m.postings, p.ID, snap.markup[p.ID].InterestedAt != nil), nil
-		}
-	case msg.String() == "x":
-		if m.cursor < len(snap.postings) {
-			p := snap.postings[m.cursor]
-			return toggleArchived(m.postings, p.ID, snap.markup[p.ID].ArchivedAt != nil), nil
-		}
-	case msg.String() == "A":
-		return nil, toggleHideArchivedMsg{}
-	}
-	return nil, nil
+// send is a command for a message App still handles itself.
+func send(msg tea.Msg) tea.Cmd {
+	return func() tea.Msg { return msg }
 }
 
-// View renders the list in height terminal rows (App.screenRows). Every
-// line drawn above or below the table -- the description, filter summary
-// and archived notice included -- costs the table a row, so the list
-// still fits.
-func (m *postingListModel) View(snap postingListSnapshot, width, height int) string {
+// View renders the list in the rows of the last content size. Every line
+// drawn above or below the table -- the description, filter summary and
+// archived notice included -- costs the table a row, so the list still
+// fits.
+func (m *postingListModel) View() tea.View {
 	var b strings.Builder
 	help := model.HelpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  r: refresh  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back")
 	// The description gets one line, truncated to the table's width.
 	var description, summary, archived string
-	if snap.companyDescription != "" {
-		description = model.DimStyle.Render(truncateCol(strings.Join(strings.Fields(snap.companyDescription), " "), tableWidth(width)))
+	if m.company.Description != "" {
+		description = model.DimStyle.Render(truncateCol(strings.Join(strings.Fields(m.company.Description), " "), tableWidth(m.width)))
 	}
-	if s := filterSummaryLine(snap.activeFilterDepartments, snap.activeFilterLocations); s != "" {
+	if s := filterSummaryLine(m.list.Departments, m.list.Locations); s != "" {
 		summary = model.HelpStyle.Render(s)
 	}
-	if snap.hideArchived {
+	if m.hideArchived {
 		archived = model.HelpStyle.Render("Archived postings hidden (press 'A' to show)")
 	}
 	for _, line := range []string{description, summary, archived} {
@@ -198,10 +272,11 @@ func (m *postingListModel) View(snap postingListSnapshot, width, height int) str
 			b.WriteString(line + "\n")
 		}
 	}
-	if len(snap.postings) == 0 {
+	postings := m.list.Postings
+	if len(postings) == 0 {
 		b.WriteString("No postings yet. Press 'r' to refresh.\n")
 	} else {
-		start, end := visibleWindow(m.cursor, len(snap.postings), tableRows(height, description, summary, archived, help))
+		start, end := visibleWindow(m.cursor, len(postings), tableRows(m.height, description, summary, archived, help))
 		cursorRow := m.cursor - start
 		t := table.New().
 			Border(lipgloss.RoundedBorder()).
@@ -213,11 +288,11 @@ func (m *postingListModel) View(snap postingListSnapshot, width, height int) str
 				}
 				return style
 			})
-		titleWidth := flexColWidth(width, markerColWidth, departmentColWidth, locationColWidth, statusColWidth)
+		titleWidth := flexColWidth(m.width, markerColWidth, departmentColWidth, locationColWidth, statusColWidth)
 		for i := start; i < end; i++ {
-			p := snap.postings[i]
+			p := postings[i]
 			t.Row(
-				padCol(postingMarker(snap.markup[p.ID]), markerColWidth),
+				padCol(postingMarker(m.list.Markup[p.ID]), markerColWidth),
 				padCol(p.Title, titleWidth),
 				padCol(p.Department, departmentColWidth),
 				padCol(p.Location, locationColWidth),
@@ -227,43 +302,20 @@ func (m *postingListModel) View(snap postingListSnapshot, width, height int) str
 		b.WriteString(t.Render() + "\n")
 	}
 	b.WriteString(help)
-	return b.String()
-}
-
-// resetCursor points the cursor back at the top of the list -- called
-// when a fresh set of postings loads (see postingsLoadedMsg in
-// App.Update).
-func (m *postingListModel) resetCursor() {
-	m.cursor = 0
+	return tea.NewView(b.String())
 }
 
 // clampCursor keeps the cursor in bounds after postings shrinks (e.g.
-// archiving while hideArchived is on). App can't reach m.cursor directly
-// since it's private, so this is the explicit hook for that case.
+// archiving while hideArchived is on).
 func (m *postingListModel) clampCursor(n int) {
 	if m.cursor >= n && m.cursor > 0 {
 		m.cursor = n - 1
 	}
 }
 
-// resetCursorIfOutOfBounds resets the cursor to the top if it's no
-// longer a valid index into n postings -- distinct from clampCursor
-// (which lands on the last valid index): used after a filter save
-// re-narrows the list, where landing back at the top reads more
-// naturally than landing on whatever the last item happens to be.
-func (m *postingListModel) resetCursorIfOutOfBounds(n int) {
-	if m.cursor >= n {
-		m.resetCursor()
-	}
-}
-
-// setCursor points the cursor at index i, if valid. Used to keep this
-// screen's cursor in sync with wherever h/l navigation inside
-// postingDetailModel last landed, when the user returns to the list --
-// the two model don't share a cursor (postingDetailModel tracks only
-// the one posting it's showing), so App reconciles them here at the
-// transition boundary rather than either model needing to know about
-// the other (see backToPostingListMsg in App.Update).
+// setCursor points the cursor at index i, if valid. Posting detail keeps
+// no cursor of its own, so App moves this one to wherever h/l there last
+// landed when the user comes back.
 func (m *postingListModel) setCursor(i int) {
 	if i >= 0 {
 		m.cursor = i
@@ -271,19 +323,36 @@ func (m *postingListModel) setCursor(i int) {
 }
 
 // selected is the ID of the posting under the cursor, or 0.
-func (m *postingListModel) selected(postings []posting.Posting) int64 {
-	if m.cursor < len(postings) {
-		return postings[m.cursor].ID
+func (m *postingListModel) selected() int64 {
+	if m.cursor < len(m.list.Postings) {
+		return m.list.Postings[m.cursor].ID
 	}
 	return 0
 }
 
 // keepCursorOn moves the cursor to posting id after a reload in place; if
 // it's gone, the cursor stays in range.
-func (m *postingListModel) keepCursorOn(id int64, postings []posting.Posting) {
-	if i := indexOfPosting(postings, id); i >= 0 {
+func (m *postingListModel) keepCursorOn(id int64) {
+	if i := indexOfPosting(m.list.Postings, id); i >= 0 {
 		m.cursor = i
 		return
 	}
-	m.clampCursor(len(postings))
+	m.clampCursor(len(m.list.Postings))
+}
+
+// narrow shows only the postings matching departments and locations as
+// soon as they're saved, before the reload that follows the save.
+func (m *postingListModel) narrow(departments, locations []string) {
+	m.list.Postings = narrowPostingsToFilters(m.list.Postings, departments, locations)
+	m.list.Departments, m.list.Locations = departments, locations
+	if m.cursor >= len(m.list.Postings) {
+		m.cursor = 0
+	}
+}
+
+// patch replaces a posting reloaded elsewhere, if the list has it.
+func (m *postingListModel) patch(p message.Posting) {
+	if i := indexOfPosting(m.list.Postings, p.ID); i >= 0 {
+		m.list.Postings[i] = p
+	}
 }

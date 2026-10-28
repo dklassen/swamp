@@ -23,7 +23,6 @@ import (
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
-	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
@@ -80,12 +79,8 @@ type App struct {
 	err           error
 	// syncing runs sync all and refreshes, and draws their progress in the
 	// banner.
-	syncing         *model.Syncing
-	selectedCompany company.Company
-	postings        []posting.Posting
-	postingMarkup   map[int64]posting.Markup
-	postingList     postingListModel
-	postingDetail   postingDetailModel
+	syncing       *model.Syncing
+	postingDetail postingDetailModel
 	// postingDetailFrom is the screen that opened posting detail.
 	postingDetailFrom screen
 	// applicationsByPosting holds the application for each posting_id that
@@ -137,22 +132,14 @@ type App struct {
 	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
 	// mirroring how SWAMP_DB_PATH configures the store.
 	documents *documents.Store
-	// hideArchived is ephemeral, in-memory-only display state -- not
-	// persisted. Defaults true: the point of
-	// archiving a posting is to declutter the list.
+	// hideArchived is what each posting list opens with: the last one's
+	// choice, for the session only. Defaults true: the point of archiving
+	// a posting is to declutter the list.
 	hideArchived bool
 	width        int
 	height       int
 
 	filterSelect filterSelectModel
-
-	// activeFilterDepartments/activeFilterLocations are the company's
-	// currently-applied filter values, kept in sync with whatever
-	// loadPostings last applied (or, immediately on save, what was just
-	// saved) -- displayed in the posting list so the filter state isn't
-	// invisible.
-	activeFilterDepartments []string
-	activeFilterLocations   []string
 
 	// router is a message router for Dispatching bubbletea tea.Msg's
 	router model.Router
@@ -214,7 +201,6 @@ func New(
 		syncer:                syncer,
 		currentScreen:         screenActiveApplications,
 		allPostings:           newAllPostingsModel(postings),
-		postingList:           newPostingListModel(postings),
 		activeApplicationList: newActiveApplicationListModel(),
 		hideArchived:          true,
 		documents:             docs,
@@ -245,9 +231,10 @@ func New(
 // stackedAs is the screen each kind a Nav pushes shows as, for the paths
 // that still switch on currentScreen.
 var stackedAs = map[message.Screen]screen{
-	message.ScreenCompanyForm:   screenCompanyForm,
-	message.ScreenCompanyEdit:   screenCompanyEdit,
-	message.ScreenCompanyDelete: screenCompanyDelete,
+	message.ScreenCompanyForm:     screenCompanyForm,
+	message.ScreenCompanyEdit:     screenCompanyEdit,
+	message.ScreenCompanyDelete:   screenCompanyDelete,
+	message.ScreenCompanyPostings: screenPostingList,
 }
 
 // push opens s over the screen up: routes, then Init, so nothing Init
@@ -278,10 +265,14 @@ func (a *App) fail(err error) tea.Cmd {
 }
 
 // focused is the instance of the converted screen on screen, or 0 when
-// the screen up hasn't registered routes yet.
+// the screen up hasn't registered routes yet, including one of App's own
+// shown over a pushed screen.
 func (a *App) focused() message.ScreenInstance {
 	if a.stack.len() > 0 {
-		return a.stack.top().Instance()
+		if stackedAs[a.stack.topKind()] == a.currentScreen {
+			return a.stack.top().Instance()
+		}
+		return 0
 	}
 	if a.currentScreen == screenCompanyList {
 		return a.companyList.Instance()
@@ -324,7 +315,7 @@ func (a *App) navCompany(e message.Event[message.Nav[message.Company]]) tea.Cmd 
 	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenCompanyEdit:
 		return a.push(e.Payload.Screen, newCompanyEditModel(a.companyService, c.ID, c.Name))
 	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenCompanyPostings:
-		return a.openCompanyPostings(c)
+		return a.push(e.Payload.Screen, newPostingListModel(a.companyService, a.postingService, c, a.hideArchived, a.sized))
 	}
 	return a.unknownNav(e)
 }
@@ -340,10 +331,24 @@ func (a *App) navCompanyRow(e message.Event[message.Nav[message.CompanyRow]]) te
 	return a.unknownNav(e)
 }
 
-func (a *App) openCompanyPostings(c message.Company) tea.Cmd {
-	a.selectedCompany = companyOf(c)
-	a.currentScreen = screenPostingList
-	return loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
+// postingList is the open posting list, or nil, for the screens over it
+// that are still App's.
+func (a *App) postingList() *postingListModel {
+	l, _ := a.stack.open(message.ScreenCompanyPostings).(*postingListModel)
+	return l
+}
+
+// listedPostings is the open posting list's postings, in its order.
+func (a *App) listedPostings() []message.Posting {
+	if l := a.postingList(); l != nil {
+		return l.list.Postings
+	}
+	return nil
+}
+
+func (a *App) hideArchivedChanged(e message.Event[message.Signal[message.HideArchived]]) tea.Cmd {
+	a.hideArchived = e.Payload.Value.Hidden
+	return nil
 }
 
 // WithStatus starts the App with status on the status line.
@@ -545,13 +550,13 @@ func (a *App) returnBack() screen {
 // change to the application-side data (status, notes, a review) while
 // still on screenPostingDetail, keeping whichever posting is already
 // displayed rather than re-deriving it via lookupPosting. lookupPosting's
-// Posting result depends on a.postings, which is never populated when
+// Posting result depends on the open posting list, which there isn't when
 // posting detail was entered via application detail's fast path (see
 // #87 follow-up) -- re-deriving it here would silently
 // clobber a correct posting with a zero value. These handlers only ever
 // change application data, never which posting is shown, so the
 // already-displayed posting is always still the right one; only
-// app/hasApp (from a.applicationsByPosting, independent of a.postings)
+// app/hasApp (from a.applicationsByPosting, independent of the list)
 // need refreshing.
 func (a *App) rebuildPostingDetailApplication() tea.Cmd {
 	_, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
@@ -559,24 +564,21 @@ func (a *App) rebuildPostingDetailApplication() tea.Cmd {
 	return maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID)
 }
 
-// lookupPosting finds id in a.postings, returning it along with its
-// application (if any) from a.applicationsByPosting -- used to seed a
+// lookupPosting finds id in the open posting list, returning it along with
+// its application (if any) from a.applicationsByPosting -- used to seed a
 // fresh postingDetailModel by ID, since that model doesn't hold a
 // reference to either collection itself.
 func (a *App) lookupPosting(id int64) (posting.Posting, application.Application, bool) {
 	var p posting.Posting
-	for _, candidate := range a.postings {
-		if candidate.ID == id {
-			p = candidate
-			break
-		}
+	if i := indexOfPosting(a.listedPostings(), id); i >= 0 {
+		p = postingOf(a.listedPostings()[i])
 	}
 	app, hasApp := a.applicationsByPosting[id]
 	return p, app, hasApp
 }
 
 // indexOfPosting returns id's index in postings, or -1 if not present.
-func indexOfPosting(postings []posting.Posting, id int64) int {
+func indexOfPosting(postings []message.Posting, id int64) int {
 	for i, p := range postings {
 		if p.ID == id {
 			return i
@@ -866,17 +868,6 @@ func updateApplicationNotes(applications *service.ApplicationService, applicatio
 	}
 }
 
-type postingsLoadedMsg struct {
-	postings    []posting.Posting
-	markup      map[int64]posting.Markup
-	departments []string
-	locations   []string
-	err         error
-	// keepCursor: a reload in place, not a fresh list, so the cursor stays
-	// on the posting it was on.
-	keepCursor bool
-}
-
 // loadPostings re-applies the company's currently-saved filters after
 // fetching, since ListPostingsByCompany returns every stored posting:
 // sync stores them all, and filters only decide what's shown. Without
@@ -902,58 +893,63 @@ type postingsLoadedMsg struct {
 // ephemeral TUI display state (see the App.hideArchived field), not a
 // company_filters row, so it's applied here rather than at the
 // ingestion-gating layer.
-func loadPostings(companies *service.CompanyService, postings *service.PostingService, companyID int64, hideArchived bool) tea.Cmd {
+func loadPostings(companies *service.CompanyService, postings *service.PostingService, src message.Source, companyID int64, hideArchived bool) tea.Cmd {
+	subject := message.Subject{Type: message.TypeCompany, ID: companyID}
+	failed := func(err error) tea.Msg {
+		return message.New(src, subject, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
+	}
 	return func() tea.Msg {
 		ctx := context.Background()
-		list, err := postings.ListByCompany(ctx, companyID)
+		stored, err := postings.ListByCompany(ctx, companyID)
 		if err != nil {
-			return postingsLoadedMsg{err: err}
+			return failed(err)
 		}
-		list = filterOutClosed(list)
 		companyFilters, err := companies.Filters(ctx, companyID)
 		if err != nil {
-			return postingsLoadedMsg{err: err}
+			return failed(err)
 		}
-		departments, locations := splitCompanyFilters(companyFilters)
-		list, err = filterPostingsByCompanyFilters(list, companyFilters)
+		var list message.PostingList
+		list.Departments, list.Locations = splitCompanyFilters(companyFilters)
+		list.Postings, err = filterPostingsByCompanyFilters(openSnapshots(stored), companyFilters)
 		if err != nil {
-			return postingsLoadedMsg{err: err}
+			return failed(err)
 		}
 
-		markup := make(map[int64]posting.Markup, len(list))
-		for _, p := range list {
+		list.Markup = make(map[int64]message.Markup, len(list.Postings))
+		for _, p := range list.Postings {
 			m, err := postings.Markup(ctx, p.ID)
 			if err != nil {
-				return postingsLoadedMsg{err: err}
+				return failed(err)
 			}
-			markup[p.ID] = *m
+			list.Markup[p.ID] = markupSnapshot(*m)
 		}
 
 		if hideArchived {
-			list = filterOutArchived(list, markup)
+			list.Postings = filterOutArchived(list.Postings, list.Markup)
 		}
 
-		return postingsLoadedMsg{postings: list, markup: markup, departments: departments, locations: locations}
+		return message.New(src, subject, message.OpNone, time.Now().UTC(), message.Read[message.PostingList]{Value: list})
 	}
 }
 
-// filterOutClosed drops postings whose listing has closed on the job board.
-func filterOutClosed(postings []posting.Posting) []posting.Posting {
-	visible := make([]posting.Posting, 0, len(postings))
+// openSnapshots is the postings whose listing hasn't closed on the job
+// board.
+func openSnapshots(postings []posting.Posting) []message.Posting {
+	visible := make([]message.Posting, 0, len(postings))
 	for _, p := range postings {
 		if p.ListingStatus == posting.ListingClosed {
 			continue
 		}
-		visible = append(visible, p)
+		visible = append(visible, postingSnapshot(p))
 	}
 	return visible
 }
 
 // filterOutArchived drops postings whose markup has ArchivedAt set.
-func filterOutArchived(postings []posting.Posting, markup map[int64]posting.Markup) []posting.Posting {
-	visible := make([]posting.Posting, 0, len(postings))
+func filterOutArchived(postings []message.Posting, markup map[int64]message.Markup) []message.Posting {
+	visible := make([]message.Posting, 0, len(postings))
 	for _, p := range postings {
-		if markup[p.ID].ArchivedAt != nil {
+		if !markup[p.ID].ArchivedAt.IsZero() {
 			continue
 		}
 		visible = append(visible, p)
@@ -966,8 +962,8 @@ func filterOutArchived(postings []posting.Posting, markup map[int64]posting.Mark
 // so the list after a reload and the one narrowed right after a save
 // can't disagree. An unsupported field is returned as an error rather
 // than ignored.
-func filterPostingsByCompanyFilters(postings []posting.Posting, companyFilters []filter.Filter) ([]posting.Posting, error) {
-	narrowed := make([]posting.Posting, 0, len(postings))
+func filterPostingsByCompanyFilters(postings []message.Posting, companyFilters []filter.Filter) ([]message.Posting, error) {
+	narrowed := make([]message.Posting, 0, len(postings))
 	for _, p := range postings {
 		match, err := filter.Match(filter.Posting{Department: p.Department, Location: p.Location}, companyFilters)
 		if err != nil {
@@ -1031,13 +1027,14 @@ func loadFilterOptions(companies *service.CompanyService, companyID int64) tea.C
 // only decide what's shown, so saving them is the whole job: there's
 // nothing to re-sync.
 type companyFiltersSavedMsg struct {
-	err error
+	company message.Company
+	err     error
 }
 
-func saveCompanyFilters(companies *service.CompanyService, companyID int64, departments, locations []string) tea.Cmd {
+func saveCompanyFilters(companies *service.CompanyService, c message.Company, departments, locations []string) tea.Cmd {
 	return func() tea.Msg {
-		err := companies.SetFilters(context.Background(), companyID, companyFiltersFrom(departments, locations))
-		return companyFiltersSavedMsg{err: err}
+		err := companies.SetFilters(context.Background(), c.ID, companyFiltersFrom(departments, locations))
+		return companyFiltersSavedMsg{company: c, err: err}
 	}
 }
 
@@ -1055,7 +1052,7 @@ func companyFiltersFrom(departments, locations []string) []filter.Filter {
 // narrowPostingsToFilters narrows the list as soon as a filter selection
 // is saved, before the save completes, through the same match as
 // loadPostings.
-func narrowPostingsToFilters(postings []posting.Posting, departments, locations []string) []posting.Posting {
+func narrowPostingsToFilters(postings []message.Posting, departments, locations []string) []message.Posting {
 	narrowed, err := filterPostingsByCompanyFilters(postings, companyFiltersFrom(departments, locations))
 	if err != nil {
 		// Unreachable: filters is built entirely from filter.FieldDepartment/
@@ -1093,6 +1090,7 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.navNone),
 		model.Always(a.navCompany),
 		model.Always(a.navCompanyRow),
+		model.Always(a.hideArchivedChanged),
 	}
 }
 
@@ -1165,45 +1163,26 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.activeApplications = msg.applications
 		a.activeApplicationProgress = msg.progress
 		a.activeApplicationList.keepCursorOn(previous, a.activeApplications)
-	case message.Event[message.Ran[message.SyncReport]]:
-		if msg.Payload.Value.Code == 0 && msg.Meta.Subject.ID == a.selectedCompany.ID {
-			// The cursor stays on its posting: the sync can add some
-			// ahead of it.
-			return a, reloadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
-		}
-	case postingsLoadedMsg:
-		a.setLoadErr(msg.err)
-		previousPosting := a.postingList.selected(a.postings)
-		a.postings = msg.postings
-		a.postingMarkup = msg.markup
-		if msg.keepCursor {
-			a.postingList.keepCursorOn(previousPosting, a.postings)
-		} else {
-			a.postingList.resetCursor()
-		}
-		a.activeFilterDepartments = msg.departments
-		a.activeFilterLocations = msg.locations
 	case postingMarkupUpdatedMsg:
 		a.err = msg.err
-		if msg.err == nil {
-			if a.postingMarkup == nil {
-				a.postingMarkup = make(map[int64]posting.Markup)
-			}
-			a.postingMarkup[msg.markup.PostingID] = msg.markup
-			// Archiving a posting while hideArchived is on should remove
-			// it from view immediately, not just once the list is next
-			// reloaded -- consistent with the fact that unarchiving it
-			// again requires pressing 'A' first (it's no longer
-			// reachable by cursor once hidden).
-			if a.hideArchived && msg.markup.ArchivedAt != nil {
-				if i := indexOfPosting(a.postings, msg.markup.PostingID); i != -1 {
-					a.postings = append(a.postings[:i], a.postings[i+1:]...)
-				}
-				a.postingList.clampCursor(len(a.postings))
-			}
-			if a.currentScreen == screenAllPostings {
-				return a, a.allPostings.load(a.allPostings.size)
-			}
+		if msg.err == nil && a.currentScreen == screenAllPostings {
+			return a, a.allPostings.load(a.allPostings.size)
+		}
+	case enterPostingDetailMsg:
+		// Only if the user is still on the list it came from.
+		if a.currentScreen == screenPostingList {
+			a.err = nil
+			a.postingDetailFrom = screenPostingList
+			p, app, hasApp := a.lookupPosting(msg.postingID)
+			a.postingDetail = newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
+			a.enterFrom(screenPostingDetail)
+			return a, tea.Batch(loadApplication(a.postingService, p.ID), maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID), loadPostingScores(a.scoringService, p.ID))
+		}
+	case enterFilterSelectMsg:
+		if l := a.postingList(); l != nil && a.currentScreen == screenPostingList {
+			a.err = nil
+			a.currentScreen = screenFilterSelect
+			return a, loadFilterOptions(a.companyService, l.company.ID)
 		}
 	case applicationLoadedMsg:
 		a.setLoadErr(msg.err)
@@ -1217,7 +1196,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				delete(a.applicationsByPosting, msg.postingID)
 			}
 			if a.currentScreen == screenPostingDetail {
-				// The posting on screen, which a.postings lacks when the detail
+				// The posting on screen, which no list has when the detail
 				// was opened from all postings.
 				p := a.postingDetail.posting
 				_, app, hasApp := a.lookupPosting(p.ID)
@@ -1241,7 +1220,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.applicationsByPosting[msg.application.PostingID] = msg.application
 			var reviewsCmd tea.Cmd
 			if a.currentScreen == screenPostingDetail {
-				// The posting on screen, which a.postings lacks when the detail
+				// The posting on screen, which no list has when the detail
 				// was opened from all postings.
 				p := a.postingDetail.posting
 				_, app, hasApp := a.lookupPosting(p.ID)
@@ -1457,16 +1436,20 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case filterOptionsLoadedMsg:
 		a.err = msg.err
-		a.filterSelect = newFilterSelectModel(a.selectedCompany.ID, msg.departments, msg.locations, msg.existingFilters)
+		if l := a.postingList(); l != nil {
+			a.filterSelect = newFilterSelectModel(l.company.ID, msg.departments, msg.locations, msg.existingFilters)
+		}
 	case companyFiltersSavedMsg:
 		a.err = msg.err
 		if msg.err == nil {
-			a.status = a.selectedCompany.Name + " filters saved"
+			a.status = msg.company.Name + " filters saved"
 			// Reload from the DB so the view becomes authoritative instead
 			// of just the optimistic narrowing applied synchronously when
 			// the filter selection was saved (see screenFilterSelect's
 			// saveFilterSelectionMsg handling in updateKeyMsg).
-			return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
+			if l := a.postingList(); l != nil && l.company.ID == msg.company.ID {
+				return a, l.load()
+			}
 		}
 	case browserOpenedMsg:
 		a.err = msg.err
@@ -1585,8 +1568,8 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			a.currentScreen = screenActiveApplications
 		case enterPostingDetailMsg:
 			// Unlike screenPostingList's own enterPostingDetailMsg handler,
-			// this can't use lookupPosting -- a.postings is only populated
-			// by browsing that list, which application detail (reached via
+			// this can't use lookupPosting -- a posting list is only open
+			// while browsing one, which application detail (reached via
 			// active-applications) may never have done. applicationDetail's
 			// own posting.ActiveApplication already carries the full posting,
 			// application, and latest reviews (freshly loaded for the
@@ -1623,48 +1606,21 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return a, loadDocumentReviews(a.documentService, a.documents, a.applicationDetail.application.ID)
 		}
 		return a, cmd
-	case screenPostingList:
-		snap := postingListSnapshot{
-			companyDescription:      a.selectedCompany.Description,
-			postings:                a.postings,
-			markup:                  a.postingMarkup,
-			hideArchived:            a.hideArchived,
-			activeFilterDepartments: a.activeFilterDepartments,
-			activeFilterLocations:   a.activeFilterLocations,
-		}
-		cmd, intent := a.postingList.Update(msg, snap)
-		switch v := intent.(type) {
-		case backToCompanyListMsg:
-			a.currentScreen = screenCompanyList
-			return a, nil
-		case enterPostingDetailMsg:
-			a.postingDetailFrom = screenPostingList
-			p, app, hasApp := a.lookupPosting(v.postingID)
-			a.postingDetail = newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
-			a.enterFrom(screenPostingDetail)
-			return a, tea.Batch(loadApplication(a.postingService, p.ID), maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID), loadPostingScores(a.scoringService, p.ID))
-		case enterFilterSelectMsg:
-			a.currentScreen = screenFilterSelect
-			return a, loadFilterOptions(a.companyService, a.selectedCompany.ID)
-		case refreshSelectedCompanyMsg:
-			return a, syncCompany(message.Source{Instance: a.instance}, companySnapshot(a.selectedCompany))
-		case toggleHideArchivedMsg:
-			a.hideArchived = !a.hideArchived
-			return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
-		}
-		return a, cmd
 	case screenPostingDetail:
 		cmd, intent := a.postingDetail.Update(msg)
 		switch v := intent.(type) {
 		case backToPostingListMsg:
 			if a.returnBack() == screenPostingList {
-				a.postingList.setCursor(indexOfPosting(a.postings, a.postingDetail.posting.ID))
+				if l := a.postingList(); l != nil {
+					l.setCursor(indexOfPosting(l.list.Postings, a.postingDetail.posting.ID))
+				}
 			}
 		case navigatePostingMsg:
-			idx := indexOfPosting(a.postings, v.postingID)
+			listed := a.listedPostings()
+			idx := indexOfPosting(listed, v.postingID)
 			newIdx := idx + v.direction
-			if idx >= 0 && newIdx >= 0 && newIdx < len(a.postings) {
-				p := a.postings[newIdx]
+			if idx >= 0 && newIdx >= 0 && newIdx < len(listed) {
+				p := postingOf(listed[newIdx])
 				app, hasApp := a.applicationsByPosting[p.ID]
 				a.postingDetail = newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 				return a, tea.Batch(loadApplication(a.postingService, p.ID), maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID), loadPostingScores(a.scoringService, p.ID))
@@ -1752,11 +1708,12 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// runs -- it's the same in-memory narrowing loadPostings' own
 			// authoritative pass uses, working off what's already loaded.
 			a.currentScreen = screenPostingList
-			a.postings = narrowPostingsToFilters(a.postings, v.departments, v.locations)
-			a.activeFilterDepartments = v.departments
-			a.activeFilterLocations = v.locations
-			a.postingList.resetCursorIfOutOfBounds(len(a.postings))
-			return a, saveCompanyFilters(a.companyService, a.selectedCompany.ID, v.departments, v.locations)
+			l := a.postingList()
+			if l == nil {
+				return a, a.fail(fmt.Errorf("tui: filters saved with no posting list open"))
+			}
+			l.narrow(v.departments, v.locations)
+			return a, saveCompanyFilters(a.companyService, l.company, v.departments, v.locations)
 		}
 		return a, cmd
 	}
@@ -1839,15 +1796,9 @@ func (a *App) body(s screen) string {
 	case screenCompanyEdit:
 		b.WriteString(a.stack.top().View().Content)
 	case screenPostingList:
-		snap := postingListSnapshot{
-			companyDescription:      a.selectedCompany.Description,
-			postings:                a.postings,
-			markup:                  a.postingMarkup,
-			hideArchived:            a.hideArchived,
-			activeFilterDepartments: a.activeFilterDepartments,
-			activeFilterLocations:   a.activeFilterLocations,
+		if l := a.postingList(); l != nil {
+			b.WriteString(l.View().Content)
 		}
-		b.WriteString(a.postingList.View(snap, a.width, a.screenRows()))
 	case screenPostingDetail:
 		b.WriteString(a.postingDetail.View())
 	case screenApplicationStatusSelect:
@@ -1871,16 +1822,16 @@ func (a *App) body(s screen) string {
 }
 
 // canNavigateSiblings reports whether prev/next posting navigation can
-// actually move anywhere from postingID. It needs a.postings to contain
-// that posting, which holds when the user reached posting detail by
-// browsing a company's list, but not via application detail's 'p' fast
-// path, where a.postings was never loaded (see issue #93).
+// actually move anywhere from postingID. It needs the open posting list to
+// contain that posting, which holds when the user reached posting detail
+// by browsing a company's list, but not via application detail's 'p' fast
+// path, where no list is open (see issue #93).
 //
 // Recomputed at every posting-detail construction rather than carried
-// along, so it always reflects what a.postings holds now rather than
-// what it held when the screen was first entered.
+// along, so it always reflects what the list holds now rather than what
+// it held when the screen was first entered.
 func (a *App) canNavigateSiblings(postingID int64) bool {
-	return a.postingDetailFrom == screenPostingList && indexOfPosting(a.postings, postingID) >= 0
+	return a.postingDetailFrom == screenPostingList && indexOfPosting(a.listedPostings(), postingID) >= 0
 }
 
 // sectionHeading renders a posting-detail section heading: name, then a

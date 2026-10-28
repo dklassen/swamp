@@ -35,7 +35,7 @@ type postingDetailModel struct {
 	hasApplication bool
 
 	// canNavigateSiblings reports whether prev/next posting navigation
-	// can actually do anything here: it needs App.postings to contain this
+	// can actually do anything here: it needs the open posting list to have this
 	// posting, which it does when the screen was reached by browsing a
 	// company's posting list, but not via application detail's 'p' fast
 	// path. The keys themselves no-op safely either way; this exists so

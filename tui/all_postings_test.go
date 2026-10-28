@@ -208,8 +208,8 @@ func TestAllPostings_EnterOpensTheDetailAndEscComesBack(t *testing.T) {
 	}
 }
 
-// A company's list browsed earlier stays in a.postings, but its order
-// isn't the all-postings page's, so the detail mustn't step through it.
+// A company's list browsed earlier isn't in the all-postings page's order,
+// so the detail mustn't step through it.
 func TestAllPostings_DetailDoesNotStepThroughACompanyListBrowsedEarlier(t *testing.T) {
 	t.Parallel()
 
@@ -222,8 +222,8 @@ func TestAllPostings_DetailDoesNotStepThroughACompanyListBrowsedEarlier(t *testi
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.currentScreen != screenPostingList || len(app.postings) != 3 {
-		t.Fatalf("screen %v with %d postings, want Acme's posting list with 3", app.currentScreen, len(app.postings))
+	if app.currentScreen != screenPostingList || len(openList(t, app).list.Postings) != 3 {
+		t.Fatalf("screen %v with %d postings, want Acme's posting list with 3", app.currentScreen, len(openList(t, app).list.Postings))
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})

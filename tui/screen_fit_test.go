@@ -131,8 +131,8 @@ func sizedScreens() []sizedScreen {
 			}
 			app = applyCmd(t, app, app.reloadCompanies())
 			app = openPostingList(t, app)
-			if app.selectedCompany.Description == "" || len(app.activeFilterDepartments) == 0 {
-				t.Fatalf("posting list isn't showing the description and filters (description %q, %d department filters)", app.selectedCompany.Description, len(app.activeFilterDepartments))
+			if openList(t, app).company.Description == "" || len(openList(t, app).list.Departments) == 0 {
+				t.Fatalf("posting list isn't showing the description and filters (description %q, %d department filters)", openList(t, app).company.Description, len(openList(t, app).list.Departments))
 			}
 			return app
 		}},

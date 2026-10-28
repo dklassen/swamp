@@ -215,7 +215,7 @@ func containsAll(s string, substrs ...string) bool {
 }
 
 // TestPostingDetailModel_View_HelpAdvertisesNavigationOnlyWhenAvailable
-// covers #93. Prev/next posting navigation needs App.postings to contain
+// covers #93. Prev/next posting navigation needs the open posting list to have
 // this posting, which it doesn't when posting detail was reached via
 // application detail's 'p' fast path. The keys already no-op safely
 // there; the bug is the help line promising something that silently does

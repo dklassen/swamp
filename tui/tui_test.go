@@ -63,6 +63,17 @@ func mustUpsertPosting(t *testing.T, s testutil.TestApp, companyID int64, source
 	return ingested.Posting
 }
 
+// storedPosting is posting id as the store has it, with the fields a
+// snapshot leaves out.
+func storedPosting(t *testing.T, s testutil.TestApp, id int64) posting.Posting {
+	t.Helper()
+	p, err := s.Postings.Get(context.Background(), id)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	return *p
+}
+
 func mustCreateApplication(t *testing.T, s testutil.TestApp, postingID int64) application.Application {
 	t.Helper()
 	a, err := createApplicationIn(context.Background(), s, postingID)
