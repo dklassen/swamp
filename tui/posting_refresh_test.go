@@ -33,7 +33,7 @@ func TestApp_PostingList_R_RefreshesTheCompany(t *testing.T) {
 		t.Fatalf("screen after r = %v, want the posting list", app.currentScreen)
 	}
 	var titles []string
-	for _, p := range app.postings {
+	for _, p := range openList(t, app).list.Postings {
 		titles = append(titles, p.Title)
 	}
 	if len(titles) != 3 || !strings.Contains(strings.Join(titles, ","), "Analyst") {
@@ -51,11 +51,11 @@ func TestApp_PostingList_R_KeepsTheCursor(t *testing.T) {
 
 	app, board := newPostingRefreshTestApp(t)
 	app = sendKeyAndApply(t, app, runeKey('j'))
-	before := app.postingList.selected(app.postings)
+	before := openList(t, app).selected()
 	board["acme"] = append(board["acme"], jobboard.Posting{SourceID: "job-3", Title: "Analyst"})
 
 	app = sendKeyAndApply(t, app, runeKey('r'))
-	if got := app.postingList.selected(app.postings); got != before {
+	if got := openList(t, app).selected(); got != before {
 		t.Errorf("posting under the cursor after r = %d, want %d (the one it was on)", got, before)
 	}
 }

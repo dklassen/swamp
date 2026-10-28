@@ -2,10 +2,10 @@ package message
 
 import "fmt"
 
-// Kind, Type, Op, NavOp, ErrorCode and Screen are decided on, so Go code
-// compares constants; each encodes as its name from one table, so
-// reordering the constants can't change what a stored event means. A
-// zero value is in its table only where "none" is legal.
+// Kind, Type, Op, NavOp, ErrorCode, Screen and ListingStatus are decided
+// on, so Go code compares constants; each encodes as its name from one
+// table, so reordering the constants can't change what a stored event
+// means. A zero value is in its table only where "none" is legal.
 
 type Kind int
 
@@ -55,6 +55,8 @@ const (
 	TypeStatus
 	TypeError
 	TypeNone
+	TypePostingList
+	TypeHideArchived
 )
 
 var typeNames = [...]string{
@@ -70,6 +72,8 @@ var typeNames = [...]string{
 	TypeStatus:        "status",
 	TypeError:         "error",
 	TypeNone:          "none",
+	TypePostingList:   "posting_list",
+	TypeHideArchived:  "hide_archived",
 }
 
 func (t Type) String() string                { return nameOf(t, typeNames[:]) }
@@ -160,6 +164,26 @@ var screenNames = [...]string{
 func (s Screen) String() string                { return nameOf(s, screenNames[:]) }
 func (s Screen) MarshalText() ([]byte, error)  { return marshalName(s, screenNames[:]) }
 func (s *Screen) UnmarshalText(b []byte) error { return unmarshalName(s, b, screenNames[:]) }
+
+// ListingStatus is whether a posting's job board still lists it.
+type ListingStatus int
+
+const (
+	_ ListingStatus = iota
+	ListingOpen
+	ListingClosed
+)
+
+var listingStatusNames = [...]string{
+	ListingOpen:   "open",
+	ListingClosed: "closed",
+}
+
+func (s ListingStatus) String() string               { return nameOf(s, listingStatusNames[:]) }
+func (s ListingStatus) MarshalText() ([]byte, error) { return marshalName(s, listingStatusNames[:]) }
+func (s *ListingStatus) UnmarshalText(b []byte) error {
+	return unmarshalName(s, b, listingStatusNames[:])
+}
 
 // An empty entry is a value with no name, such as the zero Kind.
 func nameOf[E ~int](e E, names []string) string {

@@ -15,6 +15,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/tui/message"
 )
 
 // changePollInterval is how often the TUI reads the change log. Nothing is
@@ -157,7 +158,7 @@ func (a *App) reloadFor(events []change.Event) tea.Cmd {
 		return tea.Batch(cmds...)
 	case screenPostingList:
 		if touches(events, "postings") {
-			return reloadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
+			return a.reloadPostings()
 		}
 	case screenAllPostings:
 		// companies too: a deleted company's postings leave the list.
@@ -177,16 +178,11 @@ func touches(events []change.Event, tables ...string) bool {
 	return slices.ContainsFunc(events, func(e change.Event) bool { return slices.Contains(tables, e.Table) })
 }
 
-// reloadPostings is loadPostings for a list already on screen.
-func reloadPostings(companies *service.CompanyService, postings *service.PostingService, companyID int64, hideArchived bool) tea.Cmd {
-	load := loadPostings(companies, postings, companyID, hideArchived)
+// reloadPostings asks the posting list to read its postings again.
+func (a *App) reloadPostings() tea.Cmd {
+	src := message.Source{Instance: a.instance}
 	return func() tea.Msg {
-		msg := load()
-		if loaded, ok := msg.(postingsLoadedMsg); ok {
-			loaded.keepCursor = true
-			return loaded
-		}
-		return msg
+		return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.PostingList]{})
 	}
 }
 
@@ -299,8 +295,8 @@ func (a *App) handlePostingReloaded(msg postingReloadedMsg) tea.Cmd {
 	if msg.err != nil || a.currentScreen != screenPostingDetail || a.postingDetail.posting.ID != msg.posting.ID {
 		return nil
 	}
-	if i := indexOfPosting(a.postings, msg.posting.ID); i >= 0 {
-		a.postings[i] = msg.posting
+	if l := a.postingList(); l != nil {
+		l.patch(postingSnapshot(msg.posting))
 	}
 	d := a.postingDetail
 	a.replacePostingDetail(newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), msg.posting, d.application, d.hasApplication, d.latestReviews, a.canNavigateSiblings(msg.posting.ID)))

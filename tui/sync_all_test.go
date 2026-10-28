@@ -245,7 +245,7 @@ func TestApp_SyncAll_FilterSaveDuringRun_Saves(t *testing.T) {
 	app, _ = sendIntentKey(t, app, runeKey('R'))                  // a run under way, its first step not run
 	app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // Acme's postings
 	app = applyCmd(t, app, cmd)
-	app, cmd = sendKey(app, runeKey('f'))
+	app, cmd = sendIntentKey(t, app, runeKey('f'))
 	app = applyCmd(t, app, cmd)
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 
@@ -257,7 +257,7 @@ func TestApp_SyncAll_FilterSaveDuringRun_Saves(t *testing.T) {
 		t.Fatal("saving filters during a sync-all run returned nil Cmd, want one that saves them")
 	}
 	app = applyCmd(t, app, cmd)
-	saved, err := s.Companies.Filters(t.Context(), app.selectedCompany.ID)
+	saved, err := s.Companies.Filters(t.Context(), openList(t, app).company.ID)
 	if err != nil {
 		t.Fatalf("Filters: %v", err)
 	}

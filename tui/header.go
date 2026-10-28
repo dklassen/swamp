@@ -111,7 +111,9 @@ func (a *App) crumbs(path []screen) []string {
 		case screenAllPostings:
 			crumbs = append(crumbs, "All postings")
 		case screenPostingList:
-			crumbs = append(crumbs, a.selectedCompany.Name)
+			if l := a.postingList(); l != nil {
+				crumbs = append(crumbs, l.company.Name)
+			}
 		case screenPostingDetail:
 			// Application detail has already named it.
 			if i > 0 && path[i-1] == screenApplicationDetail {

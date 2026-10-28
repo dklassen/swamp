@@ -9,9 +9,9 @@ import (
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
-	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/tui/message"
 )
 
 // Below the tabs, the header names the way back to one: what esc steps
@@ -60,7 +60,9 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 				documents.NewStore(t.TempDir()),
 			)
 			app.width = 120
-			app.selectedCompany = company.Company{Name: "Globex"}
+			if err := app.stack.push(message.ScreenCompanyPostings, newPostingListModel(nil, nil, message.Company{ID: 1, Name: "Globex"}, false, message.ContentSize{}), screenCompanyList); err != nil {
+				t.Fatalf("push: %v", err)
+			}
 			app.postingDetail.posting = p
 			app.applicationDetail.application = view
 			app.documentReviewForm.documentType = document.CoverLetter

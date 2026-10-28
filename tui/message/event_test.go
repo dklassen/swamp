@@ -223,6 +223,12 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "notify", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Notify{Status: "saved"}))},
 		{name: "signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.ContentSize]{Value: r}))},
 		{name: "focus signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: 7}}))},
+		{name: "posting list read", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Read[message.PostingList]{Value: message.PostingList{
+			Postings:    []message.Posting{{ID: 5, CompanyID: 3, Title: "Engineer", Department: "Platform", Location: "Remote", JobURL: "https://example.com/5", ListingStatus: message.ListingOpen}},
+			Markup:      map[int64]message.Markup{5: {PostingID: 5, InterestedAt: at}},
+			Departments: []string{"Platform"},
+		}}))},
+		{name: "hide archived signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.HideArchived]{Value: message.HideArchived{Hidden: true}}))},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -64,6 +64,16 @@ func pushed[T stackScreen](t *testing.T, app *App) T {
 	return s
 }
 
+// openList is app's open posting list, whatever is shown over it.
+func openList(t *testing.T, app *App) *postingListModel {
+	t.Helper()
+	l := app.postingList()
+	if l == nil {
+		t.Fatalf("no posting list is open; %v is up", app.currentScreen)
+	}
+	return l
+}
+
 func applyCmd(t *testing.T, app *App, cmd tea.Cmd) *App {
 	t.Helper()
 	if cmd == nil {
@@ -534,8 +544,8 @@ func TestApp_NavFromAModelNoLongerOnTop_IsDropped(t *testing.T) {
 	app = applyCmd(t, app, first)
 	app = applyCmd(t, app, second)
 
-	if app.currentScreen != screenPostingList || app.selectedCompany.ID != acme.ID {
-		t.Errorf("after enter, j, enter: screen %v on company %d, want the posting list for Acme (%d)", app.currentScreen, app.selectedCompany.ID, acme.ID)
+	if app.currentScreen != screenPostingList || openList(t, app).company.ID != acme.ID {
+		t.Errorf("after enter, j, enter: screen %v on company %d, want the posting list for Acme (%d)", app.currentScreen, openList(t, app).company.ID, acme.ID)
 	}
 }
 
@@ -796,7 +806,7 @@ func TestApp_PressI_OnPostingList_TogglesInterestedOnSelectedPosting(t *testing.
 	})
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
-	postingID := app.postings[0].ID
+	postingID := openList(t, app).list.Postings[0].ID
 
 	app, cmd := sendKey(app, runeKey('i'))
 	if cmd == nil {
@@ -811,8 +821,8 @@ func TestApp_PressI_OnPostingList_TogglesInterestedOnSelectedPosting(t *testing.
 	if markup.InterestedAt == nil {
 		t.Fatal("InterestedAt is nil after pressing 'i', want non-nil")
 	}
-	if app.postingMarkup[postingID].InterestedAt == nil {
-		t.Fatal("app.postingMarkup[postingID].InterestedAt is nil after pressing 'i', want non-nil")
+	if openList(t, app).list.Markup[postingID].InterestedAt.IsZero() {
+		t.Fatal("markup InterestedAt is nil after pressing 'i', want non-nil")
 	}
 
 	_, cmd = sendKey(app, runeKey('i'))
@@ -838,7 +848,7 @@ func TestApp_PressX_OnPostingList_TogglesArchivedOnSelectedPosting(t *testing.T)
 	})
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
-	postingID := app.postings[0].ID
+	postingID := openList(t, app).list.Postings[0].ID
 
 	app, cmd := sendKey(app, runeKey('x'))
 	if cmd == nil {
@@ -853,18 +863,14 @@ func TestApp_PressX_OnPostingList_TogglesArchivedOnSelectedPosting(t *testing.T)
 	if markup.ArchivedAt == nil {
 		t.Fatal("ArchivedAt is nil after pressing 'x', want non-nil")
 	}
-	if app.postingMarkup[postingID].ArchivedAt == nil {
-		t.Fatal("app.postingMarkup[postingID].ArchivedAt is nil after pressing 'x', want non-nil")
+	if openList(t, app).list.Markup[postingID].ArchivedAt.IsZero() {
+		t.Fatal("markup ArchivedAt is nil after pressing 'x', want non-nil")
 	}
 
 	// Archiving hides the posting from view by default, so it's no longer
 	// reachable by cursor -- reveal archived postings again before
 	// toggling this one back off.
-	app, cmd = sendKey(app, runeKey('A'))
-	if cmd == nil {
-		t.Fatal("Update on 'A' returned nil Cmd")
-	}
-	app, _ = sendKey(app, cmd())
+	app = sendKeyAndApply(t, app, runeKey('A'))
 
 	_, cmd = sendKey(app, runeKey('x'))
 	if cmd == nil {
@@ -889,22 +895,18 @@ func TestApp_PressI_WhileArchived_SwitchesToInterestedAndClearsArchived(t *testi
 	})
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
-	postingID := app.postings[0].ID
+	postingID := openList(t, app).list.Postings[0].ID
 
 	app, cmd := sendKey(app, runeKey('x'))
 	app, _ = sendKey(app, cmd())
-	if app.postingMarkup[postingID].ArchivedAt == nil {
+	if openList(t, app).list.Markup[postingID].ArchivedAt.IsZero() {
 		t.Fatal("ArchivedAt is nil after pressing 'x', want non-nil (setup)")
 	}
 
 	// Archiving hides the posting from view by default, so it's no longer
 	// reachable by cursor -- reveal archived postings again before
 	// pressing 'i' on it.
-	app, cmd = sendKey(app, runeKey('A'))
-	if cmd == nil {
-		t.Fatal("Update on 'A' returned nil Cmd")
-	}
-	app, _ = sendKey(app, cmd())
+	app = sendKeyAndApply(t, app, runeKey('A'))
 
 	app, cmd = sendKey(app, runeKey('i'))
 	if cmd == nil {
@@ -922,8 +924,8 @@ func TestApp_PressI_WhileArchived_SwitchesToInterestedAndClearsArchived(t *testi
 	if markup.InterestedAt == nil {
 		t.Fatal("InterestedAt is nil after pressing 'i' while archived, want non-nil")
 	}
-	if app.postingMarkup[postingID].ArchivedAt != nil {
-		t.Fatal("app.postingMarkup[postingID].ArchivedAt is non-nil after pressing 'i' while archived, want nil")
+	if !openList(t, app).list.Markup[postingID].ArchivedAt.IsZero() {
+		t.Fatal("markup ArchivedAt is non-nil after pressing 'i' while archived, want nil")
 	}
 }
 
@@ -935,11 +937,11 @@ func TestApp_PressX_WhileInterested_SwitchesToArchivedAndClearsInterested(t *tes
 	})
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
-	postingID := app.postings[0].ID
+	postingID := openList(t, app).list.Postings[0].ID
 
 	app, cmd := sendKey(app, runeKey('i'))
 	app, _ = sendKey(app, cmd())
-	if app.postingMarkup[postingID].InterestedAt == nil {
+	if openList(t, app).list.Markup[postingID].InterestedAt.IsZero() {
 		t.Fatal("InterestedAt is nil after pressing 'i', want non-nil (setup)")
 	}
 
@@ -959,8 +961,8 @@ func TestApp_PressX_WhileInterested_SwitchesToArchivedAndClearsInterested(t *tes
 	if markup.ArchivedAt == nil {
 		t.Fatal("ArchivedAt is nil after pressing 'x' while interested, want non-nil")
 	}
-	if app.postingMarkup[postingID].InterestedAt != nil {
-		t.Fatal("app.postingMarkup[postingID].InterestedAt is non-nil after pressing 'x' while interested, want nil")
+	if !openList(t, app).list.Markup[postingID].InterestedAt.IsZero() {
+		t.Fatal("markup InterestedAt is non-nil after pressing 'x' while interested, want nil")
 	}
 }
 
@@ -1005,11 +1007,11 @@ func TestApp_OpenPostingList_HidesArchivedPostingsByDefault(t *testing.T) {
 	}
 	app, _ = sendKey(app, cmd())
 
-	if len(app.postings) != 1 {
-		t.Fatalf("postings after opening list = %d, want 1 (archived one hidden)", len(app.postings))
+	if len(openList(t, app).list.Postings) != 1 {
+		t.Fatalf("postings after opening list = %d, want 1 (archived one hidden)", len(openList(t, app).list.Postings))
 	}
-	if app.postings[0].Title != "Engineer" {
-		t.Fatalf("visible posting = %q, want %q", app.postings[0].Title, "Engineer")
+	if openList(t, app).list.Postings[0].Title != "Engineer" {
+		t.Fatalf("visible posting = %q, want %q", openList(t, app).list.Postings[0].Title, "Engineer")
 	}
 }
 
@@ -1026,7 +1028,7 @@ func TestApp_PressA_OnPostingList_TogglesArchivedPostingsBackIntoView(t *testing
 	app = openPostingList(t, app)
 
 	var archivedID int64
-	for _, p := range app.postings {
+	for _, p := range openList(t, app).list.Postings {
 		if p.Title == "Designer" {
 			archivedID = p.ID
 		}
@@ -1038,24 +1040,39 @@ func TestApp_PressA_OnPostingList_TogglesArchivedPostingsBackIntoView(t *testing
 		t.Fatalf("postingmarkup.SetArchived: %v", err)
 	}
 
-	app, cmd := sendKey(app, runeKey('A'))
-	if cmd == nil {
-		t.Fatal("Update on 'A' returned nil Cmd")
-	}
-	app, _ = sendKey(app, cmd())
+	app = sendKeyAndApply(t, app, runeKey('A'))
 
-	if len(app.postings) != 2 {
-		t.Fatalf("postings after pressing 'A' = %d, want 2 (archived one revealed)", len(app.postings))
+	if len(openList(t, app).list.Postings) != 2 {
+		t.Fatalf("postings after pressing 'A' = %d, want 2 (archived one revealed)", len(openList(t, app).list.Postings))
 	}
 
-	app, cmd = sendKey(app, runeKey('A'))
-	if cmd == nil {
-		t.Fatal("Update on second 'A' returned nil Cmd")
-	}
-	app, _ = sendKey(app, cmd())
+	app = sendKeyAndApply(t, app, runeKey('A'))
 
-	if len(app.postings) != 1 {
-		t.Fatalf("postings after second 'A' = %d, want 1 (archived one hidden again)", len(app.postings))
+	if len(openList(t, app).list.Postings) != 1 {
+		t.Fatalf("postings after second 'A' = %d, want 1 (archived one hidden again)", len(openList(t, app).list.Postings))
+	}
+}
+
+// Showing archived postings lasts for the session: the next list opened
+// shows them too.
+func TestApp_PressA_LastsAcrossOpenings(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}, {SourceID: "job-2", Title: "Designer"}},
+	})
+	app := openPostingList(t, newTestApp(t, s, syncer))
+	if _, err := s.Postings.SetArchived(context.Background(), openList(t, app).list.Postings[0].ID); err != nil {
+		t.Fatalf("SetArchived: %v", err)
+	}
+	app = sendKeyAndApply(t, app, runeKey('A'))
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
+
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if got := len(openList(t, app).list.Postings); got != 2 {
+		t.Errorf("reopened list shows %d postings, want 2: archived ones still shown", got)
 	}
 }
 
@@ -1075,7 +1092,7 @@ func TestApp_PostingList_NeverShowsClosedPostings(t *testing.T) {
 	app = openPostingList(t, app)
 
 	var closedID int64
-	for _, p := range app.postings {
+	for _, p := range openList(t, app).list.Postings {
 		if p.Title == "Designer" {
 			closedID = p.ID
 		}
@@ -1088,17 +1105,13 @@ func TestApp_PostingList_NeverShowsClosedPostings(t *testing.T) {
 	}
 
 	// Showing archived postings mustn't bring closed ones back.
-	app, cmd := sendKey(app, runeKey('A'))
-	if cmd == nil {
-		t.Fatal("Update on 'A' returned nil Cmd")
-	}
-	app, _ = sendKey(app, cmd())
+	app = sendKeyAndApply(t, app, runeKey('A'))
 
-	if len(app.postings) != 1 {
-		t.Fatalf("postings after reload = %d, want 1 (closed one never shown)", len(app.postings))
+	if len(openList(t, app).list.Postings) != 1 {
+		t.Fatalf("postings after reload = %d, want 1 (closed one never shown)", len(openList(t, app).list.Postings))
 	}
-	if app.postings[0].Title != "Engineer" {
-		t.Fatalf("visible posting = %q, want %q", app.postings[0].Title, "Engineer")
+	if openList(t, app).list.Postings[0].Title != "Engineer" {
+		t.Fatalf("visible posting = %q, want %q", openList(t, app).list.Postings[0].Title, "Engineer")
 	}
 }
 
@@ -1113,10 +1126,10 @@ func TestApp_PressX_WhileHidingArchived_RemovesPostingFromViewAndClampsCursor(t 
 	})
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
-	if len(app.postings) != 2 {
-		t.Fatalf("initial postings = %d, want 2", len(app.postings))
+	if len(openList(t, app).list.Postings) != 2 {
+		t.Fatalf("initial postings = %d, want 2", len(openList(t, app).list.Postings))
 	}
-	app.postingList.cursor = 1
+	openList(t, app).cursor = 1
 
 	app, cmd := sendKey(app, runeKey('x'))
 	if cmd == nil {
@@ -1124,11 +1137,11 @@ func TestApp_PressX_WhileHidingArchived_RemovesPostingFromViewAndClampsCursor(t 
 	}
 	app, _ = sendKey(app, cmd())
 
-	if len(app.postings) != 1 {
-		t.Fatalf("postings after archiving = %d, want 1 (archived one removed immediately)", len(app.postings))
+	if len(openList(t, app).list.Postings) != 1 {
+		t.Fatalf("postings after archiving = %d, want 1 (archived one removed immediately)", len(openList(t, app).list.Postings))
 	}
-	if app.postingList.cursor != 0 {
-		t.Fatalf("postingCursor after archiving = %d, want 0 (clamped)", app.postingList.cursor)
+	if openList(t, app).cursor != 0 {
+		t.Fatalf("postingCursor after archiving = %d, want 0 (clamped)", openList(t, app).cursor)
 	}
 }
 
@@ -1140,7 +1153,7 @@ func TestApp_PressA_OnPostingDetail_WithNoApplication_CreatesApplication(t *test
 	})
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
-	postingID := app.postings[0].ID
+	postingID := openList(t, app).list.Postings[0].ID
 	app = openPostingDetail(t, app)
 
 	app, cmd := sendKey(app, runeKey('a'))
@@ -1202,7 +1215,7 @@ func TestApp_PressA_OnPostingDetail_ClosedPosting_ExplainsInStatus(t *testing.T)
 	})
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
-	postingID := app.postings[0].ID
+	postingID := openList(t, app).list.Postings[0].ID
 	app = openPostingDetail(t, app)
 	if err := s.Postings.Close(context.Background(), postingID, nil); err != nil {
 		t.Fatalf("Close: %v", err)
@@ -1233,7 +1246,7 @@ func TestApp_PressA_OnPostingDetail_WhenApplicationAlreadyExists_DoesNotDuplicat
 	})
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
-	postingID := app.postings[0].ID
+	postingID := openList(t, app).list.Postings[0].ID
 	app = openPostingDetail(t, app)
 
 	app, cmd := sendKey(app, runeKey('a'))
@@ -1265,7 +1278,7 @@ func TestApp_OpenPostingDetail_WithExistingApplication_LoadsAndDisplaysStatus(t 
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	postingID := app.postings[0].ID
+	postingID := openList(t, app).list.Postings[0].ID
 	if _, err := createApplicationIn(context.Background(), s, postingID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
@@ -1308,7 +1321,7 @@ func TestApp_PressS_OnPostingDetail_WithApplication_OpensStatusSelect(t *testing
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	postingID := app.postings[0].ID
+	postingID := openList(t, app).list.Postings[0].ID
 	if _, err := createApplicationIn(context.Background(), s, postingID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
@@ -1348,7 +1361,7 @@ func TestApp_StatusSelect_Enter_UpdatesStatusAndReturnsToDetail(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	postingID := app.postings[0].ID
+	postingID := openList(t, app).list.Postings[0].ID
 	if _, err := createApplicationIn(context.Background(), s, postingID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
@@ -1389,7 +1402,7 @@ func TestApp_StatusSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	postingID := app.postings[0].ID
+	postingID := openList(t, app).list.Postings[0].ID
 	if _, err := createApplicationIn(context.Background(), s, postingID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
@@ -1502,7 +1515,7 @@ func TestApp_PressN_OnPostingDetail_WithApplication_OpensNotesEditorPrepopulated
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	postingID := app.postings[0].ID
+	postingID := openList(t, app).list.Postings[0].ID
 	created, err := createApplicationIn(context.Background(), s, postingID)
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
@@ -1531,7 +1544,7 @@ func TestApp_NotesEdit_CtrlS_SavesNotesAndReturnsToDetail(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	postingID := app.postings[0].ID
+	postingID := openList(t, app).list.Postings[0].ID
 	if _, err := createApplicationIn(context.Background(), s, postingID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
@@ -1570,7 +1583,7 @@ func TestApp_NotesEdit_Esc_CancelsWithoutSaving(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	postingID := app.postings[0].ID
+	postingID := openList(t, app).list.Postings[0].ID
 	if _, err := createApplicationIn(context.Background(), s, postingID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
@@ -1648,8 +1661,8 @@ func TestApp_PostingDetail_NavigatingBetweenPostings_LoadsEachPostingsOwnApplica
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	engineerID := app.postings[0].ID
-	designerID := app.postings[1].ID
+	engineerID := openList(t, app).list.Postings[0].ID
+	designerID := openList(t, app).list.Postings[1].ID
 	if _, err := createApplicationIn(context.Background(), s, designerID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
@@ -1795,14 +1808,14 @@ func TestApp_PressEnter_OpensPostingListForSelectedCompany(t *testing.T) {
 	if app.currentScreen != screenPostingList {
 		t.Fatalf("screen after enter = %v, want screenPostingList", app.currentScreen)
 	}
-	if len(app.postings) != 1 {
-		t.Fatalf("app.postings = %+v, want 1", app.postings)
+	if len(openList(t, app).list.Postings) != 1 {
+		t.Fatalf("openList(t, app).list.Postings = %+v, want 1", openList(t, app).list.Postings)
 	}
-	if app.postings[0].Title != "Engineer" {
-		t.Fatalf("app.postings[0].Title = %q, want %q", app.postings[0].Title, "Engineer")
+	if openList(t, app).list.Postings[0].Title != "Engineer" {
+		t.Fatalf("openList(t, app).list.Postings[0].Title = %q, want %q", openList(t, app).list.Postings[0].Title, "Engineer")
 	}
-	if app.selectedCompany.ID != acme.ID {
-		t.Fatalf("app.selectedCompany.ID = %d, want %d", app.selectedCompany.ID, acme.ID)
+	if openList(t, app).company.ID != acme.ID {
+		t.Fatalf("openList(t, app).company.ID = %d, want %d", openList(t, app).company.ID, acme.ID)
 	}
 }
 
@@ -1815,10 +1828,33 @@ func TestApp_PressEsc_OnPostingList_ReturnsToCompanyList(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
 	if app.currentScreen != screenCompanyList {
 		t.Fatalf("screen after esc = %v, want screenCompanyList", app.currentScreen)
+	}
+}
+
+// Posting detail is drawn over the list, which stays open under it, so
+// the list must not take the keys typed there.
+func TestApp_PostingDetail_KeysDontReachTheListUnderIt(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}, {SourceID: "job-2", Title: "Designer"}},
+	})
+	app := openPostingList(t, newTestApp(t, s, syncer))
+	app = openPostingDetail(t, app)
+	if app.currentScreen != screenPostingDetail {
+		t.Fatalf("screen after enter = %v, want posting detail", app.currentScreen)
+	}
+
+	app = sendKeyAndApply(t, app, runeKey('j'))
+
+	if got := openList(t, app).cursor; got != 0 {
+		t.Errorf("list cursor after j on posting detail = %d, want 0", got)
 	}
 }
 
@@ -1834,20 +1870,20 @@ func TestApp_PostingListCursor_MovesWithinBounds(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
 
-	if app.postingList.cursor != 0 {
-		t.Fatalf("initial postingCursor = %d, want 0", app.postingList.cursor)
+	if openList(t, app).cursor != 0 {
+		t.Fatalf("initial postingCursor = %d, want 0", openList(t, app).cursor)
 	}
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyDown})
-	if app.postingList.cursor != 1 {
-		t.Fatalf("postingCursor after down = %d, want 1", app.postingList.cursor)
+	if openList(t, app).cursor != 1 {
+		t.Fatalf("postingCursor after down = %d, want 1", openList(t, app).cursor)
 	}
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyDown})
-	if app.postingList.cursor != 1 {
-		t.Fatalf("postingCursor after down at bottom = %d, want 1 (clamped)", app.postingList.cursor)
+	if openList(t, app).cursor != 1 {
+		t.Fatalf("postingCursor after down at bottom = %d, want 1 (clamped)", openList(t, app).cursor)
 	}
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyUp})
-	if app.postingList.cursor != 0 {
-		t.Fatalf("postingCursor after up = %d, want 0", app.postingList.cursor)
+	if openList(t, app).cursor != 0 {
+		t.Fatalf("postingCursor after up = %d, want 0", openList(t, app).cursor)
 	}
 }
 
@@ -1936,8 +1972,8 @@ func TestApp_PostingDetail_RightMovesToNextPostingStayingInDetail(t *testing.T) 
 	// Returning to the list should land the cursor on the posting last
 	// viewed in detail, not wherever it was before entering detail.
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
-	if app.postingList.cursor != 0 {
-		t.Fatalf("postingList.cursor after returning from detail = %d, want 0 (synced to last-viewed posting)", app.postingList.cursor)
+	if openList(t, app).cursor != 0 {
+		t.Fatalf("postingList.cursor after returning from detail = %d, want 0 (synced to last-viewed posting)", openList(t, app).cursor)
 	}
 }
 
@@ -2042,7 +2078,7 @@ func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testin
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 	app = openPostingList(t, app)
 
-	posting := app.postings[0]
+	posting := openList(t, app).list.Postings[0]
 	application, err := createApplicationIn(context.Background(), s, posting.ID)
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
@@ -2079,7 +2115,7 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 	app = openPostingList(t, app)
 
-	posting := app.postings[0]
+	posting := openList(t, app).list.Postings[0]
 	application, err := createApplicationIn(context.Background(), s, posting.ID)
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
@@ -2169,7 +2205,7 @@ func TestApp_LoadSucceedsAfterAnotherFails_KeepsTheError(t *testing.T) {
 	}{
 		{"applications fail, companies succeed", activeApplicationsLoadedMsg{err: loadErr}, companiesReadOf(nil, nil)},
 		{"companies fail, applications succeed", companiesLoadFailed(loadErr), activeApplicationsLoadedMsg{}},
-		{"companies fail, postings succeed", companiesLoadFailed(loadErr), postingsLoadedMsg{}},
+		{"companies fail, postings succeed", companiesLoadFailed(loadErr), message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Read[message.PostingList]{})},
 		{"companies fail, application succeeds", companiesLoadFailed(loadErr), applicationLoadedMsg{}},
 		{"companies fail, document reviews succeed", companiesLoadFailed(loadErr), documentReviewsLoadedMsg{}},
 		{"companies fail, posting reload succeeds", companiesLoadFailed(loadErr), postingReloadedMsg{}},
@@ -2217,7 +2253,7 @@ func TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag(t *testing.T) 
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 	app = openPostingList(t, app)
 
-	posting := app.postings[0]
+	posting := openList(t, app).list.Postings[0]
 	application, err := createApplicationIn(context.Background(), s, posting.ID)
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
@@ -2277,7 +2313,7 @@ func TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 	app = openPostingList(t, app)
 
-	posting := app.postings[0]
+	posting := openList(t, app).list.Postings[0]
 	application, err := createApplicationIn(context.Background(), s, posting.ID)
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
@@ -2329,7 +2365,7 @@ func TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail(t *testing.T) 
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 	app = openPostingList(t, app)
 
-	posting := app.postings[0]
+	posting := openList(t, app).list.Postings[0]
 	application, err := createApplicationIn(context.Background(), s, posting.ID)
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
@@ -2396,7 +2432,7 @@ func TestApp_ApplicationDetail_P_EntersPostingDetail(t *testing.T) {
 	// No Cmd expected: applicationDetail's posting.ActiveApplication already has the
 	// full posting/application/reviews loaded (from active-applications),
 	// so entering posting detail from here renders synchronously rather
-	// than round-tripping through a.postings-dependent lookupPosting (see
+	// than round-tripping through list-dependent lookupPosting (see
 	// #86 follow-up).
 	app, _ = sendKey(app, runeKey('p'))
 
@@ -2412,8 +2448,8 @@ func TestApp_ApplicationDetail_P_EntersPostingDetail(t *testing.T) {
 // is a regression test: backToPostingListMsg's handler used to
 // unconditionally set screen = screenPostingList, which is wrong when
 // posting detail was reached from application detail rather than by
-// browsing a company's postings -- a.postings is empty in that case (it's
-// only populated by screenPostingList's own loadPostings), so esc landed
+// browsing a company's postings -- no posting list is open in that case,
+// so esc landed
 // on an empty, disconnected posting-list screen instead of back where the
 // user came from. returnStack now tracks where posting detail was entered
 // from, the same way it does for the other multi-entry screens (see
@@ -2438,11 +2474,12 @@ func TestApp_PostingDetailFromApplicationDetail_Esc_ReturnsToApplicationDetail(t
 
 // TestApp_StatusChangeFromApplicationDetailFastPath_PreservesPostingFields
 // is a regression test for a bug caught in code review: applicationDetail's
-// 'p' enters posting detail without ever populating a.postings (the fast
+// 'p' enters posting detail without a posting list open (the fast
 // path -- #87 follow-up). applicationStatusUpdatedMsg's
 // handler used to unconditionally rebuild a.postingDetail via
-// lookupPosting(a.postingDetail.posting.ID), which searches a.postings and
-// returns a zero-value posting.Posting{} when not found -- so changing status
+// lookupPosting(a.postingDetail.posting.ID), which searches the open
+// posting list and returns a zero-value posting.Posting{} when not found
+// -- so changing status
 // from a posting-detail screen reached this way silently blanked the
 // displayed posting's title/department/location/etc, even though the
 // status write itself succeeded. rebuildPostingDetailApplication fixes this
@@ -2472,7 +2509,7 @@ func TestApp_StatusChangeFromApplicationDetailFastPath_PreservesPostingFields(t 
 		t.Fatalf("screen after status change = %v, want screenPostingDetail", app.currentScreen)
 	}
 	if app.postingDetail.posting.Title != "Engineer" {
-		t.Fatalf("postingDetail.posting.Title after status change = %q, want %q (lookupPosting must not clobber the posting when a.postings was never populated)", app.postingDetail.posting.Title, "Engineer")
+		t.Fatalf("postingDetail.posting.Title after status change = %q, want %q (lookupPosting must not clobber the posting when no posting list was open)", app.postingDetail.posting.Title, "Engineer")
 	}
 }
 
@@ -2823,7 +2860,7 @@ func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testi
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 	app = openPostingList(t, app)
 
-	posting := app.postings[0]
+	posting := openList(t, app).list.Postings[0]
 	application, err := createApplicationIn(context.Background(), s, posting.ID)
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
@@ -2897,12 +2934,12 @@ func TestApp_PostingList_VimJK_MoveCursorLikeArrows(t *testing.T) {
 	app = openPostingList(t, app)
 
 	app, _ = sendKey(app, runeKey('j'))
-	if app.postingList.cursor != 1 {
-		t.Fatalf("postingCursor after 'j' = %d, want 1", app.postingList.cursor)
+	if openList(t, app).cursor != 1 {
+		t.Fatalf("postingCursor after 'j' = %d, want 1", openList(t, app).cursor)
 	}
 	app, _ = sendKey(app, runeKey('k'))
-	if app.postingList.cursor != 0 {
-		t.Fatalf("postingCursor after 'k' = %d, want 0", app.postingList.cursor)
+	if openList(t, app).cursor != 0 {
+		t.Fatalf("postingCursor after 'k' = %d, want 0", openList(t, app).cursor)
 	}
 }
 
@@ -3042,7 +3079,7 @@ func TestApp_PressF_OnPostingList_OpensFilterSelectAndLoadsOptions(t *testing.T)
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
 
-	app, cmd := sendKey(app, runeKey('f'))
+	app, cmd := sendIntentKey(t, app, runeKey('f'))
 	if cmd == nil {
 		t.Fatal("Update on 'f' returned nil Cmd, want a command that loads filter options")
 	}
@@ -3068,7 +3105,7 @@ func TestApp_FilterSelect_SpaceTogglesSelection(t *testing.T) {
 	})
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
-	app, cmd := sendKey(app, runeKey('f'))
+	app, cmd := sendIntentKey(t, app, runeKey('f'))
 	app, _ = sendKey(app, cmd())
 
 	if app.filterSelect.selectedDepartments["Engineering"] {
@@ -3094,7 +3131,7 @@ func TestApp_FilterSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 	})
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
-	app, cmd := sendKey(app, runeKey('f'))
+	app, cmd := sendIntentKey(t, app, runeKey('f'))
 	app, _ = sendKey(app, cmd())
 
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
@@ -3124,11 +3161,11 @@ func TestApp_FilterSelect_Enter_SavesAndNarrows(t *testing.T) {
 	})
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
-	if len(app.postings) != 2 {
-		t.Fatalf("initial postings = %+v, want 2", app.postings)
+	if len(openList(t, app).list.Postings) != 2 {
+		t.Fatalf("initial postings = %+v, want 2", openList(t, app).list.Postings)
 	}
 
-	app, cmd := sendKey(app, runeKey('f'))
+	app, cmd := sendIntentKey(t, app, runeKey('f'))
 	app, _ = sendKey(app, cmd())
 
 	// Cursor starts at filterDepartmentOptions[0]. Confirm which
@@ -3143,11 +3180,11 @@ func TestApp_FilterSelect_Enter_SavesAndNarrows(t *testing.T) {
 	if app.currentScreen != screenPostingList {
 		t.Fatalf("screen after enter = %v, want screenPostingList", app.currentScreen)
 	}
-	if len(app.postings) != 1 {
-		t.Fatalf("postings after enter = %+v, want 1 (narrowed to %s, before saveCompanyFilters' Cmd even runs)", app.postings, wantDept)
+	if len(openList(t, app).list.Postings) != 1 {
+		t.Fatalf("postings after enter = %+v, want 1 (narrowed to %s, before saveCompanyFilters' Cmd even runs)", openList(t, app).list.Postings, wantDept)
 	}
-	if app.postings[0].Department != wantDept {
-		t.Fatalf("remaining posting department = %q, want %q", app.postings[0].Department, wantDept)
+	if openList(t, app).list.Postings[0].Department != wantDept {
+		t.Fatalf("remaining posting department = %q, want %q", openList(t, app).list.Postings[0].Department, wantDept)
 	}
 	if cmd == nil {
 		t.Fatal("Update on enter returned nil Cmd, want a command that applies the filters")
@@ -3175,11 +3212,11 @@ func TestApp_FilterSelect_Enter_SavesAndNarrows(t *testing.T) {
 	// not just re-fetch.
 	app, _ = sendKey(app, cmd())
 
-	if len(app.postings) != 1 {
-		t.Fatalf("postings after post-save reload = %+v, want still 1 (filter should survive the reload)", app.postings)
+	if len(openList(t, app).list.Postings) != 1 {
+		t.Fatalf("postings after post-save reload = %+v, want still 1 (filter should survive the reload)", openList(t, app).list.Postings)
 	}
-	if app.postings[0].Department != wantDept {
-		t.Fatalf("posting department after reload = %q, want %q", app.postings[0].Department, wantDept)
+	if openList(t, app).list.Postings[0].Department != wantDept {
+		t.Fatalf("posting department after reload = %q, want %q", openList(t, app).list.Postings[0].Department, wantDept)
 	}
 }
 
@@ -3201,7 +3238,7 @@ func TestApp_FilterSelect_Enter_WhileCompanySyncsElsewhere_Saves(t *testing.T) {
 		t.Fatalf("AcquireSyncLease = %v, %v", taken, err)
 	}
 
-	app, cmd := sendKey(app, runeKey('f'))
+	app, cmd := sendIntentKey(t, app, runeKey('f'))
 	app, _ = sendKey(app, cmd())
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	app, cmd = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -3251,8 +3288,8 @@ func TestApp_CompanySynced_ForCurrentlyViewedCompany_ReloadsPostings(t *testing.
 
 			app = sendKeyAndApply(t, app, synced(message.Source{Instance: app.syncing.Instance()}, acme.ID, tt.runID, 0))
 
-			if len(app.postings) != 2 {
-				t.Fatalf("postings after the sync = %+v, want both", app.postings)
+			if len(openList(t, app).list.Postings) != 2 {
+				t.Fatalf("postings after the sync = %+v, want both", openList(t, app).list.Postings)
 			}
 		})
 	}
@@ -3283,7 +3320,7 @@ func TestApp_CompanyRefreshed_ForDifferentCompany_DoesNotReloadPostings(t *testi
 	}
 	reloadsCompanies := false
 	for _, msg := range msgs {
-		if _, ok := msg.(postingsLoadedMsg); ok {
+		if _, ok := msg.(message.Event[message.Read[message.PostingList]]); ok {
 			t.Fatal("refresh of a different company reloaded the postings being viewed")
 		}
 		reloadsCompanies = reloadsCompanies || isCompaniesRead(msg)
@@ -3325,11 +3362,11 @@ func TestApp_OpenPostingList_WithPreExistingSavedFilters_NarrowsOnFirstLoad(t *t
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
 
-	if len(app.postings) != 1 {
-		t.Fatalf("postings on first load = %+v, want 1 (narrowed by pre-existing saved filter, simulating a prior session)", app.postings)
+	if len(openList(t, app).list.Postings) != 1 {
+		t.Fatalf("postings on first load = %+v, want 1 (narrowed by pre-existing saved filter, simulating a prior session)", openList(t, app).list.Postings)
 	}
-	if app.postings[0].Department != "Engineering" {
-		t.Fatalf("posting department = %q, want %q", app.postings[0].Department, "Engineering")
+	if openList(t, app).list.Postings[0].Department != "Engineering" {
+		t.Fatalf("posting department = %q, want %q", openList(t, app).list.Postings[0].Department, "Engineering")
 	}
 }
 
@@ -3344,11 +3381,11 @@ func TestApp_OpenPostingList_TracksActiveFiltersFromExisting(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
 
-	if diff := cmp.Diff([]string{"Engineering"}, app.activeFilterDepartments); diff != "" {
-		t.Fatalf("activeFilterDepartments mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff([]string{"Engineering"}, openList(t, app).list.Departments); diff != "" {
+		t.Fatalf("department filters mismatch (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff([]string{"Remote"}, app.activeFilterLocations); diff != "" {
-		t.Fatalf("activeFilterLocations mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff([]string{"Remote"}, openList(t, app).list.Locations); diff != "" {
+		t.Fatalf("location filters mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -3360,11 +3397,11 @@ func TestApp_FilterSelect_Enter_UpdatesActiveFiltersImmediately(t *testing.T) {
 	})
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
-	if len(app.activeFilterDepartments) != 0 {
-		t.Fatalf("initial activeFilterDepartments = %+v, want empty", app.activeFilterDepartments)
+	if len(openList(t, app).list.Departments) != 0 {
+		t.Fatalf("initial department filters = %+v, want empty", openList(t, app).list.Departments)
 	}
 
-	app, cmd := sendKey(app, runeKey('f'))
+	app, cmd := sendIntentKey(t, app, runeKey('f'))
 	app, _ = sendKey(app, cmd())
 	wantDept := app.filterSelect.departmentOptions[0]
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
@@ -3372,8 +3409,8 @@ func TestApp_FilterSelect_Enter_UpdatesActiveFiltersImmediately(t *testing.T) {
 	// saveCompanyFilters Cmd to observe it.
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	if diff := cmp.Diff([]string{wantDept}, app.activeFilterDepartments); diff != "" {
-		t.Fatalf("activeFilterDepartments after enter mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff([]string{wantDept}, openList(t, app).list.Departments); diff != "" {
+		t.Fatalf("department filters after enter mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -3402,15 +3439,15 @@ func TestFilterSummaryLine_DepartmentsAndLocations(t *testing.T) {
 func TestFilterPostingsByCompanyFilters_MatchSemantics(t *testing.T) {
 	t.Parallel()
 
-	eng := posting.Posting{ID: 1, IngestedFields: posting.IngestedFields{Department: "Engineering", Location: "Remote"}}
-	sales := posting.Posting{ID: 2, IngestedFields: posting.IngestedFields{Department: "Sales", Location: "Remote"}}
-	engNYC := posting.Posting{ID: 3, IngestedFields: posting.IngestedFields{Department: "Engineering", Location: "New York"}}
-	postings := []posting.Posting{eng, sales, engNYC}
+	eng := message.Posting{ID: 1, Department: "Engineering", Location: "Remote"}
+	sales := message.Posting{ID: 2, Department: "Sales", Location: "Remote"}
+	engNYC := message.Posting{ID: 3, Department: "Engineering", Location: "New York"}
+	postings := []message.Posting{eng, sales, engNYC}
 
 	tests := []struct {
 		name    string
 		filters []filter.Filter
-		want    []posting.Posting
+		want    []message.Posting
 	}{
 		{
 			name:    "no filters matches everything",
@@ -3420,12 +3457,12 @@ func TestFilterPostingsByCompanyFilters_MatchSemantics(t *testing.T) {
 		{
 			name:    "department filter alone",
 			filters: []filter.Filter{{Field: filter.FieldDepartment, Value: "Engineering"}},
-			want:    []posting.Posting{eng, engNYC},
+			want:    []message.Posting{eng, engNYC},
 		},
 		{
 			name:    "location filter alone",
 			filters: []filter.Filter{{Field: filter.FieldLocation, Value: "Remote"}},
-			want:    []posting.Posting{eng, sales},
+			want:    []message.Posting{eng, sales},
 		},
 		{
 			name: "department and location AND together, OR within a field",
@@ -3434,7 +3471,7 @@ func TestFilterPostingsByCompanyFilters_MatchSemantics(t *testing.T) {
 				{Field: filter.FieldDepartment, Value: "Sales"},
 				{Field: filter.FieldLocation, Value: "Remote"},
 			},
-			want: []posting.Posting{eng, sales},
+			want: []message.Posting{eng, sales},
 		},
 	}
 	for _, tt := range tests {
@@ -3456,7 +3493,7 @@ func TestFilterPostingsByCompanyFilters_MatchSemantics(t *testing.T) {
 func TestFilterPostingsByCompanyFilters_UnsupportedField_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	postings := []posting.Posting{{ID: 1, IngestedFields: posting.IngestedFields{Department: "Engineering"}}}
+	postings := []message.Posting{{ID: 1, Department: "Engineering"}}
 	filters := []filter.Filter{{Field: "not_a_real_field", Value: "x"}}
 
 	_, err := filterPostingsByCompanyFilters(postings, filters)
@@ -3465,19 +3502,9 @@ func TestFilterPostingsByCompanyFilters_UnsupportedField_ReturnsError(t *testing
 	}
 }
 
-// TestApp_PostingsLoadedMsgWithErr_ClearsPostingsAndMarkup pins the
-// App-level consequence of loadPostings returning an error (e.g. from
-// filterPostingsByCompanyFilters, though company_filters' CHECK
-// constraint makes that specific trigger unreachable in practice --
-// postingsLoadedMsg{err:...} can come from any of loadPostings' several
-// fallible steps): the Update handler unconditionally applies
-// msg.postings/msg.markup/msg.departments/msg.locations, so an error
-// blanks the previously-loaded list rather than leaving it visible
-// alongside the error. Documented as a deliberate trade-off (see
-// #61) rather than something this test argues should
-// change -- it exists so a future change to this behavior is a visible,
-// intentional diff instead of a silent one.
-func TestApp_PostingsLoadedMsgWithErr_ClearsPostingsAndMarkup(t *testing.T) {
+// A failed reload of the postings is an error for the banner alone: the
+// list keeps showing what it last read.
+func TestApp_PostingsLoadFails_KeepsThePostingsAndShowsTheError(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
@@ -3488,20 +3515,19 @@ func TestApp_PostingsLoadedMsgWithErr_ClearsPostingsAndMarkup(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app = openPostingList(t, app)
 
-	if len(app.postings) != 1 {
-		t.Fatalf("postings before error = %+v, want 1", app.postings)
+	if len(openList(t, app).list.Postings) != 1 {
+		t.Fatalf("postings before error = %+v, want 1", openList(t, app).list.Postings)
 	}
 
-	app, _ = sendKey(app, postingsLoadedMsg{err: errors.New("boom")})
+	l := openList(t, app)
+	app, _ = sendKey(app, message.New(message.Source{Instance: l.Instance()}, message.Subject{Type: message.TypeCompany, ID: l.company.ID}, message.OpNone, time.Now().UTC(),
+		model.ErrorOf(errors.New("boom"))))
 
-	if app.postings != nil {
-		t.Fatalf("postings after error = %+v, want nil (cleared)", app.postings)
+	if len(openList(t, app).list.Postings) != 1 {
+		t.Errorf("postings after error = %+v, want the 1 read before", openList(t, app).list.Postings)
 	}
-	if app.postingMarkup != nil {
-		t.Fatalf("postingMarkup after error = %+v, want nil (cleared)", app.postingMarkup)
-	}
-	if app.err == nil {
-		t.Fatal("app.err = nil, want the propagated error")
+	if !strings.Contains(app.banner(), "boom") {
+		t.Errorf("banner = %q, want the error", app.banner())
 	}
 }
 
@@ -3618,8 +3644,8 @@ func TestPostingDetailContent_ShowsStatusLabelNotEnumValue(t *testing.T) {
 
 // TestApp_PostingDetailViaApplicationDetail_HelpOmitsPostingNavigation is
 // the scenario #93 reports: application detail -> 'p' -> the help line
-// used to advertise "←/→ (h/l): prev/next posting" even though a.postings
-// was never loaded on that path, so pressing it did nothing with no
+// used to advertise "←/→ (h/l): prev/next posting" even though no posting
+// list is open on that path, so pressing it did nothing with no
 // indication why.
 func TestApp_PostingDetailViaApplicationDetail_HelpOmitsPostingNavigation(t *testing.T) {
 	s := testutil.NewTestApp(t)
@@ -3636,12 +3662,12 @@ func TestApp_PostingDetailViaApplicationDetail_HelpOmitsPostingNavigation(t *tes
 		t.Fatalf("screen after 'p' = %v, want screenPostingDetail", app.currentScreen)
 	}
 	if got := app.postingDetail.View(); strings.Contains(got, "prev/next posting") {
-		t.Errorf("posting detail reached via application detail advertises h/l, but a.postings is empty so it does nothing; view = %q", got)
+		t.Errorf("posting detail reached via application detail advertises h/l, but no posting list is open so it does nothing; view = %q", got)
 	}
 }
 
 // TestApp_PostingDetailViaPostingList_HelpKeepsPostingNavigation is the
-// other half: browsing a company's postings does populate a.postings, so
+// other half: browsing a company's postings does open a posting list, so
 // the hint must still be there.
 func TestApp_PostingDetailViaPostingList_HelpKeepsPostingNavigation(t *testing.T) {
 	s := testutil.NewTestApp(t)
@@ -3868,7 +3894,7 @@ func TestApp_NotesEsc_WhileSaving_WaitsForTheSave(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	if _, err := createApplicationIn(context.Background(), s, app.postings[0].ID); err != nil {
+	if _, err := createApplicationIn(context.Background(), s, openList(t, app).list.Postings[0].ID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
 	app = openPostingDetail(t, app)
@@ -3899,7 +3925,7 @@ func TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	if _, err := createApplicationIn(context.Background(), s, app.postings[0].ID); err != nil {
+	if _, err := createApplicationIn(context.Background(), s, openList(t, app).list.Postings[0].ID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
 	app = openPostingDetail(t, app)
@@ -3910,7 +3936,7 @@ func TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T
 	if app.currentScreen != screenApplicationNotesEdit {
 		t.Fatalf("screen after re-entering = %v, want screenApplicationNotesEdit", app.currentScreen)
 	}
-	stored, err := s.Postings.Application(context.Background(), app.postings[0].ID)
+	stored, err := s.Postings.Application(context.Background(), openList(t, app).list.Postings[0].ID)
 	if err != nil {
 		t.Fatalf("application.Get: %v", err)
 	}
@@ -4120,8 +4146,8 @@ func TestApp_CompanyList_SearchEnterEnter_OpensMatchAndKeepsSearchOnReturn(t *te
 	if app.currentScreen != screenPostingList {
 		t.Fatalf("screen after enter, enter = %v, want screenPostingList", app.currentScreen)
 	}
-	if app.selectedCompany.Name != "Globex" {
-		t.Fatalf("selectedCompany = %q, want %q", app.selectedCompany.Name, "Globex")
+	if openList(t, app).company.Name != "Globex" {
+		t.Fatalf("list company = %q, want %q", openList(t, app).company.Name, "Globex")
 	}
 
 	app, cmd = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
@@ -4201,7 +4227,7 @@ func TestApp_NotesSaveFails_UnblocksEditing(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	if _, err := createApplicationIn(context.Background(), s, app.postings[0].ID); err != nil {
+	if _, err := createApplicationIn(context.Background(), s, openList(t, app).list.Postings[0].ID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
 	app = openPostingDetail(t, app)
@@ -4228,7 +4254,7 @@ func TestApp_ApplicationFormSaveFails_UnblocksEditing(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 30})
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	app, loadCmd := sendKey(app, runeKey('f'))
+	app, loadCmd := sendIntentKey(t, app, runeKey('f'))
 	app = applyCmd(t, app, loadCmd)
 	app, _ = sendKey(app, runeKey([]rune("Why us? *")...))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
@@ -4254,7 +4280,7 @@ func TestApp_ApplicationFormEscWithEdits_DrawsDiscardBox(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 30})
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	app, loadCmd := sendKey(app, runeKey('f'))
+	app, loadCmd := sendIntentKey(t, app, runeKey('f'))
 	app = applyCmd(t, app, loadCmd)
 	app, _ = sendKey(app, runeKey([]rune("Why us? *")...))
 
@@ -4281,7 +4307,7 @@ func TestApp_NotesEscWithEdits_DrawsDiscardBox(t *testing.T) {
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
 	app = openPostingList(t, app)
-	if _, err := createApplicationIn(context.Background(), s, app.postings[0].ID); err != nil {
+	if _, err := createApplicationIn(context.Background(), s, openList(t, app).list.Postings[0].ID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
 	app = openPostingDetail(t, app)

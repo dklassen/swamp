@@ -66,4 +66,20 @@ func (st *screenStack) top() stackScreen {
 	return st.entries[len(st.entries)-1].screen
 }
 
+// topKind is the kind of the screen pushed last. Only call it while len is
+// above 0.
+func (st *screenStack) topKind() message.Screen {
+	return st.entries[len(st.entries)-1].kind
+}
+
+// open is the screen of kind on the stack, or nil if none is.
+func (st *screenStack) open(kind message.Screen) stackScreen {
+	for _, e := range st.entries {
+		if e.kind == kind {
+			return e.screen
+		}
+	}
+	return nil
+}
+
 func (st *screenStack) len() int { return len(st.entries) }

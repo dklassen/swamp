@@ -99,3 +99,46 @@ type FocusChanged struct {
 }
 
 func (FocusChanged) Type() Type { return TypeFocusChanged }
+
+// Posting is what an event carries for a posting.
+type Posting struct {
+	ID              int64         `json:"id"`
+	CompanyID       int64         `json:"company_id"`
+	Title           string        `json:"title"`
+	Department      string        `json:"department"`
+	Team            string        `json:"team"`
+	Location        string        `json:"location"`
+	EmploymentType  string        `json:"employment_type"`
+	WorkplaceType   string        `json:"workplace_type"`
+	DescriptionText string        `json:"description_text"`
+	JobURL          string        `json:"job_url"`
+	ApplicationURL  string        `json:"application_url"`
+	ListingStatus   ListingStatus `json:"listing_status"`
+}
+
+// Markup is how the user has marked a posting. A time is zero while the
+// posting isn't marked that way.
+type Markup struct {
+	PostingID    int64     `json:"posting_id"`
+	InterestedAt time.Time `json:"interested_at,omitzero"`
+	ArchivedAt   time.Time `json:"archived_at,omitzero"`
+}
+
+// PostingList is the open postings of the event's Subject, a company, that
+// match its saved filters, each with its markup. Departments and Locations
+// are those filters.
+type PostingList struct {
+	Postings    []Posting        `json:"postings"`
+	Markup      map[int64]Markup `json:"markup"`
+	Departments []string         `json:"departments,omitempty"`
+	Locations   []string         `json:"locations,omitempty"`
+}
+
+func (PostingList) Type() Type { return TypePostingList }
+
+// HideArchived is whether posting lists leave archived postings out.
+type HideArchived struct {
+	Hidden bool `json:"hidden"`
+}
+
+func (HideArchived) Type() Type { return TypeHideArchived }
