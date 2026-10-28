@@ -51,6 +51,19 @@ func newTestApp(t *testing.T, s testutil.TestApp, syncer *sync.Syncer) *App {
 // unpacks into per-command messages applied individually. These tests
 // drive App directly without a real tea.Program, so this replicates both
 // behaviors by hand.
+// pushed is the screen on top of app's stack, as a T.
+func pushed[T stackScreen](t *testing.T, app *App) T {
+	t.Helper()
+	if app.stack.len() == 0 {
+		t.Fatalf("no screen is pushed; %v is up", app.currentScreen)
+	}
+	s, ok := app.stack.top().(T)
+	if !ok {
+		t.Fatalf("the screen on top is %T, want %T", app.stack.top(), *new(T))
+	}
+	return s
+}
+
 func applyCmd(t *testing.T, app *App, cmd tea.Cmd) *App {
 	t.Helper()
 	if cmd == nil {
@@ -225,7 +238,7 @@ func TestApp_SubmitForm_BoardRejectsSourceRef_StaysOnFormToRetry(t *testing.T) {
 	if app.err == nil {
 		t.Fatal("app.err = nil, want the board check error shown")
 	}
-	if got := app.companyForm.inputs[formFieldSourceRef].Value(); got != "acmee" {
+	if got := pushed[*companyFormModel](t, app).inputs[formFieldSourceRef].Value(); got != "acmee" {
 		t.Fatalf("sourceRef = %q, want %q kept for correction", got, "acmee")
 	}
 	if _, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}); cmd == nil {
@@ -242,7 +255,7 @@ func TestApp_TypingInForm_UpdatesFocusedField(t *testing.T) {
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab}) // source field is focused first; move to name
 	app, _ = sendKey(app, runeKey('A', 'c', 'm', 'e'))
 
-	if got := app.companyForm.inputs[formFieldName].Value(); got != "Acme" {
+	if got := pushed[*companyFormModel](t, app).inputs[formFieldName].Value(); got != "Acme" {
 		t.Fatalf("companyForm.inputs[formFieldName].Value() = %q, want %q", got, "Acme")
 	}
 }
@@ -253,25 +266,25 @@ func TestApp_Tab_MovesFocusToNextField(t *testing.T) {
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 
 	app, _ = sendIntentKey(t, app, runeKey('a'))
-	if app.companyForm.focus != formFieldSource {
-		t.Fatalf("companyForm.focus on entering the form = %d, want formFieldSource", app.companyForm.focus)
+	if pushed[*companyFormModel](t, app).focus != formFieldSource {
+		t.Fatalf("companyForm.focus on entering the form = %d, want formFieldSource", pushed[*companyFormModel](t, app).focus)
 	}
 
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 
-	if app.companyForm.focus != formFieldSourceRef {
-		t.Fatalf("companyForm.focus after 2 tabs = %d, want formFieldSourceRef", app.companyForm.focus)
+	if pushed[*companyFormModel](t, app).focus != formFieldSourceRef {
+		t.Fatalf("companyForm.focus after 2 tabs = %d, want formFieldSourceRef", pushed[*companyFormModel](t, app).focus)
 	}
-	if !app.companyForm.inputs[formFieldSourceRef].Focused() {
+	if !pushed[*companyFormModel](t, app).inputs[formFieldSourceRef].Focused() {
 		t.Fatal("companyForm.inputs[formFieldSourceRef] should be focused after 2 tabs")
 	}
-	if app.companyForm.inputs[formFieldName].Focused() {
+	if pushed[*companyFormModel](t, app).inputs[formFieldName].Focused() {
 		t.Fatal("companyForm.inputs[formFieldName] should be blurred after tabbing away")
 	}
 
 	app, _ = sendKey(app, runeKey('a', 'c', 'm', 'e'))
-	if got := app.companyForm.inputs[formFieldSourceRef].Value(); got != "acme" {
+	if got := pushed[*companyFormModel](t, app).inputs[formFieldSourceRef].Value(); got != "acme" {
 		t.Fatalf("companyForm.inputs[formFieldSourceRef].Value() = %q, want %q", got, "acme")
 	}
 }
@@ -356,7 +369,7 @@ func TestApp_CompanyDeleteConfirmation_ReopeningGetsANewInstance(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 	app = sendKeyAndApply(t, app, runeKey('d'))
-	first := app.companyDelete.Instance()
+	first := pushed[*companyDeleteModel](t, app).Instance()
 	app = sendKeyAndApply(t, app, runeKey('n'))
 
 	app = sendKeyAndApply(t, app, runeKey('d'))
@@ -364,7 +377,7 @@ func TestApp_CompanyDeleteConfirmation_ReopeningGetsANewInstance(t *testing.T) {
 	if app.currentScreen != screenCompanyDelete {
 		t.Fatalf("screen after the second d = %v, want the delete confirmation", app.currentScreen)
 	}
-	if second := app.companyDelete.Instance(); second == first || first == 0 || second == 0 {
+	if second := pushed[*companyDeleteModel](t, app).Instance(); second == first || first == 0 || second == 0 {
 		t.Errorf("instances of the two openings = %d and %d, want two different nonzero numbers", first, second)
 	}
 }
@@ -383,7 +396,7 @@ func TestApp_RegisteredModels_HaveDistinctInstances(t *testing.T) {
 	instances := map[string]message.ScreenInstance{
 		"company list":        app.companyList.Instance(),
 		"syncing":             app.syncing.Instance(),
-		"delete confirmation": app.companyDelete.Instance(),
+		"delete confirmation": pushed[*companyDeleteModel](t, app).Instance(),
 	}
 	seen := map[message.ScreenInstance]string{}
 	for name, instance := range instances {
@@ -526,6 +539,23 @@ func TestApp_NavFromAModelNoLongerOnTop_IsDropped(t *testing.T) {
 	}
 }
 
+func TestApp_PushingAScreenAlreadyOpen_Panics(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
+	app = sendKeyAndApply(t, app, runeKey('a'))
+
+	again := message.Push(message.Source{Instance: app.focused()}, message.ScreenCompanyForm, message.Subject{}, message.None{})()
+	defer func() {
+		if recover() == nil {
+			t.Errorf("pushing %v while it's open didn't panic", message.ScreenCompanyForm)
+		}
+	}()
+	app.Update(again)
+}
+
 func TestApp_CompanyDeleteConfirmation_HoldsTheListsKeysUntilItCloses(t *testing.T) {
 	t.Parallel()
 
@@ -558,7 +588,7 @@ func TestApp_CompanyDeleteFails_ShowsTheErrorOnTheList(t *testing.T) {
 	app = sendKeyAndApply(t, app, runeKey('d'))
 
 	failure := errors.New("disk full")
-	from := message.Source{Instance: app.companyDelete.Instance()}
+	from := message.Source{Instance: pushed[*companyDeleteModel](t, app).Instance()}
 	app = applyCmd(t, app, func() tea.Msg {
 		return message.New(from, message.Subject{Type: message.TypeCompany, ID: acme.ID}, message.OpDeleted, time.Now().UTC(), model.ErrorOf(failure))
 	})
@@ -581,7 +611,7 @@ func TestApp_CompanyRenameFails_ShowsTheErrorAndKeepsTheEditOpen(t *testing.T) {
 	app = sendKeyAndApply(t, app, runeKey('e'))
 
 	failure := errors.New("disk full")
-	from := message.Source{Instance: app.companyEdit.Instance()}
+	from := message.Source{Instance: pushed[*companyEditModel](t, app).Instance()}
 	app = applyCmd(t, app, func() tea.Msg {
 		return message.New(from, message.Subject{Type: message.TypeCompany, ID: acme.ID}, message.OpUpdated, time.Now().UTC(), model.ErrorOf(failure))
 	})
@@ -626,7 +656,7 @@ func TestApp_PressE_EditsCompanyName(t *testing.T) {
 	if app.currentScreen != screenCompanyEdit {
 		t.Fatalf("screen after 'e' = %v, want screenCompanyEdit", app.currentScreen)
 	}
-	if got := app.companyEdit.nameInput.Value(); got != "Acme" {
+	if got := pushed[*companyEditModel](t, app).nameInput.Value(); got != "Acme" {
 		t.Fatalf("companyEdit.nameInput.Value() = %q, want %q (seeded from selected company)", got, "Acme")
 	}
 

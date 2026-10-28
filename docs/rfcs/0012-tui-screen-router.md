@@ -464,7 +464,7 @@ While screens are partly converted, the code works in ways the Template doesn't:
 
 - **`App` still does its own part of a routed message.** `Update` routes a message to its registered handlers and also runs `App`'s old `update` switch on it, which still sets `a.err` and `a.currentScreen` for the screens not yet converted.
 - **Tab reaches the company list before `App` switches tabs.** `route` runs before the old `updateKeyMsg`, which still handles tab, so the list's key handler sees tab first and ignores it. A tab press has no `Text` in v2, so an open search doesn't type it. In the Template, `handle` takes tab before `route`.
-- **A company screen's `Nav` is `App`'s to act on.** `App` switches `a.currentScreen` on it, until the stack replaces that (section 4).
+- **The stack holds only converted screens.** Each records the `currentScreen` it was pushed over and `pop` puts it back; screens on `App`'s old paths still go by `currentScreen`, and focus is sent when `currentScreen` changes rather than by `push` and `pop`.
 - **`App` still reloads the posting list after a sync.** On a `Ran[SyncReport]` about `selectedCompany` it reloads the posting list, until that screen routes the `Ran` itself (section 6). The company list already does.
 - **Screens not yet converted are still `App`'s fields,** called directly, and the company list is still a typed field, not an entry in `screens`.
 - **App tests wait a message for a converted screen's intent.** A converted screen's key comes back as a command, so tests that press one use `sendIntentKey`, which delivers the intent, or `applyCmd`. This is section 4's "keys typed in between" cost, as seen from a test.
