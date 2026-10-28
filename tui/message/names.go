@@ -57,23 +57,27 @@ const (
 	TypeNone
 	TypePostingList
 	TypeHideArchived
+	TypeFilterSelection
+	TypeFilterOptions
 )
 
 var typeNames = [...]string{
-	TypeCompany:       "company",
-	TypeCompanyList:   "company_list",
-	TypeCompanyRow:    "company_row",
-	TypeSyncCompany:   "sync_company",
-	TypeSyncAll:       "sync_all",
-	TypeSyncReport:    "sync_report",
-	TypeSyncAllReport: "sync_all_report",
-	TypeContentSize:   "content_size",
-	TypeFocusChanged:  "focus_changed",
-	TypeStatus:        "status",
-	TypeError:         "error",
-	TypeNone:          "none",
-	TypePostingList:   "posting_list",
-	TypeHideArchived:  "hide_archived",
+	TypeCompany:         "company",
+	TypeCompanyList:     "company_list",
+	TypeCompanyRow:      "company_row",
+	TypeSyncCompany:     "sync_company",
+	TypeSyncAll:         "sync_all",
+	TypeSyncReport:      "sync_report",
+	TypeSyncAllReport:   "sync_all_report",
+	TypeContentSize:     "content_size",
+	TypeFocusChanged:    "focus_changed",
+	TypeStatus:          "status",
+	TypeError:           "error",
+	TypeNone:            "none",
+	TypePostingList:     "posting_list",
+	TypeHideArchived:    "hide_archived",
+	TypeFilterSelection: "filter_selection",
+	TypeFilterOptions:   "filter_options",
 }
 
 func (t Type) String() string                { return nameOf(t, typeNames[:]) }
@@ -151,6 +155,7 @@ const (
 	ScreenCompanyEdit
 	ScreenCompanyDelete
 	ScreenCompanyPostings
+	ScreenFilterSelect
 )
 
 var screenNames = [...]string{
@@ -159,6 +164,7 @@ var screenNames = [...]string{
 	ScreenCompanyEdit:     "company_edit",
 	ScreenCompanyDelete:   "company_delete",
 	ScreenCompanyPostings: "company_postings",
+	ScreenFilterSelect:    "filter_select",
 }
 
 func (s Screen) String() string                { return nameOf(s, screenNames[:]) }
