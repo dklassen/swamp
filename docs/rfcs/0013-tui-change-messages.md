@@ -419,7 +419,7 @@ With step 4, RFC 0012 changed in three places: its naming rule (messages are `Ev
 ## Open questions
 
 1. **Should a write only its asker hears be `Changed[T]`?** By default no: `companyFiltersSavedMsg` and `applicationFormSavedMsg` are `Ran`, since neither has one entity to be the subject.
-2. **What is `Before` for another process's write?** If the change log feeds `Changed[T]`, `change.Event.Old` holds only the logged columns, not a whole snapshot. The default is the zero snapshot, with `Op` from the event. Its own writes come back through the change log too, with a different `ID` from the event its command sent; by default the TUI skips rows whose origin is its own process.
+2. **What is `Before` for another process's write?** If the change log feeds `Changed[T]`, `change.Event.Old` holds only the logged columns, not a whole snapshot. Its own writes come back through the change log too, with a different `ID` from the event its command sent. Decided: `Before` is the zero snapshot, with `Op` from the event, and the TUI skips rows whose origin is its own process.
 3. **Does `Meta` need a correlation ID?** `Source.Instance` ties an outcome to the dialog that asked, which is all the TUI needs. A chain across processes (a sync started by the TUI that writes postings) would need an ID that each event made because of another copies. By default there's none until a consumer needs it.
 4. **Should `Subject.ID` be `int64` for every entity?** A composite key would need it to be a string.
 5. **How does a payload's schema change?** `Kind` and `Type` name a payload, not a version of it. By default a payload only gains fields that are optional, and a breaking change is a new `Type`.
