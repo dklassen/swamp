@@ -504,6 +504,28 @@ func TestApp_CompanyDeleteConfirmation_TwoQuickNs_CloseItOnce(t *testing.T) {
 	}
 }
 
+// The second enter is pressed before the first one's posting list opens,
+// so it comes from a list that is no longer on top.
+func TestApp_NavFromAModelNoLongerOnTop_IsDropped(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	mustCreateCompany(t, s, "Globex", jobboard.Lever, "globex")
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
+
+	app, first := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, runeKey('j'))
+	app, second := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = applyCmd(t, app, first)
+	app = applyCmd(t, app, second)
+
+	if app.currentScreen != screenPostingList || app.selectedCompany.ID != acme.ID {
+		t.Errorf("after enter, j, enter: screen %v on company %d, want the posting list for Acme (%d)", app.currentScreen, app.selectedCompany.ID, acme.ID)
+	}
+}
+
 func TestApp_CompanyDeleteConfirmation_HoldsTheListsKeysUntilItCloses(t *testing.T) {
 	t.Parallel()
 

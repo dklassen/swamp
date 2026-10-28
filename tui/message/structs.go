@@ -4,7 +4,6 @@ import (
 	"time"
 
 	tea "charm.land/bubbletea/v2"
-	"github.com/dklassen/swamp/internal/domain/company"
 )
 
 type ScreenInstance int
@@ -23,28 +22,3 @@ func ReportStatus(src Source, s string) tea.Cmd {
 		return New(src, Subject{}, OpNone, time.Now().UTC(), Notify{Status: s})
 	}
 }
-
-// OpenCompanyFormMsg asks for the form that adds a company.
-type OpenCompanyFormMsg struct{}
-
-// CloseCompanyFormMsg asks for the add-company form to close.
-type CloseCompanyFormMsg struct{}
-
-// OpenCompanyEditMsg asks for Company's edit form.
-type OpenCompanyEditMsg struct{ Company company.Company }
-
-// CloseCompanyEditMsg asks for the company edit to close.
-type CloseCompanyEditMsg struct{}
-
-// OpenCompanyDeleteMsg asks for the confirmation before deleting Company,
-// which has OpenPostings open postings.
-type OpenCompanyDeleteMsg struct {
-	Company      company.Company
-	OpenPostings int
-}
-
-// CloseCompanyDeleteMsg asks for the delete confirmation to close.
-type CloseCompanyDeleteMsg struct{}
-
-// OpenCompanyPostingsMsg asks for Company's postings.
-type OpenCompanyPostingsMsg struct{ Company company.Company }

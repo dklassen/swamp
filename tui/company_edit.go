@@ -90,7 +90,7 @@ func (m *companyEditModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 // close takes a failed save's error from the banner with the edit.
 func (m *companyEditModel) close() tea.Cmd {
 	return tea.Batch(
-		func() tea.Msg { return message.CloseCompanyEditMsg{} },
+		closeScreen(m.source()),
 		message.ReportStatus(m.source(), ""),
 	)
 }

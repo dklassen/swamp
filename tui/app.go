@@ -259,36 +259,78 @@ func (a *App) focused() message.ScreenInstance {
 	return 0
 }
 
-// closeCompanyEdit takes the company edit down, back to the company list.
-func (a *App) closeCompanyEdit() tea.Cmd {
-	if err := a.router.Deregister(a.companyEdit); err != nil {
-		return message.Fail(message.Source{Process: a.origin}, err)
+// onTop is whether meta is from the screen on top. A Nav from any other,
+// such as a second esc typed before the first one's close arrived, is
+// dropped.
+func (a *App) onTop(meta message.Meta) bool {
+	return meta.Source.Instance != 0 && meta.Source.Instance == a.focused()
+}
+
+// unknownNav reports a Nav for a screen App doesn't open that way.
+func (a *App) unknownNav(nav tea.Msg) tea.Cmd {
+	return message.Fail(message.Source{Process: a.origin}, fmt.Errorf("tui: no screen opens on %+v", nav))
+}
+
+// closeTop takes the screen on top down, back to the company list.
+func (a *App) closeTop() tea.Cmd {
+	fail := func(err error) tea.Cmd { return message.Fail(message.Source{Process: a.origin}, err) }
+	switch a.currentScreen {
+	case screenCompanyForm:
+		if err := a.router.Deregister(a.companyForm); err != nil {
+			return fail(err)
+		}
+		a.companyForm = nil
+	case screenCompanyEdit:
+		if err := a.router.Deregister(a.companyEdit); err != nil {
+			return fail(err)
+		}
+		a.companyEdit = nil
+	case screenCompanyDelete:
+		if err := a.router.Deregister(a.companyDelete); err != nil {
+			return fail(err)
+		}
+		a.companyDelete = nil
+	default:
+		return fail(fmt.Errorf("tui: screen %v can't be popped", a.currentScreen))
 	}
-	a.companyEdit = nil
 	a.currentScreen = screenCompanyList
 	return nil
 }
 
-// closeCompanyForm takes the add-company form down, back to the company
-// list.
-func (a *App) closeCompanyForm() tea.Cmd {
-	if err := a.router.Deregister(a.companyForm); err != nil {
+func (a *App) openCompanyForm() tea.Cmd {
+	form := newCompanyFormModel(a.syncer)
+	if err := a.router.Register(form); err != nil {
 		return message.Fail(message.Source{Process: a.origin}, err)
 	}
-	a.companyForm = nil
-	a.currentScreen = screenCompanyList
+	a.companyForm = form
+	a.currentScreen = screenCompanyForm
 	return nil
 }
 
-// closeCompanyDelete takes the delete confirmation down, back to the
-// company list.
-func (a *App) closeCompanyDelete() tea.Cmd {
-	if err := a.router.Deregister(a.companyDelete); err != nil {
+func (a *App) openCompanyEdit(c message.Company) tea.Cmd {
+	edit := newCompanyEditModel(a.companyService, c.ID, c.Name)
+	if err := a.router.Register(edit); err != nil {
 		return message.Fail(message.Source{Process: a.origin}, err)
 	}
-	a.companyDelete = nil
-	a.currentScreen = screenCompanyList
+	a.companyEdit = edit
+	a.currentScreen = screenCompanyEdit
 	return nil
+}
+
+func (a *App) openCompanyDelete(row message.CompanyRow) tea.Cmd {
+	dialog := newCompanyDeleteModel(a.companyService, companyOf(row.Company), row.OpenPostings, a.sized.Width)
+	if err := a.router.Register(dialog); err != nil {
+		return message.Fail(message.Source{Process: a.origin}, err)
+	}
+	a.companyDelete = dialog
+	a.currentScreen = screenCompanyDelete
+	return nil
+}
+
+func (a *App) openCompanyPostings(c message.Company) tea.Cmd {
+	a.selectedCompany = companyOf(c)
+	a.currentScreen = screenPostingList
+	return loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
 }
 
 // WithStatus starts the App with status on the status line.
@@ -1107,46 +1149,36 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.activeApplications = msg.applications
 		a.activeApplicationProgress = msg.progress
 		a.activeApplicationList.keepCursorOn(previous, a.activeApplications)
-	case message.CloseCompanyFormMsg:
-		// A second esc, typed before the first one's close arrived.
-		if a.currentScreen == screenCompanyForm {
-			return a, a.closeCompanyForm()
+	case message.Event[message.Nav[message.None]]:
+		if !a.onTop(msg.Meta) {
+			break
 		}
-	case message.CloseCompanyEditMsg:
-		// A second esc, typed before the first one's close arrived.
-		if a.currentScreen == screenCompanyEdit {
-			return a, a.closeCompanyEdit()
+		switch {
+		case msg.Payload.Op == message.NavPop:
+			return a, a.closeTop()
+		case msg.Payload.Op == message.NavPush && msg.Payload.Screen == message.ScreenCompanyForm:
+			return a, a.openCompanyForm()
 		}
-	case message.OpenCompanyFormMsg:
-		form := newCompanyFormModel(a.syncer)
-		if err := a.router.Register(form); err != nil {
-			return a, message.Fail(message.Source{Process: a.origin}, err)
+		return a, a.unknownNav(msg)
+	case message.Event[message.Nav[message.Company]]:
+		if !a.onTop(msg.Meta) {
+			break
 		}
-		a.companyForm = form
-		a.currentScreen = screenCompanyForm
-	case message.OpenCompanyEditMsg:
-		edit := newCompanyEditModel(a.companyService, msg.Company.ID, msg.Company.Name)
-		if err := a.router.Register(edit); err != nil {
-			return a, message.Fail(message.Source{Process: a.origin}, err)
+		switch {
+		case msg.Payload.Op == message.NavPush && msg.Payload.Screen == message.ScreenCompanyEdit:
+			return a, a.openCompanyEdit(msg.Payload.Value)
+		case msg.Payload.Op == message.NavPush && msg.Payload.Screen == message.ScreenCompanyPostings:
+			return a, a.openCompanyPostings(msg.Payload.Value)
 		}
-		a.companyEdit = edit
-		a.currentScreen = screenCompanyEdit
-	case message.OpenCompanyDeleteMsg:
-		dialog := newCompanyDeleteModel(a.companyService, msg.Company, msg.OpenPostings, a.sized.Width)
-		if err := a.router.Register(dialog); err != nil {
-			return a, message.Fail(message.Source{Process: a.origin}, err)
+		return a, a.unknownNav(msg)
+	case message.Event[message.Nav[message.CompanyRow]]:
+		if !a.onTop(msg.Meta) {
+			break
 		}
-		a.companyDelete = dialog
-		a.currentScreen = screenCompanyDelete
-	case message.CloseCompanyDeleteMsg:
-		// A second keep key, typed before the first one's close arrived.
-		if a.currentScreen == screenCompanyDelete {
-			return a, a.closeCompanyDelete()
+		if msg.Payload.Op == message.NavPush && msg.Payload.Screen == message.ScreenCompanyDelete {
+			return a, a.openCompanyDelete(msg.Payload.Value)
 		}
-	case message.OpenCompanyPostingsMsg:
-		a.selectedCompany = msg.Company
-		a.currentScreen = screenPostingList
-		return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
+		return a, a.unknownNav(msg)
 	case message.Event[message.Ran[message.SyncReport]]:
 		if msg.Payload.Value.Code == 0 && msg.Meta.Subject.ID == a.selectedCompany.ID {
 			// The cursor stays on its posting: the sync can add some

@@ -178,6 +178,7 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	if onCompany {
 		current = visible[m.cursor]
 	}
+	src, about := message.Source{Instance: m.instance}, message.Subject{Type: message.TypeCompany, ID: current.ID}
 	switch key.String() {
 	case "down", "j":
 		if m.cursor < len(visible)-1 {
@@ -191,17 +192,14 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 		return tea.Quit
 	case "d":
 		if onCompany {
-			openPostings := m.openPostings[current.ID]
-			return func() tea.Msg {
-				return message.OpenCompanyDeleteMsg{Company: companyOf(current), OpenPostings: openPostings}
-			}
+			return openScreen(src, message.ScreenCompanyDelete, about, message.CompanyRow{Company: current, OpenPostings: m.openPostings[current.ID]})
 		}
 	case "r":
 		if onCompany {
-			return syncCompany(message.Source{Instance: m.instance}, current)
+			return syncCompany(src, current)
 		}
 	case "R":
-		src, companies := message.Source{Instance: m.instance}, append([]message.Company(nil), m.companies...)
+		companies := append([]message.Company(nil), m.companies...)
 		return func() tea.Msg {
 			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(),
 				message.Run[message.SyncAll]{Value: message.SyncAll{Companies: companies}})
@@ -209,18 +207,18 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	case "i":
 		m.showInfo = !m.showInfo
 	case "a":
-		return func() tea.Msg { return message.OpenCompanyFormMsg{} }
+		return openScreen(src, message.ScreenCompanyForm, message.Subject{}, message.None{})
 	case "/":
 		m.searching = true
 	case "esc":
 		m.clearSearch()
 	case "e":
 		if onCompany {
-			return func() tea.Msg { return message.OpenCompanyEditMsg{Company: companyOf(current)} }
+			return openScreen(src, message.ScreenCompanyEdit, about, current)
 		}
 	case "enter":
 		if onCompany {
-			return func() tea.Msg { return message.OpenCompanyPostingsMsg{Company: companyOf(current)} }
+			return openScreen(src, message.ScreenCompanyPostings, about, current)
 		}
 	}
 	return nil

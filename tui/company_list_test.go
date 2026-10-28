@@ -10,6 +10,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/testutil"
@@ -173,18 +174,46 @@ func TestCompanyListModel_CursorMovement(t *testing.T) {
 	}
 }
 
-func TestCompanyListModel_Enter_ReturnsOpenCompanyPostingsMsg(t *testing.T) {
+// A key that opens a screen asks App to push it, from the list, about the
+// company under the cursor, carrying what the screen shows of it.
+func TestCompanyListModel_KeysPushScreensWithWhatTheyShow(t *testing.T) {
 	t.Parallel()
 
-	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}}, nil, 0, 40)
-
-	intent := press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	sel, ok := intent.(message.OpenCompanyPostingsMsg)
-	if !ok {
-		t.Fatalf("intent = %T, want message.OpenCompanyPostingsMsg", intent)
+	acme := company.Company{ID: 1, Name: "Acme", Source: "greenhouse"}
+	about := message.Subject{Type: message.TypeCompany, ID: acme.ID}
+	tests := []struct {
+		name string
+		key  tea.KeyPressMsg
+		want func(from message.Source) tea.Msg
+	}{
+		{name: "enter", key: tea.KeyPressMsg{Code: tea.KeyEnter}, want: func(from message.Source) tea.Msg {
+			return message.New(from, about, message.OpNone, time.Time{},
+				message.Nav[message.Company]{Op: message.NavPush, Screen: message.ScreenCompanyPostings, Value: companySnapshot(acme)})
+		}},
+		{name: "e", key: runeKey('e'), want: func(from message.Source) tea.Msg {
+			return message.New(from, about, message.OpNone, time.Time{},
+				message.Nav[message.Company]{Op: message.NavPush, Screen: message.ScreenCompanyEdit, Value: companySnapshot(acme)})
+		}},
+		{name: "d", key: runeKey('d'), want: func(from message.Source) tea.Msg {
+			return message.New(from, about, message.OpNone, time.Time{},
+				message.Nav[message.CompanyRow]{Op: message.NavPush, Screen: message.ScreenCompanyDelete, Value: message.CompanyRow{Company: companySnapshot(acme), OpenPostings: 3}})
+		}},
+		{name: "a", key: runeKey('a'), want: func(from message.Source) tea.Msg {
+			return message.New(from, message.Subject{}, message.OpNone, time.Time{},
+				message.Nav[message.None]{Op: message.NavPush, Screen: message.ScreenCompanyForm})
+		}},
 	}
-	if sel.Company.ID != 1 {
-		t.Fatalf("message.OpenCompanyPostingsMsg.Company.ID = %d, want 1", sel.Company.ID)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := companyListOf(t, []company.Company{acme}, map[int64]int{acme.ID: 3}, 0, 40)
+
+			got := press(t, m, tt.key)
+
+			if diff := cmp.Diff(tt.want(message.Source{Instance: m.Instance()}), got, cmpopts.IgnoreFields(message.Meta{}, "ID", "At")); diff != "" {
+				t.Errorf("%s sent (-want +got):\n%s", tt.name, diff)
+			}
+		})
 	}
 }
 
@@ -195,21 +224,6 @@ func TestCompanyListModel_Enter_NoCompanies_ReturnsNothing(t *testing.T) {
 
 	if intent := press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter}); intent != nil {
 		t.Fatalf("intent = %#v, want nil", intent)
-	}
-}
-
-func TestCompanyListModel_E_ReturnsOpenCompanyEditMsg(t *testing.T) {
-	t.Parallel()
-
-	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}}, nil, 0, 40)
-
-	intent := press(t, m, runeKey('e'))
-	edit, ok := intent.(message.OpenCompanyEditMsg)
-	if !ok {
-		t.Fatalf("intent = %T, want message.OpenCompanyEditMsg", intent)
-	}
-	if edit.Company.ID != 1 {
-		t.Fatalf("message.OpenCompanyEditMsg.Company.ID = %d, want 1", edit.Company.ID)
 	}
 }
 
@@ -232,21 +246,6 @@ func TestCompanyListModel_R_AsksToSyncTheCompany(t *testing.T) {
 	}
 }
 
-func TestCompanyListModel_D_ReturnsOpenCompanyDeleteMsgWithOpenPostings(t *testing.T) {
-	t.Parallel()
-
-	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}}, map[int64]int{1: 3}, 0, 40)
-
-	intent := press(t, m, runeKey('d'))
-	del, ok := intent.(message.OpenCompanyDeleteMsg)
-	if !ok {
-		t.Fatalf("intent = %T, want message.OpenCompanyDeleteMsg", intent)
-	}
-	if del.Company.ID != 1 || del.OpenPostings != 3 {
-		t.Fatalf("message.OpenCompanyDeleteMsg = %+v, want company 1 with 3 open postings", del)
-	}
-}
-
 // A command runs off the event loop, so it carries the company the cursor
 // was on when the key was pressed, not wherever the cursor is later.
 func TestCompanyListModel_CommandKeepsTheCompanyFromWhenTheKeyWasPressed(t *testing.T) {
@@ -257,8 +256,8 @@ func TestCompanyListModel_CommandKeepsTheCompanyFromWhenTheKeyWasPressed(t *test
 	cmd := m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})
 	press(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 
-	if sel, ok := cmd().(message.OpenCompanyPostingsMsg); !ok || sel.Company.ID != 1 {
-		t.Fatalf("enter's command after the cursor moved = %#v, want message.OpenCompanyPostingsMsg for Acme (ID 1)", sel)
+	if got := opened(cmd(), message.ScreenCompanyPostings); got != 1 {
+		t.Fatalf("enter's command after the cursor moved opened company %d, want Acme (ID 1)", got)
 	}
 }
 
@@ -310,16 +309,6 @@ func TestCompanyListModel_EscOrB_DoesNothing(t *testing.T) {
 		if intent := press(t, m, key); intent != nil {
 			t.Errorf("press(%v) = %#v, want nil", key, intent)
 		}
-	}
-}
-
-func TestCompanyListModel_A_ReturnsOpenCompanyFormMsg(t *testing.T) {
-	t.Parallel()
-
-	m := companyListOf(t, nil, nil, 0, 40)
-
-	if intent := press(t, m, runeKey('a')); intent != (message.OpenCompanyFormMsg{}) {
-		t.Fatalf("intent = %T, want message.OpenCompanyFormMsg", intent)
 	}
 }
 
@@ -549,12 +538,12 @@ func TestCompanyListModel_Search_EnterKeepsMatchesForCommands(t *testing.T) {
 	}
 
 	intent := press(t, m, runeKey('e'))
-	if edit, ok := intent.(message.OpenCompanyEditMsg); !ok || edit.Company.ID != 2 {
-		t.Errorf("e on the kept matches: intent = %#v, want message.OpenCompanyEditMsg for Globex", intent)
+	if got := opened(intent, message.ScreenCompanyEdit); got != 2 {
+		t.Errorf("e on the kept matches: intent = %#v, want a push of the edit for Globex", intent)
 	}
 	intent = press(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if sel, ok := intent.(message.OpenCompanyPostingsMsg); !ok || sel.Company.ID != 2 {
-		t.Errorf("enter on the kept matches: intent = %#v, want message.OpenCompanyPostingsMsg for Globex", intent)
+	if got := opened(intent, message.ScreenCompanyPostings); got != 2 {
+		t.Errorf("enter on the kept matches: intent = %#v, want a push of the posting list for Globex", intent)
 	}
 }
 
@@ -615,15 +604,15 @@ func TestCompanyListModel_Search_ArrowsMoveThroughMatches(t *testing.T) {
 			press(t, m, tt.down)
 			press(t, m, tt.down) // past the last match: stays on it
 			intent := openHighlighted(t, m)
-			if sel, ok := intent.(message.OpenCompanyPostingsMsg); !ok || sel.Company.ID != 2 {
-				t.Fatalf("intent after down, down, enter = %#v, want message.OpenCompanyPostingsMsg for Acme Robotics (ID 2)", intent)
+			if got := opened(intent, message.ScreenCompanyPostings); got != 2 {
+				t.Fatalf("intent after down, down, enter = %#v, want a push of the posting list for Acme Robotics (ID 2)", intent)
 			}
 
 			press(t, m, runeKey('/'))
 			press(t, m, tt.up)
 			intent = openHighlighted(t, m)
-			if sel, ok := intent.(message.OpenCompanyPostingsMsg); !ok || sel.Company.ID != 1 {
-				t.Fatalf("intent after up, enter = %#v, want message.OpenCompanyPostingsMsg for Acme (ID 1)", intent)
+			if got := opened(intent, message.ScreenCompanyPostings); got != 1 {
+				t.Fatalf("intent after up, enter = %#v, want a push of the posting list for Acme (ID 1)", intent)
 			}
 		})
 	}
@@ -637,8 +626,8 @@ func TestCompanyListModel_Search_BackspaceWidensMatches(t *testing.T) {
 	typeKeys(t, m, "/gx") // matches nothing
 	press(t, m, tea.KeyPressMsg{Code: tea.KeyBackspace})
 	intent := openHighlighted(t, m)
-	if sel, ok := intent.(message.OpenCompanyPostingsMsg); !ok || sel.Company.ID != 2 {
-		t.Fatalf("intent after backspace, enter = %#v, want message.OpenCompanyPostingsMsg for Globex (ID 2)", intent)
+	if got := opened(intent, message.ScreenCompanyPostings); got != 2 {
+		t.Fatalf("intent after backspace, enter = %#v, want a push of the posting list for Globex (ID 2)", intent)
 	}
 }
 
@@ -650,8 +639,8 @@ func TestCompanyListModel_Search_SpaceIsPartOfTheQuery(t *testing.T) {
 	typeKeys(t, m, "/acme")
 	press(t, m, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 	intent := openHighlighted(t, m)
-	if sel, ok := intent.(message.OpenCompanyPostingsMsg); !ok || sel.Company.ID != 2 {
-		t.Fatalf("intent after \"acme \", enter = %#v, want message.OpenCompanyPostingsMsg for Acme Robotics (ID 2)", intent)
+	if got := opened(intent, message.ScreenCompanyPostings); got != 2 {
+		t.Fatalf("intent after \"acme \", enter = %#v, want a push of the posting list for Acme Robotics (ID 2)", intent)
 	}
 }
 
@@ -667,13 +656,13 @@ func TestCompanyListModel_Search_EscClearsAndKeepsHighlight(t *testing.T) {
 		t.Fatalf("intent on esc in the prompt = %#v, want nil (esc closes the prompt, it doesn't leave the screen)", intent)
 	}
 	intent := press(t, m, runeKey('e'))
-	if edit, ok := intent.(message.OpenCompanyEditMsg); !ok || edit.Company.ID != 2 {
-		t.Fatalf("intent on 'e' after esc = %#v, want message.OpenCompanyEditMsg for Globex (ID 2)", intent)
+	if got := opened(intent, message.ScreenCompanyEdit); got != 2 {
+		t.Fatalf("intent on 'e' after esc = %#v, want a push of the edit for Globex (ID 2)", intent)
 	}
 	press(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 	intent = press(t, m, runeKey('e'))
-	if edit, ok := intent.(message.OpenCompanyEditMsg); !ok || edit.Company.ID != 3 {
-		t.Fatalf("intent on down, 'e' after esc = %#v, want message.OpenCompanyEditMsg for Initech (ID 3): the full list is back", intent)
+	if got := opened(intent, message.ScreenCompanyEdit); got != 3 {
+		t.Fatalf("intent on down, 'e' after esc = %#v, want a push of the edit for Initech (ID 3): the full list is back", intent)
 	}
 }
 
@@ -691,8 +680,8 @@ func TestCompanyListModel_Search_CommandLettersAreTyped(t *testing.T) {
 				t.Fatalf("intent on %q in the prompt = %#v, want nil", r, intent)
 			}
 			intent := openHighlighted(t, m)
-			if sel, ok := intent.(message.OpenCompanyPostingsMsg); !ok || sel.Company.ID != 2 {
-				t.Fatalf("intent on enter after typing %q = %#v, want message.OpenCompanyPostingsMsg for ID 2", r, intent)
+			if got := opened(intent, message.ScreenCompanyPostings); got != 2 {
+				t.Fatalf("intent on enter after typing %q = %#v, want a push of the posting list for ID 2", r, intent)
 			}
 		})
 	}

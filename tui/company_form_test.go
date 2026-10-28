@@ -3,7 +3,6 @@ package tui
 import (
 	"context"
 	"errors"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -332,7 +331,7 @@ func TestCompanyFormModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 			r.Dispatch(focusOn(tt.focused(m)))
 			cmd := r.Dispatch(tea.KeyPressMsg{Code: tea.KeyEsc})
 
-			if closed := slices.Contains(runCmd(t, cmd), tea.Msg(message.CloseCompanyFormMsg{})); closed != tt.wantClose {
+			if closed := popsIn(runCmd(t, cmd), m.Instance()); closed != tt.wantClose {
 				t.Errorf("esc asked to close = %v, want %v", closed, tt.wantClose)
 			}
 		})
@@ -376,7 +375,7 @@ func TestCompanyFormModel_ActsOnItsOwnResultOnly(t *testing.T) {
 				t.Fatal("enter: cmd = nil, want the board check")
 			}
 
-			closed := slices.Contains(runCmd(t, r.Dispatch(tt.result(m))), tea.Msg(message.CloseCompanyFormMsg{}))
+			closed := popsIn(runCmd(t, r.Dispatch(tt.result(m))), m.Instance())
 
 			if closed != tt.wantClose {
 				t.Errorf("asked to close = %v, want %v", closed, tt.wantClose)

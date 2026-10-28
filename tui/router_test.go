@@ -30,11 +30,11 @@ func TestApp_CompanyList_GetsEachKeyOnce(t *testing.T) {
 	_, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	if cmd == nil {
-		t.Fatal("enter returned no command, want message.OpenCompanyPostingsMsg")
+		t.Fatal("enter returned no command, want a push of the posting list")
 	}
 	msg := cmd()
-	if got, ok := msg.(message.OpenCompanyPostingsMsg); !ok || got.Company.ID != globex.ID {
-		t.Errorf("enter after one down = %#v, want message.OpenCompanyPostingsMsg for Globex (ID %d)", msg, globex.ID)
+	if got := opened(msg, message.ScreenCompanyPostings); got != globex.ID {
+		t.Errorf("enter after one down = %#v, want a push of the posting list for Globex (ID %d)", msg, globex.ID)
 	}
 }
 

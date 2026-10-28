@@ -2,7 +2,6 @@ package tui
 
 import (
 	"errors"
-	"slices"
 	"testing"
 	"time"
 
@@ -145,7 +144,7 @@ func TestCompanyEditModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 			r.Dispatch(focusOn(tt.focused(m)))
 			cmd := r.Dispatch(tea.KeyPressMsg{Code: tea.KeyEsc})
 
-			if closed := slices.Contains(runCmd(t, cmd), tea.Msg(message.CloseCompanyEditMsg{})); closed != tt.wantClose {
+			if closed := popsIn(runCmd(t, cmd), m.Instance()); closed != tt.wantClose {
 				t.Errorf("esc asked to close = %v, want %v", closed, tt.wantClose)
 			}
 		})
@@ -189,7 +188,7 @@ func TestCompanyEditModel_ActsOnItsOwnResultOnly(t *testing.T) {
 				t.Fatal("enter: cmd = nil, want the save")
 			}
 
-			closed := slices.Contains(runCmd(t, r.Dispatch(tt.result(m))), tea.Msg(message.CloseCompanyEditMsg{}))
+			closed := popsIn(runCmd(t, r.Dispatch(tt.result(m))), m.Instance())
 
 			if closed != tt.wantClose {
 				t.Errorf("asked to close = %v, want %v", closed, tt.wantClose)
