@@ -86,11 +86,9 @@ func (m *companyListModel) loadRequested(message.Event[message.Load[message.Comp
 	return m.load()
 }
 
-// synced reloads, since a sync changes the Open and Last fetched columns.
-func (m *companyListModel) synced(e message.Event[message.Ran[message.SyncReport]]) tea.Cmd {
-	if e.Payload.Value.Code != 0 {
-		return nil
-	}
+// synced reloads even when the sync failed, since one can fail after
+// writing postings.
+func (m *companyListModel) synced(message.Event[message.Ran[message.SyncReport]]) tea.Cmd {
 	return m.load()
 }
 
