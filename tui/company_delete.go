@@ -56,7 +56,7 @@ func (m *companyDeleteModel) focusChanged(e message.Event[message.Signal[message
 // clears an earlier failure from the banner.
 func (m *companyDeleteModel) companyDeleted(message.Event[message.Changed[message.Company]]) tea.Cmd {
 	return tea.Batch(
-		func() tea.Msg { return message.CloseCompanyDeleteMsg{} },
+		message.Pop(message.Source{Instance: m.instance}),
 		message.ReportStatus(message.Source{Instance: m.instance}, ""),
 	)
 }
@@ -64,7 +64,7 @@ func (m *companyDeleteModel) companyDeleted(message.Event[message.Changed[messag
 // deleteFailed closes the confirmation too: a failed delete's y is spent,
 // and the banner shows the error.
 func (m *companyDeleteModel) deleteFailed(message.Event[message.Error]) tea.Cmd {
-	return func() tea.Msg { return message.CloseCompanyDeleteMsg{} }
+	return message.Pop(message.Source{Instance: m.instance})
 }
 
 func (m *companyDeleteModel) resize(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {
@@ -81,7 +81,7 @@ func (m *companyDeleteModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, ni
 func (m *companyDeleteModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	switch key.String() {
 	case "esc", "enter", "n":
-		return func() tea.Msg { return message.CloseCompanyDeleteMsg{} }
+		return message.Pop(message.Source{Instance: m.instance})
 	case "y":
 		if !m.confirmed {
 			m.confirmed = true

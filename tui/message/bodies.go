@@ -28,6 +28,19 @@ type CompanyList struct {
 
 func (CompanyList) Type() Type { return TypeCompanyList }
 
+// CompanyRow is one company as its list shows it.
+type CompanyRow struct {
+	Company      Company `json:"company"`
+	OpenPostings int     `json:"open_postings"`
+}
+
+func (CompanyRow) Type() Type { return TypeCompanyRow }
+
+// None is the body of a primitive that carries nothing, such as a pop.
+type None struct{}
+
+func (None) Type() Type { return TypeNone }
+
 // SyncCompany asks for one company's postings to be fetched from its job
 // board. The event's Subject is the company.
 type SyncCompany struct {

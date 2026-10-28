@@ -8,7 +8,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
@@ -60,12 +59,15 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 		open func(app *App)
 	}{
 		{name: "company form", open: func(app *App) {
-			app.Update(message.OpenCompanyFormMsg{})
+			app.currentScreen = screenCompanyList
+			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenCompanyForm, message.Subject{}, message.None{})())
 			// Past the source picker, which takes no text.
 			app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		}},
 		{name: "company edit", open: func(app *App) {
-			app.Update(message.OpenCompanyEditMsg{Company: company.Company{ID: 1}})
+			app.currentScreen = screenCompanyList
+			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenCompanyEdit,
+				message.Subject{Type: message.TypeCompany, ID: 1}, message.Company{ID: 1})())
 		}},
 		{name: "export", open: func(app *App) {
 			app.currentScreen, app.applicationExport = screenApplicationExport, newApplicationExportModel(nil, app.documents, posting.ActiveApplication{}, "", 80)

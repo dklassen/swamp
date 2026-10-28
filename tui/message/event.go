@@ -149,14 +149,16 @@ func (Error) Kind() Kind { return KindError }
 func (Error) Type() Type { return TypeError }
 
 // Nav is a request to the screen stack. The entity to open on is the
-// event's Subject.
-type Nav struct {
+// event's Subject, and Value what the screen shows of it, so opening one
+// needs no read.
+type Nav[T Body] struct {
 	Op     NavOp  `json:"op"`
 	Screen Screen `json:"screen,omitzero"`
+	Value  T      `json:"value"`
 }
 
-func (Nav) Kind() Kind { return KindNav }
-func (Nav) Type() Type { return TypeNav }
+func (Nav[T]) Kind() Kind { return KindNav }
+func (Nav[T]) Type() Type { var t T; return t.Type() }
 
 // Notify is a status line for the banner.
 type Notify struct {

@@ -30,7 +30,7 @@ Each primitive is a `Kind`. Requests have no `Op`; only `Changed` says something
 | `run` | `Run[T]` | A request for a job whose state another model owns | `RefreshCompanyMsg`, `refreshSelectedCompanyMsg`, `ToggleSyncAllMsg` | 3 |
 | `ran` | `Ran[T]` | That a job ran, with its report `T`: how many succeeded and failed, and what else a responding model needs to update, never the rows the job wrote | `CompanyRefreshedMsg`, `SyncAllStepMsg`, `SyncAllFinishedMsg`, `applicationExportedMsg`, `browserOpenedMsg`, `editorClosedMsg`, and the saves only the asker hears, `companyFiltersSavedMsg` and `applicationFormSavedMsg` | 8 |
 | `error` | `Error` | An error: a write, load or run that didn't happen, or a fault in the program, and why. The only error event | Every `Err` field, `ErrMsg`, and `documentChangedDuringReviewMsg` (a review refused because the document changed) | 2 |
-| `nav` | `Nav` | A request to the stack: push, pop, replace | `Open…`, `Close…`, `cancel…`, `backTo…`, `enter…`, `navigatePostingMsg` | 31 |
+| `nav` | `Nav[T]` | A request to the stack: push, pop, replace, with what the opened screen shows | `Open…`, `Close…`, `cancel…`, `backTo…`, `enter…`, `navigatePostingMsg` | 31 |
 | `notify` | `Notify` | A status line for the banner | `BannerMsg` | 1 |
 | `signal` | `Signal[T]` | A UI fact with no entity: size, focus, a timer | `ContentSizeMsg`, `FocusChangedMsg`, `changeTickMsg`, `allPostingsSearchMsg` | 4 |
 
@@ -47,7 +47,7 @@ The rest go, since a model does the work itself: the write requests (`confirmApp
 | What every event shares | `Meta`: `ID`, `Kind`, `Type`, `Source`, `Subject`, `Op` and `At`. It's the same struct for every event, so the router, a log line or a Kafka producer can read it without knowing the payload. |
 | `ID` | Unique per event, so a consumer that sees one twice can drop the second. 128 random bits from `crypto/rand`, as hex, set by the constructor. An event made from a `change_events` row takes its ID from that row instead, so the same row read twice gives the same ID. |
 | `Kind` | Which primitive the payload is. A consumer that wants every write, or every failure, reads `Kind` alone. |
-| `Type` | What the payload is about within its kind: `company`, `company_list`, `sync_company`, `content_size`, …, one closed set of constants in `tui/message`. `Kind` and `Type` together name the payload's schema off the wire. `error`, `nav` and `notify` have one `Type` each (`error`, `nav`, `status`); a route picks out an error or a nav by `From` or `About`, not by its code or screen. |
+| `Type` | What the payload is about within its kind: `company`, `company_list`, `sync_company`, `content_size`, …, one closed set of constants in `tui/message`. `Kind` and `Type` together name the payload's schema off the wire. `error` and `notify` have one `Type` each (`error`, `status`), and a `Nav[T]` has its body's; a route picks out an error or a nav by `From` or `About`, not by its code or screen. |
 | How `Kind` and `Type` stay right | Each primitive has `Kind()`, and its content has `Type()`. `New` sets both from the payload, so neither can disagree with it, and every constructor goes through `New`. |
 | `Source` | Who: `Process`, the writer's `"kind:pid"` as `change.Event.Origin` records it, and `Instance`, the `ScreenInstance` that asked, 0 for none. A late result for a dialog that was closed and opened again carries the old number, so it doesn't match. A number is used rather than the model because it serialises, and a command can carry it without capturing the model. A model draws its own number when it's built (`message.NewScreenInstance`: random, never 0, no shared counter) and exposes it as `Routable.Instance()`. The router records every instance it registers and refuses 0 or one it has seen, even after a `Deregister`. |
 | `Subject` | Which entity the event is about: its `Type` and `ID`. Zero for an event about no one entity. On Kafka it's the record key, so one entity's events stay in order in one partition. An outcome carries its request's subject. |
@@ -99,7 +99,7 @@ Each struct becomes an event when the model that sends or handles it migrates (R
 | `BannerMsg` | `Event[Notify]`: `Status`; its errors are `Event[Error]` |
 | `ErrMsg` | `Event[Error]`, `Code` `fault`, sent by `Fail` |
 | `FocusChangedMsg`, `ContentSizeMsg` | `Event[Signal[FocusChanged]]` (`Focused ScreenInstance`), `Event[Signal[ContentSize]]` |
-| `OpenCompanyFormMsg`, `OpenCompanyEditMsg`, `OpenCompanyDeleteMsg`, `OpenCompanyPostingsMsg`, `CloseCompanyDeleteMsg`, `CloseCompanyFormMsg`, `CloseCompanyEditMsg` | `Event[Nav]` |
+| `OpenCompanyFormMsg`, `OpenCompanyEditMsg`, `OpenCompanyDeleteMsg`, `OpenCompanyPostingsMsg`, `CloseCompanyDeleteMsg`, `CloseCompanyFormMsg`, `CloseCompanyEditMsg` | `Event[Nav[Company]]` for the edit and the posting list, `Event[Nav[CompanyRow]]` (the company and its open count) for the delete confirmation, `Event[Nav[None]]` for the add form and every close |
 
 ### Still in `tui`
 
@@ -111,12 +111,15 @@ Each struct becomes an event when the model that sends or handles it migrates (R
 | Loads and reloads | `postingsLoadedMsg`, `activeApplicationsLoadedMsg`, `applicationReloadedForDeleteMsg`, `postingReloadedMsg`, … | `Event[Read[T]]`, one `T` per query |
 | Change log | `changesMsg` | `Event[Changed[T]]` per row, `Source.Process` the row's origin (open question 2) |
 | Jobs outside the database | `applicationExportedMsg`, `browserOpenedMsg`, `editorClosedMsg` | `Event[Ran[ExportReport]]` (the directory, the paths written and the documents skipped, which the submit screen shows), `Event[Ran[OpenBrowser]]`, and `Event[Ran[EditDocument]]`, whose command records the editor's write before it reports; or `Event[Error]` |
-| Navigation | `enter…Msg`, `cancel…Msg`, `backTo…Msg`, `navigatePostingMsg` | `Event[Nav]` |
+| Navigation | `enter…Msg`, `cancel…Msg`, `backTo…Msg`, `navigatePostingMsg` | `Event[Nav[T]]` |
 | Timers | `changeTickMsg`, `allPostingsSearchMsg` | `Event[Signal[T]]` |
 
 ### Navigation without the model
 
-RFC 0012's `NavMsg` carries `Next tea.Model`. As a primitive, `Nav` carries its `NavOp` and the `Screen` kind to open, `Source.Instance` is RFC 0012's `From`, and `Subject` says which entity the screen opens on. `App` builds the model, numbers it and `Register`s it, as it already does for `OpenCompanyDeleteMsg`.
+RFC 0012's `NavMsg` carries `Next tea.Model`. As a primitive, `Nav[T]` carries its `NavOp`, the `Screen` kind to open and `Value`, the snapshot the screen shows; `Source.Instance` is RFC 0012's `From`, and `Subject` says which entity the screen opens on. `App` builds the model from `Value` and `Register`s it.
+
+- **A screen opens on what the `Nav` carries, not a read.** The model that has the data sends it, so loading stays with the model that owns it and a screen opens on the message alone. A pop, or a screen that shows nothing yet, carries `None`.
+- **`App` acts on a `Nav` only from the screen on top**, by `Source.Instance`. A second esc, or a second enter typed before the first one's screen opened, comes from a screen that isn't on top any more, and is dropped. A `Nav` for a screen `App` doesn't open that way is a `fault`.
 
 ## Template
 
@@ -156,7 +159,7 @@ const (
  TypeFocusChanged            // "focus_changed"
  TypeStatus                  // "status"
  TypeError                   // "error"
- TypeNav                     // "nav"
+ TypeNone                    // "none"
 )
 
 // Meta is what every event carries, and all that routing and filtering read.
@@ -411,7 +414,7 @@ Each step keeps `go build`, `go test`, the linter and `gofmt` clean.
 4. **The migrated company models.** Add `Company` and instance numbering. The company list, delete and edit register `Event[Changed[Company]]` and `Event[Error]`, the three company result structs go, and the rest of the structs in `tui/message` become events. `tui/message` stops importing `company` and `sync`.
 5. **Each model as it migrates** adopts its row in the tables above. A service write it uses returns `change.Of[T]` first.
 
-When step 4 lands, RFC 0012 changes in three places: its naming rule (messages are `Event[P]` of a primitive), `NavMsg` (`Event[Nav]`, a screen kind and a subject, not `Next`), and `FocusChangedMsg` (a `Signal` naming a `ScreenInstance`).
+When step 4 lands, RFC 0012 changes in three places: its naming rule (messages are `Event[P]` of a primitive), `NavMsg` (`Event[Nav[T]]`, a screen kind, a subject and the snapshot the screen shows, not `Next`), and `FocusChangedMsg` (a `Signal` naming a `ScreenInstance`).
 
 ## Open questions
 

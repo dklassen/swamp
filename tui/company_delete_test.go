@@ -2,7 +2,6 @@ package tui
 
 import (
 	"errors"
-	"slices"
 	"testing"
 	"time"
 
@@ -37,8 +36,8 @@ func TestCompanyDeleteModel_KeepKeys_AskToClose(t *testing.T) {
 			if cmd == nil {
 				t.Fatalf("keyPressed(%s) returned no command, want one asking to close", tt.name)
 			}
-			if got := cmd(); got != (message.CloseCompanyDeleteMsg{}) {
-				t.Errorf("keyPressed(%s) sent %#v, want message.CloseCompanyDeleteMsg{}", tt.name, got)
+			if got := cmd(); !pops(got, m.Instance()) {
+				t.Errorf("keyPressed(%s) sent %#v, want a pop of the confirmation", tt.name, got)
 			}
 		})
 	}
@@ -88,7 +87,7 @@ func TestCompanyDeleteModel_ClosesWhenItsCompanyIsDeletedOrItsDeleteFails(t *tes
 				t.Fatalf("Register: %v", err)
 			}
 
-			closed := slices.Contains(runCmd(t, r.Dispatch(tt.event(m))), tea.Msg(message.CloseCompanyDeleteMsg{}))
+			closed := popsIn(runCmd(t, r.Dispatch(tt.event(m))), m.Instance())
 
 			if closed != tt.wantClose {
 				t.Errorf("asked to close = %v, want %v", closed, tt.wantClose)
@@ -122,7 +121,7 @@ func TestCompanyDeleteModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 			r.Dispatch(focusOn(tt.focused(m)))
 			cmd := r.Dispatch(runeKey('n'))
 
-			if closed := cmd != nil && cmd() == (message.CloseCompanyDeleteMsg{}); closed != tt.wantClose {
+			if closed := cmd != nil && pops(cmd(), m.Instance()); closed != tt.wantClose {
 				t.Errorf("n asked to close = %v, want %v", closed, tt.wantClose)
 			}
 		})
