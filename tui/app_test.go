@@ -54,12 +54,12 @@ func newTestApp(t *testing.T, s testutil.TestApp, syncer *sync.Syncer) *App {
 // pushed is the screen on top of app's stack, as a T.
 func pushed[T stackScreen](t *testing.T, app *App) T {
 	t.Helper()
-	if len(app.stack) == 0 {
+	if app.stack.len() == 0 {
 		t.Fatalf("no screen is pushed; %v is up", app.currentScreen)
 	}
-	s, ok := app.top().(T)
+	s, ok := app.stack.top().(T)
 	if !ok {
-		t.Fatalf("the screen on top is %T, want %T", app.top(), *new(T))
+		t.Fatalf("the screen on top is %T, want %T", app.stack.top(), *new(T))
 	}
 	return s
 }
