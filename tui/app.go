@@ -1147,19 +1147,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.selectedCompany = msg.Company
 		a.currentScreen = screenPostingList
 		return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
-	case message.SyncAllFinishedMsg:
-		// The posting list, if its company was synced.
-		for _, r := range msg.Results {
-			if r.Err == nil && r.CompanyID == a.selectedCompany.ID {
-				return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
-			}
-		}
-	case message.CompanyRefreshedMsg:
-		if msg.Err == nil && msg.Result.CompanyID == a.selectedCompany.ID {
-			// The company whose postings are currently being viewed
-			// just finished a re-sync (r on its posting list): reload
-			// them from the DB. The cursor stays on its posting: the
-			// sync can add some ahead of it.
+	case message.Event[message.Ran[message.SyncReport]]:
+		if msg.Payload.Value.Code == 0 && msg.Meta.Subject.ID == a.selectedCompany.ID {
+			// The cursor stays on its posting: the sync can add some
+			// ahead of it.
 			return a, reloadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)
 		}
 	case postingsLoadedMsg:
@@ -1638,8 +1629,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			a.currentScreen = screenFilterSelect
 			return a, loadFilterOptions(a.companyService, a.selectedCompany.ID)
 		case refreshSelectedCompanyMsg:
-			c := a.selectedCompany
-			return a, func() tea.Msg { return message.RefreshCompanyMsg{Company: c} }
+			return a, syncCompany(message.Source{Instance: a.instance}, companySnapshot(a.selectedCompany))
 		case toggleHideArchivedMsg:
 			a.hideArchived = !a.hideArchived
 			return a, loadPostings(a.companyService, a.postingService, a.selectedCompany.ID, a.hideArchived)

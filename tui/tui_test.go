@@ -5,6 +5,8 @@ import (
 	"testing"
 	"time"
 
+	tea "charm.land/bubbletea/v2"
+
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/company"
@@ -31,6 +33,13 @@ func assertEventFrom(t *testing.T, meta message.Meta, src message.Source) {
 	if meta.Source != src {
 		t.Errorf("Meta.Source = %+v, want %+v", meta.Source, src)
 	}
+}
+
+// synced is a company's sync reporting back from src: a step of run runID,
+// or a refresh for 0, with code saying why it didn't sync, zero if it did.
+func synced(src message.Source, companyID int64, runID int, code message.ErrorCode) tea.Msg {
+	return message.New(src, message.Subject{Type: message.TypeCompany, ID: companyID}, message.OpNone, time.Now().UTC(),
+		message.Ran[message.SyncReport]{Value: message.SyncReport{RunID: runID, Code: code}})
 }
 
 func mustCreateCompany(t *testing.T, s testutil.TestApp, name, source, sourceRef string) company.Company {

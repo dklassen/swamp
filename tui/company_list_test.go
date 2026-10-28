@@ -14,7 +14,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
@@ -214,22 +213,22 @@ func TestCompanyListModel_E_ReturnsOpenCompanyEditMsg(t *testing.T) {
 	}
 }
 
-// TestCompanyListModel_R_ReturnsRefreshCompanyMsg: 'r' asks for the selected
+// TestCompanyListModel_R_AsksToSyncTheCompany: 'r' asks for the selected
 // company to be refreshed rather than starting the sync itself, so what
 // knows about any other sync running decides (#152).
-func TestCompanyListModel_R_ReturnsRefreshCompanyMsg(t *testing.T) {
+func TestCompanyListModel_R_AsksToSyncTheCompany(t *testing.T) {
 	t.Parallel()
 
 	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}, nil, 0, 40)
 	press(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 
 	intent := press(t, m, runeKey('r'))
-	refresh, ok := intent.(message.RefreshCompanyMsg)
+	refresh, ok := intent.(message.Event[message.Run[message.SyncCompany]])
 	if !ok {
-		t.Fatalf("intent = %T, want message.RefreshCompanyMsg", intent)
+		t.Fatalf("intent = %T, want message.Event[message.Run[message.SyncCompany]]", intent)
 	}
-	if refresh.Company.ID != 2 {
-		t.Fatalf("RefreshCompanyMsg.Company.ID = %d, want 2", refresh.Company.ID)
+	if want := (message.Subject{Type: message.TypeCompany, ID: 2}); refresh.Meta.Subject != want || refresh.Payload.Value.Company.Name != "Globex" {
+		t.Fatalf("refresh = %+v, want Globex with subject %+v", refresh, want)
 	}
 }
 
@@ -265,19 +264,19 @@ func TestCompanyListModel_CommandKeepsTheCompanyFromWhenTheKeyWasPressed(t *test
 
 // 'R' hands the run its own copy of the companies, so a reload landing
 // mid-run can't change which companies it syncs.
-func TestCompanyListModel_ShiftR_ReturnsToggleSyncAllMsgWithACopyOfTheCompanies(t *testing.T) {
+func TestCompanyListModel_ShiftR_AsksToSyncACopyOfTheCompanies(t *testing.T) {
 	t.Parallel()
 
 	m := companyListOf(t, []company.Company{{ID: 1, Name: "Acme"}, {ID: 2, Name: "Globex"}}, nil, 0, 40)
 
 	intent := press(t, m, runeKey('R'))
-	start, ok := intent.(message.ToggleSyncAllMsg)
+	start, ok := intent.(message.Event[message.Run[message.SyncAll]])
 	if !ok {
-		t.Fatalf("intent = %T, want message.ToggleSyncAllMsg", intent)
+		t.Fatalf("intent = %T, want message.Event[message.Run[message.SyncAll]]", intent)
 	}
 	m.companies[0].Name = "Changed"
-	if len(start.Companies) != 2 || start.Companies[0].Name != "Acme" || start.Companies[1].Name != "Globex" {
-		t.Fatalf("ToggleSyncAllMsg.Companies = %+v, want a copy of Acme and Globex", start.Companies)
+	if got := start.Payload.Value.Companies; len(got) != 2 || got[0].Name != "Acme" || got[1].Name != "Globex" {
+		t.Fatalf("SyncAll.Companies = %+v, want a copy of Acme and Globex", got)
 	}
 }
 
@@ -937,9 +936,10 @@ func TestCompanyListModel_ReloadsAfterASync(t *testing.T) {
 		msg        tea.Msg
 		wantReload bool
 	}{
-		{name: "a refresh", msg: message.CompanyRefreshedMsg{Name: "Acme", Result: sync.Result{CompanyID: 1, Name: "Acme"}}, wantReload: true},
-		{name: "a refused refresh", msg: message.CompanyRefreshedMsg{Name: "Acme", Err: sync.ErrSyncInProgress}, wantReload: false},
-		{name: "a sync-all run ending", msg: message.SyncAllFinishedMsg{}, wantReload: true},
+		{name: "a refresh", msg: synced(message.Source{Instance: 9}, 1, 0, 0), wantReload: true},
+		{name: "a refused refresh", msg: message.New(message.Source{Instance: 9}, message.Subject{Type: message.TypeCompany, ID: 1}, message.OpNone, time.Now().UTC(), message.Error{Code: message.ErrSyncInProgress}), wantReload: false},
+		{name: "a company synced in a run", msg: synced(message.Source{Instance: 9}, 1, 1, 0), wantReload: true},
+		{name: "a company that failed partway in a run", msg: synced(message.Source{Instance: 9}, 1, 1, message.ErrOther), wantReload: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

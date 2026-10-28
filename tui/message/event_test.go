@@ -198,6 +198,21 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "load", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Load[message.CompanyList]{}))},
 		{name: "run", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Run[message.ContentSize]{Value: r}))},
 		{name: "ran", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Ran[message.ContentSize]{Value: r}))},
+		{name: "sync company run", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Run[message.SyncCompany]{Value: message.SyncCompany{
+			Company: message.Company{ID: 3, Name: "Acme", CreatedAt: at, UpdatedAt: at},
+		}}))},
+		{name: "sync all run", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Run[message.SyncAll]{Value: message.SyncAll{
+			Companies: []message.Company{{ID: 3, Name: "Acme", CreatedAt: at, UpdatedAt: at}},
+		}}))},
+		{name: "sync report ran", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Ran[message.SyncReport]{Value: message.SyncReport{
+			RunID: 2, Fetched: 40, Created: 3, Updated: 2, Closed: 1, Reopened: 1,
+		}}))},
+		{name: "skipped sync report ran", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Ran[message.SyncReport]{Value: message.SyncReport{
+			RunID: 2, Code: message.ErrSyncInProgress,
+		}}))},
+		{name: "sync all report ran", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Ran[message.SyncAllReport]{Value: message.SyncAllReport{
+			Companies: 3, Failed: []string{"Globex"}, Skipped: []string{"Initech"},
+		}}))},
 		{name: "error", check: roundTrip(message.New(src, subject, message.OpUpdated, at, message.Error{Code: message.ErrSyncInProgress, Text: "a sync is already running"}))},
 		{name: "nav", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Nav{Op: message.NavReplace, Screen: message.ScreenCompanyEdit}))},
 		{name: "notify", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Notify{Status: "saved"}))},

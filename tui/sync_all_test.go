@@ -165,7 +165,7 @@ func TestApp_SyncAll_RAgainDuringRun_StopsAfterInFlightCompany(t *testing.T) {
 	}
 	if msg, ok := next().(tea.BatchMsg); ok {
 		for _, c := range msg {
-			if _, isStep := c().(message.SyncAllStepMsg); isStep {
+			if _, isStep := c().(message.Event[message.Ran[message.SyncReport]]); isStep {
 				t.Error("stopping issued another company's sync")
 			}
 		}
@@ -208,9 +208,11 @@ func TestApp_SyncAll_MessageFromEarlierRun_Ignored(t *testing.T) {
 	app, _ = sendIntentKey(t, app, runeKey('R'))
 	banner := bannerLine(app)
 
-	app, stray := sendKey(app, message.SyncAllStepMsg{RunID: 1, Result: sync.Result{Name: "Acme"}})
-	if stray != nil {
-		t.Error("a message from run 1 issued a Cmd during run 2, want nil")
+	app, stray := sendKey(app, synced(message.Source{Instance: app.syncing.Instance()}, app.companyList.companies[0].ID, 1, 0))
+	for _, msg := range runCmd(t, stray) {
+		if _, isStep := msg.(message.Event[message.Ran[message.SyncReport]]); isStep {
+			t.Error("a message from run 1 issued a company's sync during run 2")
+		}
 	}
 	if bannerLine(app) != banner {
 		t.Errorf("banner after a stray run-1 message = %q, want %q (unchanged)", bannerLine(app), banner)
