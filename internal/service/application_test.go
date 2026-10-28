@@ -5,13 +5,16 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -28,24 +31,15 @@ func TestApplicationService_SetStatus_UpdatesStatus(t *testing.T) {
 	if err != nil {
 		t.Fatalf("SetStatus: %v", err)
 	}
-	if updated.Status != application.Interviewing {
-		t.Errorf("Status = %s, want %s", updated.Status, application.Interviewing)
+	if updated.After.Status != application.Interviewing {
+		t.Errorf("Status = %s, want %s", updated.After.Status, application.Interviewing)
 	}
 	got, err := applications.Get(ctx, app.ID)
 	if err != nil {
 		t.Fatalf("Get: %v", err)
 	}
-	if diff := cmp.Diff(updated, got); diff != "" {
+	if diff := cmp.Diff(updated.After, *got); diff != "" {
 		t.Errorf("stored application (-returned +stored):\n%s", diff)
-	}
-}
-
-func TestApplicationService_SetStatus_NonexistentApplication_ReturnsErrNotFound(t *testing.T) {
-	t.Parallel()
-	s := testutil.NewTestApp(t)
-
-	if _, err := s.Applications.SetStatus(context.Background(), 999, application.Interviewing); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("SetStatus(999): err = %v, want store.ErrNotFound", err)
 	}
 }
 
@@ -200,5 +194,141 @@ func TestApplicationService_Active_LeavesOutTerminalStatusesAndPostingsWithoutAn
 	}
 	if diff := cmp.Diff(want, titles, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
 		t.Errorf("active application titles (-want +got):\n%s", diff)
+	}
+}
+
+// Before is read in the write's transaction, so it's what the last writer
+// left, not what the caller last saw.
+func TestApplicationService_Updates_ReturnTheApplicationBeforeAndAfter(t *testing.T) {
+	t.Parallel()
+	writes := []struct {
+		name  string
+		write func(*service.ApplicationService, context.Context, int64) (*change.Of[application.Application], error)
+	}{
+		{"SetStatus", func(s *service.ApplicationService, ctx context.Context, id int64) (*change.Of[application.Application], error) {
+			return s.SetStatus(ctx, id, application.Interviewing)
+		}},
+		{"SetNotes", func(s *service.ApplicationService, ctx context.Context, id int64) (*change.Of[application.Application], error) {
+			return s.SetNotes(ctx, id, "Recruiter called back")
+		}},
+	}
+	for _, w := range writes {
+		t.Run(w.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			s := testutil.NewTestApp(t)
+			app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+			if _, err := s.Applications.SetNotes(ctx, app.ID, "Referred by a friend"); err != nil {
+				t.Fatalf("SetNotes: %v", err)
+			}
+			before, err := s.Applications.Get(ctx, app.ID)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+
+			got, err := w.write(s.Applications, ctx, app.ID)
+			if err != nil {
+				t.Fatalf("%s: %v", w.name, err)
+			}
+
+			if diff := cmp.Diff(*before, got.Before); diff != "" {
+				t.Errorf("Before (-want +got):\n%s", diff)
+			}
+			after, err := s.Applications.Get(ctx, app.ID)
+			if err != nil {
+				t.Fatalf("Get: %v", err)
+			}
+			if diff := cmp.Diff(*after, got.After); diff != "" {
+				t.Errorf("After (-want +got):\n%s", diff)
+			}
+			if !got.At.Equal(got.After.UpdatedAt) || got.At.Location() != time.UTC {
+				t.Errorf("At = %v, want After.UpdatedAt %v, in UTC", got.At, got.After.UpdatedAt)
+			}
+		})
+	}
+}
+
+// After is the soft-deleted row, and At when it was deleted.
+func TestApplicationService_Delete_ReturnsTheApplicationBeforeAndAfter(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+	if _, err := s.Applications.SetNotes(ctx, app.ID, "Referred by a friend"); err != nil {
+		t.Fatalf("SetNotes: %v", err)
+	}
+	before, err := s.Applications.Get(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+
+	got, err := s.Applications.Delete(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	if diff := cmp.Diff(*before, got.Before); diff != "" {
+		t.Errorf("Before (-want +got):\n%s", diff)
+	}
+	after, err := s.Applications.GetIncludingDeleted(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("GetIncludingDeleted: %v", err)
+	}
+	if diff := cmp.Diff(*after, got.After); diff != "" {
+		t.Errorf("After (-want +got):\n%s", diff)
+	}
+	if got.After.DeletedAt.IsZero() {
+		t.Fatal("After.DeletedAt is zero, want when it was deleted")
+	}
+	if !got.At.Equal(got.After.DeletedAt) || got.At.Location() != time.UTC {
+		t.Errorf("At = %v, want After.DeletedAt %v, in UTC", got.At, got.After.DeletedAt)
+	}
+}
+
+func TestApplicationService_Writes_ReturnNotFoundForAnApplicationNotThere(t *testing.T) {
+	t.Parallel()
+	writes := []struct {
+		name  string
+		write func(*service.ApplicationService, context.Context, int64) (*change.Of[application.Application], error)
+	}{
+		{"SetStatus", func(s *service.ApplicationService, ctx context.Context, id int64) (*change.Of[application.Application], error) {
+			return s.SetStatus(ctx, id, application.Interviewing)
+		}},
+		{"SetNotes", func(s *service.ApplicationService, ctx context.Context, id int64) (*change.Of[application.Application], error) {
+			return s.SetNotes(ctx, id, "Recruiter called back")
+		}},
+		{"Delete", (*service.ApplicationService).Delete},
+	}
+	applications := []struct {
+		name    string
+		arrange func(*testing.T, testutil.TestApp) int64
+	}{
+		{"missing", func(*testing.T, testutil.TestApp) int64 { return 999 }},
+		{"already deleted", func(t *testing.T, s testutil.TestApp) int64 {
+			t.Helper()
+			app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+			if _, err := s.Applications.Delete(context.Background(), app.ID); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			return app.ID
+		}},
+	}
+	for _, w := range writes {
+		for _, a := range applications {
+			t.Run(w.name+", "+a.name, func(t *testing.T) {
+				t.Parallel()
+				s := testutil.NewTestApp(t)
+				id := a.arrange(t, s)
+
+				got, err := w.write(s.Applications, context.Background(), id)
+
+				if !errors.Is(err, store.ErrNotFound) {
+					t.Errorf("err = %v, want store.ErrNotFound", err)
+				}
+				if got != nil {
+					t.Errorf("change = %+v, want nil", got)
+				}
+			})
+		}
 	}
 }

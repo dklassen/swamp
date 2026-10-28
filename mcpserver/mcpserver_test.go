@@ -331,7 +331,7 @@ func TestWriteDocument_DeletedApplication_WritesNothing(t *testing.T) {
 	mustMarkInterested(t, s, posting.ID)
 	cs := connectClient(t, srv)
 	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
-	if err := s.Applications.Delete(context.Background(), prepared.ApplicationID); err != nil {
+	if _, err := s.Applications.Delete(context.Background(), prepared.ApplicationID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
 
@@ -555,7 +555,7 @@ func TestReadDocument_DeletedApplication_SaysSo(t *testing.T) {
 		"DocumentType":  "cover_letter",
 		"Content":       "a draft",
 	})
-	if err := s.Applications.Delete(context.Background(), prepared.ApplicationID); err != nil {
+	if _, err := s.Applications.Delete(context.Background(), prepared.ApplicationID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
 

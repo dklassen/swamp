@@ -146,7 +146,7 @@ func TestStatusForm_ShowsTheStatusAsItIsNow(t *testing.T) {
 	t.Parallel()
 
 	app, target := deleteTestApp(t)
-	if _, err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
+	if err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
@@ -165,7 +165,7 @@ func TestStatusForm_ApplicationDeletedMeanwhile_StaysAndSaysSo(t *testing.T) {
 	t.Parallel()
 
 	app, target := deleteTestApp(t)
-	if err := storeOf(app).Applications.Delete(context.Background(), target.ID); err != nil {
+	if _, err := storeOf(app).Applications.Delete(context.Background(), target.ID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
 

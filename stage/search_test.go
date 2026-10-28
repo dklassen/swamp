@@ -50,7 +50,7 @@ func newSearchStage(t *testing.T) searchStage {
 	if _, err := createApplication(ctx, s, f.submitted.ID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := updateApplicationStatus(ctx, s, f.submitted.ID, application.Submitted); err != nil {
+	if err := updateApplicationStatus(ctx, s, f.submitted.ID, application.Submitted); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 	if err := s.Postings.Close(ctx, f.closed.ID, nil); err != nil {
@@ -432,10 +432,11 @@ func createApplication(ctx context.Context, s testutil.TestApp, postingID int64)
 	return s.Postings.ApplyTo(ctx, postingID)
 }
 
-func updateApplicationStatus(ctx context.Context, s testutil.TestApp, postingID int64, status application.Status) (*application.Application, error) {
+func updateApplicationStatus(ctx context.Context, s testutil.TestApp, postingID int64, status application.Status) error {
 	app, err := s.Postings.Application(ctx, postingID)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return s.Applications.SetStatus(ctx, app.ID, status)
+	_, err = s.Applications.SetStatus(ctx, app.ID, status)
+	return err
 }

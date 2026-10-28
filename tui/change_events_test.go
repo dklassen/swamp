@@ -120,7 +120,7 @@ func TestApp_HomeListReload_KeepsTheCursorOnTheSameApplication(t *testing.T) {
 	app, _ = sendKey(app, runeKey('j'))
 	onLast := rows[2].ID
 
-	if err := s.Applications.Delete(ctx, rows[0].ID); err != nil {
+	if _, err := s.Applications.Delete(ctx, rows[0].ID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "applications", RowID: rows[0].ID, Op: "update", Origin: "tui:2"}}})
@@ -235,7 +235,7 @@ func TestApp_ApplicationDeletedElsewhere_GoesBackAndSaysSo(t *testing.T) {
 	app, target := deleteTestApp(t)
 	app.WithChangeLog(0, "tui:1")
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if err := storeOf(app).Applications.Delete(context.Background(), target.ID); err != nil {
+	if _, err := storeOf(app).Applications.Delete(context.Background(), target.ID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
 
@@ -378,7 +378,7 @@ func TestApp_EnteringApplicationDetail_ShowsAChangeMadeBeforeIt(t *testing.T) {
 
 	app, target := deleteTestApp(t)
 	app.WithChangeLog(0, "tui:1")
-	if _, err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
+	if err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
@@ -416,7 +416,7 @@ func TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere(t *testing.T) {
 	if app.applicationDetail.application.ID == first.ID {
 		other = second
 	}
-	if _, err := updateApplicationStatusIn(ctx, s, other.PostingID, application.Interviewing); err != nil {
+	if err := updateApplicationStatusIn(ctx, s, other.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "applications", RowID: other.ID, Op: "update", Origin: "mcp:7"}}})
@@ -443,7 +443,7 @@ func TestApp_TabBackToTheHomeList_ShowsAChangeClearedOnTheCompanyList(t *testing
 	if app.currentScreen != screenCompanyList {
 		t.Fatalf("screen = %v, want the company list", app.currentScreen)
 	}
-	if _, err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
+	if err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "applications", RowID: target.ID, Op: "update", Origin: "mcp:7"}}})

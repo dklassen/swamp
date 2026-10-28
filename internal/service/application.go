@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/repository"
@@ -104,13 +105,53 @@ func (service *ApplicationService) GetIncludingDeleted(ctx context.Context, appl
 	return service.applicationViewer.GetByIDIncludingDeleted(ctx, service.db, applicationID)
 }
 
-func (service *ApplicationService) SetNotes(ctx context.Context, applicationID int64, notes string) (*application.Application, error) {
-	return service.applicationWriter.SetNotes(ctx, service.db, applicationID, notes)
+// SetNotes replaces a live application's notes, or returns
+// store.ErrNotFound.
+func (service *ApplicationService) SetNotes(ctx context.Context, applicationID int64, notes string) (*change.Of[application.Application], error) {
+	var updated *change.Of[application.Application]
+	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
+		before, err := service.applicationViewer.Get(ctx, tx, applicationID)
+		if err != nil {
+			return err
+		}
+		after, err := service.applicationWriter.SetNotes(ctx, tx, applicationID, notes)
+		if err != nil {
+			return err
+		}
+		updated = &change.Of[application.Application]{Before: *before, After: *after, At: after.UpdatedAt}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
 }
 
-// Delete soft-deletes an application, or returns store.ErrNotFound.
-func (service *ApplicationService) Delete(ctx context.Context, applicationID int64) error {
-	return service.applicationWriter.Delete(ctx, service.db, applicationID)
+// Delete soft-deletes a live application, or returns store.ErrNotFound.
+func (service *ApplicationService) Delete(ctx context.Context, applicationID int64) (*change.Of[application.Application], error) {
+	var deleted *change.Of[application.Application]
+	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
+		before, err := service.applicationViewer.Get(ctx, tx, applicationID)
+		if err != nil {
+			return err
+		}
+		if err := service.applicationWriter.Delete(ctx, tx, applicationID); err != nil {
+			return err
+		}
+		after, err := service.applicationViewer.GetByIDIncludingDeleted(ctx, tx, applicationID)
+		if err != nil {
+			return fmt.Errorf("application: get deleted application: %w", err)
+		}
+		if after.DeletedAt.IsZero() {
+			return fmt.Errorf("application: %d has no deleted_at after its delete", applicationID)
+		}
+		deleted = &change.Of[application.Application]{Before: *before, After: *after, At: after.DeletedAt}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return deleted, nil
 }
 
 // History returns an application's status changes, oldest first.
@@ -121,21 +162,22 @@ func (service *ApplicationService) History(ctx context.Context, applicationID in
 // SetStatus sets an application's status and records it as the user's
 // change. Saving the status it already has records nothing: it isn't a
 // change.
-func (service *ApplicationService) SetStatus(ctx context.Context, applicationID int64, status application.Status) (*application.Application, error) {
-	var updated *application.Application
+func (service *ApplicationService) SetStatus(ctx context.Context, applicationID int64, status application.Status) (*change.Of[application.Application], error) {
+	var updated *change.Of[application.Application]
 	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
 		before, err := service.applicationViewer.Get(ctx, tx, applicationID)
 		if err != nil {
 			return err
 		}
-		updated, err = service.applicationWriter.SetStatus(ctx, tx, applicationID, status)
+		after, err := service.applicationWriter.SetStatus(ctx, tx, applicationID, status)
 		if err != nil {
 			return err
 		}
+		updated = &change.Of[application.Application]{Before: *before, After: *after, At: after.UpdatedAt}
 		if before.Status == status {
 			return nil
 		}
-		return service.applicationHistoryWriter.Insert(ctx, tx, updated.ID, status, application.ChangedByUser)
+		return service.applicationHistoryWriter.Insert(ctx, tx, after.ID, status, application.ChangedByUser)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("application: update status: %w", err)

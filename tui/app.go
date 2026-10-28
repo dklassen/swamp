@@ -858,7 +858,7 @@ func updateApplicationStatus(applications *service.ApplicationService, applicati
 		if err != nil {
 			return applicationStatusUpdatedMsg{from: from, err: err}
 		}
-		return applicationStatusUpdatedMsg{application: *app, from: from}
+		return applicationStatusUpdatedMsg{application: app.After, from: from}
 	}
 }
 
@@ -874,7 +874,7 @@ func updateApplicationNotes(applications *service.ApplicationService, applicatio
 		if err != nil {
 			return applicationNotesUpdatedMsg{from: from, err: err}
 		}
-		return applicationNotesUpdatedMsg{application: *app, from: from}
+		return applicationNotesUpdatedMsg{application: app.After, from: from}
 	}
 }
 

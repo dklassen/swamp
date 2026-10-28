@@ -1666,7 +1666,7 @@ func TestApp_PostingDetail_NavigatingBetweenPostings_LoadsEachPostingsOwnApplica
 	if _, err := createApplicationIn(context.Background(), s, designerID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := updateApplicationStatusIn(context.Background(), s, designerID, application.Interviewing); err != nil {
+	if err := updateApplicationStatusIn(context.Background(), s, designerID, application.Interviewing); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 	app = openPostingDetail(t, app) // opens the posting at cursor 0, no application

@@ -83,7 +83,7 @@ type applicationDeletedMsg struct {
 // up.
 func deleteApplication(applications *service.ApplicationService, app posting.ActiveApplication) tea.Cmd {
 	return func() tea.Msg {
-		err := applications.Delete(context.Background(), app.ID)
+		_, err := applications.Delete(context.Background(), app.ID)
 		return applicationDeletedMsg{application: app, err: err}
 	}
 }

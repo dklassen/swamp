@@ -180,7 +180,7 @@ func TestList_ExcludesApplicationsInTerminalStatus(t *testing.T) {
 			if _, err := createApplication(context.Background(), s, posting.ID); err != nil {
 				t.Fatalf("application.Create: %v", err)
 			}
-			if _, err := updateApplicationStatus(context.Background(), s, posting.ID, tc.status); err != nil {
+			if err := updateApplicationStatus(context.Background(), s, posting.ID, tc.status); err != nil {
 				t.Fatalf("application.UpdateStatus: %v", err)
 			}
 
@@ -701,7 +701,7 @@ func TestPrepare_AfterDelete_StartsFreshApplicationWithoutOldDrafts(t *testing.T
 	if err := os.WriteFile(draft.Path, []byte("Dear Acme,\n"), 0o644); err != nil {
 		t.Fatalf("write draft: %v", err)
 	}
-	if err := s.Applications.Delete(context.Background(), first.ApplicationID); err != nil {
+	if _, err := s.Applications.Delete(context.Background(), first.ApplicationID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
 
@@ -947,7 +947,7 @@ func TestList_IncludesStartedApplicationsNotMarkedInterested(t *testing.T) {
 	if _, err := createApplication(ctx, s, submitted.ID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := updateApplicationStatus(ctx, s, submitted.ID, application.Submitted); err != nil {
+	if err := updateApplicationStatus(ctx, s, submitted.ID, application.Submitted); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 

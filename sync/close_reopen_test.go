@@ -38,7 +38,7 @@ func mustClosePosting(t *testing.T, s testutil.TestApp, postingID int64, from []
 
 func mustUpdateApplicationStatus(t *testing.T, s testutil.TestApp, postingID int64, status application.Status) {
 	t.Helper()
-	if _, err := updateApplicationStatus(context.Background(), s, postingID, status); err != nil {
+	if err := updateApplicationStatus(context.Background(), s, postingID, status); err != nil {
 		t.Fatalf("UpdateStatus(%s): %v", status, err)
 	}
 }
@@ -79,7 +79,7 @@ func TestClosePosting(t *testing.T) {
 				if _, err := createApplication(ctx, s, p.ID); err != nil {
 					t.Fatalf("application.Create: %v", err)
 				}
-				if _, err := updateApplicationStatus(ctx, s, p.ID, *tt.application); err != nil {
+				if err := updateApplicationStatus(ctx, s, p.ID, *tt.application); err != nil {
 					t.Fatalf("application.UpdateStatus: %v", err)
 				}
 			}

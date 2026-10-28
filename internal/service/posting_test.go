@@ -519,7 +519,7 @@ func TestPostingService_ApplyTo_AfterTheApplicationIsDeleted_StartsAFreshOne(t *
 		t.Fatalf("Get: %v", err)
 	}
 
-	if err := applications.Delete(ctx, app.ID); err != nil {
+	if _, err := applications.Delete(ctx, app.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 
@@ -562,7 +562,7 @@ func TestPostingService_Application_AfterDeleteAndRestart_IsTheLiveOne(t *testin
 	applications := s.Applications
 	p := testutil.MustIngestPosting(t, s, "job-1", "Software Engineer")
 	first := testutil.MustApplyTo(t, s, p.ID)
-	if err := applications.Delete(ctx, first.ID); err != nil {
+	if _, err := applications.Delete(ctx, first.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	deleted, err := applications.GetIncludingDeleted(ctx, first.ID)
@@ -672,6 +672,37 @@ func TestPostingService_MarkupWrites_ReturnTheMarkupBeforeAndAfter(t *testing.T)
 			}
 			if !got.At.Equal(got.After.UpdatedAt) || got.At.Location() != time.UTC {
 				t.Errorf("At = %v, want After.UpdatedAt %v, in UTC", got.At, got.After.UpdatedAt)
+			}
+		})
+	}
+}
+
+func TestPostingService_MarkupWrites_ReturnNotFoundForAPostingNotThere(t *testing.T) {
+	t.Parallel()
+	writes := []struct {
+		name  string
+		write func(*service.PostingService, context.Context, int64) (*change.Of[posting.Markup], error)
+	}{
+		{"SetInterested", (*service.PostingService).SetInterested},
+		{"UnmarkInterested", (*service.PostingService).UnmarkInterested},
+		{"SetArchived", (*service.PostingService).SetArchived},
+		{"Unarchive", (*service.PostingService).Unarchive},
+		{"SetNotes", func(s *service.PostingService, ctx context.Context, id int64) (*change.Of[posting.Markup], error) {
+			return s.SetNotes(ctx, id, "Asked a recruiter")
+		}},
+	}
+	for _, w := range writes {
+		t.Run(w.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+
+			got, err := w.write(s.Postings, context.Background(), 999)
+
+			if !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("err = %v, want store.ErrNotFound", err)
+			}
+			if got != nil {
+				t.Errorf("change = %+v, want nil", got)
 			}
 		})
 	}
