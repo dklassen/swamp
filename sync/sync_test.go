@@ -141,10 +141,11 @@ func createApplication(ctx context.Context, s testutil.TestApp, postingID int64)
 
 // updateApplicationStatus sets postingID's application to status, as the
 // user would.
-func updateApplicationStatus(ctx context.Context, s testutil.TestApp, postingID int64, status application.Status) (*application.Application, error) {
+func updateApplicationStatus(ctx context.Context, s testutil.TestApp, postingID int64, status application.Status) error {
 	app, err := s.Postings.Application(ctx, postingID)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return s.Applications.SetStatus(ctx, app.ID, status)
+	_, err = s.Applications.SetStatus(ctx, app.ID, status)
+	return err
 }

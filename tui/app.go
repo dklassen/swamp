@@ -23,6 +23,7 @@ import (
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
@@ -728,7 +729,7 @@ func toggleInterested(postings *service.PostingService, postingID int64, current
 	return func() tea.Msg {
 		ctx := context.Background()
 		var (
-			m   *posting.Markup
+			m   *change.Of[posting.Markup]
 			err error
 		)
 		if currentlyInterested {
@@ -739,7 +740,7 @@ func toggleInterested(postings *service.PostingService, postingID int64, current
 		if err != nil {
 			return postingMarkupUpdatedMsg{err: err}
 		}
-		return postingMarkupUpdatedMsg{markup: *m}
+		return postingMarkupUpdatedMsg{markup: m.After}
 	}
 }
 
@@ -747,7 +748,7 @@ func toggleArchived(postings *service.PostingService, postingID int64, currently
 	return func() tea.Msg {
 		ctx := context.Background()
 		var (
-			m   *posting.Markup
+			m   *change.Of[posting.Markup]
 			err error
 		)
 		if currentlyArchived {
@@ -758,7 +759,7 @@ func toggleArchived(postings *service.PostingService, postingID int64, currently
 		if err != nil {
 			return postingMarkupUpdatedMsg{err: err}
 		}
-		return postingMarkupUpdatedMsg{markup: *m}
+		return postingMarkupUpdatedMsg{markup: m.After}
 	}
 }
 
@@ -857,7 +858,7 @@ func updateApplicationStatus(applications *service.ApplicationService, applicati
 		if err != nil {
 			return applicationStatusUpdatedMsg{from: from, err: err}
 		}
-		return applicationStatusUpdatedMsg{application: *app, from: from}
+		return applicationStatusUpdatedMsg{application: app.After, from: from}
 	}
 }
 
@@ -873,7 +874,7 @@ func updateApplicationNotes(applications *service.ApplicationService, applicatio
 		if err != nil {
 			return applicationNotesUpdatedMsg{from: from, err: err}
 		}
-		return applicationNotesUpdatedMsg{application: *app, from: from}
+		return applicationNotesUpdatedMsg{application: app.After, from: from}
 	}
 }
 

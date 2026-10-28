@@ -5,11 +5,13 @@ import (
 	"encoding/json"
 	"errors"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
@@ -507,7 +509,7 @@ func TestPostingService_ApplyTo_AfterTheApplicationIsDeleted_StartsAFreshOne(t *
 	postings := s.Postings
 	applications := s.Applications
 	p := testutil.MustIngestPosting(t, s, "job-1", "Software Engineer")
-	markupBefore, err := postings.SetInterested(ctx, p.ID)
+	interested, err := postings.SetInterested(ctx, p.ID)
 	if err != nil {
 		t.Fatalf("SetInterested: %v", err)
 	}
@@ -517,7 +519,7 @@ func TestPostingService_ApplyTo_AfterTheApplicationIsDeleted_StartsAFreshOne(t *
 		t.Fatalf("Get: %v", err)
 	}
 
-	if err := applications.Delete(ctx, app.ID); err != nil {
+	if _, err := applications.Delete(ctx, app.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 
@@ -532,7 +534,7 @@ func TestPostingService_ApplyTo_AfterTheApplicationIsDeleted_StartsAFreshOne(t *
 	if err != nil {
 		t.Fatalf("Markup after delete: %v", err)
 	}
-	if diff := cmp.Diff(markupBefore, markupAfter); diff != "" {
+	if diff := cmp.Diff(interested.After, *markupAfter); diff != "" {
 		t.Errorf("posting markup changed (-before +after):\n%s", diff)
 	}
 
@@ -560,7 +562,7 @@ func TestPostingService_Application_AfterDeleteAndRestart_IsTheLiveOne(t *testin
 	applications := s.Applications
 	p := testutil.MustIngestPosting(t, s, "job-1", "Software Engineer")
 	first := testutil.MustApplyTo(t, s, p.ID)
-	if err := applications.Delete(ctx, first.ID); err != nil {
+	if _, err := applications.Delete(ctx, first.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 	deleted, err := applications.GetIncludingDeleted(ctx, first.ID)
@@ -620,5 +622,88 @@ func TestPostingService_Form(t *testing.T) {
 	}
 	if got.FetchedAt.IsZero() {
 		t.Error("FetchedAt is zero, want when the form was saved")
+	}
+}
+
+// Before is read in the write's transaction, so it's what the last writer
+// left, not what the caller last saw.
+func TestPostingService_MarkupWrites_ReturnTheMarkupBeforeAndAfter(t *testing.T) {
+	t.Parallel()
+	writes := []struct {
+		name  string
+		write func(*service.PostingService, context.Context, int64) (*change.Of[posting.Markup], error)
+	}{
+		{"SetInterested", (*service.PostingService).SetInterested},
+		{"UnmarkInterested", (*service.PostingService).UnmarkInterested},
+		{"SetArchived", (*service.PostingService).SetArchived},
+		{"Unarchive", (*service.PostingService).Unarchive},
+		{"SetNotes", func(s *service.PostingService, ctx context.Context, id int64) (*change.Of[posting.Markup], error) {
+			return s.SetNotes(ctx, id, "Asked a recruiter")
+		}},
+	}
+	for _, w := range writes {
+		t.Run(w.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			s := testutil.NewTestApp(t)
+			p := testutil.MustIngestPosting(t, s, "job-1", "Software Engineer")
+			if _, err := s.Postings.SetNotes(ctx, p.ID, "Referred by a friend"); err != nil {
+				t.Fatalf("SetNotes: %v", err)
+			}
+			before, err := s.Postings.Markup(ctx, p.ID)
+			if err != nil {
+				t.Fatalf("Markup: %v", err)
+			}
+
+			got, err := w.write(s.Postings, ctx, p.ID)
+			if err != nil {
+				t.Fatalf("%s: %v", w.name, err)
+			}
+
+			if diff := cmp.Diff(*before, got.Before); diff != "" {
+				t.Errorf("Before (-want +got):\n%s", diff)
+			}
+			after, err := s.Postings.Markup(ctx, p.ID)
+			if err != nil {
+				t.Fatalf("Markup: %v", err)
+			}
+			if diff := cmp.Diff(*after, got.After); diff != "" {
+				t.Errorf("After (-want +got):\n%s", diff)
+			}
+			if !got.At.Equal(got.After.UpdatedAt) || got.At.Location() != time.UTC {
+				t.Errorf("At = %v, want After.UpdatedAt %v, in UTC", got.At, got.After.UpdatedAt)
+			}
+		})
+	}
+}
+
+func TestPostingService_MarkupWrites_ReturnNotFoundForAPostingNotThere(t *testing.T) {
+	t.Parallel()
+	writes := []struct {
+		name  string
+		write func(*service.PostingService, context.Context, int64) (*change.Of[posting.Markup], error)
+	}{
+		{"SetInterested", (*service.PostingService).SetInterested},
+		{"UnmarkInterested", (*service.PostingService).UnmarkInterested},
+		{"SetArchived", (*service.PostingService).SetArchived},
+		{"Unarchive", (*service.PostingService).Unarchive},
+		{"SetNotes", func(s *service.PostingService, ctx context.Context, id int64) (*change.Of[posting.Markup], error) {
+			return s.SetNotes(ctx, id, "Asked a recruiter")
+		}},
+	}
+	for _, w := range writes {
+		t.Run(w.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+
+			got, err := w.write(s.Postings, context.Background(), 999)
+
+			if !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("err = %v, want store.ErrNotFound", err)
+			}
+			if got != nil {
+				t.Errorf("change = %+v, want nil", got)
+			}
+		})
 	}
 }

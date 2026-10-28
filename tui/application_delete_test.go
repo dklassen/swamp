@@ -150,7 +150,7 @@ func TestDeleteFlow_ConfirmationShowsTheStatusAsItIsNow(t *testing.T) {
 	t.Parallel()
 
 	app, target := deleteTestApp(t)
-	if _, err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
+	if err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
@@ -167,7 +167,7 @@ func TestDeleteFlow_AlreadyDeletedElsewhere_StaysOnDetailAndSaysSo(t *testing.T)
 
 	app, target := deleteTestApp(t)
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if err := storeOf(app).Applications.Delete(context.Background(), target.ID); err != nil {
+	if _, err := storeOf(app).Applications.Delete(context.Background(), target.ID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
 

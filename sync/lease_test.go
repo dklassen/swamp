@@ -185,7 +185,7 @@ func TestSyncCompany_StaleFetchCantEndReopenedPostingsApplication(t *testing.T) 
 	if _, err := seed.SyncCompany(ctx, acme.ID); err != nil { // X dropped: closed
 		t.Fatalf("closing SyncCompany: %v", err)
 	}
-	if _, err := updateApplicationStatus(ctx, s, xID, application.Started); err != nil {
+	if err := updateApplicationStatus(ctx, s, xID, application.Started); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
