@@ -45,6 +45,7 @@ const (
 	_ Type = iota
 	TypeCompany
 	TypeCompanyList
+	TypeCompanyRow
 	TypeSyncCompany
 	TypeSyncAll
 	TypeSyncReport
@@ -53,12 +54,13 @@ const (
 	TypeFocusChanged
 	TypeStatus
 	TypeError
-	TypeNav
+	TypeNone
 )
 
 var typeNames = [...]string{
 	TypeCompany:       "company",
 	TypeCompanyList:   "company_list",
+	TypeCompanyRow:    "company_row",
 	TypeSyncCompany:   "sync_company",
 	TypeSyncAll:       "sync_all",
 	TypeSyncReport:    "sync_report",
@@ -67,7 +69,7 @@ var typeNames = [...]string{
 	TypeFocusChanged:  "focus_changed",
 	TypeStatus:        "status",
 	TypeError:         "error",
-	TypeNav:           "nav",
+	TypeNone:          "none",
 }
 
 func (t Type) String() string                { return nameOf(t, typeNames[:]) }
