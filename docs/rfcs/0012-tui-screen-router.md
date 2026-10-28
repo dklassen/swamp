@@ -2,7 +2,7 @@
 
 - **Status:** Draft
 - **Date:** 2026-10-17 (revised 2026-10-19)
-- **Related:** #55 (screen navigation and transition logic is scattered across two switches in `tui/app.go`); #89 (the return stack); #115 (screen instances); #41 (a stale error clears on a screen change); RFC 0008 (the change log, which each view follows)
+- **Related:** #55 (screen navigation and transition logic is scattered across two switches in `tui/app.go`); #89 (the return stack); #115 (screen instances); #41 (a stale error clears on a screen change); RFC 0008 (the change log, which each view follows); RFC 0013 (every routed message is an `Event[P]`, which replaces this RFC's message naming, `NavMsg`, `FocusChangedMsg`, `BannerMsg` and `ErrMsg`)
 - **Bubble Tea:** v2 (`charm.land/bubbletea/v2`, `charm.land/bubbles/v2`). The first draft was written against v1. The text and the Template now use v2's interfaces.
 
 ## Summary
@@ -13,31 +13,32 @@ This RFC proposes:
 
 1. **`App` becomes a router.** It keeps what really belongs to every screen: the header and tabs, the banner, the terminal size, global keys, the navigation stack and the change-log cursors. It holds no screen's data.
 2. **Each screen is a `SubComponent` that owns its own state**, handles its own async results and says where to go next. A `SubComponent` is a `tea.Model` that also registers routes.
-3. **Screens register for the messages they handle.** When the router opens a screen, the screen calls `model.Handle` once for each message type it wants, passing a handler that takes that type. The router keeps a lookup table from message type to handlers. When a message arrives, every open screen that registered for its type gets it, whether or not that screen is on top. Each registration has a scope: always, or only while the screen is in focus, which is how keys reach only the screen on top. Messages no handler took go to the top screen's `Update`.
+3. **Screens register for the messages they handle.** A screen lists its routes in `Routes()`, one per message type, each made with `model.Always` or `model.WhenFocused` from a handler that takes that type. When the router opens a screen it registers them with `model.MsgRouter`, which keeps a lookup table from message type to routes. When a message arrives, every open screen with a route for its type gets it, whether or not that screen is on top. `WhenFocused` passes it only while the screen is in focus, which is how keys reach only the screen on top. Messages no handler took go to the top screen's `Update`.
 4. **Navigation is a small, closed set of router operations** (push, pop, replace, switch tab). A screen asks for one by returning a `tea.Cmd`, as Elm's `Nav.pushUrl` does, and the router applies the message it produces. Each screen no longer has its own "intent" type that only `App` understands.
 5. **Three packages.** The router stays in `tui`. Screens move to `tui/model`, and every message moves to `tui/message` (section 8).
 6. **Work that isn't a screen is a `SubComponent` too.** Sync all and refresh are `model.Syncing`: it registers routes like a screen, but never goes on the stack, and the banner draws its view (section 6).
 
-The router, `Router` and `SubComponent` come from the sketches this RFC started from. The Template section has the routing as the code to start from. The rest of this document is where `tui/app.go` makes those sketches change shape.
+The router, `Router` and `SubComponent` come from the sketches this RFC started from. The routing is built (`tui/model/router.go`); the Template section has the stack, still to build. The rest of this document is where `tui/app.go` makes those sketches change shape.
 
 ## Decisions
 
 | Question                                | Decision                                                                                                                                                                                                         |
 | --------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | How many screens can handle one message | Any number. A message goes to every open screen that registered for its type, whether or not it's on top (section 1).                                                                                            |
-| How a message finds its screens         | Screens register for it. Each screen's `RegisterRoutes` lists the message types it handles, so who handles a message is written next to how they handle it. The lookup is keyed by a `model.RouteID`, an opaque value made from the message's concrete type that serialises to the type's name. |
-| Who gets a registered message          | Whoever registered for its type, as the registration's scope allows: `model.AlwaysScope` (every message, owner in focus or not) or `model.FocusScope` (only while the owner is the top of the stack). The scope is a required argument to `Register`, with no default, and the router knows nothing about which message types are input. `Register` refuses nothing, so a component that's never in focus can still follow other views' messages in `AlwaysScope` (section 2). |
-| How a handler is registered             | With `model.Handle(r, scope, handler)`, where the handler takes the concrete message type it handles, such as `func(message.ContentSizeMsg) tea.Cmd`. The route is that type, so a handler can't be registered for a message it doesn't take; that's checked by the compiler. `Handle` refuses a handler that takes an interface, which has no concrete type to route by. If the router ever hands a route the wrong type, the route sends `message.ErrMsg` rather than panicking. `ErrMsg` is for faults in the program, not for the user: the router logs the wrapped error to `swamp.log` and the banner shows only "internal error, see swamp.log". `BannerMsg` stays the way to tell the user something (section 2). |
-| When a screen's routes go away          | When the screen closes. The router records the `SubComponent` that registered each handler, not a screen kind, and drops its handlers when it's popped or replaced (section 5).                                  |
+| How a message finds its screens         | Screens register for it. Each screen's `Routes()` lists the message types it handles, so who handles a message is written next to how they handle it. The lookup is keyed by a `model.RouteID`, an opaque value made from the message's concrete type that serialises to the type's name. |
+| Who gets a registered message          | Whoever has a route for its type, as the route allows: `model.Always` (every message, owner in focus or not) or `model.WhenFocused` (only while the owner's `Focused()` is true). Each route is made by one or the other, so there's no default, and the router knows nothing about which message types are input. A route may also take RFC 0013's filters on the event's `Meta` (section 2). |
+| How a handler is registered             | As a route in `Routes()`, made with `model.Always(handler)` or `model.WhenFocused(owner, handler)`, where the handler takes the concrete message type it handles, such as `func(message.Event[message.Signal[message.ContentSize]]) tea.Cmd`. The route is that type, so a handler can't be registered for a message it doesn't take; that's checked by the compiler. `Register` refuses a handler that takes an interface, which has no concrete type to route by. If the router ever hands a route the wrong type, the route sends an `Error` with code `fault` (`message.Fail`) rather than panicking: `App` logs it to `swamp.log` and the banner shows only "internal error, see swamp.log" (section 2). |
+| When a screen's routes go away          | When the screen closes. The router records the `Routable` that registered each route, not a screen kind, and `Deregister` drops them when it's popped or replaced (section 5).                                  |
+| How a screen gets its instance          | It draws its own when it's built (`message.NewScreenInstance`) and exposes it as `Instance()`. `Register` refuses 0, or an instance it has seen, even after a `Deregister` (section 5). |
 | Where navigation lives                  | On the router, as a stack. Screens ask to push, pop or replace, and never hold the stack or name the screen underneath them (section 3).                                                                         |
 | How a screen asks to navigate           | By returning a `tea.Cmd` whose message the router applies, in line with the Elm architecture. The message names the screen that asked, and the router ignores it unless that screen is still on top (section 4). |
 | Screens or children                     | Every screen is its own entry on the router's stack. No screen holds others as children (section 3).                                                                                                             |
-| What a screen is                        | A pointer type that implements `tea.Model` and `RegisterRoutes`. Handlers close over the pointer, so a screen is changed in place and is never copied (section 5).                                               |
+| What a screen is                        | A pointer type that implements `tea.Model` and `model.Routable` (`Routes()` and `Instance()`). Handlers close over the pointer, so a screen is changed in place and is never copied (section 5).                |
 | Where a screen's state changes          | Only on Bubble Tea's event loop: in `Init`, `Update`, `View` and handlers. A `tea.Cmd` captures copies of what it needs and reports back with a message, never through the receiver (section 5).                 |
 | Where code lives                        | The router in `tui`, screens in `tui/model`, all messages in `tui/message` (section 8).                                                                                                                         |
 | Which Bubble Tea                        | v2. A screen's `View` returns a `tea.View`; the router composes their `.Content` and sets the terminal options on its own. Keys are `tea.KeyPressMsg`, matched by `msg.String()`, and pastes are `tea.PasteMsg` (sections 2 and 6). |
 | Where sync all and refresh live         | In `model.Syncing`, a `SubComponent` that isn't a screen. It owns the run, the refresh spinner, and refusing a refresh during a run; the banner draws its view. When a run or refresh finishes it broadcasts that, and the components that care reload themselves (section 6). |
-| How messages are named                  | A request says what it asks for, in the imperative (`OpenCompanyEditMsg`, `ToggleSyncAllMsg`, `RefreshCompanyMsg`). A result says what happened, in the past tense (`CompanyCreatedMsg`, `CompaniesLoadedMsg`) (section 8). |
+| How messages are named                  | Every message in `tui/message` is an `Event[P]` of one of RFC 0013's primitives, such as `Event[Changed[Company]]` or `Event[Run[SyncAll]]`. The primitive says whether it's a request or a result; its content type names what it's about and drops `Msg` (section 8). |
 | Where the styles live                   | In `tui/model`, exported and moved as one block, so the palette is in one place (section 8).                                                                                                                    |
 
 ## Problem
@@ -71,63 +72,32 @@ The sketches had a router that sends each message type to one screen, `ChangeScr
 
 A single `TargetScreen()` can only send each of these to one of the screens.
 
-**So:** the lookup table maps a message type to a list of handlers, and the router calls every one. The company form and the company list both register for `message.CompanyCreatedMsg`:
+**So:** the lookup table maps a message type to a list of routes, and the router calls every one. The company form and the company list both route `Event[Changed[Company]]`: the form, filtered `From` its own instance, pops itself; the list adds the row (RFC 0013's Template has the list's handler).
 
-```go
-// company form
-func (m *CompanyForm) RegisterRoutes(r Router, id message.ScreenInstance) error {
- m.id = id
- return model.Handle(r, model.AlwaysScope, m.companyCreated)
-}
+The form leaves itself rather than naming the list as its destination. It doesn't need to know what's underneath it. Adding a screen that cares about a message means one more route in that screen's `Routes()`. Nothing changes where the message is created.
 
-func (m *CompanyForm) companyCreated(created message.CompanyCreatedMsg) tea.Cmd {
- m.checking = false
- if created.Err != nil {
-  return message.ReportErr(created.Err)
- }
- return message.Pop(m.id)
-}
-
-// company list
-func (m *CompanyList) RegisterRoutes(r Router, id message.ScreenInstance) error {
- m.id = id
- return errors.Join(
-  model.Handle(r, model.AlwaysScope, m.companiesLoaded),
-  model.Handle(r, model.AlwaysScope, m.companyCreated),
- )
-}
-
-func (m *CompanyList) companyCreated(created message.CompanyCreatedMsg) tea.Cmd {
- if created.Err == nil {
-  m.companies = append(m.companies, created.Company)
-  sortCompaniesByName(m.companies)
- }
- return nil
-}
-```
-
-The form leaves itself rather than naming the list as its destination. It doesn't need to know what's underneath it. Adding a screen that cares about a message means one more `Handle` call in that screen. Nothing changes where the message is created.
-
-Handlers run in the order they were registered. `New` registers the persistent screens in a fixed order, not by ranging over a map, and a stacked screen's handlers come after them. No handler should depend on that order, though. Each one changes only its own screen, and any navigation it asks for arrives later as a message of its own (section 4).
+Handlers run in the order they were registered. `New` registers the persistent screens in a fixed order, not by ranging over a map, and a stacked screen's routes come after them. No handler should depend on that order, though. Each one changes only its own screen, and any navigation it asks for arrives later as a message of its own (section 4).
 
 ### 2. Screens update whether or not they're showing
 
 Most of the 26 `a.screen == …` checks exist because only `App` holds the data, so a handler has to work out which screen's copy to patch. Once a screen owns its data, it applies a result to itself whether it's on top or not. `documentReviewsLoadedMsg` stops being three guarded branches. Posting detail, application detail and the home screen each register for it, check that the result is for their own application, and take it.
 
-So a registered message can go to its handlers even while another screen is up. Whether it does is up to the handler's **scope**, which the screen gives when it registers:
+So a registered message can go to its handlers even while another screen is up. Whether it does is up to how the screen made the route:
 
-- **`model.AlwaysScope`**: every message of the type, whether or not the owner is in focus. A load's or a save's result, which a screen applies to itself while it's covered.
-- **`model.FocusScope`**: only while the owner is in focus, meaning it's the top of the stack. Typed input, which only the screen someone is looking at should act on: in Bubble Tea v2, `tea.KeyPressMsg` (matched with `msg.String()`, as in `"ctrl+c"`, `"tab"`, `"j"`) and `tea.PasteMsg`, which v2 delivers apart from keys.
+- **`model.Always`**: every message of the type, whether or not the owner is in focus. A load's or a save's result, which a screen applies to itself while it's covered.
+- **`model.WhenFocused`**: only while the owner is in focus, meaning it's the top of the stack. Typed input, which only the screen someone is looking at should act on: in Bubble Tea v2, `tea.KeyPressMsg` (matched with `msg.String()`, as in `"ctrl+c"`, `"tab"`, `"j"`) and `tea.PasteMsg`, which v2 delivers apart from keys. It takes the owner, a `model.Focusable`, and asks its `Focused()` when a message arrives.
 
-The scope is a required argument to `Register`, with no default, because either default has a silent failure. If "always" were the default, a screen that forgot to say "focus" on its key handler would act on keys typed into the screen on top of it. The company list's cursor would move while someone types into the company form. If "focus" were the default, a screen that forgot to say "always" on a result would miss it while covered, and the company list would be stale after a company was added. Making each registration state its scope means there's no forgotten case.
+There's no default, because either default has a silent failure. If "always" were the default, a screen that forgot to say "focus" on its key handler would act on keys typed into the screen on top of it. The company list's cursor would move while someone types into the company form. If "focus" were the default, a screen that forgot to say "always" on a result would miss it while covered, and the company list would be stale after a company was added. Making each route say which it is means there's no forgotten case.
 
-The scope belongs to the registration, not the message type, so the router needs no list of which messages are input. To decide whether a handler gets a message, it needs only the route table, each route's owner and scope, and which component is in focus (`Route.Accepts`). A new message type needs nothing from the router. An earlier draft had `Register` refuse typed input outright, but that was a ban standing in for a routing rule the Template didn't yet have.
+Focus belongs to the route, not the message type, so the router needs no list of which messages are input. A new message type needs nothing from the router. A screen knows whether it's in focus from the `Event[Signal[FocusChanged]]` `App` sends whenever the top screen changes, which names the `ScreenInstance` now in focus, 0 for none (RFC 0013).
 
-`Register` refuses nothing: any component may register for any message type in either scope. That includes a component that's never in focus, such as `model.Syncing`. Its `FocusScope` registrations would never run, but its `AlwaysScope` ones let it follow what other views do, and that's a reason to listen to messages that aren't its own. A component that registers for what it can never get is a bug its own tests catch, not something the router guards against. `model.Handle` refuses only a handler it couldn't route at all (below).
+A route can also filter on an event's `Meta` with RFC 0013's `About`, `From` and `OnOp`, so a dialog hears only its own company's delete, or only its own request's failure, without looking at the payload.
 
-A screen registers each handler with `model.Handle(r, scope, handler)`, not `Router.Register` directly. The handler takes the concrete type it handles, and `Handle` registers under that type, so which message a handler gets is its own signature: wiring a handler to another message doesn't compile. Go has no generic methods, so `Handle` is a function over `Router`, and `Register` keeps taking a `tea.Msg` and a `HandlerFunc`. `Handle` returns an error for a handler that takes an interface such as `tea.KeyMsg`: its zero value is nil, so the route would have no type and never be called. The compiler doesn't catch a handler that takes a pointer when the message is sent as a value, a message nobody sends, or the wrong scope; those are for the component's tests.
+`Register` refuses only what it couldn't route or tell apart: a nil owner, an instance of 0 or one it has seen, a nil or zero route, a handler that takes an interface such as `tea.KeyMsg` (its zero value is nil, so the route would have no type and never be called), and a filter on a type with no `Meta`. Any component may otherwise route any message type, either way. That includes a component that's never in focus, such as `model.Syncing`: its `Always` routes let it follow what other views do. A component that registers for what it can never get is a bug its own tests catch, not something the router guards against.
 
-The route `Handle` registers still checks the message's type, since the router is what guarantees it. On a mismatch it returns `message.Fail(err)` instead of panicking. `Fail` sends a `message.ErrMsg`, the message for faults in the program: the router logs the wrapped error to `swamp.log`, where `cmd/swamp` sends `log` while the TUI owns the terminal, and the banner shows only "internal error, see swamp.log". It isn't a `BannerMsg`, which is for things the user can act on.
+The handler takes the concrete type it handles, and `Always` and `WhenFocused` route by that type, so which message a handler gets is its own signature: wiring a handler to another message doesn't compile. The compiler doesn't catch a handler that takes a pointer when the message is sent as a value, a message nobody sends, or the wrong choice of `Always` or `WhenFocused`; those are for the component's tests.
+
+The route still checks the message's type, since the router is what guarantees it. On a mismatch it returns `message.Fail` instead of panicking, an `Event[Error]` with code `fault`, for faults in the program: `App` logs it to `swamp.log`, where `cmd/swamp` sends `log` while the TUI owns the terminal, and the banner shows only "internal error, see swamp.log".
 
 The top screen's `Update` gets a message when no handler was called for it, not when nothing registered for it. Otherwise a key whose only handler belongs to a screen in the background would go nowhere. `Update` still matters for Bubbles' own messages, such as a text input's cursor blink, and for a screen that takes keys there instead of through a handler.
 
@@ -137,34 +107,23 @@ The top screen's `Update` gets a message when no handler was called for it, not 
 
 | Operation       | Today's equivalent                                                        |
 | --------------- | ------------------------------------------------------------------------- |
-| `Push(next)`    | `enterFrom(next)`                                                         |
-| `Pop`           | `returnBack()`, and every hard-coded "esc goes to X"                      |
-| `Replace(next)` | the document review picker replacing itself with the form (`app.go:1716`) |
-| `Tab(id)`       | tab cycling between the three home tabs (`app.go:1479`)                   |
+| `Push(screen, subject, value)`    | `enterFrom(next)`                                                         |
+| `Pop`                             | `returnBack()`, and every hard-coded "esc goes to X"                      |
+| `Replace(screen, subject, value)` | the document review picker replacing itself with the form (`app.go:1716`) |
+| `Tab`                             | tab cycling between the three home tabs (`app.go:1479`)                   |
 
-A screen that opens another has to give it its data: today `App` calls `newPostingDetailModel(…, p, app, hasApp, …)` with arguments from its own fields. `Push` takes the new screen's model, already built, so the caller passes what the new screen needs directly. `App` doesn't have to know any screen's arguments.
+A screen that opens another has to give it its data: today `App` calls `newPostingDetailModel(…, p, app, hasApp, …)` with arguments from its own fields. `Push` carries the snapshot the new screen shows, from the screen that has it, and `App` builds the screen from that, with no read (RFC 0013, "Navigation without the model").
 
 ### 4. Navigation is a command
 
-A screen asks to navigate the way it asks for anything else: it returns a `tea.Cmd`. The command produces a `message.NavMsg`, and the router applies it to the stack when it arrives. This is Elm's pattern: `Nav.pushUrl` returns a `Cmd`, and the page changes when the resulting message comes back through `update`. A screen's `Update` keeps Bubble Tea's shape, `(tea.Model, tea.Cmd)`, with no third return value.
+A screen asks to navigate the way it asks for anything else: it returns a `tea.Cmd`. The command produces an `Event[Nav[T]]` (`message.Push`, `message.Pop`), and the router applies it to the stack when it arrives. This is Elm's pattern: `Nav.pushUrl` returns a `Cmd`, and the page changes when the resulting message comes back through `update`. A screen's `Update` keeps Bubble Tea's shape, `(tea.Model, tea.Cmd)`, with no third return value.
 
-```go
-type NavMsg struct {
- From ScreenInstance // the screen that asked
- Op   NavOp          // push, pop, replace, tab
- Kind Screen         // the screen to open, for push and replace
- Next SubComponent
-}
-
-func Pop(from ScreenInstance) tea.Cmd {
- return func() tea.Msg { return NavMsg{From: from, Op: NavPop} }
-}
-```
+A `Nav[T]` holds its `NavOp`, the `Screen` kind to open and `Value`, the snapshot of type `T` the screen shows; a pop, or a screen that shows nothing yet, carries `None`. The event's `Subject` is the entity the screen opens on, and its `Source.Instance` the screen that asked. It holds no model, so it stays plain data (RFC 0013).
 
 Two things follow from the message arriving later, rather than in the `Update` call that asked for it:
 
-- **The request names who asked.** By the time a `NavMsg` arrives, the user may already have left that screen, so popping blindly would pop the wrong one. `From` is the asking screen's instance, and the router ignores the message unless that screen is on top. That replaces the "only navigate if they're still here" checks (`app.go:1237`, `1341`, `1380`).
-- **Keys typed in between go to the screen that's leaving.** Today every transition happens inside the `Update` call that caused it. Now a key already queued when the `NavMsg` is created is handled first, by the old screen. That's the accepted cost of the Elm shape.
+- **The request names who asked.** By the time a `Nav` arrives, the user may already have left that screen, so popping blindly would pop the wrong one. The router acts on it only if `Source.Instance` is the screen on top, and drops it otherwise. That replaces the "only navigate if they're still here" checks (`app.go:1237`, `1341`, `1380`). A `Nav` for a screen the router doesn't open that way is a `fault`.
+- **Keys typed in between go to the screen that's leaving.** Today every transition happens inside the `Update` call that caused it. Now a key already queued when the `Nav` is created is handled first, by the old screen. That's the accepted cost of the Elm shape.
 
 ### 5. Short-lived screens and stale results
 
@@ -177,15 +136,15 @@ Lists and tabs live for the whole session. Forms, pickers and confirmations are 
 
 **The router opens a screen in a fixed order:**
 
-1. It gives the screen a new `ScreenInstance`.
-2. It calls `RegisterRoutes(a, id)`, recording the screen itself as the owner of every handler registered during that call.
+1. It builds the screen from the `Nav`'s value; the screen draws its own `ScreenInstance` as it's built.
+2. It calls `Register(screen)`, which records the screen itself as the owner of every route in its `Routes()`.
 3. It calls `Init()`, so the results of the loads `Init` starts can't arrive before the screen's handlers are there to take them.
 
-Closing a screen removes the handlers it owns. A screen never unregisters anything itself, so it can't forget to.
+Closing a screen `Deregister`s every route it owns. A screen never deregisters anything itself, so it can't forget to.
 
-A route records its owner as the `SubComponent` itself rather than its `message.Screen` kind, because not everything that registers is a screen: `model.Syncing` has no kind and is never on the stack (section 6). Removing a closed screen's handlers compares owners, which works the same for both.
+A route records its owner as the `Routable` itself rather than its `message.Screen` kind, because not everything that registers is a screen: `model.Syncing` has no kind and is never on the stack (section 6). Removing a closed screen's routes compares owners, which works the same for both.
 
-`RegisterRoutes` is also how a screen learns its instance. `Init` is `tea.Model`'s, so it takes no arguments, and the opener can't pass the instance because the router hasn't assigned it yet. A stacked screen keeps the instance to compare with a result's `From`, as it does today, and puts it in every `NavMsg` it sends (section 4). Handlers are found by message type, so a second opening of the same form registers for the same messages and would still get the first opening's late result without that check.
+A screen draws its instance (`message.NewScreenInstance`: random, never 0, no shared counter) rather than being given one, so it has it from the start and a command can carry it without capturing the model. It puts it in the `Source` of every event it sends, and filters its results `From` it (section 4). Routes are found by message type, so a second opening of the same form registers for the same messages and would still get the first opening's late result without that filter. The router refuses an instance it has seen, even after a `Deregister`, so a reopened form can't hear the closed one's results.
 
 Every open screen lives in one map, `screens`, keyed by kind (Template). That works because **a kind of screen is open at most once at a time.** That's true of today's code: following every transition in `updateKeyMsg`, no screen can open a chain of screens that leads back to its own kind. `open` panics on a kind that's already open. A new transition that breaks the rule then fails the first time it's tried, instead of quietly replacing the open screen and its handlers.
 
@@ -196,20 +155,21 @@ Each handler closes over its screen's pointer. The model the router keeps in `sc
 ```go
 // Races: m.cursor is read on the command's goroutine while Update moves it,
 // and may index past the end of visible.
-return m, func() tea.Msg { return message.OpenCompanyDeleteMsg{Company: visible[m.cursor]} }
+return m, func() tea.Msg {
+ return message.Push(src, message.ScreenCompanyDelete, about, message.CompanyRow{Company: visible[m.cursor]})()
+}
 
-// Safe: the company is read now, on the loop, and the closure holds a copy.
-c := visible[m.cursor]
-return m, func() tea.Msg { return message.OpenCompanyDeleteMsg{Company: c} }
+// Safe: Push's arguments are read now, on the loop, and its command holds copies.
+return m, message.Push(src, message.ScreenCompanyDelete, about, message.CompanyRow{Company: visible[m.cursor]})
 ```
 
 The company list was the first screen converted, and its first draft had exactly the racing form for every key.
 
 So, for every screen:
 
-- **A command captures values, never the receiver.** Compute what it needs before returning it. `message.Pop(m.id)` is safe, because `m.id` is read when `Pop` is called, not when the command runs. A method value such as `return m, m.load` is not: `load` runs on another goroutine with `m` in hand. A method value on a value receiver is safe, because Go copies the value when the method value is made: `m.spinner.Tick` copies the Bubbles `spinner.Model`, on the loop. Loads stay free functions that take the services and IDs they need, such as `loadPostings(svc, companyID, hideArchived)`, as they are today.
+- **A command captures values, never the receiver.** Compute what it needs before returning it. `message.Pop(message.Source{Instance: m.instance})` is safe, because `m.instance` is read when `Pop` is called, not when the command runs. A method value such as `return m, m.load` is not: `load` runs on another goroutine with `m` in hand. A method value on a value receiver is safe, because Go copies the value when the method value is made: `m.spinner.Tick` copies the Bubbles `spinner.Model`, on the loop. Loads stay free functions that take the services and IDs they need, such as `loadPostings(svc, companyID, hideArchived)`, as they are today.
 - **A command's result changes the screen only by coming back as a message.** The command returns a message, and the handler for it, running on the loop, applies it. A command never sets a field, even one nothing else reads yet.
-- **A slice or map handed on is copied.** Anything passed to a command or to a screen being pushed shares its backing array with the screen that passed it. `companyCreated` appends to and sorts `m.companies` in place, so a slice handed out without a copy changes under whoever holds it. The same goes for a pointer to anything a screen goes on changing. `R` on the company list is the worked example: it sends `ToggleSyncAllMsg{Companies: slices.Clone(m.companies)}`, so a reload landing mid-run can't change which companies the run syncs.
+- **A slice or map handed on is copied.** Anything passed to a command or to a screen being pushed shares its backing array with the screen that passed it. `companyCreated` appends to and sorts `m.companies` in place, so a slice handed out without a copy changes under whoever holds it. The same goes for a pointer to anything a screen goes on changing. `R` on the company list is the worked example: it sends `Run[SyncAll]` with its own copy of the companies, so a reload landing mid-run can't change which companies the run syncs.
 
 `go test -race` catches a command that breaks these rules once a test runs it alongside the screen's `Update`. Nothing in the type system or the linters does.
 
@@ -217,7 +177,7 @@ So, for every screen:
 
 These belong to every screen, so they stay on `App`:
 
-- **The header, tabs and banner.** Screens report errors and status by returning a command that produces a `message.BannerMsg` (`message.ReportErr`, `ReportLoad`, `ReportStatus`). A load's result is flagged, so a successful load leaves another load's error in place, keeping the difference `setLoadErr` makes today (`app.go:433`). Any other report replaces both the error and the status line, so `ReportStatus("")` clears the banner. Clearing a stale error on a screen change (#41) is already the router's job. A fault in the program is a `message.ErrMsg` (`message.Fail`), not a `BannerMsg`: the router logs it and the banner shows only that there was one (section 2).
+- **The header, tabs and banner.** The banner hears every `Event[Error]` and `Event[Notify]` (RFC 0013). An `Error` shows its text, or, for code `fault`, is logged and shows only that there was one (section 2). A `Notify` (`message.ReportStatus`) replaces both the error and the status line, so `ReportStatus(src, "")` clears the banner. An error stays up until the next `Error` or `Notify`; a load that succeeds sends neither, so another load's failure stays, as `setLoadErr` does today (`app.go:433`). Clearing a stale error on a screen change (#41) is already the router's job.
 
   The banner draws the error, else `Syncing`'s view if it has one, else the status line. Because reports now arrive as messages, three things differ from when `App` set the fields directly. All three are accepted:
   - A sync-all run's final summary clears an error left on screen, so the summary shows. Before, the error hid it.
@@ -225,9 +185,9 @@ These belong to every screen, so they stay on `App`:
   - A banner update lands one message after the action that caused it.
 
   The tabs show a count for applications and all postings but not companies. The router doesn't read the company list's data, and the company count wasn't worth a message.
-- **The terminal size.** The router owns `tea.WindowSizeMsg`. It works out the area left for a screen and routes it as a `message.ContentSizeMsg`, which every screen registers for in `AlwaysScope`, so screens in the background, persistent and stacked, are already the right size when they come back on top. Two things differ from subtracting a fixed amount from `tea.WindowSizeMsg`:
+- **The terminal size.** The router owns `tea.WindowSizeMsg`. It works out the area left for a screen and routes it as an `Event[Signal[ContentSize]]`, which every screen routes with `Always`, so screens in the background, persistent and stacked, are already the right size when they come back on top. Two things differ from subtracting a fixed amount from `tea.WindowSizeMsg`:
   - **The rows taken aren't constant.** `screenRows()` (`app.go:1788`) counts the header's and the banner's lines. The banner grows and shrinks with errors, status lines, the sync-all bar and the refresh spinner, and none of those changes arrives as a `tea.WindowSizeMsg`. So after every message, the router compares the size it would send with the last one sent, and resends it if they differ. A window resize and the banner growing go through the same check. That replaces the `setHeight` switch at the end of `Update` (`app.go:1041`).
-  - **A separate `message.ContentSizeMsg`, not a rewritten `tea.WindowSizeMsg`.** A screen that gets a `tea.WindowSizeMsg` can't tell the terminal's size from the area it's been given. With its own type, the terminal's size only ever means the terminal.
+  - **A separate `ContentSize`, not a rewritten `tea.WindowSizeMsg`.** A screen that gets a `tea.WindowSizeMsg` can't tell the terminal's size from the area it's been given. With its own type, the terminal's size only ever means the terminal.
 
   `tea.ClearScreen` stays with the router (`app.go:1456`): it's about the terminal rewrapping the old frame, not about any screen.
 
@@ -248,10 +208,10 @@ These belong to every screen, so they stay on `App`:
 Sync all and single-company refresh don't stay with the router, even though they draw in the banner. They're `model.Syncing`:
 
 - **One model for both.** A refresh is refused while sync all runs, since the run may be syncing that company right now (#150), and both draw in the same banner slot. Keeping them together means the refusal is a check on the model's own state, not a question the router has to ask.
-- **A `SubComponent` that isn't a screen.** `New` builds and registers it like a tab, but it has no `message.Screen` kind, is never on the stack, and is never in focus. It registers in `AlwaysScope`, and could follow other views' messages the same way (section 2). It registers for `ToggleSyncAllMsg`, `RefreshCompanyMsg`, `SyncAllStepMsg`, `CompanyRefreshedMsg` and `spinner.TickMsg`. Its `View` is the run's bar and progress line, or the refresh spinner, or empty, and `banner()` draws it.
-- **It reports like a screen.** Summaries and refresh outcomes go to the banner as `ReportStatus`/`ReportErr`. The end of a run is announced as `SyncAllFinishedMsg{Results}`.
-- **Screens start it with a message.** The company list's `R` sends `ToggleSyncAllMsg` with its own copy of the companies (section 7). Its `r` and the posting list's `r` send `RefreshCompanyMsg`.
-- **The end of a sync is broadcast, and listeners act on it.** When a run or a refresh finishes, `SyncAllFinishedMsg` and `CompanyRefreshedMsg` go to every component that registered for them. The company list and the posting list register and reload themselves; the posting list checks whether its company was synced. `App` reloads nothing and doesn't read `selectedCompany` to decide.
+- **A `SubComponent` that isn't a screen.** `New` builds and registers it like a tab, but it has no `message.Screen` kind, is never on the stack, and is never in focus. Its routes are all `Always`, and it could follow other views' messages the same way (section 2). It routes `Run[SyncAll]` and `Run[SyncCompany]`, the `Ran` and `Error` outcomes of its own syncs (filtered `From` its instance), and `spinner.TickMsg`. Its `View` is the run's bar and progress line, or the refresh spinner, or empty, and `banner()` draws it.
+- **It reports like a screen.** Summaries go to the banner as a `Notify`, and a refresh that didn't sync as an `Error`. Each company synced is a `Ran[SyncReport]` about that company, and the end of a run a `Ran[SyncAllReport]` (RFC 0013).
+- **Screens start it with a message.** The company list's `R` sends `Run[SyncAll]` with its own copy of the companies (section 7). Its `r` and the posting list's `r` send `Run[SyncCompany]`.
+- **The end of a sync is broadcast, and listeners act on it.** Each `Ran` goes to every component with a route for it. The company list and the posting list route it and reload themselves; the posting list filters it `About` its company. `App` reloads nothing and doesn't read `selectedCompany` to decide.
 - **Spinner ticks.** `Syncing` registers for `spinner.TickMsg`, so every tick goes to it, and the spinner drops ticks with another spinner's ID. A screen with a spinner of its own would register for the tick too, and each would ignore the other's.
 
 ### 7. Shared data has one owner
@@ -262,7 +222,7 @@ Some data on `App` is read by more than one screen today. Screens then depend on
 | ---------------------------------- | ------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `postings`                         | posting list, posting detail (previous/next, `canNavigateSiblings`) | posting list. Opening posting detail passes the posting IDs in list order. Opening it from all postings or application detail passes none, which is what `canNavigateSiblings` works out today (#93). |
 | `applicationsByPosting`            | posting detail, seeded by application detail (`app.go:1541`)        | posting detail. Whoever opens it passes the application, if any. The map becomes the one posting's application.                                                                                       |
-| `companies`, `companyOpenPostings` | company list, company delete (open count), sync all, the Companies tab's count | company list. Opening delete passes the count. Sync all gets its own copy in `ToggleSyncAllMsg`. The Companies tab no longer shows a count (section 6).                                                |
+| `companies`, `companyOpenPostings` | company list, company delete (open count), sync all, the Companies tab's count | company list. Opening delete passes the count. Sync all gets its own copy in `Run[SyncAll]`. The Companies tab no longer shows a count (section 6).                                                |
 | `exportDir`                        | export, submit                                                      | router, passed to both when they open. A remembered value for the session isn't any one screen's.                                                                                                     |
 | `hideArchived`                     | posting list                                                        | posting list. It lives for the session, so the posting list has to be persistent (open question 1).                                                                                                   |
 
@@ -273,19 +233,16 @@ The router, the screens and the messages each get a package:
 | Package       | Holds                                                                                                                                                                        | Imports                     |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
 | `tui`         | `App`: the stack, the lookup table, the header, tabs and banner, the change log                                                                                              | `tui/model`, `tui/message` |
-| `tui/model`  | one exported type per screen, and `Syncing`; `Router`, `HandlerFunc`, `SubComponent`, `Dialog` and `ChangeFollower`, the interfaces the router and screens meet at, and `Handle`, which registers a typed handler; the lookup table's entry types (`Route`, `RouteID`, `RouteIDOf`); the styles and view helpers the screens draw with | `tui/message`               |
-| `tui/message` | every message type, with exported fields; `Screen` and `ScreenInstance`; the commands screens return to the router (`Push`, `Pop`, `Replace`, `ReportErr`, `Fail`, …)                | neither                     |
+| `tui/model`  | one exported type per screen, and `Syncing`; `Router`, `MsgRouter`, `Routable`, `SubComponent`, `Focusable`, `Dialog` and `ChangeFollower`, the types the router and screens meet at; `Route`, made only by `Always` and `WhenFocused`, its filters (`About`, `From`, `OnOp`), and `RouteID`/`RouteIDOf`; the styles and view helpers the screens draw with | `tui/message`               |
+| `tui/message` | every message type, as RFC 0013's `Event[P]` and its primitives and bodies; `Screen` and `ScreenInstance`; the commands screens return to the router (`Push`, `Pop`, `ReportStatus`, `Fail`, …)                | the standard library, and Bubble Tea for the commands |
 
-`tui/message` imports neither of the other two, so a screen and the router both depend on it and never on each other's internals. `NavMsg` names a screen by `message.Screen`, which is why the screen kinds live there and are exported.
+`tui/message` imports neither of the other two, so a screen and the router both depend on it and never on each other's internals. A `Nav` names a screen by `message.Screen`, which is why the screen kinds live there and are exported.
 
-A message moves to `tui/message` when it's created, or when it's first touched by this refactor: when a screen sends it, registers for it, or handles it. Nothing moves just to move. Until a message moves it stays unexported in `tui`, and only the router can use it. `tui/message` may import domain packages for the types its fields carry (`company`, `sync`), never `tui` or `tui/model`.
+A message moves to `tui/message` when it's created, or when it's first touched by this refactor: when a screen sends it, registers for it, or handles it. Nothing moves just to move. Until a message moves it stays unexported in `tui`, and only the router can use it. `tui/message` imports no domain package, `tui` or `tui/model`; a test fails on any import but the standard library and Bubble Tea (RFC 0013).
 
-When a message moves, it's named for what it communicates:
+When a message moves, it becomes an `Event[P]`: the primitive (`Changed`, `Read`, `Run`, `Ran`, `Error`, `Nav`, `Notify`, `Signal`, …) says whether it's a request or a result, and its content type says what it's about, without `Msg`. RFC 0013 lists what each of today's structs becomes.
 
-- **A request** is imperative and says what it asks for, not which key asked: `ToggleSyncAllMsg` (start a run, or stop the one under way), `RefreshCompanyMsg`, `OpenCompanyFormMsg`, `OpenCompanyEditMsg`, `OpenCompanyDeleteMsg` (the confirmation, not the delete), `OpenCompanyPostingsMsg`. The `Open…` requests are what `App` acts on until `NavMsg` exists, and `Push` replaces them then.
-- **A result** is past tense and says what happened: `CompaniesLoadedMsg`, `CompanyCreatedMsg`, `CompanyDeletedMsg`, `CompanyNameUpdatedMsg`, `CompanyRefreshedMsg`, `SyncAllFinishedMsg`. `SyncAllStepMsg` is one company's result within a run.
-
-Splitting the package also fixes the last point under Problem: a screen in `tui/model` is tested by calling its own `Update`, `View` and handlers, with no `App`. A test registers the screen with a fake `Router` that records handlers by message type, then delivers messages the way the router would (`tui/model/syncing_test.go`). `App`'s own tests assert what the user sees, such as the banner line, the screen on top, and the commands that come back, never a screen's unexported fields.
+Splitting the package also fixes the last point under Problem: a screen in `tui/model` is tested by calling its own `Update`, `View` and handlers, with no `App`. A test registers the screen with its own `model.NewMsgRouter()` and dispatches messages to it the way `App` would (`tui/model/syncing_test.go`). `App`'s own tests assert what the user sees, such as the banner line, the screen on top, and the commands that come back, never a screen's unexported fields.
 
 What splitting the package costs:
 
@@ -294,143 +251,14 @@ What splitting the package costs:
 
 ## Template
 
-This is the routing from the sketches, adjusted for the sections above. It shows each mechanism, not every case: the bodies left as `…` are today's code moved. Each screen and message moves onto it as the work breakdown reaches it.
+The routing is built: `tui/model/router.go` has `MsgRouter`, `Routable`, `Always`, `WhenFocused` and the filters, and RFC 0013's Template has the events, the banner's `Error` and `Notify`, and a screen's `Routes()`. What follows is the part still to build, the stack, in today's names. Bodies left as `…` are today's code moved.
 
-### Messages and screens (`tui/message`)
-
-```go
-package message
-
-// Screen is a kind of screen. A kind is open at most once at a time.
-type Screen int
-
-const (
- ScreenCompanyList Screen = iota
- ScreenApplicationList
- // …
-)
-
-// ScreenInstance tells two openings of the same kind of screen apart.
-type ScreenInstance int
-
-type CompanyCreatedMsg struct {
- Company company.Company
- Err     error
-}
-
-type ActiveApplicationsLoadedMsg struct {
- Applications []posting.ActiveApplication
- Progress     map[int64]map[document.Type]DocumentProgress
- Err          error
-}
-```
-
-### Screens (`tui/model`)
-
-```go
-package model
-
-// HandlerFunc handles a message of the type it was registered for.
-type HandlerFunc func(tea.Msg) tea.Cmd
-
-// Router is what a screen registers its routes with.
-type Router interface {
- // Register calls handler for every msg of the same concrete type that
- // scope lets through (section 2).
- Register(msg tea.Msg, scope Scope, handler HandlerFunc) error
-}
-
-// Handle registers handle for every T that scope lets through. The route
-// is T itself, so a handler can't be registered for a message it doesn't
-// take.
-func Handle[T tea.Msg](r Router, scope Scope, handle func(T) tea.Cmd) error {
- var zero T
- if any(zero) == nil {
-  return fmt.Errorf("model.Handle: the handler takes %v, an interface, which has no type to route by; take a concrete message type", reflect.TypeFor[T]())
- }
- return r.Register(zero, scope, func(msg tea.Msg) tea.Cmd {
-  m, ok := msg.(T)
-  if !ok {
-   return message.Fail(fmt.Errorf("handler for %T got %T", zero, msg))
-  }
-  return handle(m)
- })
-}
-
-// Scope is when a registered handler gets the messages it registered for.
-type Scope int
-
-const (
- // AlwaysScope: every message of the type, whether or not the owner is
- // in focus, such as a load's result.
- AlwaysScope Scope = iota
- // FocusScope: only while the owner is in focus, such as typed input.
- FocusScope
-)
-
-// SubComponent is a screen, or anything else the router sends messages
-// to. Implementations are pointer types, since the handlers they register
-// change them in place.
-type SubComponent interface {
- tea.Model
- // RegisterRoutes runs when the router opens the component, before Init.
- RegisterRoutes(r Router, id message.ScreenInstance) error
-}
-
-// Dialog marks a screen drawn over the one beneath it, like a delete
-// confirmation.
-type Dialog interface {
- Dialog()
-}
-
-// Route is one registered handler and the component that registered it.
-type Route struct {
- Owner  SubComponent
- Scope  Scope
- Handle HandlerFunc
-}
-
-func NewRoute(owner SubComponent, scope Scope, handle HandlerFunc) *Route {
- return &Route{owner, scope, handle}
-}
-
-// Accepts reports whether r's handler gets a message while focused is the
-// component in focus; focused is nil when none is.
-func (r *Route) Accepts(focused SubComponent) bool {
- return r.Scope == AlwaysScope || r.Owner == focused
-}
-
-// RouteID names the messages one set of handlers is for. It's opaque, so
-// only RouteIDOf knows how it is made, and the table can be keyed some
-// other way without touching Register, route or unregister.
-type RouteID struct {
- // Keyed by type identity, not name: %T prints the package's name, not
- // its path, so two packages' same-named types would share a string.
- typ reflect.Type
-}
-
-// RouteIDOf is msg's concrete type. A value and a pointer to it are
-// different IDs, so a message is always sent and registered as a value.
-func RouteIDOf(msg tea.Msg) RouteID {
- return RouteID{typ: reflect.TypeOf(msg)}
-}
-
-// String is the type's name as %T prints it, such as
-// "message.CompanyCreatedMsg".
-func (id RouteID) String() string {
- if id.typ == nil {
-  return "<nil>"
- }
- return id.typ.String()
-}
-```
-
-A screen opens another by returning `Push`, with the new screen built but not started. Its loads go in its `Init`, not in the opener's command:
+A screen opens another by returning `Push` with what the new screen shows. Its loads go in its own `Init`, not in the opener's command:
 
 ```go
 // posting list
 case enterPostingDetail:
- return m, message.Push(m.id, message.ScreenPostingDetail, NewPostingDetail(p, app, m.postingIDs()))
+ return m, message.Push(m.source(), message.ScreenPostingDetail, about, message.PostingDetail{…})
 
 // posting detail
 func (m *PostingDetail) Init() tea.Cmd {
@@ -438,156 +266,26 @@ func (m *PostingDetail) Init() tea.Cmd {
 }
 ```
 
-### Navigation (`tui/message`, applied in `tui`)
+### The stack (`tui`)
 
 ```go
-// tui/message
-type NavMsg struct {
- From ScreenInstance // the screen that asked
- Op   NavOp          // NavPush, NavPop, NavReplace, NavTab
- Kind Screen         // the screen to open, for push and replace
- Next tea.Model      // a model.SubComponent; tea.Model so message imports no screen code
-}
-
-func Push(from ScreenInstance, kind Screen, next tea.Model) tea.Cmd {
- return func() tea.Msg { return NavMsg{From: from, Op: NavPush, Kind: kind, Next: next} }
-}
-
-func Pop(from ScreenInstance) tea.Cmd {
- return func() tea.Msg { return NavMsg{From: from, Op: NavPop} }
-}
-
-func Replace(from ScreenInstance, kind Screen, next tea.Model) tea.Cmd {
- return func() tea.Msg { return NavMsg{From: from, Op: NavReplace, Kind: kind, Next: next} }
-}
-```
-
-```go
-// tui
-
 // stacked is one entry on the stack. The bottom entry is always the current
 // tab, so the top is always a.stack[len(a.stack)-1].
 type stacked struct {
- kind     message.Screen
- instance message.ScreenInstance
+ kind   message.Screen
+ screen model.Routable
 }
 
-// navigate applies msg to the stack and does what every change of the top
-// screen needs.
-func (a *App) navigate(msg message.NavMsg) tea.Cmd {
- var cmd tea.Cmd
- switch msg.Op {
- case message.NavPush:
-  cmd = a.open(msg.Kind, msg.Next.(model.SubComponent))
- case message.NavPop:
-  a.close()
- case message.NavReplace:
-  a.close()
-  cmd = a.open(msg.Kind, msg.Next.(model.SubComponent))
- case message.NavTab:
-  a.stack[0] = a.nextTab()
- }
- a.err = nil // a stale error from the screen just left (#41)
- return tea.Batch(cmd, a.activate())
-}
-
-// open makes next the top screen: instance, then routes, then Init (section 5).
-func (a *App) open(kind message.Screen, next model.SubComponent) tea.Cmd {
- if _, open := a.screens[kind]; open {
-  panic(fmt.Sprintf("tui: %v is already open", kind))
- }
- id := a.newScreenInstance()
- a.register(next, id)
- a.screens[kind] = next
- a.stack = append(a.stack, stacked{kind: kind, instance: id})
- return next.Init()
-}
-
-func (a *App) close() {
- if len(a.stack) == 1 {
-  return // a tab never closes
- }
- kind := a.top().kind
- a.unregister(a.screens[kind])
- delete(a.screens, kind)
- a.stack = a.stack[:len(a.stack)-1]
-}
-```
-
-### The banner
-
-```go
-// tui/message
-
-// BannerMsg is how a screen reports to the banner.
-type BannerMsg struct {
- Err    error
- Status string
- // Load: a load's result. Loads finish in any order, so a successful
- // one leaves another load's error in place.
- Load bool
-}
-
-func ReportErr(err error) tea.Cmd   { return func() tea.Msg { return BannerMsg{Err: err} } }
-func ReportLoad(err error) tea.Cmd  { return func() tea.Msg { return BannerMsg{Err: err, Load: true} } }
-func ReportStatus(s string) tea.Cmd { return func() tea.Msg { return BannerMsg{Status: s} } }
-
-// ErrMsg is a fault in the program, such as a handler given a message it
-// wasn't registered for, which nothing the user does can fix. It isn't
-// meant to be shown; the router logs it.
-type ErrMsg struct{ Err error }
-
-// Fail sends err as an ErrMsg.
-func Fail(err error) tea.Cmd { return func() tea.Msg { return ErrMsg{Err: err} } }
-```
-
-```go
-// tui
-
-// errInternal is the banner for an ErrMsg: the error itself means nothing
-// to the user, so it says where the details went.
-var errInternal = errors.New("internal error, see swamp.log")
-
-func (a *App) setBanner(msg message.BannerMsg) {
- if msg.Load {
-  a.setLoadErr(msg.Err) // only a failure changes the banner
-  return
- }
- a.err, a.status = msg.Err, msg.Status
-}
-
-// banner draws the error, else what's syncing, else the status line.
-func (a *App) banner() string {
- if a.err != nil {
-  return "\n\n" + model.ErrStyle.Render("error: "+a.err.Error())
- }
- if syncing := a.syncing.View().Content; syncing != "" {
-  return "\n\n" + syncing
- }
- if a.status != "" {
-  return "\n\n" + model.DimStyle.Render(a.status)
- }
- return ""
-}
-```
-
-### The router (`tui`)
-
-```go
 type App struct {
+ router *model.MsgRouter
  // Every open screen: the three tabs, and whatever is stacked over the
  // current one. A kind of screen is open at most once (section 5).
  screens map[message.Screen]model.SubComponent
- // routes is every registered component's handlers, by message type,
- // and registering is the one whose RegisterRoutes is running.
- routes      map[model.RouteID][]model.Route
- registering model.SubComponent
  // syncing runs sync all and refreshes; the banner draws its view.
  syncing *model.Syncing
-
- stack []stacked
+ stack   []stacked
  // sized is the last size sent to the screens.
- sized message.ContentSizeMsg
+ sized message.ContentSize
 
  width, height int
  err           error
@@ -596,137 +294,79 @@ type App struct {
  // change-log fields, services the router itself uses
 }
 
-func New(/* services */) *App {
- a := &App{
-  screens: make(map[message.Screen]model.SubComponent),
-  routes:  make(map[model.RouteID][]model.Route),
-  seen:    make(map[message.Screen]int64),
-  syncing: model.NewSyncing(syncer),
- }
- // Not a screen: it has no kind and is never on the stack (section 6).
- a.register(a.syncing, a.newScreenInstance())
- // A slice, not a map, so handlers run in the same order every time
- // (section 1).
- for _, tab := range []struct {
-  kind   message.Screen
-  screen model.SubComponent
- }{
-  {message.ScreenActiveApplications, model.NewActiveApplications(…)},
-  {message.ScreenCompanyList, model.NewCompanyList(…)},
-  {message.ScreenAllPostings, model.NewAllPostings(…)},
- } {
-  id := a.newScreenInstance()
-  a.register(tab.screen, id)
-  a.screens[tab.kind] = tab.screen
-  if tab.kind == message.ScreenActiveApplications {
-   a.stack = []stacked{{kind: tab.kind, instance: id}}
-  }
- }
- return a
-}
-
-// register runs s's RegisterRoutes, recording s as its handlers' owner.
-func (a *App) register(s model.SubComponent, id message.ScreenInstance) {
- a.registering = s
- if err := s.RegisterRoutes(a, id); err != nil {
-  panic(fmt.Sprintf("tui: registering %T: %v", s, err))
+// One route per Nav[T], since each T is its own type, beside the banner's.
+func (a *App) Routes() []*model.Route {
+ return []*model.Route{
+  model.Always(a.errorReported),
+  model.Always(a.notified),
+  model.Always(a.navNone),
+  model.Always(a.navCompany),
+  // …
  }
 }
 
-// Register is Router's, for the component whose RegisterRoutes is running.
-func (a *App) Register(msg tea.Msg, scope model.Scope, handler model.HandlerFunc) error {
- id := model.RouteIDOf(msg)
- a.routes[id] = append(a.routes[id], model.NewRoute(a.registering, scope, handler))
- return nil
+func (a *App) navCompany(e message.Event[message.Nav[message.Company]]) tea.Cmd {
+ if !a.onTop(e.Meta) {
+  return nil // the user left the screen that asked (section 4)
+ }
+ switch e.Payload.Screen {
+ case message.ScreenCompanyEdit:
+  return a.push(e.Payload.Screen, newCompanyEdit(…, e.Payload.Value))
+ }
+ return a.unknownNav(e)
 }
 
-// unregister drops every handler owner registered.
-func (a *App) unregister(owner model.SubComponent) {
- for id, rs := range a.routes {
-  a.routes[id] = slices.DeleteFunc(rs, func(r model.Route) bool { return r.Owner == owner })
+// push makes next the top screen: routes, then Init (section 5).
+func (a *App) push(kind message.Screen, next model.Routable) tea.Cmd {
+ if _, open := a.screens[kind]; open {
+  panic(fmt.Sprintf("tui: %v is already open", kind))
  }
+ if err := a.router.Register(next); err != nil {
+  return message.Fail(a.source(), err)
+ }
+ a.screens[kind] = next
+ a.stack = append(a.stack, stacked{kind: kind, screen: next})
+ return tea.Batch(next.Init(), a.focusChanged())
 }
 
-func (a *App) Init() tea.Cmd {
- cmds := []tea.Cmd{a.pollChanges()}
- for _, screen := range a.screens {
-  cmds = append(cmds, screen.Init())
+func (a *App) pop() tea.Cmd {
+ if len(a.stack) == 1 {
+  return nil // a tab never closes
  }
- return tea.Batch(cmds...)
+ top := a.top()
+ if err := a.router.Deregister(top.screen); err != nil {
+  return message.Fail(a.source(), err)
+ }
+ delete(a.screens, top.kind)
+ a.stack = a.stack[:len(a.stack)-1]
+ a.err = nil // a stale error from the screen just left (#41)
+ return a.focusChanged()
+}
+
+// focusChanged tells every screen which is on top now; WhenFocused routes
+// read it through Focused().
+func (a *App) focusChanged() tea.Cmd {
+ return a.router.Dispatch(message.New(a.source(), message.Subject{}, message.OpNone, time.Now().UTC(),
+  message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: a.top().screen.Instance()}}))
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
- cmd, handled := a.own(msg)
+ cmd, handled := a.handle(msg) // ctrl+c, tab, the window's size, the change log
  if !handled {
   cmd = tea.Batch(cmd, a.route(msg))
  }
  // The window or the banner may have changed size, on any message.
- if size := (message.ContentSizeMsg{Width: a.width, Rows: a.screenRows()}); size != a.sized {
+ if size := (message.ContentSize{Width: a.width, Rows: a.screenRows()}); size != a.sized {
   a.sized = size
-  cmd = tea.Batch(cmd, a.route(size))
+  cmd = tea.Batch(cmd, a.router.Dispatch(message.New(a.source(), message.Subject{}, message.OpNone, time.Now().UTC(),
+   message.Signal[message.ContentSize]{Value: size})))
  }
  return a, cmd
 }
 
-// own does the router's part of msg. handled means no screen needs it.
-func (a *App) own(msg tea.Msg) (tea.Cmd, bool) {
- switch msg := msg.(type) {
- case message.NavMsg:
-  // The user may have left the screen that asked before this arrived.
-  if msg.From != a.top().instance {
-   return nil, true
-  }
-  return a.navigate(msg), true
- case message.BannerMsg:
-  a.setBanner(msg)
-  return nil, true
- case message.ErrMsg:
-  // The TUI owns the terminal, so cmd/swamp points log at swamp.log.
-  log.Printf("tui: %v", msg.Err)
-  a.err = errInternal
-  return nil, true
- case tea.WindowSizeMsg:
-  a.width, a.height = msg.Width, msg.Height
-  return tea.ClearScreen, true
- case changeTickMsg:
-  return a.handleTick(), true
- case changesMsg:
-  return a.handleChanges(msg), true
- case tea.KeyPressMsg:
-  // The terminal is in raw mode, so ctrl+c arrives as a key.
-  if msg.String() == "ctrl+c" {
-   return tea.Quit, true
-  }
-  if msg.String() == "tab" && len(a.stack) == 1 {
-   return a.navigate(message.NavMsg{Op: message.NavTab}), true
-  }
- }
- return nil, false
-}
-
-// route delivers msg to the screens it's for.
-func (a *App) route(msg tea.Msg) tea.Cmd {
- // Every handler for msg's type whose scope lets it through: always, or
- // only while its owner is in focus (section 2). Handlers run here, on the
- // event loop; only the commands they return run elsewhere (section 5).
- top := a.top().kind
- focused := a.screens[top]
- var cmds []tea.Cmd
- for _, r := range a.routes[model.RouteIDOf(msg)] {
-  if r.Accepts(focused) {
-   cmds = append(cmds, r.Handle(msg))
-  }
- }
- if len(cmds) > 0 {
-  return tea.Batch(cmds...)
- }
-
- // No handler was called: keys the top screen takes in Update, and Bubbles
- // components' own messages such as a text input's cursor blink.
- next, cmd := focused.Update(msg)
- a.screens[top] = next.(model.SubComponent)
- return cmd
-}
+// route delivers msg to every route for its type that lets it through, and
+// to the top screen's Update if none was called (section 2).
+func (a *App) route(msg tea.Msg) tea.Cmd { … }
 
 // View composes the screens' content strings: in Bubble Tea v2 a View is a
 // tea.View, and only the router's goes to the terminal.
@@ -779,24 +419,24 @@ Application detail also reloads every time it comes back on top, because its doc
 How this differs from the sketches:
 
 - **Several screens can register for one message type,** because messages already go to several screens (section 1). The lookup holds a list of handlers, not one.
-- **The router records who registered each handler and drops it on close,** so a late result for a closed screen reaches nothing, and no `Update` is called on a missing map entry. It records the registering `SubComponent` itself, so a component with no screen kind can register too (sections 5 and 6).
-- **Routes are registered when a screen opens, not once at start-up.** Stacked screens come and go, so `open` registers and `close` unregisters. `New` registers the tabs once, and `Init` doesn't register again.
-- **`RegisterRoutes` takes the screen's instance,** and runs before `Init`. `Init` is `tea.Model`'s and takes nothing, and a screen whose loads started before its handlers existed would lose their results (section 5).
-- **Delivery depends on a scope each registration gives.** `model.AlwaysScope` fans a message out to every handler; `model.FocusScope` delivers only to the handler whose owner is in focus. That's how keys and pastes reach only the screen on top, with no list of input types in the router and nothing refused at registration (section 2).
-- **`ChangeScreenMsg{Target}` becomes `NavMsg`,** which operates on the stack instead of naming a destination, and names the screen that asked (sections 3 and 4).
-- **The router does its part of a message, then routes it,** unless no screen needs it. `BrowserOpenedMsg` updates the banner and still reaches its screen.
+- **The router records who registered each handler and drops it on close,** so a late result for a closed screen reaches nothing, and no `Update` is called on a missing map entry. It records the registering `Routable` itself, so a component with no screen kind can register too (sections 5 and 6).
+- **Routes are registered when a screen opens, not once at start-up.** Stacked screens come and go, so `push` registers and `pop` deregisters. `New` registers the tabs once, and `Init` doesn't register again.
+- **A screen draws its own instance** when it's built, and is registered before `Init`. `Init` is `tea.Model`'s and takes nothing, and a screen whose loads started before its handlers existed would lose their results (section 5).
+- **Delivery depends on how each route was made.** `model.Always` fans a message out to every handler; `model.WhenFocused` delivers only while its owner is in focus. That's how keys and pastes reach only the screen on top, with no list of input types in the router (section 2).
+- **`ChangeScreenMsg{Target}` becomes `Event[Nav[T]]`,** which operates on the stack instead of naming a destination, names the screen that asked, and carries what the opened screen shows (sections 3 and 4).
+- **The router does its part of a message, then routes it,** unless no screen needs it. The banner hears every `Error` and `Notify`, which still reach the screens with routes for them.
 - **Work that isn't a screen registers like one.** `model.Syncing` registers for its messages, including its spinner's tick, and the router draws its view in the banner. The sketches had the router own that work and its Bubbles messages (section 6).
 - **Size is resent whenever it changes,** compared after every message, so a banner growing or shrinking resizes the screens as a window resize does (section 6).
 - **Bubble Tea v2, not v1.** A screen's `View` returns a `tea.View`, not a string, and the router composes `.Content` and sets the terminal options on its own view. Keys are `tea.KeyPressMsg`, matched by `msg.String()`, not `msg.Type`, and pastes arrive as `tea.PasteMsg` (sections 2 and 6).
 - **Only ctrl+c quits globally,** not `q` (section 6).
-- **Handlers take their message's concrete type and register with `model.Handle`,** which routes by that type, so a handler wired to the wrong message doesn't compile. The sketches' handlers took `tea.Msg` and asserted, which panics on a mismatch. A mismatch the router causes sends a `message.ErrMsg`, which the router logs (section 2).
-- **Routes are keyed by an opaque `model.RouteID`, not a bare string.** `model.RouteIDOf` is the only way to make one, so its insides can change without touching `Register`, `route` or `unregister`. It holds the message's `reflect.Type`: a key by type identity, where `%T`'s string uses the package's name rather than its path and so would collide for same-named types in two packages of the same name. It also skips building a string for every message. `String()` serialises it to the name `%T` prints, such as `message.CompanyCreatedMsg`, for logs and errors.
+- **Handlers take their message's concrete type, made into a route with `model.Always` or `model.WhenFocused`,** which routes by that type, so a handler wired to the wrong message doesn't compile. The sketches' handlers took `tea.Msg` and asserted, which panics on a mismatch. A mismatch the router causes sends an `Error` with code `fault`, which `App` logs (section 2).
+- **Routes are keyed by an opaque `model.RouteID`, not a bare string.** `model.RouteIDOf` is the only way to make one, so its insides can change without touching `Register`, `Dispatch` or `Deregister`. It holds the message's `reflect.Type`: a key by type identity, where `%T`'s string uses the package's name rather than its path and so would collide for same-named types in two packages of the same name. It also skips building a string for every message. `String()` serialises it to the name `%T` prints, such as `tea.KeyPressMsg`, for logs and errors.
 
 ## Open questions
 
 1. **Which screens are persistent?** The three tabs for certain. The posting list holds `hideArchived` for the session. Should it be persistent and re-pointed at each company, or stacked, with `hideArchived` moving to the router?
 2. **Where do overlays live?** This RFC makes them stacked screens that report they're overlays. The alternative is a separate overlay slot on the router, which is simpler while there's never more than one at a time.
-3. **Does `New` build the tabs, or take them?** The Template builds them in `New` from the services it's given, as today. Passing them in instead would let tests choose which screens exist. But `cmd/swamp` would then have to build every screen, and each test needs fresh screens, never a shared package-level map.
+3. **Does `New` build the tabs, or take them?** `New` builds them from the services it's given, as today. Passing them in instead would let tests choose which screens exist. But `cmd/swamp` would then have to build every screen, and each test needs fresh screens, never a shared package-level map.
 
 ## Progress
 
@@ -818,13 +458,14 @@ Where the conversion stands. Each step keeps `go build`, `go test`, the linter a
 | Company delete is routed | The confirmation is a `SubComponent` that App registers on `OpenCompanyDeleteMsg` and deregisters on `CloseCompanyDeleteMsg`, built with the current width since it misses the last `ContentSizeMsg`. Its keys are `WhenFocused`; `y` sends the delete itself. It closes on its own company's `CompanyDeletedMsg` only, and the company list reports that result to the banner, so App no longer handles it. Focus moves both ways through the `FocusChangedMsg` App sends on any screen change. Tested by `TestCompanyDeleteModel_*`, `TestApp_CompanyDeleteConfirmation_TwoQuickNs_CloseItOnce`, `…_HoldsTheListsKeysUntilItCloses` and `TestApp_CompanyDeleteFails_ShowsTheErrorOnTheList`. |
 | Company form and edit are routed | As the delete confirmation: App registers each on its `Open…` request and deregisters it on `CloseCompanyFormMsg` or `CloseCompanyEditMsg`, which esc and a successful save send. Keys and pastes are `WhenFocused`. A create or rename result carries `From`, the instance that asked, and the form or edit acts only on its own. The company list reports the result to the banner, so App no longer handles it; esc sends an empty notice, so a failed save's error goes with the form. Tested by `TestCompanyFormModel_*`, `TestCompanyEditModel_*` and `TestApp_CompanyRenameFails_ShowsTheErrorAndKeepsTheEditOpen`. |
 | Company navigation is `Event[Nav[T]]` | The seven `Open…` and `Close…` structs become RFC 0013's `Nav[T]` (`message.Push`, `message.Pop`), which carries the snapshot the screen opens on, so `App` builds a screen from the message without a read. `App` acts on a `Nav` only from the screen on top, section 4's `From` check, which replaces the second-esc guards. Tested by `TestCompanyListModel_KeysPushScreensWithWhatTheyShow`, `TestApp_NavFromAModelNoLongerOnTop_IsDropped` and `TestApp_CompanyDeleteConfirmation_TwoQuickNs_CloseItOnce`. |
+| Names follow RFC 0013 | The rows above use the names of their time. `Register(msg, scope, handler)`, `model.Handle` and the scopes are now `Routes()` with `model.Always`/`model.WhenFocused` on `model.MsgRouter`; screens draw their own instance; every `…Msg` in `tui/message` is an `Event[P]`. |
 
 While screens are partly converted, the code works in ways the Template doesn't:
 
 - **`App` still does its own part of a routed message.** `Update` routes a message to its registered handlers and also runs `App`'s old `update` switch on it, which still sets `a.err` and `a.currentScreen` for the screens not yet converted.
 - **Tab reaches the company list before `App` switches tabs.** `route` runs before the old `updateKeyMsg`, which still handles tab, so the list's key handler sees tab first and ignores it. A tab press has no `Text` in v2, so an open search doesn't type it. In the Template, `handle` takes tab before `route`.
 - **A company screen's `Nav` is `App`'s to act on.** `App` switches `a.currentScreen` on it, until the stack replaces that (section 4).
-- **`App` still reloads after a sync.** On `SyncAllFinishedMsg` and `CompanyRefreshedMsg` it reloads the company list, and the posting list if `selectedCompany` was synced, until those screens register for the messages themselves (section 6).
+- **`App` still reloads the posting list after a sync.** On a `Ran[SyncReport]` about `selectedCompany` it reloads the posting list, until that screen routes the `Ran` itself (section 6). The company list already does.
 - **Screens not yet converted are still `App`'s fields,** called directly, and the company list is still a typed field, not an entry in `screens`.
 - **App tests wait a message for a converted screen's intent.** A converted screen's key comes back as a command, so tests that press one use `sendIntentKey`, which delivers the intent, or `applyCmd`. This is section 4's "keys typed in between" cost, as seen from a test.
 

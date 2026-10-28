@@ -414,7 +414,7 @@ Each step keeps `go build`, `go test`, the linter and `gofmt` clean.
 4. **The migrated company models.** Add `Company` and instance numbering. The company list, delete and edit register `Event[Changed[Company]]` and `Event[Error]`, the three company result structs go, and the rest of the structs in `tui/message` become events. `tui/message` stops importing `company` and `sync`.
 5. **Each model as it migrates** adopts its row in the tables above. A service write it uses returns `change.Of[T]` first.
 
-When step 4 lands, RFC 0012 changes in three places: its naming rule (messages are `Event[P]` of a primitive), `NavMsg` (`Event[Nav[T]]`, a screen kind, a subject and the snapshot the screen shows, not `Next`), and `FocusChangedMsg` (a `Signal` naming a `ScreenInstance`).
+With step 4, RFC 0012 changed in three places: its naming rule (messages are `Event[P]` of a primitive), `NavMsg` (`Event[Nav[T]]`, a screen kind, a subject and the snapshot the screen shows, not `Next`), and `FocusChangedMsg` (a `Signal` naming a `ScreenInstance`).
 
 ## Open questions
 
