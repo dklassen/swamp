@@ -224,7 +224,7 @@ Some data on `App` is read by more than one screen today. Screens then depend on
 | `applicationsByPosting`            | posting detail, seeded by application detail (`app.go:1541`)        | posting detail. Whoever opens it passes the application, if any. The map becomes the one posting's application.                                                                                       |
 | `companies`, `companyOpenPostings` | company list, company delete (open count), sync all, the Companies tab's count | company list. Opening delete passes the count. Sync all gets its own copy in `Run[SyncAll]`. The Companies tab no longer shows a count (section 6).                                                |
 | `exportDir`                        | export, submit                                                      | router, passed to both when they open. A remembered value for the session isn't any one screen's.                                                                                                     |
-| `hideArchived`                     | posting list                                                        | posting list. It lives for the session, so the posting list has to be persistent (open question 1).                                                                                                   |
+| `hideArchived`                     | posting list                                                        | router. It lives for the session and the posting list is stacked, so the router passes it in and keeps what the list sets (open question 1).                                                           |
 
 ### 8. Three packages
 
@@ -434,7 +434,7 @@ How this differs from the sketches:
 
 ## Open questions
 
-1. **Which screens are persistent?** The three tabs for certain. The posting list holds `hideArchived` for the session. Should it be persistent and re-pointed at each company, or stacked, with `hideArchived` moving to the router?
+1. **Which screens are persistent?** Decided: the three tabs. The posting list is stacked, built for each company it opens on, and `hideArchived` moves to the router, which passes it in and keeps what the list last set.
 2. **Where do overlays live?** This RFC makes them stacked screens that report they're overlays. The alternative is a separate overlay slot on the router, which is simpler while there's never more than one at a time.
 3. **Does `New` build the tabs, or take them?** `New` builds them from the services it's given, as today. Passing them in instead would let tests choose which screens exist. But `cmd/swamp` would then have to build every screen, and each test needs fresh screens, never a shared package-level map.
 
