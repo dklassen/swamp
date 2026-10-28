@@ -126,6 +126,7 @@ func (m *postingListModel) Routes() []*model.Route {
 		model.Always(m.postingsRead, model.From(m.instance)),
 		model.Always(m.loadRequested),
 		model.Always(m.synced, model.About(message.TypeCompany, m.company.ID)),
+		model.Always(m.filtersSaved, model.About(message.TypeCompany, m.company.ID)),
 		model.Always(m.markupUpdated),
 		model.WhenFocused(m, m.keyPressed),
 		model.Always(m.resize),
@@ -158,6 +159,10 @@ func (m *postingListModel) loadRequested(message.Event[message.Load[message.Post
 // synced reloads even when the sync failed, since one can fail after
 // writing postings.
 func (m *postingListModel) synced(message.Event[message.Ran[message.SyncReport]]) tea.Cmd {
+	return m.load()
+}
+
+func (m *postingListModel) filtersSaved(message.Event[message.Ran[message.FilterSelection]]) tea.Cmd {
 	return m.load()
 }
 
@@ -217,7 +222,8 @@ func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	case "r":
 		return syncCompany(src, m.company)
 	case "f":
-		return send(enterFilterSelectMsg{})
+		return message.Push(src, message.ScreenFilterSelect, message.Subject{Type: message.TypeCompany, ID: m.company.ID},
+			message.FilterSelection{Company: m.company, Departments: m.list.Departments, Locations: m.list.Locations})
 	case "i":
 		if onPosting {
 			return toggleInterested(m.postingService, current.ID, !m.list.Markup[current.ID].InterestedAt.IsZero())
@@ -239,10 +245,6 @@ func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 // enterPostingDetailMsg signals that App should switch to the
 // posting-detail screen for the given posting.
 type enterPostingDetailMsg struct{ postingID int64 }
-
-// enterFilterSelectMsg signals that App should switch to the
-// filter-select screen.
-type enterFilterSelectMsg struct{}
 
 // send is a command for a message App still handles itself.
 func send(msg tea.Msg) tea.Cmd {
@@ -338,16 +340,6 @@ func (m *postingListModel) keepCursorOn(id int64) {
 		return
 	}
 	m.clampCursor(len(m.list.Postings))
-}
-
-// narrow shows only the postings matching departments and locations as
-// soon as they're saved, before the reload that follows the save.
-func (m *postingListModel) narrow(departments, locations []string) {
-	m.list.Postings = narrowPostingsToFilters(m.list.Postings, departments, locations)
-	m.list.Departments, m.list.Locations = departments, locations
-	if m.cursor >= len(m.list.Postings) {
-		m.cursor = 0
-	}
 }
 
 // patch replaces a posting reloaded elsewhere, if the list has it.

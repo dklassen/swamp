@@ -139,8 +139,6 @@ type App struct {
 	width        int
 	height       int
 
-	filterSelect filterSelectModel
-
 	// router is a message router for Dispatching bubbletea tea.Msg's
 	router model.Router
 	// instance is the banner's, which App registers routes for.
@@ -235,6 +233,7 @@ var stackedAs = map[message.Screen]screen{
 	message.ScreenCompanyEdit:     screenCompanyEdit,
 	message.ScreenCompanyDelete:   screenCompanyDelete,
 	message.ScreenCompanyPostings: screenPostingList,
+	message.ScreenFilterSelect:    screenFilterSelect,
 }
 
 // push opens s over the screen up: routes, then Init, so nothing Init
@@ -327,6 +326,16 @@ func (a *App) navCompanyRow(e message.Event[message.Nav[message.CompanyRow]]) te
 	row := e.Payload.Value
 	if e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenCompanyDelete {
 		return a.push(e.Payload.Screen, newCompanyDeleteModel(a.companyService, companyOf(row.Company), row.OpenPostings, a.sized.Width))
+	}
+	return a.unknownNav(e)
+}
+
+func (a *App) navFilterSelection(e message.Event[message.Nav[message.FilterSelection]]) tea.Cmd {
+	if !a.onTop(e.Meta) {
+		return nil
+	}
+	if e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenFilterSelect {
+		return a.push(e.Payload.Screen, newFilterSelectModel(a.companyService, e.Payload.Value, a.sized))
 	}
 	return a.unknownNav(e)
 }
@@ -958,9 +967,7 @@ func filterOutArchived(postings []message.Posting, markup map[int64]message.Mark
 }
 
 // filterPostingsByCompanyFilters keeps only postings matching
-// companyFilters. loadPostings and narrowPostingsToFilters both call it,
-// so the list after a reload and the one narrowed right after a save
-// can't disagree. An unsupported field is returned as an error rather
+// companyFilters. An unsupported field is returned as an error rather
 // than ignored.
 func filterPostingsByCompanyFilters(postings []message.Posting, companyFilters []filter.Filter) ([]message.Posting, error) {
 	narrowed := make([]message.Posting, 0, len(postings))
@@ -997,47 +1004,6 @@ func toSet(values []string) map[string]bool {
 	return set
 }
 
-type filterOptionsLoadedMsg struct {
-	departments     []string
-	locations       []string
-	existingFilters []filter.Filter
-	err             error
-}
-
-func loadFilterOptions(companies *service.CompanyService, companyID int64) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
-		departments, err := companies.Departments(ctx, companyID)
-		if err != nil {
-			return filterOptionsLoadedMsg{err: err}
-		}
-		locations, err := companies.Locations(ctx, companyID)
-		if err != nil {
-			return filterOptionsLoadedMsg{err: err}
-		}
-		existing, err := companies.Filters(ctx, companyID)
-		if err != nil {
-			return filterOptionsLoadedMsg{err: err}
-		}
-		return filterOptionsLoadedMsg{departments: departments, locations: locations, existingFilters: existing}
-	}
-}
-
-// companyFiltersSavedMsg reports saving a new filter selection. Filters
-// only decide what's shown, so saving them is the whole job: there's
-// nothing to re-sync.
-type companyFiltersSavedMsg struct {
-	company message.Company
-	err     error
-}
-
-func saveCompanyFilters(companies *service.CompanyService, c message.Company, departments, locations []string) tea.Cmd {
-	return func() tea.Msg {
-		err := companies.SetFilters(context.Background(), c.ID, companyFiltersFrom(departments, locations))
-		return companyFiltersSavedMsg{company: c, err: err}
-	}
-}
-
 func companyFiltersFrom(departments, locations []string) []filter.Filter {
 	filters := make([]filter.Filter, 0, len(departments)+len(locations))
 	for _, d := range departments {
@@ -1047,22 +1013,6 @@ func companyFiltersFrom(departments, locations []string) []filter.Filter {
 		filters = append(filters, filter.Filter{Field: filter.FieldLocation, Value: l})
 	}
 	return filters
-}
-
-// narrowPostingsToFilters narrows the list as soon as a filter selection
-// is saved, before the save completes, through the same match as
-// loadPostings.
-func narrowPostingsToFilters(postings []message.Posting, departments, locations []string) []message.Posting {
-	narrowed, err := filterPostingsByCompanyFilters(postings, companyFiltersFrom(departments, locations))
-	if err != nil {
-		// Unreachable: filters is built entirely from filter.FieldDepartment/
-		// FieldLocation above, both always-supported by filter.Match.
-		// Matches the old behavior on a hypothetical Match error here --
-		// treat as no matches rather than propagate, since this optimistic
-		// pass was never authoritative to begin with.
-		return nil
-	}
-	return narrowed
 }
 
 // errInternal is the banner for a fault: the error itself means nothing
@@ -1090,6 +1040,7 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.navNone),
 		model.Always(a.navCompany),
 		model.Always(a.navCompanyRow),
+		model.Always(a.navFilterSelection),
 		model.Always(a.hideArchivedChanged),
 	}
 }
@@ -1177,12 +1128,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.postingDetail = newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
 			a.enterFrom(screenPostingDetail)
 			return a, tea.Batch(loadApplication(a.postingService, p.ID), maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID), loadPostingScores(a.scoringService, p.ID))
-		}
-	case enterFilterSelectMsg:
-		if l := a.postingList(); l != nil && a.currentScreen == screenPostingList {
-			a.err = nil
-			a.currentScreen = screenFilterSelect
-			return a, loadFilterOptions(a.companyService, l.company.ID)
 		}
 	case applicationLoadedMsg:
 		a.setLoadErr(msg.err)
@@ -1434,23 +1379,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.activeApplications[i].LatestReviews = msg.reviews
 			}
 		}
-	case filterOptionsLoadedMsg:
-		a.err = msg.err
-		if l := a.postingList(); l != nil {
-			a.filterSelect = newFilterSelectModel(l.company.ID, msg.departments, msg.locations, msg.existingFilters)
-		}
-	case companyFiltersSavedMsg:
-		a.err = msg.err
-		if msg.err == nil {
-			a.status = msg.company.Name + " filters saved"
-			// Reload from the DB so the view becomes authoritative instead
-			// of just the optimistic narrowing applied synchronously when
-			// the filter selection was saved (see screenFilterSelect's
-			// saveFilterSelectionMsg handling in updateKeyMsg).
-			if l := a.postingList(); l != nil && l.company.ID == msg.company.ID {
-				return a, l.load()
-			}
-		}
 	case browserOpenedMsg:
 		a.err = msg.err
 		if a.currentScreen == screenApplicationSubmit {
@@ -1698,24 +1626,6 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			a.returnBack()
 		}
 		return a, cmd
-	case screenFilterSelect:
-		cmd, intent := a.filterSelect.Update(msg)
-		switch v := intent.(type) {
-		case cancelFilterSelectMsg:
-			a.currentScreen = screenPostingList
-		case saveFilterSelectionMsg:
-			// Narrowed synchronously, before saveCompanyFilters' Cmd even
-			// runs -- it's the same in-memory narrowing loadPostings' own
-			// authoritative pass uses, working off what's already loaded.
-			a.currentScreen = screenPostingList
-			l := a.postingList()
-			if l == nil {
-				return a, a.fail(fmt.Errorf("tui: filters saved with no posting list open"))
-			}
-			l.narrow(v.departments, v.locations)
-			return a, saveCompanyFilters(a.companyService, l.company, v.departments, v.locations)
-		}
-		return a, cmd
 	}
 	return a, nil
 }
@@ -1793,7 +1703,7 @@ func (a *App) body(s screen) string {
 		b.WriteString(a.companyList.View().Content)
 	case screenCompanyForm:
 		b.WriteString(a.stack.top().View().Content)
-	case screenCompanyEdit:
+	case screenCompanyEdit, screenFilterSelect:
 		b.WriteString(a.stack.top().View().Content)
 	case screenPostingList:
 		if l := a.postingList(); l != nil {
@@ -1815,8 +1725,6 @@ func (a *App) body(s screen) string {
 		b.WriteString(a.documentReviewSelect.View())
 	case screenDocumentReviewForm:
 		b.WriteString(a.documentReviewForm.View())
-	case screenFilterSelect:
-		b.WriteString(a.filterSelect.View(a.screenRows()))
 	}
 	return b.String()
 }

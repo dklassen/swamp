@@ -77,7 +77,6 @@ func TestPostingListModel_Keys_AskAppToOpenItsScreens(t *testing.T) {
 		want tea.Msg
 	}{
 		{name: "enter", key: tea.KeyPressMsg{Code: tea.KeyEnter}, want: enterPostingDetailMsg{postingID: 1}},
-		{name: "f", key: runeKey('f'), want: enterFilterSelectMsg{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -89,6 +88,34 @@ func TestPostingListModel_Keys_AskAppToOpenItsScreens(t *testing.T) {
 				t.Errorf("%s sent (-want +got):\n%s", tt.name, diff)
 			}
 		})
+	}
+}
+
+func TestPostingListModel_F_PushesThePickerOnTheListsFilters(t *testing.T) {
+	t.Parallel()
+
+	m := newPostingListModel(nil, nil, testListCompany, false, message.ContentSize{Rows: 40})
+	read := postingsReadOf(m, testPostings())
+	read.Payload.Value.Departments, read.Payload.Value.Locations = []string{"Engineering"}, []string{"Remote"}
+	m.postingsRead(read)
+
+	got := pressOn(t, m, runeKey('f'))
+	if len(got) != 1 {
+		t.Fatalf("f sent %#v, want one Nav", got)
+	}
+	nav, ok := got[0].(message.Event[message.Nav[message.FilterSelection]])
+	if !ok {
+		t.Fatalf("f sent %T, want a Nav to the filter picker", got[0])
+	}
+	assertEventFrom(t, nav.Meta, message.Source{Instance: m.Instance()})
+	if want := (message.Subject{Type: message.TypeCompany, ID: testListCompany.ID}); nav.Meta.Subject != want {
+		t.Errorf("Subject = %+v, want %+v", nav.Meta.Subject, want)
+	}
+	want := message.Nav[message.FilterSelection]{Op: message.NavPush, Screen: message.ScreenFilterSelect, Value: message.FilterSelection{
+		Company: testListCompany, Departments: []string{"Engineering"}, Locations: []string{"Remote"},
+	}}
+	if diff := cmp.Diff(want, nav.Payload); diff != "" {
+		t.Errorf("Nav (-want +got):\n%s", diff)
 	}
 }
 

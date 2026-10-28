@@ -142,3 +142,22 @@ type HideArchived struct {
 }
 
 func (HideArchived) Type() Type { return TypeHideArchived }
+
+// FilterSelection is the departments and locations a company's posting
+// list keeps to.
+type FilterSelection struct {
+	Company     Company  `json:"company"`
+	Departments []string `json:"departments,omitempty"`
+	Locations   []string `json:"locations,omitempty"`
+}
+
+func (FilterSelection) Type() Type { return TypeFilterSelection }
+
+// FilterOptions is the departments and locations the event's Subject, a
+// company, has postings in.
+type FilterOptions struct {
+	Departments []string `json:"departments"`
+	Locations   []string `json:"locations"`
+}
+
+func (FilterOptions) Type() Type { return TypeFilterOptions }
