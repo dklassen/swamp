@@ -77,6 +77,44 @@ func TestScreenStack_Pop_StopsTheScreensRoutesAndReturnsWhatItCovered(t *testing
 	}
 }
 
+func TestScreenStack_Replace_SwapsTheTopOverTheSameScreen(t *testing.T) {
+	t.Parallel()
+	router := model.NewMsgRouter()
+	stack := newScreenStack(router)
+	old, replacement := newStackedFake(), newStackedFake()
+	if err := stack.push(message.ScreenPostingDetail, old, screenPostingList); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+
+	if err := stack.replace(message.ScreenPostingDetail, replacement); err != nil {
+		t.Fatalf("replace: %v", err)
+	}
+	router.Dispatch(stackPing{})
+
+	if old.heard != 0 || replacement.heard != 1 {
+		t.Errorf("pings heard after the replace: replaced %d, replacement %d; want 0 and 1", old.heard, replacement.heard)
+	}
+	if stack.top() != replacement || stack.len() != 1 {
+		t.Errorf("top = %v of %d, want the replacement alone", stack.top(), stack.len())
+	}
+	covered, err := stack.pop()
+	if err != nil {
+		t.Fatalf("pop: %v", err)
+	}
+	if covered != screenPostingList {
+		t.Errorf("pop returned %v, want %v, the screen the replaced one was pushed over", covered, screenPostingList)
+	}
+}
+
+func TestScreenStack_ReplaceWithNothingPushed_Fails(t *testing.T) {
+	t.Parallel()
+	stack := newScreenStack(model.NewMsgRouter())
+
+	if err := stack.replace(message.ScreenPostingDetail, newStackedFake()); err == nil {
+		t.Error("replace with nothing pushed: nil error, want one")
+	}
+}
+
 func TestScreenStack_PopWithNothingPushed_Fails(t *testing.T) {
 	t.Parallel()
 	stack := newScreenStack(model.NewMsgRouter())
