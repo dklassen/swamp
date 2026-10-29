@@ -72,6 +72,8 @@ const (
 	TypeSearchDebounce
 	TypeOpenBrowser
 	TypeActiveApplications
+	TypeApplicationDetail
+	TypeEditDocument
 )
 
 var typeNames = [...]string{
@@ -103,6 +105,8 @@ var typeNames = [...]string{
 	TypeSearchDebounce:     "search_debounce",
 	TypeOpenBrowser:        "open_browser",
 	TypeActiveApplications: "active_applications",
+	TypeApplicationDetail:  "application_detail",
+	TypeEditDocument:       "edit_document",
 }
 
 func (t Type) String() string                { return nameOf(t, typeNames[:]) }
@@ -186,6 +190,7 @@ const (
 	ScreenPostingDetail
 	ScreenApplicationStatus
 	ScreenApplicationNotes
+	ScreenApplicationDetail
 )
 
 var screenNames = [...]string{
@@ -198,6 +203,7 @@ var screenNames = [...]string{
 	ScreenPostingDetail:     "posting_detail",
 	ScreenApplicationStatus: "application_status",
 	ScreenApplicationNotes:  "application_notes",
+	ScreenApplicationDetail: "application_detail",
 }
 
 func (s Screen) String() string                { return nameOf(s, screenNames[:]) }

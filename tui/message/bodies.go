@@ -323,3 +323,22 @@ type ActiveApplications struct {
 }
 
 func (ActiveApplications) Type() Type { return TypeActiveApplications }
+
+// ApplicationDetail is one application with its posting, its company's
+// name, and the latest review of each document that still describes it.
+type ApplicationDetail struct {
+	Application Application `json:"application"`
+	Posting     Posting     `json:"posting"`
+	CompanyName string      `json:"company_name"`
+	Reviews     []Review    `json:"reviews,omitempty"`
+}
+
+func (ApplicationDetail) Type() Type { return TypeApplicationDetail }
+
+// EditDocument is an edit of one of an application's documents in the
+// user's editor, which records what it wrote before it reports.
+type EditDocument struct {
+	DocumentType DocumentType `json:"document_type"`
+}
+
+func (EditDocument) Type() Type { return TypeEditDocument }
