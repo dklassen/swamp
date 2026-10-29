@@ -14,6 +14,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -53,6 +54,8 @@ type postingDetailModel struct {
 	// scores is every score the posting was given, newest first; loaded
 	// async, and empty until then or when it has none.
 	scores []score.Score
+
+	instance message.ScreenInstance
 }
 
 // newPostingDetailModel returns a detail screen for p, sized to
@@ -65,7 +68,7 @@ func newPostingDetailModel(postings *service.PostingService, docs *documents.Sto
 	inner := detailInnerWidth(width)
 	help := indentLines(wrapToWidth(postingDetailHelp(canNavigateSiblings), inner), detailPadding)
 	vp := viewport.New(viewport.WithWidth(width))
-	m := postingDetailModel{postings: postings, documents: docs, viewport: vp, width: width, help: help, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews, canNavigateSiblings: canNavigateSiblings}
+	m := postingDetailModel{postings: postings, documents: docs, viewport: vp, width: width, help: help, posting: p, application: app, hasApplication: hasApp, latestReviews: latestReviews, canNavigateSiblings: canNavigateSiblings, instance: message.NewScreenInstance()}
 	m.setContent()
 	m.setHeight(height)
 	return m
@@ -213,7 +216,7 @@ func (m *postingDetailModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 		}
 	case msg.String() == "a":
 		if !m.hasApplication {
-			return createApplication(m.postings, m.posting.ID), nil
+			return createApplication(m.postings, message.Source{Instance: m.instance}, m.posting.ID), nil
 		}
 	case msg.String() == "s":
 		if m.hasApplication {

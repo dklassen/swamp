@@ -1173,9 +1173,8 @@ func TestApp_PressA_OnPostingDetail_WithNoApplication_CreatesApplication(t *test
 
 // TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications
 // verifies a freshly-started application shows up in the active-
-// applications list without needing a restart -- applicationCreatedMsg
-// reloads it, the same way applicationStatusUpdatedMsg already does for
-// status changes.
+// applications list without needing a restart -- the create's change
+// reloads it, the same way a status change already does.
 func TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
@@ -1195,7 +1194,7 @@ func TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications(t
 	}
 	app, createdCmd := sendKey(app, cmd())
 	if createdCmd == nil {
-		t.Fatal("applicationCreatedMsg handling returned nil Cmd, want a command that reloads active applications")
+		t.Fatal("the created change returned nil Cmd, want a command that reloads active applications")
 	}
 	app = applyCmd(t, app, createdCmd)
 
@@ -1474,7 +1473,7 @@ func TestApp_ActiveApplications_StatusChange_ReturnsToActiveApplications(t *test
 }
 
 // TestApp_ActiveApplications_StatusChangeToRejected_RemovesFromList
-// verifies the applicationStatusUpdatedMsg handler reloads the active
+// verifies a status change reloads the active
 // list after a status change, since moving to a terminal status
 // (rejected/offer_declined) should drop the application from view
 // immediately rather than on the next full reload.
@@ -1497,7 +1496,7 @@ func TestApp_ActiveApplications_StatusChangeToRejected_RemovesFromList(t *testin
 	}
 	app, statusCmd := sendKey(app, cmd())
 	if statusCmd == nil {
-		t.Fatal("applicationStatusUpdatedMsg handling returned nil Cmd, want a command that reloads active applications")
+		t.Fatal("the status change returned nil Cmd, want a command that reloads active applications")
 	}
 	app, _ = sendKey(app, statusCmd())
 
@@ -2475,7 +2474,7 @@ func TestApp_PostingDetailFromApplicationDetail_Esc_ReturnsToApplicationDetail(t
 // TestApp_StatusChangeFromApplicationDetailFastPath_PreservesPostingFields
 // is a regression test for a bug caught in code review: applicationDetail's
 // 'p' enters posting detail without a posting list open (the fast
-// path -- #87 follow-up). applicationStatusUpdatedMsg's
+// path -- #87 follow-up). The status change's
 // handler used to unconditionally rebuild a.postingDetail via
 // lookupPosting(a.postingDetail.posting.ID), which searches the open
 // posting list and returns a zero-value posting.Posting{} when not found
@@ -3876,7 +3875,7 @@ func TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T
 		t.Fatalf("application.Get: %v", err)
 	}
 
-	app, _ = sendKey(app, applicationNotesUpdatedMsg{application: *stored, from: earlier})
+	app, _ = sendKey(app, message.Updated(message.Source{Instance: earlier}, stored.ID, stored.UpdatedAt, applicationSnapshot(*stored), applicationSnapshot(*stored)))
 
 	if app.currentScreen != screenApplicationNotesEdit {
 		t.Fatalf("screen after the earlier instance's save result = %v, want screenApplicationNotesEdit (the reopened one stays open)", app.currentScreen)
@@ -4170,7 +4169,7 @@ func TestApp_NotesSaveFails_UnblocksEditing(t *testing.T) {
 	app, _ = sendKey(app, runeKey('H', 'i'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
-	app, _ = sendKey(app, applicationNotesUpdatedMsg{from: app.applicationNotes.instance, err: errors.New("disk full")})
+	app, _ = sendKey(app, message.New(message.Source{Instance: app.applicationNotes.instance}, message.Subject{Type: message.TypeApplication, ID: app.applicationNotes.applicationID}, message.OpUpdated, time.Now().UTC(), model.ErrorOf(errors.New("disk full"))))
 	app, _ = sendKey(app, runeKey('!'))
 
 	if app.currentScreen != screenApplicationNotesEdit {
@@ -4178,6 +4177,35 @@ func TestApp_NotesSaveFails_UnblocksEditing(t *testing.T) {
 	}
 	if got := app.applicationNotes.textarea.Value(); got != "Hi!" {
 		t.Fatalf("notes after failed save and typing = %q, want %q (editing resumes)", got, "Hi!")
+	}
+}
+
+func TestApp_NotesSaveSucceedsAfterFailing_ClearsTheError(t *testing.T) {
+	s := testutil.NewTestApp(t)
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
+		"acme": {{SourceID: "job-1", Title: "Engineer"}},
+	})
+	app := newTestApp(t, s, syncer)
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 20})
+	app = openPostingList(t, app)
+	mustCreateApplication(t, s, openList(t, app).list.Postings[0].ID)
+	app = openPostingDetail(t, app)
+	app, _ = sendKey(app, runeKey('n'))
+	if app.currentScreen != screenApplicationNotesEdit {
+		t.Fatalf("screen after n = %v, want the notes editor", app.currentScreen)
+	}
+	app, _ = sendKey(app, runeKey('H', 'i'))
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+	app, _ = sendKey(app, message.New(message.Source{Instance: app.applicationNotes.instance}, message.Subject{Type: message.TypeApplication, ID: app.applicationNotes.applicationID}, message.OpUpdated, time.Now().UTC(), model.ErrorOf(errors.New("disk full"))))
+
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
+
+	if app.currentScreen != screenPostingDetail {
+		t.Errorf("screen after the retry = %v, want posting detail", app.currentScreen)
+	}
+	if app.err != nil {
+		t.Errorf("err after the retry saved = %v, want the failure cleared", app.err)
 	}
 }
 

@@ -71,7 +71,7 @@ func (m *applicationStatusModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) 
 		return nil, cancelApplicationStatusMsg{}
 	case msg.String() == "enter":
 		status := applicationStatuses[m.cursor]
-		return updateApplicationStatus(m.applications, m.applicationID, status, m.instance), nil
+		return updateApplicationStatus(m.applications, message.Source{Instance: m.instance}, m.applicationID, status), nil
 	}
 	return nil, nil
 }

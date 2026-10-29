@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -17,6 +18,8 @@ import (
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // deleteTestApp is an App on the home screen with one started
@@ -130,16 +133,33 @@ func TestDeleteFlow_FailureReturnsToDetailWithTheError(t *testing.T) {
 	app, _ = sendKey(app, runeKey('y'))
 
 	failure := errors.New("disk on fire")
-	app, _ = sendKey(app, applicationDeletedMsg{application: app.applicationDelete.application, err: failure})
+	app, _ = sendKey(app, message.New(message.Source{Instance: app.applicationDelete.instance}, message.Subject{Type: message.TypeApplication, ID: target.ID}, message.OpDeleted, time.Now().UTC(), model.ErrorOf(failure)))
 
 	if app.currentScreen != screenApplicationDetail {
 		t.Errorf("screen = %v, want back on application detail", app.currentScreen)
 	}
-	if !errors.Is(app.err, failure) {
+	if app.err == nil || app.err.Error() != failure.Error() {
 		t.Errorf("err = %v, want %v shown", app.err, failure)
 	}
 	if _, ok := app.applicationsByPosting[target.PostingID]; !ok {
 		t.Error("applicationsByPosting dropped an application that wasn't deleted")
+	}
+}
+
+func TestDeleteFlow_ADeleteNoOneHereAskedFor_LeavesTheConfirmationAndBanner(t *testing.T) {
+	t.Parallel()
+	app, target := deleteTestApp(t)
+	app = startDelete(t, app)
+	failure := errors.New("disk on fire")
+	app, _ = sendKey(app, message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(failure)))
+
+	app, _ = sendKey(app, message.Deleted(message.Source{}, target.ID, time.Now().UTC(), applicationSnapshot(target)))
+
+	if app.currentScreen != screenApplicationDelete {
+		t.Errorf("screen = %v, want the confirmation still open", app.currentScreen)
+	}
+	if app.err == nil || app.err.Error() != failure.Error() || app.status != "" {
+		t.Errorf("err, status = %v, %q, want %v still shown", app.err, app.status, failure)
 	}
 }
 
