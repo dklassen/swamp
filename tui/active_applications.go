@@ -175,12 +175,6 @@ func (m *activeApplicationListModel) focusChanged(e message.Event[message.Signal
 	return nil
 }
 
-// enterApplicationDetailMsg asks App to open application detail on this
-// application.
-type enterApplicationDetailMsg struct {
-	application posting.ActiveApplication
-}
-
 // enterApplicationExportMsg asks App to open the export screen, where the
 // user picks the folder for this application's PDFs.
 type enterApplicationExportMsg struct {
@@ -229,7 +223,8 @@ func (m *activeApplicationListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 		}
 	case "enter":
 		if onRow {
-			return ask(enterApplicationDetailMsg{application: visible[m.cursor]})
+			a := visible[m.cursor]
+			return message.Push(m.src(), message.ScreenApplicationDetail, message.Subject{Type: message.TypeApplication, ID: a.ID}, applicationDetailOf(a))
 		}
 	}
 	return nil

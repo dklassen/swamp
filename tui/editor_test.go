@@ -35,6 +35,28 @@ func TestEditorCommand_EditorUnset_ReturnsError(t *testing.T) {
 	}
 }
 
+// onApplicationDetail is the application detail on screen, failing the
+// test if none is.
+func onApplicationDetail(t *testing.T, app *App) *applicationDetailModel {
+	t.Helper()
+	d := app.applicationDetail()
+	if d == nil || app.currentScreen != screenApplicationDetail {
+		t.Fatalf("screen = %v, want application detail", app.currentScreen)
+	}
+	return d
+}
+
+// editorClosed is what editing documentType from the detail on screen
+// reports once the editor closes, given its hash before the edit.
+func editorClosed(t *testing.T, app *App, applicationID int64, documentType document.Type, before string) tea.Cmd {
+	t.Helper()
+	path, err := app.documents.Path(applicationID, documentType)
+	if err != nil {
+		t.Fatalf("Path: %v", err)
+	}
+	return recordEditorWrite(app.documentService, onApplicationDetail(t, app).src(), applicationID, documentType, path, before)
+}
+
 // TestApp_EditorClosed_ReloadsTheApplicationsReviews: editing a draft from
 // application detail can make its latest review stale. When the editor
 // closes, the badge must reflect the file as it is now, not as it was
@@ -63,7 +85,7 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	if _, err := docs.Write(target.ID, document.Resume, "# Edited in $EDITOR\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: document.Resume, before: documents.ContentSHA256("# Draft\n")})
+	app = applyCmd(t, app, editorClosed(t, app, target.ID, document.Resume, documents.ContentSHA256("# Draft\n")))
 
 	if view := viewText(app); strings.Contains(view, "[PASSED]") {
 		t.Errorf("application detail still shows the review of the old version as [PASSED]:\n%s", view)
@@ -81,10 +103,11 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 func TestApp_EditorClosedWithAnError_ShowsIt(t *testing.T) {
 	t.Parallel()
 
-	app, _ := deleteTestApp(t)
+	app, target := deleteTestApp(t)
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	app = sendKeyAndApply(t, app, editorClosedMsg{err: errors.New("tui: $EDITOR is not set")})
+	src := onApplicationDetail(t, app).src()
+	app = applyCmd(t, app, func() tea.Msg { return editFailed(src, target.ID, errors.New("tui: $EDITOR is not set")) })
 
 	if app.err == nil || !strings.Contains(app.err.Error(), "$EDITOR is not set") {
 		t.Errorf("err = %v, want the editor's error", app.err)
@@ -105,7 +128,7 @@ func TestApp_EditorClosedAfterAChange_RecordsTheWrite(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 
-	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: document.Resume, before: documents.ContentSHA256("# Draft\n")})
+	app = applyCmd(t, app, editorClosed(t, app, target.ID, document.Resume, documents.ContentSHA256("# Draft\n")))
 
 	write, err := storeOf(app).Documents.LatestWrite(ctx, target.ID, document.Resume)
 	if err != nil {
@@ -122,7 +145,7 @@ func TestApp_EditorClosedWithoutAChange_RecordsNothing(t *testing.T) {
 	app, target := deleteTestApp(t) // resume drafted as "# Draft\n"
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	app = sendKeyAndApply(t, app, editorClosedMsg{applicationID: target.ID, documentType: document.Resume, before: documents.ContentSHA256("# Draft\n")})
+	app = applyCmd(t, app, editorClosed(t, app, target.ID, document.Resume, documents.ContentSHA256("# Draft\n")))
 
 	if _, err := storeOf(app).Documents.LatestWrite(context.Background(), target.ID, document.Resume); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("LatestWrite: err = %v, want store.ErrNotFound: nothing recorded for an unchanged document", err)

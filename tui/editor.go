@@ -7,12 +7,15 @@ import (
 	"io/fs"
 	"os"
 	"os/exec"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // editorCommand picks the command/args to open path in $EDITOR, given its
@@ -30,54 +33,67 @@ func editorCommand(editorEnv, path string) (string, []string, error) {
 	return editorEnv, []string{path}, nil
 }
 
-// editorClosedMsg reports that a tea.ExecProcess-launched $EDITOR has
-// returned control to the Program, successfully or not. before is the
-// document's hash when the editor opened (empty: it didn't exist), so a
-// change can be recorded as the user's.
-type editorClosedMsg struct {
-	applicationID int64
-	documentType  document.Type
-	before        string
-	err           error
-}
-
 // openInEditor opens path in $EDITOR, taking over the terminal until the
 // editor exits (bubbletea suspends its own rendering for the duration --
-// see tea.ExecProcess). If $EDITOR isn't set, or the target file doesn't
-// exist yet, this still runs: most editors create the file on save, so
-// there's nothing to special-case here.
-func openInEditor(path string, closed editorClosedMsg) tea.Cmd {
+// see tea.ExecProcess), then reports with closed. If the target file
+// doesn't exist yet, this still runs: most editors create the file on
+// save, so there's nothing to special-case here.
+func openInEditor(path string, closed func(error) tea.Msg) tea.Cmd {
 	cmdName, args, err := editorCommand(os.Getenv("EDITOR"), path)
 	if err != nil {
-		closed.err = err
-		return func() tea.Msg { return closed }
+		return func() tea.Msg { return closed(err) }
 	}
-	return tea.ExecProcess(exec.Command(cmdName, args...), func(err error) tea.Msg {
-		closed.err = err
-		return closed
+	return tea.ExecProcess(exec.Command(cmdName, args...), closed)
+}
+
+// editDocument opens one of an application's documents in $EDITOR and,
+// once it closes, records the user's write and reports Ran[EditDocument],
+// or Error.
+func editDocument(documentService *service.DocumentService, docs *documents.Store, src message.Source, applicationID int64, documentType document.Type) tea.Cmd {
+	failed := func(err error) tea.Msg { return editFailed(src, applicationID, err) }
+	// Most editors create the file on save, but not its directory.
+	if _, err := docs.EnsureDir(applicationID); err != nil {
+		return func() tea.Msg { return failed(err) }
+	}
+	path, err := docs.Path(applicationID, documentType)
+	if err != nil {
+		return func() tea.Msg { return failed(err) }
+	}
+	before, err := docs.SHA256(applicationID, documentType)
+	if err != nil {
+		return func() tea.Msg { return failed(err) }
+	}
+	return openInEditor(path, func(err error) tea.Msg {
+		if err != nil {
+			return failed(err)
+		}
+		// Bubble Tea calls this on its event loop; a batch runs the record
+		// off it.
+		return tea.BatchMsg{recordEditorWrite(documentService, src, applicationID, documentType, path, before)}
 	})
 }
 
-// recordEditorWrite records the user's edit if the document changed while
-// the editor was open, then reloads the application's reviews, which the
-// edit may have made stale.
-func recordEditorWrite(documentService *service.DocumentService, docs *documents.Store, closed editorClosedMsg) tea.Cmd {
+func editFailed(src message.Source, applicationID int64, err error) tea.Msg {
+	return message.New(src, message.Subject{Type: message.TypeApplication, ID: applicationID}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
+}
+
+// recordEditorWrite records the user's edit if the document at path no
+// longer has the hash before it had when the editor opened (empty: it
+// didn't exist), then reports the edit.
+func recordEditorWrite(documentService *service.DocumentService, src message.Source, applicationID int64, documentType document.Type, path, before string) tea.Cmd {
 	return func() tea.Msg {
-		path, err := docs.Path(closed.applicationID, closed.documentType)
-		if err != nil {
-			return documentReviewsLoadedMsg{applicationID: closed.applicationID, err: err}
-		}
 		content, err := os.ReadFile(path)
 		switch {
 		case errors.Is(err, fs.ErrNotExist):
 			// Closed without saving a new document: nothing was written.
 		case err != nil:
-			return documentReviewsLoadedMsg{applicationID: closed.applicationID, err: fmt.Errorf("read %s after editing: %w", path, err)}
-		case documents.ContentSHA256(string(content)) != closed.before:
-			if err := documentService.RecordWrite(context.Background(), closed.applicationID, closed.documentType, string(content), document.SourceEditor); err != nil {
-				return documentReviewsLoadedMsg{applicationID: closed.applicationID, err: err}
+			return editFailed(src, applicationID, fmt.Errorf("read %s after editing: %w", path, err))
+		case documents.ContentSHA256(string(content)) != before:
+			if err := documentService.RecordWrite(context.Background(), applicationID, documentType, string(content), document.SourceEditor); err != nil {
+				return editFailed(src, applicationID, err)
 			}
 		}
-		return loadDocumentReviews(documentService, docs, closed.applicationID)()
+		return message.New(src, message.Subject{Type: message.TypeApplication, ID: applicationID}, message.OpNone, time.Now().UTC(),
+			message.Ran[message.EditDocument]{Value: message.EditDocument{DocumentType: documentTypeSnapshots[documentType]}})
 	}
 }

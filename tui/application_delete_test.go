@@ -88,6 +88,9 @@ func TestDeleteFlow_ConfirmingDeletesTheApplicationAndKeepsItsDocuments(t *testi
 	if app.currentScreen != screenActiveApplications {
 		t.Errorf("screen after confirming = %v, want the home screen", app.currentScreen)
 	}
+	if !app.activeApplicationList.Focused() {
+		t.Error("the home screen isn't in focus after confirming, so its keys do nothing: detail is still open under it")
+	}
 	if len(app.activeApplicationList.apps) != 0 {
 		t.Errorf("active applications = %d, want the deleted one gone from the list", len(app.activeApplicationList.apps))
 	}

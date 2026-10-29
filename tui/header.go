@@ -73,7 +73,6 @@ var parents = map[screen]screen{
 	screenCompanyEdit:       screenCompanyList,
 	screenPostingList:       screenCompanyList,
 	screenFilterSelect:      screenPostingList,
-	screenApplicationDetail: screenActiveApplications,
 	screenApplicationExport: screenActiveApplications,
 	screenApplicationSubmit: screenApplicationDetail,
 	screenApplicationForm:   screenApplicationDetail,
@@ -134,8 +133,9 @@ func (a *App) crumbs(path []screen) []string {
 				crumbs = append(crumbs, d.posting.Title)
 			}
 		case screenApplicationDetail:
-			view := a.applicationDetail.application
-			crumbs = append(crumbs, view.CompanyName, view.Posting.Title)
+			if d := a.applicationDetail(); d != nil {
+				crumbs = append(crumbs, d.detail.CompanyName, d.detail.Posting.Title)
+			}
 		case screenCompanyForm:
 			crumbs = append(crumbs, "Add company")
 		case screenCompanyEdit:

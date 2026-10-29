@@ -148,8 +148,8 @@ func TestApp_ActiveApplications_PasteIntoSearch_FiltersByIt(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.currentScreen != screenApplicationDetail || app.applicationDetail.application.Posting.Title != "Engineer 07" {
-		t.Fatalf("after paste, enter, enter: screen %v showing %q, want application detail for Engineer 07", app.currentScreen, app.applicationDetail.application.Posting.Title)
+	if app.currentScreen != screenApplicationDetail || shownDetail(app).Posting.Title != "Engineer 07" {
+		t.Fatalf("after paste, enter, enter: screen %v showing %q, want application detail for Engineer 07", app.currentScreen, shownDetail(app).Posting.Title)
 	}
 }
 

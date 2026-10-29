@@ -93,7 +93,6 @@ type App struct {
 	// See issue #89.
 	returnStack           []screen
 	activeApplicationList *activeApplicationListModel
-	applicationDetail     applicationDetailModel
 	applicationExport     applicationExportModel
 	// exportDir is the destination the export screen prefills: the last
 	// directory successfully exported to this session, falling back to
@@ -226,6 +225,7 @@ var stackedAs = map[message.Screen]screen{
 	message.ScreenPostingDetail:     screenPostingDetail,
 	message.ScreenApplicationStatus: screenApplicationStatusSelect,
 	message.ScreenApplicationNotes:  screenApplicationNotesEdit,
+	message.ScreenApplicationDetail: screenApplicationDetail,
 }
 
 // push opens s over the screen up: routes, then Init, so nothing Init
@@ -362,19 +362,13 @@ func (a *App) navPostingDetail(e message.Event[message.Nav[message.PostingDetail
 	}
 	switch {
 	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenPostingDetail:
-		return a.openPostingDetail(e.Payload.Value)
+		// It reads in Init, so it's as up to date as the change log read so far.
+		a.seen[screenPostingDetail] = a.latestSeen
+		return a.push(e.Payload.Screen, a.newPostingDetail(e.Payload.Value))
 	case e.Payload.Op == message.NavReplace && e.Payload.Screen == message.ScreenPostingDetail:
 		return a.replace(e.Payload.Screen, a.newPostingDetail(e.Payload.Value))
 	}
 	return a.unknownNav(e)
-}
-
-// openPostingDetail pushes posting detail, also from App's own screens,
-// which have no instance to send a Nav from.
-func (a *App) openPostingDetail(d message.PostingDetail) tea.Cmd {
-	// It reads in Init, so it's as up to date as the change log read so far.
-	a.seen[screenPostingDetail] = a.latestSeen
-	return a.push(message.ScreenPostingDetail, a.newPostingDetail(d))
 }
 
 func (a *App) newPostingDetail(d message.PostingDetail) *postingDetailModel {
@@ -401,6 +395,32 @@ func (a *App) navApplication(e message.Event[message.Nav[message.Application]]) 
 func (a *App) postingDetail() *postingDetailModel {
 	d, _ := a.stack.open(message.ScreenPostingDetail).(*postingDetailModel)
 	return d
+}
+
+func (a *App) navApplicationDetail(e message.Event[message.Nav[message.ApplicationDetail]]) tea.Cmd {
+	if !a.onTop(e.Meta) {
+		return nil
+	}
+	if e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenApplicationDetail {
+		// It reads in Init, so it's as up to date as the change log read so far.
+		a.seen[screenApplicationDetail] = a.latestSeen
+		return a.push(e.Payload.Screen, newApplicationDetailModel(a.applicationService, a.postingService, a.companyService, a.documentService, a.documents, e.Payload.Value))
+	}
+	return a.unknownNav(e)
+}
+
+// applicationDetail is the open application detail, or nil, for the
+// screens over it that are still App's.
+func (a *App) applicationDetail() *applicationDetailModel {
+	d, _ := a.stack.open(message.ScreenApplicationDetail).(*applicationDetailModel)
+	return d
+}
+
+// onApplicationDetail is whether application detail on applicationID is
+// the screen up.
+func (a *App) onApplicationDetail(applicationID int64) bool {
+	d := a.applicationDetail()
+	return a.currentScreen == screenApplicationDetail && d != nil && d.detail.Application.ID == applicationID
 }
 
 func (a *App) hideArchivedChanged(e message.Event[message.Signal[message.HideArchived]]) tea.Cmd {
@@ -582,14 +602,6 @@ func (a *App) openDocumentReviewForm(msg enterDocumentReviewFormMsg) bool {
 	return true
 }
 
-// setLoadErr records a load's failure. Loads finish in any order, so a
-// success leaves another load's error in place.
-func (a *App) setLoadErr(err error) {
-	if err != nil {
-		a.err = err
-	}
-}
-
 // returnBack pops returnStack and switches to the screen on top,
 // returning it. An empty stack means a push was missed somewhere; falling
 // back to the home screen beats panicking or staying stuck.
@@ -751,32 +763,6 @@ func applicationWritten(src message.Source, applicationID int64, op message.Op, 
 		return message.Deleted(src, applicationID, a.At, applicationSnapshot(a.Before))
 	}
 	return message.Updated(src, applicationID, a.At, applicationSnapshot(a.Before), applicationSnapshot(a.After))
-}
-
-type documentReviewsLoadedMsg struct {
-	applicationID int64
-	reviews       map[document.Type]document.Review
-	err           error
-}
-
-// loadDocumentReviews fetches the most recent review, if any, of each
-// document type for applicationID -- the data behind postingDetailContent's
-// inline review-status section (#83). A document type
-// with no review yet is simply absent from the returned map, not an
-// error. Reviews whose content no longer matches what's currently on
-// disk (the document was revised since being reviewed, whether in
-// direct response to that review or independently) are filtered out by
-// documents.Current -- a stale review shouldn't render as if it
-// still described the current draft (see
-// document.Review.IsCurrent).
-func loadDocumentReviews(documentService *service.DocumentService, docs *documents.Store, applicationID int64) tea.Cmd {
-	return func() tea.Msg {
-		reviews, err := currentReviews(documentService, docs, applicationID)
-		if err != nil {
-			return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
-		}
-		return documentReviewsLoadedMsg{applicationID: applicationID, reviews: reviews}
-	}
 }
 
 // currentReviews is the latest review of each of an application's
@@ -969,6 +955,7 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.navFilterSelection),
 		model.Always(a.navPostingDetail),
 		model.Always(a.navApplication),
+		model.Always(a.navApplicationDetail),
 		model.Always(a.hideArchivedChanged),
 		model.Always(a.applicationChanged),
 		model.Always(a.applicationWriteFailed),
@@ -1011,7 +998,7 @@ func (a *App) applicationChanged(e message.Event[message.Changed[message.Applica
 	// already have left; only the asker still on screen moves on.
 	if a.currentScreen == screenApplicationSubmit && a.applicationSubmit.instance == from {
 		a.status = "Marked " + a.applicationSubmit.application.Posting.Title + " submitted"
-		a.currentScreen = screenActiveApplications
+		return a.backHome()
 	}
 	return nil
 }
@@ -1020,9 +1007,19 @@ func (a *App) applicationDeleted(e message.Event[message.Changed[message.Applica
 	if from := e.Meta.Source.Instance; from != 0 && a.applicationDelete.instance == from {
 		a.status = "Deleted the application for " + a.applicationDelete.application.Posting.Title
 		if a.currentScreen == screenApplicationDelete {
-			a.currentScreen = screenActiveApplications
+			return a.backHome()
 		}
 	}
+	return nil
+}
+
+// backHome leaves one of App's screens for the home list, closing the
+// application detail it was opened over, if any.
+func (a *App) backHome() tea.Cmd {
+	if a.stack.len() > 0 && a.stack.topKind() == message.ScreenApplicationDetail {
+		return a.pop()
+	}
+	a.currentScreen = screenActiveApplications
 	return nil
 }
 
@@ -1101,21 +1098,30 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	// The home screen asks for the screens App still opens, unless the user
-	// has left it while the request was on its way.
-	case enterApplicationDetailMsg:
-		if a.currentScreen == screenActiveApplications {
-			a.currentScreen, a.err = screenApplicationDetail, nil
-			a.applicationDetail = newApplicationDetailModel(a.documents, msg.application)
-		}
+	// The home screen and application detail ask for the screens App still
+	// opens, unless the user has left while the request was on its way.
 	case enterApplicationExportMsg:
 		if a.currentScreen == screenActiveApplications {
 			a.currentScreen, a.err = screenApplicationExport, nil
 			a.applicationExport = newApplicationExportModel(a.documentService, a.documents, msg.application, a.exportDir, a.width)
 		}
 	case enterApplicationDeleteMsg:
-		if a.currentScreen == screenActiveApplications {
-			return a, reloadApplicationForDelete(a.applicationService, msg.application, screenActiveApplications)
+		if a.currentScreen == screenActiveApplications || a.onApplicationDetail(msg.application.ID) {
+			return a, reloadApplicationForDelete(a.applicationService, msg.application, a.currentScreen)
+		}
+	case enterApplicationSubmitMsg:
+		if a.onApplicationDetail(msg.application.ID) {
+			a.err = nil
+			return a, a.startApplicationSubmit(msg.application)
+		}
+	case enterApplicationFormMsg:
+		if d := a.applicationDetail(); d != nil && a.currentScreen == screenApplicationDetail && d.detail.Posting.ID == msg.postingID {
+			return a, loadApplicationForm(a.postingService, msg.postingID)
+		}
+	case enterDocumentReviewFormMsg:
+		// The picker hands App its form directly; this is detail's.
+		if a.onApplicationDetail(msg.applicationID) && a.openDocumentReviewForm(msg) {
+			a.enterFrom(screenDocumentReviewForm)
 		}
 	case enterDocumentReviewSelectMsg:
 		if a.currentScreen == screenPostingDetail {
@@ -1126,22 +1132,11 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handleTick()
 	case changesMsg:
 		return a, a.handleChanges(msg)
-	case applicationDetailReloadedMsg:
-		return a, a.handleApplicationDetailReloaded(msg)
-	case editorClosedMsg:
-		a.err = msg.err
-		// The edit may have made the latest review stale, so reload the
-		// application's reviews the way u does. Not
-		// after an error: the editor didn't start or exited abnormally,
-		// and the reload's result would clear the error before it's seen.
-		if msg.err == nil && a.currentScreen == screenApplicationDetail {
-			return a, recordEditorWrite(a.documentService, a.documents, msg)
-		}
 	case applicationReloadedForDeleteMsg:
 		a.err = msg.err
 		// Same guard as applicationFormLoadedMsg: only if the user is still
 		// where delete was pressed, and on detail, on that application.
-		if msg.err == nil && a.currentScreen == msg.from && (msg.from != screenApplicationDetail || a.applicationDetail.application.ID == msg.application.ID) {
+		if msg.err == nil && a.currentScreen == msg.from && (msg.from != screenApplicationDetail || a.onApplicationDetail(msg.application.ID)) {
 			a.applicationDelete = newApplicationDeleteModel(msg.application, msg.from)
 			a.currentScreen = screenApplicationDelete
 		}
@@ -1149,7 +1144,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		// Open the form only if the user is still on the application it
 		// was loaded for.
-		if msg.err == nil && a.currentScreen == screenApplicationDetail && a.applicationDetail.application.Posting.ID == msg.postingID {
+		if d := a.applicationDetail(); msg.err == nil && a.currentScreen == screenApplicationDetail && d != nil && d.detail.Posting.ID == msg.postingID {
 			a.currentScreen = screenApplicationForm
 			a.applicationForm = newApplicationFormModel(a.postingService, msg.postingID, msg.form, a.width, a.screenRows())
 		}
@@ -1200,26 +1195,12 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.returnBack()
 			}
 			// Reload so the freshly-submitted review's outcome/notes show up
-			// immediately wherever it's displayed, without having to
-			// navigate away and back (#83) -- which
-			// reload depends on which screen the user is now on.
-			switch a.currentScreen {
-			case screenApplicationDetail:
-				// documentReviewsLoadedMsg also patches this application's
-				// home-screen row, so its glyph and next step aren't stale
-				// once the user backs out -- no full reload needed (#91).
-				return a, loadDocumentReviews(a.documentService, a.documents, a.applicationDetail.application.ID)
-			case screenPostingDetail:
+			// immediately on posting detail, without having to navigate away
+			// and back (#83). Application detail reads again on coming back
+			// on top.
+			if a.currentScreen == screenPostingDetail {
 				return a, requestLoad[message.ReviewList](message.Source{Instance: a.instance})
 			}
-		}
-	case documentReviewsLoadedMsg:
-		a.setLoadErr(msg.err)
-		// A response for a posting/application the user has since
-		// navigated away from is simply discarded -- msg.applicationID no
-		// longer matching what's on screen means this result is stale.
-		if msg.err == nil && a.currentScreen == screenApplicationDetail && a.applicationDetail.application.ID == msg.applicationID {
-			a.applicationDetail.application.LatestReviews = msg.reviews
 		}
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
@@ -1275,27 +1256,6 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	switch a.currentScreen {
-	case screenApplicationDetail:
-		cmd, intent := a.applicationDetail.Update(msg)
-		switch v := intent.(type) {
-		case enterApplicationFormMsg:
-			return a, loadApplicationForm(a.postingService, v.postingID)
-		case enterApplicationSubmitMsg:
-			return a, a.startApplicationSubmit(v.application)
-		case enterApplicationDeleteMsg:
-			return a, reloadApplicationForDelete(a.applicationService, v.application, screenApplicationDetail)
-		case backToActiveApplicationsMsg:
-			a.currentScreen = screenActiveApplications
-		case message.PostingDetail:
-			return a, tea.Batch(cmd, a.openPostingDetail(v))
-		case enterDocumentReviewFormMsg:
-			if a.openDocumentReviewForm(v) {
-				a.enterFrom(screenDocumentReviewForm)
-			}
-		case refreshApplicationDetailMsg:
-			return a, loadDocumentReviews(a.documentService, a.documents, a.applicationDetail.application.ID)
-		}
-		return a, cmd
 	case screenApplicationExport:
 		cmd, intent := a.applicationExport.Update(msg)
 		if _, ok := intent.(cancelApplicationExportMsg); ok {
@@ -1411,7 +1371,9 @@ func (a *App) body(s screen) string {
 	case screenActiveApplications:
 		b.WriteString(a.activeApplicationList.View().Content)
 	case screenApplicationDetail:
-		b.WriteString(a.applicationDetail.View())
+		if d := a.applicationDetail(); d != nil {
+			b.WriteString(d.View().Content)
+		}
 	case screenAllPostings:
 		b.WriteString(a.allPostings.View().Content)
 	case screenCompanyList:

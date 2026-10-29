@@ -149,10 +149,6 @@ func (m *companyListModel) companyChanged(e message.Event[message.Changed[messag
 	return nil
 }
 
-// backToActiveApplicationsMsg signals that App should switch back to the
-// active-applications tab.
-type backToActiveApplicationsMsg struct{}
-
 // resize keeps the size it draws in, so it's right when the list is next
 // shown.
 func (m *companyListModel) resize(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {

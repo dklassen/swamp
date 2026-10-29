@@ -150,19 +150,37 @@ func TestActiveApplicationListModel_S_PushesStatusOnTheApplicationAtTheCursor(t 
 	}
 }
 
-func TestActiveApplicationListModel_Enter_AsksForDetail(t *testing.T) {
+func TestActiveApplicationListModel_Enter_PushesDetailOnTheRowAtTheCursor(t *testing.T) {
 	t.Parallel()
 
 	apps := testActiveApplications()
+	apps[1].LatestReviews = map[document.Type]document.Review{document.Resume: {ID: 3, Outcome: document.Passed}}
 	m := homeWith(t, apps)
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 
-	got, ok := pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEnter}).(enterApplicationDetailMsg)
+	nav, ok := pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEnter}).(message.Event[message.Nav[message.ApplicationDetail]])
 	if !ok {
-		t.Fatalf("enter sent no enterApplicationDetailMsg")
+		t.Fatalf("enter sent no Nav to application detail")
 	}
-	if got.application.ID != apps[0].ID {
-		t.Fatalf("application.ID = %d, want %d (application at cursor 0)", got.application.ID, apps[0].ID)
+	assertEventFrom(t, nav.Meta, message.Source{Instance: m.Instance()})
+	if want := (message.Subject{Type: message.TypeApplication, ID: apps[1].ID}); nav.Meta.Subject != want {
+		t.Errorf("Subject = %+v, want %+v", nav.Meta.Subject, want)
 	}
+	want := message.Nav[message.ApplicationDetail]{Op: message.NavPush, Screen: message.ScreenApplicationDetail, Value: message.ApplicationDetail{
+		Application: applicationSnapshot(apps[1].Application),
+		Posting:     postingSnapshot(apps[1].Posting),
+		CompanyName: apps[1].CompanyName,
+		Reviews:     []message.Review{{ID: 3, DocumentType: message.DocumentResume, Outcome: message.ReviewPassed}},
+	}}
+	if diff := cmp.Diff(want, nav.Payload); diff != "" {
+		t.Errorf("Nav (-want +got):\n%s", diff)
+	}
+}
+
+// openedDetail is the application msg opens detail on, if it does.
+func openedDetail(msg tea.Msg) (int64, bool) {
+	nav, ok := msg.(message.Event[message.Nav[message.ApplicationDetail]])
+	return nav.Payload.Value.Application.ID, ok
 }
 
 func TestActiveApplicationListModel_EmptyList_KeysDoNothing(t *testing.T) {
@@ -574,7 +592,7 @@ func TestActiveApplicationListModel_Search_EnterKeepsMatchesForCommands(t *testi
 	if got, ok := pressHome(t, m, runeKey('d')).(enterApplicationDeleteMsg); !ok || got.application.ID != globex.ID {
 		t.Errorf("d on the kept matches: sent %#v, want delete for the Globex application (%d)", got, globex.ID)
 	}
-	if got, ok := pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEnter}).(enterApplicationDetailMsg); !ok || got.application.ID != globex.ID {
+	if got, ok := openedDetail(pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})); !ok || got != globex.ID {
 		t.Errorf("enter on the kept matches: sent %#v, want detail for the Globex application (%d)", got, globex.ID)
 	}
 }
@@ -650,8 +668,8 @@ func TestActiveApplicationListModel_Search_MatchesCompanyOrTitle(t *testing.T) {
 
 			typeHomeKeys(t, m, tt.keys)
 			got := openHomeHighlighted(t, m)
-			if detail, ok := got.(enterApplicationDetailMsg); !ok || detail.application.ID != tt.want {
-				t.Fatalf("after %q, enter sent %#v, want enterApplicationDetailMsg for application %d", tt.keys, got, tt.want)
+			if id, ok := openedDetail(got); !ok || id != tt.want {
+				t.Fatalf("after %q, enter sent %#v, want detail on application %d", tt.keys, got, tt.want)
 			}
 		})
 	}
@@ -676,14 +694,14 @@ func TestActiveApplicationListModel_Search_ArrowsMoveThroughMatches(t *testing.T
 			pressHome(t, m, tt.down)
 			pressHome(t, m, tt.down) // past the last match: stays on it
 			got := openHomeHighlighted(t, m)
-			if detail, ok := got.(enterApplicationDetailMsg); !ok || detail.application.ID != 20 {
+			if id, ok := openedDetail(got); !ok || id != 20 {
 				t.Fatalf("down, down, enter sent %#v, want the Globex application (20)", got)
 			}
 
 			pressHome(t, m, runeKey('/'))
 			pressHome(t, m, tt.up)
 			got = openHomeHighlighted(t, m)
-			if detail, ok := got.(enterApplicationDetailMsg); !ok || detail.application.ID != 10 {
+			if id, ok := openedDetail(got); !ok || id != 10 {
 				t.Fatalf("up, enter sent %#v, want the Acme application (10)", got)
 			}
 		})
@@ -698,7 +716,7 @@ func TestActiveApplicationListModel_Search_BackspaceWidensMatches(t *testing.T) 
 	typeHomeKeys(t, m, "/glx") // matches nothing
 	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyBackspace})
 	got := openHomeHighlighted(t, m)
-	if detail, ok := got.(enterApplicationDetailMsg); !ok || detail.application.ID != 20 {
+	if id, ok := openedDetail(got); !ok || id != 20 {
 		t.Fatalf("backspace, enter sent %#v, want the Globex application (20)", got)
 	}
 }
@@ -752,7 +770,7 @@ func TestActiveApplicationListModel_Search_CommandLettersAreTyped(t *testing.T) 
 				t.Fatalf("%q in the prompt sent %#v, want nothing", r, got)
 			}
 			got := openHomeHighlighted(t, m)
-			if detail, ok := got.(enterApplicationDetailMsg); !ok || detail.application.ID != 20 {
+			if id, ok := openedDetail(got); !ok || id != 20 {
 				t.Fatalf("enter after typing %q sent %#v, want the application at %q (20)", r, got, apps[1].CompanyName)
 			}
 		})
@@ -845,7 +863,7 @@ func TestActiveApplicationListModel_Search_ReloadKeepsTheHighlightedMatch(t *tes
 	m.applicationsRead(applicationsReadOf(m, reloaded))
 
 	got := openHomeHighlighted(t, m)
-	if detail, ok := got.(enterApplicationDetailMsg); !ok || detail.application.ID != 30 {
+	if id, ok := openedDetail(got); !ok || id != 30 {
 		t.Fatalf("enter after the reload sent %#v, want the Initech application (30)", got)
 	}
 }
