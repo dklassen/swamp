@@ -12,6 +12,7 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -311,12 +312,12 @@ func (m *allPostingsModel) Update(msg tea.KeyPressMsg, size int) (tea.Cmd, tea.M
 	case msg.String() == "i":
 		if m.cursor < len(m.page.Listings) {
 			l := m.page.Listings[m.cursor]
-			return toggleInterested(m.postings, l.ID, l.Interested), nil
+			return toggleInterested(m.postings, message.Source{}, l.ID, l.Interested), nil
 		}
 	case msg.String() == "x":
 		if m.cursor < len(m.page.Listings) {
 			l := m.page.Listings[m.cursor]
-			return toggleArchived(m.postings, l.ID, l.Archived), nil
+			return toggleArchived(m.postings, message.Source{}, l.ID, l.Archived), nil
 		}
 	case msg.String() == "o":
 		if m.cursor < len(m.page.Listings) && m.page.Listings[m.cursor].JobURL != "" {

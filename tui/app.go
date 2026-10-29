@@ -720,12 +720,7 @@ func updateCompanyName(companies *service.CompanyService, src message.Source, co
 	}
 }
 
-type postingMarkupUpdatedMsg struct {
-	markup posting.Markup
-	err    error
-}
-
-func toggleInterested(postings *service.PostingService, postingID int64, currentlyInterested bool) tea.Cmd {
+func toggleInterested(postings *service.PostingService, src message.Source, postingID int64, currentlyInterested bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 		var (
@@ -737,14 +732,11 @@ func toggleInterested(postings *service.PostingService, postingID int64, current
 		} else {
 			m, err = postings.SetInterested(ctx, postingID)
 		}
-		if err != nil {
-			return postingMarkupUpdatedMsg{err: err}
-		}
-		return postingMarkupUpdatedMsg{markup: m.After}
+		return markupChanged(src, postingID, m, err)
 	}
 }
 
-func toggleArchived(postings *service.PostingService, postingID int64, currentlyArchived bool) tea.Cmd {
+func toggleArchived(postings *service.PostingService, src message.Source, postingID int64, currentlyArchived bool) tea.Cmd {
 	return func() tea.Msg {
 		ctx := context.Background()
 		var (
@@ -756,11 +748,17 @@ func toggleArchived(postings *service.PostingService, postingID int64, currently
 		} else {
 			m, err = postings.SetArchived(ctx, postingID)
 		}
-		if err != nil {
-			return postingMarkupUpdatedMsg{err: err}
-		}
-		return postingMarkupUpdatedMsg{markup: m.After}
+		return markupChanged(src, postingID, m, err)
 	}
+}
+
+func markupChanged(src message.Source, postingID int64, m *change.Of[posting.Markup], err error) tea.Msg {
+	subject := message.Subject{Type: message.TypePosting, ID: postingID}
+	if err != nil {
+		return message.New(src, subject, message.OpUpdated, time.Now().UTC(), model.ErrorOf(err))
+	}
+	return message.New(src, subject, message.OpUpdated, m.At,
+		message.Changed[message.Markup]{Before: markupSnapshot(m.Before), After: markupSnapshot(m.After)})
 }
 
 type applicationCreatedMsg struct {
@@ -1043,7 +1041,15 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.navCompanyRow),
 		model.Always(a.navFilterSelection),
 		model.Always(a.hideArchivedChanged),
+		model.Always(a.markupChanged),
 	}
+}
+
+func (a *App) markupChanged(message.Event[message.Changed[message.Markup]]) tea.Cmd {
+	if a.currentScreen == screenAllPostings {
+		return a.allPostings.load(a.allPostings.size)
+	}
+	return nil
 }
 
 func (a *App) Instance() message.ScreenInstance { return a.instance }
@@ -1115,11 +1121,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.activeApplications = msg.applications
 		a.activeApplicationProgress = msg.progress
 		a.activeApplicationList.keepCursorOn(previous, a.activeApplications)
-	case postingMarkupUpdatedMsg:
-		a.err = msg.err
-		if msg.err == nil && a.currentScreen == screenAllPostings {
-			return a, a.allPostings.load(a.allPostings.size)
-		}
 	case enterPostingDetailMsg:
 		// Only if the user is still on the list it came from.
 		if a.currentScreen == screenPostingList {
