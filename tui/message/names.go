@@ -2,10 +2,11 @@ package message
 
 import "fmt"
 
-// Kind, Type, Op, NavOp, ErrorCode, Screen and ListingStatus are decided
-// on, so Go code compares constants; each encodes as its name from one
-// table, so reordering the constants can't change what a stored event
-// means. A zero value is in its table only where "none" is legal.
+// Kind, Type, Op, NavOp, ErrorCode, Screen, ListingStatus and
+// ApplicationStatus are decided on, so Go code compares constants; each
+// encodes as its name from one table, so reordering the constants can't
+// change what a stored event means. A zero value is in its table only
+// where "none" is legal.
 
 type Kind int
 
@@ -61,6 +62,7 @@ const (
 	TypeFilterOptions
 	TypePosting
 	TypeMarkup
+	TypeApplication
 )
 
 var typeNames = [...]string{
@@ -82,6 +84,7 @@ var typeNames = [...]string{
 	TypeFilterOptions:   "filter_options",
 	TypePosting:         "posting",
 	TypeMarkup:          "markup",
+	TypeApplication:     "application",
 }
 
 func (t Type) String() string                { return nameOf(t, typeNames[:]) }
@@ -137,6 +140,7 @@ const (
 	ErrSyncInProgress
 	ErrOther
 	ErrFault
+	ErrPostingClosed
 )
 
 var errorCodeNames = [...]string{
@@ -144,6 +148,7 @@ var errorCodeNames = [...]string{
 	ErrSyncInProgress: "sync_in_progress",
 	ErrOther:          "other",
 	ErrFault:          "fault",
+	ErrPostingClosed:  "posting_closed",
 }
 
 func (c ErrorCode) String() string                { return nameOf(c, errorCodeNames[:]) }
@@ -193,6 +198,42 @@ func (s ListingStatus) String() string               { return nameOf(s, listingS
 func (s ListingStatus) MarshalText() ([]byte, error) { return marshalName(s, listingStatusNames[:]) }
 func (s *ListingStatus) UnmarshalText(b []byte) error {
 	return unmarshalName(s, b, listingStatusNames[:])
+}
+
+// ApplicationStatus is where the user is with an application.
+type ApplicationStatus int
+
+const (
+	_ ApplicationStatus = iota
+	ApplicationStarted
+	ApplicationSubmitted
+	ApplicationInterviewing
+	ApplicationRejected
+	ApplicationOfferReceived
+	ApplicationOfferAccepted
+	ApplicationOfferDeclined
+	ApplicationPostingClosed
+	ApplicationWithdrawn
+)
+
+var applicationStatusNames = [...]string{
+	ApplicationStarted:       "application_started",
+	ApplicationSubmitted:     "application_submitted",
+	ApplicationInterviewing:  "interviewing",
+	ApplicationRejected:      "rejected",
+	ApplicationOfferReceived: "offer_received",
+	ApplicationOfferAccepted: "offer_accepted",
+	ApplicationOfferDeclined: "offer_declined",
+	ApplicationPostingClosed: "posting_closed",
+	ApplicationWithdrawn:     "withdrawn",
+}
+
+func (s ApplicationStatus) String() string { return nameOf(s, applicationStatusNames[:]) }
+func (s ApplicationStatus) MarshalText() ([]byte, error) {
+	return marshalName(s, applicationStatusNames[:])
+}
+func (s *ApplicationStatus) UnmarshalText(b []byte) error {
+	return unmarshalName(s, b, applicationStatusNames[:])
 }
 
 // An empty entry is a value with no name, such as the zero Kind.

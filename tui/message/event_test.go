@@ -232,6 +232,11 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 			Before: message.Markup{PostingID: 5},
 			After:  message.Markup{PostingID: 5, ArchivedAt: at},
 		}))},
+		{name: "application changed", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpDeleted, at, message.Changed[message.Application]{
+			Before: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationInterviewing, Notes: "call Tuesday", CreatedAt: at, UpdatedAt: at},
+			After:  message.Application{ID: 4, PostingID: 5, Status: message.ApplicationInterviewing, Notes: "call Tuesday", CreatedAt: at, UpdatedAt: at, DeletedAt: at},
+		}))},
+		{name: "posting closed error", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpCreated, at, message.Error{Code: message.ErrPostingClosed, Text: "posting is closed"}))},
 		{name: "hide archived signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.HideArchived]{Value: message.HideArchived{Hidden: true}}))},
 		{name: "filter selection nav", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Nav[message.FilterSelection]{Op: message.NavPush, Screen: message.ScreenFilterSelect,
 			Value: message.FilterSelection{Company: message.Company{ID: 3, Name: "Acme", CreatedAt: at, UpdatedAt: at}, Departments: []string{"Platform"}, Locations: []string{"Remote"}}}))},

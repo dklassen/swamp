@@ -164,3 +164,17 @@ type FilterOptions struct {
 }
 
 func (FilterOptions) Type() Type { return TypeFilterOptions }
+
+// Application is what an event carries for an application. DeletedAt is
+// zero while it isn't deleted.
+type Application struct {
+	ID        int64             `json:"id"`
+	PostingID int64             `json:"posting_id"`
+	Status    ApplicationStatus `json:"status"`
+	Notes     string            `json:"notes"`
+	CreatedAt time.Time         `json:"created_at"`
+	UpdatedAt time.Time         `json:"updated_at"`
+	DeletedAt time.Time         `json:"deleted_at,omitzero"`
+}
+
+func (Application) Type() Type { return TypeApplication }

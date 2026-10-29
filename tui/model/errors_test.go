@@ -7,6 +7,7 @@ import (
 
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
@@ -24,6 +25,7 @@ func TestErrorOf(t *testing.T) {
 	}{
 		{"not found", store.ErrNotFound, message.Error{Code: message.ErrNotFound, Text: store.ErrNotFound.Error()}},
 		{"sync in progress", sync.ErrSyncInProgress, message.Error{Code: message.ErrSyncInProgress, Text: sync.ErrSyncInProgress.Error()}},
+		{"posting closed", service.ErrPostingClosed, message.Error{Code: message.ErrPostingClosed, Text: service.ErrPostingClosed.Error()}},
 		{"wrapped", wrapped, message.Error{Code: message.ErrNotFound, Text: wrapped.Error()}},
 		{"unmapped", unmapped, message.Error{Code: message.ErrOther, Text: unmapped.Error()}},
 	}
