@@ -232,7 +232,7 @@ func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 		}
 	case "o":
 		if onPosting && current.JobURL != "" {
-			return openInBrowser(current.JobURL)
+			return openInBrowser(src, message.Subject{Type: message.TypePosting, ID: current.ID}, current.JobURL)
 		}
 	case "r":
 		return syncCompany(src, m.company)

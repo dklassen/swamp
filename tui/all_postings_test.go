@@ -16,6 +16,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -333,7 +334,7 @@ func TestAllPostings_OOpensTheJobURL(t *testing.T) {
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	var opened []string
-	app.openURL = func(url string) tea.Cmd {
+	app.openURL = func(_ message.Source, _ message.Subject, url string) tea.Cmd {
 		opened = append(opened, url)
 		return nil
 	}

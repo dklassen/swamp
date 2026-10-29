@@ -22,8 +22,10 @@ type applicationSubmitModel struct {
 	application posting.ActiveApplication
 	// url is the link opened for the user, "" when the posting has none.
 	url string
-	// opened is the browser result, nil until it arrives.
-	opened *browserOpenedMsg
+	// opened is whether the link opened; openFailed is why it didn't. Both
+	// are zero until the browser reports.
+	opened     bool
+	openFailed string
 	// exported is the export result, nil until it arrives.
 	exported *applicationExportedMsg
 	// confirmed is set once y is pressed, so a second y while the status
@@ -80,12 +82,12 @@ func (m *applicationSubmitModel) View() string {
 	switch {
 	case m.url == "":
 		b.WriteString("this posting has no link to open\n")
-	case m.opened == nil:
-		b.WriteString("opening " + m.url + "...\n")
-	case m.opened.err != nil:
-		b.WriteString(model.ErrStyle.Render("couldn't open "+m.url+": "+m.opened.err.Error()) + "\n")
-	default:
+	case m.openFailed != "":
+		b.WriteString(model.ErrStyle.Render("couldn't open "+m.url+": "+m.openFailed) + "\n")
+	case m.opened:
 		b.WriteString("opened " + m.url + "\n")
+	default:
+		b.WriteString("opening " + m.url + "...\n")
 	}
 
 	b.WriteString(model.FieldLabel.Render("2. Documents:") + " ")
@@ -125,5 +127,6 @@ func (a *App) startApplicationSubmit(application posting.ActiveApplication) tea.
 	if a.applicationSubmit.url == "" {
 		return export
 	}
-	return tea.Batch(a.openURL(a.applicationSubmit.url), export)
+	src, about := message.Source{Instance: a.applicationSubmit.instance}, message.Subject{Type: message.TypePosting, ID: application.Posting.ID}
+	return tea.Batch(a.openURL(src, about, a.applicationSubmit.url), export)
 }

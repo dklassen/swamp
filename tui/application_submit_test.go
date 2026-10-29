@@ -16,6 +16,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/tui/message"
 )
 
 // submitTestApp is an App on the home screen with one started
@@ -48,9 +49,9 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, applicati
 		}
 	}
 	var opened []string
-	app.openURL = func(url string) tea.Cmd {
+	app.openURL = func(src message.Source, about message.Subject, url string) tea.Cmd {
 		opened = append(opened, url)
-		return func() tea.Msg { return browserOpenedMsg{} }
+		return func() tea.Msg { return browserOpened(src, about, url, nil) }
 	}
 	app.exportDir = t.TempDir()
 	return app, target, &opened
@@ -166,13 +167,24 @@ func TestSubmitFlow_FallsBackToJobURL(t *testing.T) {
 	}
 }
 
+func TestSubmitFlow_SaysTheLinkOpened(t *testing.T) {
+	t.Parallel()
+	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+
+	app = startSubmit(t, app)
+
+	if view := app.applicationSubmit.View(); !strings.Contains(view, "opened https://boards.example/job-1/apply") {
+		t.Errorf("View() = %q, want the link reported as opened", view)
+	}
+}
+
 // A browser that fails to open must not be reported as opened: the user
 // would wait for a tab that never appears.
 func TestSubmitFlow_ReportsALinkThatFailedToOpen(t *testing.T) {
 	t.Parallel()
 	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
-	app.openURL = func(string) tea.Cmd {
-		return func() tea.Msg { return browserOpenedMsg{err: errors.New("no browser")} }
+	app.openURL = func(src message.Source, about message.Subject, url string) tea.Cmd {
+		return func() tea.Msg { return browserOpened(src, about, url, errors.New("no browser")) }
 	}
 
 	app = startSubmit(t, app)

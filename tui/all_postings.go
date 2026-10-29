@@ -321,7 +321,7 @@ func (m *allPostingsModel) Update(msg tea.KeyPressMsg, size int) (tea.Cmd, tea.M
 		}
 	case msg.String() == "o":
 		if m.cursor < len(m.page.Listings) && m.page.Listings[m.cursor].JobURL != "" {
-			return nil, openJobURLMsg{url: m.page.Listings[m.cursor].JobURL}
+			return nil, openJobURLMsg{id: m.page.Listings[m.cursor].ID, url: m.page.Listings[m.cursor].JobURL}
 		}
 	case msg.String() == "left", msg.String() == "h":
 		return m.previousPage(size), nil
@@ -375,7 +375,10 @@ func (m *allPostingsModel) clearSearch(size int) tea.Cmd {
 }
 
 // openJobURLMsg asks App to open a posting in the browser.
-type openJobURLMsg struct{ url string }
+type openJobURLMsg struct {
+	id  int64
+	url string
+}
 
 // allPostingsDetailLoadedMsg is the posting enter opened: a page row
 // lacks the description the detail shows.

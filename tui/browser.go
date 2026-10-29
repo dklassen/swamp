@@ -5,8 +5,12 @@ import (
 	"fmt"
 	"os/exec"
 	"runtime"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
+
+	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // browserCommand picks the OS command to open url in the default browser.
@@ -25,16 +29,21 @@ func browserCommand(goos, url string) (string, []string, error) {
 	}
 }
 
-type browserOpenedMsg struct {
-	err error
-}
-
-func openInBrowser(url string) tea.Cmd {
+// openInBrowser opens url, the page of about, for src.
+func openInBrowser(src message.Source, about message.Subject, url string) tea.Cmd {
 	return func() tea.Msg {
 		cmd, args, err := browserCommand(runtime.GOOS, url)
-		if err != nil {
-			return browserOpenedMsg{err: err}
+		if err == nil {
+			err = exec.CommandContext(context.Background(), cmd, args...).Start()
 		}
-		return browserOpenedMsg{err: exec.CommandContext(context.Background(), cmd, args...).Start()}
+		return browserOpened(src, about, url, err)
 	}
+}
+
+// browserOpened reports opening url: a Ran, or the Error it failed with.
+func browserOpened(src message.Source, about message.Subject, url string, err error) tea.Msg {
+	if err != nil {
+		return message.New(src, about, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
+	}
+	return message.New(src, about, message.OpNone, time.Now().UTC(), message.Ran[message.OpenBrowser]{Value: message.OpenBrowser{URL: url}})
 }

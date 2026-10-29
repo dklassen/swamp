@@ -113,7 +113,7 @@ type App struct {
 	exportDir string
 	// openURL opens a URL in the browser: openInBrowser, swapped for a fake
 	// in tests so they don't launch one.
-	openURL           func(url string) tea.Cmd
+	openURL           func(src message.Source, about message.Subject, url string) tea.Cmd
 	applicationSubmit applicationSubmitModel
 	applicationDelete applicationDeleteModel
 	// documents resolves an application's document paths, hiding the
@@ -1017,7 +1017,28 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.markupChanged),
 		model.Always(a.applicationChanged),
 		model.Always(a.applicationWriteFailed),
+		model.Always(a.browserOpened),
+		model.Always(a.browserFailed),
 	}
+}
+
+// browserOpened clears an earlier failure from the banner, and tells the
+// submit screen its link opened.
+func (a *App) browserOpened(e message.Event[message.Ran[message.OpenBrowser]]) tea.Cmd {
+	a.err = nil
+	if a.currentScreen == screenApplicationSubmit && a.applicationSubmit.instance == e.Meta.Source.Instance {
+		a.applicationSubmit.opened = true
+	}
+	return nil
+}
+
+// browserFailed shows the submit screen's failed open next to its link
+// too, so the step doesn't claim the link opened when it didn't.
+func (a *App) browserFailed(e message.Event[message.Error]) tea.Cmd {
+	if a.currentScreen == screenApplicationSubmit && a.applicationSubmit.instance == e.Meta.Source.Instance && e.Meta.Subject.Type == message.TypePosting {
+		a.applicationSubmit.openFailed = e.Payload.Text
+	}
+	return nil
 }
 
 // applicationChanged does for the screens that show an application what
@@ -1271,13 +1292,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.activeApplications[i].LatestReviews = msg.reviews
 			}
 		}
-	case browserOpenedMsg:
-		a.err = msg.err
-		if a.currentScreen == screenApplicationSubmit {
-			// Also shown next to the link, so the step doesn't claim the
-			// link opened when it didn't.
-			a.applicationSubmit.opened = &msg
-		}
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
@@ -1346,7 +1360,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case message.PostingDetail:
 			return a, loadAllPostingsDetail(a.postingService, v.Posting.ID)
 		case openJobURLMsg:
-			return a, a.openURL(v.url)
+			return a, a.openURL(message.Source{Instance: a.instance}, message.Subject{Type: message.TypePosting, ID: v.id}, v.url)
 		}
 		return a, cmd
 	case screenActiveApplications:

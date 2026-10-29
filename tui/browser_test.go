@@ -1,6 +1,40 @@
 package tui
 
-import "testing"
+import (
+	"errors"
+	"testing"
+	"time"
+
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
+
+	"github.com/dklassen/swamp/tui/message"
+)
+
+func TestBrowserOpened_ReportsTheOpenOrWhyItFailed(t *testing.T) {
+	t.Parallel()
+
+	src := message.Source{Instance: 7}
+	about := message.Subject{Type: message.TypePosting, ID: 5}
+	const url = "https://jobs.example.com/acme/5"
+	ignoreIDAndTime := cmpopts.IgnoreFields(message.Meta{}, "ID", "At")
+	tests := []struct {
+		name string
+		err  error
+		want any
+	}{
+		{name: "opened", want: message.New(src, about, message.OpNone, time.Time{}, message.Ran[message.OpenBrowser]{Value: message.OpenBrowser{URL: url}})},
+		{name: "failed", err: errors.New("no browser"), want: message.New(src, about, message.OpNone, time.Time{}, message.Error{Code: message.ErrOther, Text: "no browser"})},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if diff := cmp.Diff(tt.want, browserOpened(src, about, url, tt.err), ignoreIDAndTime); diff != "" {
+				t.Errorf("browserOpened (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
 
 func TestBrowserCommand(t *testing.T) {
 	tests := []struct {
