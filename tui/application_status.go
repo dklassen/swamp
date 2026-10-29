@@ -1,15 +1,12 @@
 package tui
 
 import (
-	"context"
-	"errors"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/service"
-	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
@@ -35,48 +32,80 @@ func applicationStatusIndex(status application.Status) int {
 	return 0
 }
 
-// applicationStatusModel drives the application-status-select screen for
-// a single application. It holds the service it needs to save the new
-// status, the application it's editing (fixed for this screen's
-// lifetime), and its own private cursor -- no other screen reads or
-// writes this state.
+// applicationStatusModel picks a new status for one application and saves
+// it.
 type applicationStatusModel struct {
-	applications  *service.ApplicationService
-	applicationID int64
-	cursor        int
-	instance      message.ScreenInstance
+	applications *service.ApplicationService
+	application  message.Application
+	cursor       int
+	focused      bool
+	instance     message.ScreenInstance
 }
 
-// newApplicationStatusModel returns a status-select screen for
-// applicationID, with the cursor seeded at currentStatus's position.
-func newApplicationStatusModel(applications *service.ApplicationService, applicationID int64, currentStatus application.Status) applicationStatusModel {
-	return applicationStatusModel{applications: applications, applicationID: applicationID, cursor: applicationStatusIndex(currentStatus), instance: message.NewScreenInstance()}
+// newApplicationStatusModel opens on app, with the cursor on its status.
+func newApplicationStatusModel(applications *service.ApplicationService, app message.Application) *applicationStatusModel {
+	return &applicationStatusModel{
+		applications: applications,
+		application:  app,
+		cursor:       applicationStatusIndex(applicationOf(app).Status),
+		instance:     message.NewScreenInstance(),
+	}
 }
 
-// cancelApplicationStatusMsg signals that App should switch back to the
-// posting-detail screen without saving.
-type cancelApplicationStatusMsg struct{}
+func (m *applicationStatusModel) src() message.Source { return message.Source{Instance: m.instance} }
 
-func (m *applicationStatusModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
-	switch {
-	case msg.String() == "down", msg.String() == "j":
+func (m *applicationStatusModel) Instance() message.ScreenInstance { return m.instance }
+
+func (m *applicationStatusModel) Focused() bool { return m.focused }
+
+func (m *applicationStatusModel) Routes() []*model.Route {
+	return []*model.Route{
+		model.Always(m.saved, model.From(m.instance)),
+		model.WhenFocused(m, m.keyPressed),
+		model.Always(m.focusChanged),
+	}
+}
+
+// saved closes the picker. A failed save sends an Error instead, which
+// leaves it open.
+func (m *applicationStatusModel) saved(message.Event[message.Changed[message.Application]]) tea.Cmd {
+	return m.close()
+}
+
+func (m *applicationStatusModel) Init() tea.Cmd { return nil }
+
+// Update has nothing to do: everything the picker handles is registered.
+func (m *applicationStatusModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
+
+func (m *applicationStatusModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
+	m.focused = e.Payload.Value.Focused == m.instance
+	return nil
+}
+
+func (m *applicationStatusModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
+	switch msg.String() {
+	case "down", "j":
 		if m.cursor < len(applicationStatuses)-1 {
 			m.cursor++
 		}
-	case msg.String() == "up", msg.String() == "k":
+	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case msg.String() == "esc", msg.String() == "b":
-		return nil, cancelApplicationStatusMsg{}
-	case msg.String() == "enter":
-		status := applicationStatuses[m.cursor]
-		return updateApplicationStatus(m.applications, message.Source{Instance: m.instance}, m.applicationID, status), nil
+	case "esc", "b":
+		return m.close()
+	case "enter":
+		return updateApplicationStatus(m.applications, m.src(), m.application.ID, applicationStatuses[m.cursor])
 	}
-	return nil, nil
+	return nil
 }
 
-func (m *applicationStatusModel) View() string {
+// close takes a failed save's error from the banner with the picker.
+func (m *applicationStatusModel) close() tea.Cmd {
+	return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), ""))
+}
+
+func (m *applicationStatusModel) View() tea.View {
 	var b strings.Builder
 	for i, st := range applicationStatuses {
 		if i == m.cursor {
@@ -86,7 +115,7 @@ func (m *applicationStatusModel) View() string {
 		}
 	}
 	b.WriteString(model.HelpStyle.Render("↑/↓ (j/k): select  enter: save  esc/b: cancel"))
-	return b.String()
+	return tea.NewView(b.String())
 }
 
 // applicationStatusLabel renders an ApplicationStatus as display text.
@@ -121,30 +150,5 @@ func applicationStatusLabel(status application.Status) string {
 		return "Withdrawn"
 	default:
 		return status.String()
-	}
-}
-
-// applicationStatusLoadedMsg carries the stored status the status form
-// opens on, and the screen that asked for it.
-type applicationStatusLoadedMsg struct {
-	applicationID int64
-	status        application.Status
-	from          screen
-	err           error
-}
-
-// loadApplicationStatus reads the application's status as it is now, not
-// as the screen that opens the form loaded it: sync or an agent may have
-// changed it since, and the form would undo that on save.
-func loadApplicationStatus(applications *service.ApplicationService, applicationID int64, from screen) tea.Cmd {
-	return func() tea.Msg {
-		app, err := applications.Get(context.Background(), applicationID)
-		if errors.Is(err, store.ErrNotFound) {
-			err = errors.New("this application was deleted in the meantime")
-		}
-		if err != nil {
-			return applicationStatusLoadedMsg{applicationID: applicationID, from: from, err: err}
-		}
-		return applicationStatusLoadedMsg{applicationID: applicationID, status: app.Status, from: from}
 	}
 }

@@ -109,8 +109,7 @@ func (m *activeApplicationListModel) Update(msg tea.KeyPressMsg, apps []posting.
 		return tea.Quit, nil
 	case msg.String() == "s":
 		if m.cursor < len(visible) {
-			a := visible[m.cursor]
-			return nil, enterApplicationStatusMsg{applicationID: a.ID}
+			return nil, applicationSnapshot(visible[m.cursor].Application)
 		}
 	case msg.String() == "e":
 		if m.cursor < len(visible) {

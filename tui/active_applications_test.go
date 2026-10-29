@@ -17,6 +17,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/tui/message"
 )
 
 func testActiveApplications() []posting.ActiveApplication {
@@ -91,7 +92,7 @@ func TestActiveApplicationListModel_Q_ReturnsQuitCmd(t *testing.T) {
 	}
 }
 
-func TestActiveApplicationListModel_S_ReturnsEnterApplicationStatusMsg(t *testing.T) {
+func TestActiveApplicationListModel_S_ReturnsTheApplicationAtTheCursor(t *testing.T) {
 	t.Parallel()
 
 	m := newActiveApplicationListModel()
@@ -101,12 +102,8 @@ func TestActiveApplicationListModel_S_ReturnsEnterApplicationStatusMsg(t *testin
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}
-	got, ok := intent.(enterApplicationStatusMsg)
-	if !ok {
-		t.Fatalf("intent = %T, want enterApplicationStatusMsg", intent)
-	}
-	if want := apps[0].ID; got.applicationID != want {
-		t.Fatalf("applicationID = %d, want %d (application at cursor 0)", got.applicationID, want)
+	if diff := cmp.Diff(applicationSnapshot(apps[0].Application), intent); diff != "" {
+		t.Fatalf("intent (-want +got), want the application at cursor 0:\n%s", diff)
 	}
 }
 
@@ -532,7 +529,7 @@ func TestActiveApplicationListModel_Search_EnterKeepsMatchesForCommands(t *testi
 		t.Errorf("e on the kept matches: intent = %#v, want export for the Globex application (%d)", intent, globex.ID)
 	}
 	_, intent = m.Update(runeKey('s'), apps)
-	if got, ok := intent.(enterApplicationStatusMsg); !ok || got.applicationID != globex.ID {
+	if got, ok := intent.(message.Application); !ok || got.ID != globex.ID {
 		t.Errorf("s on the kept matches: intent = %#v, want status for the Globex application (%d)", intent, globex.ID)
 	}
 	_, intent = m.Update(runeKey('d'), apps)

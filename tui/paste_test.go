@@ -73,7 +73,9 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 			app.currentScreen, app.applicationExport = screenApplicationExport, newApplicationExportModel(nil, app.documents, posting.ActiveApplication{}, "", 80)
 		}},
 		{name: "notes", open: func(app *App) {
-			app.currentScreen, app.applicationNotes = screenApplicationNotesEdit, newApplicationNotesModel(nil, 1, "", 80, 20)
+			app.currentScreen = screenCompanyList
+			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenApplicationNotes,
+				message.Subject{Type: message.TypeApplication, ID: 1}, message.Application{ID: 1})())
 		}},
 		{name: "application form", open: func(app *App) {
 			app.currentScreen, app.applicationForm = screenApplicationForm, newApplicationFormModel(nil, 1, nil, 80, 20)
