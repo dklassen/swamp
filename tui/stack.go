@@ -61,6 +61,19 @@ func (st *screenStack) pop() (screen, error) {
 	return top.under, nil
 }
 
+// replace pops the screen on top and pushes s over the same screen, in one
+// step.
+func (st *screenStack) replace(kind message.Screen, s stackScreen) error {
+	if len(st.entries) == 0 {
+		return fmt.Errorf("tui: no screen is pushed to replace")
+	}
+	under := st.entries[len(st.entries)-1].under
+	if _, err := st.pop(); err != nil {
+		return err
+	}
+	return st.push(kind, s, under)
+}
+
 // top is the screen pushed last. Only call it while len is above 0.
 func (st *screenStack) top() stackScreen {
 	return st.entries[len(st.entries)-1].screen
@@ -80,6 +93,16 @@ func (st *screenStack) open(kind message.Screen) stackScreen {
 		}
 	}
 	return nil
+}
+
+// under is the screen the one of kind was pushed over, if it's open.
+func (st *screenStack) under(kind message.Screen) (screen, bool) {
+	for _, e := range st.entries {
+		if e.kind == kind {
+			return e.under, true
+		}
+	}
+	return 0, false
 }
 
 func (st *screenStack) len() int { return len(st.entries) }

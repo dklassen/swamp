@@ -163,7 +163,7 @@ func sizedScreens() []sizedScreen {
 			// open them with no banner up: one that appears afterwards
 			// has to be fitted by App's refit, not by luck.
 			app = clearBanner(openPostingDetail(t, openPostingList(t, app)))
-			app, _ = sendKey(app, runeKey('n'))
+			app = sendKeyAndApply(t, app, runeKey('n'))
 			return app
 		}},
 		{name: "review form from application detail", screen: screenDocumentReviewForm, open: func(t *testing.T, app *App) *App {

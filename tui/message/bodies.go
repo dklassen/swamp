@@ -114,6 +114,7 @@ type Posting struct {
 	JobURL          string        `json:"job_url"`
 	ApplicationURL  string        `json:"application_url"`
 	ListingStatus   ListingStatus `json:"listing_status"`
+	ContentSHA256   string        `json:"content_sha256"`
 }
 
 // Markup is how the user has marked a posting. A time is zero while the
@@ -178,3 +179,64 @@ type Application struct {
 }
 
 func (Application) Type() Type { return TypeApplication }
+
+// PostingDetail is what posting detail opens on: the posting, its
+// application, zero when it has none, and the postings it steps through,
+// by ID in list order, empty when it doesn't step.
+type PostingDetail struct {
+	Posting     Posting     `json:"posting"`
+	Application Application `json:"application,omitzero"`
+	Siblings    []int64     `json:"siblings,omitempty"`
+}
+
+func (PostingDetail) Type() Type { return TypePostingDetail }
+
+// PostingApplication is the event's Subject, a posting, and its
+// application, zero when it has none.
+type PostingApplication struct {
+	Posting     Posting     `json:"posting"`
+	Application Application `json:"application,omitzero"`
+}
+
+func (PostingApplication) Type() Type { return TypePostingApplication }
+
+// Review is what an event carries for a document review.
+type Review struct {
+	ID            int64         `json:"id"`
+	ApplicationID int64         `json:"application_id"`
+	DocumentType  DocumentType  `json:"document_type"`
+	Outcome       ReviewOutcome `json:"outcome"`
+	Notes         string        `json:"notes"`
+	CreatedAt     time.Time     `json:"created_at"`
+}
+
+func (Review) Type() Type { return TypeReview }
+
+// ReviewList is the latest review of each document of the event's Subject,
+// an application, that still describes the document as it is. A document
+// with none isn't in it.
+type ReviewList struct {
+	Reviews []Review `json:"reviews"`
+}
+
+func (ReviewList) Type() Type { return TypeReviewList }
+
+// Score is one fit score given to a posting. ContentSHA256 is the posting
+// content it scored.
+type Score struct {
+	Score         int       `json:"score"`
+	Reason        string    `json:"reason"`
+	Model         string    `json:"model"`
+	ClientName    string    `json:"client_name,omitempty"`
+	ClientVersion string    `json:"client_version,omitempty"`
+	ContentSHA256 string    `json:"content_sha256"`
+	ScoredAt      time.Time `json:"scored_at"`
+}
+
+// PostingScores is every score the event's Subject, a posting, was given,
+// newest first.
+type PostingScores struct {
+	Scores []Score `json:"scores"`
+}
+
+func (PostingScores) Type() Type { return TypePostingScores }

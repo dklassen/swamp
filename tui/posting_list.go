@@ -128,6 +128,7 @@ func (m *postingListModel) Routes() []*model.Route {
 		model.Always(m.synced, model.About(message.TypeCompany, m.company.ID)),
 		model.Always(m.filtersSaved, model.About(message.TypeCompany, m.company.ID)),
 		model.Always(m.markupChanged),
+		model.Always(m.detailOpened),
 		model.WhenFocused(m, m.keyPressed),
 		model.Always(m.resize),
 		model.Always(m.focusChanged),
@@ -182,6 +183,15 @@ func (m *postingListModel) markupChanged(e message.Event[message.Changed[message
 	return nil
 }
 
+// detailOpened moves the cursor to a posting detail stepped to, so going
+// back lands on the posting last shown.
+func (m *postingListModel) detailOpened(e message.Event[message.Nav[message.PostingDetail]]) tea.Cmd {
+	if i := indexOfPosting(m.list.Postings, e.Payload.Value.Posting.ID); i >= 0 {
+		m.cursor = i
+	}
+	return nil
+}
+
 func (m *postingListModel) resize(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {
 	m.width, m.height = e.Payload.Value.Width, e.Payload.Value.Rows
 	return nil
@@ -213,7 +223,12 @@ func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 		return tea.Batch(message.Pop(src), message.ReportStatus(src, ""))
 	case "enter":
 		if onPosting {
-			return send(enterPostingDetailMsg{postingID: current.ID})
+			siblings := make([]int64, len(postings))
+			for i, p := range postings {
+				siblings[i] = p.ID
+			}
+			return message.Push(src, message.ScreenPostingDetail, message.Subject{Type: message.TypePosting, ID: current.ID},
+				message.PostingDetail{Posting: current, Siblings: siblings})
 		}
 	case "o":
 		if onPosting && current.JobURL != "" {
@@ -241,10 +256,6 @@ func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	}
 	return nil
 }
-
-// enterPostingDetailMsg signals that App should switch to the
-// posting-detail screen for the given posting.
-type enterPostingDetailMsg struct{ postingID int64 }
 
 // send is a command for a message App still handles itself.
 func send(msg tea.Msg) tea.Cmd {
@@ -315,15 +326,6 @@ func (m *postingListModel) clampCursor(n int) {
 	}
 }
 
-// setCursor points the cursor at index i, if valid. Posting detail keeps
-// no cursor of its own, so App moves this one to wherever h/l there last
-// landed when the user comes back.
-func (m *postingListModel) setCursor(i int) {
-	if i >= 0 {
-		m.cursor = i
-	}
-}
-
 // selected is the ID of the posting under the cursor, or 0.
 func (m *postingListModel) selected() int64 {
 	if m.cursor < len(m.list.Postings) {
@@ -340,11 +342,4 @@ func (m *postingListModel) keepCursorOn(id int64) {
 		return
 	}
 	m.clampCursor(len(m.list.Postings))
-}
-
-// patch replaces a posting reloaded elsewhere, if the list has it.
-func (m *postingListModel) patch(p message.Posting) {
-	if i := indexOfPosting(m.list.Postings, p.ID); i >= 0 {
-		m.list.Postings[i] = p
-	}
 }

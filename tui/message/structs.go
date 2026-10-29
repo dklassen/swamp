@@ -30,6 +30,14 @@ func Push[T Body](src Source, screen Screen, subject Subject, v T) tea.Cmd {
 	}
 }
 
+// Replace asks for src's screen to give way to screen, about subject,
+// showing v.
+func Replace[T Body](src Source, screen Screen, subject Subject, v T) tea.Cmd {
+	return func() tea.Msg {
+		return New(src, subject, OpNone, time.Now().UTC(), Nav[T]{Op: NavReplace, Screen: screen, Value: v})
+	}
+}
+
 // Pop asks for src's screen to close.
 func Pop(src Source) tea.Cmd {
 	return func() tea.Msg {

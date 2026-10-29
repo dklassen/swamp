@@ -80,6 +80,17 @@ var parents = map[screen]screen{
 	screenApplicationNotesEdit: screenPostingDetail,
 }
 
+// stackedUnder is the screen a stacked screen showing as s was pushed
+// over.
+func (a *App) stackedUnder(s screen) (screen, bool) {
+	for kind, as := range stackedAs {
+		if as == s {
+			return a.stack.under(kind)
+		}
+	}
+	return 0, false
+}
+
 // path is the screens from a tab to on: the way esc goes back, reversed.
 func (a *App) path(on screen) []screen {
 	path := []screen{on}
@@ -87,6 +98,8 @@ func (a *App) path(on screen) []screen {
 	for s := on; !isTab(s); path = append(path, s) {
 		if p, ok := parents[s]; ok {
 			s = p
+		} else if under, ok := a.stackedUnder(s); ok {
+			s = under
 		} else if next >= 0 {
 			s = a.returnStack[next]
 			next--
@@ -118,8 +131,8 @@ func (a *App) crumbs(path []screen) []string {
 			// Application detail has already named it.
 			if i > 0 && path[i-1] == screenApplicationDetail {
 				crumbs = append(crumbs, "Posting")
-			} else {
-				crumbs = append(crumbs, a.postingDetail.posting.Title)
+			} else if d := a.postingDetail(); d != nil {
+				crumbs = append(crumbs, d.posting.Title)
 			}
 		case screenApplicationDetail:
 			view := a.applicationDetail.application

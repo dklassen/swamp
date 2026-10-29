@@ -67,24 +67,54 @@ func TestPostingListModel_CursorMovement_ClampsToPostings(t *testing.T) {
 	}
 }
 
-func TestPostingListModel_Keys_AskAppToOpenItsScreens(t *testing.T) {
+func TestPostingListModel_Enter_PushesDetailSteppingThroughTheList(t *testing.T) {
+	t.Parallel()
+
+	m := postingListOf(t, testListCompany, testPostings(), false, 0)
+	pressOn(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+
+	got := pressOn(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if len(got) != 1 {
+		t.Fatalf("enter sent %#v, want one Nav", got)
+	}
+	nav, ok := got[0].(message.Event[message.Nav[message.PostingDetail]])
+	if !ok {
+		t.Fatalf("enter sent %T, want a Nav to posting detail", got[0])
+	}
+	assertEventFrom(t, nav.Meta, message.Source{Instance: m.Instance()})
+	designer := testPostings()[1]
+	if want := (message.Subject{Type: message.TypePosting, ID: designer.ID}); nav.Meta.Subject != want {
+		t.Errorf("Subject = %+v, want %+v", nav.Meta.Subject, want)
+	}
+	want := message.Nav[message.PostingDetail]{Op: message.NavPush, Screen: message.ScreenPostingDetail,
+		Value: message.PostingDetail{Posting: designer, Siblings: []int64{1, 2}}}
+	if diff := cmp.Diff(want, nav.Payload); diff != "" {
+		t.Errorf("Nav (-want +got):\n%s", diff)
+	}
+}
+
+// Going back from a detail that stepped lands on the posting it showed
+// last.
+func TestPostingListModel_DetailOpened_MovesTheCursorToItsPosting(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
-		name string
-		key  tea.KeyPressMsg
-		want tea.Msg
+		name      string
+		postingID int64
+		want      int
 	}{
-		{name: "enter", key: tea.KeyPressMsg{Code: tea.KeyEnter}, want: enterPostingDetailMsg{postingID: 1}},
+		{name: "a posting it lists", postingID: 2, want: 1},
+		{name: "one it doesn't", postingID: 99, want: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m := postingListOf(t, testListCompany, testPostings(), false, 0)
 
-			got := pressOn(t, m, tt.key)
-			if diff := cmp.Diff([]tea.Msg{tt.want}, got, cmp.AllowUnexported(enterPostingDetailMsg{})); diff != "" {
-				t.Errorf("%s sent (-want +got):\n%s", tt.name, diff)
+			m.detailOpened(message.New(message.Source{Instance: 9}, message.Subject{Type: message.TypePosting, ID: tt.postingID}, message.OpNone, time.Now().UTC(),
+				message.Nav[message.PostingDetail]{Op: message.NavReplace, Screen: message.ScreenPostingDetail, Value: message.PostingDetail{Posting: message.Posting{ID: tt.postingID}}}))
+			if m.cursor != tt.want {
+				t.Errorf("cursor = %d, want %d", m.cursor, tt.want)
 			}
 		})
 	}

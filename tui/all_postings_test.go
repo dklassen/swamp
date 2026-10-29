@@ -199,8 +199,8 @@ func TestAllPostings_EnterOpensTheDetailAndEscComesBack(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	if app.currentScreen != screenPostingDetail || app.postingDetail.posting.ID != want.ID || app.postingDetail.posting.Title != want.Title {
-		t.Fatalf("after enter: screen %v showing posting %d %q, want detail for %d %q", app.currentScreen, app.postingDetail.posting.ID, app.postingDetail.posting.Title, want.ID, want.Title)
+	if app.currentScreen != screenPostingDetail || openDetail(t, app).posting.ID != want.ID || openDetail(t, app).posting.Title != want.Title {
+		t.Fatalf("after enter: screen %v showing posting %d %q, want detail for %d %q", app.currentScreen, openDetail(t, app).posting.ID, openDetail(t, app).posting.Title, want.ID, want.Title)
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if app.currentScreen != screenAllPostings || len(app.allPostings.starts) != 2 || app.allPostings.cursor != 1 {
@@ -233,7 +233,7 @@ func TestAllPostings_DetailDoesNotStepThroughACompanyListBrowsedEarlier(t *testi
 	if app.currentScreen != screenPostingDetail {
 		t.Fatalf("screen = %v, want posting detail", app.currentScreen)
 	}
-	if app.postingDetail.canNavigateSiblings {
+	if openDetail(t, app).canStep() {
 		t.Error("posting detail opened from all postings offers stepping through Acme's posting list")
 	}
 }
