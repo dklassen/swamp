@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"errors"
 	"strings"
 	"testing"
 	"time"
@@ -10,7 +9,7 @@ import (
 	"charm.land/lipgloss/v2"
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/tui/message"
@@ -153,15 +152,6 @@ func TestPostingListModel_R_AsksToSyncItsCompany(t *testing.T) {
 	}
 }
 
-func TestPostingListModel_I_ReturnsToggleInterestedCmd(t *testing.T) {
-	t.Parallel()
-
-	m := postingListOf(t, testListCompany, testPostings(), false, 0)
-	if cmd := m.keyPressed(runeKey('i')); cmd == nil {
-		t.Fatal("cmd = nil, want a command that toggles interested")
-	}
-}
-
 // listWith is a posting list registered on a router, for a company with
 // two postings in the store.
 func listWith(t *testing.T, hideArchived bool) (*postingListModel, *model.MsgRouter) {
@@ -282,30 +272,35 @@ func TestPostingListModel_Read_KeepsTheCursorOnItsPosting(t *testing.T) {
 	}
 }
 
-func TestPostingListModel_MarkupUpdated_PatchesItsRow(t *testing.T) {
+// The list hears a markup change whether or not it's on top.
+func TestPostingListModel_MarkupChanged_PatchesItsRow(t *testing.T) {
 	t.Parallel()
 
 	now := time.Now().UTC()
 	tests := []struct {
 		name         string
 		hideArchived bool
-		markup       posting.Markup
-		err          error
+		after        message.Markup
 		wantTitles   []string
 		wantMarker   string
 	}{
-		{name: "interested", markup: posting.Markup{PostingID: 2, InterestedAt: &now}, wantTitles: []string{"Engineer", "Designer"}, wantMarker: "★"},
-		{name: "archived, archived shown", markup: posting.Markup{PostingID: 2, ArchivedAt: &now}, wantTitles: []string{"Engineer", "Designer"}, wantMarker: "✕"},
-		{name: "archived, archived hidden", hideArchived: true, markup: posting.Markup{PostingID: 2, ArchivedAt: &now}, wantTitles: []string{"Engineer"}},
-		{name: "failed", markup: posting.Markup{PostingID: 2, InterestedAt: &now}, err: errors.New("disk full"), wantTitles: []string{"Engineer", "Designer"}, wantMarker: " "},
+		{name: "interested", after: message.Markup{PostingID: 2, InterestedAt: now}, wantTitles: []string{"Engineer", "Designer"}, wantMarker: "★"},
+		{name: "archived, archived shown", after: message.Markup{PostingID: 2, ArchivedAt: now}, wantTitles: []string{"Engineer", "Designer"}, wantMarker: "✕"},
+		{name: "archived, archived hidden", hideArchived: true, after: message.Markup{PostingID: 2, ArchivedAt: now}, wantTitles: []string{"Engineer"}},
+		{name: "a posting it doesn't list", after: message.Markup{PostingID: 9, InterestedAt: now}, wantTitles: []string{"Engineer", "Designer"}, wantMarker: " "},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			m := postingListOf(t, testListCompany, testPostings(), tt.hideArchived, 0)
 			pressOn(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
 
-			m.markupUpdated(postingMarkupUpdatedMsg{markup: tt.markup, err: tt.err})
+			r.Dispatch(message.New(message.Source{}, message.Subject{Type: message.TypePosting, ID: tt.after.PostingID}, message.OpUpdated, now,
+				message.Changed[message.Markup]{Before: message.Markup{PostingID: tt.after.PostingID}, After: tt.after}))
 
 			var titles []string
 			for _, p := range m.list.Postings {
@@ -321,6 +316,81 @@ func TestPostingListModel_MarkupUpdated_PatchesItsRow(t *testing.T) {
 				if got := postingMarker(m.list.Markup[2]); got != tt.wantMarker {
 					t.Errorf("Designer's marker = %q, want %q", got, tt.wantMarker)
 				}
+			}
+		})
+	}
+}
+
+func TestPostingListModel_IAndX_MarkThePostingUnderTheCursor(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		key        rune
+		wantMarker string
+	}{
+		{key: 'i', wantMarker: "★"},
+		{key: 'x', wantMarker: "✕"},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.key), func(t *testing.T) {
+			t.Parallel()
+			m, r := listWith(t, false)
+			for _, msg := range runCmd(t, m.Init()) {
+				r.Dispatch(msg)
+			}
+			marked := m.list.Postings[0]
+
+			got := pressOn(t, m, runeKey(tt.key))
+			if len(got) != 1 {
+				t.Fatalf("%c sent %#v, want one change", tt.key, got)
+			}
+			e, ok := got[0].(message.Event[message.Changed[message.Markup]])
+			if !ok {
+				t.Fatalf("%c sent %T, want message.Event[message.Changed[message.Markup]]", tt.key, got[0])
+			}
+			assertEventFrom(t, e.Meta, message.Source{Instance: m.Instance()})
+			if want := (message.Subject{Type: message.TypePosting, ID: marked.ID}); e.Meta.Subject != want || e.Meta.Op != message.OpUpdated {
+				t.Errorf("Subject, Op = %+v, %v, want %+v, %v", e.Meta.Subject, e.Meta.Op, want, message.OpUpdated)
+			}
+			if diff := cmp.Diff(message.Markup{PostingID: marked.ID}, e.Payload.Before); diff != "" {
+				t.Errorf("Before (-want +got):\n%s", diff)
+			}
+			r.Dispatch(e)
+			if got := postingMarker(m.list.Markup[marked.ID]); got != tt.wantMarker {
+				t.Errorf("%s's marker = %q, want %q", marked.Title, got, tt.wantMarker)
+			}
+		})
+	}
+}
+
+func TestMarkupToggles_OnAMissingPosting_SendAnError(t *testing.T) {
+	t.Parallel()
+
+	src := message.Source{Instance: 7}
+	const missing = 999
+	tests := []struct {
+		name   string
+		toggle func(*service.PostingService) tea.Cmd
+	}{
+		{name: "interested", toggle: func(p *service.PostingService) tea.Cmd { return toggleInterested(p, src, missing, false) }},
+		{name: "archived", toggle: func(p *service.PostingService) tea.Cmd { return toggleArchived(p, src, missing, false) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+
+			got := runCmd(t, tt.toggle(s.Postings))
+			if len(got) != 1 {
+				t.Fatalf("sent %#v, want one error", got)
+			}
+			e, ok := got[0].(message.Event[message.Error])
+			if !ok {
+				t.Fatalf("sent %T, want message.Event[message.Error]", got[0])
+			}
+			assertEventFrom(t, e.Meta, src)
+			if want := (message.Subject{Type: message.TypePosting, ID: missing}); e.Meta.Subject != want || e.Payload.Code != message.ErrNotFound {
+				t.Errorf("Subject, Code = %+v, %v, want %+v, %v", e.Meta.Subject, e.Payload.Code, want, message.ErrNotFound)
 			}
 		})
 	}

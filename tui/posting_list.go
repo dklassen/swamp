@@ -127,7 +127,7 @@ func (m *postingListModel) Routes() []*model.Route {
 		model.Always(m.loadRequested),
 		model.Always(m.synced, model.About(message.TypeCompany, m.company.ID)),
 		model.Always(m.filtersSaved, model.About(message.TypeCompany, m.company.ID)),
-		model.Always(m.markupUpdated),
+		model.Always(m.markupChanged),
 		model.WhenFocused(m, m.keyPressed),
 		model.Always(m.resize),
 		model.Always(m.focusChanged),
@@ -166,14 +166,14 @@ func (m *postingListModel) filtersSaved(message.Event[message.Ran[message.Filter
 	return m.load()
 }
 
-// markupUpdated drops a posting archived while archived ones are hidden,
+// markupChanged drops a posting archived while archived ones are hidden,
 // since it can't be reached to unarchive until they're shown.
-func (m *postingListModel) markupUpdated(msg postingMarkupUpdatedMsg) tea.Cmd {
-	i := indexOfPosting(m.list.Postings, msg.markup.PostingID)
-	if msg.err != nil || i < 0 {
+func (m *postingListModel) markupChanged(e message.Event[message.Changed[message.Markup]]) tea.Cmd {
+	marked := e.Payload.After
+	i := indexOfPosting(m.list.Postings, marked.PostingID)
+	if i < 0 {
 		return nil
 	}
-	marked := markupSnapshot(msg.markup)
 	m.list.Markup[marked.PostingID] = marked
 	if m.hideArchived && !marked.ArchivedAt.IsZero() {
 		m.list.Postings = slices.Delete(m.list.Postings, i, i+1)
@@ -226,11 +226,11 @@ func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 			message.FilterSelection{Company: m.company, Departments: m.list.Departments, Locations: m.list.Locations})
 	case "i":
 		if onPosting {
-			return toggleInterested(m.postingService, current.ID, !m.list.Markup[current.ID].InterestedAt.IsZero())
+			return toggleInterested(m.postingService, src, current.ID, !m.list.Markup[current.ID].InterestedAt.IsZero())
 		}
 	case "x":
 		if onPosting {
-			return toggleArchived(m.postingService, current.ID, !m.list.Markup[current.ID].ArchivedAt.IsZero())
+			return toggleArchived(m.postingService, src, current.ID, !m.list.Markup[current.ID].ArchivedAt.IsZero())
 		}
 	case "A":
 		m.hideArchived = !m.hideArchived

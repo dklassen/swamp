@@ -117,12 +117,15 @@ type Posting struct {
 }
 
 // Markup is how the user has marked a posting. A time is zero while the
-// posting isn't marked that way.
+// posting isn't marked that way. A change to it has the posting as its
+// Subject, since markup is no entity of its own.
 type Markup struct {
 	PostingID    int64     `json:"posting_id"`
 	InterestedAt time.Time `json:"interested_at,omitzero"`
 	ArchivedAt   time.Time `json:"archived_at,omitzero"`
 }
+
+func (Markup) Type() Type { return TypeMarkup }
 
 // PostingList is the open postings of the event's Subject, a company, that
 // match its saved filters, each with its markup. Departments and Locations
