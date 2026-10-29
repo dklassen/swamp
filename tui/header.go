@@ -168,7 +168,7 @@ func (a *App) tabBar(active screen) string {
 		screen screen
 		label  string
 	}{
-		{screenActiveApplications, fmt.Sprintf(" Applications %d ", len(a.activeApplications))},
+		{screenActiveApplications, fmt.Sprintf(" Applications %d ", len(a.activeApplicationList.apps))},
 		{screenCompanyList, " Companies "},
 		{screenAllPostings, fmt.Sprintf(" All postings %d ", a.allPostings.page.WithoutQuery)},
 	}

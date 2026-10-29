@@ -22,7 +22,7 @@ func TestApp_PasteIntoApplicationForm_AddsTheText(t *testing.T) {
 	mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 30})
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app, loadCmd := sendIntentKey(t, app, runeKey('f'))
 	app = applyCmd(t, app, loadCmd)
 

@@ -46,7 +46,7 @@ func deleteTestApp(t *testing.T) (*App, application.Application) {
 // looks at its posting and comes back, and presses D.
 func startDelete(t *testing.T, app *App) *App {
 	t.Helper()
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if app.currentScreen != screenApplicationDetail {
 		t.Fatalf("screen after enter = %v, want application detail", app.currentScreen)
 	}
@@ -88,8 +88,8 @@ func TestDeleteFlow_ConfirmingDeletesTheApplicationAndKeepsItsDocuments(t *testi
 	if app.currentScreen != screenActiveApplications {
 		t.Errorf("screen after confirming = %v, want the home screen", app.currentScreen)
 	}
-	if len(app.activeApplications) != 0 {
-		t.Errorf("active applications = %d, want the deleted one gone from the list", len(app.activeApplications))
+	if len(app.activeApplicationList.apps) != 0 {
+		t.Errorf("active applications = %d, want the deleted one gone from the list", len(app.activeApplicationList.apps))
 	}
 }
 
@@ -176,7 +176,7 @@ func TestDeleteFlow_AlreadyDeletedElsewhere_StaysOnDetailAndSaysSo(t *testing.T)
 	t.Parallel()
 
 	app, target := deleteTestApp(t)
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if _, err := storeOf(app).Applications.Delete(context.Background(), target.ID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}

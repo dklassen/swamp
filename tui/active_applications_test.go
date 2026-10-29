@@ -18,6 +18,7 @@ import (
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 func testActiveApplications() []posting.ActiveApplication {
@@ -35,20 +36,58 @@ func testActiveApplications() []posting.ActiveApplication {
 	}
 }
 
+// applicationsReadOf is m's own read of apps, with nothing drafted.
+func applicationsReadOf(m *activeApplicationListModel, apps []posting.ActiveApplication) message.Event[message.Read[message.ActiveApplications]] {
+	var read message.ActiveApplications
+	for _, a := range apps {
+		read.Rows = append(read.Rows, applicationRow(a, nil))
+	}
+	return message.New(m.src(), message.Subject{}, message.OpNone, time.Now().UTC(), message.Read[message.ActiveApplications]{Value: read})
+}
+
+// homeAt is a home screen showing apps in width columns and rows rows.
+func homeAt(t *testing.T, apps []posting.ActiveApplication, width, rows int) *activeApplicationListModel {
+	t.Helper()
+	m := newActiveApplicationListModel(nil, nil, nil)
+	m.resize(message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Signal[message.ContentSize]{Value: message.ContentSize{Width: width, Rows: rows}}))
+	m.applicationsRead(applicationsReadOf(m, apps))
+	return m
+}
+
+// homeWith is a home screen showing apps, 100 columns by 40 rows.
+func homeWith(t *testing.T, apps []posting.ActiveApplication) *activeApplicationListModel {
+	t.Helper()
+	return homeAt(t, apps, 100, 40)
+}
+
+// pressHome sends key to m, returning what its command sends, or nil when
+// it sends nothing.
+func pressHome(t *testing.T, m *activeApplicationListModel, key tea.KeyPressMsg) tea.Msg {
+	t.Helper()
+	msgs := runCmd(t, m.keyPressed(key))
+	switch len(msgs) {
+	case 0:
+		return nil
+	case 1:
+		return msgs[0]
+	}
+	t.Fatalf("%v sent %#v, want at most one message", key, msgs)
+	return nil
+}
+
 func TestActiveApplicationListModel_CursorMovement_ClampsToApps(t *testing.T) {
 	t.Parallel()
 
-	m := newActiveApplicationListModel()
-	apps := testActiveApplications()
+	m := homeWith(t, testActiveApplications())
 
-	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, apps)
-	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, apps)
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 	if m.cursor != 1 {
 		t.Fatalf("cursor after two downs = %d, want 1 (clamped)", m.cursor)
 	}
 
-	m.Update(tea.KeyPressMsg{Code: tea.KeyUp}, apps)
-	m.Update(tea.KeyPressMsg{Code: tea.KeyUp}, apps)
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyUp})
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyUp})
 	if m.cursor != 0 {
 		t.Fatalf("cursor after two ups = %d, want 0 (clamped)", m.cursor)
 	}
@@ -64,8 +103,7 @@ func TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication(t *test
 	}
 	// apps[1] is left with no LatestReviews -- neither document reviewed yet.
 
-	m := newActiveApplicationListModel()
-	got := ansi.Strip(m.View(apps, nil, time.Time{}, 0, 20))
+	got := ansi.Strip(homeAt(t, apps, 0, 20).render(time.Time{}))
 
 	if !containsAll(got, "CL:✗ R:✓", "CL:- R:-") {
 		t.Fatalf("View() = %q, want CL:✗ R:✓ for the reviewed application and CL:- R:- for the unreviewed one", got)
@@ -76,79 +114,78 @@ func TestActiveApplicationListModel_View_ShowsReviewGlyphsPerApplication(t *test
 func TestActiveApplicationListModel_C_DoesNothing(t *testing.T) {
 	t.Parallel()
 
-	m := newActiveApplicationListModel()
-	if cmd, intent := m.Update(runeKey('c'), testActiveApplications()); cmd != nil || intent != nil {
-		t.Errorf("Update('c') = %v, %v, want nil, nil", cmd, intent)
+	m := homeWith(t, testActiveApplications())
+	if got := pressHome(t, m, runeKey('c')); got != nil {
+		t.Errorf("'c' sent %#v, want nothing", got)
 	}
 }
 
-func TestActiveApplicationListModel_Q_ReturnsQuitCmd(t *testing.T) {
+func TestActiveApplicationListModel_Q_Quits(t *testing.T) {
 	t.Parallel()
 
-	m := newActiveApplicationListModel()
-	cmd, _ := m.Update(runeKey('q'), testActiveApplications())
-	if cmd == nil {
-		t.Fatal("Update on 'q' returned nil Cmd, want tea.Quit")
+	m := homeWith(t, testActiveApplications())
+	if got, ok := pressHome(t, m, runeKey('q')).(tea.QuitMsg); !ok {
+		t.Fatalf("'q' sent %#v, want tea.QuitMsg", got)
 	}
 }
 
-func TestActiveApplicationListModel_S_ReturnsTheApplicationAtTheCursor(t *testing.T) {
+func TestActiveApplicationListModel_S_PushesStatusOnTheApplicationAtTheCursor(t *testing.T) {
 	t.Parallel()
 
-	m := newActiveApplicationListModel()
 	apps := testActiveApplications()
+	m := homeWith(t, apps)
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 
-	cmd, intent := m.Update(runeKey('s'), apps)
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	if diff := cmp.Diff(applicationSnapshot(apps[0].Application), intent); diff != "" {
-		t.Fatalf("intent (-want +got), want the application at cursor 0:\n%s", diff)
-	}
-}
-
-func TestActiveApplicationListModel_Enter_ReturnsEnterApplicationDetailMsg(t *testing.T) {
-	t.Parallel()
-
-	m := newActiveApplicationListModel()
-	apps := testActiveApplications()
-
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps)
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	got, ok := intent.(enterApplicationDetailMsg)
+	nav, ok := pressHome(t, m, runeKey('s')).(message.Event[message.Nav[message.Application]])
 	if !ok {
-		t.Fatalf("intent = %T, want enterApplicationDetailMsg", intent)
+		t.Fatalf("'s' sent no Nav to the status picker")
+	}
+	assertEventFrom(t, nav.Meta, message.Source{Instance: m.Instance()})
+	if want := (message.Subject{Type: message.TypeApplication, ID: apps[1].ID}); nav.Meta.Subject != want {
+		t.Errorf("Subject = %+v, want %+v", nav.Meta.Subject, want)
+	}
+	want := message.Nav[message.Application]{Op: message.NavPush, Screen: message.ScreenApplicationStatus, Value: applicationSnapshot(apps[1].Application)}
+	if diff := cmp.Diff(want, nav.Payload); diff != "" {
+		t.Errorf("Nav (-want +got):\n%s", diff)
+	}
+}
+
+func TestActiveApplicationListModel_Enter_AsksForDetail(t *testing.T) {
+	t.Parallel()
+
+	apps := testActiveApplications()
+	m := homeWith(t, apps)
+
+	got, ok := pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEnter}).(enterApplicationDetailMsg)
+	if !ok {
+		t.Fatalf("enter sent no enterApplicationDetailMsg")
 	}
 	if got.application.ID != apps[0].ID {
 		t.Fatalf("application.ID = %d, want %d (application at cursor 0)", got.application.ID, apps[0].ID)
 	}
 }
 
-func TestActiveApplicationListModel_EmptyList_KeysDoNotPanic(t *testing.T) {
+func TestActiveApplicationListModel_EmptyList_KeysDoNothing(t *testing.T) {
 	t.Parallel()
 
-	m := newActiveApplicationListModel()
-	for _, key := range []tea.KeyPressMsg{runeKey('s'), {Code: tea.KeyEnter}} {
-		if cmd, intent := m.Update(key, nil); cmd != nil || intent != nil {
-			t.Fatalf("Update(%v) on empty list = %v, %v, want nil, nil", key, cmd, intent)
+	m := homeWith(t, nil)
+	for _, key := range []tea.KeyPressMsg{runeKey('s'), runeKey('e'), runeKey('d'), {Code: tea.KeyEnter}} {
+		if got := pressHome(t, m, key); got != nil {
+			t.Fatalf("%v on empty list sent %#v, want nothing", key, got)
 		}
 	}
 }
 
-func TestActiveApplicationListModel_E_EntersExportForSelectedApplication(t *testing.T) {
+func TestActiveApplicationListModel_E_AsksForExportOfSelectedApplication(t *testing.T) {
 	t.Parallel()
 
-	m := newActiveApplicationListModel()
 	apps := testActiveApplications()
-	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, apps)
+	m := homeWith(t, apps)
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 
-	_, intent := m.Update(runeKey('e'), apps)
-
-	got, ok := intent.(enterApplicationExportMsg)
+	got, ok := pressHome(t, m, runeKey('e')).(enterApplicationExportMsg)
 	if !ok {
-		t.Fatalf("intent = %T, want enterApplicationExportMsg", intent)
+		t.Fatalf("'e' sent no enterApplicationExportMsg")
 	}
 	if got.application.ID != apps[1].ID {
 		t.Errorf("exported application ID = %d, want %d (the one under the cursor)", got.application.ID, apps[1].ID)
@@ -158,9 +195,7 @@ func TestActiveApplicationListModel_E_EntersExportForSelectedApplication(t *test
 func TestActiveApplicationListModel_View_AdvertisesExport(t *testing.T) {
 	t.Parallel()
 
-	m := newActiveApplicationListModel()
-
-	if got := m.View(testActiveApplications(), nil, time.Time{}, 0, 20); !strings.Contains(got, "e: export") {
+	if got := homeAt(t, testActiveApplications(), 0, 20).render(time.Time{}); !strings.Contains(got, "e: export") {
 		t.Errorf("View() = %q, want it to advertise the export binding", got)
 	}
 }
@@ -172,8 +207,7 @@ func TestActiveApplicationListModel_View_ShowsStatusLabelNotEnumValue(t *testing
 	apps[0].Status = application.OfferReceived
 	apps[1].Status = application.Started
 
-	m := newActiveApplicationListModel()
-	got := m.View(apps, nil, time.Time{}, 0, 20)
+	got := homeAt(t, apps, 0, 20).render(time.Time{})
 
 	if !containsAll(got, "Offer received", "Started") {
 		t.Errorf("View() = %q, want human-readable status labels", got)
@@ -197,8 +231,7 @@ func TestActiveApplicationListModel_View_FlagsClosedPosting(t *testing.T) {
 	apps[0].Posting.ListingStatus = posting.ListingClosed
 	apps[1].Posting.ListingStatus = posting.ListingOpen
 
-	m := newActiveApplicationListModel()
-	got := m.View(apps, nil, time.Time{}, 0, 20)
+	got := homeAt(t, apps, 0, 20).render(time.Time{})
 
 	if !strings.Contains(got, "closed") {
 		t.Errorf("View() = %q, want the closed posting flagged", got)
@@ -265,8 +298,7 @@ func TestActiveApplicationListModel_View_ShowsAgeAndNextStep(t *testing.T) {
 	apps[0].StatusSince = now.Add(-21*24*time.Hour - time.Hour)
 	apps[1].StatusSince = now.Add(-2 * time.Hour)
 
-	m := newActiveApplicationListModel()
-	got := m.View(apps, nil, now, 0, 20)
+	got := homeAt(t, apps, 0, 20).render(now)
 
 	for _, want := range []string{"Age", "Next", "21d", "0d", "draft"} {
 		if !strings.Contains(got, want) {
@@ -303,17 +335,17 @@ func TestOrderForHome(t *testing.T) {
 	}
 }
 
-// loadActiveApplications works out each started application's next step
+// The home screen's read works out each started application's next step
 // from what's on disk and in the store: drafts, current reviews and
 // current exports.
-func TestLoadActiveApplications_NextSteps(t *testing.T) {
+func TestActiveApplicationListModel_Init_ReadsEachNextStep(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
 	docs := documents.NewStore(t.TempDir())
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 
-	undrafted := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
+	mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
 	ready := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-2", "Designer").ID)
 	stale := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-3", "Manager").ID)
 	for _, target := range []application.Application{ready, stale} {
@@ -337,18 +369,30 @@ func TestLoadActiveApplications_NextSteps(t *testing.T) {
 			}
 		}
 	}
+	m := newActiveApplicationListModel(s.Applications, s.Documents, docs)
+	r := model.NewMsgRouter()
+	if err := r.Register(m); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	r.Dispatch(sizedTo(message.ContentSize{Width: 120, Rows: 40}))
 
-	msg, ok := loadActiveApplications(s.Applications, s.Documents, docs)().(activeApplicationsLoadedMsg)
-	if !ok || msg.err != nil {
-		t.Fatalf("loadActiveApplications() = %+v, want a loaded message without error", msg)
+	for _, msg := range runCmd(t, m.Init()) {
+		r.Dispatch(msg)
 	}
-	want := map[int64]string{undrafted.ID: "draft", ready.ID: "submit", stale.ID: "export"}
-	got := make(map[int64]string, len(msg.applications))
-	for _, app := range msg.applications {
-		got[app.ID] = nextStep(app, msg.progress[app.ID])
+
+	want := map[string]string{"Engineer": "draft", "Designer": "submit", "Manager": "export"}
+	for _, line := range strings.Split(ansi.Strip(m.render(time.Time{})), "\n") {
+		for title, step := range want {
+			if strings.Contains(line, title) {
+				if !strings.Contains(line, step) {
+					t.Errorf("row for %s = %q, want next step %q", title, line, step)
+				}
+				delete(want, title)
+			}
+		}
 	}
-	if diff := cmp.Diff(want, got); diff != "" {
-		t.Errorf("next steps mismatch (-want +got):\n%s", diff)
+	if len(want) > 0 {
+		t.Errorf("no rows for %v", want)
 	}
 }
 
@@ -393,8 +437,7 @@ func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			m := newActiveApplicationListModel()
-			view := ansi.Strip(m.View(apps, nil, now, tt.width, 20))
+			view := ansi.Strip(homeAt(t, apps, tt.width, 20).render(now))
 			if !strings.Contains(view, "withdraw?") || !strings.Contains(view, "Offer received") {
 				t.Fatalf("View() = %q, want the widest next step and status in it", view)
 			}
@@ -472,27 +515,25 @@ func TestReviewGlyph_EveryOutcomeHasItsOwn(t *testing.T) {
 func TestActiveApplicationListModel_View_ShortRowsKeepTheTableWidth(t *testing.T) {
 	t.Parallel()
 
-	m := newActiveApplicationListModel()
-	if got := tableWidthOf(t, m.View(testActiveApplications(), nil, time.Time{}, 100, 20)); got != 100 {
+	if got := tableWidthOf(t, homeAt(t, testActiveApplications(), 100, 20).render(time.Time{})); got != 100 {
 		t.Errorf("table width with short rows = %d, want 100", got)
 	}
 }
 
 // typeHomeKeys sends each rune of s to m as a key press.
-func typeHomeKeys(t *testing.T, m *activeApplicationListModel, apps []posting.ActiveApplication, s string) {
+func typeHomeKeys(t *testing.T, m *activeApplicationListModel, s string) {
 	t.Helper()
 	for _, r := range s {
-		m.Update(runeKey(r), apps)
+		pressHome(t, m, runeKey(r))
 	}
 }
 
 // openHomeHighlighted presses enter to keep the matches, then enter again
-// to open the highlighted one, returning that intent.
-func openHomeHighlighted(t *testing.T, m *activeApplicationListModel, apps []posting.ActiveApplication) tea.Msg {
+// to open the highlighted one, returning what that sends.
+func openHomeHighlighted(t *testing.T, m *activeApplicationListModel) tea.Msg {
 	t.Helper()
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps)
-	_, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps)
-	return intent
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
+	return pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 }
 
 // testSearchApplications has three applications, at Acme, Globex and
@@ -513,44 +554,39 @@ func TestActiveApplicationListModel_Search_EnterKeepsMatchesForCommands(t *testi
 	t.Parallel()
 
 	apps := testSearchApplications()
-	m := newActiveApplicationListModel()
+	m := homeWith(t, apps)
 
-	typeHomeKeys(t, &m, apps, "/glo")
-	if _, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps); intent != nil {
-		t.Fatalf("enter while typing: intent = %#v, want none", intent)
+	typeHomeKeys(t, m, "/glo")
+	if got := pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEnter}); got != nil {
+		t.Fatalf("enter while typing sent %#v, want nothing", got)
 	}
 	if m.searching || m.query != "glo" {
 		t.Fatalf("after enter: searching %v, query %q; want not typing, query \"glo\"", m.searching, m.query)
 	}
 
 	globex := apps[1]
-	_, intent := m.Update(runeKey('e'), apps)
-	if got, ok := intent.(enterApplicationExportMsg); !ok || got.application.ID != globex.ID {
-		t.Errorf("e on the kept matches: intent = %#v, want export for the Globex application (%d)", intent, globex.ID)
+	if got, ok := pressHome(t, m, runeKey('e')).(enterApplicationExportMsg); !ok || got.application.ID != globex.ID {
+		t.Errorf("e on the kept matches: sent %#v, want export for the Globex application (%d)", got, globex.ID)
 	}
-	_, intent = m.Update(runeKey('s'), apps)
-	if got, ok := intent.(message.Application); !ok || got.ID != globex.ID {
-		t.Errorf("s on the kept matches: intent = %#v, want status for the Globex application (%d)", intent, globex.ID)
+	if got, ok := pressHome(t, m, runeKey('s')).(message.Event[message.Nav[message.Application]]); !ok || got.Payload.Value.ID != globex.ID {
+		t.Errorf("s on the kept matches: sent %#v, want status for the Globex application (%d)", got, globex.ID)
 	}
-	_, intent = m.Update(runeKey('d'), apps)
-	if got, ok := intent.(enterApplicationDeleteMsg); !ok || got.application.ID != globex.ID {
-		t.Errorf("d on the kept matches: intent = %#v, want delete for the Globex application (%d)", intent, globex.ID)
+	if got, ok := pressHome(t, m, runeKey('d')).(enterApplicationDeleteMsg); !ok || got.application.ID != globex.ID {
+		t.Errorf("d on the kept matches: sent %#v, want delete for the Globex application (%d)", got, globex.ID)
 	}
-	_, intent = m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps)
-	if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != globex.ID {
-		t.Errorf("enter on the kept matches: intent = %#v, want detail for the Globex application (%d)", intent, globex.ID)
+	if got, ok := pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEnter}).(enterApplicationDetailMsg); !ok || got.application.ID != globex.ID {
+		t.Errorf("enter on the kept matches: sent %#v, want detail for the Globex application (%d)", got, globex.ID)
 	}
 }
 
 func TestActiveApplicationListModel_Search_SlashEditsKeptQuery(t *testing.T) {
 	t.Parallel()
 
-	apps := testSearchApplications()
-	m := newActiveApplicationListModel()
-	typeHomeKeys(t, &m, apps, "/er")
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps)
+	m := homeWith(t, testSearchApplications())
+	typeHomeKeys(t, m, "/er")
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	typeHomeKeys(t, &m, apps, "/s")
+	typeHomeKeys(t, m, "/s")
 	if !m.searching || m.query != "ers" {
 		t.Fatalf("after /, s on kept matches: searching %v, query %q; want typing, query \"ers\"", m.searching, m.query)
 	}
@@ -559,13 +595,12 @@ func TestActiveApplicationListModel_Search_SlashEditsKeptQuery(t *testing.T) {
 func TestActiveApplicationListModel_Search_EscClearsKeptMatchesAndKeepsHighlight(t *testing.T) {
 	t.Parallel()
 
-	apps := testSearchApplications()
-	m := newActiveApplicationListModel()
-	typeHomeKeys(t, &m, apps, "/glo")
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps)
+	m := homeWith(t, testSearchApplications())
+	typeHomeKeys(t, m, "/glo")
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	if _, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc}, apps); intent != nil {
-		t.Errorf("esc on kept matches: intent = %#v, want none", intent)
+	if got := pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEsc}); got != nil {
+		t.Errorf("esc on kept matches sent %#v, want nothing", got)
 	}
 
 	if m.searching || m.query != "" || m.cursor != 1 {
@@ -576,16 +611,15 @@ func TestActiveApplicationListModel_Search_EscClearsKeptMatchesAndKeepsHighlight
 func TestActiveApplicationListModel_View_KeptMatches(t *testing.T) {
 	t.Parallel()
 
-	apps := testSearchApplications()
-	m := newActiveApplicationListModel()
-	typeHomeKeys(t, &m, apps, "/glo")
-	if view := m.View(apps, nil, time.Time{}, 200, 20); !strings.Contains(view, "enter: keep results") {
+	m := homeAt(t, testSearchApplications(), 200, 20)
+	typeHomeKeys(t, m, "/glo")
+	if view := m.render(time.Time{}); !strings.Contains(view, "enter: keep results") {
 		t.Errorf("typing help doesn't say enter keeps the results:\n%s", view)
 	}
 
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter}, apps)
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	view := ansi.Strip(m.View(apps, nil, time.Time{}, 200, 20))
+	view := ansi.Strip(m.render(time.Time{}))
 	for _, want := range []string{"🔍 glo  1 of 3", "/: edit search", "esc: clear search", "s: status"} {
 		if !strings.Contains(view, want) {
 			t.Errorf("view doesn't show %q:\n%s", want, view)
@@ -612,13 +646,12 @@ func TestActiveApplicationListModel_Search_MatchesCompanyOrTitle(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			apps := testSearchApplications()
-			m := newActiveApplicationListModel()
+			m := homeWith(t, testSearchApplications())
 
-			typeHomeKeys(t, &m, apps, tt.keys)
-			intent := openHomeHighlighted(t, &m, apps)
-			if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != tt.want {
-				t.Fatalf("intent after %q, enter = %#v, want enterApplicationDetailMsg for application %d", tt.keys, intent, tt.want)
+			typeHomeKeys(t, m, tt.keys)
+			got := openHomeHighlighted(t, m)
+			if detail, ok := got.(enterApplicationDetailMsg); !ok || detail.application.ID != tt.want {
+				t.Fatalf("after %q, enter sent %#v, want enterApplicationDetailMsg for application %d", tt.keys, got, tt.want)
 			}
 		})
 	}
@@ -637,22 +670,21 @@ func TestActiveApplicationListModel_Search_ArrowsMoveThroughMatches(t *testing.T
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			apps := testSearchApplications()
-			m := newActiveApplicationListModel()
+			m := homeWith(t, testSearchApplications())
 
-			typeHomeKeys(t, &m, apps, "/er") // Engineer at Acme, Designer at Globex
-			m.Update(tt.down, apps)
-			m.Update(tt.down, apps) // past the last match: stays on it
-			intent := openHomeHighlighted(t, &m, apps)
-			if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != 20 {
-				t.Fatalf("intent after down, down, enter = %#v, want the Globex application (20)", intent)
+			typeHomeKeys(t, m, "/er") // Engineer at Acme, Designer at Globex
+			pressHome(t, m, tt.down)
+			pressHome(t, m, tt.down) // past the last match: stays on it
+			got := openHomeHighlighted(t, m)
+			if detail, ok := got.(enterApplicationDetailMsg); !ok || detail.application.ID != 20 {
+				t.Fatalf("down, down, enter sent %#v, want the Globex application (20)", got)
 			}
 
-			m.Update(runeKey('/'), apps)
-			m.Update(tt.up, apps)
-			intent = openHomeHighlighted(t, &m, apps)
-			if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != 10 {
-				t.Fatalf("intent after up, enter = %#v, want the Acme application (10)", intent)
+			pressHome(t, m, runeKey('/'))
+			pressHome(t, m, tt.up)
+			got = openHomeHighlighted(t, m)
+			if detail, ok := got.(enterApplicationDetailMsg); !ok || detail.application.ID != 10 {
+				t.Fatalf("up, enter sent %#v, want the Acme application (10)", got)
 			}
 		})
 	}
@@ -661,27 +693,25 @@ func TestActiveApplicationListModel_Search_ArrowsMoveThroughMatches(t *testing.T
 func TestActiveApplicationListModel_Search_BackspaceWidensMatches(t *testing.T) {
 	t.Parallel()
 
-	apps := testSearchApplications()
-	m := newActiveApplicationListModel()
+	m := homeWith(t, testSearchApplications())
 
-	typeHomeKeys(t, &m, apps, "/glx") // matches nothing
-	m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace}, apps)
-	intent := openHomeHighlighted(t, &m, apps)
-	if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != 20 {
-		t.Fatalf("intent after backspace, enter = %#v, want the Globex application (20)", intent)
+	typeHomeKeys(t, m, "/glx") // matches nothing
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyBackspace})
+	got := openHomeHighlighted(t, m)
+	if detail, ok := got.(enterApplicationDetailMsg); !ok || detail.application.ID != 20 {
+		t.Fatalf("backspace, enter sent %#v, want the Globex application (20)", got)
 	}
 }
 
 func TestActiveApplicationListModel_Search_BackspaceOnEmptyQueryCloses(t *testing.T) {
 	t.Parallel()
 
-	apps := testSearchApplications()
-	m := newActiveApplicationListModel()
+	m := homeWith(t, testSearchApplications())
 
-	typeHomeKeys(t, &m, apps, "/")
-	m.Update(tea.KeyPressMsg{Code: tea.KeyBackspace}, apps)
-	if cmd, _ := m.Update(runeKey('q'), apps); cmd == nil {
-		t.Fatal("cmd on 'q' after backspace on an empty query = nil, want tea.Quit (the prompt should be closed)")
+	typeHomeKeys(t, m, "/")
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyBackspace})
+	if got, ok := pressHome(t, m, runeKey('q')).(tea.QuitMsg); !ok {
+		t.Fatalf("'q' after backspace on an empty query sent %#v, want tea.QuitMsg (the prompt should be closed)", got)
 	}
 }
 
@@ -691,21 +721,18 @@ func TestActiveApplicationListModel_Search_BackspaceOnEmptyQueryCloses(t *testin
 func TestActiveApplicationListModel_Search_EscClearsAndKeepsHighlight(t *testing.T) {
 	t.Parallel()
 
-	apps := testSearchApplications()
-	m := newActiveApplicationListModel()
+	m := homeWith(t, testSearchApplications())
 
-	typeHomeKeys(t, &m, apps, "/glo")
-	if _, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc}, apps); intent != nil {
-		t.Fatalf("intent on esc in the prompt = %#v, want nil (esc closes the prompt, it doesn't leave the screen)", intent)
+	typeHomeKeys(t, m, "/glo")
+	if got := pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEsc}); got != nil {
+		t.Fatalf("esc in the prompt sent %#v, want nothing (esc closes the prompt, it doesn't leave the screen)", got)
 	}
-	_, intent := m.Update(runeKey('e'), apps)
-	if got, ok := intent.(enterApplicationExportMsg); !ok || got.application.ID != 20 {
-		t.Fatalf("intent on 'e' after esc = %#v, want export for the Globex application (20)", intent)
+	if got, ok := pressHome(t, m, runeKey('e')).(enterApplicationExportMsg); !ok || got.application.ID != 20 {
+		t.Fatalf("'e' after esc sent %#v, want export for the Globex application (20)", got)
 	}
-	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, apps)
-	_, intent = m.Update(runeKey('e'), apps)
-	if got, ok := intent.(enterApplicationExportMsg); !ok || got.application.ID != 30 {
-		t.Fatalf("intent on down, 'e' after esc = %#v, want export for the Initech application (30): the full list is back", intent)
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+	if got, ok := pressHome(t, m, runeKey('e')).(enterApplicationExportMsg); !ok || got.application.ID != 30 {
+		t.Fatalf("down, 'e' after esc sent %#v, want export for the Initech application (30): the full list is back", got)
 	}
 }
 
@@ -718,15 +745,15 @@ func TestActiveApplicationListModel_Search_CommandLettersAreTyped(t *testing.T) 
 			t.Parallel()
 			apps := testSearchApplications()
 			apps[1].CompanyName = "x" + string(r) + "y"
-			m := newActiveApplicationListModel()
+			m := homeWith(t, apps)
 
-			typeHomeKeys(t, &m, apps, "/x")
-			if cmd, intent := m.Update(runeKey(r), apps); cmd != nil || intent != nil {
-				t.Fatalf("cmd, intent on %q in the prompt = %v, %#v, want nil, nil", r, cmd, intent)
+			typeHomeKeys(t, m, "/x")
+			if got := pressHome(t, m, runeKey(r)); got != nil {
+				t.Fatalf("%q in the prompt sent %#v, want nothing", r, got)
 			}
-			intent := openHomeHighlighted(t, &m, apps)
-			if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != 20 {
-				t.Fatalf("intent on enter after typing %q = %#v, want the application at %q (20)", r, intent, apps[1].CompanyName)
+			got := openHomeHighlighted(t, m)
+			if detail, ok := got.(enterApplicationDetailMsg); !ok || detail.application.ID != 20 {
+				t.Fatalf("enter after typing %q sent %#v, want the application at %q (20)", r, got, apps[1].CompanyName)
 			}
 		})
 	}
@@ -748,10 +775,9 @@ func TestActiveApplicationListModel_View_Search(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			apps := testSearchApplications()
-			m := newActiveApplicationListModel()
-			typeHomeKeys(t, &m, apps, tt.keys)
-			got := m.View(apps, nil, time.Time{}, 100, 40)
+			m := homeWith(t, testSearchApplications())
+			typeHomeKeys(t, m, tt.keys)
+			got := m.render(time.Time{})
 			for _, want := range tt.want {
 				if !strings.Contains(got, want) {
 					t.Errorf("View missing %q:\n%s", want, got)
@@ -781,10 +807,9 @@ func TestActiveApplicationListModel_View_HelpMatchesMode(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			apps := testSearchApplications()
-			m := newActiveApplicationListModel()
-			typeHomeKeys(t, &m, apps, tt.keys)
-			got := m.View(apps, nil, time.Time{}, 100, 40)
+			m := homeWith(t, testSearchApplications())
+			typeHomeKeys(t, m, tt.keys)
+			got := m.render(time.Time{})
 			for _, want := range tt.want {
 				if !strings.Contains(got, want) {
 					t.Errorf("View missing %q:\n%s", want, got)
@@ -805,9 +830,9 @@ func TestActiveApplicationListModel_Search_ReloadKeepsTheHighlightedMatch(t *tes
 	t.Parallel()
 
 	apps := testSearchApplications()
-	m := newActiveApplicationListModel()
-	typeHomeKeys(t, &m, apps, "/s")                    // Designer at Globex, Staff Analyst at Initech
-	m.Update(tea.KeyPressMsg{Code: tea.KeyDown}, apps) // the Initech application (30)
+	m := homeWith(t, apps)
+	typeHomeKeys(t, m, "/s")                            // Designer at Globex, Staff Analyst at Initech
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyDown}) // the Initech application (30)
 
 	// The reload brings in an application ahead of it that doesn't match,
 	// so its place in the full list moves and its place among the matches
@@ -817,11 +842,11 @@ func TestActiveApplicationListModel_Search_ReloadKeepsTheHighlightedMatch(t *tes
 		Posting:     posting.Posting{ID: 4, IngestedFields: posting.IngestedFields{Title: "Engineer II"}},
 		CompanyName: "Hooli",
 	}}, apps...)
-	m.keepCursorOn(m.selected(apps), reloaded)
+	m.applicationsRead(applicationsReadOf(m, reloaded))
 
-	intent := openHomeHighlighted(t, &m, reloaded)
-	if got, ok := intent.(enterApplicationDetailMsg); !ok || got.application.ID != 30 {
-		t.Fatalf("intent on enter after the reload = %#v, want the Initech application (30)", intent)
+	got := openHomeHighlighted(t, m)
+	if detail, ok := got.(enterApplicationDetailMsg); !ok || detail.application.ID != 30 {
+		t.Fatalf("enter after the reload sent %#v, want the Initech application (30)", got)
 	}
 }
 
@@ -830,14 +855,116 @@ func TestActiveApplicationListModel_Search_ReloadKeepsTheHighlightedMatch(t *tes
 func TestActiveApplicationListModel_View_SearchLineDoesNotMoveTheTable(t *testing.T) {
 	t.Parallel()
 
-	apps := testSearchApplications()
-	m := newActiveApplicationListModel()
-	idle := m.View(apps, nil, time.Time{}, 100, 40)
+	m := homeWith(t, testSearchApplications())
+	idle := m.render(time.Time{})
 	if !strings.Contains(idle, "🔍") {
 		t.Errorf("idle view has no search line:\n%s", idle)
 	}
-	typeHomeKeys(t, &m, apps, "/")
-	if got, want := tableTop(t, m.View(apps, nil, time.Time{}, 100, 40)), tableTop(t, idle); got != want {
+	typeHomeKeys(t, m, "/")
+	if got, want := tableTop(t, m.render(time.Time{})), tableTop(t, idle); got != want {
 		t.Errorf("table starts on line %d with the search open, want %d (as when idle)", got, want)
+	}
+}
+
+func TestActiveApplicationListModel_Handlers_FailOnTheWrongMessage(t *testing.T) {
+	t.Parallel()
+	assertHandlersFailOnWrongMessage(t, newActiveApplicationListModel(nil, nil, nil))
+}
+
+func TestActiveApplicationListModel_Read_ShowsOnlyItsOwn(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name  string
+		from  func(m *activeApplicationListModel) message.ScreenInstance
+		shown bool
+	}{
+		{name: "its own", from: (*activeApplicationListModel).Instance, shown: true},
+		{name: "another screen's", from: func(*activeApplicationListModel) message.ScreenInstance { return 9 }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := homeWith(t, testActiveApplications())
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+			e := applicationsReadOf(m, testSearchApplications())
+			e.Meta.Source.Instance = tt.from(m)
+
+			r.Dispatch(e)
+
+			want := len(testActiveApplications())
+			if tt.shown {
+				want = len(testSearchApplications())
+			}
+			if got := len(m.apps); got != want {
+				t.Errorf("shows %d applications, want %d", got, want)
+			}
+		})
+	}
+}
+
+// storedHome is a home screen over a store with one application,
+// registered with a router, in focus or not.
+func storedHome(t *testing.T, focused bool) (*activeApplicationListModel, *model.MsgRouter) {
+	t.Helper()
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
+	m := newActiveApplicationListModel(s.Applications, s.Documents, documents.NewStore(t.TempDir()))
+	r := model.NewMsgRouter()
+	if err := r.Register(m); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	if focused {
+		r.Dispatch(focusOn(m.Instance()))
+	}
+	return m, r
+}
+
+// applicationsReadFrom is whether msgs hold m's read of its applications.
+func applicationsReadFrom(t *testing.T, m *activeApplicationListModel, msgs []tea.Msg) bool {
+	t.Helper()
+	read := false
+	for _, msg := range msgs {
+		if e, ok := msg.(message.Event[message.Read[message.ActiveApplications]]); ok {
+			assertEventFrom(t, e.Meta, message.Source{Instance: m.Instance()})
+			read = true
+		}
+	}
+	return read
+}
+
+func TestActiveApplicationListModel_ReadsItsApplicationsAgain(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		focused bool
+		msg     func(m *activeApplicationListModel) tea.Msg
+		read    bool
+	}{
+		{name: "on coming into focus", msg: func(m *activeApplicationListModel) tea.Msg { return focusOn(m.Instance()) }, read: true},
+		{name: "not on staying in focus", focused: true, msg: func(m *activeApplicationListModel) tea.Msg { return focusOn(m.Instance()) }},
+		{name: "not on another screen's focus", msg: func(*activeApplicationListModel) tea.Msg { return focusOn(9) }},
+		{name: "on a load request", msg: func(*activeApplicationListModel) tea.Msg {
+			return message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.ActiveApplications]{})
+		}, read: true},
+		{name: "on an application changed elsewhere, out of focus", msg: func(*activeApplicationListModel) tea.Msg {
+			return message.Updated(message.Source{Instance: 9}, 1, time.Now().UTC(),
+				message.Application{ID: 1, Status: message.ApplicationStarted}, message.Application{ID: 1, Status: message.ApplicationRejected})
+		}, read: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, r := storedHome(t, tt.focused)
+
+			if got := applicationsReadFrom(t, m, runCmd(t, r.Dispatch(tt.msg(m)))); got != tt.read {
+				t.Errorf("read = %t, want %t", got, tt.read)
+			}
+		})
 	}
 }

@@ -1187,8 +1187,8 @@ func TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications(t
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
-	if len(app.activeApplications) != 0 {
-		t.Fatalf("app.activeApplications before starting one = %+v, want empty", app.activeApplications)
+	if len(app.activeApplicationList.apps) != 0 {
+		t.Fatalf("app.activeApplicationList.apps before starting one = %+v, want empty", app.activeApplicationList.apps)
 	}
 	app = openPostingList(t, app)
 	app = openPostingDetail(t, app)
@@ -1203,8 +1203,8 @@ func TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications(t
 	}
 	app = applyCmd(t, app, createdCmd)
 
-	if len(app.activeApplications) != 1 {
-		t.Fatalf("app.activeApplications after starting one = %+v, want 1", app.activeApplications)
+	if len(app.activeApplicationList.apps) != 1 {
+		t.Fatalf("app.activeApplicationList.apps after starting one = %+v, want 1", app.activeApplicationList.apps)
 	}
 }
 
@@ -1433,11 +1433,11 @@ func TestApp_StartsOnActiveApplicationsScreen(t *testing.T) {
 	if app.currentScreen != screenActiveApplications {
 		t.Fatalf("initial screen = %v, want screenActiveApplications", app.currentScreen)
 	}
-	if len(app.activeApplications) != 1 {
-		t.Fatalf("app.activeApplications = %+v, want 1 (loaded on Init)", app.activeApplications)
+	if len(app.activeApplicationList.apps) != 1 {
+		t.Fatalf("app.activeApplicationList.apps = %+v, want 1 (loaded on Init)", app.activeApplicationList.apps)
 	}
-	if app.activeApplications[0].CompanyName != "Acme" {
-		t.Fatalf("activeApplications[0].CompanyName = %q, want %q", app.activeApplications[0].CompanyName, "Acme")
+	if app.activeApplicationList.apps[0].CompanyName != "Acme" {
+		t.Fatalf("activeApplications[0].CompanyName = %q, want %q", app.activeApplicationList.apps[0].CompanyName, "Acme")
 	}
 }
 
@@ -1472,6 +1472,65 @@ func TestApp_ActiveApplications_StatusChange_ReturnsToActiveApplications(t *test
 	}
 }
 
+// Submitting moves an application below the started ones; the cursor
+// moves with it.
+func TestApp_ActiveApplications_StatusChange_KeepsTheCursorOnItsRow(t *testing.T) {
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	for _, title := range []string{"Engineer", "Designer", "Analyst"} {
+		mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, title, title).ID)
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyDown})
+	chosen := app.activeApplicationList.apps[1]
+
+	app = sendKeyAndApply(t, app, runeKey('s'))
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyDown}) // submitted
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if app.currentScreen != screenActiveApplications {
+		t.Fatalf("screen after saving status = %v, want the home list", app.currentScreen)
+	}
+	if got := app.activeApplicationList.apps[len(app.activeApplicationList.apps)-1].ID; got != chosen.ID {
+		t.Fatalf("last row is application %d, want %d, submitted and below the started ones", got, chosen.ID)
+	}
+
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if app.currentScreen != screenApplicationDetail || app.applicationDetail.application.ID != chosen.ID {
+		t.Errorf("enter opened %v on application %d, want detail on %d (%s)", app.currentScreen, app.applicationDetail.application.ID, chosen.ID, chosen.Posting.Title)
+	}
+}
+
+// A key's request can arrive after a tab has left the home list.
+func TestApp_ActiveApplications_RequestAfterLeaving_StaysWhereTheUserWent(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		key  tea.KeyPressMsg
+	}{
+		{"detail", tea.KeyPressMsg{Code: tea.KeyEnter}},
+		{"export", runeKey('e')},
+		{"delete", runeKey('d')},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+			mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
+			app := newTestApp(t, s, newTestSyncer(s, nil))
+
+			app, request := sendKey(app, tt.key)
+			app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
+			app = applyCmd(t, app, request)
+
+			if app.currentScreen != screenCompanyList {
+				t.Errorf("screen = %v, want the company list the user tabbed to", app.currentScreen)
+			}
+		})
+	}
+}
+
 // TestApp_ActiveApplications_StatusChangeToRejected_RemovesFromList
 // verifies a status change reloads the active
 // list after a status change, since moving to a terminal status
@@ -1496,8 +1555,8 @@ func TestApp_ActiveApplications_StatusChangeToRejected_RemovesFromList(t *testin
 	}
 	app = applyCmd(t, app, cmd)
 
-	if len(app.activeApplications) != 0 {
-		t.Fatalf("app.activeApplications after rejecting = %+v, want empty", app.activeApplications)
+	if len(app.activeApplicationList.apps) != 0 {
+		t.Fatalf("app.activeApplicationList.apps after rejecting = %+v, want empty", app.activeApplicationList.apps)
 	}
 }
 
@@ -2194,8 +2253,8 @@ func TestApp_LoadSucceedsAfterAnotherFails_KeepsTheError(t *testing.T) {
 		failed  tea.Msg
 		succeed tea.Msg
 	}{
-		{"applications fail, companies succeed", activeApplicationsLoadedMsg{err: loadErr}, companiesReadOf(nil, nil)},
-		{"companies fail, applications succeed", companiesLoadFailed(loadErr), activeApplicationsLoadedMsg{}},
+		{"applications fail, companies succeed", message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(loadErr)), companiesReadOf(nil, nil)},
+		{"companies fail, applications succeed", companiesLoadFailed(loadErr), message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Read[message.ActiveApplications]{})},
 		{"companies fail, postings succeed", companiesLoadFailed(loadErr), message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Read[message.PostingList]{})},
 		{"companies fail, posting and application succeed", companiesLoadFailed(loadErr), message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Read[message.PostingApplication]{})},
 		{"companies fail, document reviews succeed", companiesLoadFailed(loadErr), documentReviewsLoadedMsg{}},
@@ -2220,7 +2279,7 @@ func TestApp_ApplicationDetailReloadSucceedsAfterAnotherLoadFails_KeepsTheError(
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	application := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if app.currentScreen != screenApplicationDetail {
 		t.Fatalf("screen after enter = %v, want application detail", app.currentScreen)
 	}
@@ -2403,7 +2462,7 @@ func TestApp_ActiveApplications_Enter_EntersApplicationDetail(t *testing.T) {
 	if app.currentScreen != screenActiveApplications {
 		t.Fatalf("initial screen = %v, want screenActiveApplications", app.currentScreen)
 	}
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if app.currentScreen != screenApplicationDetail {
 		t.Fatalf("screen after enter = %v, want screenApplicationDetail", app.currentScreen)
 	}
@@ -2419,7 +2478,7 @@ func TestApp_ApplicationDetail_P_EntersPostingDetail(t *testing.T) {
 	mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
 	// Application detail has the posting, so the detail opens on it before
 	// its own read comes back (#86 follow-up).
 	app, _ = sendKey(app, runeKey('p'))
@@ -2442,8 +2501,8 @@ func TestApp_PostingDetailFromApplicationDetail_Esc_ReturnsToApplicationDetail(t
 	mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
-	app = sendKeyAndApply(t, app, runeKey('p'))                // application detail -> posting detail
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
+	app = sendKeyAndApply(t, app, runeKey('p'))                        // application detail -> posting detail
 	if app.currentScreen != screenPostingDetail {
 		t.Fatalf("screen after 'p' = %v, want screenPostingDetail", app.currentScreen)
 	}
@@ -2463,8 +2522,8 @@ func TestApp_StatusChangeFromApplicationDetailFastPath_PreservesPostingFields(t 
 	mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
-	app, _ = sendKey(app, runeKey('p'))                        // application detail -> posting detail (fast path)
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
+	app, _ = sendKey(app, runeKey('p'))                                // application detail -> posting detail (fast path)
 	if openDetail(t, app).posting.Title != "Engineer" {
 		t.Fatalf("postingDetail.posting.Title before status change = %q, want %q", openDetail(t, app).posting.Title, "Engineer")
 	}
@@ -2500,7 +2559,7 @@ func TestApp_ApplicationDetail_ShiftR_EntersReviewFormDirectly(t *testing.T) {
 		t.Fatalf("WriteFile resume: %v", err)
 	}
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
 	app, _ = sendKey(app, runeKey('R'))
 	if app.currentScreen != screenDocumentReviewForm {
 		t.Fatalf("screen after 'R' = %v, want screenDocumentReviewForm (no picker step needed -- this screen already knows which document)", app.currentScreen)
@@ -2522,7 +2581,7 @@ func TestApp_ApplicationDetail_CancelDocumentReview_ReturnsToApplicationDetail(t
 		t.Fatalf("WriteFile resume: %v", err)
 	}
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app, _ = sendKey(app, runeKey('R'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if app.currentScreen != screenApplicationDetail {
@@ -2551,7 +2610,7 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately(t
 		t.Fatalf("WriteFile resume: %v", err)
 	}
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app, _ = sendKey(app, runeKey('R'))
 	if app.currentScreen != screenDocumentReviewForm {
 		t.Fatalf("screen after 'R' = %v, want screenDocumentReviewForm", app.currentScreen)
@@ -2577,10 +2636,7 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately(t
 // TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately
 // above), but nothing asserted that backing out to
 // screenActiveApplications afterward shows the compact glyph column
-// (reviewGlyphSummary, e.g. "R:✓") reflecting the same change --
-// which documentReviewsLoadedMsg now patches into that application's
-// row, with no test to catch a regression if that were ever
-// dropped.
+// (reviewGlyphSummary, e.g. "R:✓") reflecting the same change.
 func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplicationsGlyph(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
@@ -2601,7 +2657,7 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplications
 		t.Fatal("active-applications view already shows R:✓ before any review was submitted")
 	}
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app, _ = sendKey(app, runeKey('R'))
 	if app.currentScreen != screenDocumentReviewForm {
 		t.Fatalf("screen after 'R' = %v, want screenDocumentReviewForm", app.currentScreen)
@@ -2612,7 +2668,7 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplications
 	}
 	app = applyCmd(t, app, cmd)
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if app.currentScreen != screenActiveApplications {
 		t.Fatalf("screen after esc = %v, want screenActiveApplications", app.currentScreen)
 	}
@@ -2622,14 +2678,10 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplications
 	}
 }
 
-// TestApp_SubmitDocumentReviewFromApplicationDetail_PatchesActiveApplicationRow
-// covers #91: the reviewed application's row on the home screen is
-// patched from the reviews application detail already reloads, rather
-// than by reloading every active application (which queries this
-// application's reviews a second time). The row's Next column depends on
-// those reviews too, so it has to move on with the glyph: with the cover
-// letter already passed, passing the resume turns "review" into "export".
-func TestApp_SubmitDocumentReviewFromApplicationDetail_PatchesActiveApplicationRow(t *testing.T) {
+// The row's Next column depends on the reviews too, so it moves on with
+// the glyph: with the cover letter already passed, passing the resume
+// turns "review" into "export".
+func TestApp_SubmitDocumentReviewFromApplicationDetail_MovesTheHomeRowsNextStepOn(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -2654,21 +2706,15 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_PatchesActiveApplicationR
 		t.Fatalf("active-applications view before the resume review doesn't show next step \"review\":\n%s", viewText(app))
 	}
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app, _ = sendKey(app, runeKey('R'))
 	app, save := sendKey(app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}) // pass
 	if save == nil {
 		t.Fatal("Update on ctrl+s returned nil Cmd, want a command that saves the review")
 	}
-	app, reload := sendKey(app, save())
-	for _, msg := range runCmd(t, reload) {
-		if _, isFullReload := msg.(activeApplicationsLoadedMsg); isFullReload {
-			t.Error("submitting a review from application detail reloaded every active application, want only this application's reviews")
-		}
-		app, _ = sendKey(app, msg)
-	}
+	app = sendKeyAndApply(t, app, save())
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if app.currentScreen != screenActiveApplications {
 		t.Fatalf("screen after esc = %v, want screenActiveApplications", app.currentScreen)
 	}
@@ -2720,8 +2766,8 @@ func TestApp_SubmitDocumentReviewFromPostingDetailViaApplicationDetailFastPath_K
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
-	app = sendKeyAndApply(t, app, runeKey('p'))                // application detail -> posting detail (fast path)
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
+	app = sendKeyAndApply(t, app, runeKey('p'))                        // application detail -> posting detail (fast path)
 	if app.currentScreen != screenPostingDetail {
 		t.Fatalf("screen after 'p' = %v, want screenPostingDetail", app.currentScreen)
 	}
@@ -2782,7 +2828,7 @@ func TestApp_ApplicationDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T
 	app = applyCmd(t, app, app.Init())
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if app.currentScreen != screenApplicationDetail {
 		t.Fatalf("screen after enter = %v, want screenApplicationDetail", app.currentScreen)
 	}
@@ -3450,7 +3496,7 @@ func exportTestApp(t *testing.T) *App {
 func TestApp_ActiveApplications_E_EntersExportScreenPrefilledWithDefaultDir(t *testing.T) {
 	app := exportTestApp(t)
 
-	app, _ = sendKey(app, runeKey('e'))
+	app = sendKeyAndApply(t, app, runeKey('e'))
 
 	if app.currentScreen != screenApplicationExport {
 		t.Fatalf("screen after 'e' = %v, want screenApplicationExport", app.currentScreen)
@@ -3463,7 +3509,7 @@ func TestApp_ActiveApplications_E_EntersExportScreenPrefilledWithDefaultDir(t *t
 func TestApp_ExportScreen_Esc_ReturnsToActiveApplications(t *testing.T) {
 	app := exportTestApp(t)
 
-	app, _ = sendKey(app, runeKey('e'))
+	app = sendKeyAndApply(t, app, runeKey('e'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
 	if app.currentScreen != screenActiveApplications {
@@ -3475,7 +3521,7 @@ func TestApp_Export_ReportsWhereFilesWentAndRemembersTheDirectory(t *testing.T) 
 	app := exportTestApp(t)
 	dest := t.TempDir()
 
-	app, _ = sendKey(app, runeKey('e'))
+	app = sendKeyAndApply(t, app, runeKey('e'))
 	app.applicationExport.textinput.SetValue(dest)
 	app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = applyCmd(t, app, cmd)
@@ -3508,7 +3554,7 @@ func TestApp_Export_Failure_SurfacesErrorAndKeepsRememberedDir(t *testing.T) {
 		t.Fatalf("WriteFile: %v", err)
 	}
 
-	app, _ = sendKey(app, runeKey('e'))
+	app = sendKeyAndApply(t, app, runeKey('e'))
 	app.applicationExport.textinput.SetValue(filepath.Join(blocker, "sub"))
 	app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = applyCmd(t, app, cmd)
@@ -3549,8 +3595,8 @@ func TestApp_PostingDetailViaApplicationDetail_HelpOmitsPostingNavigation(t *tes
 	mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active applications -> application detail
-	app, cmd := sendKey(app, runeKey('p'))                     // fast path -> posting detail
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
+	app, cmd := sendKey(app, runeKey('p'))                             // fast path -> posting detail
 	app = applyCmd(t, app, cmd)
 
 	if app.currentScreen != screenPostingDetail {
@@ -3596,9 +3642,9 @@ func TestApp_StatusSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 	mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
-	app, _ = sendKey(app, runeKey('p'))                        // application detail -> posting detail
-	app = sendKeyAndApply(t, app, runeKey('s'))                // posting detail -> status select
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
+	app, _ = sendKey(app, runeKey('p'))                                // application detail -> posting detail
+	app = sendKeyAndApply(t, app, runeKey('s'))                        // posting detail -> status select
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyDown})
 	app, saveCmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if saveCmd == nil {
@@ -3626,9 +3672,9 @@ func TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.
 	mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
-	app, _ = sendKey(app, runeKey('p'))                        // application detail -> posting detail
-	app = sendKeyAndApply(t, app, runeKey('s'))                // posting detail -> status select
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
+	app, _ = sendKey(app, runeKey('p'))                                // application detail -> posting detail
+	app = sendKeyAndApply(t, app, runeKey('s'))                        // posting detail -> status select
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyDown})
 	app, saveCmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if saveCmd == nil {
@@ -3669,10 +3715,10 @@ func TestApp_ReviewSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
-	app, _ = sendKey(app, runeKey('p'))                        // application detail -> posting detail
-	app = sendKeyAndApply(t, app, runeKey('r'))                // posting detail -> document review select
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // select "Cover Letter" (cursor 0)
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
+	app, _ = sendKey(app, runeKey('p'))                                // application detail -> posting detail
+	app = sendKeyAndApply(t, app, runeKey('r'))                        // posting detail -> document review select
+	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})         // select "Cover Letter" (cursor 0)
 	if app.currentScreen != screenDocumentReviewForm {
 		t.Fatalf("screen after selecting cover letter = %v, want screenDocumentReviewForm", app.currentScreen)
 	}
@@ -3708,7 +3754,7 @@ func TestApp_ReviewSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.
 		t.Fatalf("WriteFile cover letter: %v", err)
 	}
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})                 // active-applications -> application detail
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})         // active-applications -> application detail
 	app, _ = sendKey(app, runeKey('p'))                                        // application detail -> posting detail
 	app = sendKeyAndApply(t, app, runeKey('r'))                                // posting detail -> document review select
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})                 // select "Cover Letter" (cursor 0)
@@ -3757,8 +3803,8 @@ func TestApp_NestedBackOut_RetracesPath(t *testing.T) {
 			mustCreateApplication(t, s, posting.ID)
 			app := newTestApp(t, s, newTestSyncer(s, nil))
 
-			app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
-			app, _ = sendKey(app, runeKey('p'))                        // application detail -> posting detail
+			app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
+			app, _ = sendKey(app, runeKey('p'))                                // application detail -> posting detail
 			app = sendKeyAndApply(t, app, runeKey(tt.key))
 			if app.currentScreen != tt.transient {
 				t.Fatalf("screen after %q = %v, want %v", tt.key, app.currentScreen, tt.transient)
@@ -3974,7 +4020,7 @@ func TestApp_ApplicationDetail_EnterApplicationFormByHand(t *testing.T) {
 	mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 30})
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if app.currentScreen != screenApplicationDetail {
 		t.Fatalf("screen after enter = %v, want screenApplicationDetail", app.currentScreen)
 	}
@@ -4177,7 +4223,7 @@ func TestApp_ApplicationFormSaveFails_UnblocksEditing(t *testing.T) {
 	mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 30})
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app, loadCmd := sendIntentKey(t, app, runeKey('f'))
 	app = applyCmd(t, app, loadCmd)
 	app, _ = sendKey(app, runeKey([]rune("Why us? *")...))
@@ -4203,7 +4249,7 @@ func TestApp_ApplicationFormEscWithEdits_DrawsDiscardBox(t *testing.T) {
 	mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 30})
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app, loadCmd := sendIntentKey(t, app, runeKey('f'))
 	app = applyCmd(t, app, loadCmd)
 	app, _ = sendKey(app, runeKey([]rune("Why us? *")...))

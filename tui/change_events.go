@@ -131,7 +131,7 @@ func (a *App) reloadFor(events []change.Event) tea.Cmd {
 	switch a.currentScreen {
 	case screenActiveApplications:
 		if touches(events, "applications", "postings", "companies", "document_writes", "document_reviews", "document_exports") {
-			return loadActiveApplications(a.applicationService, a.documentService, a.documents)
+			return requestLoad[message.ActiveApplications](message.Source{Instance: a.instance})
 		}
 	case screenApplicationDetail:
 		view := a.applicationDetail.application
@@ -253,7 +253,7 @@ func (a *App) handleApplicationDetailReloaded(msg applicationDetailReloadedMsg) 
 	if msg.deleted {
 		a.currentScreen = screenActiveApplications
 		a.status = "The application you were viewing was deleted elsewhere"
-		return loadActiveApplications(a.applicationService, a.documentService, a.documents)
+		return nil
 	}
 	if msg.err == nil {
 		a.applicationDetail.application.Application = msg.application
