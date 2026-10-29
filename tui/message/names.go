@@ -176,16 +176,20 @@ const (
 	ScreenCompanyPostings
 	ScreenFilterSelect
 	ScreenPostingDetail
+	ScreenApplicationStatus
+	ScreenApplicationNotes
 )
 
 var screenNames = [...]string{
-	ScreenNone:            "none",
-	ScreenCompanyForm:     "company_form",
-	ScreenCompanyEdit:     "company_edit",
-	ScreenCompanyDelete:   "company_delete",
-	ScreenCompanyPostings: "company_postings",
-	ScreenFilterSelect:    "filter_select",
-	ScreenPostingDetail:   "posting_detail",
+	ScreenNone:              "none",
+	ScreenCompanyForm:       "company_form",
+	ScreenCompanyEdit:       "company_edit",
+	ScreenCompanyDelete:     "company_delete",
+	ScreenCompanyPostings:   "company_postings",
+	ScreenFilterSelect:      "filter_select",
+	ScreenPostingDetail:     "posting_detail",
+	ScreenApplicationStatus: "application_status",
+	ScreenApplicationNotes:  "application_notes",
 }
 
 func (s Screen) String() string                { return nameOf(s, screenNames[:]) }

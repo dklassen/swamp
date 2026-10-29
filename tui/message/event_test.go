@@ -246,6 +246,10 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 				Application: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted, CreatedAt: at, UpdatedAt: at},
 				Siblings:    []int64{6, 5, 7},
 			}}))},
+		{name: "application status nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.Application]{Op: message.NavPush, Screen: message.ScreenApplicationStatus,
+			Value: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationInterviewing, CreatedAt: at, UpdatedAt: at}}))},
+		{name: "application notes nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.Application]{Op: message.NavPush, Screen: message.ScreenApplicationNotes,
+			Value: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted, Notes: "recruiter call Tuesday", CreatedAt: at, UpdatedAt: at}}))},
 		{name: "posting application read", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpNone, at, message.Read[message.PostingApplication]{Value: message.PostingApplication{
 			Posting: message.Posting{ID: 5, CompanyID: 3, Title: "Engineer", ListingStatus: message.ListingClosed},
 		}}))},
