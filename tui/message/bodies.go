@@ -240,3 +240,57 @@ type PostingScores struct {
 }
 
 func (PostingScores) Type() Type { return TypePostingScores }
+
+// Listing is one posting as a search lists it: with its company's name,
+// its markup and its current score, Score 0 when it has none.
+type Listing struct {
+	ID             int64         `json:"id"`
+	CompanyName    string        `json:"company_name"`
+	Title          string        `json:"title"`
+	Department     string        `json:"department"`
+	Location       string        `json:"location"`
+	WorkplaceType  string        `json:"workplace_type"`
+	JobURL         string        `json:"job_url"`
+	ApplicationURL string        `json:"application_url"`
+	ListingStatus  ListingStatus `json:"listing_status"`
+	FirstSeenAt    time.Time     `json:"first_seen_at"`
+	Interested     bool          `json:"interested"`
+	Archived       bool          `json:"archived"`
+	Score          int           `json:"score,omitzero"`
+	// ScoreStale is whether the posting's content has changed since Score.
+	ScoreStale bool `json:"score_stale,omitzero"`
+}
+
+// PostingSearch is a page of every company's open postings that its
+// filters let through, and the search it's a page of: Query, in Order,
+// after the row AfterID (and AfterScore, by fit), Limit rows at most.
+// Total is how many match in all, and WithoutQuery how many would with no
+// query.
+type PostingSearch struct {
+	Query        string       `json:"query,omitempty"`
+	Order        PostingOrder `json:"order"`
+	AfterID      int64        `json:"after_id,omitzero"`
+	AfterScore   int          `json:"after_score,omitzero"`
+	Limit        int          `json:"limit"`
+	Listings     []Listing    `json:"listings"`
+	HasMore      bool         `json:"has_more"`
+	Total        int          `json:"total"`
+	WithoutQuery int          `json:"without_query"`
+}
+
+func (PostingSearch) Type() Type { return TypePostingSearch }
+
+// SearchDebounce is the pause after typing Query into a search.
+type SearchDebounce struct {
+	Query string `json:"query"`
+}
+
+func (SearchDebounce) Type() Type { return TypeSearchDebounce }
+
+// OpenBrowser is a URL opened in the browser. The event's Subject is what
+// the URL is of.
+type OpenBrowser struct {
+	URL string `json:"url"`
+}
+
+func (OpenBrowser) Type() Type { return TypeOpenBrowser }

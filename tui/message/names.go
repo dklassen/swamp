@@ -68,6 +68,9 @@ const (
 	TypeReview
 	TypeReviewList
 	TypePostingScores
+	TypePostingSearch
+	TypeSearchDebounce
+	TypeOpenBrowser
 )
 
 var typeNames = [...]string{
@@ -95,6 +98,9 @@ var typeNames = [...]string{
 	TypeReview:             "review",
 	TypeReviewList:         "review_list",
 	TypePostingScores:      "posting_scores",
+	TypePostingSearch:      "posting_search",
+	TypeSearchDebounce:     "search_debounce",
+	TypeOpenBrowser:        "open_browser",
 }
 
 func (t Type) String() string                { return nameOf(t, typeNames[:]) }
@@ -290,6 +296,26 @@ func (o ReviewOutcome) String() string               { return nameOf(o, reviewOu
 func (o ReviewOutcome) MarshalText() ([]byte, error) { return marshalName(o, reviewOutcomeNames[:]) }
 func (o *ReviewOutcome) UnmarshalText(b []byte) error {
 	return unmarshalName(o, b, reviewOutcomeNames[:])
+}
+
+// PostingOrder is the order a posting search lists in.
+type PostingOrder int
+
+const (
+	_ PostingOrder = iota
+	OrderNewest
+	OrderBestFit
+)
+
+var postingOrderNames = [...]string{
+	OrderNewest:  "newest",
+	OrderBestFit: "best_fit",
+}
+
+func (o PostingOrder) String() string               { return nameOf(o, postingOrderNames[:]) }
+func (o PostingOrder) MarshalText() ([]byte, error) { return marshalName(o, postingOrderNames[:]) }
+func (o *PostingOrder) UnmarshalText(b []byte) error {
+	return unmarshalName(o, b, postingOrderNames[:])
 }
 
 // An empty entry is a value with no name, such as the zero Kind.
