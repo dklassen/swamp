@@ -2007,7 +2007,7 @@ func TestApp_PostingDetail_FitsTheTerminalUnderTheBanner(t *testing.T) {
 		msg  tea.Msg
 	}{
 		{name: "status", msg: nil},
-		{name: "error", msg: browserOpenedMsg{err: errors.New("could not open browser")}},
+		{name: "error", msg: browserOpened(message.Source{}, message.Subject{Type: message.TypePosting, ID: 1}, "https://example.com", errors.New("could not open browser"))},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
@@ -16,6 +17,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -115,7 +117,7 @@ func TestAllPostings_PagesForwardAndBack(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
 	app = openAllPostings(t, app)
-	size := app.allPostings.size
+	size := app.allPostings.page.Limit
 	if size < 1 || size >= 7 {
 		t.Fatalf("page size = %d at height 13, want fewer than seven so they take several pages", size)
 	}
@@ -172,12 +174,12 @@ func TestAllPostings_ResizingReadsThePageAtTheNewSize(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
 	app = openAllPostings(t, app)
-	tall := app.allPostings.size
+	tall := app.allPostings.page.Limit
 
 	app = sendKeyAndApply(t, app, tea.WindowSizeMsg{Width: 120, Height: 13})
 
-	if short := app.allPostings.pageSize(app.screenRows()); short >= tall || app.allPostings.size != short || len(app.allPostings.page.Listings) != short {
-		t.Errorf("after shrinking: page read at %d rows with %d listings, want %d (it was %d)", app.allPostings.size, len(app.allPostings.page.Listings), short, tall)
+	if short := app.allPostings.pageSize(app.screenRows()); short >= tall || app.allPostings.page.Limit != short || len(app.allPostings.page.Listings) != short {
+		t.Errorf("after shrinking: page read at %d rows with %d listings, want %d (it was %d)", app.allPostings.page.Limit, len(app.allPostings.page.Listings), short, tall)
 	}
 }
 
@@ -333,7 +335,7 @@ func TestAllPostings_OOpensTheJobURL(t *testing.T) {
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	var opened []string
-	app.openURL = func(url string) tea.Cmd {
+	app.allPostings.openURL = func(_ message.Source, _ message.Subject, url string) tea.Cmd {
 		opened = append(opened, url)
 		return nil
 	}
@@ -496,7 +498,8 @@ func searchAllPostings(t *testing.T, app *App, query string) *App {
 	for _, r := range query {
 		app, _ = sendKey(app, runeKey(r))
 	}
-	return sendKeyAndApply(t, app, allPostingsSearchMsg{typed: app.allPostings.typed})
+	return sendKeyAndApply(t, app, message.New(message.Source{Instance: app.allPostings.Instance()}, message.Subject{}, message.OpNone, time.Now().UTC(),
+		message.Signal[message.SearchDebounce]{Value: message.SearchDebounce{Query: app.allPostings.query}}))
 }
 
 func TestAllPostings_EscClearsTheSearch(t *testing.T) {
@@ -641,7 +644,7 @@ func TestAllPostings_PagesThroughSearchResults(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
 	app = openAllPostings(t, app)
 	app = searchAllPostings(t, app, "platform")
-	size := app.allPostings.size
+	size := app.allPostings.page.Limit
 	if size >= 7 {
 		t.Fatalf("page size %d, want fewer than the 7 matches", size)
 	}
@@ -830,5 +833,274 @@ func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
 
 	if view := ansi.Strip(viewText(app)); !strings.Contains(view, "5 · after the rewrite") {
 		t.Errorf("detail doesn't show the score the agent just recorded:\n%s", view)
+	}
+}
+
+// A posting archived while its detail is up over all postings is gone
+// from the page by the time the user comes back to it.
+func TestAllPostings_ArchivedWhileDetailIsUp_LeavesThePageUnderIt(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	for i := 1; i <= 3; i++ {
+		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+	}
+	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
+	app = openAllPostings(t, app)
+	shown := app.allPostings.page.Listings[0]
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	app = applyCmd(t, app, toggleArchived(s.Postings, message.Source{}, shown.ID, false))
+
+	if app.currentScreen != screenPostingDetail {
+		t.Fatalf("screen = %v, want posting detail still up", app.currentScreen)
+	}
+	if diff := cmp.Diff([]string{"Role 2", "Role 1"}, pageTitles(app)); diff != "" {
+		t.Errorf("all postings under the detail (-want +got):\n%s", diff)
+	}
+}
+
+func testListings() []message.Listing {
+	return []message.Listing{
+		{ID: 2, CompanyName: "Globex", Title: "Designer", ListingStatus: message.ListingOpen},
+		{ID: 1, CompanyName: "Acme", Title: "Engineer", Department: "Platform", Location: "Berlin", WorkplaceType: "Hybrid",
+			JobURL: "https://jobs.example.com/acme/1", ApplicationURL: "https://jobs.example.com/acme/1/apply", ListingStatus: message.ListingOpen, Interested: true},
+	}
+}
+
+// allPostingsWith is an all-postings view, 40 rows tall, showing page 1 of
+// a search with no query that found listings.
+func allPostingsWith(t *testing.T, listings []message.Listing) *allPostingsModel {
+	t.Helper()
+	m := newAllPostingsModel(nil)
+	m.resize(message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Signal[message.ContentSize]{Value: message.ContentSize{Width: 120, Rows: 40}}))
+	m.searchRead(searchReadOf(m, message.PostingSearch{Order: message.OrderNewest, Limit: m.pageSize(40), Listings: listings, Total: len(listings), WithoutQuery: len(listings)}))
+	return m
+}
+
+func searchReadOf(m *allPostingsModel, page message.PostingSearch) message.Event[message.Read[message.PostingSearch]] {
+	return message.New(message.Source{Instance: m.Instance()}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Read[message.PostingSearch]{Value: page})
+}
+
+// routedAllPostings is allPostingsWith(testListings()) registered with a
+// router, so events reach it only through its routes' filters.
+func routedAllPostings(t *testing.T) (*allPostingsModel, *model.MsgRouter) {
+	t.Helper()
+	m := allPostingsWith(t, testListings())
+	r := model.NewMsgRouter()
+	if err := r.Register(m); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	return m, r
+}
+
+func TestAllPostingsModel_SearchRead_ShowsOnlyThePageOnScreen(t *testing.T) {
+	t.Parallel()
+
+	page := func(edit func(*message.PostingSearch)) message.PostingSearch {
+		p := message.PostingSearch{Order: message.OrderNewest, Limit: 10, Listings: []message.Listing{{ID: 9, Title: "Late"}}, Total: 1}
+		edit(&p)
+		return p
+	}
+	tests := []struct {
+		name  string
+		from  func(m *allPostingsModel) message.ScreenInstance
+		read  message.PostingSearch
+		shown bool
+	}{
+		{name: "its own read of the page on screen", read: page(func(*message.PostingSearch) {}), shown: true},
+		{name: "a late one for an earlier query", read: page(func(p *message.PostingSearch) { p.Query = "plat" })},
+		{name: "a late one in the other order", read: page(func(p *message.PostingSearch) { p.Order = message.OrderBestFit })},
+		{name: "a late one for another page", read: page(func(p *message.PostingSearch) { p.AfterID = 40 })},
+		{name: "another screen's", read: page(func(*message.PostingSearch) {}), from: func(*allPostingsModel) message.ScreenInstance { return 9 }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, r := routedAllPostings(t)
+			e := searchReadOf(m, tt.read)
+			if tt.from != nil {
+				e.Meta.Source.Instance = tt.from(m)
+			}
+
+			r.Dispatch(e)
+
+			want := testListings()
+			if tt.shown {
+				want = tt.read.Listings
+			}
+			if diff := cmp.Diff(want, m.page.Listings); diff != "" {
+				t.Errorf("page (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestAllPostingsModel_Pause_SearchesOnlyForTheQueryTyped(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name     string
+		from     message.ScreenInstance
+		query    string
+		searched bool
+	}{
+		{name: "its own pause after the last key", query: "plat", searched: true},
+		{name: "its own pause after an earlier key", query: "pl"},
+		{name: "another screen's", from: 9, query: "plat"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, r := routedAllPostings(t)
+			m.query = "plat"
+			m.starts = append(m.starts, pageStart{id: 1})
+			from := tt.from
+			if from == 0 {
+				from = m.Instance()
+			}
+
+			cmd := r.Dispatch(message.New(message.Source{Instance: from}, message.Subject{}, message.OpNone, time.Now().UTC(),
+				message.Signal[message.SearchDebounce]{Value: message.SearchDebounce{Query: tt.query}}))
+
+			if searched := cmd != nil && len(m.starts) == 1; searched != tt.searched {
+				t.Errorf("searched = %t (on page %d), want %t", searched, len(m.starts), tt.searched)
+			}
+		})
+	}
+}
+
+func TestAllPostingsModel_O_OpensTheRowsJobURLItself(t *testing.T) {
+	t.Parallel()
+
+	m := allPostingsWith(t, testListings())
+	type open struct {
+		src   message.Source
+		about message.Subject
+		url   string
+	}
+	var opened []open
+	m.openURL = func(src message.Source, about message.Subject, url string) tea.Cmd {
+		opened = append(opened, open{src, about, url})
+		return nil
+	}
+
+	runCmd(t, m.keyPressed(runeKey('o'))) // the first row has no URL
+	runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyDown}))
+	runCmd(t, m.keyPressed(runeKey('o')))
+
+	row := testListings()[1]
+	want := []open{{message.Source{Instance: m.Instance()}, message.Subject{Type: message.TypePosting, ID: row.ID}, row.JobURL}}
+	if diff := cmp.Diff(want, opened, cmp.AllowUnexported(open{})); diff != "" {
+		t.Errorf("opened (-want +got):\n%s", diff)
+	}
+}
+
+// storedAllPostings is an all-postings view over a store with two open
+// postings, registered with a router, in focus or not.
+func storedAllPostings(t *testing.T, focused bool) (*allPostingsModel, *model.MsgRouter) {
+	t.Helper()
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
+	m := newAllPostingsModel(s.Postings)
+	r := model.NewMsgRouter()
+	if err := r.Register(m); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	r.Dispatch(sizedTo(message.ContentSize{Width: 120, Rows: 40}))
+	if focused {
+		r.Dispatch(focusOn(m.Instance()))
+	}
+	return m, r
+}
+
+func sizedTo(size message.ContentSize) tea.Msg {
+	return message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Signal[message.ContentSize]{Value: size})
+}
+
+// searchReadsFrom is whether msgs hold m's read of its page.
+func searchReadsFrom(t *testing.T, m *allPostingsModel, msgs []tea.Msg) bool {
+	t.Helper()
+	read := false
+	for _, msg := range msgs {
+		if e, ok := msg.(message.Event[message.Read[message.PostingSearch]]); ok {
+			assertEventFrom(t, e.Meta, message.Source{Instance: m.Instance()})
+			read = true
+		}
+	}
+	return read
+}
+
+func TestAllPostingsModel_ReadsItsPageAgain(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		focused bool
+		msg     func(m *allPostingsModel) tea.Msg
+		read    bool
+	}{
+		{name: "on coming into focus", msg: func(m *allPostingsModel) tea.Msg { return focusOn(m.Instance()) }, read: true},
+		{name: "not on staying in focus", focused: true, msg: func(m *allPostingsModel) tea.Msg { return focusOn(m.Instance()) }},
+		{name: "not on another screen's focus", msg: func(*allPostingsModel) tea.Msg { return focusOn(9) }},
+		{name: "on a load request", msg: func(*allPostingsModel) tea.Msg {
+			return message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.PostingSearch]{})
+		}, read: true},
+		{name: "on a markup change", msg: func(*allPostingsModel) tea.Msg {
+			return message.Updated(message.Source{Instance: 9}, 1, time.Now().UTC(), message.Markup{PostingID: 1}, message.Markup{PostingID: 1, ArchivedAt: time.Now().UTC()})
+		}, read: true},
+		{name: "on fewer rows, in focus", focused: true, msg: func(*allPostingsModel) tea.Msg { return sizedTo(message.ContentSize{Width: 120, Rows: 20}) }, read: true},
+		{name: "not on the same rows, narrower", focused: true, msg: func(*allPostingsModel) tea.Msg { return sizedTo(message.ContentSize{Width: 80, Rows: 40}) }},
+		{name: "not on fewer rows, out of focus", msg: func(*allPostingsModel) tea.Msg { return sizedTo(message.ContentSize{Width: 120, Rows: 20}) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, r := storedAllPostings(t, tt.focused)
+			for _, msg := range runCmd(t, m.Init()) {
+				r.Dispatch(msg)
+			}
+
+			if got := searchReadsFrom(t, m, runCmd(t, r.Dispatch(tt.msg(m)))); got != tt.read {
+				t.Errorf("read = %t, want %t", got, tt.read)
+			}
+		})
+	}
+}
+
+func TestAllPostingsModel_Handlers_FailOnTheWrongMessage(t *testing.T) {
+	t.Parallel()
+	assertHandlersFailOnWrongMessage(t, newAllPostingsModel(nil))
+}
+
+func TestAllPostingsModel_Enter_PushesDetailOnTheRowsPosting(t *testing.T) {
+	t.Parallel()
+
+	m := allPostingsWith(t, testListings())
+	runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyDown}))
+
+	got := runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}))
+	if len(got) != 1 {
+		t.Fatalf("enter sent %#v, want one Nav", got)
+	}
+	nav, ok := got[0].(message.Event[message.Nav[message.PostingDetail]])
+	if !ok {
+		t.Fatalf("enter sent %T, want a Nav to posting detail", got[0])
+	}
+	assertEventFrom(t, nav.Meta, message.Source{Instance: m.Instance()})
+	row := testListings()[1]
+	if want := (message.Subject{Type: message.TypePosting, ID: row.ID}); nav.Meta.Subject != want {
+		t.Errorf("Subject = %+v, want %+v", nav.Meta.Subject, want)
+	}
+	want := message.Nav[message.PostingDetail]{Op: message.NavPush, Screen: message.ScreenPostingDetail, Value: message.PostingDetail{Posting: message.Posting{
+		ID: row.ID, Title: row.Title, Department: row.Department, Location: row.Location, WorkplaceType: row.WorkplaceType,
+		JobURL: row.JobURL, ApplicationURL: row.ApplicationURL, ListingStatus: row.ListingStatus,
+	}}}
+	if diff := cmp.Diff(want, nav.Payload); diff != "" {
+		t.Errorf("Nav (-want +got):\n%s", diff)
 	}
 }

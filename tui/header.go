@@ -170,7 +170,7 @@ func (a *App) tabBar(active screen) string {
 	}{
 		{screenActiveApplications, fmt.Sprintf(" Applications %d ", len(a.activeApplications))},
 		{screenCompanyList, " Companies "},
-		{screenAllPostings, fmt.Sprintf(" All postings %d ", a.allPostings.total)},
+		{screenAllPostings, fmt.Sprintf(" All postings %d ", a.allPostings.page.WithoutQuery)},
 	}
 	const gap = "  "
 	var line, rule strings.Builder

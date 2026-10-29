@@ -173,7 +173,7 @@ func sizedScreens() []sizedScreen {
 			return applyCmd(t, app, cmd)
 		}},
 		{name: "application submit", screen: screenApplicationSubmit, open: func(t *testing.T, app *App) *App {
-			app.openURL = func(string) tea.Cmd { return nil }
+			app.openURL = func(message.Source, message.Subject, string) tea.Cmd { return nil }
 			app.exportDir = t.TempDir()
 			app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 			app = applyCmd(t, app, cmd)
@@ -213,7 +213,7 @@ func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 	}{
 		{name: "no banner"},
 		{name: "status", msg: message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Notify{Status: "Acme: fetched 40"}), text: "Acme: fetched 40"},
-		{name: "error", msg: browserOpenedMsg{err: errors.New("could not open browser")}, text: "error: could not open browser"},
+		{name: "error", msg: browserOpened(message.Source{}, message.Subject{Type: message.TypePosting, ID: 1}, "https://example.com", errors.New("could not open browser")), text: "error: could not open browser"},
 	}
 	for _, sc := range sizedScreens() {
 		for _, bn := range banners {

@@ -35,29 +35,61 @@ const allPostingsResultsHelp = "↑/↓ (j/k): select  ←/→ (h/l): page  s: s
 // lands on page 1 instead of shifting the one being read.
 type allPostingsModel struct {
 	postings *service.PostingService
-	cursor   int
+	// openURL opens a URL in the browser: openInBrowser, swapped for a
+	// fake in tests so they don't launch one.
+	openURL func(src message.Source, about message.Subject, url string) tea.Cmd
+	cursor  int
 	// starts is where each page so far began, page 1's being the zero
 	// start; the last is the page on screen.
 	starts []pageStart
-	// order is newest first or best fit first.
-	order posting.Order
-	page  posting.SearchPage
-	// size is the number of rows page was read at.
-	size int
+	order  message.PostingOrder
+	// page is the page on screen, and the search it was read with.
+	page message.PostingSearch
 	// searching is whether the '/' line is open and taking keys; query is
 	// what's been typed into it, kept with its results once enter closes it.
 	searching bool
 	query     string
-	// typed counts keys typed into the search, so only the pause after the
-	// latest one searches.
-	typed int
-	// total is how many postings there are without the query.
-	total int
+
+	width    int
+	rows     int
+	focused  bool
+	instance message.ScreenInstance
 }
 
-func newAllPostingsModel(postings *service.PostingService) allPostingsModel {
-	return allPostingsModel{postings: postings, starts: []pageStart{{}}, order: posting.OrderIDDesc}
+func newAllPostingsModel(postings *service.PostingService) *allPostingsModel {
+	return &allPostingsModel{
+		postings: postings,
+		openURL:  openInBrowser,
+		starts:   []pageStart{{}},
+		order:    message.OrderNewest,
+		instance: message.NewScreenInstance(),
+	}
 }
+
+func (m *allPostingsModel) Instance() message.ScreenInstance { return m.instance }
+
+func (m *allPostingsModel) Focused() bool { return m.focused }
+
+func (m *allPostingsModel) Routes() []*model.Route {
+	return []*model.Route{
+		model.Always(m.searchRead, model.From(m.instance)),
+		model.Always(m.paused, model.From(m.instance)),
+		model.Always(m.loadRequested),
+		model.Always(m.markupChanged),
+		model.WhenFocused(m, m.keyPressed),
+		model.WhenFocused(m, m.paste),
+		model.Always(m.resize),
+		model.Always(m.focusChanged),
+	}
+}
+
+// Init reads page 1 for the tab's count.
+func (m *allPostingsModel) Init() tea.Cmd { return m.load() }
+
+// Update has nothing to do: everything the view handles is registered.
+func (m *allPostingsModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
+
+func (m *allPostingsModel) src() message.Source { return message.Source{Instance: m.instance} }
 
 // pageStart is the row a page was read after: its ID, and its score for the
 // order by fit.
@@ -66,22 +98,15 @@ type pageStart struct {
 	score int
 }
 
-type allPostingsLoadedMsg struct {
-	start pageStart
-	order posting.Order
-	query string
-	size  int
-	page  posting.SearchPage
-	total int
-	err   error
-}
-
 // searchPause is how long typing must stop before the search runs, so fast
 // typing doesn't queue a load per key.
 const searchPause = 150 * time.Millisecond
 
-// allPostingsSearchMsg is the pause after the typed'th key.
-type allPostingsSearchMsg struct{ typed int }
+// searchOrders is the order each PostingOrder reads in.
+var searchOrders = map[message.PostingOrder]posting.Order{
+	message.OrderNewest:  posting.OrderIDDesc,
+	message.OrderBestFit: posting.OrderScoreDesc,
+}
 
 // pageSize is how many rows fill height: what's left after the search and
 // page lines, the table's chrome and the help.
@@ -89,67 +114,111 @@ func (m *allPostingsModel) pageSize(height int) int {
 	return max(tableRows(height-2, model.HelpStyle.Render(allPostingsHelp)), 1)
 }
 
-// load reads the page on screen again, size rows long, with the query and,
-// when there is one, the total without it.
-func (m *allPostingsModel) load(size int) tea.Cmd {
-	s, start, order, query := m.postings, m.starts[len(m.starts)-1], m.order, m.query
+// load reads the page on screen again, as many rows as fit.
+func (m *allPostingsModel) load() tea.Cmd {
+	return m.loadAt(m.pageSize(m.rows))
+}
+
+// loadAt reads the page on screen again, size rows long, with the query
+// and the count without it.
+func (m *allPostingsModel) loadAt(size int) tea.Cmd {
+	s, src, start := m.postings, m.src(), m.starts[len(m.starts)-1]
+	read := message.PostingSearch{Query: m.query, Order: m.order, AfterID: start.id, AfterScore: start.score, Limit: size}
 	return func() tea.Msg {
 		ctx := context.Background()
+		fail := func(err error) tea.Msg {
+			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
+		}
 		open := posting.ListingOpen
 		page, err := s.Search(ctx, posting.Search{
 			ListingStatus: &open,
-			Order:         order,
-			AfterID:       start.id,
-			AfterScore:    start.score,
-			Query:         query,
-			Limit:         size,
+			Order:         searchOrders[read.Order],
+			AfterID:       read.AfterID,
+			AfterScore:    read.AfterScore,
+			Query:         read.Query,
+			Limit:         read.Limit,
 		})
 		if err != nil {
-			return allPostingsLoadedMsg{start: start, order: order, query: query, size: size, err: err}
+			return fail(err)
 		}
-		total := page.Total
-		if query != "" {
+		read.HasMore, read.Total, read.WithoutQuery = page.HasMore, page.Total, page.Total
+		if read.Query != "" {
 			all, err := s.Search(ctx, posting.Search{ListingStatus: &open, Limit: 1})
 			if err != nil {
-				return allPostingsLoadedMsg{start: start, order: order, query: query, size: size, err: err}
+				return fail(err)
 			}
-			total = all.Total
+			read.WithoutQuery = all.Total
 		}
-		return allPostingsLoadedMsg{start: start, order: order, query: query, size: size, page: *page, total: total}
+		read.Listings = make([]message.Listing, len(page.Listings))
+		for i, l := range page.Listings {
+			read.Listings[i] = listingSnapshot(l)
+		}
+		return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Read[message.PostingSearch]{Value: read})
 	}
 }
 
-// loaded shows msg's page, if it's still the page on screen. A page past
-// the first that has emptied, its postings archived or closed, steps back.
-func (m *allPostingsModel) loaded(msg allPostingsLoadedMsg) tea.Cmd {
-	if msg.start != m.starts[len(m.starts)-1] || msg.order != m.order || msg.query != m.query {
+// searchRead shows the page read, if it's still the search on screen. A
+// page past the first that has emptied, its postings archived or closed,
+// steps back.
+func (m *allPostingsModel) searchRead(e message.Event[message.Read[message.PostingSearch]]) tea.Cmd {
+	read, start := e.Payload.Value, m.starts[len(m.starts)-1]
+	if read.Query != m.query || read.Order != m.order || read.AfterID != start.id || read.AfterScore != start.score {
 		return nil
 	}
-	if len(msg.page.Listings) == 0 && len(m.starts) > 1 {
+	if len(read.Listings) == 0 && len(m.starts) > 1 {
 		m.starts = m.starts[:len(m.starts)-1]
-		return m.load(msg.size)
+		return m.loadAt(read.Limit)
 	}
-	m.page, m.size, m.total = msg.page, msg.size, msg.total
+	m.page = read
 	m.cursor = min(m.cursor, max(len(m.page.Listings)-1, 0))
 	return nil
 }
 
-// searched reads page 1 with the query, unless a key was typed after the
-// one msg's pause followed.
-func (m *allPostingsModel) searched(msg allPostingsSearchMsg, size int) tea.Cmd {
-	if msg.typed != m.typed {
+func (m *allPostingsModel) loadRequested(message.Event[message.Load[message.PostingSearch]]) tea.Cmd {
+	return m.load()
+}
+
+// markupChanged reloads, since a posting archived leaves the page.
+func (m *allPostingsModel) markupChanged(message.Event[message.Changed[message.Markup]]) tea.Cmd {
+	return m.load()
+}
+
+// paused searches, unless the query has changed since the pause began.
+func (m *allPostingsModel) paused(e message.Event[message.Signal[message.SearchDebounce]]) tea.Cmd {
+	if e.Payload.Value.Query != m.query {
 		return nil
 	}
-	return m.firstPage(size)
+	return m.firstPage()
 }
 
-func (m *allPostingsModel) firstPage(size int) tea.Cmd {
+// resize reads the page again when a different number of rows fits, if
+// it's on screen; otherwise coming into focus reads it.
+func (m *allPostingsModel) resize(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {
+	m.width, m.rows = e.Payload.Value.Width, e.Payload.Value.Rows
+	if m.focused && m.pageSize(m.rows) != m.page.Limit {
+		return m.load()
+	}
+	return nil
+}
+
+// focusChanged reads the page again on coming into focus, since postings
+// are synced, scored and marked while it's away.
+func (m *allPostingsModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
+	gained := !m.focused && e.Payload.Value.Focused == m.instance
+	m.focused = e.Payload.Value.Focused == m.instance
+	if gained {
+		return m.load()
+	}
+	return nil
+}
+
+func (m *allPostingsModel) firstPage() tea.Cmd {
 	m.starts = []pageStart{{}}
 	m.cursor = 0
-	return m.load(size)
+	return m.load()
 }
 
-func (m *allPostingsModel) nextPage(size int) tea.Cmd {
+func (m *allPostingsModel) nextPage() tea.Cmd {
 	n := len(m.page.Listings)
 	if n == 0 || !m.page.HasMore {
 		return nil
@@ -157,24 +226,25 @@ func (m *allPostingsModel) nextPage(size int) tea.Cmd {
 	last := m.page.Listings[n-1]
 	m.starts = append(m.starts, pageStart{id: last.ID, score: last.Score})
 	m.cursor = 0
-	return m.load(size)
+	return m.load()
 }
 
-func (m *allPostingsModel) previousPage(size int) tea.Cmd {
+func (m *allPostingsModel) previousPage() tea.Cmd {
 	if len(m.starts) == 1 {
 		return nil
 	}
 	m.starts = m.starts[:len(m.starts)-1]
 	m.cursor = 0
-	return m.load(size)
+	return m.load()
 }
 
 // typedKey changes the query and waits for a pause before searching.
 func (m *allPostingsModel) typedKey(query string) tea.Cmd {
 	m.query = query
-	m.typed++
-	typed := m.typed
-	return tea.Tick(searchPause, func(time.Time) tea.Msg { return allPostingsSearchMsg{typed: typed} })
+	src := m.src()
+	return tea.Tick(searchPause, func(time.Time) tea.Msg {
+		return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Signal[message.SearchDebounce]{Value: message.SearchDebounce{Query: query}})
+	})
 }
 
 func (m *allPostingsModel) paste(msg tea.PasteMsg) tea.Cmd {
@@ -186,7 +256,7 @@ func (m *allPostingsModel) paste(msg tea.PasteMsg) tea.Cmd {
 
 // orderLabel names the order the pages are in.
 func (m *allPostingsModel) orderLabel() string {
-	if m.order == posting.OrderScoreDesc {
+	if m.order == message.OrderBestFit {
 		return "best fit first"
 	}
 	return "newest first"
@@ -194,15 +264,15 @@ func (m *allPostingsModel) orderLabel() string {
 
 // pages is how many pages Total fills at the page size.
 func (m *allPostingsModel) pages() int {
-	if m.size <= 0 {
+	if m.page.Limit <= 0 {
 		return 1
 	}
-	return max((m.page.Total+m.size-1)/m.size, 1)
+	return max((m.page.Total+m.page.Limit-1)/m.page.Limit, 1)
 }
 
 // fitCell is a posting's current score, blank when it has none and dimmed
 // when its content has changed since.
-func fitCell(l posting.Listing) string {
+func fitCell(l message.Listing) string {
 	if l.Score == 0 {
 		return padCol("", fitColWidth)
 	}
@@ -215,7 +285,7 @@ func fitCell(l posting.Listing) string {
 
 // locationLabel is a posting's location with its workplace type, when the
 // board gave one.
-func locationLabel(l posting.Listing) string {
+func locationLabel(l message.Listing) string {
 	switch {
 	case l.WorkplaceType == "":
 		return l.Location
@@ -225,7 +295,8 @@ func locationLabel(l posting.Listing) string {
 	return l.Location + " (" + l.WorkplaceType + ")"
 }
 
-func (m *allPostingsModel) View(width, height int) string {
+// View renders the view in the last content size.
+func (m *allPostingsModel) View() tea.View {
 	var b strings.Builder
 	help := model.HelpStyle.Render(allPostingsHelp)
 	switch {
@@ -234,7 +305,7 @@ func (m *allPostingsModel) View(width, height int) string {
 	case m.query != "":
 		help = model.HelpStyle.Render(allPostingsResultsHelp)
 	}
-	b.WriteString(searchLine(m.searching, m.query, m.page.Total, m.total) + "\n")
+	b.WriteString(searchLine(m.searching, m.query, m.page.Total, m.page.WithoutQuery) + "\n")
 	fmt.Fprintf(&b, "%s\n", model.DimStyle.Render(fmt.Sprintf("Page %d of %d · %d postings · %s", len(m.starts), m.pages(), m.page.Total, m.orderLabel())))
 	switch {
 	case len(m.page.Listings) == 0 && m.query != "":
@@ -242,8 +313,8 @@ func (m *allPostingsModel) View(width, height int) string {
 	case len(m.page.Listings) == 0:
 		b.WriteString("No open postings.\n")
 	default:
-		// A banner can take rows after the page was read, so draw what fits.
-		start, end := visibleWindow(m.cursor, len(m.page.Listings), tableRows(height-2, help))
+		// The page can be read before the rows that fit change, so draw what fits.
+		start, end := visibleWindow(m.cursor, len(m.page.Listings), tableRows(m.rows-2, help))
 		cursorRow := m.cursor - start
 		t := table.New().
 			Border(lipgloss.RoundedBorder()).
@@ -255,7 +326,7 @@ func (m *allPostingsModel) View(width, height int) string {
 				}
 				return style
 			})
-		titleWidth := flexColWidth(width, seenColWidth, homeCompanyColWidth, departmentColWidth, locationColWidth, markerColWidth, fitColWidth)
+		titleWidth := flexColWidth(m.width, seenColWidth, homeCompanyColWidth, departmentColWidth, locationColWidth, markerColWidth, fitColWidth)
 		for _, l := range m.page.Listings[start:end] {
 			marker := " "
 			if l.Interested {
@@ -274,77 +345,81 @@ func (m *allPostingsModel) View(width, height int) string {
 		b.WriteString(t.Render() + "\n")
 	}
 	b.WriteString(help)
-	return b.String()
+	return tea.NewView(b.String())
 }
 
-// Update handles a key on the all-postings view, given the page size that
-// fills the window now.
-func (m *allPostingsModel) Update(msg tea.KeyPressMsg, size int) (tea.Cmd, tea.Msg) {
+// keyPressed handles a key. Each command carries a copy of what it needs,
+// since it runs off the event loop.
+func (m *allPostingsModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	if m.searching {
-		return m.updateSearch(msg, size)
+		return m.updateSearch(msg)
 	}
-	switch {
-	case msg.String() == "down", msg.String() == "j":
+	var current message.Listing
+	onPosting := m.cursor < len(m.page.Listings)
+	if onPosting {
+		current = m.page.Listings[m.cursor]
+	}
+	about := message.Subject{Type: message.TypePosting, ID: current.ID}
+	switch msg.String() {
+	case "down", "j":
 		if m.cursor < len(m.page.Listings)-1 {
 			m.cursor++
 		}
-	case msg.String() == "up", msg.String() == "k":
+	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case msg.String() == "right", msg.String() == "l":
-		return m.nextPage(size), nil
-	case msg.String() == "enter":
-		if m.cursor < len(m.page.Listings) {
-			return nil, message.PostingDetail{Posting: message.Posting{ID: m.page.Listings[m.cursor].ID}}
+	case "right", "l":
+		return m.nextPage()
+	case "left", "h":
+		return m.previousPage()
+	case "enter":
+		if onPosting {
+			return message.Push(m.src(), message.ScreenPostingDetail, about, message.PostingDetail{Posting: listingPosting(current)})
 		}
-	case msg.String() == "s":
-		if m.order == posting.OrderScoreDesc {
-			m.order = posting.OrderIDDesc
+	case "s":
+		if m.order == message.OrderBestFit {
+			m.order = message.OrderNewest
 		} else {
-			m.order = posting.OrderScoreDesc
+			m.order = message.OrderBestFit
 		}
-		return m.firstPage(size), nil
-	case msg.String() == "/":
+		return m.firstPage()
+	case "/":
 		m.searching = true
-	case msg.String() == "esc":
-		return m.clearSearch(size), nil
-	case msg.String() == "i":
-		if m.cursor < len(m.page.Listings) {
-			l := m.page.Listings[m.cursor]
-			return toggleInterested(m.postings, message.Source{}, l.ID, l.Interested), nil
+	case "esc":
+		return m.clearSearch()
+	case "i":
+		if onPosting {
+			return toggleInterested(m.postings, m.src(), current.ID, current.Interested)
 		}
-	case msg.String() == "x":
-		if m.cursor < len(m.page.Listings) {
-			l := m.page.Listings[m.cursor]
-			return toggleArchived(m.postings, message.Source{}, l.ID, l.Archived), nil
+	case "x":
+		if onPosting {
+			return toggleArchived(m.postings, m.src(), current.ID, current.Archived)
 		}
-	case msg.String() == "o":
-		if m.cursor < len(m.page.Listings) && m.page.Listings[m.cursor].JobURL != "" {
-			return nil, openJobURLMsg{url: m.page.Listings[m.cursor].JobURL}
+	case "o":
+		if onPosting && current.JobURL != "" {
+			return m.openURL(m.src(), about, current.JobURL)
 		}
-	case msg.String() == "left", msg.String() == "h":
-		return m.previousPage(size), nil
 	}
-	return nil, nil
+	return nil
 }
 
 // updateSearch handles a key while the search line is open: letters go
 // into the query, so only keys that aren't text move or page.
-func (m *allPostingsModel) updateSearch(msg tea.KeyPressMsg, size int) (tea.Cmd, tea.Msg) {
+func (m *allPostingsModel) updateSearch(msg tea.KeyPressMsg) tea.Cmd {
 	switch msg.String() {
 	default:
 		if msg.Text != "" {
-			return m.typedKey(m.query + msg.Text), nil
+			return m.typedKey(m.query + msg.Text)
 		}
 	case "backspace":
 		if r := []rune(m.query); len(r) > 0 {
-			return m.typedKey(string(r[:len(r)-1])), nil
+			return m.typedKey(string(r[:len(r)-1]))
 		}
 		m.searching = false
 	case "esc":
 		m.searching = false
-		return m.clearSearch(size), nil
+		return m.clearSearch()
 	case "down", "ctrl+n":
 		if m.cursor < len(m.page.Listings)-1 {
 			m.cursor++
@@ -354,42 +429,21 @@ func (m *allPostingsModel) updateSearch(msg tea.KeyPressMsg, size int) (tea.Cmd,
 			m.cursor--
 		}
 	case "right":
-		return m.nextPage(size), nil
+		return m.nextPage()
 	case "left":
-		return m.previousPage(size), nil
+		return m.previousPage()
 	case "enter":
 		// Keeps the results, so letters act on them instead of being typed.
 		m.searching = false
 	}
-	return nil, nil
+	return nil
 }
 
 // clearSearch drops the query and reloads page 1 without it, if there was one.
-func (m *allPostingsModel) clearSearch(size int) tea.Cmd {
+func (m *allPostingsModel) clearSearch() tea.Cmd {
 	if m.query == "" {
 		return nil
 	}
 	m.query = ""
-	m.typed++
-	return m.firstPage(size)
-}
-
-// openJobURLMsg asks App to open a posting in the browser.
-type openJobURLMsg struct{ url string }
-
-// allPostingsDetailLoadedMsg is the posting enter opened: a page row
-// lacks the description the detail shows.
-type allPostingsDetailLoadedMsg struct {
-	posting posting.Posting
-	err     error
-}
-
-func loadAllPostingsDetail(postings *service.PostingService, id int64) tea.Cmd {
-	return func() tea.Msg {
-		p, err := postings.Get(context.Background(), id)
-		if err != nil {
-			return allPostingsDetailLoadedMsg{err: err}
-		}
-		return allPostingsDetailLoadedMsg{posting: *p}
-	}
+	return m.firstPage()
 }

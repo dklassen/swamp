@@ -181,7 +181,7 @@ func (m *postingDetailModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 		return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), ""))
 	case "o":
 		if m.posting.JobURL != "" {
-			return openInBrowser(m.posting.JobURL)
+			return openInBrowser(m.src(), message.Subject{Type: message.TypePosting, ID: m.posting.ID}, m.posting.JobURL)
 		}
 	case "a":
 		if !m.hasApplication() {

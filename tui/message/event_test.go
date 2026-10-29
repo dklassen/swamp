@@ -262,6 +262,15 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "posting scores read", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpNone, at, message.Read[message.PostingScores]{Value: message.PostingScores{
 			Scores: []message.Score{{Score: 4, Reason: "fits", Model: "claude", ClientName: "cli", ClientVersion: "1.0", ContentSHA256: "abc", ScoredAt: at}},
 		}}))},
+		{name: "posting search read", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Read[message.PostingSearch]{Value: message.PostingSearch{
+			Query: "platform", Order: message.OrderBestFit, AfterID: 9, AfterScore: 4, Limit: 20,
+			Listings: []message.Listing{{ID: 5, CompanyName: "Acme", Title: "Engineer", Department: "Platform", Location: "Remote", WorkplaceType: "Remote",
+				JobURL: "https://example.com/5", ApplicationURL: "https://example.com/5/apply", ListingStatus: message.ListingOpen, FirstSeenAt: at,
+				Interested: true, Score: 4, ScoreStale: true}},
+			HasMore: true, Total: 21, WithoutQuery: 40,
+		}}))},
+		{name: "search debounce signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.SearchDebounce]{Value: message.SearchDebounce{Query: "plat"}}))},
+		{name: "open browser ran", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpNone, at, message.Ran[message.OpenBrowser]{Value: message.OpenBrowser{URL: "https://example.com/5"}}))},
 		{name: "filter options read", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Read[message.FilterOptions]{Value: message.FilterOptions{
 			Departments: []string{"Platform", "Sales"}, Locations: []string{"Remote"},
 		}}))},

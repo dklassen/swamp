@@ -55,6 +55,40 @@ func postingOf(s message.Posting) posting.Posting {
 	return p
 }
 
+func listingSnapshot(l posting.Listing) message.Listing {
+	return message.Listing{
+		ID:             l.ID,
+		CompanyName:    l.CompanyName,
+		Title:          l.Title,
+		Department:     l.Department,
+		Location:       l.Location,
+		WorkplaceType:  l.WorkplaceType,
+		JobURL:         l.JobURL,
+		ApplicationURL: l.ApplicationURL,
+		ListingStatus:  listingStatuses[l.ListingStatus],
+		FirstSeenAt:    l.FirstSeenAt,
+		Interested:     l.Interested,
+		Archived:       l.Archived,
+		Score:          l.Score,
+		ScoreStale:     l.ScoreStale,
+	}
+}
+
+// listingPosting is the posting a search row is of, with only the fields
+// the row has.
+func listingPosting(l message.Listing) message.Posting {
+	return message.Posting{
+		ID:             l.ID,
+		Title:          l.Title,
+		Department:     l.Department,
+		Location:       l.Location,
+		WorkplaceType:  l.WorkplaceType,
+		JobURL:         l.JobURL,
+		ApplicationURL: l.ApplicationURL,
+		ListingStatus:  l.ListingStatus,
+	}
+}
+
 func markupSnapshot(m posting.Markup) message.Markup {
 	s := message.Markup{PostingID: m.PostingID}
 	if m.InterestedAt != nil {
