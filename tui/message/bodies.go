@@ -294,3 +294,32 @@ type OpenBrowser struct {
 }
 
 func (OpenBrowser) Type() Type { return TypeOpenBrowser }
+
+// DocumentProgress is one of an application's documents as it stands on
+// disk: whether it's drafted, and whether what's there now was exported.
+type DocumentProgress struct {
+	DocumentType DocumentType `json:"document_type"`
+	Drafted      bool         `json:"drafted"`
+	Exported     bool         `json:"exported"`
+}
+
+// ApplicationRow is one application as the home screen lists it: with its
+// posting, its company's name, the latest review of each document that
+// still describes it, when it took its status, and its documents'
+// progress.
+type ApplicationRow struct {
+	Application Application        `json:"application"`
+	Posting     Posting            `json:"posting"`
+	CompanyName string             `json:"company_name"`
+	Reviews     []Review           `json:"reviews,omitempty"`
+	StatusSince time.Time          `json:"status_since,omitzero"`
+	Documents   []DocumentProgress `json:"documents"`
+}
+
+// ActiveApplications is every application not at a dead end, in the order
+// the home screen lists them.
+type ActiveApplications struct {
+	Rows []ApplicationRow `json:"rows"`
+}
+
+func (ActiveApplications) Type() Type { return TypeActiveApplications }

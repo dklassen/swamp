@@ -71,6 +71,7 @@ const (
 	TypePostingSearch
 	TypeSearchDebounce
 	TypeOpenBrowser
+	TypeActiveApplications
 )
 
 var typeNames = [...]string{
@@ -101,6 +102,7 @@ var typeNames = [...]string{
 	TypePostingSearch:      "posting_search",
 	TypeSearchDebounce:     "search_debounce",
 	TypeOpenBrowser:        "open_browser",
+	TypeActiveApplications: "active_applications",
 }
 
 func (t Type) String() string                { return nameOf(t, typeNames[:]) }
