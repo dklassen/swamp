@@ -10,6 +10,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -25,10 +26,11 @@ type applicationDeleteModel struct {
 	// confirmed is set once y is pressed, so a second y while the delete
 	// is in flight doesn't run it twice.
 	confirmed bool
+	instance  message.ScreenInstance
 }
 
 func newApplicationDeleteModel(application posting.ActiveApplication, from screen) applicationDeleteModel {
-	return applicationDeleteModel{application: application, from: from}
+	return applicationDeleteModel{application: application, from: from, instance: message.NewScreenInstance()}
 }
 
 // enterApplicationDeleteMsg signals that App should open the delete
@@ -72,19 +74,13 @@ func (m *applicationDeleteModel) View(width int) string {
 	return confirmBox(b.String(), width)
 }
 
-// applicationDeletedMsg reports the result of deleteApplication.
-type applicationDeletedMsg struct {
-	application posting.ActiveApplication
-	err         error
-}
-
-// deleteApplication soft-deletes application. Its documents stay on disk
-// for a later restore; with IDs never reused, nothing else can pick them
-// up.
-func deleteApplication(applications *service.ApplicationService, app posting.ActiveApplication) tea.Cmd {
+// deleteApplication soft-deletes an application. Its documents stay on
+// disk for a later restore; with IDs never reused, nothing else can pick
+// them up.
+func deleteApplication(applications *service.ApplicationService, src message.Source, applicationID int64) tea.Cmd {
 	return func() tea.Msg {
-		_, err := applications.Delete(context.Background(), app.ID)
-		return applicationDeletedMsg{application: app, err: err}
+		a, err := applications.Delete(context.Background(), applicationID)
+		return applicationWritten(src, applicationID, message.OpDeleted, a, err)
 	}
 }
 

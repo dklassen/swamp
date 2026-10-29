@@ -761,19 +761,26 @@ func markupChanged(src message.Source, postingID int64, m *change.Of[posting.Mar
 		message.Changed[message.Markup]{Before: markupSnapshot(m.Before), After: markupSnapshot(m.After)})
 }
 
-type applicationCreatedMsg struct {
-	application application.Application
-	err         error
-}
-
-func createApplication(postings *service.PostingService, postingID int64) tea.Cmd {
+// createApplication's error is about the posting, since there's no
+// application yet.
+func createApplication(postings *service.PostingService, src message.Source, postingID int64) tea.Cmd {
 	return func() tea.Msg {
 		app, err := postings.ApplyTo(context.Background(), postingID)
 		if err != nil {
-			return applicationCreatedMsg{err: err}
+			return message.New(src, message.Subject{Type: message.TypePosting, ID: postingID}, message.OpCreated, time.Now().UTC(), model.ErrorOf(err))
 		}
-		return applicationCreatedMsg{application: *app}
+		return message.Created(src, app.ID, app.CreatedAt, applicationSnapshot(*app))
 	}
+}
+
+func applicationWritten(src message.Source, applicationID int64, op message.Op, a *change.Of[application.Application], err error) tea.Msg {
+	if err != nil {
+		return message.New(src, message.Subject{Type: message.TypeApplication, ID: applicationID}, op, time.Now().UTC(), model.ErrorOf(err))
+	}
+	if op == message.OpDeleted {
+		return message.Deleted(src, applicationID, a.At, applicationSnapshot(a.Before))
+	}
+	return message.Updated(src, applicationID, a.At, applicationSnapshot(a.Before), applicationSnapshot(a.After))
 }
 
 type applicationLoadedMsg struct {
@@ -844,35 +851,17 @@ func maybeLoadDocumentReviews(documentService *service.DocumentService, docs *do
 	return loadDocumentReviews(documentService, docs, applicationID)
 }
 
-type applicationStatusUpdatedMsg struct {
-	application application.Application
-	from        message.ScreenInstance
-	err         error
-}
-
-func updateApplicationStatus(applications *service.ApplicationService, applicationID int64, status application.Status, from message.ScreenInstance) tea.Cmd {
+func updateApplicationStatus(applications *service.ApplicationService, src message.Source, applicationID int64, status application.Status) tea.Cmd {
 	return func() tea.Msg {
-		app, err := applications.SetStatus(context.Background(), applicationID, status)
-		if err != nil {
-			return applicationStatusUpdatedMsg{from: from, err: err}
-		}
-		return applicationStatusUpdatedMsg{application: app.After, from: from}
+		a, err := applications.SetStatus(context.Background(), applicationID, status)
+		return applicationWritten(src, applicationID, message.OpUpdated, a, err)
 	}
 }
 
-type applicationNotesUpdatedMsg struct {
-	application application.Application
-	from        message.ScreenInstance
-	err         error
-}
-
-func updateApplicationNotes(applications *service.ApplicationService, applicationID int64, notes string, from message.ScreenInstance) tea.Cmd {
+func updateApplicationNotes(applications *service.ApplicationService, src message.Source, applicationID int64, notes string) tea.Cmd {
 	return func() tea.Msg {
-		app, err := applications.SetNotes(context.Background(), applicationID, notes)
-		if err != nil {
-			return applicationNotesUpdatedMsg{from: from, err: err}
-		}
-		return applicationNotesUpdatedMsg{application: app.After, from: from}
+		a, err := applications.SetNotes(context.Background(), applicationID, notes)
+		return applicationWritten(src, applicationID, message.OpUpdated, a, err)
 	}
 }
 
@@ -1042,7 +1031,72 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.navFilterSelection),
 		model.Always(a.hideArchivedChanged),
 		model.Always(a.markupChanged),
+		model.Always(a.applicationChanged),
+		model.Always(a.applicationWriteFailed),
 	}
+}
+
+// applicationChanged does for the screens that show an application what
+// they'll do for themselves once they hear the change.
+func (a *App) applicationChanged(e message.Event[message.Changed[message.Application]]) tea.Cmd {
+	from := e.Meta.Source.Instance
+	if from != 0 {
+		// Its asker's write went through, so its earlier error is stale.
+		a.err = nil
+	}
+	if e.Meta.Op == message.OpDeleted {
+		return a.applicationDeleted(e)
+	}
+	after := applicationOf(e.Payload.After)
+	if a.applicationsByPosting == nil {
+		a.applicationsByPosting = make(map[int64]application.Application)
+	}
+	a.applicationsByPosting[after.PostingID] = after
+	// Nothing blocks esc while the save is in flight, so the user may
+	// already have left; only the asker still on screen moves on.
+	switch {
+	case a.currentScreen == screenApplicationStatusSelect && a.applicationStatus.instance == from:
+		a.returnBack()
+	case a.currentScreen == screenApplicationSubmit && a.applicationSubmit.instance == from:
+		a.status = "Marked " + a.applicationSubmit.application.Posting.Title + " submitted"
+		a.currentScreen = screenActiveApplications
+	case a.currentScreen == screenApplicationNotesEdit && a.applicationNotes.instance == from:
+		a.currentScreen = screenPostingDetail
+	}
+	var cmd tea.Cmd
+	if a.currentScreen == screenPostingDetail {
+		cmd = a.rebuildPostingDetailApplication()
+	}
+	// A new status may move the application to or from a terminal one,
+	// so the home list reloads rather than patching its row.
+	if e.Meta.Op == message.OpCreated || e.Payload.Before.Status != e.Payload.After.Status {
+		cmd = tea.Batch(cmd, loadActiveApplications(a.applicationService, a.documentService, a.documents))
+	}
+	return cmd
+}
+
+func (a *App) applicationDeleted(e message.Event[message.Changed[message.Application]]) tea.Cmd {
+	delete(a.applicationsByPosting, e.Payload.Before.PostingID)
+	if from := e.Meta.Source.Instance; from != 0 && a.applicationDelete.instance == from {
+		a.status = "Deleted the application for " + a.applicationDelete.application.Posting.Title
+		if a.currentScreen == screenApplicationDelete {
+			a.currentScreen = screenActiveApplications
+		}
+	}
+	return loadActiveApplications(a.applicationService, a.documentService, a.documents)
+}
+
+// applicationWriteFailed puts the screen that asked back as it was before
+// it asked; the banner shows why.
+func (a *App) applicationWriteFailed(e message.Event[message.Error]) tea.Cmd {
+	switch from := e.Meta.Source.Instance; {
+	case a.currentScreen == screenApplicationDelete && a.applicationDelete.instance == from:
+		// Rather than leave a confirmation whose y is already spent.
+		a.currentScreen = a.applicationDelete.from
+	case a.currentScreen == screenApplicationNotesEdit && a.applicationNotes.instance == from:
+		a.applicationNotes.saving = false
+	}
+	return nil
 }
 
 func (a *App) markupChanged(message.Event[message.Changed[message.Markup]]) tea.Cmd {
@@ -1059,6 +1113,12 @@ func (a *App) errorReported(e message.Event[message.Error]) tea.Cmd {
 		// The TUI owns the terminal, so cmd/swamp points log at swamp.log.
 		log.Printf("tui: %s", e.Payload.Text)
 		a.err = errInternal
+		return nil
+	}
+	if e.Payload.Code == message.ErrPostingClosed {
+		// Refused, not failed: the posting is no longer listed, so
+		// there's no form left to submit.
+		a.err, a.status = nil, "This posting is closed; an application can't be started on it"
 		return nil
 	}
 	a.err, a.status = errors.New(e.Payload.Text), ""
@@ -1151,76 +1211,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				return a, maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID)
 			}
 		}
-	case applicationCreatedMsg:
-		if errors.Is(msg.err, service.ErrPostingClosed) {
-			// Refused, not failed (#175): the posting is no longer listed,
-			// so there's no form left to submit.
-			a.err = nil
-			a.status = "This posting is closed; an application can't be started on it"
-			break
-		}
-		a.err = msg.err
-		if msg.err == nil {
-			if a.applicationsByPosting == nil {
-				a.applicationsByPosting = make(map[int64]application.Application)
-			}
-			a.applicationsByPosting[msg.application.PostingID] = msg.application
-			var reviewsCmd tea.Cmd
-			if a.currentScreen == screenPostingDetail {
-				// The posting on screen, which no list has when the detail
-				// was opened from all postings.
-				p := a.postingDetail.posting
-				_, app, hasApp := a.lookupPosting(p.ID)
-				a.replacePostingDetail(newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID)))
-				reviewsCmd = maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID)
-			}
-			// A freshly-started application should show up in the active-
-			// applications list without needing a restart.
-			return a, tea.Batch(loadActiveApplications(a.applicationService, a.documentService, a.documents), reviewsCmd)
-		}
-	case applicationDeletedMsg:
-		a.err = msg.err
-		if a.currentScreen == screenApplicationDelete {
-			if msg.err != nil {
-				// Back where it was opened rather than leaving a
-				// confirmation whose y is already spent; the error shows there.
-				a.currentScreen = a.applicationDelete.from
-				return a, nil
-			}
-			a.currentScreen = screenActiveApplications
-		}
-		if msg.err == nil {
-			delete(a.applicationsByPosting, msg.application.Posting.ID)
-			a.status = "Deleted the application for " + msg.application.Posting.Title
-			return a, loadActiveApplications(a.applicationService, a.documentService, a.documents)
-		}
-	case applicationStatusUpdatedMsg:
-		a.err = msg.err
-		if msg.err == nil {
-			if a.applicationsByPosting == nil {
-				a.applicationsByPosting = make(map[int64]application.Application)
-			}
-			a.applicationsByPosting[msg.application.PostingID] = msg.application
-			// Nothing blocks esc while the save is in flight, so the user
-			// may already have left -- only navigate if they're still here.
-			if a.currentScreen == screenApplicationStatusSelect && a.applicationStatus.instance == msg.from {
-				a.returnBack()
-			}
-			if a.currentScreen == screenApplicationSubmit && a.applicationSubmit.instance == msg.from {
-				a.status = "Marked " + a.applicationSubmit.application.Posting.Title + " submitted"
-				a.currentScreen = screenActiveApplications
-			}
-			var reviewsCmd tea.Cmd
-			if a.currentScreen == screenPostingDetail {
-				reviewsCmd = a.rebuildPostingDetailApplication()
-			}
-			// The new status may have moved this application to/from a
-			// terminal status (rejected/offer_declined), changing whether
-			// it belongs in the active-applications list at all -- reload
-			// rather than patch in place so that's always correct,
-			// regardless of which screen triggered the change.
-			return a, tea.Batch(loadActiveApplications(a.applicationService, a.documentService, a.documents), reviewsCmd)
-		}
 	case changeTickMsg:
 		return a, a.handleTick()
 	case changesMsg:
@@ -1290,29 +1280,9 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 		if msg.err == nil {
 			a.status = "Application form saved"
-			// Same late-save guard as applicationNotesUpdatedMsg.
+			// Same late-save guard as a notes save.
 			if a.currentScreen == screenApplicationForm {
 				a.currentScreen = screenApplicationDetail
-			}
-		}
-	case applicationNotesUpdatedMsg:
-		a.err = msg.err
-		if msg.err != nil && a.currentScreen == screenApplicationNotesEdit && a.applicationNotes.instance == msg.from {
-			a.applicationNotes.saving = false
-		}
-		if msg.err == nil {
-			if a.applicationsByPosting == nil {
-				a.applicationsByPosting = make(map[int64]application.Application)
-			}
-			a.applicationsByPosting[msg.application.PostingID] = msg.application
-			// Same late-save guard as applicationStatusUpdatedMsg: yanking
-			// the user back to posting detail after their own esc already
-			// popped its returnStack entry would strand the next esc.
-			if a.currentScreen == screenApplicationNotesEdit && a.applicationNotes.instance == msg.from {
-				a.currentScreen = screenPostingDetail
-			}
-			if a.currentScreen == screenPostingDetail {
-				return a, a.rebuildPostingDetailApplication()
 			}
 		}
 	case applicationExportedMsg:
@@ -1512,7 +1482,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			// screenPostingList's enterPostingDetailMsg handler gets it seeded
 			// via loadApplication's applicationLoadedMsg: later handlers that
 			// change application-side data while still on screenPostingDetail
-			// (documentReviewCreatedMsg, applicationStatusUpdatedMsg, etc.) go
+			// (documentReviewCreatedMsg, an application change, etc.) go
 			// through rebuildPostingDetailApplication -> lookupPosting, which
 			// reads only from this map, not from appView. Without seeding it
 			// here, that lookup misses and hasApp wrongly flips to false even
@@ -1585,7 +1555,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case cancelApplicationSubmitMsg:
 			a.currentScreen = screenApplicationDetail
 		case confirmApplicationSubmitMsg:
-			return a, updateApplicationStatus(a.applicationService, v.applicationID, application.Submitted, a.applicationSubmit.instance)
+			return a, updateApplicationStatus(a.applicationService, message.Source{Instance: a.applicationSubmit.instance}, v.applicationID, application.Submitted)
 		}
 		return a, cmd
 	case screenApplicationDelete:
@@ -1594,7 +1564,7 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		case cancelApplicationDeleteMsg:
 			a.currentScreen = a.applicationDelete.from
 		case confirmApplicationDeleteMsg:
-			return a, deleteApplication(a.applicationService, v.application)
+			return a, deleteApplication(a.applicationService, message.Source{Instance: a.applicationDelete.instance}, v.application.ID)
 		}
 		return a, cmd
 	case screenApplicationNotesEdit:

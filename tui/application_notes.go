@@ -93,7 +93,7 @@ func (m *applicationNotesModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
 		return nil, cancelApplicationNotesMsg{}
 	case "ctrl+s":
 		m.saving = true
-		return updateApplicationNotes(m.applications, m.applicationID, m.textarea.Value(), m.instance), nil
+		return updateApplicationNotes(m.applications, message.Source{Instance: m.instance}, m.applicationID, m.textarea.Value()), nil
 	}
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
