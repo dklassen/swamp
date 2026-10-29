@@ -271,6 +271,16 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		}}))},
 		{name: "search debounce signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.SearchDebounce]{Value: message.SearchDebounce{Query: "plat"}}))},
 		{name: "open browser ran", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpNone, at, message.Ran[message.OpenBrowser]{Value: message.OpenBrowser{URL: "https://example.com/5"}}))},
+		{name: "active applications read", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Read[message.ActiveApplications]{Value: message.ActiveApplications{
+			Rows: []message.ApplicationRow{{
+				Application: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted, CreatedAt: at, UpdatedAt: at},
+				Posting:     message.Posting{ID: 5, CompanyID: 3, Title: "Engineer", ListingStatus: message.ListingClosed},
+				CompanyName: "Acme",
+				Reviews:     []message.Review{{ID: 8, ApplicationID: 4, DocumentType: message.DocumentCoverLetter, Outcome: message.ReviewFlagged, CreatedAt: at}},
+				StatusSince: at,
+				Documents:   []message.DocumentProgress{{DocumentType: message.DocumentCoverLetter, Drafted: true, Exported: true}, {DocumentType: message.DocumentResume}},
+			}},
+		}}))},
 		{name: "filter options read", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Read[message.FilterOptions]{Value: message.FilterOptions{
 			Departments: []string{"Platform", "Sales"}, Locations: []string{"Remote"},
 		}}))},

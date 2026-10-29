@@ -112,7 +112,7 @@ func TestApp_HomeListReload_KeepsTheCursorOnTheSameApplication(t *testing.T) {
 		}
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
-	rows := app.activeApplications
+	rows := app.activeApplicationList.apps
 	if len(rows) != 3 {
 		t.Fatalf("home list has %d rows, want 3", len(rows))
 	}
@@ -125,7 +125,7 @@ func TestApp_HomeListReload_KeepsTheCursorOnTheSameApplication(t *testing.T) {
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "applications", RowID: rows[0].ID, Op: "update", Origin: "tui:2"}}})
 
-	if got := app.activeApplications[app.activeApplicationList.cursor].ID; got != onLast {
+	if got := app.activeApplicationList.apps[app.activeApplicationList.cursor].ID; got != onLast {
 		t.Errorf("cursor is on application %d after the reload, want %d (the one it was on)", got, onLast)
 	}
 }

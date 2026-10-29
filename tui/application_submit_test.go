@@ -61,7 +61,7 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, applicati
 // presses S, running everything the submit screen kicks off.
 func startSubmit(t *testing.T, app *App) *App {
 	t.Helper()
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if app.currentScreen != screenApplicationDetail {
 		t.Fatalf("screen after enter = %v, want application detail", app.currentScreen)
 	}

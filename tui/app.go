@@ -91,20 +91,10 @@ type App struct {
 	// application detail -> posting detail -> review), and one push/pop pair
 	// per transition keeps a new entry point from needing its own field.
 	// See issue #89.
-	returnStack []screen
-	// activeApplications backs the home screen: every application not at
-	// a terminal dead-end status, across every company (see
-	// ApplicationService.Active).
-	activeApplications []posting.ActiveApplication
-	// activeApplicationProgress is each active application's document
-	// progress, by application ID, loaded with activeApplications. The
-	// home screen derives each row's next step from it and the row's
-	// LatestReviews when it renders, so patching one row's reviews (#91)
-	// moves its next step on too.
-	activeApplicationProgress map[int64]map[document.Type]documentProgress
-	activeApplicationList     activeApplicationListModel
-	applicationDetail         applicationDetailModel
-	applicationExport         applicationExportModel
+	returnStack           []screen
+	activeApplicationList *activeApplicationListModel
+	applicationDetail     applicationDetailModel
+	applicationExport     applicationExportModel
 	// exportDir is the destination the export screen prefills: the last
 	// directory successfully exported to this session, falling back to
 	// defaultExportDir. Ephemeral and in-memory only, like hideArchived
@@ -188,7 +178,7 @@ func New(
 		syncer:                syncer,
 		currentScreen:         screenActiveApplications,
 		allPostings:           newAllPostingsModel(postings),
-		activeApplicationList: newActiveApplicationListModel(),
+		activeApplicationList: newActiveApplicationListModel(applications, documentService, docs),
 		hideArchived:          true,
 		documents:             docs,
 		exportDir:             defaultExportDir,
@@ -202,6 +192,7 @@ func New(
 
 	modules := []model.Routable{
 		a,
+		a.activeApplicationList,
 		a.companyList,
 		a.allPostings,
 		a.syncing,
@@ -212,8 +203,16 @@ func New(
 			panic(err)
 		}
 	}
+	// The home screen is up first. What hearing so starts is a read, which
+	// Init starts too.
+	_ = a.router.Dispatch(a.focusSignal())
 
 	return a
+}
+
+func (a *App) focusSignal() tea.Msg {
+	return message.New(message.Source{Process: a.origin}, message.Subject{}, message.OpNone, time.Now().UTC(),
+		message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: a.focused()}})
 }
 
 // stackedAs is the screen each kind a Nav pushes shows as, for the paths
@@ -279,6 +278,8 @@ func (a *App) focused() message.ScreenInstance {
 		return 0
 	}
 	switch a.currentScreen {
+	case screenActiveApplications:
+		return a.activeApplicationList.Instance()
 	case screenCompanyList:
 		return a.companyList.Instance()
 	case screenAllPostings:
@@ -611,16 +612,6 @@ func indexOfPosting(postings []message.Posting, id int64) int {
 	return -1
 }
 
-// indexOfApplication returns id's index in apps, or -1 if not present.
-func indexOfApplication(apps []posting.ActiveApplication, id int64) int {
-	for i, app := range apps {
-		if app.ID == id {
-			return i
-		}
-	}
-	return -1
-}
-
 // indexOfCompany returns id's index in companies, or -1 if not present.
 func indexOfCompany(companies []message.Company, id int64) int {
 	for i, c := range companies {
@@ -655,45 +646,7 @@ func sortCompaniesByName(companies []message.Company) {
 }
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.companyList.Init(), loadActiveApplications(a.applicationService, a.documentService, a.documents), a.allPostings.Init(), a.pollChanges())
-}
-
-type activeApplicationsLoadedMsg struct {
-	applications []posting.ActiveApplication
-	progress     map[int64]map[document.Type]documentProgress
-	err          error
-}
-
-// loadActiveApplications fetches every active application, filtering
-// each one's LatestReviews through documents.Current -- the services have
-// no filesystem access (see documents.go's own doc comment) so
-// ApplicationService.Active itself can't do this, and every screen this
-// list feeds (the active-applications glyph column, application detail,
-// and posting detail reached via application detail's 'p' fast path,
-// which skips its own separate load) would
-// otherwise show a stale review as if it still described the current
-// document.
-func loadActiveApplications(applications *service.ApplicationService, documentService *service.DocumentService, docs *documents.Store) tea.Cmd {
-	return func() tea.Msg {
-		apps, err := applications.Active(context.Background())
-		if err != nil {
-			return activeApplicationsLoadedMsg{err: err}
-		}
-		progress := make(map[int64]map[document.Type]documentProgress, len(apps))
-		for i, app := range apps {
-			reviews, err := documents.Current(docs.Status(app.ID), app.LatestReviews, document.Review.IsCurrent)
-			if err != nil {
-				return activeApplicationsLoadedMsg{err: err}
-			}
-			apps[i].LatestReviews = reviews
-			progress[app.ID], err = documentProgressOf(documentService, docs, app.ID)
-			if err != nil {
-				return activeApplicationsLoadedMsg{err: err}
-			}
-		}
-		orderForHome(apps)
-		return activeApplicationsLoadedMsg{applications: apps, progress: progress}
-	}
+	return tea.Batch(a.activeApplicationList.Init(), a.companyList.Init(), a.allPostings.Init(), a.pollChanges())
 }
 
 // boardCheckTimeout bounds createCompany's live board check, so an
@@ -1060,11 +1013,6 @@ func (a *App) applicationChanged(e message.Event[message.Changed[message.Applica
 		a.status = "Marked " + a.applicationSubmit.application.Posting.Title + " submitted"
 		a.currentScreen = screenActiveApplications
 	}
-	// A new status may move the application to or from a terminal one,
-	// so the home list reloads rather than patching its row.
-	if e.Meta.Op == message.OpCreated || e.Payload.Before.Status != e.Payload.After.Status {
-		return loadActiveApplications(a.applicationService, a.documentService, a.documents)
-	}
 	return nil
 }
 
@@ -1075,7 +1023,7 @@ func (a *App) applicationDeleted(e message.Event[message.Changed[message.Applica
 			a.currentScreen = screenActiveApplications
 		}
 	}
-	return loadActiveApplications(a.applicationService, a.documentService, a.documents)
+	return nil
 }
 
 // applicationWriteFailed puts the screen that asked back as it was before
@@ -1126,8 +1074,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// A replace changes the screen in focus but not currentScreen.
 	if a.currentScreen != before || a.focused() != focusedBefore {
 		// Dispatched now, not as a Cmd, so keys already queued see it.
-		focused := a.router.Dispatch(message.New(message.Source{Process: a.origin}, message.Subject{}, message.OpNone, time.Now().UTC(),
-			message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: a.focused()}}))
+		focused := a.router.Dispatch(a.focusSignal())
 		cmd = tea.Batch(cmd, focused, a.activate())
 	}
 	// The window or the banner may have changed size, on any message.
@@ -1154,12 +1101,22 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case activeApplicationsLoadedMsg:
-		a.setLoadErr(msg.err)
-		previous := a.activeApplicationList.selected(a.activeApplications)
-		a.activeApplications = msg.applications
-		a.activeApplicationProgress = msg.progress
-		a.activeApplicationList.keepCursorOn(previous, a.activeApplications)
+	// The home screen asks for the screens App still opens, unless the user
+	// has left it while the request was on its way.
+	case enterApplicationDetailMsg:
+		if a.currentScreen == screenActiveApplications {
+			a.currentScreen, a.err = screenApplicationDetail, nil
+			a.applicationDetail = newApplicationDetailModel(a.documents, msg.application)
+		}
+	case enterApplicationExportMsg:
+		if a.currentScreen == screenActiveApplications {
+			a.currentScreen, a.err = screenApplicationExport, nil
+			a.applicationExport = newApplicationExportModel(a.documentService, a.documents, msg.application, a.exportDir, a.width)
+		}
+	case enterApplicationDeleteMsg:
+		if a.currentScreen == screenActiveApplications {
+			return a, reloadApplicationForDelete(a.applicationService, msg.application, screenActiveApplications)
+		}
 	case enterDocumentReviewSelectMsg:
 		if a.currentScreen == screenPostingDetail {
 			a.enterFrom(screenDocumentReviewSelect)
@@ -1264,13 +1221,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil && a.currentScreen == screenApplicationDetail && a.applicationDetail.application.ID == msg.applicationID {
 			a.applicationDetail.application.LatestReviews = msg.reviews
 		}
-		// The reviews are fresh whichever screen asked for them, so the
-		// application's home-screen row takes them too (#91).
-		if msg.err == nil {
-			if i := indexOfApplication(a.activeApplications, msg.applicationID); i != -1 {
-				a.activeApplications[i].LatestReviews = msg.reviews
-			}
-		}
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
@@ -1298,8 +1248,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // paste is never a key, so a pasted "q" can't quit.
 func (a *App) paste(msg tea.PasteMsg) tea.Cmd {
 	switch a.currentScreen {
-	case screenActiveApplications:
-		a.activeApplicationList.paste(msg)
 	case screenApplicationExport:
 		return a.applicationExport.paste(msg)
 	case screenApplicationForm:
@@ -1327,22 +1275,6 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	switch a.currentScreen {
-	case screenActiveApplications:
-		cmd, intent := a.activeApplicationList.Update(msg, a.activeApplications)
-		switch v := intent.(type) {
-		case message.Application:
-			// The home screen is App's, with no instance to send a Nav from.
-			return a, a.push(message.ScreenApplicationStatus, newApplicationStatusModel(a.applicationService, v))
-		case enterApplicationDetailMsg:
-			a.currentScreen = screenApplicationDetail
-			a.applicationDetail = newApplicationDetailModel(a.documents, v.application)
-		case enterApplicationExportMsg:
-			a.currentScreen = screenApplicationExport
-			a.applicationExport = newApplicationExportModel(a.documentService, a.documents, v.application, a.exportDir, a.width)
-		case enterApplicationDeleteMsg:
-			return a, reloadApplicationForDelete(a.applicationService, v.application, screenActiveApplications)
-		}
-		return a, cmd
 	case screenApplicationDetail:
 		cmd, intent := a.applicationDetail.Update(msg)
 		switch v := intent.(type) {
@@ -1477,7 +1409,7 @@ func (a *App) body(s screen) string {
 	var b strings.Builder
 	switch s {
 	case screenActiveApplications:
-		b.WriteString(a.activeApplicationList.View(a.activeApplications, a.activeApplicationProgress, time.Now(), a.width, a.screenRows()))
+		b.WriteString(a.activeApplicationList.View().Content)
 	case screenApplicationDetail:
 		b.WriteString(a.applicationDetail.View())
 	case screenAllPostings:
