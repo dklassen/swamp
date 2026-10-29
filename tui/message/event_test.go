@@ -240,6 +240,24 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "hide archived signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.HideArchived]{Value: message.HideArchived{Hidden: true}}))},
 		{name: "filter selection nav", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Nav[message.FilterSelection]{Op: message.NavPush, Screen: message.ScreenFilterSelect,
 			Value: message.FilterSelection{Company: message.Company{ID: 3, Name: "Acme", CreatedAt: at, UpdatedAt: at}, Departments: []string{"Platform"}, Locations: []string{"Remote"}}}))},
+		{name: "posting detail nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpNone, at, message.Nav[message.PostingDetail]{Op: message.NavReplace, Screen: message.ScreenPostingDetail,
+			Value: message.PostingDetail{
+				Posting:     message.Posting{ID: 5, CompanyID: 3, Title: "Engineer", ContentSHA256: "abc", ListingStatus: message.ListingOpen},
+				Application: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted, CreatedAt: at, UpdatedAt: at},
+				Siblings:    []int64{6, 5, 7},
+			}}))},
+		{name: "posting application read", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpNone, at, message.Read[message.PostingApplication]{Value: message.PostingApplication{
+			Posting: message.Posting{ID: 5, CompanyID: 3, Title: "Engineer", ListingStatus: message.ListingClosed},
+		}}))},
+		{name: "review list read", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Read[message.ReviewList]{Value: message.ReviewList{
+			Reviews: []message.Review{
+				{ID: 8, ApplicationID: 4, DocumentType: message.DocumentCoverLetter, Outcome: message.ReviewFlagged, Notes: "too long", CreatedAt: at},
+				{ID: 9, ApplicationID: 4, DocumentType: message.DocumentResume, Outcome: message.ReviewPassed, CreatedAt: at},
+			},
+		}}))},
+		{name: "posting scores read", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpNone, at, message.Read[message.PostingScores]{Value: message.PostingScores{
+			Scores: []message.Score{{Score: 4, Reason: "fits", Model: "claude", ClientName: "cli", ClientVersion: "1.0", ContentSHA256: "abc", ScoredAt: at}},
+		}}))},
 		{name: "filter options read", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Read[message.FilterOptions]{Value: message.FilterOptions{
 			Departments: []string{"Platform", "Sales"}, Locations: []string{"Remote"},
 		}}))},
