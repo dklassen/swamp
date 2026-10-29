@@ -17,13 +17,13 @@ Posting detail is opened from three screens by `enterPostingDetailMsg`, each see
 
 - `Nav[PostingDetail]` (the posting, its application if any, and the sibling posting IDs in list order, empty when opened outside the posting list) pushes it. It loads in `Init`: `Read[PostingApplication]`, `Read[ReviewList]`, `Read[PostingScores]`.
 - Previous/next send `Replace` with the sibling's snapshot. `message.Replace` is new, beside `Push` and `Pop`, and the stack's `replace` pops and pushes in one step.
-- It routes `Changed[Markup]` and `Changed[Application]` `About` its posting or application and patches itself.
+- It routes `Changed[Application]` for its posting and patches itself. A new application's ID isn't known yet, so it goes by the posting. It shows no markup, so it doesn't route `Changed[Markup]` (decided 2026-10-29).
 - Its own `enter…` requests (status, notes, review select) stay `App`'s until steps 20 and 25.
 - Remove `enterPostingDetailMsg`, `navigatePostingMsg`, `backToPostingListMsg`, `refreshPostingDetailMsg` and `postingReloadedMsg`'s detail path.
 
 ## Acceptance criteria
 
 - [ ] Opening from the posting list, all postings and application detail shows the same posting; previous/next only from the posting list.
-- [ ] A status change or archive made while it's covered shows when it's back on top.
+- [ ] A status or notes change made while it's covered shows when it's back on top.
 - [ ] Manual check against real data from each entry point.
 - [ ] Verification checklist clean.
