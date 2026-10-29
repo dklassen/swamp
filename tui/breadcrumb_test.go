@@ -19,31 +19,35 @@ import (
 func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 	t.Parallel()
 
-	p := posting.Posting{ID: 5, IngestedFields: posting.IngestedFields{Title: "Staff Engineer"}}
+	p := message.Posting{ID: 5, Title: "Staff Engineer"}
 	view := posting.ActiveApplication{
 		Application: application.Application{ID: 1},
 		Posting:     posting.Posting{ID: 9, IngestedFields: posting.IngestedFields{Title: "Engineering Manager"}},
 		CompanyName: "Initech",
 	}
+	// noDetail is a detailOver for a path with no posting detail on it.
+	const noDetail screen = -1
 	tests := []struct {
 		name   string
 		screen screen
-		stack  []screen
-		want   string
+		// detailOver is the screen posting detail was pushed over.
+		detailOver screen
+		stack      []screen
+		want       string
 	}{
-		{"posting list", screenPostingList, nil, "Companies › Globex"},
-		{"posting detail from the list", screenPostingDetail, []screen{screenPostingList}, "Companies › Globex › Staff Engineer"},
-		{"posting detail from all postings", screenPostingDetail, []screen{screenAllPostings}, "All postings › Staff Engineer"},
-		{"notes, under posting detail from all postings", screenApplicationNotesEdit, []screen{screenAllPostings}, "All postings › Staff Engineer › Edit notes"},
-		{"application detail", screenApplicationDetail, nil, "Applications › Initech › Engineering Manager"},
-		{"posting detail from an application", screenPostingDetail, []screen{screenApplicationDetail}, "Applications › Initech › Engineering Manager › Posting"},
-		{"notes, under posting detail from the list", screenApplicationNotesEdit, []screen{screenPostingList}, "Companies › Globex › Staff Engineer › Edit notes"},
-		{"status from the home list", screenApplicationStatusSelect, []screen{screenActiveApplications}, "Applications › Set status"},
-		{"review form, picked under posting detail", screenDocumentReviewForm, []screen{screenPostingList, screenPostingDetail}, "Companies › Globex › Staff Engineer › Review " + document.CoverLetter.Label()},
-		{"add company", screenCompanyForm, nil, "Companies › Add company"},
-		{"filters", screenFilterSelect, nil, "Companies › Globex › Filters"},
-		{"export", screenApplicationExport, nil, "Applications › Export PDFs"},
-		{"submit", screenApplicationSubmit, nil, "Applications › Initech › Engineering Manager › Submit"},
+		{"posting list", screenPostingList, noDetail, nil, "Companies › Globex"},
+		{"posting detail from the list", screenPostingDetail, screenPostingList, nil, "Companies › Globex › Staff Engineer"},
+		{"posting detail from all postings", screenPostingDetail, screenAllPostings, nil, "All postings › Staff Engineer"},
+		{"notes, under posting detail from all postings", screenApplicationNotesEdit, screenAllPostings, nil, "All postings › Staff Engineer › Edit notes"},
+		{"application detail", screenApplicationDetail, noDetail, nil, "Applications › Initech › Engineering Manager"},
+		{"posting detail from an application", screenPostingDetail, screenApplicationDetail, nil, "Applications › Initech › Engineering Manager › Posting"},
+		{"notes, under posting detail from the list", screenApplicationNotesEdit, screenPostingList, nil, "Companies › Globex › Staff Engineer › Edit notes"},
+		{"status from the home list", screenApplicationStatusSelect, noDetail, []screen{screenActiveApplications}, "Applications › Set status"},
+		{"review form, picked under posting detail", screenDocumentReviewForm, screenPostingList, []screen{screenPostingDetail}, "Companies › Globex › Staff Engineer › Review " + document.CoverLetter.Label()},
+		{"add company", screenCompanyForm, noDetail, nil, "Companies › Add company"},
+		{"filters", screenFilterSelect, noDetail, nil, "Companies › Globex › Filters"},
+		{"export", screenApplicationExport, noDetail, nil, "Applications › Export PDFs"},
+		{"submit", screenApplicationSubmit, noDetail, nil, "Applications › Initech › Engineering Manager › Submit"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -63,7 +67,12 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 			if err := app.stack.push(message.ScreenCompanyPostings, newPostingListModel(nil, nil, message.Company{ID: 1, Name: "Globex"}, false, message.ContentSize{}), screenCompanyList); err != nil {
 				t.Fatalf("push: %v", err)
 			}
-			app.postingDetail.posting = p
+			if tt.detailOver != noDetail {
+				d := newPostingDetailModel(nil, nil, nil, nil, message.PostingDetail{Posting: p}, message.ContentSize{})
+				if err := app.stack.push(message.ScreenPostingDetail, d, tt.detailOver); err != nil {
+					t.Fatalf("push: %v", err)
+				}
+			}
 			app.applicationDetail.application = view
 			app.documentReviewForm.documentType = document.CoverLetter
 			app.currentScreen, app.returnStack = tt.screen, tt.stack
@@ -84,7 +93,7 @@ func TestApp_Screens_BreadcrumbReplacesTheTitle(t *testing.T) {
 	formerTitles := map[string]func(app *App) string{
 		"posting list": func(*App) string { return "Postings: Acme" },
 		"posting list with description and filters": func(*App) string { return "Postings: Acme" },
-		"posting detail":                     func(app *App) string { return app.postingDetail.posting.Title },
+		"posting detail":                     func(app *App) string { return app.postingDetail().posting.Title },
 		"filter select":                      func(*App) string { return "Filters: Acme" },
 		"filter select across both sections": func(*App) string { return "Filters: Acme" },
 		"application notes":                  func(*App) string { return "Edit application notes" },

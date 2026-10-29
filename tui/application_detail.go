@@ -9,6 +9,7 @@ import (
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -35,7 +36,7 @@ func (m *applicationDetailModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) 
 	case msg.String() == "esc", msg.String() == "b":
 		return nil, backToActiveApplicationsMsg{}
 	case msg.String() == "p":
-		return nil, enterPostingDetailMsg{postingID: m.application.Posting.ID}
+		return nil, message.PostingDetail{Posting: postingSnapshot(m.application.Posting), Application: applicationSnapshot(m.application.Application)}
 	case msg.String() == "u":
 		return nil, refreshApplicationDetailMsg{}
 	case msg.String() == "S":

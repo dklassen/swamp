@@ -95,4 +95,14 @@ func (st *screenStack) open(kind message.Screen) stackScreen {
 	return nil
 }
 
+// under is the screen the one of kind was pushed over, if it's open.
+func (st *screenStack) under(kind message.Screen) (screen, bool) {
+	for _, e := range st.entries {
+		if e.kind == kind {
+			return e.under, true
+		}
+	}
+	return 0, false
+}
+
 func (st *screenStack) len() int { return len(st.entries) }

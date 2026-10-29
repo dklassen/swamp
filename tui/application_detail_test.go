@@ -8,11 +8,13 @@ import (
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/tui/message"
 )
 
 func testApplicationView() posting.ActiveApplication {
@@ -38,20 +40,18 @@ func TestApplicationDetailModel_EscOrB_ReturnsBackToActiveApplicationsMsg(t *tes
 	}
 }
 
-func TestApplicationDetailModel_P_ReturnsEnterPostingDetailMsg(t *testing.T) {
+func TestApplicationDetailModel_P_AsksForItsPostingsDetailWithTheApplication(t *testing.T) {
 	t.Parallel()
 
-	m := newApplicationDetailModel(documents.NewStore(t.TempDir()), testApplicationView())
+	view := testApplicationView()
+	m := newApplicationDetailModel(documents.NewStore(t.TempDir()), view)
 	cmd, intent := m.Update(runeKey('p'))
 	if cmd != nil {
 		t.Fatalf("cmd = %v, want nil", cmd)
 	}
-	got, ok := intent.(enterPostingDetailMsg)
-	if !ok {
-		t.Fatalf("intent = %T, want enterPostingDetailMsg", intent)
-	}
-	if got.postingID != 5 {
-		t.Fatalf("postingID = %d, want 5 (the application's posting)", got.postingID)
+	want := message.PostingDetail{Posting: postingSnapshot(view.Posting), Application: applicationSnapshot(view.Application)}
+	if diff := cmp.Diff(want, intent); diff != "" {
+		t.Fatalf("intent (-want +got):\n%s", diff)
 	}
 }
 

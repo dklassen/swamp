@@ -11,8 +11,6 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/change"
-	"github.com/dklassen/swamp/internal/domain/posting"
-	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/tui/message"
@@ -143,17 +141,20 @@ func (a *App) reloadFor(events []change.Event) tea.Cmd {
 			return tea.Batch(reloadApplicationDetail(a.applicationService, view.ID), loadDocumentReviews(a.documentService, a.documents, view.ID))
 		}
 	case screenPostingDetail:
-		d := a.postingDetail
+		d := a.postingDetail()
+		if d == nil {
+			return nil
+		}
 		var cmds []tea.Cmd
 		if slices.ContainsFunc(events, func(e change.Event) bool {
-			return (e.Table == "postings" && e.RowID == d.posting.ID) || (e.Table == "applications" && eventPostingID(e) == d.posting.ID) || (d.hasApplication && eventApplicationID(e) == d.application.ID)
+			return (e.Table == "postings" && e.RowID == d.posting.ID) || (e.Table == "applications" && eventPostingID(e) == d.posting.ID) || (d.hasApplication() && eventApplicationID(e) == d.application.ID)
 		}) {
-			cmds = append(cmds, reloadPosting(a.postingService, d.posting.ID))
+			cmds = append(cmds, requestLoad[message.PostingApplication](message.Source{Instance: a.instance}))
 		}
 		if slices.ContainsFunc(events, func(e change.Event) bool {
 			return e.Table == "posting_scores" && eventPostingID(e) == d.posting.ID
 		}) {
-			cmds = append(cmds, loadPostingScores(a.scoringService, d.posting.ID))
+			cmds = append(cmds, requestLoad[message.PostingScores](message.Source{Instance: a.instance}))
 		}
 		return tea.Batch(cmds...)
 	case screenPostingList:
@@ -180,10 +181,7 @@ func touches(events []change.Event, tables ...string) bool {
 
 // reloadPostings asks the posting list to read its postings again.
 func (a *App) reloadPostings() tea.Cmd {
-	src := message.Source{Instance: a.instance}
-	return func() tea.Msg {
-		return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.PostingList]{})
-	}
+	return requestLoad[message.PostingList](message.Source{Instance: a.instance})
 }
 
 // eventApplicationID is the application an event is about, or 0.
@@ -261,69 +259,4 @@ func (a *App) handleApplicationDetailReloaded(msg applicationDetailReloadedMsg) 
 		a.applicationDetail.application.Application = msg.application
 	}
 	return nil
-}
-
-// replacePostingDetail swaps in m, keeping the scroll position when it's
-// the same posting: a reload mustn't jump you back to the top.
-func (a *App) replacePostingDetail(m postingDetailModel) {
-	if m.posting.ID == a.postingDetail.posting.ID {
-		m.setScores(a.postingDetail.scores)
-		m.viewport.SetYOffset(a.postingDetail.viewport.YOffset())
-	}
-	a.postingDetail = m
-}
-
-type postingReloadedMsg struct {
-	posting posting.Posting
-	err     error
-}
-
-func reloadPosting(postings *service.PostingService, id int64) tea.Cmd {
-	return func() tea.Msg {
-		p, err := postings.Get(context.Background(), id)
-		if err != nil {
-			return postingReloadedMsg{err: err}
-		}
-		return postingReloadedMsg{posting: *p}
-	}
-}
-
-// handlePostingReloaded shows the posting's new content, then reloads its
-// application, which rebuilds the screen again with the same scroll.
-func (a *App) handlePostingReloaded(msg postingReloadedMsg) tea.Cmd {
-	a.setLoadErr(msg.err)
-	if msg.err != nil || a.currentScreen != screenPostingDetail || a.postingDetail.posting.ID != msg.posting.ID {
-		return nil
-	}
-	if l := a.postingList(); l != nil {
-		l.patch(postingSnapshot(msg.posting))
-	}
-	d := a.postingDetail
-	a.replacePostingDetail(newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), msg.posting, d.application, d.hasApplication, d.latestReviews, a.canNavigateSiblings(msg.posting.ID)))
-	return loadApplication(a.postingService, msg.posting.ID)
-}
-
-type postingScoresLoadedMsg struct {
-	postingID int64
-	scores    []score.Score
-	err       error
-}
-
-func loadPostingScores(scores *service.ScoringService, postingID int64) tea.Cmd {
-	return func() tea.Msg {
-		postingScores, err := scores.ForPosting(context.Background(), postingID)
-		return postingScoresLoadedMsg{postingID: postingID, scores: postingScores, err: err}
-	}
-}
-
-// handlePostingScoresLoaded shows a posting's scores, if its detail is
-// still the one open, under whatever screen is on top of it.
-func (a *App) handlePostingScoresLoaded(msg postingScoresLoadedMsg) {
-	if msg.err != nil {
-		a.err = msg.err
-		return
-	}
-	if a.postingDetail.posting.ID == msg.postingID {
-		a.postingDetail.setScores(msg.scores)
-	}
 }

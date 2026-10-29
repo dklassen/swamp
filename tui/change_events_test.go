@@ -267,7 +267,7 @@ func TestApp_PostingDetailReload_ShowsTheChangeAndKeepsTheScroll(t *testing.T) {
 	for range 20 {
 		app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyDown})
 	}
-	scrolled := app.postingDetail.viewport.YOffset()
+	scrolled := openDetail(t, app).viewport.YOffset()
 	if scrolled == 0 {
 		t.Fatal("posting detail didn't scroll; the test can't tell the scroll was kept")
 	}
@@ -278,11 +278,39 @@ func TestApp_PostingDetailReload_ShowsTheChangeAndKeepsTheScroll(t *testing.T) {
 	}
 	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "postings", RowID: p.ID, Op: "update", Origin: "fetch:9"}}})
 
-	if got := app.postingDetail.posting.Title; got != "Senior Engineer" {
+	if got := openDetail(t, app).posting.Title; got != "Senior Engineer" {
 		t.Errorf("posting detail title = %q, want the renamed %q", got, "Senior Engineer")
 	}
-	if got := app.postingDetail.viewport.YOffset(); got != scrolled {
+	if got := openDetail(t, app).viewport.YOffset(); got != scrolled {
 		t.Errorf("scroll offset = %d after the reload, want %d", got, scrolled)
+	}
+}
+
+// #284: posting detail opened from application detail keeps showing its
+// posting, with the new content, when a write elsewhere reloads it.
+func TestApp_PostingDetailFromApplicationDetail_ReloadKeepsThePosting(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	p := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	mustCreateApplication(t, s, p.ID)
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // home -> application detail
+	app = sendKeyAndApply(t, app, runeKey('p'))                        // -> posting detail
+	if app.currentScreen != screenPostingDetail {
+		t.Fatalf("screen after p = %v, want posting detail", app.currentScreen)
+	}
+
+	stored := storedPosting(t, s, p.ID)
+	if _, err := s.Postings.Ingest(context.Background(), stored.CompanyID, stored.Source, stored.SourceID, posting.IngestedFields{Title: "Engineer", Location: "Remote", RawPayload: stored.RawPayload}); err != nil {
+		t.Fatalf("Ingest: %v", err)
+	}
+	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "postings", RowID: p.ID, Op: "update", Origin: "fetch:9"}}})
+
+	if view := viewText(app); !strings.Contains(view, "Remote") || strings.Contains(view, "No application started") {
+		t.Errorf("posting detail after the reload doesn't show the posting's new location with its application:\n%s", view)
 	}
 }
 
@@ -308,7 +336,7 @@ func TestApp_ApplicationStartedElsewhere_PostingDetailShowsIt(t *testing.T) {
 		t.Fatalf("Latest: %v", err)
 	}
 
-	if _, err := createApplicationIn(ctx, s, app.postingDetail.posting.ID); err != nil {
+	if _, err := createApplicationIn(ctx, s, openDetail(t, app).posting.ID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
 	events, err := s.Changes.After(ctx, since)

@@ -43,8 +43,7 @@ func deleteTestApp(t *testing.T) (*App, application.Application) {
 }
 
 // startDelete goes from the home screen to the application's detail,
-// looks at its posting and comes back (which records the application in
-// applicationsByPosting), and presses D.
+// looks at its posting and comes back, and presses D.
 func startDelete(t *testing.T, app *App) *App {
 	t.Helper()
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -57,9 +56,6 @@ func startDelete(t *testing.T, app *App) *App {
 	app = applyCmd(t, app, cmd)
 	if app.currentScreen != screenApplicationDetail {
 		t.Fatalf("screen after viewing the posting = %v, want application detail", app.currentScreen)
-	}
-	if _, ok := app.applicationsByPosting[app.applicationDetail.application.Posting.ID]; !ok {
-		t.Fatal("applicationsByPosting has no entry for the application after viewing its posting")
 	}
 	app, cmd = sendKey(app, runeKey('D'))
 	app = applyCmd(t, app, cmd)
@@ -94,9 +90,6 @@ func TestDeleteFlow_ConfirmingDeletesTheApplicationAndKeepsItsDocuments(t *testi
 	}
 	if len(app.activeApplications) != 0 {
 		t.Errorf("active applications = %d, want the deleted one gone from the list", len(app.activeApplications))
-	}
-	if _, ok := app.applicationsByPosting[target.PostingID]; ok {
-		t.Error("applicationsByPosting still has the deleted application")
 	}
 }
 
@@ -140,9 +133,6 @@ func TestDeleteFlow_FailureReturnsToDetailWithTheError(t *testing.T) {
 	}
 	if app.err == nil || app.err.Error() != failure.Error() {
 		t.Errorf("err = %v, want %v shown", app.err, failure)
-	}
-	if _, ok := app.applicationsByPosting[target.PostingID]; !ok {
-		t.Error("applicationsByPosting dropped an application that wasn't deleted")
 	}
 }
 

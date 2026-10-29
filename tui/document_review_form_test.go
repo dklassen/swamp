@@ -128,7 +128,7 @@ func TestApp_ReviewSavedOfAnUnchangedDocument_DoesNotWarn(t *testing.T) {
 	}
 
 	app = openPostingDetail(t, app)
-	app, _ = sendKey(app, runeKey('r'))
+	app = sendKeyAndApply(t, app, runeKey('r'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
@@ -162,7 +162,7 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 	}
 
 	app = openPostingDetail(t, app)
-	app, _ = sendKey(app, runeKey('r'))
+	app = sendKeyAndApply(t, app, runeKey('r'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
 	app, _ = sendKey(app, runeKey([]rune("tighten the intro")...))
 	if err := os.WriteFile(path, []byte("Dear team,\nRewritten meanwhile\n"), 0o644); err != nil {
@@ -221,7 +221,7 @@ func TestApp_ReviewOfADocumentDeletedMeanwhile_SavesNothingAndSaysSo(t *testing.
 	}
 
 	app = openPostingDetail(t, app)
-	app, _ = sendKey(app, runeKey('r'))
+	app = sendKeyAndApply(t, app, runeKey('r'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
 	if err := os.Remove(path); err != nil {
 		t.Fatalf("Remove: %v", err)
@@ -262,7 +262,7 @@ func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
 	}
 
 	app = openPostingDetail(t, app)
-	app, _ = sendKey(app, runeKey('r'))
+	app = sendKeyAndApply(t, app, runeKey('r'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
 	if _, err := app.documents.Write(application.ID, document.CoverLetter, "Rewritten by the agent\n"); err != nil {
 		t.Fatalf("Write: %v", err)
@@ -311,7 +311,7 @@ func TestApp_ReviewOfADocumentChangedOutsideSwamp_DoesNotNameTheLastWriter(t *te
 	}
 
 	app = openPostingDetail(t, app)
-	app, _ = sendKey(app, runeKey('r'))
+	app = sendKeyAndApply(t, app, runeKey('r'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
 	if err := os.WriteFile(path, []byte("Changed outside Swamp\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)

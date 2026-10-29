@@ -1,207 +1,365 @@
 package tui
 
 import (
+	"context"
+	"os"
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/document"
-	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/domain/score"
+	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
+)
+
+// detailOf is posting detail on p and app in width by rows, able to step
+// through siblings.
+func detailOf(docs *documents.Store, p message.Posting, app message.Application, siblings []int64, width, rows int) *postingDetailModel {
+	return newPostingDetailModel(nil, nil, nil, docs, message.PostingDetail{Posting: p, Application: app, Siblings: siblings}, message.ContentSize{Width: width, Rows: rows})
+}
+
+// withReviews gives m reviews of its application, as its read would.
+func withReviews(m *postingDetailModel, reviews ...message.Review) *postingDetailModel {
+	m.reviewsRead(message.New(m.src(), message.Subject{Type: message.TypeApplication, ID: m.application.ID}, message.OpNone, time.Now().UTC(),
+		message.Read[message.ReviewList]{Value: message.ReviewList{Reviews: reviews}}))
+	return m
+}
+
+func detailView(m *postingDetailModel) string { return m.View().Content }
+
+// pressDetail sends key to m and returns the messages its command produces.
+func pressDetail(t *testing.T, m *postingDetailModel, key tea.KeyPressMsg) []tea.Msg {
+	t.Helper()
+	return runCmd(t, m.keyPressed(key))
+}
+
+var (
+	testDetailPosting     = message.Posting{ID: 5, Title: "Engineer", JobURL: "https://example.com/5"}
+	testDetailApplication = message.Application{ID: 9, PostingID: 5, Status: message.ApplicationSubmitted, Notes: "existing notes"}
 )
 
 func TestPostingDetailModel_New_RendersContent(t *testing.T) {
 	t.Parallel()
 
-	p := posting.Posting{ID: 1, IngestedFields: posting.IngestedFields{Title: "Engineer"}}
-	m := newPostingDetailModel(nil, nil, 80, 20, p, application.Application{}, false, nil, true)
-	if !strings.Contains(m.View(), "No application started") {
-		t.Fatalf("View() = %q, want it to contain the no-application message", m.View())
+	m := detailOf(nil, testDetailPosting, message.Application{}, nil, 80, 20)
+	if !strings.Contains(detailView(m), "No application started") {
+		t.Fatalf("View() = %q, want it to contain the no-application message", detailView(m))
 	}
 }
 
 func TestPostingDetailModel_New_NoReviewsYet_ShowsNotReviewedBadge(t *testing.T) {
 	t.Parallel()
 
-	app := application.Application{ID: 9, PostingID: 5}
-	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, posting.Posting{ID: 5}, app, true, nil, true)
-	if !containsAll(m.View(), "Cover Letter", "[not reviewed]", "Resume") {
-		t.Fatalf("View() = %q, want both documents marked [not reviewed]", m.View())
+	m := detailOf(documents.NewStore(t.TempDir()), testDetailPosting, testDetailApplication, nil, 80, 20)
+	if !containsAll(detailView(m), "Cover Letter", "[not reviewed]", "Resume") {
+		t.Fatalf("View() = %q, want both documents marked [not reviewed]", detailView(m))
 	}
 }
 
-func TestPostingDetailModel_New_WithReviews_ShowsOutcomeAndNotes(t *testing.T) {
+func TestPostingDetailModel_WithReviews_ShowsOutcomeAndNotes(t *testing.T) {
 	t.Parallel()
 
-	app := application.Application{ID: 9, PostingID: 5}
-	reviews := map[document.Type]document.Review{
-		document.CoverLetter: {Outcome: document.Flagged, Notes: "too generic, mention Go specifically"},
-		document.Resume:      {Outcome: document.Passed},
-	}
-	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, posting.Posting{ID: 5}, app, true, reviews, true)
-	got := m.View()
-	if !containsAll(got, "[FLAGGED]", "too generic, mention Go specifically", "[PASSED]") {
+	m := withReviews(detailOf(documents.NewStore(t.TempDir()), testDetailPosting, testDetailApplication, nil, 80, 20),
+		message.Review{ApplicationID: 9, DocumentType: message.DocumentCoverLetter, Outcome: message.ReviewFlagged, Notes: "too generic, mention Go specifically"},
+		message.Review{ApplicationID: 9, DocumentType: message.DocumentResume, Outcome: message.ReviewPassed},
+	)
+	if got := detailView(m); !containsAll(got, "[FLAGGED]", "too generic, mention Go specifically", "[PASSED]") {
 		t.Fatalf("View() = %q, want FLAGGED cover letter with notes and PASSED resume", got)
 	}
 }
 
-func TestPostingDetailModel_L_ReturnsNavigateForward(t *testing.T) {
+// A late read for an application the posting no longer has mustn't show.
+func TestPostingDetailModel_ReviewsOfAnotherApplication_AreDropped(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, nil, 80, 20, posting.Posting{ID: 5}, application.Application{}, false, nil, true)
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyRight})
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	got, ok := intent.(navigatePostingMsg)
-	if !ok {
-		t.Fatalf("intent = %T, want navigatePostingMsg", intent)
-	}
-	if got.postingID != 5 || got.direction != 1 {
-		t.Fatalf("navigatePostingMsg = %+v, want {postingID:5 direction:1}", got)
+	m := detailOf(documents.NewStore(t.TempDir()), testDetailPosting, testDetailApplication, nil, 80, 20)
+	m.reviewsRead(message.New(m.src(), message.Subject{Type: message.TypeApplication, ID: 99}, message.OpNone, time.Now().UTC(),
+		message.Read[message.ReviewList]{Value: message.ReviewList{Reviews: []message.Review{{ApplicationID: 99, DocumentType: message.DocumentCoverLetter, Outcome: message.ReviewFlagged}}}}))
+
+	if strings.Contains(detailView(m), "[FLAGGED]") {
+		t.Errorf("View() = %q, want no review of application 99", detailView(m))
 	}
 }
 
-func TestPostingDetailModel_H_ReturnsNavigateBackward(t *testing.T) {
+func TestPostingDetailModel_PrevNext_ReplaceItWithTheSibling(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, nil, 80, 20, posting.Posting{ID: 5}, application.Application{}, false, nil, true)
-	_, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyLeft})
-	got, ok := intent.(navigatePostingMsg)
-	if !ok || got.direction != -1 {
-		t.Fatalf("intent = %+v, want navigatePostingMsg{direction: -1}", intent)
+	siblings := []int64{4, 5, 6}
+	tests := []struct {
+		name     string
+		siblings []int64
+		key      tea.KeyPressMsg
+		want     int64 // 0 for no step
+	}{
+		{name: "right", siblings: siblings, key: tea.KeyPressMsg{Code: tea.KeyRight}, want: 6},
+		{name: "l", siblings: siblings, key: runeKey('l'), want: 6},
+		{name: "left", siblings: siblings, key: tea.KeyPressMsg{Code: tea.KeyLeft}, want: 4},
+		{name: "h", siblings: siblings, key: runeKey('h'), want: 4},
+		{name: "right at the last", siblings: []int64{4, 5}, key: tea.KeyPressMsg{Code: tea.KeyRight}},
+		{name: "left at the first", siblings: []int64{5, 6}, key: tea.KeyPressMsg{Code: tea.KeyLeft}},
+		{name: "no siblings", key: tea.KeyPressMsg{Code: tea.KeyRight}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := detailOf(nil, testDetailPosting, message.Application{}, tt.siblings, 80, 20)
+
+			got := pressDetail(t, m, tt.key)
+			if tt.want == 0 {
+				if len(got) != 0 {
+					t.Fatalf("%s sent %#v, want nothing", tt.name, got)
+				}
+				return
+			}
+			if len(got) != 1 {
+				t.Fatalf("%s sent %#v, want one Nav", tt.name, got)
+			}
+			nav, ok := got[0].(message.Event[message.Nav[message.PostingDetail]])
+			if !ok {
+				t.Fatalf("%s sent %T, want a Nav to posting detail", tt.name, got[0])
+			}
+			assertEventFrom(t, nav.Meta, m.src())
+			if want := (message.Subject{Type: message.TypePosting, ID: tt.want}); nav.Meta.Subject != want {
+				t.Errorf("Subject = %+v, want %+v", nav.Meta.Subject, want)
+			}
+			want := message.Nav[message.PostingDetail]{Op: message.NavReplace, Screen: message.ScreenPostingDetail,
+				Value: message.PostingDetail{Posting: message.Posting{ID: tt.want}, Siblings: tt.siblings}}
+			if diff := cmp.Diff(want, nav.Payload); diff != "" {
+				t.Errorf("Nav (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
-func TestPostingDetailModel_Esc_ReturnsBackToPostingListMsg(t *testing.T) {
+func TestPostingDetailModel_EscOrB_Pops(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, nil, 80, 20, posting.Posting{ID: 5}, application.Application{}, false, nil, true)
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	if _, ok := intent.(backToPostingListMsg); !ok {
-		t.Fatalf("intent = %T, want backToPostingListMsg", intent)
+	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEsc}, runeKey('b')} {
+		t.Run(key.String(), func(t *testing.T) {
+			t.Parallel()
+			m := detailOf(nil, testDetailPosting, message.Application{}, nil, 80, 20)
+
+			if got := pressDetail(t, m, key); !popsIn(got, m.Instance()) {
+				t.Errorf("%s sent %#v, want a pop of the detail", key, got)
+			}
+		})
 	}
 }
 
-func TestPostingDetailModel_A_NoApplication_ReturnsCreateCmd(t *testing.T) {
+// Status, notes and the review picker are still App's to open.
+func TestPostingDetailModel_ApplicationKeys_AskAppToOpenItsScreens(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, nil, 80, 20, posting.Posting{ID: 5}, application.Application{}, false, nil, true)
-	cmd, intent := m.Update(runeKey('a'))
-	if cmd == nil {
-		t.Fatal("cmd = nil, want a command that creates the application")
+	tests := []struct {
+		key  tea.KeyPressMsg
+		want tea.Msg
+	}{
+		{key: runeKey('s'), want: enterApplicationStatusMsg{applicationID: 9}},
+		{key: runeKey('n'), want: enterApplicationNotesMsg{applicationID: 9, currentNotes: "existing notes"}},
+		{key: runeKey('r'), want: enterDocumentReviewSelectMsg{applicationID: 9}},
 	}
-	if intent != nil {
-		t.Fatalf("intent = %v, want nil", intent)
+	for _, tt := range tests {
+		t.Run(tt.key.String(), func(t *testing.T) {
+			t.Parallel()
+			m := detailOf(documents.NewStore(t.TempDir()), testDetailPosting, testDetailApplication, nil, 80, 20)
+
+			got := pressDetail(t, m, tt.key)
+			if diff := cmp.Diff([]tea.Msg{tt.want}, got, cmp.AllowUnexported(enterApplicationStatusMsg{}, enterApplicationNotesMsg{}, enterDocumentReviewSelectMsg{})); diff != "" {
+				t.Errorf("%s sent (-want +got):\n%s", tt.key, diff)
+			}
+		})
 	}
 }
 
-func TestPostingDetailModel_A_HasApplication_NoOp(t *testing.T) {
+func TestPostingDetailModel_ApplicationKeys_WithNoApplication_DoNothing(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, posting.Posting{ID: 5}, application.Application{}, true, nil, true)
-	cmd, intent := m.Update(runeKey('a'))
-	if cmd != nil || intent != nil {
-		t.Fatalf("cmd, intent = %v, %v, want nil, nil (application already exists)", cmd, intent)
+	for _, key := range []tea.KeyPressMsg{runeKey('s'), runeKey('n'), runeKey('r')} {
+		t.Run(key.String(), func(t *testing.T) {
+			t.Parallel()
+			m := detailOf(nil, testDetailPosting, message.Application{}, nil, 80, 20)
+
+			if got := pressDetail(t, m, key); len(got) != 0 {
+				t.Errorf("%s sent %#v, want nothing: there's no application", key, got)
+			}
+		})
 	}
 }
 
-func TestPostingDetailModel_S_HasApplication_ReturnsEnterStatusMsg(t *testing.T) {
+func TestPostingDetailModel_A_WithAnApplication_DoesNothing(t *testing.T) {
 	t.Parallel()
 
-	app := application.Application{ID: 9, PostingID: 5, Status: application.Submitted}
-	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, posting.Posting{ID: 5}, app, true, nil, true)
-	cmd, intent := m.Update(runeKey('s'))
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
-	}
-	got, ok := intent.(enterApplicationStatusMsg)
-	if !ok {
-		t.Fatalf("intent = %T, want enterApplicationStatusMsg", intent)
-	}
-	if got.applicationID != app.ID {
-		t.Fatalf("enterApplicationStatusMsg = %+v, want applicationID=%d", got, app.ID)
+	m := detailOf(documents.NewStore(t.TempDir()), testDetailPosting, testDetailApplication, nil, 80, 20)
+	if cmd := m.keyPressed(runeKey('a')); cmd != nil {
+		t.Errorf("a with an application returned %v, want nil", cmd)
 	}
 }
 
-func TestPostingDetailModel_S_NoApplication_NoOp(t *testing.T) {
-	t.Parallel()
+// detailWith is posting detail registered on a router, for a posting in
+// the store with an application whose cover letter was reviewed, and a
+// score.
+func detailWith(t *testing.T) (*postingDetailModel, *model.MsgRouter, testutil.TestApp) {
+	t.Helper()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	p := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	app := mustCreateApplication(t, s, p.ID)
+	docs := documents.NewStore(t.TempDir())
+	if _, err := docs.EnsureDir(app.ID); err != nil {
+		t.Fatalf("EnsureDir: %v", err)
+	}
+	if err := os.WriteFile(mustDoc(t, docs.Status(app.ID), document.CoverLetter).Path, []byte("Dear Acme"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	if _, err := createReview(ctx, s, app.ID, document.CoverLetter, "Dear Acme", document.Flagged, "say why Acme"); err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	if _, err := recordScores(ctx, s, score.Provenance{Model: "claude", ProfileSHA256: "def"}, []score.Entry{{PostingID: p.ID, Score: 4, Reason: "fits", ContentSHA256: p.ContentSHA256}}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	m := newPostingDetailModel(s.Postings, s.Documents, s.Scores, docs, message.PostingDetail{Posting: message.Posting{ID: p.ID}}, message.ContentSize{Width: 100, Rows: 60})
+	r := model.NewMsgRouter()
+	if err := r.Register(m); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	return m, r, s
+}
 
-	m := newPostingDetailModel(nil, nil, 80, 20, posting.Posting{ID: 5}, application.Application{}, false, nil, true)
-	cmd, intent := m.Update(runeKey('s'))
-	if cmd != nil || intent != nil {
-		t.Fatalf("cmd, intent = %v, %v, want nil, nil (no application yet)", cmd, intent)
+// settle dispatches msgs through r, and what their handlers send, until
+// nothing more comes.
+func settle(t *testing.T, r *model.MsgRouter, msgs []tea.Msg) {
+	t.Helper()
+	for len(msgs) > 0 {
+		var next []tea.Msg
+		for _, msg := range msgs {
+			next = append(next, runCmd(t, r.Dispatch(msg))...)
+		}
+		msgs = next
 	}
 }
 
-func TestPostingDetailModel_N_HasApplication_ReturnsEnterNotesMsg(t *testing.T) {
+func TestPostingDetailModel_Init_ReadsThePostingItsApplicationReviewsAndScores(t *testing.T) {
 	t.Parallel()
 
-	app := application.Application{ID: 9, PostingID: 5, Notes: "existing notes"}
-	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, posting.Posting{ID: 5}, app, true, nil, true)
-	cmd, intent := m.Update(runeKey('n'))
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
+	m, r, _ := detailWith(t)
+	settle(t, r, runCmd(t, m.Init()))
+
+	if m.posting.Title != "Engineer" {
+		t.Errorf("posting after Init = %+v, want Engineer read in full", m.posting)
 	}
-	got, ok := intent.(enterApplicationNotesMsg)
-	if !ok {
-		t.Fatalf("intent = %T, want enterApplicationNotesMsg", intent)
-	}
-	if got.applicationID != app.ID || got.currentNotes != "existing notes" {
-		t.Fatalf("enterApplicationNotesMsg = %+v, want applicationID=%d currentNotes=%q", got, app.ID, "existing notes")
+	if got := detailView(m); !containsAll(got, applicationStatusLabel(application.Started), "[FLAGGED]", "say why Acme", "4 · fits") {
+		t.Errorf("View() after Init = %q, want its application, the cover letter's review and the score", got)
 	}
 }
 
-func TestPostingDetailModel_R_HasApplication_ReturnsEnterDocumentReviewSelectMsg(t *testing.T) {
+func TestPostingDetailModel_LoadRequests_SendTheirReads(t *testing.T) {
 	t.Parallel()
 
-	app := application.Application{ID: 9, PostingID: 5}
-	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 20, posting.Posting{ID: 5}, app, true, nil, true)
-	cmd, intent := m.Update(runeKey('r'))
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
+	tests := []struct {
+		name string
+		load tea.Msg
+		want func(msg tea.Msg) bool
+	}{
+		{
+			name: "posting application",
+			load: message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.PostingApplication]{}),
+			want: func(msg tea.Msg) bool {
+				_, ok := msg.(message.Event[message.Read[message.PostingApplication]])
+				return ok
+			},
+		},
+		{
+			name: "posting scores",
+			load: message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.PostingScores]{}),
+			want: func(msg tea.Msg) bool { _, ok := msg.(message.Event[message.Read[message.PostingScores]]); return ok },
+		},
+		{
+			name: "review list",
+			load: message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.ReviewList]{}),
+			want: func(msg tea.Msg) bool { _, ok := msg.(message.Event[message.Read[message.ReviewList]]); return ok },
+		},
 	}
-	got, ok := intent.(enterDocumentReviewSelectMsg)
-	if !ok {
-		t.Fatalf("intent = %T, want enterDocumentReviewSelectMsg", intent)
-	}
-	if got.applicationID != app.ID {
-		t.Fatalf("enterDocumentReviewSelectMsg = %+v, want applicationID=%d", got, app.ID)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, r, _ := detailWith(t)
+			settle(t, r, runCmd(t, m.Init()))
+
+			got := runCmd(t, r.Dispatch(tt.load))
+			if len(got) != 1 || !tt.want(got[0]) {
+				t.Fatalf("a %s load sent %#v, want its read", tt.name, got)
+			}
+			assertEventFrom(t, got[0].(interface{ Metadata() message.Meta }).Metadata(), m.src())
+		})
 	}
 }
 
-func TestPostingDetailModel_R_NoApplication_NoOp(t *testing.T) {
+// A write to the posting's application shows whoever made it, including
+// one made while another screen covers the detail.
+func TestPostingDetailModel_ApplicationChanged_AboutItsPosting_PatchesIt(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, nil, 80, 20, posting.Posting{ID: 5}, application.Application{}, false, nil, true)
-	cmd, intent := m.Update(runeKey('r'))
-	if cmd != nil || intent != nil {
-		t.Fatalf("cmd, intent = %v, %v, want nil, nil (no application yet)", cmd, intent)
+	interviewing := message.Application{ID: 9, PostingID: 5, Status: message.ApplicationInterviewing}
+	tests := []struct {
+		name    string
+		start   message.Application
+		changed tea.Msg
+		want    message.Application
+	}{
+		{name: "created", changed: message.Created(message.Source{Instance: 7}, 9, time.Now().UTC(), interviewing), want: interviewing},
+		{name: "updated", start: testDetailApplication, changed: message.Updated(message.Source{Instance: 7}, 9, time.Now().UTC(), testDetailApplication, interviewing), want: interviewing},
+		{name: "deleted", start: testDetailApplication, changed: message.Deleted(message.Source{Instance: 7}, 9, time.Now().UTC(), testDetailApplication)},
+		{name: "another posting's", start: testDetailApplication, changed: message.Updated(message.Source{Instance: 7}, 10, time.Now().UTC(),
+			message.Application{ID: 10, PostingID: 6}, message.Application{ID: 10, PostingID: 6, Status: message.ApplicationRejected}), want: testDetailApplication},
 	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := detailOf(documents.NewStore(t.TempDir()), testDetailPosting, tt.start, nil, 80, 40)
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+
+			r.Dispatch(tt.changed)
+			if m.application != tt.want {
+				t.Errorf("application = %+v, want %+v", m.application, tt.want)
+			}
+		})
+	}
+}
+
+func TestPostingDetailModel_Handlers_FailOnTheWrongMessage(t *testing.T) {
+	t.Parallel()
+	assertHandlersFailOnWrongMessage(t, detailOf(nil, testDetailPosting, message.Application{}, nil, 80, 20))
 }
 
 func TestPostingDetailModel_Resize_RebuildsViewportAtNewDimensions(t *testing.T) {
 	t.Parallel()
 
-	m := newPostingDetailModel(nil, nil, 80, 20, posting.Posting{ID: 1, IngestedFields: posting.IngestedFields{Title: "Engineer"}}, application.Application{}, false, nil, true)
-	m.resize(40, 10)
+	m := detailOf(nil, message.Posting{ID: 1, Title: "Engineer"}, message.Application{}, nil, 80, 20)
+	m.resize(message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Signal[message.ContentSize]{Value: message.ContentSize{Width: 40, Rows: 10}}))
 	if m.viewport.Width() != 40 {
 		t.Fatalf("viewport width = %d, want 40", m.viewport.Width())
 	}
 	// The height is every row the screen gets, so the whole view -- viewport
 	// and help -- fits in it (see setHeight).
-	if lines := strings.Count(m.View(), "\n") + 1; lines > 10 {
+	if lines := strings.Count(detailView(m), "\n") + 1; lines > 10 {
 		t.Fatalf("View() after resize is %d lines, want at most 10 (the new height)", lines)
 	}
-	if !strings.Contains(m.View(), "Application") {
-		t.Fatalf("View() after resize = %q, want it to still contain the body", m.View())
+	if !strings.Contains(detailView(m), "Application") {
+		t.Fatalf("View() after resize = %q, want it to still contain the body", detailView(m))
 	}
 }
 
@@ -214,31 +372,27 @@ func containsAll(s string, substrs ...string) bool {
 	return true
 }
 
-// TestPostingDetailModel_View_HelpAdvertisesNavigationOnlyWhenAvailable
-// covers #93. Prev/next posting navigation needs the open posting list to have
-// this posting, which it doesn't when posting detail was reached via
-// application detail's 'p' fast path. The keys already no-op safely
-// there; the bug is the help line promising something that silently does
-// nothing, with no indication why.
+// Prev/next needs the posting among the siblings it was opened with, which
+// it isn't when opened outside the posting list (#93): the help line
+// mustn't promise a move that does nothing.
 func TestPostingDetailModel_View_HelpAdvertisesNavigationOnlyWhenAvailable(t *testing.T) {
 	t.Parallel()
 
-	p := posting.Posting{ID: 1, IngestedFields: posting.IngestedFields{Title: "Engineer"}}
 	docs := documents.NewStore(t.TempDir())
 
-	withSiblings := newPostingDetailModel(nil, docs, 80, 20, p, application.Application{}, false, nil, true)
-	if !strings.Contains(withSiblings.View(), "prev/next posting") {
-		t.Errorf("View() with siblings available = %q, want the h/l hint present", withSiblings.View())
+	withSiblings := detailOf(docs, testDetailPosting, message.Application{}, []int64{4, 5}, 80, 20)
+	if !strings.Contains(detailView(withSiblings), "prev/next posting") {
+		t.Errorf("View() with siblings available = %q, want the h/l hint present", detailView(withSiblings))
 	}
 
-	withoutSiblings := newPostingDetailModel(nil, docs, 80, 20, p, application.Application{}, false, nil, false)
-	if strings.Contains(withoutSiblings.View(), "prev/next posting") {
-		t.Errorf("View() with no siblings = %q, want the h/l hint omitted -- pressing it does nothing", withoutSiblings.View())
+	withoutSiblings := detailOf(docs, testDetailPosting, message.Application{}, nil, 80, 20)
+	if strings.Contains(detailView(withoutSiblings), "prev/next posting") {
+		t.Errorf("View() with no siblings = %q, want the h/l hint omitted -- pressing it does nothing", detailView(withoutSiblings))
 	}
 	// The rest of the help line must survive the conditional.
 	for _, want := range []string{"o: open in browser", "esc/b: back"} {
-		if !strings.Contains(withoutSiblings.View(), want) {
-			t.Errorf("View() with no siblings = %q, want it to still offer %q", withoutSiblings.View(), want)
+		if !strings.Contains(detailView(withoutSiblings), want) {
+			t.Errorf("View() with no siblings = %q, want it to still offer %q", detailView(withoutSiblings), want)
 		}
 	}
 }
@@ -251,14 +405,10 @@ func TestPostingDetailModel_View_HelpAdvertisesNavigationOnlyWhenAvailable(t *te
 func TestPostingDetailModel_View_GroupsContentIntoSections(t *testing.T) {
 	t.Parallel()
 
-	p := posting.Posting{ID: 5, IngestedFields: posting.IngestedFields{
-		Title:           "Engineer",
-		Location:        "Ottawa, ON",
-		DescriptionText: "We build tools for practitioners.",
-	}}
-	app := application.Application{ID: 9, PostingID: 5, Status: application.Started}
-	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 80, 60, p, app, true, nil, true)
-	lines := strings.Split(ansi.Strip(m.View()), "\n")
+	p := message.Posting{ID: 5, Title: "Engineer", Location: "Ottawa, ON", DescriptionText: "We build tools for practitioners."}
+	app := message.Application{ID: 9, PostingID: 5, Status: message.ApplicationStarted}
+	m := detailOf(documents.NewStore(t.TempDir()), p, app, nil, 80, 60)
+	lines := strings.Split(ansi.Strip(detailView(m)), "\n")
 
 	// Each entry must appear on a later line than the one before it.
 	// Headings are matched as headings, not substrings -- "Posting" also
@@ -305,15 +455,16 @@ func TestPostingDetailModel_View_PadsTitleAndBody(t *testing.T) {
 	t.Parallel()
 
 	const width, pad = 60, 2
-	p := posting.Posting{ID: 5, IngestedFields: posting.IngestedFields{
+	p := message.Posting{
+		ID:              5,
 		Title:           "Engineer",
 		JobURL:          "https://jobs.example.com/a-very-long-path/that-needs-to-wrap/somewhere-sensible",
 		DescriptionText: strings.Repeat("We build tools for practitioners. ", 8),
-	}}
-	app := application.Application{ID: 9, PostingID: 5}
-	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), width, 60, p, app, true, nil, true)
+	}
+	app := message.Application{ID: 9, PostingID: 5}
+	m := detailOf(documents.NewStore(t.TempDir()), p, app, nil, width, 60)
 
-	title := strings.Split(ansi.Strip(m.View()), "\n")[0]
+	title := strings.Split(ansi.Strip(detailView(m)), "\n")[0]
 	body := strings.Split(ansi.Strip(m.viewport.View()), "\n")
 	for i, line := range append([]string{title}, body...) {
 		text := strings.TrimRight(line, " ")
@@ -337,17 +488,16 @@ func TestPostingDetailModel_View_PadsTitleAndBody(t *testing.T) {
 func TestPostingDetailModel_View_AlignsFieldValues(t *testing.T) {
 	t.Parallel()
 
-	p := posting.Posting{ID: 5, IngestedFields: posting.IngestedFields{
+	p := message.Posting{
+		ID:         5,
 		Title:      "Engineer",
 		Department: "Engineering",
 		Location:   "Ottawa, ON",
 		JobURL:     "https://jobs.example.com/a-very-long-path/that-needs-to-wrap/somewhere-sensible",
-	}}
-	app := application.Application{ID: 9, PostingID: 5, Status: application.Started}
-	reviews := map[document.Type]document.Review{
-		document.CoverLetter: {Outcome: document.Flagged, Notes: "too generic"},
 	}
-	m := newPostingDetailModel(nil, documents.NewStore(t.TempDir()), 70, 60, p, app, true, reviews, true)
+	app := message.Application{ID: 9, PostingID: 5, Status: message.ApplicationStarted}
+	m := withReviews(detailOf(documents.NewStore(t.TempDir()), p, app, nil, 70, 60),
+		message.Review{ApplicationID: 9, DocumentType: message.DocumentCoverLetter, Outcome: message.ReviewFlagged, Notes: "too generic"})
 	lines := strings.Split(ansi.Strip(m.viewport.View()), "\n")
 
 	// column is where text starts on its line or, for text on a wrapped
@@ -397,12 +547,12 @@ func TestPostingDetailModel_View_NeverSplitsAReviewBadge(t *testing.T) {
 	t.Parallel()
 
 	docs := documents.NewStore(t.TempDir())
-	app := application.Application{ID: 9, PostingID: 5}
+	app := message.Application{ID: 9, PostingID: 5}
 	minWidth := len("[not reviewed]") + 2*detailPadding
 	for width := minWidth; width <= 140; width++ {
 		// Tall enough to show the whole body: at the narrowest widths the
 		// path wraps a character or two per line.
-		m := newPostingDetailModel(nil, docs, width, 1000, posting.Posting{ID: 5}, app, true, nil, true)
+		m := detailOf(docs, message.Posting{ID: 5}, app, nil, width, 1000)
 		view := ansi.Strip(m.viewport.View())
 		if n := strings.Count(view, "[not reviewed]"); n != 2 {
 			t.Errorf("width %d: found %d intact [not reviewed] badges, want 2 in view:\n%s", width, n, view)
@@ -419,16 +569,17 @@ func TestPostingDetailModel_View_FitsTheTerminal(t *testing.T) {
 	t.Parallel()
 
 	const termHeight = 30
-	p := posting.Posting{ID: 5, IngestedFields: posting.IngestedFields{
+	p := message.Posting{
+		ID:              5,
 		Title:           "Senior Developer, Fullstack",
 		DescriptionText: strings.Repeat("A long description paragraph that fills the body.\n\n", 40),
-	}}
+	}
 	for _, width := range []int{60, 80, 110, 200} {
 		t.Run(strconv.Itoa(width), func(t *testing.T) {
 			t.Parallel()
 
-			m := newPostingDetailModel(nil, nil, width, termHeight, p, application.Application{}, false, nil, true)
-			lines := strings.Split(ansi.Strip(m.View()), "\n")
+			m := detailOf(nil, p, message.Application{}, []int64{5}, width, termHeight)
+			lines := strings.Split(ansi.Strip(detailView(m)), "\n")
 			if len(lines) > termHeight {
 				t.Errorf("view is %d lines, want at most %d (the terminal height)", len(lines), termHeight)
 			}

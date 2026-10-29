@@ -296,7 +296,7 @@ func (m *allPostingsModel) Update(msg tea.KeyPressMsg, size int) (tea.Cmd, tea.M
 		return m.nextPage(size), nil
 	case msg.String() == "enter":
 		if m.cursor < len(m.page.Listings) {
-			return nil, enterPostingDetailMsg{postingID: m.page.Listings[m.cursor].ID}
+			return nil, message.PostingDetail{Posting: message.Posting{ID: m.page.Listings[m.cursor].ID}}
 		}
 	case msg.String() == "s":
 		if m.order == posting.OrderScoreDesc {

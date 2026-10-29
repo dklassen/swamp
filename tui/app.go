@@ -28,7 +28,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
-	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
@@ -80,20 +79,12 @@ type App struct {
 	err           error
 	// syncing runs sync all and refreshes, and draws their progress in the
 	// banner.
-	syncing       *model.Syncing
-	postingDetail postingDetailModel
-	// postingDetailFrom is the screen that opened posting detail.
-	postingDetailFrom screen
-	// applicationsByPosting holds the application for each posting_id that
-	// has one (fetched async on entering posting detail -- see
-	// loadApplication). A posting with no entry has no application yet
-	// (Application is created lazily, unlike posting.Markup).
-	applicationsByPosting map[int64]application.Application
-	applicationStatus     applicationStatusModel
-	applicationNotes      applicationNotesModel
-	applicationForm       applicationFormModel
-	documentReviewSelect  documentReviewSelectModel
-	documentReviewForm    documentReviewFormModel
+	syncing              *model.Syncing
+	applicationStatus    applicationStatusModel
+	applicationNotes     applicationNotesModel
+	applicationForm      applicationFormModel
+	documentReviewSelect documentReviewSelectModel
+	documentReviewForm   documentReviewFormModel
 	// returnStack records where the user came from for each screen that
 	// can be entered from more than one place: screenPostingDetail,
 	// screenApplicationStatusSelect, and the document review screens
@@ -235,6 +226,7 @@ var stackedAs = map[message.Screen]screen{
 	message.ScreenCompanyDelete:   screenCompanyDelete,
 	message.ScreenCompanyPostings: screenPostingList,
 	message.ScreenFilterSelect:    screenFilterSelect,
+	message.ScreenPostingDetail:   screenPostingDetail,
 }
 
 // push opens s over the screen up: routes, then Init, so nothing Init
@@ -245,6 +237,18 @@ func (a *App) push(kind message.Screen, s stackScreen) tea.Cmd {
 		return a.fail(fmt.Errorf("tui: %v isn't a screen a Nav pushes", kind))
 	}
 	if err := a.stack.push(kind, s, a.currentScreen); err != nil {
+		return a.fail(err)
+	}
+	a.currentScreen = as
+	return s.Init()
+}
+
+func (a *App) replace(kind message.Screen, s stackScreen) tea.Cmd {
+	as, ok := stackedAs[kind]
+	if !ok {
+		return a.fail(fmt.Errorf("tui: %v isn't a screen a Nav pushes", kind))
+	}
+	if err := a.stack.replace(kind, s); err != nil {
 		return a.fail(err)
 	}
 	a.currentScreen = as
@@ -348,12 +352,36 @@ func (a *App) postingList() *postingListModel {
 	return l
 }
 
-// listedPostings is the open posting list's postings, in its order.
-func (a *App) listedPostings() []message.Posting {
-	if l := a.postingList(); l != nil {
-		return l.list.Postings
+func (a *App) navPostingDetail(e message.Event[message.Nav[message.PostingDetail]]) tea.Cmd {
+	if !a.onTop(e.Meta) {
+		return nil
 	}
-	return nil
+	switch {
+	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenPostingDetail:
+		return a.openPostingDetail(e.Payload.Value)
+	case e.Payload.Op == message.NavReplace && e.Payload.Screen == message.ScreenPostingDetail:
+		return a.replace(e.Payload.Screen, a.newPostingDetail(e.Payload.Value))
+	}
+	return a.unknownNav(e)
+}
+
+// openPostingDetail pushes posting detail, also from App's own screens,
+// which have no instance to send a Nav from.
+func (a *App) openPostingDetail(d message.PostingDetail) tea.Cmd {
+	// It reads in Init, so it's as up to date as the change log read so far.
+	a.seen[screenPostingDetail] = a.latestSeen
+	return a.push(message.ScreenPostingDetail, a.newPostingDetail(d))
+}
+
+func (a *App) newPostingDetail(d message.PostingDetail) *postingDetailModel {
+	return newPostingDetailModel(a.postingService, a.documentService, a.scoringService, a.documents, d, a.sized)
+}
+
+// postingDetail is the open posting detail, or nil, for the screens over
+// it that are still App's.
+func (a *App) postingDetail() *postingDetailModel {
+	d, _ := a.stack.open(message.ScreenPostingDetail).(*postingDetailModel)
+	return d
 }
 
 func (a *App) hideArchivedChanged(e message.Event[message.Signal[message.HideArchived]]) tea.Cmd {
@@ -454,8 +482,7 @@ func reviewGlyph(review document.Review, hasReview bool) string {
 // description as the scrollable body of the detail view (title is rendered
 // separately, as a fixed header outside the viewport). application/
 // hasApplication are passed in rather than fetched here so this stays a
-// pure function of already-loaded state -- the async fetch happens
-// separately via loadApplication (see newPostingDetailModel).
+// pure function of already-loaded state.
 //
 // docs resolves the application's document paths and their presence via
 // os.Stat -- done inline here rather than through a separate
@@ -556,37 +583,6 @@ func (a *App) returnBack() screen {
 	return a.currentScreen
 }
 
-// rebuildPostingDetailApplication refreshes a.postingDetail after a
-// change to the application-side data (status, notes, a review) while
-// still on screenPostingDetail, keeping whichever posting is already
-// displayed rather than re-deriving it via lookupPosting. lookupPosting's
-// Posting result depends on the open posting list, which there isn't when
-// posting detail was entered via application detail's fast path (see
-// #87 follow-up) -- re-deriving it here would silently
-// clobber a correct posting with a zero value. These handlers only ever
-// change application data, never which posting is shown, so the
-// already-displayed posting is always still the right one; only
-// app/hasApp (from a.applicationsByPosting, independent of the list)
-// need refreshing.
-func (a *App) rebuildPostingDetailApplication() tea.Cmd {
-	_, app, hasApp := a.lookupPosting(a.postingDetail.posting.ID)
-	a.replacePostingDetail(newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), a.postingDetail.posting, app, hasApp, nil, a.canNavigateSiblings(a.postingDetail.posting.ID)))
-	return maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID)
-}
-
-// lookupPosting finds id in the open posting list, returning it along with
-// its application (if any) from a.applicationsByPosting -- used to seed a
-// fresh postingDetailModel by ID, since that model doesn't hold a
-// reference to either collection itself.
-func (a *App) lookupPosting(id int64) (posting.Posting, application.Application, bool) {
-	var p posting.Posting
-	if i := indexOfPosting(a.listedPostings(), id); i >= 0 {
-		p = postingOf(a.listedPostings()[i])
-	}
-	app, hasApp := a.applicationsByPosting[id]
-	return p, app, hasApp
-}
-
 // indexOfPosting returns id's index in postings, or -1 if not present.
 func indexOfPosting(postings []message.Posting, id int64) int {
 	for i, p := range postings {
@@ -619,9 +615,13 @@ func indexOfCompany(companies []message.Company, id int64) int {
 
 // reloadCompanies asks the company list to read its companies again.
 func (a *App) reloadCompanies() tea.Cmd {
-	src := message.Source{Instance: a.instance}
+	return requestLoad[message.CompanyList](message.Source{Instance: a.instance})
+}
+
+// requestLoad asks the model that shows T to read it again.
+func requestLoad[T message.Body](src message.Source) tea.Cmd {
 	return func() tea.Msg {
-		return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.CompanyList]{})
+		return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[T]{})
 	}
 }
 
@@ -783,31 +783,6 @@ func applicationWritten(src message.Source, applicationID int64, op message.Op, 
 	return message.Updated(src, applicationID, a.At, applicationSnapshot(a.Before), applicationSnapshot(a.After))
 }
 
-type applicationLoadedMsg struct {
-	postingID   int64
-	application application.Application
-	found       bool
-	err         error
-}
-
-// loadApplication fetches the application for a posting, if one exists.
-// PostingService.Application returns store.ErrNotFound when the posting has
-// no application yet (the common case, since Application is created lazily
-// via 'a' on the detail screen rather than alongside every posting) --
-// that's translated to found=false here rather than surfaced as an error.
-func loadApplication(postings *service.PostingService, postingID int64) tea.Cmd {
-	return func() tea.Msg {
-		app, err := postings.Application(context.Background(), postingID)
-		if errors.Is(err, store.ErrNotFound) {
-			return applicationLoadedMsg{postingID: postingID, found: false}
-		}
-		if err != nil {
-			return applicationLoadedMsg{postingID: postingID, err: err}
-		}
-		return applicationLoadedMsg{postingID: postingID, application: *app, found: true}
-	}
-}
-
 type documentReviewsLoadedMsg struct {
 	applicationID int64
 	reviews       map[document.Type]document.Review
@@ -826,11 +801,7 @@ type documentReviewsLoadedMsg struct {
 // document.Review.IsCurrent).
 func loadDocumentReviews(documentService *service.DocumentService, docs *documents.Store, applicationID int64) tea.Cmd {
 	return func() tea.Msg {
-		reviews, err := documentService.LatestReviews(context.Background(), applicationID)
-		if err != nil {
-			return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
-		}
-		reviews, err = documents.Current(docs.Status(applicationID), reviews, document.Review.IsCurrent)
+		reviews, err := currentReviews(documentService, docs, applicationID)
 		if err != nil {
 			return documentReviewsLoadedMsg{applicationID: applicationID, err: err}
 		}
@@ -838,17 +809,14 @@ func loadDocumentReviews(documentService *service.DocumentService, docs *documen
 	}
 }
 
-// maybeLoadDocumentReviews returns the Cmd to (re)load applicationID's
-// latest document reviews when hasApp is true, or nil otherwise -- used
-// at every point a.postingDetail's underlying application changes, so
-// the inline review status reloads through the same async round trip the
-// rest of this screen's store-backed state uses (see
-// postingDetailContent's own doc comment).
-func maybeLoadDocumentReviews(documentService *service.DocumentService, docs *documents.Store, hasApp bool, applicationID int64) tea.Cmd {
-	if !hasApp {
-		return nil
+// currentReviews is the latest review of each of an application's
+// documents, leaving out one whose document has changed since.
+func currentReviews(documentService *service.DocumentService, docs *documents.Store, applicationID int64) (map[document.Type]document.Review, error) {
+	reviews, err := documentService.LatestReviews(context.Background(), applicationID)
+	if err != nil {
+		return nil, err
 	}
-	return loadDocumentReviews(documentService, docs, applicationID)
+	return documents.Current(docs.Status(applicationID), reviews, document.Review.IsCurrent)
 }
 
 func updateApplicationStatus(applications *service.ApplicationService, src message.Source, applicationID int64, status application.Status) tea.Cmd {
@@ -1029,6 +997,7 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.navCompany),
 		model.Always(a.navCompanyRow),
 		model.Always(a.navFilterSelection),
+		model.Always(a.navPostingDetail),
 		model.Always(a.hideArchivedChanged),
 		model.Always(a.markupChanged),
 		model.Always(a.applicationChanged),
@@ -1047,11 +1016,6 @@ func (a *App) applicationChanged(e message.Event[message.Changed[message.Applica
 	if e.Meta.Op == message.OpDeleted {
 		return a.applicationDeleted(e)
 	}
-	after := applicationOf(e.Payload.After)
-	if a.applicationsByPosting == nil {
-		a.applicationsByPosting = make(map[int64]application.Application)
-	}
-	a.applicationsByPosting[after.PostingID] = after
 	// Nothing blocks esc while the save is in flight, so the user may
 	// already have left; only the asker still on screen moves on.
 	switch {
@@ -1063,20 +1027,15 @@ func (a *App) applicationChanged(e message.Event[message.Changed[message.Applica
 	case a.currentScreen == screenApplicationNotesEdit && a.applicationNotes.instance == from:
 		a.currentScreen = screenPostingDetail
 	}
-	var cmd tea.Cmd
-	if a.currentScreen == screenPostingDetail {
-		cmd = a.rebuildPostingDetailApplication()
-	}
 	// A new status may move the application to or from a terminal one,
 	// so the home list reloads rather than patching its row.
 	if e.Meta.Op == message.OpCreated || e.Payload.Before.Status != e.Payload.After.Status {
-		cmd = tea.Batch(cmd, loadActiveApplications(a.applicationService, a.documentService, a.documents))
+		return loadActiveApplications(a.applicationService, a.documentService, a.documents)
 	}
-	return cmd
+	return nil
 }
 
 func (a *App) applicationDeleted(e message.Event[message.Changed[message.Application]]) tea.Cmd {
-	delete(a.applicationsByPosting, e.Payload.Before.PostingID)
 	if from := e.Meta.Source.Instance; from != 0 && a.applicationDelete.instance == from {
 		a.status = "Deleted the application for " + a.applicationDelete.application.Posting.Title
 		if a.currentScreen == screenApplicationDelete {
@@ -1137,11 +1096,12 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	}
 
 	// Before Dispatch, since a Nav's route moves the screen.
-	before := a.currentScreen
+	before, focusedBefore := a.currentScreen, a.focused()
 	routed := a.router.Dispatch(msg)
 	model, cmd := a.update(msg)
 	cmd = tea.Batch(routed, cmd)
-	if a.currentScreen != before {
+	// A replace changes the screen in focus but not currentScreen.
+	if a.currentScreen != before || a.focused() != focusedBefore {
 		// Dispatched now, not as a Cmd, so keys already queued see it.
 		focused := a.router.Dispatch(message.New(message.Source{Process: a.origin}, message.Subject{}, message.OpNone, time.Now().UTC(),
 			message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: a.focused()}}))
@@ -1161,8 +1121,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// when they're built. The list screens are sized as they render, so
 	// they need nothing here.
 	switch a.currentScreen {
-	case screenPostingDetail:
-		a.postingDetail.setHeight(a.screenRows())
 	case screenApplicationNotesEdit:
 		a.applicationNotes.setHeight(a.screenRows())
 	case screenApplicationForm:
@@ -1181,35 +1139,20 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.activeApplications = msg.applications
 		a.activeApplicationProgress = msg.progress
 		a.activeApplicationList.keepCursorOn(previous, a.activeApplications)
-	case enterPostingDetailMsg:
-		// Only if the user is still on the list it came from.
-		if a.currentScreen == screenPostingList {
-			a.err = nil
-			a.postingDetailFrom = screenPostingList
-			p, app, hasApp := a.lookupPosting(msg.postingID)
-			a.postingDetail = newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
-			a.enterFrom(screenPostingDetail)
-			return a, tea.Batch(loadApplication(a.postingService, p.ID), maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID), loadPostingScores(a.scoringService, p.ID))
+	case enterApplicationStatusMsg:
+		// Only if the user is still on the posting detail that asked.
+		if a.currentScreen == screenPostingDetail {
+			return a, loadApplicationStatus(a.applicationService, msg.applicationID, a.currentScreen)
 		}
-	case applicationLoadedMsg:
-		a.setLoadErr(msg.err)
-		if msg.err == nil {
-			if a.applicationsByPosting == nil {
-				a.applicationsByPosting = make(map[int64]application.Application)
-			}
-			if msg.found {
-				a.applicationsByPosting[msg.postingID] = msg.application
-			} else {
-				delete(a.applicationsByPosting, msg.postingID)
-			}
-			if a.currentScreen == screenPostingDetail {
-				// The posting on screen, which no list has when the detail
-				// was opened from all postings.
-				p := a.postingDetail.posting
-				_, app, hasApp := a.lookupPosting(p.ID)
-				a.replacePostingDetail(newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID)))
-				return a, maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID)
-			}
+	case enterApplicationNotesMsg:
+		if a.currentScreen == screenPostingDetail {
+			a.currentScreen = screenApplicationNotesEdit
+			a.applicationNotes = newApplicationNotesModel(a.applicationService, msg.applicationID, msg.currentNotes, a.width, a.screenRows())
+		}
+	case enterDocumentReviewSelectMsg:
+		if a.currentScreen == screenPostingDetail {
+			a.enterFrom(screenDocumentReviewSelect)
+			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, msg.applicationID)
 		}
 	case changeTickMsg:
 		return a, a.handleTick()
@@ -1229,16 +1172,8 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.err = msg.err
 		// Only if the user is still where they pressed enter.
 		if msg.err == nil && a.currentScreen == screenAllPostings {
-			a.postingDetailFrom = screenAllPostings
-			app, hasApp := a.applicationsByPosting[msg.posting.ID]
-			a.postingDetail = newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), msg.posting, app, hasApp, nil, a.canNavigateSiblings(msg.posting.ID))
-			a.enterFrom(screenPostingDetail)
-			return a, tea.Batch(loadApplication(a.postingService, msg.posting.ID), maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID), loadPostingScores(a.scoringService, msg.posting.ID))
+			return a, a.openPostingDetail(message.PostingDetail{Posting: postingSnapshot(msg.posting)})
 		}
-	case postingScoresLoadedMsg:
-		a.handlePostingScoresLoaded(msg)
-	case postingReloadedMsg:
-		return a, a.handlePostingReloaded(msg)
 	case applicationDetailReloadedMsg:
 		return a, a.handleApplicationDetailReloaded(msg)
 	case editorClosedMsg:
@@ -1330,7 +1265,7 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				// once the user backs out -- no full reload needed (#91).
 				return a, loadDocumentReviews(a.documentService, a.documents, a.applicationDetail.application.ID)
 			case screenPostingDetail:
-				return a, a.rebuildPostingDetailApplication()
+				return a, requestLoad[message.ReviewList](message.Source{Instance: a.instance})
 			}
 		}
 	case documentReviewsLoadedMsg:
@@ -1338,9 +1273,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		// A response for a posting/application the user has since
 		// navigated away from is simply discarded -- msg.applicationID no
 		// longer matching what's on screen means this result is stale.
-		if msg.err == nil && a.currentScreen == screenPostingDetail && a.postingDetail.application.ID == msg.applicationID {
-			a.replacePostingDetail(newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), a.postingDetail.posting, a.postingDetail.application, a.postingDetail.hasApplication, msg.reviews, a.canNavigateSiblings(a.postingDetail.posting.ID)))
-		}
 		if msg.err == nil && a.currentScreen == screenApplicationDetail && a.applicationDetail.application.ID == msg.applicationID {
 			a.applicationDetail.application.LatestReviews = msg.reviews
 		}
@@ -1361,15 +1293,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
-		if a.currentScreen == screenPostingDetail {
-			// Re-wrap at the new width: viewport.View() truncates rather
-			// than re-wrapping already-set content when Width shrinks, so
-			// just resizing the fields isn't enough. postingDetail.resize
-			// rebuilds the viewport at the new dimensions. When not on the
-			// detail screen, sizing happens fresh the next time it's
-			// entered, so nothing to do here.
-			a.postingDetail.resize(a.width, a.screenRows())
-		}
 		var reload tea.Cmd
 		if size := a.allPostings.pageSize(a.screenRows()); a.currentScreen == screenAllPostings && size != a.allPostings.size {
 			reload = a.allPostings.load(size)
@@ -1434,8 +1357,8 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case screenAllPostings:
 		cmd, intent := a.allPostings.Update(msg, a.allPostings.pageSize(a.screenRows()))
 		switch v := intent.(type) {
-		case enterPostingDetailMsg:
-			return a, loadAllPostingsDetail(a.postingService, v.postingID)
+		case message.PostingDetail:
+			return a, loadAllPostingsDetail(a.postingService, v.Posting.ID)
 		case openJobURLMsg:
 			return a, a.openURL(v.url)
 		}
@@ -1466,75 +1389,14 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return a, reloadApplicationForDelete(a.applicationService, v.application, screenApplicationDetail)
 		case backToActiveApplicationsMsg:
 			a.currentScreen = screenActiveApplications
-		case enterPostingDetailMsg:
-			// Unlike screenPostingList's own enterPostingDetailMsg handler,
-			// this can't use lookupPosting -- a posting list is only open
-			// while browsing one, which application detail (reached via
-			// active-applications) may never have done. applicationDetail's
-			// own posting.ActiveApplication already carries the full posting,
-			// application, and latest reviews (freshly loaded for the
-			// active-applications screen), so render from that directly
-			// rather than triggering loadApplication's own rebuild, which
-			// would immediately clobber this with a zero-value Posting via
-			// the same lookupPosting gap.
-			//
-			// a.applicationsByPosting must also be seeded here, the same way
-			// screenPostingList's enterPostingDetailMsg handler gets it seeded
-			// via loadApplication's applicationLoadedMsg: later handlers that
-			// change application-side data while still on screenPostingDetail
-			// (documentReviewCreatedMsg, an application change, etc.) go
-			// through rebuildPostingDetailApplication -> lookupPosting, which
-			// reads only from this map, not from appView. Without seeding it
-			// here, that lookup misses and hasApp wrongly flips to false even
-			// though the application is unchanged.
-			a.postingDetailFrom = screenApplicationDetail
-			appView := a.applicationDetail.application
-			if a.applicationsByPosting == nil {
-				a.applicationsByPosting = make(map[int64]application.Application)
-			}
-			a.applicationsByPosting[appView.Posting.ID] = appView.Application
-			a.postingDetail = newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), appView.Posting, appView.Application, true, appView.LatestReviews, a.canNavigateSiblings(appView.Posting.ID))
-			// Built from application detail's copy, so as up to date as it.
-			a.seen[screenPostingDetail] = a.cursor(screenApplicationDetail)
-			a.enterFrom(screenPostingDetail)
-			return a, tea.Batch(cmd, loadPostingScores(a.scoringService, appView.Posting.ID))
+		case message.PostingDetail:
+			return a, tea.Batch(cmd, a.openPostingDetail(v))
 		case enterDocumentReviewFormMsg:
 			if a.openDocumentReviewForm(v) {
 				a.enterFrom(screenDocumentReviewForm)
 			}
 		case refreshApplicationDetailMsg:
 			return a, loadDocumentReviews(a.documentService, a.documents, a.applicationDetail.application.ID)
-		}
-		return a, cmd
-	case screenPostingDetail:
-		cmd, intent := a.postingDetail.Update(msg)
-		switch v := intent.(type) {
-		case backToPostingListMsg:
-			if a.returnBack() == screenPostingList {
-				if l := a.postingList(); l != nil {
-					l.setCursor(indexOfPosting(l.list.Postings, a.postingDetail.posting.ID))
-				}
-			}
-		case navigatePostingMsg:
-			listed := a.listedPostings()
-			idx := indexOfPosting(listed, v.postingID)
-			newIdx := idx + v.direction
-			if idx >= 0 && newIdx >= 0 && newIdx < len(listed) {
-				p := postingOf(listed[newIdx])
-				app, hasApp := a.applicationsByPosting[p.ID]
-				a.postingDetail = newPostingDetailModel(a.postingService, a.documents, a.width, a.screenRows(), p, app, hasApp, nil, a.canNavigateSiblings(p.ID))
-				return a, tea.Batch(loadApplication(a.postingService, p.ID), maybeLoadDocumentReviews(a.documentService, a.documents, hasApp, app.ID), loadPostingScores(a.scoringService, p.ID))
-			}
-		case enterApplicationStatusMsg:
-			return a, loadApplicationStatus(a.applicationService, v.applicationID, a.currentScreen)
-		case enterApplicationNotesMsg:
-			a.currentScreen = screenApplicationNotesEdit
-			a.applicationNotes = newApplicationNotesModel(a.applicationService, v.applicationID, v.currentNotes, a.width, a.screenRows())
-		case enterDocumentReviewSelectMsg:
-			a.enterFrom(screenDocumentReviewSelect)
-			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, v.applicationID)
-		case refreshPostingDetailMsg:
-			return a, a.rebuildPostingDetailApplication()
 		}
 		return a, cmd
 	case screenApplicationStatusSelect:
@@ -1682,7 +1544,9 @@ func (a *App) body(s screen) string {
 			b.WriteString(l.View().Content)
 		}
 	case screenPostingDetail:
-		b.WriteString(a.postingDetail.View())
+		if d := a.postingDetail(); d != nil {
+			b.WriteString(d.View().Content)
+		}
 	case screenApplicationStatusSelect:
 		b.WriteString(a.applicationStatus.View())
 	case screenApplicationExport:
@@ -1699,19 +1563,6 @@ func (a *App) body(s screen) string {
 		b.WriteString(a.documentReviewForm.View())
 	}
 	return b.String()
-}
-
-// canNavigateSiblings reports whether prev/next posting navigation can
-// actually move anywhere from postingID. It needs the open posting list to
-// contain that posting, which holds when the user reached posting detail
-// by browsing a company's list, but not via application detail's 'p' fast
-// path, where no list is open (see issue #93).
-//
-// Recomputed at every posting-detail construction rather than carried
-// along, so it always reflects what the list holds now rather than what
-// it held when the screen was first entered.
-func (a *App) canNavigateSiblings(postingID int64) bool {
-	return a.postingDetailFrom == screenPostingList && indexOfPosting(a.listedPostings(), postingID) >= 0
 }
 
 // sectionHeading renders a posting-detail section heading: name, then a

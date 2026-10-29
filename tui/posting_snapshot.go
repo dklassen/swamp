@@ -24,6 +24,7 @@ func postingSnapshot(p posting.Posting) message.Posting {
 		JobURL:          p.JobURL,
 		ApplicationURL:  p.ApplicationURL,
 		ListingStatus:   listingStatuses[p.ListingStatus],
+		ContentSHA256:   p.ContentSHA256,
 	}
 }
 
@@ -44,6 +45,7 @@ func postingOf(s message.Posting) posting.Posting {
 			JobURL:          s.JobURL,
 			ApplicationURL:  s.ApplicationURL,
 		},
+		ContentSHA256: s.ContentSHA256,
 	}
 	for status, snapshot := range listingStatuses {
 		if snapshot == s.ListingStatus {
