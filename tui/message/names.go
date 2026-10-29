@@ -59,6 +59,8 @@ const (
 	TypeHideArchived
 	TypeFilterSelection
 	TypeFilterOptions
+	TypePosting
+	TypeMarkup
 )
 
 var typeNames = [...]string{
@@ -78,6 +80,8 @@ var typeNames = [...]string{
 	TypeHideArchived:    "hide_archived",
 	TypeFilterSelection: "filter_selection",
 	TypeFilterOptions:   "filter_options",
+	TypePosting:         "posting",
+	TypeMarkup:          "markup",
 }
 
 func (t Type) String() string                { return nameOf(t, typeNames[:]) }
