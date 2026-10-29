@@ -2,6 +2,7 @@ package tui
 
 import (
 	"slices"
+	"testing"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -26,4 +27,24 @@ func pops(msg tea.Msg, from message.ScreenInstance) bool {
 // popsIn is whether any of msgs asks App to pop from's screen.
 func popsIn(msgs []tea.Msg, from message.ScreenInstance) bool {
 	return slices.ContainsFunc(msgs, func(msg tea.Msg) bool { return pops(msg, from) })
+}
+
+// statusPicker is the open status picker, failing the test if none is.
+func statusPicker(t *testing.T, app *App) *applicationStatusModel {
+	t.Helper()
+	m, ok := app.stack.open(message.ScreenApplicationStatus).(*applicationStatusModel)
+	if !ok {
+		t.Fatal("no status picker is open")
+	}
+	return m
+}
+
+// notesEditor is the open notes editor, failing the test if none is.
+func notesEditor(t *testing.T, app *App) *applicationNotesModel {
+	t.Helper()
+	m, ok := app.stack.open(message.ScreenApplicationNotes).(*applicationNotesModel)
+	if !ok {
+		t.Fatal("no notes editor is open")
+	}
+	return m
 }

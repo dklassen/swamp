@@ -189,11 +189,11 @@ func (m *postingDetailModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 		}
 	case "s":
 		if m.hasApplication() {
-			return send(enterApplicationStatusMsg{applicationID: m.application.ID})
+			return m.openApplication(message.ScreenApplicationStatus)
 		}
 	case "n":
 		if m.hasApplication() {
-			return send(enterApplicationNotesMsg{applicationID: m.application.ID, currentNotes: m.application.Notes})
+			return m.openApplication(message.ScreenApplicationNotes)
 		}
 	case "r":
 		if m.hasApplication() {
@@ -220,6 +220,10 @@ func (m *postingDetailModel) step(delta int) tea.Cmd {
 	id := m.siblings[next]
 	return message.Replace(m.src(), message.ScreenPostingDetail, message.Subject{Type: message.TypePosting, ID: id},
 		message.PostingDetail{Posting: message.Posting{ID: id}, Siblings: m.siblings})
+}
+
+func (m *postingDetailModel) openApplication(screen message.Screen) tea.Cmd {
+	return message.Push(m.src(), screen, message.Subject{Type: message.TypeApplication, ID: m.application.ID}, m.application)
 }
 
 // canStep is whether previous and next can move anywhere.
@@ -318,21 +322,6 @@ func indentLines(s string, n int) string {
 		}
 	}
 	return strings.Join(lines, "\n")
-}
-
-// enterApplicationStatusMsg signals that App should switch to the
-// application-status-select screen, seeded from this application's
-// current status.
-type enterApplicationStatusMsg struct {
-	applicationID int64
-}
-
-// enterApplicationNotesMsg signals that App should switch to the
-// application-notes-edit screen, seeded from this application's current
-// notes.
-type enterApplicationNotesMsg struct {
-	applicationID int64
-	currentNotes  string
 }
 
 // enterDocumentReviewSelectMsg signals that App should switch to the

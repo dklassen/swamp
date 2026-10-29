@@ -124,8 +124,8 @@ func viewText(app *App) string {
 	return ansi.Strip(app.View().Content)
 }
 
-// sendKeyAndApply is sendKey followed by applyCmd, for a key whose screen
-// opens only once a load it starts has finished (the status form).
+// sendKeyAndApply is sendKey followed by applyCmd, for a key whose effect
+// arrives as a command: a load, or a Nav that opens or closes a screen.
 func sendKeyAndApply(t *testing.T, app *App, msg tea.Msg) *App {
 	t.Helper()
 	app, cmd := sendKey(app, msg)
@@ -1372,7 +1372,7 @@ func TestApp_StatusSelect_Enter_UpdatesStatusAndReturnsToDetail(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Update on enter (status select) returned nil Cmd, want a command that updates the status")
 	}
-	app, _ = sendKey(app, cmd())
+	app = applyCmd(t, app, cmd)
 
 	if app.currentScreen != screenPostingDetail {
 		t.Fatalf("screen after saving status = %v, want screenPostingDetail", app.currentScreen)
@@ -1408,7 +1408,7 @@ func TestApp_StatusSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 	app = sendKeyAndApply(t, app, runeKey('s'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyDown})
 
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
 	if app.currentScreen != screenPostingDetail {
 		t.Fatalf("screen after esc = %v, want screenPostingDetail", app.currentScreen)
@@ -1441,11 +1441,9 @@ func TestApp_StartsOnActiveApplicationsScreen(t *testing.T) {
 	}
 }
 
-// TestApp_ActiveApplications_StatusChange_ReturnsToActiveApplications
-// exercises the return-screen tracking returnStack exists for: screenApplicationStatusSelect is reachable from both
-// screenPostingDetail and screenActiveApplications now, so saving (or
-// cancelling) must land back on whichever one entered it, not a
-// hardcoded screen.
+// The status picker opens from posting detail and from the home list, and
+// a save goes back to whichever it was opened from, showing the new
+// status.
 func TestApp_ActiveApplications_StatusChange_ReturnsToActiveApplications(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
@@ -1464,10 +1462,13 @@ func TestApp_ActiveApplications_StatusChange_ReturnsToActiveApplications(t *test
 	if cmd == nil {
 		t.Fatal("Update on enter (status select) returned nil Cmd, want a command that updates the status")
 	}
-	app, _ = sendKey(app, cmd())
+	app = applyCmd(t, app, cmd)
 
 	if app.currentScreen != screenActiveApplications {
 		t.Fatalf("screen after saving status = %v, want screenActiveApplications (where 's' was pressed from)", app.currentScreen)
+	}
+	if view := viewText(app); !strings.Contains(view, applicationStatusLabel(application.Submitted)) {
+		t.Errorf("home list = %q, want the new status %q", view, applicationStatusLabel(application.Submitted))
 	}
 }
 
@@ -1493,11 +1494,7 @@ func TestApp_ActiveApplications_StatusChangeToRejected_RemovesFromList(t *testin
 	if cmd == nil {
 		t.Fatal("Update on enter (status select) returned nil Cmd, want a command that updates the status")
 	}
-	app, statusCmd := sendKey(app, cmd())
-	if statusCmd == nil {
-		t.Fatal("the status change returned nil Cmd, want a command that reloads active applications")
-	}
-	app, _ = sendKey(app, statusCmd())
+	app = applyCmd(t, app, cmd)
 
 	if len(app.activeApplications) != 0 {
 		t.Fatalf("app.activeApplications after rejecting = %+v, want empty", app.activeApplications)
@@ -1528,7 +1525,7 @@ func TestApp_PressN_OnPostingDetail_WithApplication_OpensNotesEditorPrepopulated
 	if app.currentScreen != screenApplicationNotesEdit {
 		t.Fatalf("screen after 'n' = %v, want screenApplicationNotesEdit", app.currentScreen)
 	}
-	if got := app.applicationNotes.textarea.Value(); got != "Referred by Alice" {
+	if got := notesEditor(t, app).textarea.Value(); got != "Referred by Alice" {
 		t.Fatalf("applicationNotes.textarea.Value() = %q, want %q", got, "Referred by Alice")
 	}
 }
@@ -1554,7 +1551,7 @@ func TestApp_NotesEdit_CtrlS_SavesNotesAndReturnsToDetail(t *testing.T) {
 	if cmd == nil {
 		t.Fatal("Update on ctrl+s (notes edit) returned nil Cmd, want a command that saves notes")
 	}
-	app, _ = sendKey(app, cmd())
+	app = applyCmd(t, app, cmd)
 
 	if app.currentScreen != screenPostingDetail {
 		t.Fatalf("screen after saving notes = %v, want screenPostingDetail", app.currentScreen)
@@ -1590,7 +1587,7 @@ func TestApp_NotesEdit_Esc_CancelsWithoutSaving(t *testing.T) {
 
 	app, _ = sendKey(app, runeKey('H', 'i'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
-	app, _ = sendKey(app, runeKey('y')) // discard the unsaved "Hi"
+	app = sendKeyAndApply(t, app, runeKey('y')) // discard the unsaved "Hi"
 
 	if app.currentScreen != screenPostingDetail {
 		t.Fatalf("screen after esc and discarding = %v, want screenPostingDetail", app.currentScreen)
@@ -3607,7 +3604,7 @@ func TestApp_StatusSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 	if saveCmd == nil {
 		t.Fatal("Update on enter (status select) returned nil Cmd, want a command that updates the status")
 	}
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})         // status select -> posting detail, save still in flight
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc}) // status select -> posting detail, save still in flight
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc}) // posting detail -> application detail
 	if app.currentScreen != screenApplicationDetail {
 		t.Fatalf("screen after backing out = %v, want screenApplicationDetail", app.currentScreen)
@@ -3637,8 +3634,8 @@ func TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.
 	if saveCmd == nil {
 		t.Fatal("Update on enter (status select) returned nil Cmd, want a command that updates the status")
 	}
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc}) // status select -> posting detail, save still in flight
-	app = sendKeyAndApply(t, app, runeKey('s'))              // posting detail -> status select again
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc}) // status select -> posting detail, save still in flight
+	app = sendKeyAndApply(t, app, runeKey('s'))                      // posting detail -> status select again
 	if app.currentScreen != screenApplicationStatusSelect {
 		t.Fatalf("screen after re-entering = %v, want screenApplicationStatusSelect", app.currentScreen)
 	}
@@ -3648,7 +3645,7 @@ func TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.
 	if app.currentScreen != screenApplicationStatusSelect {
 		t.Fatalf("screen after the earlier instance's save result = %v, want screenApplicationStatusSelect (the reopened one stays open)", app.currentScreen)
 	}
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if app.currentScreen != screenPostingDetail {
 		t.Fatalf("screen after esc from the reopened screen = %v, want screenPostingDetail", app.currentScreen)
 	}
@@ -3828,7 +3825,7 @@ func TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T
 	}
 	app = openPostingDetail(t, app)
 	app = sendKeyAndApply(t, app, runeKey('n'))
-	earlier := app.applicationNotes.instance
+	earlier := notesEditor(t, app).instance
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc}) // notes edit -> posting detail
 	app = sendKeyAndApply(t, app, runeKey('n'))              // posting detail -> notes edit again
 	if app.currentScreen != screenApplicationNotesEdit {
@@ -4133,13 +4130,13 @@ func TestApp_NotesSaveFails_UnblocksEditing(t *testing.T) {
 	app, _ = sendKey(app, runeKey('H', 'i'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
-	app, _ = sendKey(app, message.New(message.Source{Instance: app.applicationNotes.instance}, message.Subject{Type: message.TypeApplication, ID: app.applicationNotes.applicationID}, message.OpUpdated, time.Now().UTC(), model.ErrorOf(errors.New("disk full"))))
+	app, _ = sendKey(app, message.New(message.Source{Instance: notesEditor(t, app).instance}, message.Subject{Type: message.TypeApplication, ID: notesEditor(t, app).application.ID}, message.OpUpdated, time.Now().UTC(), model.ErrorOf(errors.New("disk full"))))
 	app, _ = sendKey(app, runeKey('!'))
 
 	if app.currentScreen != screenApplicationNotesEdit {
 		t.Fatalf("screen after failed save = %v, want screenApplicationNotesEdit", app.currentScreen)
 	}
-	if got := app.applicationNotes.textarea.Value(); got != "Hi!" {
+	if got := notesEditor(t, app).textarea.Value(); got != "Hi!" {
 		t.Fatalf("notes after failed save and typing = %q, want %q (editing resumes)", got, "Hi!")
 	}
 }
@@ -4161,7 +4158,7 @@ func TestApp_NotesSaveSucceedsAfterFailing_ClearsTheError(t *testing.T) {
 	}
 	app, _ = sendKey(app, runeKey('H', 'i'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
-	app, _ = sendKey(app, message.New(message.Source{Instance: app.applicationNotes.instance}, message.Subject{Type: message.TypeApplication, ID: app.applicationNotes.applicationID}, message.OpUpdated, time.Now().UTC(), model.ErrorOf(errors.New("disk full"))))
+	app, _ = sendKey(app, message.New(message.Source{Instance: notesEditor(t, app).instance}, message.Subject{Type: message.TypeApplication, ID: notesEditor(t, app).application.ID}, message.OpUpdated, time.Now().UTC(), model.ErrorOf(errors.New("disk full"))))
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
@@ -4244,7 +4241,7 @@ func TestApp_NotesEscWithEdits_DrawsDiscardBox(t *testing.T) {
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
 	view := viewText(app)
-	box := ansi.Strip(app.applicationNotes.discardBox(app.width))
+	box := ansi.Strip(notesEditor(t, app).discardBox(app.width))
 	for _, line := range strings.Split(box, "\n") {
 		if !strings.Contains(view, line) {
 			t.Fatalf("view doesn't draw the discard box line %q:\n%s", line, view)

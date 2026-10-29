@@ -363,7 +363,7 @@ func TestApp_ChangesWhileAFormIsOpen_WaitUntilItCloses(t *testing.T) {
 		t.Fatalf("screen after s = %v, want the status form", app.currentScreen)
 	}
 	app, _ = sendKey(app, runeKey('j'))
-	form := app.applicationStatus
+	cursor := statusPicker(t, app).cursor
 	s := storeOf(app)
 	acme, err := s.Companies.Get(ctx, mustPosting(t, s, target.PostingID).CompanyID)
 	if err != nil {
@@ -379,8 +379,8 @@ func TestApp_ChangesWhileAFormIsOpen_WaitUntilItCloses(t *testing.T) {
 	if _, isTick := next().(changeTickMsg); !isTick {
 		t.Fatal("a tick on the form did more than schedule the next tick")
 	}
-	if app.currentScreen != screenApplicationStatusSelect || app.applicationStatus.cursor != form.cursor {
-		t.Fatalf("the status form changed under you: screen %v, cursor %d (was %d)", app.currentScreen, app.applicationStatus.cursor, form.cursor)
+	if app.currentScreen != screenApplicationStatusSelect || statusPicker(t, app).cursor != cursor {
+		t.Fatalf("the status form changed under you: screen %v, cursor %d (was %d)", app.currentScreen, statusPicker(t, app).cursor, cursor)
 	}
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})

@@ -69,15 +69,14 @@ func isTab(s screen) bool {
 // which is where esc goes. The screens missing from it are entered from
 // more than one, and push where they came from onto returnStack.
 var parents = map[screen]screen{
-	screenCompanyForm:          screenCompanyList,
-	screenCompanyEdit:          screenCompanyList,
-	screenPostingList:          screenCompanyList,
-	screenFilterSelect:         screenPostingList,
-	screenApplicationDetail:    screenActiveApplications,
-	screenApplicationExport:    screenActiveApplications,
-	screenApplicationSubmit:    screenApplicationDetail,
-	screenApplicationForm:      screenApplicationDetail,
-	screenApplicationNotesEdit: screenPostingDetail,
+	screenCompanyForm:       screenCompanyList,
+	screenCompanyEdit:       screenCompanyList,
+	screenPostingList:       screenCompanyList,
+	screenFilterSelect:      screenPostingList,
+	screenApplicationDetail: screenActiveApplications,
+	screenApplicationExport: screenActiveApplications,
+	screenApplicationSubmit: screenApplicationDetail,
+	screenApplicationForm:   screenApplicationDetail,
 }
 
 // stackedUnder is the screen a stacked screen showing as s was pushed

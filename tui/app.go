@@ -80,18 +80,15 @@ type App struct {
 	// syncing runs sync all and refreshes, and draws their progress in the
 	// banner.
 	syncing              *model.Syncing
-	applicationStatus    applicationStatusModel
-	applicationNotes     applicationNotesModel
 	applicationForm      applicationFormModel
 	documentReviewSelect documentReviewSelectModel
 	documentReviewForm   documentReviewFormModel
 	// returnStack records where the user came from for each screen that
-	// can be entered from more than one place: screenPostingDetail,
-	// screenApplicationStatusSelect, and the document review screens
-	// (select and form count as one step). Entering one pushes the
+	// can be entered from more than one place: the document review
+	// screens (select and form count as one step). Entering one pushes the
 	// screen being left; backing out or finishing pops it. It's a stack
-	// rather than one field per screen because these nest (e.g. posting
-	// list -> posting detail -> status select), and one push/pop pair
+	// rather than one field per screen because these nest (e.g.
+	// application detail -> posting detail -> review), and one push/pop pair
 	// per transition keeps a new entry point from needing its own field.
 	// See issue #89.
 	returnStack []screen
@@ -221,12 +218,14 @@ func New(
 // stackedAs is the screen each kind a Nav pushes shows as, for the paths
 // that still switch on currentScreen.
 var stackedAs = map[message.Screen]screen{
-	message.ScreenCompanyForm:     screenCompanyForm,
-	message.ScreenCompanyEdit:     screenCompanyEdit,
-	message.ScreenCompanyDelete:   screenCompanyDelete,
-	message.ScreenCompanyPostings: screenPostingList,
-	message.ScreenFilterSelect:    screenFilterSelect,
-	message.ScreenPostingDetail:   screenPostingDetail,
+	message.ScreenCompanyForm:       screenCompanyForm,
+	message.ScreenCompanyEdit:       screenCompanyEdit,
+	message.ScreenCompanyDelete:     screenCompanyDelete,
+	message.ScreenCompanyPostings:   screenPostingList,
+	message.ScreenFilterSelect:      screenFilterSelect,
+	message.ScreenPostingDetail:     screenPostingDetail,
+	message.ScreenApplicationStatus: screenApplicationStatusSelect,
+	message.ScreenApplicationNotes:  screenApplicationNotesEdit,
 }
 
 // push opens s over the screen up: routes, then Init, so nothing Init
@@ -375,6 +374,21 @@ func (a *App) openPostingDetail(d message.PostingDetail) tea.Cmd {
 
 func (a *App) newPostingDetail(d message.PostingDetail) *postingDetailModel {
 	return newPostingDetailModel(a.postingService, a.documentService, a.scoringService, a.documents, d, a.sized)
+}
+
+func (a *App) navApplication(e message.Event[message.Nav[message.Application]]) tea.Cmd {
+	if !a.onTop(e.Meta) {
+		return nil
+	}
+	if e.Payload.Op == message.NavPush {
+		switch e.Payload.Screen {
+		case message.ScreenApplicationStatus:
+			return a.push(e.Payload.Screen, newApplicationStatusModel(a.applicationService, e.Payload.Value))
+		case message.ScreenApplicationNotes:
+			return a.push(e.Payload.Screen, newApplicationNotesModel(a.applicationService, e.Payload.Value, a.sized))
+		}
+	}
+	return a.unknownNav(e)
 }
 
 // postingDetail is the open posting detail, or nil, for the screens over
@@ -998,6 +1012,7 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.navCompanyRow),
 		model.Always(a.navFilterSelection),
 		model.Always(a.navPostingDetail),
+		model.Always(a.navApplication),
 		model.Always(a.hideArchivedChanged),
 		model.Always(a.markupChanged),
 		model.Always(a.applicationChanged),
@@ -1018,14 +1033,9 @@ func (a *App) applicationChanged(e message.Event[message.Changed[message.Applica
 	}
 	// Nothing blocks esc while the save is in flight, so the user may
 	// already have left; only the asker still on screen moves on.
-	switch {
-	case a.currentScreen == screenApplicationStatusSelect && a.applicationStatus.instance == from:
-		a.returnBack()
-	case a.currentScreen == screenApplicationSubmit && a.applicationSubmit.instance == from:
+	if a.currentScreen == screenApplicationSubmit && a.applicationSubmit.instance == from {
 		a.status = "Marked " + a.applicationSubmit.application.Posting.Title + " submitted"
 		a.currentScreen = screenActiveApplications
-	case a.currentScreen == screenApplicationNotesEdit && a.applicationNotes.instance == from:
-		a.currentScreen = screenPostingDetail
 	}
 	// A new status may move the application to or from a terminal one,
 	// so the home list reloads rather than patching its row.
@@ -1048,12 +1058,9 @@ func (a *App) applicationDeleted(e message.Event[message.Changed[message.Applica
 // applicationWriteFailed puts the screen that asked back as it was before
 // it asked; the banner shows why.
 func (a *App) applicationWriteFailed(e message.Event[message.Error]) tea.Cmd {
-	switch from := e.Meta.Source.Instance; {
-	case a.currentScreen == screenApplicationDelete && a.applicationDelete.instance == from:
+	if a.currentScreen == screenApplicationDelete && a.applicationDelete.instance == e.Meta.Source.Instance {
 		// Rather than leave a confirmation whose y is already spent.
 		a.currentScreen = a.applicationDelete.from
-	case a.currentScreen == screenApplicationNotesEdit && a.applicationNotes.instance == from:
-		a.applicationNotes.saving = false
 	}
 	return nil
 }
@@ -1121,8 +1128,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// when they're built. The list screens are sized as they render, so
 	// they need nothing here.
 	switch a.currentScreen {
-	case screenApplicationNotesEdit:
-		a.applicationNotes.setHeight(a.screenRows())
 	case screenApplicationForm:
 		a.applicationForm.setHeight(a.screenRows())
 	case screenDocumentReviewForm:
@@ -1139,16 +1144,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.activeApplications = msg.applications
 		a.activeApplicationProgress = msg.progress
 		a.activeApplicationList.keepCursorOn(previous, a.activeApplications)
-	case enterApplicationStatusMsg:
-		// Only if the user is still on the posting detail that asked.
-		if a.currentScreen == screenPostingDetail {
-			return a, loadApplicationStatus(a.applicationService, msg.applicationID, a.currentScreen)
-		}
-	case enterApplicationNotesMsg:
-		if a.currentScreen == screenPostingDetail {
-			a.currentScreen = screenApplicationNotesEdit
-			a.applicationNotes = newApplicationNotesModel(a.applicationService, msg.applicationID, msg.currentNotes, a.width, a.screenRows())
-		}
 	case enterDocumentReviewSelectMsg:
 		if a.currentScreen == screenPostingDetail {
 			a.enterFrom(screenDocumentReviewSelect)
@@ -1192,13 +1187,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		if msg.err == nil && a.currentScreen == msg.from && (msg.from != screenApplicationDetail || a.applicationDetail.application.ID == msg.application.ID) {
 			a.applicationDelete = newApplicationDeleteModel(msg.application, msg.from)
 			a.currentScreen = screenApplicationDelete
-		}
-	case applicationStatusLoadedMsg:
-		a.err = msg.err
-		// Open the form only if the user is still where they asked for it.
-		if msg.err == nil && a.currentScreen == msg.from {
-			a.enterFrom(screenApplicationStatusSelect)
-			a.applicationStatus = newApplicationStatusModel(a.applicationService, msg.applicationID, msg.status)
 		}
 	case applicationFormLoadedMsg:
 		a.err = msg.err
@@ -1327,8 +1315,6 @@ func (a *App) paste(msg tea.PasteMsg) tea.Cmd {
 		a.activeApplicationList.paste(msg)
 	case screenApplicationExport:
 		return a.applicationExport.paste(msg)
-	case screenApplicationNotesEdit:
-		return a.applicationNotes.paste(msg)
 	case screenApplicationForm:
 		return a.applicationForm.paste(msg)
 	case screenDocumentReviewForm:
@@ -1366,8 +1352,9 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	case screenActiveApplications:
 		cmd, intent := a.activeApplicationList.Update(msg, a.activeApplications)
 		switch v := intent.(type) {
-		case enterApplicationStatusMsg:
-			return a, loadApplicationStatus(a.applicationService, v.applicationID, a.currentScreen)
+		case message.Application:
+			// The home screen is App's, with no instance to send a Nav from.
+			return a, a.push(message.ScreenApplicationStatus, newApplicationStatusModel(a.applicationService, v))
 		case enterApplicationDetailMsg:
 			a.currentScreen = screenApplicationDetail
 			a.applicationDetail = newApplicationDetailModel(a.documents, v.application)
@@ -1399,12 +1386,6 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return a, loadDocumentReviews(a.documentService, a.documents, a.applicationDetail.application.ID)
 		}
 		return a, cmd
-	case screenApplicationStatusSelect:
-		cmd, intent := a.applicationStatus.Update(msg)
-		if _, ok := intent.(cancelApplicationStatusMsg); ok {
-			a.returnBack()
-		}
-		return a, cmd
 	case screenApplicationExport:
 		cmd, intent := a.applicationExport.Update(msg)
 		if _, ok := intent.(cancelApplicationExportMsg); ok {
@@ -1427,12 +1408,6 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			a.currentScreen = a.applicationDelete.from
 		case confirmApplicationDeleteMsg:
 			return a, deleteApplication(a.applicationService, message.Source{Instance: a.applicationDelete.instance}, v.application.ID)
-		}
-		return a, cmd
-	case screenApplicationNotesEdit:
-		cmd, intent := a.applicationNotes.Update(msg)
-		if _, ok := intent.(cancelApplicationNotesMsg); ok {
-			a.currentScreen = screenPostingDetail
 		}
 		return a, cmd
 	case screenApplicationForm:
@@ -1501,10 +1476,6 @@ func (a *App) View() tea.View {
 		if a.applicationForm.confirmingDiscard {
 			body = overlay(body, a.applicationForm.discardBox(a.width), a.width)
 		}
-	case screenApplicationNotesEdit:
-		if a.applicationNotes.confirmingDiscard {
-			body = overlay(body, a.applicationNotes.discardBox(a.width), a.width)
-		}
 	}
 	v := tea.NewView(a.header() + body + a.banner())
 	v.AltScreen = true
@@ -1537,7 +1508,7 @@ func (a *App) body(s screen) string {
 		b.WriteString(a.companyList.View().Content)
 	case screenCompanyForm:
 		b.WriteString(a.stack.top().View().Content)
-	case screenCompanyEdit, screenFilterSelect:
+	case screenCompanyEdit, screenFilterSelect, screenApplicationStatusSelect, screenApplicationNotesEdit:
 		b.WriteString(a.stack.top().View().Content)
 	case screenPostingList:
 		if l := a.postingList(); l != nil {
@@ -1547,14 +1518,10 @@ func (a *App) body(s screen) string {
 		if d := a.postingDetail(); d != nil {
 			b.WriteString(d.View().Content)
 		}
-	case screenApplicationStatusSelect:
-		b.WriteString(a.applicationStatus.View())
 	case screenApplicationExport:
 		b.WriteString(a.applicationExport.View())
 	case screenApplicationSubmit:
 		b.WriteString(a.applicationSubmit.View())
-	case screenApplicationNotesEdit:
-		b.WriteString(a.applicationNotes.View())
 	case screenApplicationForm:
 		b.WriteString(a.applicationForm.View())
 	case screenDocumentReviewSelect:

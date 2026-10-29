@@ -156,17 +156,15 @@ func TestPostingDetailModel_EscOrB_Pops(t *testing.T) {
 	}
 }
 
-// Status, notes and the review picker are still App's to open.
-func TestPostingDetailModel_ApplicationKeys_AskAppToOpenItsScreens(t *testing.T) {
+func TestPostingDetailModel_StatusAndNotesKeys_PushTheirScreenOnTheApplication(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
 		key  tea.KeyPressMsg
-		want tea.Msg
+		want message.Screen
 	}{
-		{key: runeKey('s'), want: enterApplicationStatusMsg{applicationID: 9}},
-		{key: runeKey('n'), want: enterApplicationNotesMsg{applicationID: 9, currentNotes: "existing notes"}},
-		{key: runeKey('r'), want: enterDocumentReviewSelectMsg{applicationID: 9}},
+		{key: runeKey('s'), want: message.ScreenApplicationStatus},
+		{key: runeKey('n'), want: message.ScreenApplicationNotes},
 	}
 	for _, tt := range tests {
 		t.Run(tt.key.String(), func(t *testing.T) {
@@ -174,10 +172,35 @@ func TestPostingDetailModel_ApplicationKeys_AskAppToOpenItsScreens(t *testing.T)
 			m := detailOf(documents.NewStore(t.TempDir()), testDetailPosting, testDetailApplication, nil, 80, 20)
 
 			got := pressDetail(t, m, tt.key)
-			if diff := cmp.Diff([]tea.Msg{tt.want}, got, cmp.AllowUnexported(enterApplicationStatusMsg{}, enterApplicationNotesMsg{}, enterDocumentReviewSelectMsg{})); diff != "" {
-				t.Errorf("%s sent (-want +got):\n%s", tt.key, diff)
+			if len(got) != 1 {
+				t.Fatalf("%s sent %#v, want one Nav", tt.key, got)
+			}
+			nav, ok := got[0].(message.Event[message.Nav[message.Application]])
+			if !ok {
+				t.Fatalf("%s sent %T, want a Nav of the application", tt.key, got[0])
+			}
+			assertEventFrom(t, nav.Meta, message.Source{Instance: m.Instance()})
+			if want := (message.Subject{Type: message.TypeApplication, ID: testDetailApplication.ID}); nav.Meta.Subject != want {
+				t.Errorf("Subject = %+v, want %+v", nav.Meta.Subject, want)
+			}
+			want := message.Nav[message.Application]{Op: message.NavPush, Screen: tt.want, Value: testDetailApplication}
+			if diff := cmp.Diff(want, nav.Payload); diff != "" {
+				t.Errorf("Nav (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// The review picker is still App's to open.
+func TestPostingDetailModel_R_AsksAppToOpenTheReviewPicker(t *testing.T) {
+	t.Parallel()
+
+	m := detailOf(documents.NewStore(t.TempDir()), testDetailPosting, testDetailApplication, nil, 80, 20)
+
+	got := pressDetail(t, m, runeKey('r'))
+	want := []tea.Msg{enterDocumentReviewSelectMsg{applicationID: testDetailApplication.ID}}
+	if diff := cmp.Diff(want, got, cmp.AllowUnexported(enterDocumentReviewSelectMsg{})); diff != "" {
+		t.Errorf("r sent (-want +got):\n%s", diff)
 	}
 }
 
