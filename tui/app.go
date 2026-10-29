@@ -72,7 +72,7 @@ type App struct {
 	latestSeen    int64
 	syncer        *sync.Syncer
 	companyList   *companyListModel
-	allPostings   allPostingsModel
+	allPostings   *allPostingsModel
 	currentScreen screen
 	stack         *screenStack
 	status        string
@@ -203,6 +203,7 @@ func New(
 	modules := []model.Routable{
 		a,
 		a.companyList,
+		a.allPostings,
 		a.syncing,
 	}
 
@@ -277,8 +278,11 @@ func (a *App) focused() message.ScreenInstance {
 		}
 		return 0
 	}
-	if a.currentScreen == screenCompanyList {
+	switch a.currentScreen {
+	case screenCompanyList:
 		return a.companyList.Instance()
+	case screenAllPostings:
+		return a.allPostings.Instance()
 	}
 	return 0
 }
@@ -651,8 +655,7 @@ func sortCompaniesByName(companies []message.Company) {
 }
 
 func (a *App) Init() tea.Cmd {
-	// The all-postings page too, for its tab's count.
-	return tea.Batch(a.companyList.Init(), loadActiveApplications(a.applicationService, a.documentService, a.documents), a.allPostings.load(a.allPostings.pageSize(a.screenRows())), a.pollChanges())
+	return tea.Batch(a.companyList.Init(), loadActiveApplications(a.applicationService, a.documentService, a.documents), a.allPostings.Init(), a.pollChanges())
 }
 
 type activeApplicationsLoadedMsg struct {
@@ -1014,7 +1017,6 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.navPostingDetail),
 		model.Always(a.navApplication),
 		model.Always(a.hideArchivedChanged),
-		model.Always(a.markupChanged),
 		model.Always(a.applicationChanged),
 		model.Always(a.applicationWriteFailed),
 		model.Always(a.browserOpened),
@@ -1082,13 +1084,6 @@ func (a *App) applicationWriteFailed(e message.Event[message.Error]) tea.Cmd {
 	if a.currentScreen == screenApplicationDelete && a.applicationDelete.instance == e.Meta.Source.Instance {
 		// Rather than leave a confirmation whose y is already spent.
 		a.currentScreen = a.applicationDelete.from
-	}
-	return nil
-}
-
-func (a *App) markupChanged(message.Event[message.Changed[message.Markup]]) tea.Cmd {
-	if a.currentScreen == screenAllPostings {
-		return a.allPostings.load(a.allPostings.size)
 	}
 	return nil
 }
@@ -1174,22 +1169,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handleTick()
 	case changesMsg:
 		return a, a.handleChanges(msg)
-	case allPostingsSearchMsg:
-		return a, a.allPostings.searched(msg, a.allPostings.pageSize(a.screenRows()))
-	case allPostingsLoadedMsg:
-		// It also loads in the background for its tab's count, so success
-		// mustn't clear another load's error.
-		if msg.err != nil {
-			a.err = msg.err
-		} else {
-			return a, a.allPostings.loaded(msg)
-		}
-	case allPostingsDetailLoadedMsg:
-		a.err = msg.err
-		// Only if the user is still where they pressed enter.
-		if msg.err == nil && a.currentScreen == screenAllPostings {
-			return a, a.openPostingDetail(message.PostingDetail{Posting: postingSnapshot(msg.posting)})
-		}
 	case applicationDetailReloadedMsg:
 		return a, a.handleApplicationDetailReloaded(msg)
 	case editorClosedMsg:
@@ -1295,14 +1274,10 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
-		var reload tea.Cmd
-		if size := a.allPostings.pageSize(a.screenRows()); a.currentScreen == screenAllPostings && size != a.allPostings.size {
-			reload = a.allPostings.load(size)
-		}
 		// The terminal rewraps the old frame when it narrows, pushing rows
 		// below where the new one ends. The renderer only clears below a
 		// frame that got shorter, so without this they stay on screen.
-		return a, tea.Batch(tea.ClearScreen, reload)
+		return a, tea.ClearScreen
 	case tea.KeyPressMsg:
 		prevScreen := a.currentScreen
 		model, cmd := a.updateKeyMsg(msg)
@@ -1323,8 +1298,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // paste is never a key, so a pasted "q" can't quit.
 func (a *App) paste(msg tea.PasteMsg) tea.Cmd {
 	switch a.currentScreen {
-	case screenAllPostings:
-		return a.allPostings.paste(msg)
 	case screenActiveApplications:
 		a.activeApplicationList.paste(msg)
 	case screenApplicationExport:
@@ -1347,22 +1320,13 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return a, nil
 		case screenCompanyList:
 			a.currentScreen = screenAllPostings
-			return a, a.allPostings.load(a.allPostings.pageSize(a.screenRows()))
+			return a, nil
 		case screenAllPostings:
 			a.currentScreen = screenActiveApplications
 			return a, nil
 		}
 	}
 	switch a.currentScreen {
-	case screenAllPostings:
-		cmd, intent := a.allPostings.Update(msg, a.allPostings.pageSize(a.screenRows()))
-		switch v := intent.(type) {
-		case message.PostingDetail:
-			return a, loadAllPostingsDetail(a.postingService, v.Posting.ID)
-		case openJobURLMsg:
-			return a, a.openURL(message.Source{Instance: a.instance}, message.Subject{Type: message.TypePosting, ID: v.id}, v.url)
-		}
-		return a, cmd
 	case screenActiveApplications:
 		cmd, intent := a.activeApplicationList.Update(msg, a.activeApplications)
 		switch v := intent.(type) {
@@ -1517,7 +1481,7 @@ func (a *App) body(s screen) string {
 	case screenApplicationDetail:
 		b.WriteString(a.applicationDetail.View())
 	case screenAllPostings:
-		b.WriteString(a.allPostings.View(a.width, a.screenRows()))
+		b.WriteString(a.allPostings.View().Content)
 	case screenCompanyList:
 		b.WriteString(a.companyList.View().Content)
 	case screenCompanyForm:
