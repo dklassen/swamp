@@ -74,6 +74,7 @@ const (
 	TypeActiveApplications
 	TypeApplicationDetail
 	TypeEditDocument
+	TypeDocumentReview
 )
 
 var typeNames = [...]string{
@@ -107,6 +108,7 @@ var typeNames = [...]string{
 	TypeActiveApplications: "active_applications",
 	TypeApplicationDetail:  "application_detail",
 	TypeEditDocument:       "edit_document",
+	TypeDocumentReview:     "document_review",
 }
 
 func (t Type) String() string                { return nameOf(t, typeNames[:]) }
@@ -163,14 +165,16 @@ const (
 	ErrOther
 	ErrFault
 	ErrPostingClosed
+	ErrDocumentChanged
 )
 
 var errorCodeNames = [...]string{
-	ErrNotFound:       "not_found",
-	ErrSyncInProgress: "sync_in_progress",
-	ErrOther:          "other",
-	ErrFault:          "fault",
-	ErrPostingClosed:  "posting_closed",
+	ErrNotFound:        "not_found",
+	ErrSyncInProgress:  "sync_in_progress",
+	ErrOther:           "other",
+	ErrFault:           "fault",
+	ErrPostingClosed:   "posting_closed",
+	ErrDocumentChanged: "document_changed",
 }
 
 func (c ErrorCode) String() string                { return nameOf(c, errorCodeNames[:]) }
@@ -192,20 +196,24 @@ const (
 	ScreenApplicationNotes
 	ScreenApplicationDetail
 	ScreenApplicationDelete
+	ScreenDocumentReviewSelect
+	ScreenDocumentReviewForm
 )
 
 var screenNames = [...]string{
-	ScreenNone:              "none",
-	ScreenCompanyForm:       "company_form",
-	ScreenCompanyEdit:       "company_edit",
-	ScreenCompanyDelete:     "company_delete",
-	ScreenCompanyPostings:   "company_postings",
-	ScreenFilterSelect:      "filter_select",
-	ScreenPostingDetail:     "posting_detail",
-	ScreenApplicationStatus: "application_status",
-	ScreenApplicationNotes:  "application_notes",
-	ScreenApplicationDetail: "application_detail",
-	ScreenApplicationDelete: "application_delete",
+	ScreenNone:                 "none",
+	ScreenCompanyForm:          "company_form",
+	ScreenCompanyEdit:          "company_edit",
+	ScreenCompanyDelete:        "company_delete",
+	ScreenCompanyPostings:      "company_postings",
+	ScreenFilterSelect:         "filter_select",
+	ScreenPostingDetail:        "posting_detail",
+	ScreenApplicationStatus:    "application_status",
+	ScreenApplicationNotes:     "application_notes",
+	ScreenApplicationDetail:    "application_detail",
+	ScreenApplicationDelete:    "application_delete",
+	ScreenDocumentReviewSelect: "document_review_select",
+	ScreenDocumentReviewForm:   "document_review_form",
 }
 
 func (s Screen) String() string                { return nameOf(s, screenNames[:]) }

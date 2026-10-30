@@ -342,3 +342,14 @@ type EditDocument struct {
 }
 
 func (EditDocument) Type() Type { return TypeEditDocument }
+
+// DocumentReview is what a review form opens on: one of an application's
+// documents, as Content read when it was picked, which is what a review
+// saved from the form describes.
+type DocumentReview struct {
+	ApplicationID int64        `json:"application_id"`
+	DocumentType  DocumentType `json:"document_type"`
+	Content       string       `json:"content"`
+}
+
+func (DocumentReview) Type() Type { return TypeDocumentReview }

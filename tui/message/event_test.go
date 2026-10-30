@@ -293,6 +293,14 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "application delete nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.ApplicationDetail]{
 			Op: message.NavPush, Screen: message.ScreenApplicationDelete, Value: message.ApplicationDetail{Application: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted}, Posting: message.Posting{ID: 5, Title: "Engineer", ListingStatus: message.ListingOpen}, CompanyName: "Acme"},
 		}))},
+		{name: "review changed", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpCreated, at, message.Changed[message.Review]{
+			After: message.Review{ID: 8, ApplicationID: 4, DocumentType: message.DocumentCoverLetter, Outcome: message.ReviewFlagged, Notes: "too long", CreatedAt: at},
+		}))},
+		{name: "document changed error", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpCreated, at, message.Error{Code: message.ErrDocumentChanged, Text: "the document changed"}))},
+		{name: "review select nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.Application]{Op: message.NavPush, Screen: message.ScreenDocumentReviewSelect,
+			Value: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted}}))},
+		{name: "review form nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.DocumentReview]{Op: message.NavReplace, Screen: message.ScreenDocumentReviewForm,
+			Value: message.DocumentReview{ApplicationID: 4, DocumentType: message.DocumentResume, Content: "# Resume\n"}}))},
 		{name: "edit document ran", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Ran[message.EditDocument]{Value: message.EditDocument{DocumentType: message.DocumentCoverLetter}}))},
 		{name: "filter options read", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Read[message.FilterOptions]{Value: message.FilterOptions{
 			Departments: []string{"Platform", "Sales"}, Locations: []string{"Remote"},
