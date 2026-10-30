@@ -8,6 +8,8 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/internal/domain/change"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
@@ -73,6 +75,55 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 				return nil, err
 			}
 			return message.Logged(row.ID, mcp, message.Subject{Type: message.TypePosting, ID: m.PostingID}, message.OpUpdated, row.At, markupSnapshot(*m)), nil
+		}},
+		{"posting scored", "posting_scores", func(ctx context.Context, f fixture) error {
+			p, err := f.s.Postings.Get(ctx, f.postingID)
+			if err != nil {
+				return err
+			}
+			_, err = service.NewScoringService(f.writer).Record(ctx, score.Provenance{Model: "claude-sonnet-5", ProfileSHA256: "profile"}, []score.Entry{{PostingID: p.ID, Score: 4, Reason: "fits", ContentSHA256: p.ContentSHA256}})
+			return err
+		}, func(ctx context.Context, f fixture, row change.Event) (tea.Msg, error) {
+			scores, err := f.s.Scores.ForPosting(ctx, f.postingID)
+			if err != nil {
+				return nil, err
+			}
+			return message.Logged(row.ID, mcp, message.Subject{Type: message.TypePosting, ID: f.postingID}, message.OpCreated, row.At, message.Score{
+				ID: scores[0].ID, PostingID: f.postingID, Score: 4, Reason: "fits", Model: "claude-sonnet-5", ContentSHA256: scores[0].ContentSHA256, ScoredAt: scores[0].ScoredAt,
+			}), nil
+		}},
+		{"document reviewed", "document_reviews", func(ctx context.Context, f fixture) error {
+			_, err := service.NewDocumentService(f.writer).Review(ctx, f.applicationID, document.CoverLetter, "draft", document.Flagged, "too long")
+			return err
+		}, func(ctx context.Context, f fixture, row change.Event) (tea.Msg, error) {
+			r, err := f.s.Documents.LatestReview(ctx, f.applicationID, document.CoverLetter)
+			if err != nil {
+				return nil, err
+			}
+			return message.Logged(row.ID, mcp, message.Subject{Type: message.TypeApplication, ID: f.applicationID}, message.OpCreated, row.At, reviewSnapshot(*r)), nil
+		}},
+		{"document written", "document_writes", func(ctx context.Context, f fixture) error {
+			return service.NewDocumentService(f.writer).RecordWrite(ctx, f.applicationID, document.Resume, "draft", document.SourceWriteDocument)
+		}, func(ctx context.Context, f fixture, row change.Event) (tea.Msg, error) {
+			w, err := f.s.Documents.LatestWrite(ctx, f.applicationID, document.Resume)
+			if err != nil {
+				return nil, err
+			}
+			return message.Logged(row.ID, mcp, message.Subject{Type: message.TypeApplication, ID: f.applicationID}, message.OpCreated, row.At, message.DocumentWrite{
+				ID: w.ID, ApplicationID: f.applicationID, DocumentType: message.DocumentResume, ContentSHA256: document.ContentSHA256("draft"), WrittenAt: w.WrittenAt,
+			}), nil
+		}},
+		{"document exported", "document_exports", func(ctx context.Context, f fixture) error {
+			return service.NewDocumentService(f.writer).RecordExport(ctx, f.applicationID, document.CoverLetter, "draft", "/out/cover_letter.pdf")
+		}, func(ctx context.Context, f fixture, row change.Event) (tea.Msg, error) {
+			exports, err := f.s.Documents.LatestExports(ctx, f.applicationID)
+			if err != nil {
+				return nil, err
+			}
+			e := exports[document.CoverLetter]
+			return message.Logged(row.ID, mcp, message.Subject{Type: message.TypeApplication, ID: f.applicationID}, message.OpCreated, row.At, message.DocumentExport{
+				ID: e.ID, ApplicationID: f.applicationID, DocumentType: message.DocumentCoverLetter, ContentSHA256: document.ContentSHA256("draft"), ExportedAt: e.ExportedAt,
+			}), nil
 		}},
 	}
 	for _, tt := range tests {

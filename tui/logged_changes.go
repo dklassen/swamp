@@ -10,7 +10,9 @@ import (
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/tui/message"
 )
@@ -55,6 +57,22 @@ func (r changeReader) changed(ctx context.Context, rows []change.Event) ([]tea.M
 	if err != nil {
 		return nil, fmt.Errorf("change log: read markup: %w", err)
 	}
+	scores, err := byID(ctx, ids["posting_scores"], r.scores.GetMany, func(s score.Score) int64 { return s.ID })
+	if err != nil {
+		return nil, fmt.Errorf("change log: read scores: %w", err)
+	}
+	reviews, err := byID(ctx, ids["document_reviews"], r.documents.GetManyReviews, func(r document.Review) int64 { return r.ID })
+	if err != nil {
+		return nil, fmt.Errorf("change log: read reviews: %w", err)
+	}
+	writes, err := byID(ctx, ids["document_writes"], r.documents.GetManyWrites, func(w document.Write) int64 { return w.ID })
+	if err != nil {
+		return nil, fmt.Errorf("change log: read writes: %w", err)
+	}
+	exports, err := byID(ctx, ids["document_exports"], r.documents.GetManyExports, func(e document.Export) int64 { return e.ID })
+	if err != nil {
+		return nil, fmt.Errorf("change log: read exports: %w", err)
+	}
 
 	events := make([]tea.Msg, 0, len(rows))
 	for _, row := range rows {
@@ -78,6 +96,22 @@ func (r changeReader) changed(ctx context.Context, rows []change.Event) ([]tea.M
 		case "posting_markup":
 			events = appendLogged(events, row, op, markup, markupSnapshot, func(message.Markup) message.Subject {
 				return message.Subject{Type: message.TypePosting, ID: row.RowID}
+			})
+		case "posting_scores":
+			events = appendLogged(events, row, op, scores, scoreSnapshot, func(s message.Score) message.Subject {
+				return message.Subject{Type: message.TypePosting, ID: s.PostingID}
+			})
+		case "document_reviews":
+			events = appendLogged(events, row, op, reviews, reviewSnapshot, func(r message.Review) message.Subject {
+				return message.Subject{Type: message.TypeApplication, ID: r.ApplicationID}
+			})
+		case "document_writes":
+			events = appendLogged(events, row, op, writes, documentWriteSnapshot, func(w message.DocumentWrite) message.Subject {
+				return message.Subject{Type: message.TypeApplication, ID: w.ApplicationID}
+			})
+		case "document_exports":
+			events = appendLogged(events, row, op, exports, documentExportSnapshot, func(e message.DocumentExport) message.Subject {
+				return message.Subject{Type: message.TypeApplication, ID: e.ApplicationID}
 			})
 		default:
 			return nil, fmt.Errorf("change log: no event for table %q", row.Table)
