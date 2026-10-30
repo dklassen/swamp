@@ -177,7 +177,7 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 				t.Fatalf("the write logged %d %s rows, want 1: %+v", len(want), tt.table, rows)
 			}
 
-			reader := changeReader{companies: s.Companies, postings: s.Postings, applications: s.Applications, documents: s.Documents, scores: s.Scores, origin: "tui:1"}
+			reader := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, "tui:1")
 			got, err := reader.changed(ctx, []change.Event{row})
 			if err != nil {
 				t.Fatalf("changed: %v", err)
@@ -214,7 +214,7 @@ func TestChangeReader_ItsOwnRows_AreSkipped(t *testing.T) {
 		t.Fatalf("After: %v", err)
 	}
 
-	reader := changeReader{companies: s.Companies, postings: s.Postings, applications: s.Applications, documents: s.Documents, scores: s.Scores, origin: "tui:1"}
+	reader := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, "tui:1")
 	got, err := reader.changed(ctx, rows)
 	if err != nil {
 		t.Fatalf("changed: %v", err)
@@ -252,7 +252,7 @@ func TestChangeReader_TheSameRowsReadTwice_AreTheSameEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("After: %v", err)
 	}
-	reader := changeReader{companies: s.Companies, postings: s.Postings, applications: s.Applications, documents: s.Documents, scores: s.Scores, origin: "tui:1"}
+	reader := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, "tui:1")
 
 	first, err := reader.changed(ctx, rows)
 	if err != nil {
@@ -284,7 +284,7 @@ func TestChangeReader_AGoneRowIsLeftOutAndADeleteHasNoAfter(t *testing.T) {
 		{ID: 1, Table: "postings", RowID: 9999, Op: "update", Origin: mcp.Process, At: at},
 		{ID: 2, Table: "companies", RowID: 5, Op: "delete", Origin: mcp.Process, At: at},
 	}
-	reader := changeReader{companies: s.Companies, postings: s.Postings, applications: s.Applications, documents: s.Documents, scores: s.Scores, origin: "tui:1"}
+	reader := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, "tui:1")
 
 	got, err := reader.changed(ctx, rows)
 	if err != nil {
@@ -293,5 +293,23 @@ func TestChangeReader_AGoneRowIsLeftOutAndADeleteHasNoAfter(t *testing.T) {
 	want := []tea.Msg{message.Logged(2, mcp, message.Subject{Type: message.TypeCompany, ID: 5}, message.OpDeleted, at, message.Company{})}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("events (-want +got):\n%s", diff)
+	}
+}
+
+// Every logged table's rows are an event, so a table logged later can't
+// be skipped without saying so.
+func TestChangeReader_EveryLoggedTable_HasAnEvent(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	reader := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, "tui:1")
+	for _, table := range slices.Sorted(maps.Keys(migrations.Logged)) {
+		got, err := reader.changed(context.Background(), []change.Event{{ID: 1, Table: table, RowID: 5, Op: "delete", Origin: mcp.Process}})
+		if err != nil {
+			t.Errorf("%s: %v", table, err)
+			continue
+		}
+		if len(got) != 1 {
+			t.Errorf("%s: a delete gave %d events, want 1", table, len(got))
+		}
 	}
 }
