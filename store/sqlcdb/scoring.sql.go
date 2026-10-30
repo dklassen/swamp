@@ -8,6 +8,7 @@ package sqlcdb
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const createPostingScore = `-- name: CreatePostingScore :exec
@@ -195,6 +196,55 @@ ORDER BY id DESC
 
 func (q *Queries) ListPostingScores(ctx context.Context, postingID int64) ([]PostingScore, error) {
 	rows, err := q.db.QueryContext(ctx, listPostingScores, postingID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PostingScore
+	for rows.Next() {
+		var i PostingScore
+		if err := rows.Scan(
+			&i.ID,
+			&i.PostingID,
+			&i.Score,
+			&i.Reason,
+			&i.ContentSha256,
+			&i.ProfileSha256,
+			&i.Model,
+			&i.ClientName,
+			&i.ClientVersion,
+			&i.ScoredAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listPostingScoresByID = `-- name: ListPostingScoresByID :many
+SELECT id, posting_id, score, reason, content_sha256, profile_sha256, model, client_name, client_version, scored_at FROM posting_scores
+WHERE id IN (/*SLICE:ids*/?)
+`
+
+func (q *Queries) ListPostingScoresByID(ctx context.Context, ids []int64) ([]PostingScore, error) {
+	query := listPostingScoresByID
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}

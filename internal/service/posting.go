@@ -23,6 +23,7 @@ var ErrPostingClosed = errors.New("application: posting is closed")
 
 type postingViewer interface {
 	Get(ctx context.Context, r store.Runner, id int64) (*posting.Posting, error)
+	GetMany(ctx context.Context, r store.Runner, ids []int64) ([]posting.Posting, error)
 	GetBySource(ctx context.Context, r store.Runner, source, sourceID string) (*posting.Posting, error)
 	ListInterested(ctx context.Context, r store.Runner, excluding []application.Status) ([]posting.Interested, error)
 	ListByCompany(ctx context.Context, r store.Runner, companyID int64) ([]posting.Posting, error)
@@ -54,6 +55,7 @@ type postingHistoryViewer interface {
 
 type markupViewer interface {
 	Get(ctx context.Context, r store.Runner, postingID int64) (*posting.Markup, error)
+	GetMany(ctx context.Context, r store.Runner, postingIDs []int64) ([]posting.Markup, error)
 }
 
 type markupWriter interface {
@@ -202,6 +204,12 @@ func (service *PostingService) Get(ctx context.Context, postingID int64) (*posti
 	return service.postingViewer.Get(ctx, service.db, postingID)
 }
 
+// GetMany returns the postings with the given ids, in no order. An id
+// with no posting is left out.
+func (service *PostingService) GetMany(ctx context.Context, ids []int64) ([]posting.Posting, error) {
+	return service.postingViewer.GetMany(ctx, service.db, ids)
+}
+
 // GetBySource returns the posting source knows as sourceID, or
 // store.ErrNotFound.
 func (service *PostingService) GetBySource(ctx context.Context, source, sourceID string) (*posting.Posting, error) {
@@ -249,6 +257,12 @@ func (service *PostingService) Application(ctx context.Context, postingID int64)
 // Markup returns the user's triage on the posting, or store.ErrNotFound.
 func (service *PostingService) Markup(ctx context.Context, postingID int64) (*posting.Markup, error) {
 	return service.markupViewer.Get(ctx, service.db, postingID)
+}
+
+// MarkupMany returns the user's triage on the given postings, in no
+// order. A posting with none is left out.
+func (service *PostingService) MarkupMany(ctx context.Context, postingIDs []int64) ([]posting.Markup, error) {
+	return service.markupViewer.GetMany(ctx, service.db, postingIDs)
 }
 
 // SetInterested marks the posting interested, which also unarchives it.

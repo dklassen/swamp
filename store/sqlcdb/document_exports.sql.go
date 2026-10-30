@@ -7,6 +7,7 @@ package sqlcdb
 
 import (
 	"context"
+	"strings"
 )
 
 const createDocumentExport = `-- name: CreateDocumentExport :exec
@@ -57,4 +58,49 @@ func (q *Queries) LatestDocumentExport(ctx context.Context, arg LatestDocumentEx
 		&i.ExportedAt,
 	)
 	return i, err
+}
+
+const listDocumentExportsByID = `-- name: ListDocumentExportsByID :many
+SELECT id, application_id, document_type, content_sha256, path, exported_at FROM document_exports
+WHERE id IN (/*SLICE:ids*/?)
+`
+
+func (q *Queries) ListDocumentExportsByID(ctx context.Context, ids []int64) ([]DocumentExport, error) {
+	query := listDocumentExportsByID
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DocumentExport
+	for rows.Next() {
+		var i DocumentExport
+		if err := rows.Scan(
+			&i.ID,
+			&i.ApplicationID,
+			&i.DocumentType,
+			&i.ContentSha256,
+			&i.Path,
+			&i.ExportedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

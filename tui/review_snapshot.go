@@ -64,6 +64,8 @@ func reviewsOf(list message.ReviewList) map[document.Type]document.Review {
 
 func scoreSnapshot(s score.Score) message.Score {
 	return message.Score{
+		ID:            s.ID,
+		PostingID:     s.PostingID,
 		Score:         s.Score,
 		Reason:        s.Reason,
 		Model:         s.Model,
@@ -71,5 +73,25 @@ func scoreSnapshot(s score.Score) message.Score {
 		ClientVersion: s.ClientVersion,
 		ContentSHA256: s.ContentSHA256,
 		ScoredAt:      s.ScoredAt,
+	}
+}
+
+func documentWriteSnapshot(w document.Write) message.DocumentWrite {
+	return message.DocumentWrite{
+		ID:            w.ID,
+		ApplicationID: w.ApplicationID,
+		DocumentType:  documentTypeSnapshots[w.DocumentType],
+		ContentSHA256: w.ContentSHA256,
+		WrittenAt:     w.WrittenAt,
+	}
+}
+
+func documentExportSnapshot(e document.Export) message.DocumentExport {
+	return message.DocumentExport{
+		ID:            e.ID,
+		ApplicationID: e.ApplicationID,
+		DocumentType:  documentTypeSnapshots[e.DocumentType],
+		ContentSHA256: e.ContentSHA256,
+		ExportedAt:    e.ExportedAt,
 	}
 }

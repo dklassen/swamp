@@ -13,6 +13,7 @@ import (
 type reviewViewer interface {
 	Count(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type) (int64, error)
 	List(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type) ([]document.Review, error)
+	GetMany(ctx context.Context, r store.Runner, ids []int64) ([]document.Review, error)
 }
 
 type reviewRecorder interface {
@@ -21,6 +22,7 @@ type reviewRecorder interface {
 
 type exportViewer interface {
 	Latest(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type) (*document.Export, error)
+	GetMany(ctx context.Context, r store.Runner, ids []int64) ([]document.Export, error)
 }
 
 type exportRecorder interface {
@@ -29,6 +31,7 @@ type exportRecorder interface {
 
 type writeViewer interface {
 	Latest(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type) (*document.Write, error)
+	GetMany(ctx context.Context, r store.Runner, ids []int64) ([]document.Write, error)
 }
 
 type writeRecorder interface {
@@ -87,6 +90,12 @@ func (service *DocumentService) Reviews(ctx context.Context, applicationID int64
 	return service.reviewViewer.List(ctx, service.db, applicationID, documentType)
 }
 
+// GetManyReviews returns the reviews with the given ids, in no order. An
+// id with no review is left out.
+func (service *DocumentService) GetManyReviews(ctx context.Context, ids []int64) ([]document.Review, error) {
+	return service.reviewViewer.GetMany(ctx, service.db, ids)
+}
+
 // LatestReview returns applicationID's most recent review of
 // documentType, or store.ErrNotFound when none has been recorded yet.
 func (service *DocumentService) LatestReview(ctx context.Context, applicationID int64, documentType document.Type) (*document.Review, error) {
@@ -142,6 +151,12 @@ func (service *DocumentService) LatestExports(ctx context.Context, applicationID
 	return exports, nil
 }
 
+// GetManyExports returns the recorded exports with the given ids, in no
+// order. An id with no export is left out.
+func (service *DocumentService) GetManyExports(ctx context.Context, ids []int64) ([]document.Export, error) {
+	return service.exportViewer.GetMany(ctx, service.db, ids)
+}
+
 // RecordWrite records that source wrote content as applicationID's
 // documentType. Callers record only after the file was written.
 func (service *DocumentService) RecordWrite(ctx context.Context, applicationID int64, documentType document.Type, content string, source document.Source) error {
@@ -156,4 +171,10 @@ func (service *DocumentService) LatestWrite(ctx context.Context, applicationID i
 		return nil, fmt.Errorf("document: latest write: %w", err)
 	}
 	return write, nil
+}
+
+// GetManyWrites returns the recorded writes with the given ids, in no
+// order. An id with no write is left out.
+func (service *DocumentService) GetManyWrites(ctx context.Context, ids []int64) ([]document.Write, error) {
+	return service.writeViewer.GetMany(ctx, service.db, ids)
 }

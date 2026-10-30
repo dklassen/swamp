@@ -9,3 +9,7 @@ SELECT * FROM document_writes
 WHERE application_id = ? AND document_type = ?
 ORDER BY written_at DESC, id DESC
 LIMIT 1;
+
+-- name: ListDocumentWritesByID :many
+SELECT * FROM document_writes
+WHERE id IN (sqlc.slice('ids'));

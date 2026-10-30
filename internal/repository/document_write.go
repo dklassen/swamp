@@ -40,15 +40,40 @@ func (repository *DocumentWriteRepository) Latest(ctx context.Context, r store.R
 	if err != nil {
 		return nil, err
 	}
-	parsedType, err := domain.ParseType(row.DocumentType)
-	if err != nil {
-		return nil, fmt.Errorf("document: %w", err)
-	}
-	source, err := domain.ParseSource(row.Source)
+	w, err := fromDocumentWriteRow(row)
 	if err != nil {
 		return nil, err
 	}
-	return &domain.Write{
+	return &w, nil
+}
+
+// GetMany returns the writes with the given ids that exist, in no order.
+func (repository *DocumentWriteRepository) GetMany(ctx context.Context, r store.Runner, ids []int64) ([]domain.Write, error) {
+	rows, err := store.Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.DocumentWrite, error) {
+		return q.ListDocumentWritesByID(ctx, ids)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("document: writes by id: %w", err)
+	}
+	writes := make([]domain.Write, len(rows))
+	for i, row := range rows {
+		if writes[i], err = fromDocumentWriteRow(row); err != nil {
+			return nil, err
+		}
+	}
+	return writes, nil
+}
+
+func fromDocumentWriteRow(row sqlcdb.DocumentWrite) (domain.Write, error) {
+	parsedType, err := domain.ParseType(row.DocumentType)
+	if err != nil {
+		return domain.Write{}, fmt.Errorf("document: %w", err)
+	}
+	source, err := domain.ParseSource(row.Source)
+	if err != nil {
+		return domain.Write{}, err
+	}
+	return domain.Write{
 		ID:            row.ID,
 		ApplicationID: row.ApplicationID,
 		DocumentType:  parsedType,

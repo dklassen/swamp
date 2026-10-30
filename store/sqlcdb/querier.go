@@ -110,6 +110,8 @@ type Querier interface {
 	// Oldest first. id breaks ties between changes in the same second
 	// (CURRENT_TIMESTAMP has one-second resolution).
 	ListApplicationStatusHistory(ctx context.Context, applicationID int64) ([]ApplicationStatusHistory, error)
+	ListApplicationsByIDIncludingDeleted(ctx context.Context, ids []int64) ([]Application, error)
+	ListCompaniesByIDIncludingDeleted(ctx context.Context, ids []int64) ([]Company, error)
 	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)
 	// Keyspace discovery for filter selection: department is a company-
 	// specific vocabulary (not a fixed enum), so filter values are offered
@@ -118,9 +120,12 @@ type Querier interface {
 	// so excluding '' is the only filter required.
 	ListDistinctDepartmentsForCompany(ctx context.Context, companyID int64) ([]string, error)
 	ListDistinctLocationsForCompany(ctx context.Context, companyID int64) ([]string, error)
+	ListDocumentExportsByID(ctx context.Context, ids []int64) ([]DocumentExport, error)
 	// cycle DESC: most recent review first, matching how a human would want
 	// to read review history (latest verdict up top).
 	ListDocumentReviews(ctx context.Context, arg ListDocumentReviewsParams) ([]DocumentReview, error)
+	ListDocumentReviewsByID(ctx context.Context, ids []int64) ([]DocumentReview, error)
+	ListDocumentWritesByID(ctx context.Context, ids []int64) ([]DocumentWrite, error)
 	// Postings the user has flagged interested and not archived, that the
 	// company's posting list shows (open, company not deleted, let through by
 	// its filters, matched as the SearchPostings queries match them), joined with
@@ -163,11 +168,14 @@ type Querier interface {
 	// sqlc can't resolve the alias m.
 	ListPendingPostings(ctx context.Context, arg ListPendingPostingsParams) ([]ListPendingPostingsRow, error)
 	ListPostingHistoryByPosting(ctx context.Context, postingID int64) ([]PostingHistory, error)
+	ListPostingMarkupByPostingID(ctx context.Context, postingIds []int64) ([]PostingMarkup, error)
 	ListPostingScores(ctx context.Context, postingID int64) ([]PostingScore, error)
+	ListPostingScoresByID(ctx context.Context, ids []int64) ([]PostingScore, error)
 	// id DESC is a tiebreaker: a single sync inserts many rows within the same
 	// CURRENT_TIMESTAMP second (sqlite has only second resolution), so
 	// first_seen_at alone leaves ties with no guaranteed order.
 	ListPostingsByCompany(ctx context.Context, companyID int64) ([]Posting, error)
+	ListPostingsByID(ctx context.Context, ids []int64) ([]Posting, error)
 	// Records a successful fetch of this company's postings (see sync.SyncCompany).
 	MarkCompanyFetched(ctx context.Context, id int64) error
 	// Records that a sync saw these postings on their board (#176). Not a

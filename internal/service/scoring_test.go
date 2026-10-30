@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
@@ -308,5 +309,41 @@ func TestScoringService_ForPosting_NewestFirstWithWhatProducedThem(t *testing.T)
 	want := []summary{{4, "after the edit", second, p.ContentSHA256}, {2, "first look", first, p.ContentSHA256}}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("scores (-want +got):\n%s", diff)
+	}
+}
+
+func TestScoringService_GetMany_NamesEachScoresPostingLeavesOutMissing(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	acme := testutil.MustAddCompany(t, s, "Acme")
+	p := testutil.MustIngestPostingFor(t, s, acme.ID, "1", "Role")
+	other := testutil.MustIngestPostingFor(t, s, acme.ID, "2", "Other")
+	provenance := score.Provenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: "profile"}
+	if _, err := s.Scores.Record(ctx, provenance, []score.Entry{{PostingID: p.ID, Score: 2, Reason: "first look", ContentSHA256: p.ContentSHA256}, {PostingID: other.ID, Score: 1, Reason: "not this one", ContentSHA256: other.ContentSHA256}}); err != nil {
+		t.Fatalf("Record: %v", err)
+	}
+	var want []score.Score
+	ids := []int64{9999}
+	for _, posting := range []int64{p.ID, other.ID} {
+		scores, err := s.Scores.ForPosting(ctx, posting)
+		if err != nil {
+			t.Fatalf("ForPosting: %v", err)
+		}
+		for _, sc := range scores {
+			if sc.PostingID != posting {
+				t.Errorf("score %d: PostingID = %d, want %d", sc.ID, sc.PostingID, posting)
+			}
+			ids = append(ids, sc.ID)
+		}
+		want = append(want, scores...)
+	}
+
+	got, err := s.Scores.GetMany(ctx, ids)
+	if err != nil {
+		t.Fatalf("GetMany: %v", err)
+	}
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b score.Score) bool { return a.ID < b.ID })); diff != "" {
+		t.Errorf("GetMany (-want +got):\n%s", diff)
 	}
 }

@@ -7,6 +7,7 @@ package sqlcdb
 
 import (
 	"context"
+	"strings"
 )
 
 const countDocumentReviews = `-- name: CountDocumentReviews :one
@@ -83,6 +84,54 @@ type ListDocumentReviewsParams struct {
 // to read review history (latest verdict up top).
 func (q *Queries) ListDocumentReviews(ctx context.Context, arg ListDocumentReviewsParams) ([]DocumentReview, error) {
 	rows, err := q.db.QueryContext(ctx, listDocumentReviews, arg.ApplicationID, arg.DocumentType)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DocumentReview
+	for rows.Next() {
+		var i DocumentReview
+		if err := rows.Scan(
+			&i.ID,
+			&i.ApplicationID,
+			&i.DocumentType,
+			&i.Cycle,
+			&i.ContentSnapshot,
+			&i.ContentSha256,
+			&i.Outcome,
+			&i.Notes,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDocumentReviewsByID = `-- name: ListDocumentReviewsByID :many
+SELECT id, application_id, document_type, cycle, content_snapshot, content_sha256, outcome, notes, created_at FROM document_reviews
+WHERE id IN (/*SLICE:ids*/?)
+`
+
+func (q *Queries) ListDocumentReviewsByID(ctx context.Context, ids []int64) ([]DocumentReview, error) {
+	query := listDocumentReviewsByID
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}

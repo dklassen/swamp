@@ -4,6 +4,7 @@ import (
 	"crypto/rand"
 	"encoding/binary"
 	"encoding/hex"
+	"strconv"
 	"time"
 )
 
@@ -105,6 +106,15 @@ func Deleted[T Snapshot](src Source, id int64, at time.Time, before T) Event[Cha
 
 func changed[T Snapshot](src Source, id int64, op Op, at time.Time, c Changed[T]) Event[Changed[T]] {
 	return New(src, Subject{Type: c.Type(), ID: id}, op, at, c)
+}
+
+// Logged is the write that change log row records. Its ID is the row's,
+// so a row read twice is one event. Before is zero, since the row doesn't
+// hold the whole entity; After is zero for OpDeleted.
+func Logged[T Snapshot](row int64, src Source, subject Subject, op Op, at time.Time, after T) Event[Changed[T]] {
+	e := New(src, subject, op, at, Changed[T]{After: after})
+	e.Meta.ID = "change_event:" + strconv.FormatInt(row, 10)
+	return e
 }
 
 // Read is a read's result, for the model that asked.

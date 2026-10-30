@@ -707,3 +707,54 @@ func TestPostingService_MarkupWrites_ReturnNotFoundForAPostingNotThere(t *testin
 		})
 	}
 }
+
+func TestPostingService_GetMany_LeavesOutPostingsNotThere(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	acme, err := s.Companies.Add(ctx, "Acme", jobboard.Ashby, "acme")
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	first := testutil.MustIngestPostingFor(t, s, acme.ID, "job-1", "Software Engineer")
+	testutil.MustIngestPostingFor(t, s, acme.ID, "job-2", "Designer")
+	third := testutil.MustIngestPostingFor(t, s, acme.ID, "job-3", "Product Manager")
+
+	got, err := s.Postings.GetMany(ctx, []int64{third.ID, 9999, first.ID})
+	if err != nil {
+		t.Fatalf("GetMany: %v", err)
+	}
+	want := []posting.Posting{first, third}
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b posting.Posting) bool { return a.ID < b.ID })); diff != "" {
+		t.Errorf("GetMany (-want +got):\n%s", diff)
+	}
+}
+
+func TestPostingService_MarkupMany_LeavesOutPostingsNotThere(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	acme, err := s.Companies.Add(ctx, "Acme", jobboard.Ashby, "acme")
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	first := testutil.MustIngestPostingFor(t, s, acme.ID, "job-1", "Software Engineer")
+	second := testutil.MustIngestPostingFor(t, s, acme.ID, "job-2", "Designer")
+	interested, err := s.Postings.SetInterested(ctx, second.ID)
+	if err != nil {
+		t.Fatalf("SetInterested: %v", err)
+	}
+	untouched, err := s.Postings.Markup(ctx, first.ID)
+	if err != nil {
+		t.Fatalf("Markup: %v", err)
+	}
+
+	got, err := s.Postings.MarkupMany(ctx, []int64{second.ID, 9999, first.ID})
+	if err != nil {
+		t.Fatalf("MarkupMany: %v", err)
+	}
+	want := []posting.Markup{*untouched, interested.After}
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b posting.Markup) bool { return a.PostingID < b.PostingID })); diff != "" {
+		t.Errorf("MarkupMany (-want +got):\n%s", diff)
+	}
+}

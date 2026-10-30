@@ -14,6 +14,7 @@ type scoreViewer interface {
 	Pending(ctx context.Context, r store.Runner, rescoreProfileSHA256 string, beforeID int64, limit int) (*score.PendingPostingsPage, error)
 	HasRepeat(ctx context.Context, r store.Runner, postingID int64, contentSHA256, profileSHA256, model string) (bool, error)
 	ListByPosting(ctx context.Context, r store.Runner, postingID int64) ([]score.Score, error)
+	GetMany(ctx context.Context, r store.Runner, ids []int64) ([]score.Score, error)
 }
 
 type scoreRecorder interface {
@@ -52,6 +53,12 @@ func (service *ScoringService) Pending(ctx context.Context, rescoreProfileSHA256
 // one, first.
 func (service *ScoringService) ForPosting(ctx context.Context, postingID int64) ([]score.Score, error) {
 	return service.scoreViewer.ListByPosting(ctx, service.db, postingID)
+}
+
+// GetMany returns the scores with the given ids, in no order. An id with
+// no score is left out.
+func (service *ScoringService) GetMany(ctx context.Context, ids []int64) ([]score.Score, error) {
+	return service.scoreViewer.GetMany(ctx, service.db, ids)
 }
 
 // Record records entries as scores from provenance, all together or not

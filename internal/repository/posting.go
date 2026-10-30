@@ -122,6 +122,23 @@ func (repository *PostingRepository) Get(ctx context.Context, r store.Runner, id
 	})
 }
 
+// GetMany returns the postings with the given ids that exist, in no order.
+func (repository *PostingRepository) GetMany(ctx context.Context, r store.Runner, ids []int64) ([]domain.Posting, error) {
+	rows, err := store.Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.Posting, error) {
+		return q.ListPostingsByID(ctx, ids)
+	})
+	if err != nil {
+		return nil, err
+	}
+	postings := make([]domain.Posting, len(rows))
+	for i, row := range rows {
+		if postings[i], err = FromPostingRow(row); err != nil {
+			return nil, err
+		}
+	}
+	return postings, nil
+}
+
 // GetBySource returns the posting source knows as sourceID, or
 // store.ErrNotFound.
 func (repository *PostingRepository) GetBySource(ctx context.Context, r store.Runner, source, sourceID string) (*domain.Posting, error) {

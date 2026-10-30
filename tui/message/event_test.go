@@ -293,6 +293,14 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "application delete nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.ApplicationDetail]{
 			Op: message.NavPush, Screen: message.ScreenApplicationDelete, Value: message.ApplicationDetail{Application: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted}, Posting: message.Posting{ID: 5, Title: "Engineer", ListingStatus: message.ListingOpen}, CompanyName: "Acme"},
 		}))},
+		{name: "logged posting changed", check: roundTrip(message.Logged(12, message.Source{Process: "sync:9"}, message.Subject{Type: message.TypePosting, ID: 5}, message.OpUpdated, at,
+			message.Posting{ID: 5, CompanyID: 3, Title: "Engineer", ListingStatus: message.ListingClosed, ContentSHA256: "abc"}))},
+		{name: "logged score changed", check: roundTrip(message.Logged(13, message.Source{Process: "mcp:9"}, message.Subject{Type: message.TypePosting, ID: 5}, message.OpCreated, at,
+			message.Score{ID: 2, PostingID: 5, Score: 4, Reason: "fits", Model: "claude", ContentSHA256: "abc", ScoredAt: at}))},
+		{name: "logged document write changed", check: roundTrip(message.Logged(14, message.Source{Process: "mcp:9"}, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpCreated, at,
+			message.DocumentWrite{ID: 6, ApplicationID: 4, DocumentType: message.DocumentResume, ContentSHA256: "abc", WrittenAt: at}))},
+		{name: "logged document export changed", check: roundTrip(message.Logged(15, message.Source{Process: "tui:7"}, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpCreated, at,
+			message.DocumentExport{ID: 3, ApplicationID: 4, DocumentType: message.DocumentCoverLetter, ContentSHA256: "abc", ExportedAt: at}))},
 		{name: "review changed", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpCreated, at, message.Changed[message.Review]{
 			After: message.Review{ID: 8, ApplicationID: 4, DocumentType: message.DocumentCoverLetter, Outcome: message.ReviewFlagged, Notes: "too long", CreatedAt: at},
 		}))},
@@ -346,5 +354,28 @@ func roundTrip[P message.Primitive](want message.Event[P]) func(t *testing.T) {
 		if diff := cmp.Diff(want, got); diff != "" {
 			t.Errorf("%s round trip (-want +got):\n%s", b, diff)
 		}
+	}
+}
+
+func TestLogged_TakesItsIDFromTheRowAndLeavesBeforeZero(t *testing.T) {
+	t.Parallel()
+
+	mcp := message.Source{Process: "mcp:9"}
+	subject := message.Subject{Type: message.TypeCompany, ID: 3}
+	after := message.Company{ID: 3, Name: "Acme Corp"}
+	first := message.Logged(12, mcp, subject, message.OpUpdated, at, after)
+
+	want := message.Event[message.Changed[message.Company]]{
+		Meta:    message.Meta{Kind: message.KindChanged, Type: message.TypeCompany, Source: mcp, Subject: subject, Op: message.OpUpdated, At: at},
+		Payload: message.Changed[message.Company]{After: after},
+	}
+	if diff := cmp.Diff(want, first, cmpopts.IgnoreFields(message.Meta{}, "ID")); diff != "" {
+		t.Errorf("event mismatch (-want +got):\n%s", diff)
+	}
+	if again := message.Logged(12, mcp, subject, message.OpUpdated, at, after); again.Meta.ID != first.Meta.ID {
+		t.Errorf("the same row read twice: IDs %q and %q, want equal", first.Meta.ID, again.Meta.ID)
+	}
+	if other := message.Logged(13, mcp, subject, message.OpUpdated, at, after); other.Meta.ID == first.Meta.ID {
+		t.Errorf("rows 12 and 13 both have ID %q", first.Meta.ID)
 	}
 }

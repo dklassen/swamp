@@ -15,6 +15,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -272,5 +273,32 @@ func TestCompanyService_Delete_ReturnsTheCompanyBeforeAndAfter(t *testing.T) {
 	}
 	if !got.At.Equal(*got.After.DeletedAt) || got.At.Location() != time.UTC {
 		t.Errorf("At = %v, want After.DeletedAt %v, in UTC", got.At, *got.After.DeletedAt)
+	}
+}
+
+func TestCompanyService_GetManyIncludingDeleted_FindsDeletedLeavesOutMissing(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	live, err := s.Companies.Add(ctx, "Acme", jobboard.Ashby, "acme")
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	gone, err := s.Companies.Add(ctx, "Globex", jobboard.Ashby, "globex")
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	deleted, err := s.Companies.Delete(ctx, gone.ID)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	got, err := s.Companies.GetManyIncludingDeleted(ctx, []int64{gone.ID, 9999, live.ID})
+	if err != nil {
+		t.Fatalf("GetManyIncludingDeleted: %v", err)
+	}
+	want := []company.Company{*live, deleted.After}
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b company.Company) bool { return a.ID < b.ID })); diff != "" {
+		t.Errorf("GetManyIncludingDeleted (-want +got):\n%s", diff)
 	}
 }

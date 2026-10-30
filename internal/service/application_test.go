@@ -332,3 +332,34 @@ func TestApplicationService_Writes_ReturnNotFoundForAnApplicationNotThere(t *tes
 		}
 	}
 }
+
+func TestApplicationService_GetManyIncludingDeleted_FindsDeletedLeavesOutMissing(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	acme, err := s.Companies.Add(ctx, "Acme", jobboard.Ashby, "acme")
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	live, err := s.Postings.ApplyTo(ctx, testutil.MustIngestPostingFor(t, s, acme.ID, "job-1", "Software Engineer").ID)
+	if err != nil {
+		t.Fatalf("ApplyTo: %v", err)
+	}
+	gone, err := s.Postings.ApplyTo(ctx, testutil.MustIngestPostingFor(t, s, acme.ID, "job-2", "Designer").ID)
+	if err != nil {
+		t.Fatalf("ApplyTo: %v", err)
+	}
+	deleted, err := s.Applications.Delete(ctx, gone.ID)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	got, err := s.Applications.GetManyIncludingDeleted(ctx, []int64{gone.ID, 9999, live.ID})
+	if err != nil {
+		t.Fatalf("GetManyIncludingDeleted: %v", err)
+	}
+	want := []application.Application{*live, deleted.After}
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b application.Application) bool { return a.ID < b.ID })); diff != "" {
+		t.Errorf("GetManyIncludingDeleted (-want +got):\n%s", diff)
+	}
+}

@@ -487,6 +487,67 @@ func (q *Queries) ListPostingsByCompany(ctx context.Context, companyID int64) ([
 	return items, nil
 }
 
+const listPostingsByID = `-- name: ListPostingsByID :many
+SELECT id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at, content_sha256 FROM postings
+WHERE id IN (/*SLICE:ids*/?)
+`
+
+func (q *Queries) ListPostingsByID(ctx context.Context, ids []int64) ([]Posting, error) {
+	query := listPostingsByID
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Posting
+	for rows.Next() {
+		var i Posting
+		if err := rows.Scan(
+			&i.ID,
+			&i.CompanyID,
+			&i.Source,
+			&i.SourceID,
+			&i.Title,
+			&i.Department,
+			&i.Team,
+			&i.Location,
+			&i.EmploymentType,
+			&i.WorkplaceType,
+			&i.DescriptionHtml,
+			&i.DescriptionText,
+			&i.JobUrl,
+			&i.ApplicationUrl,
+			&i.PublishedAt,
+			&i.RawPayload,
+			&i.ListingStatus,
+			&i.FirstSeenAt,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ContentSha256,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const markPostingsSeen = `-- name: MarkPostingsSeen :exec
 UPDATE postings
 SET last_seen_at = CURRENT_TIMESTAMP

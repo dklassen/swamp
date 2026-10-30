@@ -14,3 +14,7 @@ WHERE application_id = ? AND document_type = ?;
 SELECT * FROM document_reviews
 WHERE application_id = ? AND document_type = ?
 ORDER BY cycle DESC;
+
+-- name: ListDocumentReviewsByID :many
+SELECT * FROM document_reviews
+WHERE id IN (sqlc.slice('ids'));

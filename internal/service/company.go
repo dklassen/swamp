@@ -17,6 +17,7 @@ import (
 type companyViewer interface {
 	Get(ctx context.Context, r store.Runner, id int64) (*company.Company, error)
 	GetIncludingDeleted(ctx context.Context, r store.Runner, id int64) (*company.Company, error)
+	GetManyIncludingDeleted(ctx context.Context, r store.Runner, ids []int64) ([]company.Company, error)
 	GetBySource(ctx context.Context, r store.Runner, source, sourceRef string) (*company.Company, error)
 	ListActive(ctx context.Context, r store.Runner) ([]company.Company, error)
 }
@@ -218,6 +219,13 @@ func (service *CompanyService) Get(ctx context.Context, id int64) (*company.Comp
 // (check DeletedAt).
 func (service *CompanyService) GetIncludingDeleted(ctx context.Context, id int64) (*company.Company, error) {
 	return service.companyViewer.GetIncludingDeleted(ctx, service.db, id)
+}
+
+// GetManyIncludingDeleted returns the companies with the given ids,
+// deleted or not (check DeletedAt), in no order. An id with no company is
+// left out.
+func (service *CompanyService) GetManyIncludingDeleted(ctx context.Context, ids []int64) ([]company.Company, error) {
+	return service.companyViewer.GetManyIncludingDeleted(ctx, service.db, ids)
 }
 
 // GetBySource finds the company for a job board slug, including a

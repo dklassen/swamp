@@ -50,13 +50,14 @@ func TestScoreSnapshot_KeepsWhatTheFitSectionShows(t *testing.T) {
 	at := time.Date(2026, 10, 29, 9, 0, 0, 0, time.UTC)
 	s := score.Score{
 		ID:            3,
+		PostingID:     5,
 		Provenance:    score.Provenance{Model: "claude", ClientName: "cli", ClientVersion: "1.0", ProfileSHA256: "def"},
 		Score:         4,
 		Reason:        "fits",
 		ContentSHA256: "abc",
 		ScoredAt:      at,
 	}
-	want := message.Score{Score: 4, Reason: "fits", Model: "claude", ClientName: "cli", ClientVersion: "1.0", ContentSHA256: "abc", ScoredAt: at}
+	want := message.Score{ID: 3, PostingID: 5, Score: 4, Reason: "fits", Model: "claude", ClientName: "cli", ClientVersion: "1.0", ContentSHA256: "abc", ScoredAt: at}
 	if diff := cmp.Diff(want, scoreSnapshot(s)); diff != "" {
 		t.Errorf("scoreSnapshot (-want +got):\n%s", diff)
 	}
