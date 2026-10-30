@@ -38,6 +38,6 @@ Each step is one PR and keeps the verification checklist clean. Do them in order
 
 Steps 1 and 3 don't depend on each other, so either can go first. Step 16 depends only on 3, so it can go any time before 17.
 
-Decided for steps 13 to 29: RFC 0012's stack is built first (step 13), the posting list is stacked (RFC 0012 open question 1), and the change log's `Before` is the zero snapshot, skipping the TUI's own rows (RFC 0013 open question 2).
+Decided for steps 13 to 29: RFC 0012's stack is built first (step 13), the posting list is stacked (RFC 0012 open question 1), and the change log's `Before` is the zero snapshot, skipping the TUI's own rows (RFC 0013 open question 2). Step 28 is two PRs: the snapshots, the reads by ID and the rows as events first, then `App` and the screens switching over.
 
 Tags: every issue carries `rfc-0013` and `rfc0013-step-N` ("RFC 0013 work order: step N of 29"), the same as earlier RFCs' work orders. Steps 7, 11 and 12 also carry `rfc-0012`, since they change what RFC 0012 describes.
