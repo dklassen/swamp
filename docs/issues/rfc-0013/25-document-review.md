@@ -14,10 +14,10 @@ The picker is opened from posting detail and replaced by the form (`enterDocumen
 
 ## Change
 
-- A `Review` snapshot; the form sends `Created` or `Error`. A document that changed is `Error` with a new code, `document_changed`.
-- The picker sends `Replace` to the form with the document it picked.
-- Posting detail, application detail and the home screen route `Changed[Review]` `About` their application.
-- Remove `enterDocumentReviewSelectMsg`, `enterDocumentReviewFormMsg`, `cancelDocumentReviewSelectMsg`, `cancelDocumentReviewFormMsg`, `documentReviewCreatedMsg` and `documentChangedDuringReviewMsg`.
+- A `Review` snapshot; the form sends `Changed[Review]`, its Subject the review's application, or `Error`. A document that changed is `Error` with a new code, `document_changed`, whose text says who changed it; the form reads the document again and shows the diff.
+- `Nav[Application]` pushes the picker. It sends `Replace` to the form with the document it picked, as `Nav[DocumentReview]`: the content read when it was picked, which is what the review describes. Application detail pushes the form the same way.
+- Posting detail, application detail and the home screen route `Changed[Review]` `About` their application. Posting detail checks the application in the handler, since its application can change while it's open.
+- Remove `enterDocumentReviewSelectMsg`, `enterDocumentReviewFormMsg`, `cancelDocumentReviewSelectMsg`, `cancelDocumentReviewFormMsg`, `documentReviewCreatedMsg` and `documentChangedDuringReviewMsg`, and `returnStack`, which the review screens were the last to use.
 
 ## Acceptance criteria
 

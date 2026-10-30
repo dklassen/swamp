@@ -7,6 +7,7 @@ import (
 
 	"charm.land/lipgloss/v2"
 
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -65,9 +66,9 @@ func isTab(s screen) bool {
 	return s == screenActiveApplications || s == screenCompanyList || s == screenAllPostings
 }
 
-// parents maps each screen entered from only one place to that place,
-// which is where esc goes. The screens missing from it are entered from
-// more than one, and push where they came from onto returnStack.
+// parents maps each of App's own screens to the one it's entered from,
+// which is where esc goes. A stacked screen goes back to the one it was
+// pushed over instead.
 var parents = map[screen]screen{
 	screenCompanyForm:       screenCompanyList,
 	screenCompanyEdit:       screenCompanyList,
@@ -92,17 +93,13 @@ func (a *App) stackedUnder(s screen) (screen, bool) {
 // path is the screens from a tab to on: the way esc goes back, reversed.
 func (a *App) path(on screen) []screen {
 	path := []screen{on}
-	next := len(a.returnStack) - 1
 	for s := on; !isTab(s); path = append(path, s) {
 		if p, ok := parents[s]; ok {
 			s = p
 		} else if under, ok := a.stackedUnder(s); ok {
 			s = under
-		} else if next >= 0 {
-			s = a.returnStack[next]
-			next--
 		} else {
-			// Where returnBack goes when a push was missed.
+			// A screen with no way back still ends at a tab.
 			s = screenActiveApplications
 		}
 	}
@@ -149,7 +146,9 @@ func (a *App) crumbs(path []screen) []string {
 		case screenDocumentReviewSelect:
 			crumbs = append(crumbs, "Review a document")
 		case screenDocumentReviewForm:
-			crumbs = append(crumbs, "Review "+a.documentReviewForm.documentType.Label())
+			if f, ok := a.stack.open(message.ScreenDocumentReviewForm).(*documentReviewFormModel); ok {
+				crumbs = append(crumbs, "Review "+documentTypeOf(f.review.DocumentType).Label())
+			}
 		case screenApplicationExport:
 			crumbs = append(crumbs, "Export PDFs")
 		case screenApplicationSubmit:

@@ -57,6 +57,7 @@ func (m *applicationDetailModel) Routes() []*model.Route {
 		model.Always(m.readFailed, model.From(m.instance)),
 		model.Always(m.loadRequested),
 		model.Always(m.applicationChanged, model.About(message.TypeApplication, m.detail.Application.ID)),
+		model.Always(m.reviewChanged, model.About(message.TypeApplication, m.detail.Application.ID)),
 		model.Always(m.documentEdited, model.From(m.instance)),
 		model.WhenFocused(m, m.keyPressed),
 		model.Always(m.focusChanged),
@@ -114,13 +115,19 @@ func (m *applicationDetailModel) applicationChanged(e message.Event[message.Chan
 	return nil
 }
 
+// reviewChanged takes a review of one of its documents, whoever saved it.
+func (m *applicationDetailModel) reviewChanged(e message.Event[message.Changed[message.Review]]) tea.Cmd {
+	m.detail.Reviews = withReview(m.detail.Reviews, e.Payload.After)
+	return nil
+}
+
 // documentEdited reads again, for the review an edit may have made stale.
 func (m *applicationDetailModel) documentEdited(message.Event[message.Ran[message.EditDocument]]) tea.Cmd {
 	return m.load()
 }
 
 // focusChanged reads again on coming back on top: documents change on
-// disk, and reviews are written, with no event it hears.
+// disk with no event it hears.
 func (m *applicationDetailModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
 	gained := !m.focused && e.Payload.Value.Focused == m.instance
 	m.focused = e.Payload.Value.Focused == m.instance
@@ -155,9 +162,7 @@ func (m *applicationDetailModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 		case string(documentType.Key()):
 			return editDocument(m.documentService, m.documents, m.src(), m.detail.Application.ID, documentType)
 		case string(unicode.ToUpper(documentType.Key())):
-			if review := m.enterReview(documentType); review != nil {
-				return ask(review)
-			}
+			return m.openReview(documentType)
 		}
 	}
 	return nil
@@ -173,19 +178,18 @@ func (m *applicationDetailModel) active() posting.ActiveApplication {
 	}
 }
 
-// enterReview reads documentType's current content off disk and returns
-// the message that opens the review form on it; nil if the document
-// doesn't exist yet, since there's nothing to review.
-func (m *applicationDetailModel) enterReview(documentType document.Type) tea.Msg {
+// openReview opens the review form on documentType as it is now, or does
+// nothing if it isn't drafted yet, since there's nothing to review.
+func (m *applicationDetailModel) openReview(documentType document.Type) tea.Cmd {
 	id := m.detail.Application.ID
 	doc, err := m.documents.Status(id).Doc(documentType)
 	if err != nil {
-		return enterDocumentReviewFormMsg{err: err}
+		return message.Fail(m.src(), err)
 	}
 	if !doc.Exists {
 		return nil
 	}
-	return readDocumentForReview(id, documentType, doc.Path)
+	return openDocumentReview(m.src(), message.Push[message.DocumentReview], id, documentType, doc.Path)
 }
 
 func (m *applicationDetailModel) View() tea.View {

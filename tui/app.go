@@ -79,19 +79,8 @@ type App struct {
 	err           error
 	// syncing runs sync all and refreshes, and draws their progress in the
 	// banner.
-	syncing              *model.Syncing
-	applicationForm      applicationFormModel
-	documentReviewSelect documentReviewSelectModel
-	documentReviewForm   documentReviewFormModel
-	// returnStack records where the user came from for each screen that
-	// can be entered from more than one place: the document review
-	// screens (select and form count as one step). Entering one pushes the
-	// screen being left; backing out or finishing pops it. It's a stack
-	// rather than one field per screen because these nest (e.g.
-	// application detail -> posting detail -> review), and one push/pop pair
-	// per transition keeps a new entry point from needing its own field.
-	// See issue #89.
-	returnStack           []screen
+	syncing               *model.Syncing
+	applicationForm       applicationFormModel
 	activeApplicationList *activeApplicationListModel
 	applicationExport     applicationExportModel
 	// exportDir is the destination the export screen prefills: the last
@@ -216,16 +205,18 @@ func (a *App) focusSignal() tea.Msg {
 // stackedAs is the screen each kind a Nav pushes shows as, for the paths
 // that still switch on currentScreen.
 var stackedAs = map[message.Screen]screen{
-	message.ScreenCompanyForm:       screenCompanyForm,
-	message.ScreenCompanyEdit:       screenCompanyEdit,
-	message.ScreenCompanyDelete:     screenCompanyDelete,
-	message.ScreenCompanyPostings:   screenPostingList,
-	message.ScreenFilterSelect:      screenFilterSelect,
-	message.ScreenPostingDetail:     screenPostingDetail,
-	message.ScreenApplicationStatus: screenApplicationStatusSelect,
-	message.ScreenApplicationNotes:  screenApplicationNotesEdit,
-	message.ScreenApplicationDetail: screenApplicationDetail,
-	message.ScreenApplicationDelete: screenApplicationDelete,
+	message.ScreenCompanyForm:          screenCompanyForm,
+	message.ScreenCompanyEdit:          screenCompanyEdit,
+	message.ScreenCompanyDelete:        screenCompanyDelete,
+	message.ScreenCompanyPostings:      screenPostingList,
+	message.ScreenFilterSelect:         screenFilterSelect,
+	message.ScreenPostingDetail:        screenPostingDetail,
+	message.ScreenApplicationStatus:    screenApplicationStatusSelect,
+	message.ScreenApplicationNotes:     screenApplicationNotesEdit,
+	message.ScreenApplicationDetail:    screenApplicationDetail,
+	message.ScreenApplicationDelete:    screenApplicationDelete,
+	message.ScreenDocumentReviewSelect: screenDocumentReviewSelect,
+	message.ScreenDocumentReviewForm:   screenDocumentReviewForm,
 }
 
 // push opens s over the screen up: routes, then Init, so nothing Init
@@ -385,9 +376,30 @@ func (a *App) navApplication(e message.Event[message.Nav[message.Application]]) 
 			return a.push(e.Payload.Screen, newApplicationStatusModel(a.applicationService, e.Payload.Value))
 		case message.ScreenApplicationNotes:
 			return a.push(e.Payload.Screen, newApplicationNotesModel(a.applicationService, e.Payload.Value, a.sized))
+		case message.ScreenDocumentReviewSelect:
+			return a.push(e.Payload.Screen, newDocumentReviewSelectModel(a.documents, e.Payload.Value))
 		}
 	}
 	return a.unknownNav(e)
+}
+
+// navDocumentReview opens the review form, over application detail or in
+// place of the picker.
+func (a *App) navDocumentReview(e message.Event[message.Nav[message.DocumentReview]]) tea.Cmd {
+	if !a.onTop(e.Meta) {
+		return nil
+	}
+	switch {
+	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenDocumentReviewForm:
+		return a.push(e.Payload.Screen, a.newDocumentReviewForm(e.Payload.Value))
+	case e.Payload.Op == message.NavReplace && e.Payload.Screen == message.ScreenDocumentReviewForm:
+		return a.replace(e.Payload.Screen, a.newDocumentReviewForm(e.Payload.Value))
+	}
+	return a.unknownNav(e)
+}
+
+func (a *App) newDocumentReviewForm(d message.DocumentReview) *documentReviewFormModel {
+	return newDocumentReviewFormModel(a.documentService, a.documents, d, a.sized)
 }
 
 // postingDetail is the open posting detail, or nil, for the screens over
@@ -537,12 +549,11 @@ func reviewGlyph(review document.Review, hasReview bool) string {
 // is false, no documents section is rendered at all -- "no application
 // -> show nothing".
 //
-// latestReviews is, like application, loaded async and passed in (see
-// loadDocumentReviews/documentReviewsLoadedMsg) rather than queried here
-// -- a DB read, unlike docs.Status's local os.Stat, follows the same
-// tea.Cmd/tea.Msg convention as the rest of this file's store-backed
-// state (#83). A document with no entry in the map
-// renders as "not reviewed".
+// latestReviews is, like application, read by posting detail and passed
+// in rather than queried here -- a DB read, unlike docs.Status's local
+// os.Stat, follows the same tea.Cmd/tea.Msg convention as the rest of
+// this file's store-backed state (#83). A document with no entry in the
+// map renders as "not reviewed".
 func postingDetailContent(p posting.Posting, application application.Application, hasApplication bool, docs *documents.Store, latestReviews map[document.Type]document.Review, width int) string {
 	var b strings.Builder
 	b.WriteString(sectionHeading("Posting", width) + "\n")
@@ -585,38 +596,6 @@ func postingDetailContent(p posting.Posting, application application.Application
 		b.WriteString("\n" + sectionHeading("Description", width) + "\n" + desc + "\n")
 	}
 	return b.String()
-}
-
-// enterFrom switches to next, pushing the current screen onto
-// returnStack so returnBack can come back to it.
-func (a *App) enterFrom(next screen) {
-	a.returnStack = append(a.returnStack, a.currentScreen)
-	a.currentScreen = next
-}
-
-// openDocumentReviewForm builds the review form from msg, or records
-// msg.err and reports false so the caller stays where it is. Navigation
-// is left to the caller: application detail pushes the form, the picker
-// replaces itself with it.
-func (a *App) openDocumentReviewForm(msg enterDocumentReviewFormMsg) bool {
-	a.err = msg.err
-	if msg.err != nil {
-		return false
-	}
-	a.documentReviewForm = newDocumentReviewFormModel(a.documentService, a.documents, msg.applicationID, msg.documentType, msg.content, a.width, a.screenRows())
-	return true
-}
-
-// returnBack pops returnStack and switches to the screen on top,
-// returning it. An empty stack means a push was missed somewhere; falling
-// back to the home screen beats panicking or staying stuck.
-func (a *App) returnBack() screen {
-	a.currentScreen = screenActiveApplications
-	if n := len(a.returnStack); n > 0 {
-		a.currentScreen = a.returnStack[n-1]
-		a.returnStack = a.returnStack[:n-1]
-	}
-	return a.currentScreen
 }
 
 // indexOfPosting returns id's index in postings, or -1 if not present.
@@ -961,6 +940,7 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.navPostingDetail),
 		model.Always(a.navApplication),
 		model.Always(a.navApplicationDetail),
+		model.Always(a.navDocumentReview),
 		model.Always(a.hideArchivedChanged),
 		model.Always(a.applicationChanged),
 		model.Always(a.browserOpened),
@@ -1068,11 +1048,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// state to the rows left under the banner every time, rather than only
 	// when they're built. The list screens are sized as they render, so
 	// they need nothing here.
-	switch a.currentScreen {
-	case screenApplicationForm:
+	if a.currentScreen == screenApplicationForm {
 		a.applicationForm.setHeight(a.screenRows())
-	case screenDocumentReviewForm:
-		a.documentReviewForm.setHeight(a.screenRows())
 	}
 	return model, cmd
 }
@@ -1094,16 +1071,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case enterApplicationFormMsg:
 		if d := a.applicationDetail(); d != nil && a.currentScreen == screenApplicationDetail && d.detail.Posting.ID == msg.postingID {
 			return a, loadApplicationForm(a.postingService, msg.postingID)
-		}
-	case enterDocumentReviewFormMsg:
-		// The picker hands App its form directly; this is detail's.
-		if a.onApplicationDetail(msg.applicationID) && a.openDocumentReviewForm(msg) {
-			a.enterFrom(screenDocumentReviewForm)
-		}
-	case enterDocumentReviewSelectMsg:
-		if a.currentScreen == screenPostingDetail {
-			a.enterFrom(screenDocumentReviewSelect)
-			a.documentReviewSelect = newDocumentReviewSelectModel(a.documents, msg.applicationID)
 		}
 	case changeTickMsg:
 		return a, a.handleTick()
@@ -1151,26 +1118,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		a.status = exportStatusLine(msg)
 		a.currentScreen = screenActiveApplications
 		return a, nil
-	case documentChangedDuringReviewMsg:
-		if a.currentScreen == screenDocumentReviewForm && a.documentReviewForm.instance == msg.from {
-			a.documentReviewForm.reload(msg.current, msg.who)
-		}
-	case documentReviewCreatedMsg:
-		a.err = msg.err
-		if msg.err == nil {
-			// Nothing blocks esc while the save is in flight, so the user
-			// may already have left -- only navigate if they're still here.
-			if a.currentScreen == screenDocumentReviewForm && a.documentReviewForm.instance == msg.from {
-				a.returnBack()
-			}
-			// Reload so the freshly-submitted review's outcome/notes show up
-			// immediately on posting detail, without having to navigate away
-			// and back (#83). Application detail reads again on coming back
-			// on top.
-			if a.currentScreen == screenPostingDetail {
-				return a, requestLoad[message.ReviewList](message.Source{Instance: a.instance})
-			}
-		}
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
@@ -1202,8 +1149,6 @@ func (a *App) paste(msg tea.PasteMsg) tea.Cmd {
 		return a.applicationExport.paste(msg)
 	case screenApplicationForm:
 		return a.applicationForm.paste(msg)
-	case screenDocumentReviewForm:
-		return a.documentReviewForm.paste(msg)
 	}
 	return nil
 }
@@ -1244,25 +1189,6 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		cmd, intent := a.applicationForm.Update(msg)
 		if _, ok := intent.(cancelApplicationFormMsg); ok {
 			a.currentScreen = screenApplicationDetail
-		}
-		return a, cmd
-	case screenDocumentReviewSelect:
-		cmd, intent := a.documentReviewSelect.Update(msg)
-		switch v := intent.(type) {
-		case cancelDocumentReviewSelectMsg:
-			a.returnBack()
-		case enterDocumentReviewFormMsg:
-			// Replaces the picker rather than pushing onto it, so leaving
-			// the form goes straight back to posting detail.
-			if a.openDocumentReviewForm(v) {
-				a.currentScreen = screenDocumentReviewForm
-			}
-		}
-		return a, cmd
-	case screenDocumentReviewForm:
-		cmd, intent := a.documentReviewForm.Update(msg)
-		if _, ok := intent.(cancelDocumentReviewFormMsg); ok {
-			a.returnBack()
 		}
 		return a, cmd
 	}
@@ -1339,7 +1265,8 @@ func (a *App) body(s screen) string {
 		b.WriteString(a.companyList.View().Content)
 	case screenCompanyForm:
 		b.WriteString(a.stack.top().View().Content)
-	case screenCompanyEdit, screenFilterSelect, screenApplicationStatusSelect, screenApplicationNotesEdit:
+	case screenCompanyEdit, screenFilterSelect, screenApplicationStatusSelect, screenApplicationNotesEdit,
+		screenDocumentReviewSelect, screenDocumentReviewForm:
 		b.WriteString(a.stack.top().View().Content)
 	case screenPostingList:
 		if l := a.postingList(); l != nil {
@@ -1355,10 +1282,6 @@ func (a *App) body(s screen) string {
 		b.WriteString(a.applicationSubmit.View())
 	case screenApplicationForm:
 		b.WriteString(a.applicationForm.View())
-	case screenDocumentReviewSelect:
-		b.WriteString(a.documentReviewSelect.View())
-	case screenDocumentReviewForm:
-		b.WriteString(a.documentReviewForm.View())
 	}
 	return b.String()
 }

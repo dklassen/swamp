@@ -987,6 +987,10 @@ func TestActiveApplicationListModel_ReadsItsApplicationsAgain(t *testing.T) {
 			return message.Updated(message.Source{Instance: 9}, 1, time.Now().UTC(),
 				message.Application{ID: 1, Status: message.ApplicationStarted}, message.Application{ID: 1, Status: message.ApplicationRejected})
 		}, read: true},
+		{name: "on a review saved elsewhere, out of focus", msg: func(*activeApplicationListModel) tea.Msg {
+			return reviewCreated(message.Source{Instance: 9}, time.Now().UTC(),
+				message.Review{ID: 4, ApplicationID: 1, DocumentType: message.DocumentResume, Outcome: message.ReviewFlagged})
+		}, read: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

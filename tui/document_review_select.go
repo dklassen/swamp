@@ -3,11 +3,13 @@ package tui
 import (
 	"os"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
@@ -21,22 +23,20 @@ type documentReviewOption struct {
 	exists       bool
 }
 
-// documentReviewSelectModel drives the document-review-select screen for
-// a single application: pick which document (cover letter or resume) to
-// review. It holds the application it's reviewing for and its own
-// private cursor; the *documents.Store passed to the constructor is only
-// needed there (to resolve options) and isn't kept, since nothing else
-// in this model touches it.
+// documentReviewSelectModel picks which of an application's documents to
+// review, and gives way to the review form on it.
 type documentReviewSelectModel struct {
 	applicationID int64
 	options       []documentReviewOption
 	cursor        int
+	focused       bool
+	instance      message.ScreenInstance
 }
 
-// newDocumentReviewSelectModel returns a review-select screen for
-// applicationID, with options seeded from its current document status.
-func newDocumentReviewSelectModel(docs *documents.Store, applicationID int64) documentReviewSelectModel {
-	status := docs.Status(applicationID)
+// newDocumentReviewSelectModel opens on app, with options seeded from its
+// documents as they are now.
+func newDocumentReviewSelectModel(docs *documents.Store, app message.Application) *documentReviewSelectModel {
+	status := docs.Status(app.ID)
 	var options []documentReviewOption
 	for _, documentType := range document.Types() {
 		doc, err := status.Doc(documentType)
@@ -45,74 +45,69 @@ func newDocumentReviewSelectModel(docs *documents.Store, applicationID int64) do
 		}
 		options = append(options, documentReviewOption{label: documentTitle(documentType), documentType: documentType, path: doc.Path, exists: doc.Exists})
 	}
-	return documentReviewSelectModel{applicationID: applicationID, options: options}
+	return &documentReviewSelectModel{applicationID: app.ID, options: options, instance: message.NewScreenInstance()}
 }
 
-// cancelDocumentReviewSelectMsg signals that App should switch back to
-// the posting-detail screen without starting a review.
-type cancelDocumentReviewSelectMsg struct{}
+func (m *documentReviewSelectModel) src() message.Source { return message.Source{Instance: m.instance} }
 
-// enterDocumentReviewFormMsg signals that App should switch to the
-// document-review-form screen, seeded with content read from disk at
-// selection time -- the review's eventual snapshot is exactly what was
-// read here, not whatever the file contains by the time the form is
-// submitted. err is set if the read failed (e.g. the file was deleted
-// between the existence check and now); App surfaces it as a.err and
-// stays on the select screen rather than entering the form with no
-// content.
-type enterDocumentReviewFormMsg struct {
-	applicationID int64
-	documentType  document.Type
-	content       string
-	err           error
+func (m *documentReviewSelectModel) Instance() message.ScreenInstance { return m.instance }
+
+func (m *documentReviewSelectModel) Focused() bool { return m.focused }
+
+func (m *documentReviewSelectModel) Routes() []*model.Route {
+	return []*model.Route{
+		model.WhenFocused(m, m.keyPressed),
+		model.Always(m.focusChanged),
+	}
 }
 
-// Update reads the selected document's content directly off disk (via
-// os.ReadFile) rather than through a tea.Cmd round trip. This extends
-// the same reasoning tui/active_applications.go's openDocument already
-// relies on for EnsureDir/stat calls ("local filesystem I/O -- cheap
-// enough to call synchronously") to a full content read: these are small
-// agent-drafted markdown files (a few KB at most), so the read is still
-// fast enough not to block the event loop noticeably. The actual store
-// write (createDocumentReview, in the form screen this leads to) still
-// goes through the normal async tea.Cmd convention.
-func (m *documentReviewSelectModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
-	switch {
-	case msg.String() == "down", msg.String() == "j":
+func (m *documentReviewSelectModel) Init() tea.Cmd { return nil }
+
+// Update has nothing to do: everything the picker handles is registered.
+func (m *documentReviewSelectModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
+
+func (m *documentReviewSelectModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
+	m.focused = e.Payload.Value.Focused == m.instance
+	return nil
+}
+
+func (m *documentReviewSelectModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
+	switch msg.String() {
+	case "down", "j":
 		if m.cursor < len(m.options)-1 {
 			m.cursor++
 		}
-	case msg.String() == "up", msg.String() == "k":
+	case "up", "k":
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case msg.String() == "esc", msg.String() == "b":
-		return nil, cancelDocumentReviewSelectMsg{}
-	case msg.String() == "enter":
+	case "esc", "b":
+		return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), ""))
+	case "enter":
 		opt := m.options[m.cursor]
 		if !opt.exists {
-			return nil, nil
+			return nil
 		}
-		return nil, readDocumentForReview(m.applicationID, opt.documentType, opt.path)
+		return openDocumentReview(m.src(), message.Replace[message.DocumentReview], m.applicationID, opt.documentType, opt.path)
 	}
-	return nil, nil
+	return nil
 }
 
-// readDocumentForReview reads path and builds the message that starts
-// the review form for it. Callers resolve the path themselves: the
-// picker from the options built when it opened, application detail
-// fresh from docs.Status at key-press time.
-func readDocumentForReview(applicationID int64, documentType document.Type, path string) enterDocumentReviewFormMsg {
+// openDocumentReview opens the review form on the document at path, as
+// read now: what's shown is what a review saved from it describes. The
+// read is done here rather than in a command, since these are small
+// local files. nav is message.Push or message.Replace.
+func openDocumentReview(src message.Source, nav func(message.Source, message.Screen, message.Subject, message.DocumentReview) tea.Cmd, applicationID int64, documentType document.Type, path string) tea.Cmd {
+	subject := message.Subject{Type: message.TypeApplication, ID: applicationID}
 	content, err := os.ReadFile(path)
-	return enterDocumentReviewFormMsg{
-		applicationID: applicationID,
-		documentType:  documentType,
-		content:       string(content),
-		err:           err,
+	if err != nil {
+		return func() tea.Msg { return message.New(src, subject, message.OpNone, time.Now().UTC(), model.ErrorOf(err)) }
 	}
+	return nav(src, message.ScreenDocumentReviewForm, subject,
+		message.DocumentReview{ApplicationID: applicationID, DocumentType: documentTypeSnapshots[documentType], Content: string(content)})
 }
 
-func (m *documentReviewSelectModel) View() string {
+func (m *documentReviewSelectModel) View() tea.View {
 	var b strings.Builder
 	for i, opt := range m.options {
 		status := "not found"
@@ -122,5 +117,5 @@ func (m *documentReviewSelectModel) View() string {
 		b.WriteString(renderCursorLine(opt.label+" ("+status+")", i == m.cursor))
 	}
 	b.WriteString(model.HelpStyle.Render("↑/↓ (j/k): select  enter: review  esc/b: cancel"))
-	return b.String()
+	return tea.NewView(b.String())
 }

@@ -257,11 +257,6 @@ func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-// send is a command for a message App still handles itself.
-func send(msg tea.Msg) tea.Cmd {
-	return func() tea.Msg { return msg }
-}
-
 // View renders the list in the rows of the last content size. Every line
 // drawn above or below the table -- the description, filter summary and
 // archived notice included -- costs the table a row, so the list still

@@ -203,11 +203,13 @@ func TestApplicationDetailModel_EveryDocumentType(t *testing.T) {
 		}
 		got := pressApplicationDetail(t, m, runeKey(unicode.ToUpper(key)))
 		if len(got) != 1 {
-			t.Fatalf("%q sent %#v, want one request for the review form", unicode.ToUpper(key), got)
+			t.Fatalf("%q sent %#v, want one Nav to the review form", unicode.ToUpper(key), got)
 		}
-		review, ok := got[0].(enterDocumentReviewFormMsg)
-		if !ok || review.applicationID != 1 || review.documentType != documentType || review.content != "# "+documentType.String() {
-			t.Errorf("%q: sent %+v, want a review of the %s with its content", unicode.ToUpper(key), got[0], documentType.Label())
+		nav, ok := got[0].(message.Event[message.Nav[message.DocumentReview]])
+		want := message.Nav[message.DocumentReview]{Op: message.NavPush, Screen: message.ScreenDocumentReviewForm,
+			Value: message.DocumentReview{ApplicationID: 1, DocumentType: documentTypeSnapshots[documentType], Content: "# " + documentType.String()}}
+		if !ok || nav.Payload != want {
+			t.Errorf("%q: sent %+v, want a push of the review form on the %s with its content", unicode.ToUpper(key), got[0], documentType.Label())
 		}
 		if title := documentTitle(documentType); !strings.Contains(view, title+":") {
 			t.Errorf("View() has no %q row", title)
@@ -367,6 +369,44 @@ func TestApplicationDetailModel_ApplicationChanged_AboutItsApplication_PatchesIt
 }
 
 // Its read finding no application means it was deleted elsewhere.
+// A review of one of its application's documents shows in place of the
+// one it had, whoever saved it, including while another screen covers it.
+func TestApplicationDetailModel_ReviewChanged_AboutItsApplication_ShowsIt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name          string
+		applicationID int64
+		wantShow      bool
+	}{
+		{name: "its application's", applicationID: 1, wantShow: true},
+		{name: "another application's", applicationID: 2},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			d := testApplicationDetail()
+			d.Reviews = []message.Review{{ID: 3, ApplicationID: 1, DocumentType: message.DocumentResume, Outcome: message.ReviewPassed}}
+			m := applicationDetailOn(documents.NewStore(t.TempDir()), d)
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+
+			r.Dispatch(reviewCreated(message.Source{Instance: 7}, time.Now().UTC(),
+				message.Review{ID: 4, ApplicationID: tt.applicationID, DocumentType: message.DocumentResume, Outcome: message.ReviewFlagged, Notes: "too long"}))
+
+			view := applicationDetailView(m)
+			if shown := containsAll(view, "[FLAGGED]", "too long"); shown != tt.wantShow {
+				t.Errorf("View() shows the new review: %v, want %v:\n%s", shown, tt.wantShow, view)
+			}
+			if passed := strings.Contains(view, "[PASSED]"); passed == tt.wantShow {
+				t.Errorf("View() still shows the earlier review: %v, want %v:\n%s", passed, !tt.wantShow, view)
+			}
+		})
+	}
+}
+
 func TestApplicationDetailModel_ReadFindsItGone_PopsAndSaysSo(t *testing.T) {
 	t.Parallel()
 
