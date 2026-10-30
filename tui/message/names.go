@@ -191,6 +191,7 @@ const (
 	ScreenApplicationStatus
 	ScreenApplicationNotes
 	ScreenApplicationDetail
+	ScreenApplicationDelete
 )
 
 var screenNames = [...]string{
@@ -204,6 +205,7 @@ var screenNames = [...]string{
 	ScreenApplicationStatus: "application_status",
 	ScreenApplicationNotes:  "application_notes",
 	ScreenApplicationDetail: "application_detail",
+	ScreenApplicationDelete: "application_delete",
 }
 
 func (s Screen) String() string                { return nameOf(s, screenNames[:]) }
