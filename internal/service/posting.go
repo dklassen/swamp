@@ -23,6 +23,7 @@ var ErrPostingClosed = errors.New("application: posting is closed")
 
 type postingViewer interface {
 	Get(ctx context.Context, r store.Runner, id int64) (*posting.Posting, error)
+	GetMany(ctx context.Context, r store.Runner, ids []int64) ([]posting.Posting, error)
 	GetBySource(ctx context.Context, r store.Runner, source, sourceID string) (*posting.Posting, error)
 	ListInterested(ctx context.Context, r store.Runner, excluding []application.Status) ([]posting.Interested, error)
 	ListByCompany(ctx context.Context, r store.Runner, companyID int64) ([]posting.Posting, error)
@@ -200,6 +201,12 @@ func (service *PostingService) Search(ctx context.Context, search posting.Search
 // Get returns a posting by ID, or store.ErrNotFound.
 func (service *PostingService) Get(ctx context.Context, postingID int64) (*posting.Posting, error) {
 	return service.postingViewer.Get(ctx, service.db, postingID)
+}
+
+// GetMany returns the postings with the given ids, in no order. An id
+// with no posting is left out.
+func (service *PostingService) GetMany(ctx context.Context, ids []int64) ([]posting.Posting, error) {
+	return service.postingViewer.GetMany(ctx, service.db, ids)
 }
 
 // GetBySource returns the posting source knows as sourceID, or

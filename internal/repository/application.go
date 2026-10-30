@@ -82,6 +82,24 @@ func (repository *ApplicationRepository) GetByIDIncludingDeleted(ctx context.Con
 	})
 }
 
+// GetManyIncludingDeleted returns the applications with the given ids
+// that exist, deleted or not, in no order.
+func (repository *ApplicationRepository) GetManyIncludingDeleted(ctx context.Context, r store.Runner, ids []int64) ([]domain.Application, error) {
+	rows, err := store.Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.Application, error) {
+		return q.ListApplicationsByIDIncludingDeleted(ctx, ids)
+	})
+	if err != nil {
+		return nil, err
+	}
+	apps := make([]domain.Application, len(rows))
+	for i, row := range rows {
+		if apps[i], err = FromRow(row); err != nil {
+			return nil, err
+		}
+	}
+	return apps, nil
+}
+
 // ListActive returns the applications not at one of excluding, each with
 // its posting and company name, most-recently-changed first. StatusSince
 // and LatestReviews are left for the caller to fill.

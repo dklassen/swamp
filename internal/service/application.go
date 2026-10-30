@@ -17,6 +17,7 @@ import (
 type applicationViewer interface {
 	Get(ctx context.Context, r store.Runner, id int64) (*application.Application, error)
 	GetByIDIncludingDeleted(ctx context.Context, r store.Runner, id int64) (*application.Application, error)
+	GetManyIncludingDeleted(ctx context.Context, r store.Runner, ids []int64) ([]application.Application, error)
 	ListActive(ctx context.Context, r store.Runner, excluding []application.Status) ([]posting.ActiveApplication, error)
 }
 
@@ -103,6 +104,13 @@ func (service *ApplicationService) Get(ctx context.Context, applicationID int64)
 // deleted (check DeletedAt).
 func (service *ApplicationService) GetIncludingDeleted(ctx context.Context, applicationID int64) (*application.Application, error) {
 	return service.applicationViewer.GetByIDIncludingDeleted(ctx, service.db, applicationID)
+}
+
+// GetManyIncludingDeleted returns the applications with the given ids,
+// deleted or not (check DeletedAt), in no order. An id with no
+// application is left out.
+func (service *ApplicationService) GetManyIncludingDeleted(ctx context.Context, ids []int64) ([]application.Application, error) {
+	return service.applicationViewer.GetManyIncludingDeleted(ctx, service.db, ids)
 }
 
 // SetNotes replaces a live application's notes, or returns

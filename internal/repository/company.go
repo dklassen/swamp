@@ -65,6 +65,22 @@ func (repository *CompanyRepository) GetIncludingDeleted(ctx context.Context, r 
 	})
 }
 
+// GetManyIncludingDeleted returns the companies with the given ids that
+// exist, deleted or not, in no order.
+func (repository *CompanyRepository) GetManyIncludingDeleted(ctx context.Context, r store.Runner, ids []int64) ([]domain.Company, error) {
+	rows, err := store.Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.Company, error) {
+		return q.ListCompaniesByIDIncludingDeleted(ctx, ids)
+	})
+	if err != nil {
+		return nil, err
+	}
+	companies := make([]domain.Company, len(rows))
+	for i, row := range rows {
+		companies[i] = FromCompanyRow(row)
+	}
+	return companies, nil
+}
+
 // GetBySource finds the company for a job board slug, including a
 // soft-deleted one (check DeletedAt), or returns store.ErrNotFound.
 func (repository *CompanyRepository) GetBySource(ctx context.Context, r store.Runner, source, sourceRef string) (*domain.Company, error) {

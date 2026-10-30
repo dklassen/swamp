@@ -110,6 +110,8 @@ type Querier interface {
 	// Oldest first. id breaks ties between changes in the same second
 	// (CURRENT_TIMESTAMP has one-second resolution).
 	ListApplicationStatusHistory(ctx context.Context, applicationID int64) ([]ApplicationStatusHistory, error)
+	ListApplicationsByIDIncludingDeleted(ctx context.Context, ids []int64) ([]Application, error)
+	ListCompaniesByIDIncludingDeleted(ctx context.Context, ids []int64) ([]Company, error)
 	ListCompanyFilters(ctx context.Context, companyID int64) ([]CompanyFilter, error)
 	// Keyspace discovery for filter selection: department is a company-
 	// specific vocabulary (not a fixed enum), so filter values are offered
@@ -168,6 +170,7 @@ type Querier interface {
 	// CURRENT_TIMESTAMP second (sqlite has only second resolution), so
 	// first_seen_at alone leaves ties with no guaranteed order.
 	ListPostingsByCompany(ctx context.Context, companyID int64) ([]Posting, error)
+	ListPostingsByID(ctx context.Context, ids []int64) ([]Posting, error)
 	// Records a successful fetch of this company's postings (see sync.SyncCompany).
 	MarkCompanyFetched(ctx context.Context, id int64) error
 	// Records that a sync saw these postings on their board (#176). Not a

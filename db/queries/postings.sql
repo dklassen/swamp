@@ -35,6 +35,10 @@ RETURNING *;
 SELECT * FROM postings
 WHERE id = ?;
 
+-- name: ListPostingsByID :many
+SELECT * FROM postings
+WHERE id IN (sqlc.slice('ids'));
+
 -- name: GetPostingBySourceAndSourceID :one
 SELECT * FROM postings
 WHERE source = ? AND source_id = ?;

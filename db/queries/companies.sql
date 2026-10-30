@@ -11,6 +11,10 @@ WHERE id = ? AND deleted_at IS NULL;
 SELECT * FROM companies
 WHERE id = ?;
 
+-- name: ListCompaniesByIDIncludingDeleted :many
+SELECT * FROM companies
+WHERE id IN (sqlc.slice('ids'));
+
 -- name: GetCompanyBySourceAndSourceRef :one
 -- Deliberately ignores deleted_at: source+source_ref is UNIQUE across all
 -- rows regardless of soft-delete state, so re-adding a company (CreateCompany)

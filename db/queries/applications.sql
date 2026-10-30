@@ -26,6 +26,10 @@ WHERE id = ? AND deleted_at IS NULL;
 SELECT * FROM applications
 WHERE id = ?;
 
+-- name: ListApplicationsByIDIncludingDeleted :many
+SELECT * FROM applications
+WHERE id IN (sqlc.slice('ids'));
+
 -- name: UpdateApplicationStatus :one
 UPDATE applications
 SET status = ?, updated_at = CURRENT_TIMESTAMP

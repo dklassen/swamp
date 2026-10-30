@@ -8,6 +8,7 @@ package sqlcdb
 import (
 	"context"
 	"database/sql"
+	"strings"
 )
 
 const acquireCompanySyncLease = `-- name: AcquireCompanySyncLease :execrows
@@ -155,6 +156,56 @@ ORDER BY name
 
 func (q *Queries) ListActiveCompanies(ctx context.Context) ([]Company, error) {
 	rows, err := q.db.QueryContext(ctx, listActiveCompanies)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Company
+	for rows.Next() {
+		var i Company
+		if err := rows.Scan(
+			&i.ID,
+			&i.Name,
+			&i.Source,
+			&i.SourceRef,
+			&i.DeletedAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Description,
+			&i.LastFetchedAt,
+			&i.SyncLeaseToken,
+			&i.SyncLeaseAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCompaniesByIDIncludingDeleted = `-- name: ListCompaniesByIDIncludingDeleted :many
+SELECT id, name, source, source_ref, deleted_at, created_at, updated_at, description, last_fetched_at, sync_lease_token, sync_lease_at FROM companies
+WHERE id IN (/*SLICE:ids*/?)
+`
+
+func (q *Queries) ListCompaniesByIDIncludingDeleted(ctx context.Context, ids []int64) ([]Company, error) {
+	query := listCompaniesByIDIncludingDeleted
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
 	if err != nil {
 		return nil, err
 	}
