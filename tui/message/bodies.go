@@ -117,6 +117,8 @@ type Posting struct {
 	ContentSHA256   string        `json:"content_sha256"`
 }
 
+func (Posting) Type() Type { return TypePosting }
+
 // Markup is how the user has marked a posting. A time is zero while the
 // posting isn't marked that way. A change to it has the posting as its
 // Subject, since markup is no entity of its own.
@@ -212,6 +214,32 @@ type Review struct {
 
 func (Review) Type() Type { return TypeReview }
 
+// DocumentWrite is a recorded write of one of an application's documents,
+// ContentSHA256 what was written. A change to it has the application as
+// its Subject.
+type DocumentWrite struct {
+	ID            int64        `json:"id"`
+	ApplicationID int64        `json:"application_id"`
+	DocumentType  DocumentType `json:"document_type"`
+	ContentSHA256 string       `json:"content_sha256"`
+	WrittenAt     time.Time    `json:"written_at"`
+}
+
+func (DocumentWrite) Type() Type { return TypeDocumentWrite }
+
+// DocumentExport is a recorded export of one of an application's documents
+// as a PDF, ContentSHA256 what was exported. A change to it has the
+// application as its Subject.
+type DocumentExport struct {
+	ID            int64        `json:"id"`
+	ApplicationID int64        `json:"application_id"`
+	DocumentType  DocumentType `json:"document_type"`
+	ContentSHA256 string       `json:"content_sha256"`
+	ExportedAt    time.Time    `json:"exported_at"`
+}
+
+func (DocumentExport) Type() Type { return TypeDocumentExport }
+
 // ReviewList is the latest review of each document of the event's Subject,
 // an application, that still describes the document as it is. A document
 // with none isn't in it.
@@ -222,8 +250,11 @@ type ReviewList struct {
 func (ReviewList) Type() Type { return TypeReviewList }
 
 // Score is one fit score given to a posting. ContentSHA256 is the posting
-// content it scored.
+// content it scored. A change to it has the posting as its Subject, since
+// the screens that show it show it by posting.
 type Score struct {
+	ID            int64     `json:"id"`
+	PostingID     int64     `json:"posting_id"`
 	Score         int       `json:"score"`
 	Reason        string    `json:"reason"`
 	Model         string    `json:"model"`
@@ -232,6 +263,8 @@ type Score struct {
 	ContentSHA256 string    `json:"content_sha256"`
 	ScoredAt      time.Time `json:"scored_at"`
 }
+
+func (Score) Type() Type { return TypeScore }
 
 // PostingScores is every score the event's Subject, a posting, was given,
 // newest first.

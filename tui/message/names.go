@@ -77,6 +77,9 @@ const (
 	TypeDocumentReview
 	TypeExportReport
 	TypeApplicationForm
+	TypeScore
+	TypeDocumentWrite
+	TypeDocumentExport
 )
 
 var typeNames = [...]string{
@@ -113,6 +116,9 @@ var typeNames = [...]string{
 	TypeDocumentReview:     "document_review",
 	TypeExportReport:       "export_report",
 	TypeApplicationForm:    "application_form",
+	TypeScore:              "score",
+	TypeDocumentWrite:      "document_write",
+	TypeDocumentExport:     "document_export",
 }
 
 func (t Type) String() string                { return nameOf(t, typeNames[:]) }
