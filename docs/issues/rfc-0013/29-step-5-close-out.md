@@ -16,7 +16,7 @@ After steps 13 to 28 no `…Msg` struct should be left in `tui`, and `App.update
 ## Change
 
 - A test fails on any message type in `tui` or `tui/model` that isn't an `Event[P]` or Bubble Tea's own.
-- `App.update`, `currentScreen` and `returnStack` go; the stack is the only navigation.
+- `App.update` and `currentScreen` go; the stack is the only navigation (`returnStack` went with step 25).
 - RFC 0012: its "While screens are partly converted" bullets go, and its status is decided. RFC 0013: status from Draft, and the open questions settled by these steps marked.
 
 ## Acceptance criteria
