@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"context"
 	"strings"
+	"time"
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
@@ -9,120 +11,180 @@ import (
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
-// applicationDetailModel drives the application-detail screen: the place
-// application-specific actions live -- navigating to the related
-// posting, editing the cover letter/resume in $EDITOR, and reviewing
-// each of them (see the #86 follow-up reorganizing the
-// active-applications ("application view") workflow). It holds only the
-// dependencies it needs for its own commands and the posting.ActiveApplication it
-// was constructed with -- a snapshot, not a live reference into App's
-// activeApplications slice, refreshed by App whenever the underlying
-// data changes (mirroring postingDetailModel's own convention).
+// applicationDetailModel is one application, where its own actions live:
+// its posting, editing and reviewing each document, its form, submitting
+// and deleting it. It reads the application, which it keeps.
 type applicationDetailModel struct {
-	documents   *documents.Store
-	application posting.ActiveApplication
+	applications    *service.ApplicationService
+	postings        *service.PostingService
+	companies       *service.CompanyService
+	documentService *service.DocumentService
+	documents       *documents.Store
+
+	detail message.ApplicationDetail
+
+	focused  bool
+	instance message.ScreenInstance
 }
 
-func newApplicationDetailModel(docs *documents.Store, application posting.ActiveApplication) applicationDetailModel {
-	return applicationDetailModel{documents: docs, application: application}
+func newApplicationDetailModel(applications *service.ApplicationService, postings *service.PostingService, companies *service.CompanyService, documentService *service.DocumentService, docs *documents.Store, d message.ApplicationDetail) *applicationDetailModel {
+	return &applicationDetailModel{
+		applications:    applications,
+		postings:        postings,
+		companies:       companies,
+		documentService: documentService,
+		documents:       docs,
+		detail:          d,
+		instance:        message.NewScreenInstance(),
+	}
 }
 
-func (m *applicationDetailModel) Update(msg tea.KeyPressMsg) (tea.Cmd, tea.Msg) {
-	switch {
-	case msg.String() == "esc", msg.String() == "b":
-		return nil, backToActiveApplicationsMsg{}
-	case msg.String() == "p":
-		return nil, message.PostingDetail{Posting: postingSnapshot(m.application.Posting), Application: applicationSnapshot(m.application.Application)}
-	case msg.String() == "u":
-		return nil, refreshApplicationDetailMsg{}
-	case msg.String() == "S":
-		return nil, enterApplicationSubmitMsg{application: m.application}
-	case msg.String() == "f":
-		return nil, enterApplicationFormMsg{postingID: m.application.Posting.ID}
-	case msg.String() == "D":
-		return nil, enterApplicationDeleteMsg{application: m.application}
+func (m *applicationDetailModel) Instance() message.ScreenInstance { return m.instance }
+
+func (m *applicationDetailModel) Focused() bool { return m.focused }
+
+func (m *applicationDetailModel) Routes() []*model.Route {
+	return []*model.Route{
+		model.Always(m.detailRead, model.From(m.instance)),
+		model.Always(m.readFailed, model.From(m.instance)),
+		model.Always(m.loadRequested),
+		model.Always(m.applicationChanged, model.About(message.TypeApplication, m.detail.Application.ID)),
+		model.Always(m.documentEdited, model.From(m.instance)),
+		model.WhenFocused(m, m.keyPressed),
+		model.Always(m.focusChanged),
+	}
+}
+
+func (m *applicationDetailModel) Init() tea.Cmd { return m.load() }
+
+// Update has nothing to do: everything the detail handles is registered.
+func (m *applicationDetailModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
+
+func (m *applicationDetailModel) src() message.Source { return message.Source{Instance: m.instance} }
+
+func (m *applicationDetailModel) load() tea.Cmd {
+	return loadApplicationDetail(m.applications, m.postings, m.companies, m.documentService, m.documents, m.src(), m.detail.Application.ID)
+}
+
+func (m *applicationDetailModel) detailRead(e message.Event[message.Read[message.ApplicationDetail]]) tea.Cmd {
+	m.detail = e.Payload.Value
+	return nil
+}
+
+// readFailed leaves an application that's gone, deleted elsewhere.
+func (m *applicationDetailModel) readFailed(e message.Event[message.Error]) tea.Cmd {
+	if e.Payload.Code != message.ErrNotFound {
+		return nil
+	}
+	return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), "The application you were viewing was deleted elsewhere"))
+}
+
+func (m *applicationDetailModel) loadRequested(message.Event[message.Load[message.ApplicationDetail]]) tea.Cmd {
+	return m.load()
+}
+
+// applicationChanged takes a write to its application, whoever made it. A
+// delete is left to whoever leaves the detail for it.
+func (m *applicationDetailModel) applicationChanged(e message.Event[message.Changed[message.Application]]) tea.Cmd {
+	if e.Meta.Op == message.OpUpdated {
+		m.detail.Application = e.Payload.After
+	}
+	return nil
+}
+
+// documentEdited reads again, for the review an edit may have made stale.
+func (m *applicationDetailModel) documentEdited(message.Event[message.Ran[message.EditDocument]]) tea.Cmd {
+	return m.load()
+}
+
+// focusChanged reads again on coming back on top: documents change on
+// disk, and reviews are written, with no event it hears.
+func (m *applicationDetailModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
+	gained := !m.focused && e.Payload.Value.Focused == m.instance
+	m.focused = e.Payload.Value.Focused == m.instance
+	if gained {
+		return m.load()
+	}
+	return nil
+}
+
+func (m *applicationDetailModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
+	switch msg.String() {
+	case "esc", "b":
+		return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), ""))
+	case "p":
+		return message.Push(m.src(), message.ScreenPostingDetail, message.Subject{Type: message.TypePosting, ID: m.detail.Posting.ID},
+			message.PostingDetail{Posting: m.detail.Posting, Application: m.detail.Application})
+	case "u":
+		return m.load()
+	case "S":
+		return ask(enterApplicationSubmitMsg{application: m.active()})
+	case "f":
+		return ask(enterApplicationFormMsg{postingID: m.detail.Posting.ID})
+	case "D":
+		return ask(enterApplicationDeleteMsg{application: m.active()})
 	}
 	// Each document type's key edits it, and the uppercase key reviews it.
 	for _, documentType := range document.Types() {
 		switch msg.String() {
 		case string(documentType.Key()):
-			return m.openDocument(documentType), nil
+			return editDocument(m.documentService, m.documents, m.src(), m.detail.Application.ID, documentType)
 		case string(unicode.ToUpper(documentType.Key())):
-			return nil, m.enterReview(documentType)
+			if review := m.enterReview(documentType); review != nil {
+				return ask(review)
+			}
 		}
 	}
-	return nil, nil
+	return nil
 }
 
-// refreshApplicationDetailMsg signals that App should reload this
-// application's document reviews from the store without leaving
-// application detail -- e.g. after an external agent (see
-// .agents/skills/apply-to-posting) revises a document on disk while the
-// user is still looking at this screen. Document
-// existence itself needs no reload: View reads m.documents.Status live
-// on every render.
-type refreshApplicationDetailMsg struct{}
-
-// openDocument ensures the application's document directory exists (most
-// editors create the file itself on save, but not the directory) and
-// returns a command that opens documentType's document in $EDITOR -- moved here from activeApplicationListModel
-// because editing a specific application's documents is
-// application-specific functionality, not something the cross-company
-// list screen should own directly.
-func (m *applicationDetailModel) openDocument(documentType document.Type) tea.Cmd {
-	if _, err := m.documents.EnsureDir(m.application.ID); err != nil {
-		return func() tea.Msg { return editorClosedMsg{err: err} }
+// active is the application as the screens App still opens hold it.
+func (m *applicationDetailModel) active() posting.ActiveApplication {
+	return posting.ActiveApplication{
+		Application:   applicationOf(m.detail.Application),
+		Posting:       postingOf(m.detail.Posting),
+		CompanyName:   m.detail.CompanyName,
+		LatestReviews: reviewsOf(message.ReviewList{Reviews: m.detail.Reviews}),
 	}
-	path, err := m.documents.Path(m.application.ID, documentType)
-	if err != nil {
-		return func() tea.Msg { return editorClosedMsg{err: err} }
-	}
-	before, err := m.documents.SHA256(m.application.ID, documentType)
-	if err != nil {
-		return func() tea.Msg { return editorClosedMsg{err: err} }
-	}
-	return openInEditor(path, editorClosedMsg{applicationID: m.application.ID, documentType: documentType, before: before})
 }
 
-// enterReview reads documentType's current content off disk (if it
-// exists) and returns the message that starts the review-form screen
-// for it directly -- unlike documentReviewSelectModel's two-step picker
-// (still used from posting detail's 'r'), this screen already knows
-// which document via which key was pressed (L for cover letter, R for
-// resume), so there's no picker step. Returns nil (no-op) if the
-// document doesn't exist yet -- nothing to review.
+// enterReview reads documentType's current content off disk and returns
+// the message that opens the review form on it; nil if the document
+// doesn't exist yet, since there's nothing to review.
 func (m *applicationDetailModel) enterReview(documentType document.Type) tea.Msg {
-	status := m.documents.Status(m.application.ID)
-	doc, err := status.Doc(documentType)
+	id := m.detail.Application.ID
+	doc, err := m.documents.Status(id).Doc(documentType)
 	if err != nil {
 		return enterDocumentReviewFormMsg{err: err}
 	}
 	if !doc.Exists {
 		return nil
 	}
-	return readDocumentForReview(m.application.ID, documentType, doc.Path)
+	return readDocumentForReview(id, documentType, doc.Path)
 }
 
-func (m *applicationDetailModel) View() string {
+func (m *applicationDetailModel) View() tea.View {
 	var b strings.Builder
-	b.WriteString(model.FieldLabel.Render("Company:") + " " + m.application.CompanyName + "\n")
-	b.WriteString(model.FieldLabel.Render("Status:") + " " + applicationStatusLabel(m.application.Status) + "\n")
-	if m.application.Notes != "" {
-		b.WriteString(model.FieldLabel.Render("Notes:") + " " + m.application.Notes + "\n")
+	b.WriteString(model.FieldLabel.Render("Company:") + " " + m.detail.CompanyName + "\n")
+	b.WriteString(model.FieldLabel.Render("Status:") + " " + applicationStatusLabel(applicationOf(m.detail.Application).Status) + "\n")
+	if m.detail.Application.Notes != "" {
+		b.WriteString(model.FieldLabel.Render("Notes:") + " " + m.detail.Application.Notes + "\n")
 	}
 
-	status := m.documents.Status(m.application.ID)
+	status := m.documents.Status(m.detail.Application.ID)
+	reviews := reviewsOf(message.ReviewList{Reviews: m.detail.Reviews})
 	b.WriteString("\n" + model.FieldLabel.Render("Documents") + "\n")
 	for _, documentType := range document.Types() {
 		doc, err := status.Doc(documentType)
 		if err != nil {
 			continue
 		}
-		review, hasReview := m.application.LatestReviews[documentType]
+		review, hasReview := reviews[documentType]
 		b.WriteString(documentStatusLine(documentTitle(documentType), doc.Exists, doc.Path, review, hasReview))
 	}
 
@@ -135,7 +197,55 @@ func (m *applicationDetailModel) View() string {
 	}
 	help = append(help, "f: application form", "S: submit", "D: delete", "u: refresh", "esc/b: back")
 	b.WriteString(model.HelpStyle.Render(strings.Join(help, "  ")))
-	return b.String()
+	return tea.NewView(b.String())
+}
+
+// applicationDetailOf is the snapshot detail opens on.
+func applicationDetailOf(a posting.ActiveApplication) message.ApplicationDetail {
+	d := message.ApplicationDetail{
+		Application: applicationSnapshot(a.Application),
+		Posting:     postingSnapshot(a.Posting),
+		CompanyName: a.CompanyName,
+	}
+	for _, documentType := range document.Types() {
+		if review, ok := a.LatestReviews[documentType]; ok {
+			review.DocumentType = documentType
+			d.Reviews = append(d.Reviews, reviewSnapshot(review))
+		}
+	}
+	return d
+}
+
+// loadApplicationDetail reads an application with its posting, its
+// company's name, and the reviews that still describe its documents.
+func loadApplicationDetail(applications *service.ApplicationService, postings *service.PostingService, companies *service.CompanyService, documentService *service.DocumentService, docs *documents.Store, src message.Source, applicationID int64) tea.Cmd {
+	subject := message.Subject{Type: message.TypeApplication, ID: applicationID}
+	return func() tea.Msg {
+		ctx := context.Background()
+		fail := func(err error) tea.Msg {
+			return message.New(src, subject, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
+		}
+		app, err := applications.Get(ctx, applicationID)
+		if err != nil {
+			return fail(err)
+		}
+		p, err := postings.Get(ctx, app.PostingID)
+		if err != nil {
+			return fail(err)
+		}
+		// The home screen lists an application whatever its company's state.
+		c, err := companies.GetIncludingDeleted(ctx, p.CompanyID)
+		if err != nil {
+			return fail(err)
+		}
+		reviews, err := currentReviews(documentService, docs, applicationID)
+		if err != nil {
+			return fail(err)
+		}
+		return message.New(src, subject, message.OpNone, time.Now().UTC(), message.Read[message.ApplicationDetail]{
+			Value: applicationDetailOf(posting.ActiveApplication{Application: *app, Posting: *p, CompanyName: c.Name, LatestReviews: reviews}),
+		})
+	}
 }
 
 // documentTitle is documentType's label in title case, for row headings

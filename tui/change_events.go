@@ -3,16 +3,13 @@ package tui
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"slices"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/service"
-	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/tui/message"
 )
 
@@ -82,12 +79,6 @@ func (a *App) activate() tea.Cmd {
 	if !a.changeLog || !reloads(a.currentScreen) {
 		return nil
 	}
-	if a.currentScreen == screenApplicationDetail {
-		// Its documents are files, which can change with no event.
-		a.seen[a.currentScreen] = a.latestSeen
-		id := a.applicationDetail.application.ID
-		return tea.Batch(reloadApplicationDetail(a.applicationService, id), loadDocumentReviews(a.documentService, a.documents, id))
-	}
 	return readChanges(a.changeLogService, a.currentScreen, a.cursor(a.currentScreen), false)
 }
 
@@ -134,11 +125,14 @@ func (a *App) reloadFor(events []change.Event) tea.Cmd {
 			return requestLoad[message.ActiveApplications](message.Source{Instance: a.instance})
 		}
 	case screenApplicationDetail:
-		view := a.applicationDetail.application
+		d := a.applicationDetail()
+		if d == nil {
+			return nil
+		}
 		if slices.ContainsFunc(events, func(e change.Event) bool {
-			return eventApplicationID(e) == view.ID || (e.Table == "postings" && e.RowID == view.Posting.ID)
+			return eventApplicationID(e) == d.detail.Application.ID || (e.Table == "postings" && e.RowID == d.detail.Posting.ID)
 		}) {
-			return tea.Batch(reloadApplicationDetail(a.applicationService, view.ID), loadDocumentReviews(a.documentService, a.documents, view.ID))
+			return requestLoad[message.ApplicationDetail](message.Source{Instance: a.instance})
 		}
 	case screenPostingDetail:
 		d := a.postingDetail()
@@ -221,42 +215,4 @@ func eventPostingID(e change.Event) int64 {
 		return row.PostingID
 	}
 	return 0
-}
-
-type applicationDetailReloadedMsg struct {
-	id          int64
-	application application.Application
-	deleted     bool
-	err         error
-}
-
-func reloadApplicationDetail(applications *service.ApplicationService, id int64) tea.Cmd {
-	return func() tea.Msg {
-		app, err := applications.Get(context.Background(), id)
-		if errors.Is(err, store.ErrNotFound) {
-			return applicationDetailReloadedMsg{id: id, deleted: true}
-		}
-		if err != nil {
-			return applicationDetailReloadedMsg{id: id, err: err}
-		}
-		return applicationDetailReloadedMsg{id: id, application: *app}
-	}
-}
-
-// handleApplicationDetailReloaded refreshes the application on screen, or
-// leaves it if it was deleted underneath.
-func (a *App) handleApplicationDetailReloaded(msg applicationDetailReloadedMsg) tea.Cmd {
-	if a.currentScreen != screenApplicationDetail || a.applicationDetail.application.ID != msg.id {
-		return nil
-	}
-	a.setLoadErr(msg.err)
-	if msg.deleted {
-		a.currentScreen = screenActiveApplications
-		a.status = "The application you were viewing was deleted elsewhere"
-		return nil
-	}
-	if msg.err == nil {
-		a.applicationDetail.application.Application = msg.application
-	}
-	return nil
 }

@@ -88,7 +88,7 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 					t.Fatalf("push: %v", err)
 				}
 			}
-			app.applicationDetail.application = view
+			pushApplicationDetail(t, app, view)
 			app.documentReviewForm.documentType = document.CoverLetter
 			app.currentScreen, app.returnStack = tt.screen, tt.stack
 
@@ -116,12 +116,12 @@ func TestApp_Screens_BreadcrumbReplacesTheTitle(t *testing.T) {
 			return "Review " + app.documentReviewForm.documentType.Label()
 		},
 		"application submit": func(app *App) string {
-			return "Submit: " + app.applicationDetail.application.Posting.Title
+			return "Submit: " + shownDetail(app).Posting.Title
 		},
 		"application delete": func(app *App) string {
-			return "Delete application: " + app.applicationDetail.application.Posting.Title
+			return "Delete application: " + shownDetail(app).Posting.Title
 		},
-		"application detail": func(app *App) string { return app.applicationDetail.application.Posting.Title },
+		"application detail": func(app *App) string { return shownDetail(app).Posting.Title },
 		"export":             func(*App) string { return "Export PDFs" },
 		"status":             func(*App) string { return "Set application status" },
 		"review select":      func(*App) string { return "Review a document" },
@@ -221,7 +221,7 @@ func TestApp_Header_LongBreadcrumbLosesItsMiddleFirst(t *testing.T) {
 				documents.NewStore(t.TempDir()),
 			)
 			app.width = tt.width
-			app.applicationDetail.application = view
+			pushApplicationDetail(t, app, view)
 			app.currentScreen, app.returnStack = screenPostingDetail, []screen{screenApplicationDetail}
 
 			line := strings.Split(ansi.Strip(app.header()), "\n")[0]
@@ -233,4 +233,23 @@ func TestApp_Header_LongBreadcrumbLosesItsMiddleFirst(t *testing.T) {
 			}
 		})
 	}
+}
+
+// pushApplicationDetail opens detail on a over the home list, as enter
+// there would.
+func pushApplicationDetail(t *testing.T, app *App, a posting.ActiveApplication) {
+	t.Helper()
+	d := newApplicationDetailModel(nil, nil, nil, nil, app.documents, applicationDetailOf(a))
+	if err := app.stack.push(message.ScreenApplicationDetail, d, screenActiveApplications); err != nil {
+		t.Fatalf("push: %v", err)
+	}
+}
+
+// shownDetail is what the open application detail shows, zero if none is
+// open.
+func shownDetail(app *App) message.ApplicationDetail {
+	if d := app.applicationDetail(); d != nil {
+		return d.detail
+	}
+	return message.ApplicationDetail{}
 }

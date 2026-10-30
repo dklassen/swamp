@@ -104,6 +104,9 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 	if app.currentScreen != screenActiveApplications {
 		t.Errorf("screen after confirming = %v, want the home screen", app.currentScreen)
 	}
+	if !app.activeApplicationList.Focused() {
+		t.Error("the home screen isn't in focus after confirming, so its keys do nothing: detail is still open under it")
+	}
 }
 
 func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {

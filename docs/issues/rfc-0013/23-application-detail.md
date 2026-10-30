@@ -14,9 +14,9 @@ RFC 0013, step 5 (application detail and the editor). Related: #285.
 
 ## Change
 
-- `Nav[Application]` pushes it; it loads in `Init` as `Read[ApplicationDetail]` and reloads when it comes back on top (a `Signal[FocusChanged]` naming itself), since its documents change with no event.
+- `Nav[ApplicationDetail]` pushes it, carrying the home row's application, posting, company name and reviews, so it opens on what it shows; it loads in `Init` as `Read[ApplicationDetail]` and reloads when it comes back on top (a `Signal[FocusChanged]` naming itself), since its documents change with no event.
 - The editor's command records the write before it reports, and sends `Ran[EditDocument]` or `Error`; detail reloads on its own `Ran`.
-- It routes `Changed[Application]` and `Changed[Review]` `About` its application.
+- It routes `Changed[Application]` `About` its application; `Changed[Review]` comes with step 25.
 - Remove `applicationLoadedMsg`, `refreshApplicationDetailMsg`, `editorClosedMsg`, `enterApplicationDetailMsg`, `backToActiveApplicationsMsg` (detail pops), and `activate`'s special case for it.
 
 ## Acceptance criteria

@@ -441,7 +441,7 @@ func TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere(t *testing.T) {
 		t.Fatalf("screen = %v, want application detail", app.currentScreen)
 	}
 	other := first
-	if app.applicationDetail.application.ID == first.ID {
+	if shownDetail(app).Application.ID == first.ID {
 		other = second
 	}
 	if err := updateApplicationStatusIn(ctx, s, other.PostingID, application.Interviewing); err != nil {

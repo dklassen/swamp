@@ -424,7 +424,7 @@ With step 4, RFC 0012 changed in three places: its naming rule (messages are `Ev
 4. **Should `Subject.ID` be `int64` for every entity?** A composite key would need it to be a string.
 5. **How does a payload's schema change?** `Kind` and `Type` name a payload, not a version of it. By default a payload only gains fields that are optional, and a breaking change is a new `Type`.
 6. **Where do the event types live once something other than the TUI produces them?** A producer in `sync` or `mcpserver` shouldn't import `tui/message`. Since they import only the standard library, moving them to their own package is a rename. By default that waits for the producer.
-7. **How does the banner keep a load's error?** `BannerMsg.Load` lets a failed load's error stay until a later load succeeds, since loads finish in any order. With errors as `Error`, the banner would need to hear the loads that succeed. Decided: it keeps the error until its next `Error` or `Notify`. A load that succeeds sends neither, so another load's failure stays up as before. `App`'s old paths keep `setLoadErr` until they migrate.
+7. **How does the banner keep a load's error?** `BannerMsg.Load` lets a failed load's error stay until a later load succeeds, since loads finish in any order. With errors as `Error`, the banner would need to hear the loads that succeed. Decided: it keeps the error until its next `Error` or `Notify`. A load that succeeds sends neither, so another load's failure stays up as before.
 
 ## Out of scope
 
