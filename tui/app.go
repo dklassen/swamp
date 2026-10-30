@@ -82,7 +82,6 @@ type App struct {
 	syncing               *model.Syncing
 	applicationForm       applicationFormModel
 	activeApplicationList *activeApplicationListModel
-	applicationExport     applicationExportModel
 	// exportDir is the destination the export screen prefills: the last
 	// directory successfully exported to this session, falling back to
 	// defaultExportDir. Ephemeral and in-memory only, like hideArchived
@@ -91,8 +90,7 @@ type App struct {
 	exportDir string
 	// openURL opens a URL in the browser: openInBrowser, swapped for a fake
 	// in tests so they don't launch one.
-	openURL           func(src message.Source, about message.Subject, url string) tea.Cmd
-	applicationSubmit applicationSubmitModel
+	openURL func(src message.Source, about message.Subject, url string) tea.Cmd
 	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
 	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
@@ -217,6 +215,8 @@ var stackedAs = map[message.Screen]screen{
 	message.ScreenApplicationDelete:    screenApplicationDelete,
 	message.ScreenDocumentReviewSelect: screenDocumentReviewSelect,
 	message.ScreenDocumentReviewForm:   screenDocumentReviewForm,
+	message.ScreenApplicationExport:    screenApplicationExport,
+	message.ScreenApplicationSubmit:    screenApplicationSubmit,
 }
 
 // push opens s over the screen up: routes, then Init, so nothing Init
@@ -421,6 +421,10 @@ func (a *App) navApplicationDetail(e message.Event[message.Nav[message.Applicati
 			return a.push(e.Payload.Screen, newApplicationDetailModel(a.applicationService, a.postingService, a.companyService, a.documentService, a.documents, e.Payload.Value))
 		case message.ScreenApplicationDelete:
 			return a.push(e.Payload.Screen, newApplicationDeleteModel(a.applicationService, e.Payload.Value, a.sized.Width))
+		case message.ScreenApplicationExport:
+			return a.push(e.Payload.Screen, newApplicationExportModel(a.documentService, a.documents, e.Payload.Value, a.exportDir, a.sized))
+		case message.ScreenApplicationSubmit:
+			return a.push(e.Payload.Screen, newApplicationSubmitModel(a.applicationService, a.documentService, a.documents, a.openURL, e.Payload.Value, a.exportDir))
 		}
 	}
 	return a.unknownNav(e)
@@ -431,13 +435,6 @@ func (a *App) navApplicationDetail(e message.Event[message.Nav[message.Applicati
 func (a *App) applicationDetail() *applicationDetailModel {
 	d, _ := a.stack.open(message.ScreenApplicationDetail).(*applicationDetailModel)
 	return d
-}
-
-// onApplicationDetail is whether application detail on applicationID is
-// the screen up.
-func (a *App) onApplicationDetail(applicationID int64) bool {
-	d := a.applicationDetail()
-	return a.currentScreen == screenApplicationDetail && d != nil && d.detail.Application.ID == applicationID
 }
 
 func (a *App) hideArchivedChanged(e message.Event[message.Signal[message.HideArchived]]) tea.Cmd {
@@ -944,53 +941,29 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.hideArchivedChanged),
 		model.Always(a.applicationChanged),
 		model.Always(a.browserOpened),
-		model.Always(a.browserFailed),
+		model.Always(a.exported),
 	}
 }
 
-// browserOpened clears an earlier failure from the banner, and tells the
-// submit screen its link opened.
-func (a *App) browserOpened(e message.Event[message.Ran[message.OpenBrowser]]) tea.Cmd {
+// browserOpened clears an earlier failure from the banner.
+func (a *App) browserOpened(message.Event[message.Ran[message.OpenBrowser]]) tea.Cmd {
 	a.err = nil
-	if a.currentScreen == screenApplicationSubmit && a.applicationSubmit.instance == e.Meta.Source.Instance {
-		a.applicationSubmit.opened = true
-	}
 	return nil
 }
 
-// browserFailed shows the submit screen's failed open next to its link
-// too, so the step doesn't claim the link opened when it didn't.
-func (a *App) browserFailed(e message.Event[message.Error]) tea.Cmd {
-	if a.currentScreen == screenApplicationSubmit && a.applicationSubmit.instance == e.Meta.Source.Instance && e.Meta.Subject.Type == message.TypePosting {
-		a.applicationSubmit.openFailed = e.Payload.Text
-	}
+// exported remembers where the export went, for the next export or submit
+// to start from, and clears an earlier failure from the banner.
+func (a *App) exported(e message.Event[message.Ran[message.ExportReport]]) tea.Cmd {
+	a.err, a.exportDir = nil, e.Payload.Value.Dir
 	return nil
 }
 
-// applicationChanged does for the screens that show an application what
-// they'll do for themselves once they hear the change.
+// applicationChanged clears its asker's earlier error, which the write
+// going through has made stale.
 func (a *App) applicationChanged(e message.Event[message.Changed[message.Application]]) tea.Cmd {
-	from := e.Meta.Source.Instance
-	if from != 0 {
-		// Its asker's write went through, so its earlier error is stale.
+	if e.Meta.Source.Instance != 0 {
 		a.err = nil
 	}
-	// Nothing blocks esc while the save is in flight, so the user may
-	// already have left; only the asker still on screen moves on.
-	if a.currentScreen == screenApplicationSubmit && a.applicationSubmit.instance == from {
-		a.status = "Marked " + a.applicationSubmit.application.Posting.Title + " submitted"
-		return a.backHome()
-	}
-	return nil
-}
-
-// backHome leaves one of App's screens for the home list, closing the
-// application detail it was opened over, if any.
-func (a *App) backHome() tea.Cmd {
-	if a.stack.len() > 0 && a.stack.topKind() == message.ScreenApplicationDetail {
-		return a.pop()
-	}
-	a.currentScreen = screenActiveApplications
 	return nil
 }
 
@@ -1056,18 +1029,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	// The home screen and application detail ask for the screens App still
+	// Application detail asks for the application form, which App still
 	// opens, unless the user has left while the request was on its way.
-	case enterApplicationExportMsg:
-		if a.currentScreen == screenActiveApplications {
-			a.currentScreen, a.err = screenApplicationExport, nil
-			a.applicationExport = newApplicationExportModel(a.documentService, a.documents, msg.application, a.exportDir, a.width)
-		}
-	case enterApplicationSubmitMsg:
-		if a.onApplicationDetail(msg.application.ID) {
-			a.err = nil
-			return a, a.startApplicationSubmit(msg.application)
-		}
 	case enterApplicationFormMsg:
 		if d := a.applicationDetail(); d != nil && a.currentScreen == screenApplicationDetail && d.detail.Posting.ID == msg.postingID {
 			return a, loadApplicationForm(a.postingService, msg.postingID)
@@ -1096,28 +1059,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				a.currentScreen = screenApplicationDetail
 			}
 		}
-	case applicationExportedMsg:
-		a.err = msg.err
-		if a.currentScreen == screenApplicationSubmit {
-			// The submit screen shows the result itself, failure included,
-			// and stays put: the user still decides whether they submitted.
-			a.applicationSubmit.exported = &msg
-			if msg.err == nil {
-				a.exportDir = msg.dir
-			}
-			return a, nil
-		}
-		if msg.err != nil {
-			// Stay on the export screen: the overwhelmingly likely
-			// failure is a mistyped destination, and returning to the
-			// list would make the user re-select the application just to
-			// fix a path they can still see.
-			return a, nil
-		}
-		a.exportDir = msg.dir
-		a.status = exportStatusLine(msg)
-		a.currentScreen = screenActiveApplications
-		return a, nil
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
@@ -1145,8 +1086,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 // paste is never a key, so a pasted "q" can't quit.
 func (a *App) paste(msg tea.PasteMsg) tea.Cmd {
 	switch a.currentScreen {
-	case screenApplicationExport:
-		return a.applicationExport.paste(msg)
 	case screenApplicationForm:
 		return a.applicationForm.paste(msg)
 	}
@@ -1170,21 +1109,6 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 	}
 	switch a.currentScreen {
-	case screenApplicationExport:
-		cmd, intent := a.applicationExport.Update(msg)
-		if _, ok := intent.(cancelApplicationExportMsg); ok {
-			a.currentScreen = screenActiveApplications
-		}
-		return a, cmd
-	case screenApplicationSubmit:
-		cmd, intent := a.applicationSubmit.Update(msg)
-		switch v := intent.(type) {
-		case cancelApplicationSubmitMsg:
-			a.currentScreen = screenApplicationDetail
-		case confirmApplicationSubmitMsg:
-			return a, updateApplicationStatus(a.applicationService, message.Source{Instance: a.applicationSubmit.instance}, v.applicationID, application.Submitted)
-		}
-		return a, cmd
 	case screenApplicationForm:
 		cmd, intent := a.applicationForm.Update(msg)
 		if _, ok := intent.(cancelApplicationFormMsg); ok {
@@ -1266,7 +1190,7 @@ func (a *App) body(s screen) string {
 	case screenCompanyForm:
 		b.WriteString(a.stack.top().View().Content)
 	case screenCompanyEdit, screenFilterSelect, screenApplicationStatusSelect, screenApplicationNotesEdit,
-		screenDocumentReviewSelect, screenDocumentReviewForm:
+		screenDocumentReviewSelect, screenDocumentReviewForm, screenApplicationExport, screenApplicationSubmit:
 		b.WriteString(a.stack.top().View().Content)
 	case screenPostingList:
 		if l := a.postingList(); l != nil {
@@ -1276,10 +1200,6 @@ func (a *App) body(s screen) string {
 		if d := a.postingDetail(); d != nil {
 			b.WriteString(d.View().Content)
 		}
-	case screenApplicationExport:
-		b.WriteString(a.applicationExport.View())
-	case screenApplicationSubmit:
-		b.WriteString(a.applicationSubmit.View())
 	case screenApplicationForm:
 		b.WriteString(a.applicationForm.View())
 	}

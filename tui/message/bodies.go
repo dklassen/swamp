@@ -353,3 +353,14 @@ type DocumentReview struct {
 }
 
 func (DocumentReview) Type() Type { return TypeDocumentReview }
+
+// ExportReport is an export of the event's Subject, an application: the
+// directory it went to, the PDFs written there, and the documents skipped
+// because they aren't drafted yet.
+type ExportReport struct {
+	Dir     string         `json:"dir"`
+	Paths   []string       `json:"paths,omitempty"`
+	Skipped []DocumentType `json:"skipped,omitempty"`
+}
+
+func (ExportReport) Type() Type { return TypeExportReport }

@@ -207,19 +207,28 @@ func TestActiveApplicationListModel_EmptyList_KeysDoNothing(t *testing.T) {
 	}
 }
 
-func TestActiveApplicationListModel_E_AsksForExportOfSelectedApplication(t *testing.T) {
+// exportedID is the application msg opens the export screen on.
+func exportedID(msg tea.Msg) (int64, bool) {
+	nav, ok := msg.(message.Event[message.Nav[message.ApplicationDetail]])
+	if !ok || nav.Payload.Op != message.NavPush || nav.Payload.Screen != message.ScreenApplicationExport {
+		return 0, false
+	}
+	return nav.Payload.Value.Application.ID, true
+}
+
+func TestActiveApplicationListModel_E_PushesExportOfSelectedApplication(t *testing.T) {
 	t.Parallel()
 
 	apps := testActiveApplications()
 	m := homeWith(t, apps)
 	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 
-	got, ok := pressHome(t, m, runeKey('e')).(enterApplicationExportMsg)
+	got, ok := exportedID(pressHome(t, m, runeKey('e')))
 	if !ok {
-		t.Fatalf("'e' sent no enterApplicationExportMsg")
+		t.Fatalf("'e' sent no Nav to the export screen")
 	}
-	if got.application.ID != apps[1].ID {
-		t.Errorf("exported application ID = %d, want %d (the one under the cursor)", got.application.ID, apps[1].ID)
+	if got != apps[1].ID {
+		t.Errorf("exported application ID = %d, want %d (the one under the cursor)", got, apps[1].ID)
 	}
 }
 
@@ -596,8 +605,8 @@ func TestActiveApplicationListModel_Search_EnterKeepsMatchesForCommands(t *testi
 	}
 
 	globex := apps[1]
-	if got, ok := pressHome(t, m, runeKey('e')).(enterApplicationExportMsg); !ok || got.application.ID != globex.ID {
-		t.Errorf("e on the kept matches: sent %#v, want export for the Globex application (%d)", got, globex.ID)
+	if got, ok := exportedID(pressHome(t, m, runeKey('e'))); !ok || got != globex.ID {
+		t.Errorf("e on the kept matches: export of %d (sent %v), want the Globex application (%d)", got, ok, globex.ID)
 	}
 	if got, ok := pressHome(t, m, runeKey('s')).(message.Event[message.Nav[message.Application]]); !ok || got.Payload.Value.ID != globex.ID {
 		t.Errorf("s on the kept matches: sent %#v, want status for the Globex application (%d)", got, globex.ID)
@@ -758,12 +767,12 @@ func TestActiveApplicationListModel_Search_EscClearsAndKeepsHighlight(t *testing
 	if got := pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEsc}); got != nil {
 		t.Fatalf("esc in the prompt sent %#v, want nothing (esc closes the prompt, it doesn't leave the screen)", got)
 	}
-	if got, ok := pressHome(t, m, runeKey('e')).(enterApplicationExportMsg); !ok || got.application.ID != 20 {
-		t.Fatalf("'e' after esc sent %#v, want export for the Globex application (20)", got)
+	if got, ok := exportedID(pressHome(t, m, runeKey('e'))); !ok || got != 20 {
+		t.Fatalf("'e' after esc: export of %d (sent %v), want the Globex application (20)", got, ok)
 	}
 	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
-	if got, ok := pressHome(t, m, runeKey('e')).(enterApplicationExportMsg); !ok || got.application.ID != 30 {
-		t.Fatalf("down, 'e' after esc sent %#v, want export for the Initech application (30): the full list is back", got)
+	if got, ok := exportedID(pressHome(t, m, runeKey('e'))); !ok || got != 30 {
+		t.Fatalf("down, 'e' after esc: export of %d (sent %v), want the Initech application (30): the full list is back", got, ok)
 	}
 }
 

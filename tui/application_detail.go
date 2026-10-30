@@ -150,7 +150,7 @@ func (m *applicationDetailModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	case "u":
 		return m.load()
 	case "S":
-		return ask(enterApplicationSubmitMsg{application: m.active()})
+		return message.Push(m.src(), message.ScreenApplicationSubmit, message.Subject{Type: message.TypeApplication, ID: m.detail.Application.ID}, m.detail)
 	case "f":
 		return ask(enterApplicationFormMsg{postingID: m.detail.Posting.ID})
 	case "D":
@@ -166,16 +166,6 @@ func (m *applicationDetailModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 		}
 	}
 	return nil
-}
-
-// active is the application as the screens App still opens hold it.
-func (m *applicationDetailModel) active() posting.ActiveApplication {
-	return posting.ActiveApplication{
-		Application:   applicationOf(m.detail.Application),
-		Posting:       postingOf(m.detail.Posting),
-		CompanyName:   m.detail.CompanyName,
-		LatestReviews: reviewsOf(message.ReviewList{Reviews: m.detail.Reviews}),
-	}
 }
 
 // openReview opens the review form on documentType as it is now, or does

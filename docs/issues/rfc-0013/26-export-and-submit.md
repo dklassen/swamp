@@ -14,9 +14,9 @@ Export reports `applicationExportedMsg` to `App`, which keeps the export directo
 
 ## Change
 
-- `Nav`s push both with the application and `App`'s export directory (RFC 0012, section 7).
-- Export sends `Ran[ExportReport]` (the directory, the paths written and the documents skipped) or `Error`; `App` routes it to remember the directory.
-- Submit sets the status itself; step 18's `Changed[Application]` closes it.
+- `Nav[ApplicationDetail]` pushes both, from the home screen and application detail, and `App` gives each its export directory (RFC 0012, section 7).
+- Export sends `Ran[ExportReport]` (the directory, the paths written and the documents skipped), its Subject the application, or `Error`; `App` routes it to remember the directory. Its own report closes it; a failure leaves it up to fix the path.
+- Submit opens the link and exports in `Init`, and sets the status itself; step 18's `Changed[Application]` from it closes it back to application detail, which shows the new status. A failed save takes back its `y`.
 - Remove `enterApplicationExportMsg`, `enterApplicationSubmitMsg`, `cancelApplicationExportMsg`, `cancelApplicationSubmitMsg`, `applicationExportedMsg` and `confirmApplicationSubmitMsg`.
 
 ## Acceptance criteria

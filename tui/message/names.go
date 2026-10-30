@@ -75,6 +75,7 @@ const (
 	TypeApplicationDetail
 	TypeEditDocument
 	TypeDocumentReview
+	TypeExportReport
 )
 
 var typeNames = [...]string{
@@ -109,6 +110,7 @@ var typeNames = [...]string{
 	TypeApplicationDetail:  "application_detail",
 	TypeEditDocument:       "edit_document",
 	TypeDocumentReview:     "document_review",
+	TypeExportReport:       "export_report",
 }
 
 func (t Type) String() string                { return nameOf(t, typeNames[:]) }
@@ -198,6 +200,8 @@ const (
 	ScreenApplicationDelete
 	ScreenDocumentReviewSelect
 	ScreenDocumentReviewForm
+	ScreenApplicationExport
+	ScreenApplicationSubmit
 )
 
 var screenNames = [...]string{
@@ -214,6 +218,8 @@ var screenNames = [...]string{
 	ScreenApplicationDelete:    "application_delete",
 	ScreenDocumentReviewSelect: "document_review_select",
 	ScreenDocumentReviewForm:   "document_review_form",
+	ScreenApplicationExport:    "application_export",
+	ScreenApplicationSubmit:    "application_submit",
 }
 
 func (s Screen) String() string                { return nameOf(s, screenNames[:]) }

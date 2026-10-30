@@ -70,13 +70,11 @@ func isTab(s screen) bool {
 // which is where esc goes. A stacked screen goes back to the one it was
 // pushed over instead.
 var parents = map[screen]screen{
-	screenCompanyForm:       screenCompanyList,
-	screenCompanyEdit:       screenCompanyList,
-	screenPostingList:       screenCompanyList,
-	screenFilterSelect:      screenPostingList,
-	screenApplicationExport: screenActiveApplications,
-	screenApplicationSubmit: screenApplicationDetail,
-	screenApplicationForm:   screenApplicationDetail,
+	screenCompanyForm:     screenCompanyList,
+	screenCompanyEdit:     screenCompanyList,
+	screenPostingList:     screenCompanyList,
+	screenFilterSelect:    screenPostingList,
+	screenApplicationForm: screenApplicationDetail,
 }
 
 // stackedUnder is the screen a stacked screen showing as s was pushed

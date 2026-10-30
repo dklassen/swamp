@@ -8,7 +8,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/tui/message"
@@ -69,7 +68,8 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 				message.Subject{Type: message.TypeCompany, ID: 1}, message.Company{ID: 1})())
 		}},
 		{name: "export", open: func(app *App) {
-			app.currentScreen, app.applicationExport = screenApplicationExport, newApplicationExportModel(nil, app.documents, posting.ActiveApplication{}, "", 80)
+			app.Update(message.Push(message.Source{Instance: app.activeApplicationList.Instance()}, message.ScreenApplicationExport,
+				message.Subject{Type: message.TypeApplication, ID: 1}, message.ApplicationDetail{Application: message.Application{ID: 1}})())
 		}},
 		{name: "notes", open: func(app *App) {
 			app.currentScreen = screenCompanyList

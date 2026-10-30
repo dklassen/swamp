@@ -7,25 +7,24 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/document"
-	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // testExportApplication is the application every export-screen test
 // drafts documents for.
-func testExportApplication() posting.ActiveApplication {
-	return posting.ActiveApplication{
-		Application: application.Application{ID: 42, Status: application.Started},
-		Posting:     posting.Posting{ID: 7, IngestedFields: posting.IngestedFields{Title: "Delivery Platform"}},
-		CompanyName: "Northwind",
-	}
+var testExportApplication = message.ApplicationDetail{
+	Application: message.Application{ID: 42, PostingID: 7, Status: message.ApplicationStarted},
+	Posting:     message.Posting{ID: 7, Title: "Delivery Platform", ListingStatus: message.ListingOpen},
+	CompanyName: "Northwind",
 }
 
 // writeApplicationDocuments creates a documents base dir containing the
@@ -47,64 +46,73 @@ func writeApplicationDocuments(t *testing.T, applicationID int64, present ...doc
 	return documents.NewStore(base)
 }
 
-func TestApplicationExportModel_PrefillsDestinationWithDefaultDir(t *testing.T) {
+func exportScreenOn(t *testing.T, docs *documents.Store, dir string) *applicationExportModel {
+	t.Helper()
+	return newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication, dir, message.ContentSize{Width: 80})
+}
+
+// exportedIn is the export report among msgs.
+func exportedIn(t *testing.T, msgs []tea.Msg) message.Event[message.Ran[message.ExportReport]] {
+	t.Helper()
+	for _, msg := range msgs {
+		if e, ok := msg.(message.Event[message.Ran[message.ExportReport]]); ok {
+			return e
+		}
+	}
+	t.Fatalf("no export report in %+v", msgs)
+	return message.Event[message.Ran[message.ExportReport]]{}
+}
+
+func TestApplicationExportModel_PrefillsTheDestination(t *testing.T) {
 	t.Parallel()
 
-	docs := writeApplicationDocuments(t, 42, document.CoverLetter)
-	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication(), "/home/dana/Desktop", 80)
+	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.CoverLetter), "/home/dana/Desktop")
 
 	if got := m.textinput.Value(); got != "/home/dana/Desktop" {
 		t.Errorf("destination prefill = %q, want %q", got, "/home/dana/Desktop")
 	}
-	if view := m.View(); !strings.Contains(view, "Northwind") || !strings.Contains(view, "Delivery Platform") {
+	if view := m.View().Content; !strings.Contains(view, "Northwind") || !strings.Contains(view, "Delivery Platform") {
 		t.Errorf("View() = %q, want it to name the application being exported", view)
 	}
 }
 
-func TestApplicationExportModel_EscCancels(t *testing.T) {
+func TestApplicationExportModel_EscPopsAndClearsTheBanner(t *testing.T) {
 	t.Parallel()
 
-	docs := writeApplicationDocuments(t, 42, document.CoverLetter)
-	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication(), "/tmp", 80)
+	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.CoverLetter), "/tmp")
 
-	_, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
+	got := runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEsc}))
 
-	if _, ok := intent.(cancelApplicationExportMsg); !ok {
-		t.Fatalf("intent = %T, want cancelApplicationExportMsg", intent)
+	if !popsIn(got, m.Instance()) {
+		t.Errorf("esc sent %+v, want a pop", got)
+	}
+	if status, ok := statusIn(got); !ok || status != "" {
+		t.Errorf("esc status = %q (sent %v), want the banner cleared", status, ok)
 	}
 }
 
 func TestApplicationExportModel_EnterExportsBothDocumentsWithDescriptiveNames(t *testing.T) {
 	t.Parallel()
 
-	docs := writeApplicationDocuments(t, 42, document.CoverLetter, document.Resume)
 	dest := t.TempDir()
-	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication(), dest, 80)
+	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.CoverLetter, document.Resume), dest)
 
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if intent != nil {
-		t.Fatalf("intent = %T, want nil (export runs as an async cmd)", intent)
-	}
-	if cmd == nil {
-		t.Fatal("cmd = nil, want an export command")
-	}
+	got := exportedIn(t, runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})))
 
-	got, ok := cmd().(applicationExportedMsg)
-	if !ok {
-		t.Fatalf("cmd() = %T, want applicationExportedMsg", cmd())
+	if got.Meta.Source.Instance != m.Instance() {
+		t.Errorf("report from %v, want the screen %v", got.Meta.Source.Instance, m.Instance())
 	}
-	if got.err != nil {
-		t.Fatalf("export err = %v, want nil", got.err)
+	if want := (message.Subject{Type: message.TypeApplication, ID: 42}); got.Meta.Subject != want {
+		t.Errorf("report about %+v, want %+v", got.Meta.Subject, want)
 	}
-
-	want := []string{
+	want := message.ExportReport{Dir: dest, Paths: []string{
 		filepath.Join(dest, "northwind-delivery-platform-cover_letter.pdf"),
 		filepath.Join(dest, "northwind-delivery-platform-resume.pdf"),
+	}}
+	if diff := cmp.Diff(want, got.Payload.Value); diff != "" {
+		t.Errorf("report mismatch (-want +got):\n%s", diff)
 	}
-	if diff := cmp.Diff(want, got.paths); diff != "" {
-		t.Errorf("exported paths mismatch (-want +got):\n%s", diff)
-	}
-	for _, path := range want {
+	for _, path := range want.Paths {
 		content, err := os.ReadFile(path)
 		if err != nil {
 			t.Fatalf("read exported pdf: %v", err)
@@ -119,23 +127,18 @@ func TestApplicationExportModel_SkipsUndraftedDocumentsWithoutFailing(t *testing
 	t.Parallel()
 
 	// Resume drafted, cover letter never written.
-	docs := writeApplicationDocuments(t, 42, document.Resume)
 	dest := t.TempDir()
-	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication(), dest, 80)
+	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.Resume), dest)
 
-	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	got := cmd().(applicationExportedMsg)
+	got := exportedIn(t, runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})))
 
-	if got.err != nil {
-		t.Fatalf("export err = %v, want nil (a missing draft is skipped, not an error)", got.err)
+	want := message.ExportReport{
+		Dir:     dest,
+		Paths:   []string{filepath.Join(dest, "northwind-delivery-platform-resume.pdf")},
+		Skipped: []message.DocumentType{documentTypeSnapshots[document.CoverLetter]},
 	}
-	wantPaths := []string{filepath.Join(dest, "northwind-delivery-platform-resume.pdf")}
-	if diff := cmp.Diff(wantPaths, got.paths); diff != "" {
-		t.Errorf("exported paths mismatch (-want +got):\n%s", diff)
-	}
-	wantSkipped := []document.Type{document.CoverLetter}
-	if diff := cmp.Diff(wantSkipped, got.skipped); diff != "" {
-		t.Errorf("skipped mismatch (-want +got):\n%s", diff)
+	if diff := cmp.Diff(want, got.Payload.Value); diff != "" {
+		t.Errorf("report mismatch (-want +got):\n%s", diff)
 	}
 }
 
@@ -144,21 +147,15 @@ func TestApplicationExportModel_ExpandsTildeInDestination(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	docs := writeApplicationDocuments(t, 42, document.Resume)
-	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication(), "~/Desktop", 80)
+	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.Resume), "~/Desktop")
 
-	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	got := cmd().(applicationExportedMsg)
+	got := exportedIn(t, runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})))
 
-	if got.err != nil {
-		t.Fatalf("export err = %v, want nil", got.err)
-	}
 	wantDir := filepath.Join(home, "Desktop")
-	if got.dir != wantDir {
-		t.Errorf("dir = %q, want %q (tilde expanded)", got.dir, wantDir)
+	if got.Payload.Value.Dir != wantDir {
+		t.Errorf("dir = %q, want %q (tilde expanded)", got.Payload.Value.Dir, wantDir)
 	}
-	wantPath := filepath.Join(wantDir, "northwind-delivery-platform-resume.pdf")
-	if _, err := os.Stat(wantPath); err != nil {
+	if _, err := os.Stat(filepath.Join(wantDir, "northwind-delivery-platform-resume.pdf")); err != nil {
 		t.Errorf("stat exported pdf: %v (want it written under the expanded home dir)", err)
 	}
 }
@@ -170,14 +167,10 @@ func TestApplicationExportModel_RecordsEachExport(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	docs := writeApplicationDocuments(t, 42, document.CoverLetter)
 	dest := t.TempDir()
-	m := newApplicationExportModel(s.Documents, docs, testExportApplication(), dest, 80)
+	m := newApplicationExportModel(s.Documents, writeApplicationDocuments(t, 42, document.CoverLetter), testExportApplication, dest, message.ContentSize{Width: 80})
 
-	cmd, _ := m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	if got := cmd().(applicationExportedMsg); got.err != nil {
-		t.Fatalf("export err = %v, want nil", got.err)
-	}
+	exportedIn(t, runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})))
 
 	exports, err := s.Documents.LatestExports(context.Background(), 42)
 	if err != nil {
@@ -195,5 +188,65 @@ func TestApplicationExportModel_RecordsEachExport(t *testing.T) {
 	}
 	if _, ok := exports[document.Resume]; ok {
 		t.Error("a resume export was recorded, but there was no resume to export")
+	}
+}
+
+func TestApplicationExportModel_AFailedExportIsAnError(t *testing.T) {
+	t.Parallel()
+
+	// A path under a regular file can't be created as a directory.
+	blocker := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.Resume), filepath.Join(blocker, "sub"))
+
+	got := runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}))
+
+	if len(got) != 1 {
+		t.Fatalf("enter sent %+v, want one error", got)
+	}
+	e, ok := got[0].(message.Event[message.Error])
+	if !ok {
+		t.Fatalf("enter sent %T, want an error", got[0])
+	}
+	if e.Meta.Source.Instance != m.Instance() || e.Meta.Subject != (message.Subject{Type: message.TypeApplication, ID: 42}) {
+		t.Errorf("error meta = %+v, want from the screen, about its application", e.Meta)
+	}
+}
+
+// Its own export closes it, saying where the files went, since dragging
+// them from there is what the screen is for.
+func TestApplicationExportModel_ItsExportPopsWithWhereTheFilesWent(t *testing.T) {
+	t.Parallel()
+
+	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.Resume), "/tmp")
+	report := message.ExportReport{Dir: "/out", Paths: []string{"/out/northwind-delivery-platform-resume.pdf"}}
+
+	got := runCmd(t, m.exported(message.New(m.src(), message.Subject{Type: message.TypeApplication, ID: 42}, message.OpNone, time.Now().UTC(), message.Ran[message.ExportReport]{Value: report})))
+
+	if !popsIn(got, m.Instance()) {
+		t.Errorf("its export sent %+v, want a pop", got)
+	}
+	if status, _ := statusIn(got); status != exportStatusLine(report) {
+		t.Errorf("status = %q, want %q", status, exportStatusLine(report))
+	}
+}
+
+// The route that hears a failure doesn't exist: the screen stays for the
+// user to fix the path they can still see, and App's banner shows why.
+func TestApplicationExportModel_StaysOnAFailedExport(t *testing.T) {
+	t.Parallel()
+
+	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.Resume), "/tmp")
+	r := model.NewMsgRouter()
+	if err := r.Register(m); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+
+	cmd := r.Dispatch(message.New(m.src(), message.Subject{Type: message.TypeApplication, ID: 42}, message.OpNone, time.Now().UTC(), message.Error{Code: message.ErrOther, Text: "create /x: not a directory"}))
+
+	if got := runCmd(t, cmd); popsIn(got, m.Instance()) {
+		t.Errorf("a failed export sent %+v, want the screen kept", got)
 	}
 }
