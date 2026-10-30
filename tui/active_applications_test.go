@@ -150,30 +150,43 @@ func TestActiveApplicationListModel_S_PushesStatusOnTheApplicationAtTheCursor(t 
 	}
 }
 
-func TestActiveApplicationListModel_Enter_PushesDetailOnTheRowAtTheCursor(t *testing.T) {
+// Enter opens detail and d the delete confirmation, each on the row's
+// snapshot.
+func TestActiveApplicationListModel_EnterAndD_PushTheirScreenOnTheRowAtTheCursor(t *testing.T) {
 	t.Parallel()
 
-	apps := testActiveApplications()
-	apps[1].LatestReviews = map[document.Type]document.Review{document.Resume: {ID: 3, Outcome: document.Passed}}
-	m := homeWith(t, apps)
-	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+	for _, tt := range []struct {
+		key    tea.KeyPressMsg
+		screen message.Screen
+	}{
+		{key: tea.KeyPressMsg{Code: tea.KeyEnter}, screen: message.ScreenApplicationDetail},
+		{key: runeKey('d'), screen: message.ScreenApplicationDelete},
+	} {
+		t.Run(tt.key.String(), func(t *testing.T) {
+			t.Parallel()
+			apps := testActiveApplications()
+			apps[1].LatestReviews = map[document.Type]document.Review{document.Resume: {ID: 3, Outcome: document.Passed}}
+			m := homeWith(t, apps)
+			pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 
-	nav, ok := pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEnter}).(message.Event[message.Nav[message.ApplicationDetail]])
-	if !ok {
-		t.Fatalf("enter sent no Nav to application detail")
-	}
-	assertEventFrom(t, nav.Meta, message.Source{Instance: m.Instance()})
-	if want := (message.Subject{Type: message.TypeApplication, ID: apps[1].ID}); nav.Meta.Subject != want {
-		t.Errorf("Subject = %+v, want %+v", nav.Meta.Subject, want)
-	}
-	want := message.Nav[message.ApplicationDetail]{Op: message.NavPush, Screen: message.ScreenApplicationDetail, Value: message.ApplicationDetail{
-		Application: applicationSnapshot(apps[1].Application),
-		Posting:     postingSnapshot(apps[1].Posting),
-		CompanyName: apps[1].CompanyName,
-		Reviews:     []message.Review{{ID: 3, DocumentType: message.DocumentResume, Outcome: message.ReviewPassed}},
-	}}
-	if diff := cmp.Diff(want, nav.Payload); diff != "" {
-		t.Errorf("Nav (-want +got):\n%s", diff)
+			nav, ok := pressHome(t, m, tt.key).(message.Event[message.Nav[message.ApplicationDetail]])
+			if !ok {
+				t.Fatalf("%s sent no Nav on an application", tt.key)
+			}
+			assertEventFrom(t, nav.Meta, message.Source{Instance: m.Instance()})
+			if want := (message.Subject{Type: message.TypeApplication, ID: apps[1].ID}); nav.Meta.Subject != want {
+				t.Errorf("Subject = %+v, want %+v", nav.Meta.Subject, want)
+			}
+			want := message.Nav[message.ApplicationDetail]{Op: message.NavPush, Screen: tt.screen, Value: message.ApplicationDetail{
+				Application: applicationSnapshot(apps[1].Application),
+				Posting:     postingSnapshot(apps[1].Posting),
+				CompanyName: apps[1].CompanyName,
+				Reviews:     []message.Review{{ID: 3, DocumentType: message.DocumentResume, Outcome: message.ReviewPassed}},
+			}}
+			if diff := cmp.Diff(want, nav.Payload); diff != "" {
+				t.Errorf("Nav (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 
@@ -589,7 +602,7 @@ func TestActiveApplicationListModel_Search_EnterKeepsMatchesForCommands(t *testi
 	if got, ok := pressHome(t, m, runeKey('s')).(message.Event[message.Nav[message.Application]]); !ok || got.Payload.Value.ID != globex.ID {
 		t.Errorf("s on the kept matches: sent %#v, want status for the Globex application (%d)", got, globex.ID)
 	}
-	if got, ok := pressHome(t, m, runeKey('d')).(enterApplicationDeleteMsg); !ok || got.application.ID != globex.ID {
+	if got, ok := pressHome(t, m, runeKey('d')).(message.Event[message.Nav[message.ApplicationDetail]]); !ok || got.Payload.Screen != message.ScreenApplicationDelete || got.Payload.Value.Application.ID != globex.ID {
 		t.Errorf("d on the kept matches: sent %#v, want delete for the Globex application (%d)", got, globex.ID)
 	}
 	if got, ok := openedDetail(pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})); !ok || got != globex.ID {

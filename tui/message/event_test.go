@@ -290,6 +290,9 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "application detail nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.ApplicationDetail]{
 			Op: message.NavPush, Screen: message.ScreenApplicationDetail, Value: message.ApplicationDetail{Application: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted}, Posting: message.Posting{ID: 5, Title: "Engineer", ListingStatus: message.ListingOpen}, CompanyName: "Acme"},
 		}))},
+		{name: "application delete nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.ApplicationDetail]{
+			Op: message.NavPush, Screen: message.ScreenApplicationDelete, Value: message.ApplicationDetail{Application: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted}, Posting: message.Posting{ID: 5, Title: "Engineer", ListingStatus: message.ListingOpen}, CompanyName: "Acme"},
+		}))},
 		{name: "edit document ran", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Ran[message.EditDocument]{Value: message.EditDocument{DocumentType: message.DocumentCoverLetter}}))},
 		{name: "filter options read", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Read[message.FilterOptions]{Value: message.FilterOptions{
 			Departments: []string{"Platform", "Sales"}, Locations: []string{"Remote"},

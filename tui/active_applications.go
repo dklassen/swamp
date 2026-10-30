@@ -219,7 +219,8 @@ func (m *activeApplicationListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 		}
 	case "d":
 		if onRow {
-			return ask(enterApplicationDeleteMsg{application: visible[m.cursor]})
+			a := visible[m.cursor]
+			return message.Push(m.src(), message.ScreenApplicationDelete, message.Subject{Type: message.TypeApplication, ID: a.ID}, applicationDetailOf(a))
 		}
 	case "enter":
 		if onRow {

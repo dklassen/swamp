@@ -14,9 +14,9 @@ RFC 0013, step 5 (application delete), as the company delete confirmation in RFC
 
 ## Change
 
-- `Nav[Application]` pushes it with the application it names; no reload.
+- `Nav[ApplicationDetail]` pushes it with the application, posting and company name its opener shows, so it opens on what it describes; no reload. A delete that finds the application already gone says it was deleted elsewhere.
 - `y` deletes; it closes on `Changed[Application]` `About` its application with `OnOp(OpDeleted)`, whoever deleted it, and on its own `Error`.
-- Detail, if beneath it, pops on the same delete.
+- Detail, if beneath it, pops on the same delete once it's back on top, without reading again.
 - Remove `enterApplicationDeleteMsg`, `cancelApplicationDeleteMsg`, `confirmApplicationDeleteMsg` and `applicationReloadedForDeleteMsg`.
 
 ## Acceptance criteria
