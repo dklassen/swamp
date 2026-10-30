@@ -8,7 +8,6 @@ import (
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
@@ -81,7 +80,9 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 			app.currentScreen, app.applicationForm = screenApplicationForm, newApplicationFormModel(nil, 1, nil, 80, 20)
 		}},
 		{name: "document review", open: func(app *App) {
-			app.currentScreen, app.documentReviewForm = screenDocumentReviewForm, newDocumentReviewFormModel(nil, app.documents, 1, document.CoverLetter, "", 80, 20)
+			app.currentScreen = screenCompanyList
+			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenDocumentReviewForm,
+				message.Subject{Type: message.TypeApplication, ID: 1}, message.DocumentReview{ApplicationID: 1, DocumentType: message.DocumentCoverLetter})())
 		}},
 	}
 	for _, tt := range tests {

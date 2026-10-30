@@ -156,7 +156,7 @@ func TestPostingDetailModel_EscOrB_Pops(t *testing.T) {
 	}
 }
 
-func TestPostingDetailModel_StatusAndNotesKeys_PushTheirScreenOnTheApplication(t *testing.T) {
+func TestPostingDetailModel_ApplicationKeys_PushTheirScreenOnTheApplication(t *testing.T) {
 	t.Parallel()
 
 	tests := []struct {
@@ -165,6 +165,7 @@ func TestPostingDetailModel_StatusAndNotesKeys_PushTheirScreenOnTheApplication(t
 	}{
 		{key: runeKey('s'), want: message.ScreenApplicationStatus},
 		{key: runeKey('n'), want: message.ScreenApplicationNotes},
+		{key: runeKey('r'), want: message.ScreenDocumentReviewSelect},
 	}
 	for _, tt := range tests {
 		t.Run(tt.key.String(), func(t *testing.T) {
@@ -188,19 +189,6 @@ func TestPostingDetailModel_StatusAndNotesKeys_PushTheirScreenOnTheApplication(t
 				t.Errorf("Nav (-want +got):\n%s", diff)
 			}
 		})
-	}
-}
-
-// The review picker is still App's to open.
-func TestPostingDetailModel_R_AsksAppToOpenTheReviewPicker(t *testing.T) {
-	t.Parallel()
-
-	m := detailOf(documents.NewStore(t.TempDir()), testDetailPosting, testDetailApplication, nil, 80, 20)
-
-	got := pressDetail(t, m, runeKey('r'))
-	want := []tea.Msg{enterDocumentReviewSelectMsg{applicationID: testDetailApplication.ID}}
-	if diff := cmp.Diff(want, got, cmp.AllowUnexported(enterDocumentReviewSelectMsg{})); diff != "" {
-		t.Errorf("r sent (-want +got):\n%s", diff)
 	}
 }
 
@@ -307,11 +295,6 @@ func TestPostingDetailModel_LoadRequests_SendTheirReads(t *testing.T) {
 			load: message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.PostingScores]{}),
 			want: func(msg tea.Msg) bool { _, ok := msg.(message.Event[message.Read[message.PostingScores]]); return ok },
 		},
-		{
-			name: "review list",
-			load: message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.ReviewList]{}),
-			want: func(msg tea.Msg) bool { _, ok := msg.(message.Event[message.Read[message.ReviewList]]); return ok },
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -358,6 +341,43 @@ func TestPostingDetailModel_ApplicationChanged_AboutItsPosting_PatchesIt(t *test
 			r.Dispatch(tt.changed)
 			if m.application != tt.want {
 				t.Errorf("application = %+v, want %+v", m.application, tt.want)
+			}
+		})
+	}
+}
+
+// A review of its application's document shows in place of the one it
+// had, whoever saved it, including while another screen covers the detail.
+func TestPostingDetailModel_ReviewChanged_OfItsApplication_ShowsIt(t *testing.T) {
+	t.Parallel()
+
+	flagged := message.Review{ID: 4, ApplicationID: testDetailApplication.ID, DocumentType: message.DocumentCoverLetter, Outcome: message.ReviewFlagged, Notes: "mention Go"}
+	tests := []struct {
+		name     string
+		review   message.Review
+		wantShow bool
+	}{
+		{name: "its application's", review: flagged, wantShow: true},
+		{name: "another application's", review: message.Review{ID: 5, ApplicationID: 99, DocumentType: message.DocumentCoverLetter, Outcome: message.ReviewFlagged, Notes: "mention Go"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := withReviews(detailOf(documents.NewStore(t.TempDir()), testDetailPosting, testDetailApplication, nil, 80, 40),
+				message.Review{ID: 3, ApplicationID: testDetailApplication.ID, DocumentType: message.DocumentCoverLetter, Outcome: message.ReviewPassed})
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+
+			r.Dispatch(reviewCreated(message.Source{Instance: 7}, time.Now().UTC(), tt.review))
+
+			view := detailView(m)
+			if shown := containsAll(view, "[FLAGGED]", "mention Go"); shown != tt.wantShow {
+				t.Errorf("View() shows the new review: %v, want %v:\n%s", shown, tt.wantShow, view)
+			}
+			if passed := strings.Contains(view, "[PASSED]"); passed == tt.wantShow {
+				t.Errorf("View() still shows the earlier review: %v, want %v:\n%s", passed, !tt.wantShow, view)
 			}
 		})
 	}

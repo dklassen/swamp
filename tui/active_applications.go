@@ -89,6 +89,7 @@ func (m *activeApplicationListModel) Routes() []*model.Route {
 		model.Always(m.applicationsRead, model.From(m.instance)),
 		model.Always(m.loadRequested),
 		model.Always(m.applicationChanged),
+		model.Always(m.reviewChanged),
 		model.WhenFocused(m, m.keyPressed),
 		model.WhenFocused(m, m.paste),
 		model.Always(m.resize),
@@ -159,13 +160,19 @@ func (m *activeApplicationListModel) applicationChanged(message.Event[message.Ch
 	return m.load()
 }
 
+// reviewChanged reads again, since a row's next step and review glyphs
+// follow its reviews.
+func (m *activeApplicationListModel) reviewChanged(message.Event[message.Changed[message.Review]]) tea.Cmd {
+	return m.load()
+}
+
 func (m *activeApplicationListModel) resize(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {
 	m.width, m.rows = e.Payload.Value.Width, e.Payload.Value.Rows
 	return nil
 }
 
-// focusChanged reads again on coming into focus: documents change on disk,
-// and reviews are written, with no event it hears.
+// focusChanged reads again on coming into focus: documents change on disk
+// with no event it hears.
 func (m *activeApplicationListModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
 	gained := !m.focused && e.Payload.Value.Focused == m.instance
 	m.focused = e.Payload.Value.Focused == m.instance

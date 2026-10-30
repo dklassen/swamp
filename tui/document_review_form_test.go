@@ -2,21 +2,46 @@ package tui
 
 import (
 	"context"
+	"errors"
 	"os"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
 
-func TestDocumentReviewFormModel_New_SeedsFocusedEmptyTextarea(t *testing.T) {
+var testReviewDocument = message.DocumentReview{ApplicationID: 7, DocumentType: message.DocumentCoverLetter, Content: "Dear hiring manager"}
+
+var testReviewSize = message.ContentSize{Width: 80, Rows: 10}
+
+// reviewFormOn is a form with no services, opened on testReviewDocument.
+func reviewFormOn() *documentReviewFormModel {
+	return newDocumentReviewFormModel(nil, nil, testReviewDocument, testReviewSize)
+}
+
+// routed is a router with m registered and in focus.
+func routed(t *testing.T, m model.Routable) *model.MsgRouter {
+	t.Helper()
+	r := model.NewMsgRouter()
+	if err := r.Register(m); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	r.Dispatch(focusOn(m.Instance()))
+	return r
+}
+
+func TestDocumentReviewFormModel_OpensWithAFocusedEmptyTextarea(t *testing.T) {
 	t.Parallel()
 
-	m := newDocumentReviewFormModel(nil, nil, 1, document.CoverLetter, "Dear hiring manager", 80, 10)
+	m := reviewFormOn()
 	if got := m.textarea.Value(); got != "" {
 		t.Fatalf("textarea.Value() = %q, want empty", got)
 	}
@@ -25,42 +50,69 @@ func TestDocumentReviewFormModel_New_SeedsFocusedEmptyTextarea(t *testing.T) {
 	}
 }
 
-func TestDocumentReviewFormModel_Esc_ReturnsCancelMsg(t *testing.T) {
+func TestDocumentReviewFormModel_Esc_PopsAndClearsTheBanner(t *testing.T) {
 	t.Parallel()
 
-	m := newDocumentReviewFormModel(nil, nil, 1, document.CoverLetter, "content", 80, 10)
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
-	if cmd != nil {
-		t.Fatalf("cmd = %v, want nil", cmd)
+	m := reviewFormOn()
+	got := runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEsc}))
+	if !popsIn(got, m.Instance()) {
+		t.Errorf("esc sent %#v, want a pop of the form", got)
 	}
-	if _, ok := intent.(cancelDocumentReviewFormMsg); !ok {
-		t.Fatalf("intent = %T, want cancelDocumentReviewFormMsg", intent)
+	if status, ok := statusIn(got); !ok || status != "" {
+		t.Errorf("esc sent %#v, want an empty Notify", got)
 	}
 }
 
-func TestDocumentReviewFormModel_CtrlS_ReturnsSaveCmd(t *testing.T) {
+// ctrl+s and ctrl+g save the review, passed or flagged, of the content
+// the form opened on, and say so about its application.
+func TestDocumentReviewFormModel_SaveKeys_SaveTheReview(t *testing.T) {
 	t.Parallel()
 
-	m := newDocumentReviewFormModel(nil, nil, 1, document.CoverLetter, "content", 80, 10)
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
-	if cmd == nil {
-		t.Fatal("cmd = nil, want a command that saves the review as passed")
+	tests := []struct {
+		key     tea.KeyPressMsg
+		outcome document.Outcome
+	}{
+		{key: tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}, outcome: document.Passed},
+		{key: tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl}, outcome: document.Flagged},
 	}
-	if intent != nil {
-		t.Fatalf("intent = %v, want nil", intent)
-	}
-}
+	for _, tt := range tests {
+		t.Run(tt.key.String(), func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+			stored := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
+			docs := documents.NewStore(t.TempDir())
+			if _, err := docs.Write(stored.ID, document.CoverLetter, "a draft"); err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			m := newDocumentReviewFormModel(s.Documents, docs, message.DocumentReview{ApplicationID: stored.ID, DocumentType: message.DocumentCoverLetter, Content: "a draft"}, testReviewSize)
+			m.keyPressed(runeKey([]rune("tighten it")...))
 
-func TestDocumentReviewFormModel_CtrlG_ReturnsSaveCmd(t *testing.T) {
-	t.Parallel()
+			got := runCmd(t, m.keyPressed(tt.key))
 
-	m := newDocumentReviewFormModel(nil, nil, 1, document.CoverLetter, "content", 80, 10)
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: 'g', Mod: tea.ModCtrl})
-	if cmd == nil {
-		t.Fatal("cmd = nil, want a command that saves the review as flagged")
-	}
-	if intent != nil {
-		t.Fatalf("intent = %v, want nil", intent)
+			if len(got) != 1 {
+				t.Fatalf("%s sent %#v, want one Changed", tt.key, got)
+			}
+			changed, ok := got[0].(message.Event[message.Changed[message.Review]])
+			if !ok {
+				t.Fatalf("%s sent %T, want a Changed of the review", tt.key, got[0])
+			}
+			assertEventFrom(t, changed.Meta, message.Source{Instance: m.Instance()})
+			if want := (message.Subject{Type: message.TypeApplication, ID: stored.ID}); changed.Meta.Subject != want || changed.Meta.Op != message.OpCreated {
+				t.Errorf("Subject, Op = %+v, %v; want %+v, %v", changed.Meta.Subject, changed.Meta.Op, want, message.OpCreated)
+			}
+			after := changed.Payload.After
+			if after.ApplicationID != stored.ID || after.DocumentType != message.DocumentCoverLetter || after.Outcome != outcomeSnapshots[tt.outcome] || after.Notes != "tighten it" {
+				t.Errorf("After = %+v, want the cover letter's review, %v, with the notes typed", after, tt.outcome)
+			}
+			reviews, err := s.Documents.LatestReviews(context.Background(), stored.ID)
+			if err != nil {
+				t.Fatalf("LatestReviews: %v", err)
+			}
+			if review := reviews[document.CoverLetter]; review.ID != after.ID || review.ContentSnapshot != "a draft" {
+				t.Errorf("stored review = %+v, want review %d of the content the form opened on", review, after.ID)
+			}
+		})
 	}
 }
 
@@ -71,28 +123,22 @@ func TestDocumentReviewFormModel_CtrlG_ReturnsSaveCmd(t *testing.T) {
 // notes must move the cursor, not silently submit the review. The
 // textarea's own Update legitimately returns a non-nil cmd on most
 // keystrokes (cursor-blink bookkeeping), so cmd-nil-ness can't
-// distinguish "moved the cursor" from "submitted" -- both the submit
-// path and the textarea's default path return a nil intent too, so the
-// only way to actually tell them apart is to run the returned cmd and
-// check what message it produces. m.store is nil here specifically so
-// that if this test regressed (ctrl+p still routed to
-// createDocumentReview), invoking that cmd would panic on the nil
-// store rather than silently passing.
+// distinguish "moved the cursor" from "submitted"; the only way to tell
+// them apart is to run the returned cmd and check what message it
+// produces. The form has no services here specifically so that if this
+// test regressed (ctrl+p still saving), invoking that cmd would panic
+// rather than silently passing.
 func TestDocumentReviewFormModel_CtrlP_MovesTextareaCursorInsteadOfSaving(t *testing.T) {
 	t.Parallel()
 
-	m := newDocumentReviewFormModel(nil, nil, 1, document.CoverLetter, "content", 80, 10)
-	m.Update(runeKey([]rune("line one")...))
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEnter})
-	m.Update(runeKey([]rune("line two")...))
+	m := reviewFormOn()
+	m.keyPressed(runeKey([]rune("line one")...))
+	m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})
+	m.keyPressed(runeKey([]rune("line two")...))
 
-	cmd, intent := m.Update(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl})
-	if intent != nil {
-		t.Fatalf("intent = %v, want nil", intent)
-	}
-	if cmd != nil {
-		if _, isReviewCreated := cmd().(documentReviewCreatedMsg); isReviewCreated {
-			t.Fatal("ctrl+p triggered createDocumentReview, want it to move the cursor instead")
+	if cmd := m.keyPressed(tea.KeyPressMsg{Code: 'p', Mod: tea.ModCtrl}); cmd != nil {
+		if _, saved := cmd().(message.Event[message.Changed[message.Review]]); saved {
+			t.Fatal("ctrl+p saved the review, want it to move the cursor instead")
 		}
 	}
 	if got := m.textarea.Value(); got != "line one\nline two" {
@@ -103,11 +149,122 @@ func TestDocumentReviewFormModel_CtrlP_MovesTextareaCursorInsteadOfSaving(t *tes
 func TestDocumentReviewFormModel_TypingKey_UpdatesTextareaValue(t *testing.T) {
 	t.Parallel()
 
-	m := newDocumentReviewFormModel(nil, nil, 1, document.CoverLetter, "content", 80, 10)
-	m.Update(runeKey([]rune("too generic")...))
+	m := reviewFormOn()
+	m.keyPressed(runeKey([]rune("too generic")...))
 	if got := m.textarea.Value(); got != "too generic" {
 		t.Fatalf("textarea.Value() = %q, want %q", got, "too generic")
 	}
+}
+
+func TestDocumentReviewFormModel_TakesKeysOnlyWhileFocused(t *testing.T) {
+	t.Parallel()
+
+	m := reviewFormOn()
+	r := routed(t, m)
+	r.Dispatch(focusOn(reviewFormOn().Instance()))
+
+	r.Dispatch(runeKey([]rune("ignored")...))
+
+	if got := m.textarea.Value(); got != "" {
+		t.Errorf("textarea.Value() = %q, want nothing typed while another screen is in focus", got)
+	}
+}
+
+// reviewSaved is a review of testReviewDocument saved by instance.
+func reviewSaved(instance message.ScreenInstance) tea.Msg {
+	return message.New(message.Source{Instance: instance}, message.Subject{Type: message.TypeApplication, ID: testReviewDocument.ApplicationID}, message.OpCreated, time.Now().UTC(),
+		message.Changed[message.Review]{After: message.Review{ID: 3, ApplicationID: testReviewDocument.ApplicationID, DocumentType: testReviewDocument.DocumentType, Outcome: message.ReviewPassed}})
+}
+
+// refusedBy is instance's save of testReviewDocument, refused with code.
+func refusedBy(instance message.ScreenInstance, code message.ErrorCode) tea.Msg {
+	return message.New(message.Source{Instance: instance}, message.Subject{Type: message.TypeApplication, ID: testReviewDocument.ApplicationID}, message.OpCreated, time.Now().UTC(),
+		message.Error{Code: code, Text: "refused"})
+}
+
+// The form closes on its own save only. Its own failure leaves it open
+// for another go, with the notes kept, and so does another form's save.
+func TestDocumentReviewFormModel_ClosesOnItsOwnSaveOnly(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name      string
+		result    func(m *documentReviewFormModel) tea.Msg
+		wantClose bool
+	}{
+		{name: "its own, saved", result: func(m *documentReviewFormModel) tea.Msg { return reviewSaved(m.Instance()) }, wantClose: true},
+		{name: "its own, failed", result: func(m *documentReviewFormModel) tea.Msg {
+			return message.New(message.Source{Instance: m.Instance()}, message.Subject{Type: message.TypeApplication, ID: testReviewDocument.ApplicationID},
+				message.OpCreated, time.Now().UTC(), model.ErrorOf(errors.New("disk full")))
+		}},
+		{name: "another form's, saved", result: func(*documentReviewFormModel) tea.Msg { return reviewSaved(reviewFormOn().Instance()) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := reviewFormOn()
+			r := routed(t, m)
+
+			got := runCmd(t, r.Dispatch(tt.result(m)))
+
+			if closed := popsIn(got, m.Instance()); closed != tt.wantClose {
+				t.Errorf("sent %#v, want a pop: %v", got, tt.wantClose)
+			}
+			if status, ok := statusIn(got); tt.wantClose && (!ok || status != "") {
+				t.Errorf("sent %#v, want an empty Notify with the pop", got)
+			}
+		})
+	}
+}
+
+// A save refused because the document changed switches the form to the
+// document as it is now and shows what changed, so the next save reviews
+// that. Another form's refusal leaves it alone.
+func TestDocumentReviewFormModel_DocumentChanged_ReloadsWithTheDiff(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name       string
+		from       func(m *documentReviewFormModel) message.ScreenInstance
+		wantReload bool
+	}{
+		{name: "its own", from: (*documentReviewFormModel).Instance, wantReload: true},
+		{name: "another form's", from: func(*documentReviewFormModel) message.ScreenInstance { return reviewFormOn().Instance() }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			docs := documents.NewStore(t.TempDir())
+			if _, err := docs.Write(testReviewDocument.ApplicationID, document.CoverLetter, "Rewritten meanwhile\n"); err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			opened := testReviewDocument
+			opened.Content = "What you reviewed\n"
+			m := newDocumentReviewFormModel(nil, docs, opened, testReviewSize)
+			r := routed(t, m)
+			m.keyPressed(runeKey([]rune("tighten the intro")...))
+
+			got := runCmd(t, r.Dispatch(refusedBy(tt.from(m), message.ErrDocumentChanged)))
+
+			if popsIn(got, m.Instance()) {
+				t.Errorf("sent %#v, want the form kept open", got)
+			}
+			view := m.View().Content
+			for _, want := range []string{"-What you reviewed", "+Rewritten meanwhile"} {
+				if strings.Contains(view, want) != tt.wantReload {
+					t.Errorf("view contains %q: %v, want %v:\n%s", want, !tt.wantReload, tt.wantReload, view)
+				}
+			}
+			if !strings.Contains(view, "tighten the intro") {
+				t.Errorf("view lost the notes typed:\n%s", view)
+			}
+		})
+	}
+}
+
+func TestDocumentReviewFormModel_Handlers_FailOnTheWrongMessage(t *testing.T) {
+	t.Parallel()
+	assertHandlersFailOnWrongMessage(t, reviewFormOn())
 }
 
 func TestApp_ReviewSavedOfAnUnchangedDocument_DoesNotWarn(t *testing.T) {
@@ -129,7 +286,7 @@ func TestApp_ReviewSavedOfAnUnchangedDocument_DoesNotWarn(t *testing.T) {
 
 	app = openPostingDetail(t, app)
 	app = sendKeyAndApply(t, app, runeKey('r'))
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
 	if view := viewText(app); strings.Contains(view, "while you were reviewing") {
@@ -163,7 +320,7 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 
 	app = openPostingDetail(t, app)
 	app = sendKeyAndApply(t, app, runeKey('r'))
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
 	app, _ = sendKey(app, runeKey([]rune("tighten the intro")...))
 	if err := os.WriteFile(path, []byte("Dear team,\nRewritten meanwhile\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -222,7 +379,7 @@ func TestApp_ReviewOfADocumentDeletedMeanwhile_SavesNothingAndSaysSo(t *testing.
 
 	app = openPostingDetail(t, app)
 	app = sendKeyAndApply(t, app, runeKey('r'))
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
 	if err := os.Remove(path); err != nil {
 		t.Fatalf("Remove: %v", err)
 	}
@@ -263,7 +420,7 @@ func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
 
 	app = openPostingDetail(t, app)
 	app = sendKeyAndApply(t, app, runeKey('r'))
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
 	if _, err := app.documents.Write(application.ID, document.CoverLetter, "Rewritten by the agent\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -312,7 +469,7 @@ func TestApp_ReviewOfADocumentChangedOutsideSwamp_DoesNotNameTheLastWriter(t *te
 
 	app = openPostingDetail(t, app)
 	app = sendKeyAndApply(t, app, runeKey('r'))
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
 	if err := os.WriteFile(path, []byte("Changed outside Swamp\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}

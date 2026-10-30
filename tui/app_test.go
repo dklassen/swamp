@@ -2461,7 +2461,7 @@ func TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail(t *testing.T) 
 	if app.currentScreen != screenDocumentReviewSelect {
 		t.Fatalf("screen after 'r' = %v, want screenDocumentReviewSelect", app.currentScreen)
 	}
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // select "Cover Letter" (cursor 0)
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // select "Cover Letter" (cursor 0)
 	if app.currentScreen != screenDocumentReviewForm {
 		t.Fatalf("screen after selecting cover letter = %v, want screenDocumentReviewForm", app.currentScreen)
 	}
@@ -2830,7 +2830,7 @@ func TestApp_SubmitDocumentReviewFromPostingDetailViaApplicationDetailFastPath_K
 	if app.currentScreen != screenDocumentReviewSelect {
 		t.Fatalf("screen after 'r' = %v, want screenDocumentReviewSelect", app.currentScreen)
 	}
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter}) // select "Cover Letter" (cursor 0)
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // select "Cover Letter" (cursor 0)
 	if app.currentScreen != screenDocumentReviewForm {
 		t.Fatalf("screen after selecting cover letter = %v, want screenDocumentReviewForm", app.currentScreen)
 	}
@@ -3772,7 +3772,7 @@ func TestApp_ReviewSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // active-applications -> application detail
 	app = sendKeyAndApply(t, app, runeKey('p'))                        // application detail -> posting detail
 	app = sendKeyAndApply(t, app, runeKey('r'))                        // posting detail -> document review select
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})         // select "Cover Letter" (cursor 0)
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // select "Cover Letter" (cursor 0)
 	if app.currentScreen != screenDocumentReviewForm {
 		t.Fatalf("screen after selecting cover letter = %v, want screenDocumentReviewForm", app.currentScreen)
 	}
@@ -3780,7 +3780,7 @@ func TestApp_ReviewSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 	if saveCmd == nil {
 		t.Fatal("Update on ctrl+s returned nil Cmd, want a command that saves the review")
 	}
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})         // review form -> posting detail, save still in flight
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc}) // review form -> posting detail, save still in flight
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc}) // posting detail -> application detail
 	if app.currentScreen != screenApplicationDetail {
 		t.Fatalf("screen after backing out = %v, want screenApplicationDetail", app.currentScreen)
@@ -3811,14 +3811,14 @@ func TestApp_ReviewSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})         // active-applications -> application detail
 	app = sendKeyAndApply(t, app, runeKey('p'))                                // application detail -> posting detail
 	app = sendKeyAndApply(t, app, runeKey('r'))                                // posting detail -> document review select
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})                 // select "Cover Letter" (cursor 0)
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})         // select "Cover Letter" (cursor 0)
 	app, saveCmd := sendKey(app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl}) // pass
 	if saveCmd == nil {
 		t.Fatal("Update on ctrl+s returned nil Cmd, want a command that saves the review")
 	}
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc}) // review form -> posting detail, save still in flight
-	app = sendKeyAndApply(t, app, runeKey('r'))              // posting detail -> document review select again
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc}) // review form -> posting detail, save still in flight
+	app = sendKeyAndApply(t, app, runeKey('r'))                      // posting detail -> document review select again
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if app.currentScreen != screenDocumentReviewForm {
 		t.Fatalf("screen after re-entering = %v, want screenDocumentReviewForm", app.currentScreen)
 	}
@@ -3828,7 +3828,7 @@ func TestApp_ReviewSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.
 	if app.currentScreen != screenDocumentReviewForm {
 		t.Fatalf("screen after the earlier instance's save result = %v, want screenDocumentReviewForm (the reopened one stays open)", app.currentScreen)
 	}
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 	if app.currentScreen != screenPostingDetail {
 		t.Fatalf("screen after esc from the reopened screen = %v, want screenPostingDetail", app.currentScreen)
 	}

@@ -70,9 +70,9 @@ func (m *postingDetailModel) Routes() []*model.Route {
 		model.Always(m.reviewsRead, model.From(m.instance)),
 		model.Always(m.scoresRead, model.From(m.instance)),
 		model.Always(m.postingLoadRequested),
-		model.Always(m.reviewsLoadRequested),
 		model.Always(m.scoresLoadRequested),
 		model.Always(m.applicationChanged),
+		model.Always(m.reviewChanged),
 		model.WhenFocused(m, m.keyPressed),
 		model.Always(m.resize),
 		model.Always(m.focusChanged),
@@ -138,10 +138,6 @@ func (m *postingDetailModel) postingLoadRequested(message.Event[message.Load[mes
 	return m.loadPosting()
 }
 
-func (m *postingDetailModel) reviewsLoadRequested(message.Event[message.Load[message.ReviewList]]) tea.Cmd {
-	return m.loadReviews()
-}
-
 func (m *postingDetailModel) scoresLoadRequested(message.Event[message.Load[message.PostingScores]]) tea.Cmd {
 	return m.loadScores()
 }
@@ -157,6 +153,18 @@ func (m *postingDetailModel) applicationChanged(e message.Event[message.Changed[
 	if e.Meta.Op == message.OpDeleted {
 		m.reviews = message.ReviewList{}
 	}
+	m.setContent()
+	return nil
+}
+
+// reviewChanged takes a review of its application's document, whoever
+// saved it. Its application can change while it's open, so it isn't
+// filtered by About.
+func (m *postingDetailModel) reviewChanged(e message.Event[message.Changed[message.Review]]) tea.Cmd {
+	if !m.hasApplication() || e.Meta.Subject.ID != m.application.ID {
+		return nil
+	}
+	m.reviews.Reviews = withReview(m.reviews.Reviews, e.Payload.After)
 	m.setContent()
 	return nil
 }
@@ -197,7 +205,7 @@ func (m *postingDetailModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 		}
 	case "r":
 		if m.hasApplication() {
-			return send(enterDocumentReviewSelectMsg{applicationID: m.application.ID})
+			return m.openApplication(message.ScreenDocumentReviewSelect)
 		}
 	case "u":
 		return tea.Batch(m.loadPosting(), m.loadScores())
@@ -322,12 +330,6 @@ func indentLines(s string, n int) string {
 		}
 	}
 	return strings.Join(lines, "\n")
-}
-
-// enterDocumentReviewSelectMsg signals that App should switch to the
-// document-review-select screen for this application.
-type enterDocumentReviewSelectMsg struct {
-	applicationID int64
 }
 
 func (m *postingDetailModel) View() tea.View {

@@ -29,6 +29,12 @@ func popsIn(msgs []tea.Msg, from message.ScreenInstance) bool {
 	return slices.ContainsFunc(msgs, func(msg tea.Msg) bool { return pops(msg, from) })
 }
 
+// reviewForm is the open review form, or nil.
+func reviewForm(app *App) *documentReviewFormModel {
+	f, _ := app.stack.open(message.ScreenDocumentReviewForm).(*documentReviewFormModel)
+	return f
+}
+
 // statusPicker is the open status picker, failing the test if none is.
 func statusPicker(t *testing.T, app *App) *applicationStatusModel {
 	t.Helper()

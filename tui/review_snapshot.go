@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"slices"
+
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/tui/message"
@@ -14,6 +16,23 @@ var documentTypeSnapshots = map[document.Type]message.DocumentType{
 var outcomeSnapshots = map[document.Outcome]message.ReviewOutcome{
 	document.Passed:  message.ReviewPassed,
 	document.Flagged: message.ReviewFlagged,
+}
+
+// withReview is reviews with r in place of any earlier review of its
+// document.
+func withReview(reviews []message.Review, r message.Review) []message.Review {
+	kept := slices.DeleteFunc(slices.Clone(reviews), func(old message.Review) bool { return old.DocumentType == r.DocumentType })
+	return append(kept, r)
+}
+
+// documentTypeOf is the document type a snapshot names.
+func documentTypeOf(s message.DocumentType) document.Type {
+	for documentType, snapshot := range documentTypeSnapshots {
+		if snapshot == s {
+			return documentType
+		}
+	}
+	return 0
 }
 
 func reviewSnapshot(r document.Review) message.Review {
@@ -32,12 +51,7 @@ func reviewSnapshot(r document.Review) message.Review {
 func reviewsOf(list message.ReviewList) map[document.Type]document.Review {
 	reviews := make(map[document.Type]document.Review, len(list.Reviews))
 	for _, s := range list.Reviews {
-		r := document.Review{ID: s.ID, ApplicationID: s.ApplicationID, Notes: s.Notes, CreatedAt: s.CreatedAt}
-		for documentType, snapshot := range documentTypeSnapshots {
-			if snapshot == s.DocumentType {
-				r.DocumentType = documentType
-			}
-		}
+		r := document.Review{ID: s.ID, ApplicationID: s.ApplicationID, DocumentType: documentTypeOf(s.DocumentType), Notes: s.Notes, CreatedAt: s.CreatedAt}
 		for outcome, snapshot := range outcomeSnapshots {
 			if snapshot == s.Outcome {
 				r.Outcome = outcome
