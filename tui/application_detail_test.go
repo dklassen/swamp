@@ -81,6 +81,27 @@ func TestApplicationDetailModel_P_PushesItsPostingsDetailWithTheApplication(t *t
 	}
 }
 
+func TestApplicationDetailModel_D_PushesTheDeleteConfirmationOnWhatItShows(t *testing.T) {
+	t.Parallel()
+
+	d := testApplicationDetail()
+	m := applicationDetailOn(documents.NewStore(t.TempDir()), d)
+
+	got := pressApplicationDetail(t, m, runeKey('D'))
+	if len(got) != 1 {
+		t.Fatalf("D sent %#v, want one Nav", got)
+	}
+	nav, ok := got[0].(message.Event[message.Nav[message.ApplicationDetail]])
+	if !ok {
+		t.Fatalf("D sent %#v, want a Nav to the delete confirmation", got[0])
+	}
+	assertEventFrom(t, nav.Meta, m.src())
+	want := message.Nav[message.ApplicationDetail]{Op: message.NavPush, Screen: message.ScreenApplicationDelete, Value: d}
+	if diff := cmp.Diff(want, nav.Payload); diff != "" {
+		t.Errorf("Nav (-want +got):\n%s", diff)
+	}
+}
+
 // The screens App still opens are asked for with the application as it
 // shows.
 func TestApplicationDetailModel_AppsScreenKeys_AskForThemOnTheApplication(t *testing.T) {
@@ -92,10 +113,6 @@ func TestApplicationDetailModel_AppsScreenKeys_AskForThemOnTheApplication(t *tes
 	}{
 		{key: 'S', want: func(msg tea.Msg) bool {
 			got, ok := msg.(enterApplicationSubmitMsg)
-			return ok && got.application.ID == 1
-		}},
-		{key: 'D', want: func(msg tea.Msg) bool {
-			got, ok := msg.(enterApplicationDeleteMsg)
 			return ok && got.application.ID == 1
 		}},
 		{key: 'f', want: func(msg tea.Msg) bool { got, ok := msg.(enterApplicationFormMsg); return ok && got.postingID == 5 }},
@@ -399,4 +416,81 @@ func notifiesIn(msgs []tea.Msg, status string) bool {
 func TestApplicationDetailModel_Handlers_FailOnTheWrongMessage(t *testing.T) {
 	t.Parallel()
 	assertHandlersFailOnWrongMessage(t, applicationDetailOn(documents.NewStore(t.TempDir()), testApplicationDetail()))
+}
+
+// Deleted from the confirmation over it, the detail has nothing left to
+// show: it leaves once it's back on top, without a read that would say the
+// application was deleted elsewhere.
+func TestApplicationDetailModel_DeletedWhileCovered_PopsOnComingBackWithoutReading(t *testing.T) {
+	t.Parallel()
+
+	m, r, s := applicationDetailWith(t)
+	confirmation := message.Source{Instance: message.NewScreenInstance()}
+	r.Dispatch(focusOn(confirmation.Instance))
+	deleted, err := s.Applications.Delete(context.Background(), m.detail.Application.ID)
+	if err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if got := runCmd(t, r.Dispatch(applicationWritten(confirmation, m.detail.Application.ID, message.OpDeleted, deleted, nil))); got != nil {
+		t.Errorf("the delete sent %#v while covered, want nothing until it's back on top", got)
+	}
+
+	got := runCmd(t, r.Dispatch(focusOn(m.Instance())))
+
+	if len(got) != 1 || !pops(got[0], m.Instance()) {
+		t.Errorf("coming back on top sent %#v, want only a pop of the detail", got)
+	}
+}
+
+func TestApplicationDetailModel_DeletedWhileOnTop_PopsAndSaysSo(t *testing.T) {
+	t.Parallel()
+
+	m := applicationDetailOn(documents.NewStore(t.TempDir()), testApplicationDetail())
+	r := model.NewMsgRouter()
+	if err := r.Register(m); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	r.Dispatch(focusOn(m.Instance()))
+
+	got := runCmd(t, r.Dispatch(message.Deleted(message.Source{Instance: message.NewScreenInstance()}, 1, time.Now().UTC(), testApplicationDetail().Application)))
+
+	if !popsIn(got, m.Instance()) {
+		t.Errorf("sent %#v, want a pop of the detail", got)
+	}
+	if !notifiesIn(got, "The application you were viewing was deleted elsewhere") {
+		t.Errorf("sent %#v, want a status saying it was deleted elsewhere", got)
+	}
+}
+
+// Once its application is deleted, a load the change log asks for or a
+// read already on its way doesn't say it was deleted elsewhere over the
+// confirmation's word.
+func TestApplicationDetailModel_Deleted_IgnoresLoadsAndItsLateRead(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		msg  func(m *applicationDetailModel) tea.Msg
+	}{
+		{name: "a load request", msg: func(*applicationDetailModel) tea.Msg {
+			return message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.ApplicationDetail]{})
+		}},
+		{name: "its read, finding nothing", msg: func(m *applicationDetailModel) tea.Msg {
+			return message.New(m.src(), message.Subject{Type: message.TypeApplication, ID: 1}, message.OpNone, time.Now().UTC(), model.ErrorOf(store.ErrNotFound))
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := applicationDetailOn(documents.NewStore(t.TempDir()), testApplicationDetail())
+			r := model.NewMsgRouter()
+			if err := r.Register(m); err != nil {
+				t.Fatalf("Register: %v", err)
+			}
+			r.Dispatch(message.Deleted(message.Source{Instance: message.NewScreenInstance()}, 1, time.Now().UTC(), testApplicationDetail().Application))
+
+			if got := runCmd(t, r.Dispatch(tt.msg(m))); got != nil {
+				t.Errorf("sent %#v, want nothing", got)
+			}
+		})
+	}
 }

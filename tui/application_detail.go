@@ -27,6 +27,9 @@ type applicationDetailModel struct {
 	documents       *documents.Store
 
 	detail message.ApplicationDetail
+	// deleted is set once its application is, so it leaves rather than
+	// reading what's gone.
+	deleted bool
 
 	focused  bool
 	instance message.ScreenInstance
@@ -68,6 +71,9 @@ func (m *applicationDetailModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m
 func (m *applicationDetailModel) src() message.Source { return message.Source{Instance: m.instance} }
 
 func (m *applicationDetailModel) load() tea.Cmd {
+	if m.deleted {
+		return nil
+	}
 	return loadApplicationDetail(m.applications, m.postings, m.companies, m.documentService, m.documents, m.src(), m.detail.Application.ID)
 }
 
@@ -78,9 +84,13 @@ func (m *applicationDetailModel) detailRead(e message.Event[message.Read[message
 
 // readFailed leaves an application that's gone, deleted elsewhere.
 func (m *applicationDetailModel) readFailed(e message.Event[message.Error]) tea.Cmd {
-	if e.Payload.Code != message.ErrNotFound {
+	if e.Payload.Code != message.ErrNotFound || m.deleted {
 		return nil
 	}
+	return m.goneElsewhere()
+}
+
+func (m *applicationDetailModel) goneElsewhere() tea.Cmd {
 	return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), "The application you were viewing was deleted elsewhere"))
 }
 
@@ -89,10 +99,17 @@ func (m *applicationDetailModel) loadRequested(message.Event[message.Load[messag
 }
 
 // applicationChanged takes a write to its application, whoever made it. A
-// delete is left to whoever leaves the detail for it.
+// delete closes it once it's on top, since the confirmation over it closes
+// first.
 func (m *applicationDetailModel) applicationChanged(e message.Event[message.Changed[message.Application]]) tea.Cmd {
-	if e.Meta.Op == message.OpUpdated {
+	switch e.Meta.Op {
+	case message.OpUpdated:
 		m.detail.Application = e.Payload.After
+	case message.OpDeleted:
+		m.deleted = true
+		if m.focused {
+			return m.goneElsewhere()
+		}
 	}
 	return nil
 }
@@ -107,7 +124,10 @@ func (m *applicationDetailModel) documentEdited(message.Event[message.Ran[messag
 func (m *applicationDetailModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
 	gained := !m.focused && e.Payload.Value.Focused == m.instance
 	m.focused = e.Payload.Value.Focused == m.instance
-	if gained {
+	switch {
+	case gained && m.deleted:
+		return message.Pop(m.src())
+	case gained:
 		return m.load()
 	}
 	return nil
@@ -127,7 +147,7 @@ func (m *applicationDetailModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	case "f":
 		return ask(enterApplicationFormMsg{postingID: m.detail.Posting.ID})
 	case "D":
-		return ask(enterApplicationDeleteMsg{application: m.active()})
+		return message.Push(m.src(), message.ScreenApplicationDelete, message.Subject{Type: message.TypeApplication, ID: m.detail.Application.ID}, m.detail)
 	}
 	// Each document type's key edits it, and the uppercase key reviews it.
 	for _, documentType := range document.Types() {

@@ -104,7 +104,6 @@ type App struct {
 	// in tests so they don't launch one.
 	openURL           func(src message.Source, about message.Subject, url string) tea.Cmd
 	applicationSubmit applicationSubmitModel
-	applicationDelete applicationDeleteModel
 	// documents resolves an application's document paths, hiding the
 	// path convention and base directory the same way store hides
 	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
@@ -226,6 +225,7 @@ var stackedAs = map[message.Screen]screen{
 	message.ScreenApplicationStatus: screenApplicationStatusSelect,
 	message.ScreenApplicationNotes:  screenApplicationNotesEdit,
 	message.ScreenApplicationDetail: screenApplicationDetail,
+	message.ScreenApplicationDelete: screenApplicationDelete,
 }
 
 // push opens s over the screen up: routes, then Init, so nothing Init
@@ -401,10 +401,15 @@ func (a *App) navApplicationDetail(e message.Event[message.Nav[message.Applicati
 	if !a.onTop(e.Meta) {
 		return nil
 	}
-	if e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenApplicationDetail {
-		// It reads in Init, so it's as up to date as the change log read so far.
-		a.seen[screenApplicationDetail] = a.latestSeen
-		return a.push(e.Payload.Screen, newApplicationDetailModel(a.applicationService, a.postingService, a.companyService, a.documentService, a.documents, e.Payload.Value))
+	if e.Payload.Op == message.NavPush {
+		switch e.Payload.Screen {
+		case message.ScreenApplicationDetail:
+			// It reads in Init, so it's as up to date as the change log read so far.
+			a.seen[screenApplicationDetail] = a.latestSeen
+			return a.push(e.Payload.Screen, newApplicationDetailModel(a.applicationService, a.postingService, a.companyService, a.documentService, a.documents, e.Payload.Value))
+		case message.ScreenApplicationDelete:
+			return a.push(e.Payload.Screen, newApplicationDeleteModel(a.applicationService, e.Payload.Value, a.sized.Width))
+		}
 	}
 	return a.unknownNav(e)
 }
@@ -958,7 +963,6 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.navApplicationDetail),
 		model.Always(a.hideArchivedChanged),
 		model.Always(a.applicationChanged),
-		model.Always(a.applicationWriteFailed),
 		model.Always(a.browserOpened),
 		model.Always(a.browserFailed),
 	}
@@ -991,24 +995,11 @@ func (a *App) applicationChanged(e message.Event[message.Changed[message.Applica
 		// Its asker's write went through, so its earlier error is stale.
 		a.err = nil
 	}
-	if e.Meta.Op == message.OpDeleted {
-		return a.applicationDeleted(e)
-	}
 	// Nothing blocks esc while the save is in flight, so the user may
 	// already have left; only the asker still on screen moves on.
 	if a.currentScreen == screenApplicationSubmit && a.applicationSubmit.instance == from {
 		a.status = "Marked " + a.applicationSubmit.application.Posting.Title + " submitted"
 		return a.backHome()
-	}
-	return nil
-}
-
-func (a *App) applicationDeleted(e message.Event[message.Changed[message.Application]]) tea.Cmd {
-	if from := e.Meta.Source.Instance; from != 0 && a.applicationDelete.instance == from {
-		a.status = "Deleted the application for " + a.applicationDelete.application.Posting.Title
-		if a.currentScreen == screenApplicationDelete {
-			return a.backHome()
-		}
 	}
 	return nil
 }
@@ -1020,16 +1011,6 @@ func (a *App) backHome() tea.Cmd {
 		return a.pop()
 	}
 	a.currentScreen = screenActiveApplications
-	return nil
-}
-
-// applicationWriteFailed puts the screen that asked back as it was before
-// it asked; the banner shows why.
-func (a *App) applicationWriteFailed(e message.Event[message.Error]) tea.Cmd {
-	if a.currentScreen == screenApplicationDelete && a.applicationDelete.instance == e.Meta.Source.Instance {
-		// Rather than leave a confirmation whose y is already spent.
-		a.currentScreen = a.applicationDelete.from
-	}
 	return nil
 }
 
@@ -1105,10 +1086,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.currentScreen, a.err = screenApplicationExport, nil
 			a.applicationExport = newApplicationExportModel(a.documentService, a.documents, msg.application, a.exportDir, a.width)
 		}
-	case enterApplicationDeleteMsg:
-		if a.currentScreen == screenActiveApplications || a.onApplicationDetail(msg.application.ID) {
-			return a, reloadApplicationForDelete(a.applicationService, msg.application, a.currentScreen)
-		}
 	case enterApplicationSubmitMsg:
 		if a.onApplicationDetail(msg.application.ID) {
 			a.err = nil
@@ -1132,14 +1109,6 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return a, a.handleTick()
 	case changesMsg:
 		return a, a.handleChanges(msg)
-	case applicationReloadedForDeleteMsg:
-		a.err = msg.err
-		// Same guard as applicationFormLoadedMsg: only if the user is still
-		// where delete was pressed, and on detail, on that application.
-		if msg.err == nil && a.currentScreen == msg.from && (msg.from != screenApplicationDetail || a.onApplicationDetail(msg.application.ID)) {
-			a.applicationDelete = newApplicationDeleteModel(msg.application, msg.from)
-			a.currentScreen = screenApplicationDelete
-		}
 	case applicationFormLoadedMsg:
 		a.err = msg.err
 		// Open the form only if the user is still on the application it
@@ -1271,15 +1240,6 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			return a, updateApplicationStatus(a.applicationService, message.Source{Instance: a.applicationSubmit.instance}, v.applicationID, application.Submitted)
 		}
 		return a, cmd
-	case screenApplicationDelete:
-		cmd, intent := a.applicationDelete.Update(msg)
-		switch v := intent.(type) {
-		case cancelApplicationDeleteMsg:
-			a.currentScreen = a.applicationDelete.from
-		case confirmApplicationDeleteMsg:
-			return a, deleteApplication(a.applicationService, message.Source{Instance: a.applicationDelete.instance}, v.application.ID)
-		}
-		return a, cmd
 	case screenApplicationForm:
 		cmd, intent := a.applicationForm.Update(msg)
 		if _, ok := intent.(cancelApplicationFormMsg); ok {
@@ -1338,10 +1298,8 @@ func (a *App) screenRows() int {
 func (a *App) View() tea.View {
 	body := a.body(a.beneath())
 	switch a.currentScreen {
-	case screenCompanyDelete:
+	case screenCompanyDelete, screenApplicationDelete:
 		body = overlay(body, a.stack.top().View().Content, a.width)
-	case screenApplicationDelete:
-		body = overlay(body, a.applicationDelete.View(a.width), a.width)
 	case screenApplicationForm:
 		if a.applicationForm.confirmingDiscard {
 			body = overlay(body, a.applicationForm.discardBox(a.width), a.width)
@@ -1359,7 +1317,8 @@ func (a *App) beneath() screen {
 	case screenCompanyDelete:
 		return screenCompanyList
 	case screenApplicationDelete:
-		return a.applicationDelete.from
+		under, _ := a.stack.under(message.ScreenApplicationDelete)
+		return under
 	}
 	return a.currentScreen
 }
