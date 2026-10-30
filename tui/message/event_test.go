@@ -310,6 +310,15 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "export ran", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Ran[message.ExportReport]{Value: message.ExportReport{
 			Dir: "/home/me/Desktop", Paths: []string{"/home/me/Desktop/acme-engineer-resume.pdf"}, Skipped: []message.DocumentType{message.DocumentCoverLetter},
 		}}))},
+		{name: "application form nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.Application]{Op: message.NavPush, Screen: message.ScreenApplicationForm,
+			Value: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted}}))},
+		{name: "application form read", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpNone, at, message.Read[message.ApplicationForm]{Value: message.ApplicationForm{
+			Documents: map[message.DocumentType]message.FormRequirement{message.DocumentResume: message.FormRequired, message.DocumentCoverLetter: message.FormOptional},
+			Questions: []message.FormQuestion{{Label: "Why us?", Required: true, Type: "single_select", Options: []string{"Yes", "No"}}},
+		}}))},
+		{name: "application form ran", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpNone, at, message.Ran[message.ApplicationForm]{Value: message.ApplicationForm{
+			Questions: []message.FormQuestion{{Label: "Why us?", Type: "text"}},
+		}}))},
 		{name: "edit document ran", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Ran[message.EditDocument]{Value: message.EditDocument{DocumentType: message.DocumentCoverLetter}}))},
 		{name: "filter options read", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Read[message.FilterOptions]{Value: message.FilterOptions{
 			Departments: []string{"Platform", "Sales"}, Locations: []string{"Remote"},

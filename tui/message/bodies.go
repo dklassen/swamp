@@ -364,3 +364,23 @@ type ExportReport struct {
 }
 
 func (ExportReport) Type() Type { return TypeExportReport }
+
+// ApplicationForm is what the event's Subject, a posting, asks for when
+// you apply: each document it asks for, and its own questions. A document
+// it doesn't ask for isn't in Documents.
+type ApplicationForm struct {
+	Documents map[DocumentType]FormRequirement `json:"documents,omitempty"`
+	Questions []FormQuestion                   `json:"questions,omitempty"`
+}
+
+func (ApplicationForm) Type() Type { return TypeApplicationForm }
+
+// FormQuestion is one question on an application form. Type is the
+// board's field type, such as text or single_select, and Options a
+// select's choices.
+type FormQuestion struct {
+	Label    string   `json:"label"`
+	Required bool     `json:"required,omitzero"`
+	Type     string   `json:"type,omitempty"`
+	Options  []string `json:"options,omitempty"`
+}
