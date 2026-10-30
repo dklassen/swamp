@@ -14,8 +14,8 @@ Application detail opens the form with `enterApplicationFormMsg`; `App` loads it
 
 ## Change
 
-- `Nav[Application]` pushes it; it loads in `Init` as `Read[ApplicationForm]`.
-- It saves with `PostingService.SaveForm` and gets `Ran[ApplicationForm]`, heard only by itself (open question 1's default), and pops.
+- `Nav[Application]` pushes it; it loads in `Init` as `Read[ApplicationForm]`, its Subject the posting, since application detail doesn't hold the form. Keys but esc wait for the read; a failed read closes it, leaving the error.
+- It saves with `PostingService.SaveForm` and gets `Ran[ApplicationForm]`, heard only by itself (open question 1's default), and pops. A failed save keeps it open to try again.
 - Remove `enterApplicationFormMsg`, `cancelApplicationFormMsg`, `applicationFormLoadedMsg` and `applicationFormSavedMsg`.
 
 ## Acceptance criteria
