@@ -182,12 +182,6 @@ func (m *activeApplicationListModel) focusChanged(e message.Event[message.Signal
 	return nil
 }
 
-// enterApplicationExportMsg asks App to open the export screen, where the
-// user picks the folder for this application's PDFs.
-type enterApplicationExportMsg struct {
-	application posting.ActiveApplication
-}
-
 // ask sends msg to App, for the screens App still opens itself.
 func ask(msg tea.Msg) tea.Cmd {
 	return func() tea.Msg { return msg }
@@ -222,7 +216,8 @@ func (m *activeApplicationListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 		}
 	case "e":
 		if onRow {
-			return ask(enterApplicationExportMsg{application: visible[m.cursor]})
+			a := visible[m.cursor]
+			return message.Push(m.src(), message.ScreenApplicationExport, message.Subject{Type: message.TypeApplication, ID: a.ID}, applicationDetailOf(a))
 		}
 	case "d":
 		if onRow {

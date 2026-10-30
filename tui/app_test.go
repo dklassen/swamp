@@ -3555,7 +3555,7 @@ func TestApp_ActiveApplications_E_EntersExportScreenPrefilledWithDefaultDir(t *t
 	if app.currentScreen != screenApplicationExport {
 		t.Fatalf("screen after 'e' = %v, want screenApplicationExport", app.currentScreen)
 	}
-	if got := app.applicationExport.textinput.Value(); got != app.exportDir {
+	if got := pushed[*applicationExportModel](t, app).textinput.Value(); got != app.exportDir {
 		t.Errorf("destination prefill = %q, want the app's default export dir %q", got, app.exportDir)
 	}
 }
@@ -3564,7 +3564,7 @@ func TestApp_ExportScreen_Esc_ReturnsToActiveApplications(t *testing.T) {
 	app := exportTestApp(t)
 
 	app = sendKeyAndApply(t, app, runeKey('e'))
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
 	if app.currentScreen != screenActiveApplications {
 		t.Fatalf("screen after cancelling export = %v, want screenActiveApplications", app.currentScreen)
@@ -3576,7 +3576,7 @@ func TestApp_Export_ReportsWhereFilesWentAndRemembersTheDirectory(t *testing.T) 
 	dest := t.TempDir()
 
 	app = sendKeyAndApply(t, app, runeKey('e'))
-	app.applicationExport.textinput.SetValue(dest)
+	pushed[*applicationExportModel](t, app).textinput.SetValue(dest)
 	app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = applyCmd(t, app, cmd)
 
@@ -3609,7 +3609,7 @@ func TestApp_Export_Failure_SurfacesErrorAndKeepsRememberedDir(t *testing.T) {
 	}
 
 	app = sendKeyAndApply(t, app, runeKey('e'))
-	app.applicationExport.textinput.SetValue(filepath.Join(blocker, "sub"))
+	pushed[*applicationExportModel](t, app).textinput.SetValue(filepath.Join(blocker, "sub"))
 	app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = applyCmd(t, app, cmd)
 

@@ -102,6 +102,27 @@ func TestApplicationDetailModel_D_PushesTheDeleteConfirmationOnWhatItShows(t *te
 	}
 }
 
+func TestApplicationDetailModel_S_PushesSubmitOnWhatItShows(t *testing.T) {
+	t.Parallel()
+
+	d := testApplicationDetail()
+	m := applicationDetailOn(documents.NewStore(t.TempDir()), d)
+
+	got := pressApplicationDetail(t, m, runeKey('S'))
+	if len(got) != 1 {
+		t.Fatalf("S sent %#v, want one Nav", got)
+	}
+	nav, ok := got[0].(message.Event[message.Nav[message.ApplicationDetail]])
+	if !ok {
+		t.Fatalf("S sent %#v, want a Nav to submit", got[0])
+	}
+	assertEventFrom(t, nav.Meta, m.src())
+	want := message.Nav[message.ApplicationDetail]{Op: message.NavPush, Screen: message.ScreenApplicationSubmit, Value: d}
+	if diff := cmp.Diff(want, nav.Payload); diff != "" {
+		t.Errorf("Nav (-want +got):\n%s", diff)
+	}
+}
+
 // The screens App still opens are asked for with the application as it
 // shows.
 func TestApplicationDetailModel_AppsScreenKeys_AskForThemOnTheApplication(t *testing.T) {
@@ -111,10 +132,6 @@ func TestApplicationDetailModel_AppsScreenKeys_AskForThemOnTheApplication(t *tes
 		key  rune
 		want func(msg tea.Msg) bool
 	}{
-		{key: 'S', want: func(msg tea.Msg) bool {
-			got, ok := msg.(enterApplicationSubmitMsg)
-			return ok && got.application.ID == 1
-		}},
 		{key: 'f', want: func(msg tea.Msg) bool { got, ok := msg.(enterApplicationFormMsg); return ok && got.postingID == 5 }},
 	}
 	for _, tt := range tests {

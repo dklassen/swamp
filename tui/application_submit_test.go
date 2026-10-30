@@ -73,6 +73,11 @@ func startSubmit(t *testing.T, app *App) *App {
 	return app
 }
 
+func submitView(t *testing.T, app *App) string {
+	t.Helper()
+	return pushed[*applicationSubmitModel](t, app).View().Content
+}
+
 func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T) {
 	t.Parallel()
 	app, target, opened := submitTestApp(t, "https://boards.example/job-1/apply", "https://boards.example/job-1")
@@ -101,11 +106,23 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 	if got.Status != application.Submitted {
 		t.Errorf("status after confirming = %s, want %s", got.Status, application.Submitted)
 	}
-	if app.currentScreen != screenActiveApplications {
-		t.Errorf("screen after confirming = %v, want the home screen", app.currentScreen)
+	if app.currentScreen != screenApplicationDetail {
+		t.Errorf("screen after confirming = %v, want back on application detail", app.currentScreen)
 	}
-	if !app.activeApplicationList.Focused() {
-		t.Error("the home screen isn't in focus after confirming, so its keys do nothing: detail is still open under it")
+	if want := "Marked Engineer submitted"; app.status != want {
+		t.Errorf("status line = %q, want %q", app.status, want)
+	}
+	label := applicationStatusLabel(application.Submitted)
+	if view := viewText(app); !strings.Contains(view, label) {
+		t.Errorf("application detail = %q, want the new status %q", view, label)
+	}
+
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
+	if app.currentScreen != screenActiveApplications {
+		t.Fatalf("screen after esc = %v, want the home screen", app.currentScreen)
+	}
+	if view := viewText(app); !strings.Contains(view, label) {
+		t.Errorf("home list = %q, want the new status %q", view, label)
 	}
 }
 
@@ -134,8 +151,8 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 	}
 }
 
-// The submit screen's y saves through the same status message, so it
-// needs the same protection.
+// A save that lands after the user left and opened submit again belongs
+// to the screen they left, so the one open now stays.
 func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
 	t.Parallel()
 	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
@@ -145,7 +162,7 @@ func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing
 	if saveCmd == nil {
 		t.Fatal("Update on y returned nil Cmd, want a command that marks the application submitted")
 	}
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc}) // back to application detail, save still in flight
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc}) // back to application detail, save still in flight
 	app, cmd := sendKey(app, runeKey('S'))
 	app = applyCmd(t, app, cmd)
 	if app.currentScreen != screenApplicationSubmit {
@@ -156,6 +173,48 @@ func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing
 
 	if app.currentScreen != screenApplicationSubmit {
 		t.Errorf("screen after the earlier instance's save result = %v, want the submit screen (the reopened one stays open)", app.currentScreen)
+	}
+}
+
+// Submit exports to wherever the last export went, so the PDFs it names
+// are where the user has been dragging them from.
+func TestSubmitFlow_ExportsToTheDirectoryJustExportedTo(t *testing.T) {
+	t.Parallel()
+	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	dest := t.TempDir()
+
+	app = sendKeyAndApply(t, app, runeKey('e'))
+	pushed[*applicationExportModel](t, app).textinput.SetValue(dest)
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
+	if app.currentScreen != screenActiveApplications {
+		t.Fatalf("screen after export = %v, want the home screen", app.currentScreen)
+	}
+	app = startSubmit(t, app)
+
+	if view := submitView(t, app); !strings.Contains(view, "Exported 2 PDFs to "+dest) {
+		t.Errorf("submit screen = %q, want its export in %s", view, dest)
+	}
+}
+
+// A failed export is shown on its step, and the screen stays: the user
+// still decides whether they submitted.
+func TestSubmitFlow_ShowsAFailedExport(t *testing.T) {
+	t.Parallel()
+	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	blocker := filepath.Join(t.TempDir(), "not-a-dir")
+	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+	app.exportDir = filepath.Join(blocker, "sub")
+
+	app = startSubmit(t, app)
+
+	view := submitView(t, app)
+	if !strings.Contains(view, "export failed") {
+		t.Errorf("submit screen = %q, want the export failure on its step", view)
+	}
+	if !strings.Contains(view, "opened https://boards.example/job-1/apply") {
+		t.Errorf("submit screen = %q, want the link still reported as opened", view)
 	}
 }
 
@@ -176,7 +235,7 @@ func TestSubmitFlow_SaysTheLinkOpened(t *testing.T) {
 
 	app = startSubmit(t, app)
 
-	if view := app.applicationSubmit.View(); !strings.Contains(view, "opened https://boards.example/job-1/apply") {
+	if view := submitView(t, app); !strings.Contains(view, "opened https://boards.example/job-1/apply") {
 		t.Errorf("View() = %q, want the link reported as opened", view)
 	}
 }
@@ -192,8 +251,35 @@ func TestSubmitFlow_ReportsALinkThatFailedToOpen(t *testing.T) {
 
 	app = startSubmit(t, app)
 
-	view := app.applicationSubmit.View()
+	view := submitView(t, app)
 	if !strings.Contains(view, "couldn't open https://boards.example/job-1/apply") || strings.Contains(view, "opened https://") {
 		t.Errorf("View() = %q, want the link reported as not opened", view)
+	}
+	if strings.Contains(view, "export failed") {
+		t.Errorf("View() = %q, want the export unaffected by the browser", view)
+	}
+}
+
+// A save that fails takes back its y, so the next one tries again rather
+// than the screen saying it's marking submitted for good.
+func TestSubmitFlow_AFailedSaveLetsYTryAgain(t *testing.T) {
+	t.Parallel()
+	app, target, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	app = startSubmit(t, app)
+	submit := pushed[*applicationSubmitModel](t, app)
+	app, _ = sendKey(app, runeKey('y'))
+
+	app = sendKeyAndApply(t, app, applicationWritten(message.Source{Instance: submit.Instance()}, target.ID, message.OpUpdated, nil, errors.New("disk on fire")))
+
+	if view := submitView(t, app); strings.Contains(view, "Marking submitted") {
+		t.Errorf("submit screen = %q, want y offered again after the failure", view)
+	}
+	app = sendKeyAndApply(t, app, runeKey('y'))
+	got, err := storeOf(app).Applications.Get(context.Background(), target.ID)
+	if err != nil {
+		t.Fatalf("application.GetByID: %v", err)
+	}
+	if got.Status != application.Submitted {
+		t.Errorf("status after the second y = %s, want %s", got.Status, application.Submitted)
 	}
 }

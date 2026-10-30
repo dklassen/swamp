@@ -91,6 +91,12 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 				}
 			}
 			pushApplicationDetail(t, app, view)
+			if tt.screen == screenApplicationSubmit {
+				s := newApplicationSubmitModel(nil, nil, nil, nil, applicationDetailOf(view), "")
+				if err := app.stack.push(message.ScreenApplicationSubmit, s, screenApplicationDetail); err != nil {
+					t.Fatalf("push: %v", err)
+				}
+			}
 			app.currentScreen = tt.screen
 
 			if got := strings.TrimSpace(strings.Split(ansi.Strip(app.header()), "\n")[0]); got != tt.want {
