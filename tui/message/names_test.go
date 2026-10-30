@@ -25,6 +25,7 @@ func TestEnums_FailOnAValueOrNameWithoutAnEntry(t *testing.T) {
 		{name: "application status", invalid: message.ApplicationStatus(0), decode: decodeInto[message.ApplicationStatus]},
 		{name: "document type", invalid: message.DocumentType(0), decode: decodeInto[message.DocumentType]},
 		{name: "posting order", invalid: message.PostingOrder(0), decode: decodeInto[message.PostingOrder]},
+		{name: "form requirement", invalid: message.FormRequirement(0), decode: decodeInto[message.FormRequirement]},
 		{name: "review outcome", invalid: message.ReviewOutcome(0), decode: decodeInto[message.ReviewOutcome]},
 	}
 	for _, tt := range tests {

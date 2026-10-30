@@ -54,3 +54,12 @@ func notesEditor(t *testing.T, app *App) *applicationNotesModel {
 	}
 	return m
 }
+
+func applicationForm(t *testing.T, app *App) *applicationFormModel {
+	t.Helper()
+	m, ok := app.stack.open(message.ScreenApplicationForm).(*applicationFormModel)
+	if !ok {
+		t.Fatal("no application form is open")
+	}
+	return m
+}

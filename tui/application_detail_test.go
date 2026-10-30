@@ -123,26 +123,24 @@ func TestApplicationDetailModel_S_PushesSubmitOnWhatItShows(t *testing.T) {
 	}
 }
 
-// The screens App still opens are asked for with the application as it
-// shows.
-func TestApplicationDetailModel_AppsScreenKeys_AskForThemOnTheApplication(t *testing.T) {
+func TestApplicationDetailModel_F_PushesTheFormOnTheApplication(t *testing.T) {
 	t.Parallel()
 
-	tests := []struct {
-		key  rune
-		want func(msg tea.Msg) bool
-	}{
-		{key: 'f', want: func(msg tea.Msg) bool { got, ok := msg.(enterApplicationFormMsg); return ok && got.postingID == 5 }},
-	}
-	for _, tt := range tests {
-		t.Run(string(tt.key), func(t *testing.T) {
-			t.Parallel()
-			m := applicationDetailOn(documents.NewStore(t.TempDir()), testApplicationDetail())
+	d := testApplicationDetail()
+	m := applicationDetailOn(documents.NewStore(t.TempDir()), d)
 
-			if got := pressApplicationDetail(t, m, runeKey(tt.key)); len(got) != 1 || !tt.want(got[0]) {
-				t.Errorf("%c sent %#v, want App asked for its screen on application 1", tt.key, got)
-			}
-		})
+	got := pressApplicationDetail(t, m, runeKey('f'))
+	if len(got) != 1 {
+		t.Fatalf("f sent %#v, want one Nav", got)
+	}
+	nav, ok := got[0].(message.Event[message.Nav[message.Application]])
+	if !ok {
+		t.Fatalf("f sent %#v, want a Nav to the application form", got[0])
+	}
+	assertEventFrom(t, nav.Meta, m.src())
+	want := message.Nav[message.Application]{Op: message.NavPush, Screen: message.ScreenApplicationForm, Value: d.Application}
+	if diff := cmp.Diff(want, nav.Payload); diff != "" {
+		t.Errorf("Nav (-want +got):\n%s", diff)
 	}
 }
 

@@ -3,10 +3,10 @@ package message
 import "fmt"
 
 // Kind, Type, Op, NavOp, ErrorCode, Screen, ListingStatus,
-// ApplicationStatus, DocumentType and ReviewOutcome are decided on, so Go
-// code compares constants; each encodes as its name from one table, so
-// reordering the constants can't change what a stored event means. A zero
-// value is in its table only where "none" is legal.
+// ApplicationStatus, DocumentType, FormRequirement and ReviewOutcome are
+// decided on, so Go code compares constants; each encodes as its name from
+// one table, so reordering the constants can't change what a stored event
+// means. A zero value is in its table only where "none" is legal.
 
 type Kind int
 
@@ -76,6 +76,7 @@ const (
 	TypeEditDocument
 	TypeDocumentReview
 	TypeExportReport
+	TypeApplicationForm
 )
 
 var typeNames = [...]string{
@@ -111,6 +112,7 @@ var typeNames = [...]string{
 	TypeEditDocument:       "edit_document",
 	TypeDocumentReview:     "document_review",
 	TypeExportReport:       "export_report",
+	TypeApplicationForm:    "application_form",
 }
 
 func (t Type) String() string                { return nameOf(t, typeNames[:]) }
@@ -202,6 +204,7 @@ const (
 	ScreenDocumentReviewForm
 	ScreenApplicationExport
 	ScreenApplicationSubmit
+	ScreenApplicationForm
 )
 
 var screenNames = [...]string{
@@ -220,6 +223,7 @@ var screenNames = [...]string{
 	ScreenDocumentReviewForm:   "document_review_form",
 	ScreenApplicationExport:    "application_export",
 	ScreenApplicationSubmit:    "application_submit",
+	ScreenApplicationForm:      "application_form",
 }
 
 func (s Screen) String() string                { return nameOf(s, screenNames[:]) }
@@ -300,6 +304,28 @@ func (d DocumentType) String() string               { return nameOf(d, documentT
 func (d DocumentType) MarshalText() ([]byte, error) { return marshalName(d, documentTypeNames[:]) }
 func (d *DocumentType) UnmarshalText(b []byte) error {
 	return unmarshalName(d, b, documentTypeNames[:])
+}
+
+// FormRequirement is whether an application form asks for a document.
+type FormRequirement int
+
+const (
+	_ FormRequirement = iota
+	FormOptional
+	FormRequired
+)
+
+var formRequirementNames = [...]string{
+	FormOptional: "optional",
+	FormRequired: "required",
+}
+
+func (r FormRequirement) String() string { return nameOf(r, formRequirementNames[:]) }
+func (r FormRequirement) MarshalText() ([]byte, error) {
+	return marshalName(r, formRequirementNames[:])
+}
+func (r *FormRequirement) UnmarshalText(b []byte) error {
+	return unmarshalName(r, b, formRequirementNames[:])
 }
 
 // ReviewOutcome is what a review of a document found.

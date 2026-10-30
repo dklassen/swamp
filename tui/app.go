@@ -80,7 +80,6 @@ type App struct {
 	// syncing runs sync all and refreshes, and draws their progress in the
 	// banner.
 	syncing               *model.Syncing
-	applicationForm       applicationFormModel
 	activeApplicationList *activeApplicationListModel
 	// exportDir is the destination the export screen prefills: the last
 	// directory successfully exported to this session, falling back to
@@ -217,6 +216,7 @@ var stackedAs = map[message.Screen]screen{
 	message.ScreenDocumentReviewForm:   screenDocumentReviewForm,
 	message.ScreenApplicationExport:    screenApplicationExport,
 	message.ScreenApplicationSubmit:    screenApplicationSubmit,
+	message.ScreenApplicationForm:      screenApplicationForm,
 }
 
 // push opens s over the screen up: routes, then Init, so nothing Init
@@ -378,6 +378,8 @@ func (a *App) navApplication(e message.Event[message.Nav[message.Application]]) 
 			return a.push(e.Payload.Screen, newApplicationNotesModel(a.applicationService, e.Payload.Value, a.sized))
 		case message.ScreenDocumentReviewSelect:
 			return a.push(e.Payload.Screen, newDocumentReviewSelectModel(a.documents, e.Payload.Value))
+		case message.ScreenApplicationForm:
+			return a.push(e.Payload.Screen, newApplicationFormModel(a.postingService, e.Payload.Value, a.sized))
 		}
 	}
 	return a.unknownNav(e)
@@ -430,8 +432,7 @@ func (a *App) navApplicationDetail(e message.Event[message.Nav[message.Applicati
 	return a.unknownNav(e)
 }
 
-// applicationDetail is the open application detail, or nil, for the
-// screens over it that are still App's.
+// applicationDetail is the open application detail, or nil.
 func (a *App) applicationDetail() *applicationDetailModel {
 	d, _ := a.stack.open(message.ScreenApplicationDetail).(*applicationDetailModel)
 	return d
@@ -1014,51 +1015,15 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = tea.Batch(cmd, a.router.Dispatch(message.New(message.Source{Process: a.origin}, message.Subject{}, message.OpNone, time.Now().UTC(),
 			message.Signal[message.ContentSize]{Value: size})))
 	}
-
-	// The banner above the screen can appear, change, or clear on any
-	// message -- a sync finishing, a failed browser open -- including
-	// while a screen is up, so refit the screens that keep their size in
-	// state to the rows left under the banner every time, rather than only
-	// when they're built. The list screens are sized as they render, so
-	// they need nothing here.
-	if a.currentScreen == screenApplicationForm {
-		a.applicationForm.setHeight(a.screenRows())
-	}
 	return model, cmd
 }
 
 func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	// Application detail asks for the application form, which App still
-	// opens, unless the user has left while the request was on its way.
-	case enterApplicationFormMsg:
-		if d := a.applicationDetail(); d != nil && a.currentScreen == screenApplicationDetail && d.detail.Posting.ID == msg.postingID {
-			return a, loadApplicationForm(a.postingService, msg.postingID)
-		}
 	case changeTickMsg:
 		return a, a.handleTick()
 	case changesMsg:
 		return a, a.handleChanges(msg)
-	case applicationFormLoadedMsg:
-		a.err = msg.err
-		// Open the form only if the user is still on the application it
-		// was loaded for.
-		if d := a.applicationDetail(); msg.err == nil && a.currentScreen == screenApplicationDetail && d != nil && d.detail.Posting.ID == msg.postingID {
-			a.currentScreen = screenApplicationForm
-			a.applicationForm = newApplicationFormModel(a.postingService, msg.postingID, msg.form, a.width, a.screenRows())
-		}
-	case applicationFormSavedMsg:
-		a.err = msg.err
-		if msg.err != nil && a.currentScreen == screenApplicationForm {
-			a.applicationForm.saving = false
-		}
-		if msg.err == nil {
-			a.status = "Application form saved"
-			// Same late-save guard as a notes save.
-			if a.currentScreen == screenApplicationForm {
-				a.currentScreen = screenApplicationDetail
-			}
-		}
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height
@@ -1076,20 +1041,8 @@ func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			a.err = nil
 		}
 		return model, cmd
-	case tea.PasteMsg:
-		return a, a.paste(msg)
 	}
 	return a, nil
-}
-
-// paste gives pasted text to the screen's text field, if it has one. A
-// paste is never a key, so a pasted "q" can't quit.
-func (a *App) paste(msg tea.PasteMsg) tea.Cmd {
-	switch a.currentScreen {
-	case screenApplicationForm:
-		return a.applicationForm.paste(msg)
-	}
-	return nil
 }
 
 func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
@@ -1107,14 +1060,6 @@ func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			a.currentScreen = screenActiveApplications
 			return a, nil
 		}
-	}
-	switch a.currentScreen {
-	case screenApplicationForm:
-		cmd, intent := a.applicationForm.Update(msg)
-		if _, ok := intent.(cancelApplicationFormMsg); ok {
-			a.currentScreen = screenApplicationDetail
-		}
-		return a, cmd
 	}
 	return a, nil
 }
@@ -1150,10 +1095,6 @@ func (a *App) View() tea.View {
 	switch a.currentScreen {
 	case screenCompanyDelete, screenApplicationDelete:
 		body = overlay(body, a.stack.top().View().Content, a.width)
-	case screenApplicationForm:
-		if a.applicationForm.confirmingDiscard {
-			body = overlay(body, a.applicationForm.discardBox(a.width), a.width)
-		}
 	}
 	v := tea.NewView(a.header() + body + a.banner())
 	v.AltScreen = true
@@ -1190,7 +1131,7 @@ func (a *App) body(s screen) string {
 	case screenCompanyForm:
 		b.WriteString(a.stack.top().View().Content)
 	case screenCompanyEdit, screenFilterSelect, screenApplicationStatusSelect, screenApplicationNotesEdit,
-		screenDocumentReviewSelect, screenDocumentReviewForm, screenApplicationExport, screenApplicationSubmit:
+		screenDocumentReviewSelect, screenDocumentReviewForm, screenApplicationExport, screenApplicationSubmit, screenApplicationForm:
 		b.WriteString(a.stack.top().View().Content)
 	case screenPostingList:
 		if l := a.postingList(); l != nil {
@@ -1200,8 +1141,6 @@ func (a *App) body(s screen) string {
 		if d := a.postingDetail(); d != nil {
 			b.WriteString(d.View().Content)
 		}
-	case screenApplicationForm:
-		b.WriteString(a.applicationForm.View())
 	}
 	return b.String()
 }
