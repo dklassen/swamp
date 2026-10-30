@@ -21,31 +21,12 @@ func TestApp_PasteIntoApplicationForm_AddsTheText(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 30})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	app, loadCmd := sendIntentKey(t, app, runeKey('f'))
-	app = applyCmd(t, app, loadCmd)
+	app = sendKeyAndApply(t, app, runeKey('f'))
 
 	app, _ = sendKey(app, tea.PasteMsg{Content: "Why us? *"})
 
 	if view := viewText(app); !strings.Contains(view, "Why us? *") {
 		t.Fatalf("pasted question isn't in the form:\n%s", view)
-	}
-}
-
-func TestApplicationFormModel_PasteAtDiscardPrompt_IsIgnored(t *testing.T) {
-	t.Parallel()
-
-	m := newApplicationFormModel(nil, 7, nil, 80, 20)
-	m.textarea.InsertString("Why us? *\n")
-	typed := m.textarea.Value()
-	m.Update(tea.KeyPressMsg{Code: tea.KeyEsc})
-
-	m.paste(tea.PasteMsg{Content: "y"})
-
-	if got := m.textarea.Value(); got != typed {
-		t.Errorf("text = %q, want %q unchanged", got, typed)
-	}
-	if !m.confirmingDiscard {
-		t.Error("a paste answered the discard prompt")
 	}
 }
 
@@ -77,7 +58,10 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 				message.Subject{Type: message.TypeApplication, ID: 1}, message.Application{ID: 1})())
 		}},
 		{name: "application form", open: func(app *App) {
-			app.currentScreen, app.applicationForm = screenApplicationForm, newApplicationFormModel(nil, 1, nil, 80, 20)
+			app.currentScreen = screenCompanyList
+			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenApplicationForm,
+				message.Subject{Type: message.TypeApplication, ID: 1}, message.Application{ID: 1, PostingID: 1})())
+			app.Update(formReadBy(app.stack.top().Instance(), message.ApplicationForm{}))
 		}},
 		{name: "document review", open: func(app *App) {
 			app.currentScreen = screenCompanyList

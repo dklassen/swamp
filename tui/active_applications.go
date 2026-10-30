@@ -182,11 +182,6 @@ func (m *activeApplicationListModel) focusChanged(e message.Event[message.Signal
 	return nil
 }
 
-// ask sends msg to App, for the screens App still opens itself.
-func ask(msg tea.Msg) tea.Cmd {
-	return func() tea.Msg { return msg }
-}
-
 func (m *activeApplicationListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	if m.searching {
 		return m.updateSearch(msg)

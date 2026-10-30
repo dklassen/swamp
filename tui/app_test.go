@@ -4066,7 +4066,8 @@ func TestApp_BackToCompanyList_AfterArchiving_ShowsUpdatedOpenCount(t *testing.T
 // TestApp_ApplicationDetail_EnterApplicationFormByHand: 'f' on
 // application detail opens the posting's application form as text,
 // seeded with a line per document type; ctrl+s stores what was typed the
-// same way a fetched Greenhouse form is stored, and returns to detail.
+// same way a fetched Greenhouse form is stored and returns to detail, and
+// 'f' again opens on what was saved.
 func TestApp_ApplicationDetail_EnterApplicationFormByHand(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
@@ -4079,11 +4080,7 @@ func TestApp_ApplicationDetail_EnterApplicationFormByHand(t *testing.T) {
 		t.Fatalf("screen after enter = %v, want screenApplicationDetail", app.currentScreen)
 	}
 
-	app, loadCmd := sendKey(app, runeKey('f'))
-	if loadCmd == nil {
-		t.Fatal("Update on 'f' returned nil Cmd, want a command that loads the stored form")
-	}
-	app = applyCmd(t, app, loadCmd)
+	app = sendKeyAndApply(t, app, runeKey('f'))
 	if app.currentScreen != screenApplicationForm {
 		t.Fatalf("screen after 'f' = %v, want screenApplicationForm", app.currentScreen)
 	}
@@ -4092,17 +4089,16 @@ func TestApp_ApplicationDetail_EnterApplicationFormByHand(t *testing.T) {
 	}
 
 	app, _ = sendKey(app, runeKey([]rune("Why us? *")...))
-	app, saveCmd := sendKey(app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
-	if saveCmd == nil {
-		t.Fatal("Update on ctrl+s returned nil Cmd, want a command that saves the form")
-	}
-	app = applyCmd(t, app, saveCmd)
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
 	if app.err != nil {
 		t.Fatalf("app.err = %v", app.err)
 	}
 	if app.currentScreen != screenApplicationDetail {
 		t.Errorf("screen after saving = %v, want screenApplicationDetail", app.currentScreen)
+	}
+	if app.status != "Application form saved" {
+		t.Errorf("status after saving = %q, want %q", app.status, "Application form saved")
 	}
 	stored, err := s.Postings.Form(context.Background(), posting.ID)
 	if err != nil {
@@ -4118,6 +4114,11 @@ func TestApp_ApplicationDetail_EnterApplicationFormByHand(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("stored form mismatch (-want +got):\n%s", diff)
+	}
+
+	app = sendKeyAndApply(t, app, runeKey('f'))
+	if view := viewText(app); !strings.Contains(view, "Why us? *") {
+		t.Errorf("reopened form doesn't show the saved question:\n%s", view)
 	}
 }
 
@@ -4278,18 +4279,17 @@ func TestApp_ApplicationFormSaveFails_UnblocksEditing(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 30})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	app, loadCmd := sendIntentKey(t, app, runeKey('f'))
-	app = applyCmd(t, app, loadCmd)
+	app = sendKeyAndApply(t, app, runeKey('f'))
 	app, _ = sendKey(app, runeKey([]rune("Why us? *")...))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
-	app, _ = sendKey(app, applicationFormSavedMsg{err: errors.New("disk full")})
+	app, _ = sendKey(app, formFailedFor(applicationForm(t, app).Instance(), message.OpUpdated))
 	app, _ = sendKey(app, runeKey('!'))
 
 	if app.currentScreen != screenApplicationForm {
 		t.Fatalf("screen after failed save = %v, want screenApplicationForm", app.currentScreen)
 	}
-	if got := app.applicationForm.textarea.Value(); !strings.HasSuffix(got, "Why us? *!") {
+	if got := applicationForm(t, app).textarea.Value(); !strings.HasSuffix(got, "Why us? *!") {
 		t.Fatalf("form after failed save and typing = %q, want it to end %q (editing resumes)", got, "Why us? *!")
 	}
 }
@@ -4304,14 +4304,13 @@ func TestApp_ApplicationFormEscWithEdits_DrawsDiscardBox(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 30})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	app, loadCmd := sendIntentKey(t, app, runeKey('f'))
-	app = applyCmd(t, app, loadCmd)
+	app = sendKeyAndApply(t, app, runeKey('f'))
 	app, _ = sendKey(app, runeKey([]rune("Why us? *")...))
 
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
 	view := viewText(app)
-	box := ansi.Strip(app.applicationForm.discardBox(app.width))
+	box := ansi.Strip(applicationForm(t, app).discardBox(app.width))
 	for _, line := range strings.Split(box, "\n") {
 		if !strings.Contains(view, line) {
 			t.Fatalf("view doesn't draw the discard box line %q:\n%s", line, view)

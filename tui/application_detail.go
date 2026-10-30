@@ -152,7 +152,7 @@ func (m *applicationDetailModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	case "S":
 		return message.Push(m.src(), message.ScreenApplicationSubmit, message.Subject{Type: message.TypeApplication, ID: m.detail.Application.ID}, m.detail)
 	case "f":
-		return ask(enterApplicationFormMsg{postingID: m.detail.Posting.ID})
+		return message.Push(m.src(), message.ScreenApplicationForm, message.Subject{Type: message.TypeApplication, ID: m.detail.Application.ID}, m.detail.Application)
 	case "D":
 		return message.Push(m.src(), message.ScreenApplicationDelete, message.Subject{Type: message.TypeApplication, ID: m.detail.Application.ID}, m.detail)
 	}
