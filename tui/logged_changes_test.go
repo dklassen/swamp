@@ -2,11 +2,16 @@ package tui
 
 import (
 	"context"
+	"maps"
+	"slices"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"github.com/dklassen/swamp/db/migrations"
 	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/score"
@@ -126,6 +131,13 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 			}), nil
 		}},
 	}
+	var tables []string
+	for _, tt := range tests {
+		tables = append(tables, tt.table)
+	}
+	if diff := cmp.Diff(slices.Sorted(maps.Keys(migrations.Logged)), tables, cmpopts.SortSlices(func(a, b string) bool { return a < b })); diff != "" {
+		t.Errorf("tables with a case, against the logged tables (-logged +cases):\n%s", diff)
+	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
@@ -174,5 +186,112 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 				t.Errorf("events (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+// The TUI's own writes come back through the log too, but the command
+// that made each already sent its event.
+func TestChangeReader_ItsOwnRows_AreSkipped(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	acme, err := s.Companies.Add(ctx, "Acme", jobboard.Ashby, "acme")
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	since, err := s.Changes.Latest(ctx)
+	if err != nil {
+		t.Fatalf("Latest: %v", err)
+	}
+	if _, err := service.NewCompanyService(testutil.OpenStore(t, s.Path, "tui:1")).SetName(ctx, acme.ID, "Acme Corp"); err != nil {
+		t.Fatalf("SetName by the TUI: %v", err)
+	}
+	if _, err := service.NewCompanyService(testutil.OpenStore(t, s.Path, mcp.Process)).SetName(ctx, acme.ID, "Acme Inc"); err != nil {
+		t.Fatalf("SetName by the agent: %v", err)
+	}
+	rows, err := s.Changes.After(ctx, since)
+	if err != nil {
+		t.Fatalf("After: %v", err)
+	}
+
+	reader := changeReader{companies: s.Companies, postings: s.Postings, applications: s.Applications, documents: s.Documents, scores: s.Scores, origin: "tui:1"}
+	got, err := reader.changed(ctx, rows)
+	if err != nil {
+		t.Fatalf("changed: %v", err)
+	}
+	var from []string
+	for _, e := range got {
+		from = append(from, e.(message.Event[message.Changed[message.Company]]).Meta.Source.Process)
+	}
+	if diff := cmp.Diff([]string{mcp.Process}, from); diff != "" {
+		t.Errorf("events' processes (-want +got):\n%s", diff)
+	}
+}
+
+// A page of the log read twice, as after a restart, is the same events,
+// so a consumer that has seen one can drop it.
+func TestChangeReader_TheSameRowsReadTwice_AreTheSameEvents(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	acme, err := s.Companies.Add(ctx, "Acme", jobboard.Ashby, "acme")
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	since, err := s.Changes.Latest(ctx)
+	if err != nil {
+		t.Fatalf("Latest: %v", err)
+	}
+	writer := service.NewCompanyService(testutil.OpenStore(t, s.Path, mcp.Process))
+	for _, name := range []string{"Acme Corp", "Acme Inc"} {
+		if _, err := writer.SetName(ctx, acme.ID, name); err != nil {
+			t.Fatalf("SetName: %v", err)
+		}
+	}
+	rows, err := s.Changes.After(ctx, since)
+	if err != nil {
+		t.Fatalf("After: %v", err)
+	}
+	reader := changeReader{companies: s.Companies, postings: s.Postings, applications: s.Applications, documents: s.Documents, scores: s.Scores, origin: "tui:1"}
+
+	first, err := reader.changed(ctx, rows)
+	if err != nil {
+		t.Fatalf("changed: %v", err)
+	}
+	again, err := reader.changed(ctx, rows)
+	if err != nil {
+		t.Fatalf("changed again: %v", err)
+	}
+	if len(first) != 2 {
+		t.Fatalf("changed gave %d events, want 2", len(first))
+	}
+	if diff := cmp.Diff(first, again); diff != "" {
+		t.Errorf("the same rows read twice (-first +again):\n%s", diff)
+	}
+	if a, b := first[0].(message.Event[message.Changed[message.Company]]).Meta.ID, first[1].(message.Event[message.Changed[message.Company]]).Meta.ID; a == b {
+		t.Errorf("two rows share the ID %q", a)
+	}
+}
+
+// A row is read as its entity is now: one gone since is left out, as a
+// later row is its delete, and a delete has nothing to read.
+func TestChangeReader_AGoneRowIsLeftOutAndADeleteHasNoAfter(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	at := time.Date(2026, 10, 30, 9, 0, 0, 0, time.UTC)
+	rows := []change.Event{
+		{ID: 1, Table: "postings", RowID: 9999, Op: "update", Origin: mcp.Process, At: at},
+		{ID: 2, Table: "companies", RowID: 5, Op: "delete", Origin: mcp.Process, At: at},
+	}
+	reader := changeReader{companies: s.Companies, postings: s.Postings, applications: s.Applications, documents: s.Documents, scores: s.Scores, origin: "tui:1"}
+
+	got, err := reader.changed(ctx, rows)
+	if err != nil {
+		t.Fatalf("changed: %v", err)
+	}
+	want := []tea.Msg{message.Logged(2, mcp, message.Subject{Type: message.TypeCompany, ID: 5}, message.OpDeleted, at, message.Company{})}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("events (-want +got):\n%s", diff)
 	}
 }
