@@ -9,3 +9,7 @@ SELECT * FROM document_exports
 WHERE application_id = ? AND document_type = ?
 ORDER BY exported_at DESC, id DESC
 LIMIT 1;
+
+-- name: ListDocumentExportsByID :many
+SELECT * FROM document_exports
+WHERE id IN (sqlc.slice('ids'));

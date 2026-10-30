@@ -40,11 +40,36 @@ func (repository *DocumentExportRepository) Latest(ctx context.Context, r store.
 	if err != nil {
 		return nil, err
 	}
-	parsedType, err := domain.ParseType(row.DocumentType)
+	e, err := fromDocumentExportRow(row)
 	if err != nil {
 		return nil, err
 	}
-	return &domain.Export{
+	return &e, nil
+}
+
+// GetMany returns the exports with the given ids that exist, in no order.
+func (repository *DocumentExportRepository) GetMany(ctx context.Context, r store.Runner, ids []int64) ([]domain.Export, error) {
+	rows, err := store.Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.DocumentExport, error) {
+		return q.ListDocumentExportsByID(ctx, ids)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("document: exports by id: %w", err)
+	}
+	exports := make([]domain.Export, len(rows))
+	for i, row := range rows {
+		if exports[i], err = fromDocumentExportRow(row); err != nil {
+			return nil, err
+		}
+	}
+	return exports, nil
+}
+
+func fromDocumentExportRow(row sqlcdb.DocumentExport) (domain.Export, error) {
+	parsedType, err := domain.ParseType(row.DocumentType)
+	if err != nil {
+		return domain.Export{}, err
+	}
+	return domain.Export{
 		ID:            row.ID,
 		ApplicationID: row.ApplicationID,
 		DocumentType:  parsedType,

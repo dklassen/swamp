@@ -69,3 +69,7 @@ VALUES (?, ?, ?, ?, ?, ?, ?, ?);
 SELECT * FROM posting_scores
 WHERE posting_id = ?
 ORDER BY id DESC;
+
+-- name: ListPostingScoresByID :many
+SELECT * FROM posting_scores
+WHERE id IN (sqlc.slice('ids'));

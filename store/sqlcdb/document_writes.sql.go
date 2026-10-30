@@ -7,6 +7,7 @@ package sqlcdb
 
 import (
 	"context"
+	"strings"
 )
 
 const createDocumentWrite = `-- name: CreateDocumentWrite :exec
@@ -57,4 +58,49 @@ func (q *Queries) LatestDocumentWrite(ctx context.Context, arg LatestDocumentWri
 		&i.WrittenAt,
 	)
 	return i, err
+}
+
+const listDocumentWritesByID = `-- name: ListDocumentWritesByID :many
+SELECT id, application_id, document_type, content_sha256, source, written_at FROM document_writes
+WHERE id IN (/*SLICE:ids*/?)
+`
+
+func (q *Queries) ListDocumentWritesByID(ctx context.Context, ids []int64) ([]DocumentWrite, error) {
+	query := listDocumentWritesByID
+	var queryParams []interface{}
+	if len(ids) > 0 {
+		for _, v := range ids {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:ids*/?", strings.Repeat(",?", len(ids))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DocumentWrite
+	for rows.Next() {
+		var i DocumentWrite
+		if err := rows.Scan(
+			&i.ID,
+			&i.ApplicationID,
+			&i.DocumentType,
+			&i.ContentSha256,
+			&i.Source,
+			&i.WrittenAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }

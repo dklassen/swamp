@@ -113,10 +113,26 @@ func (repository *ScoreRepository) ListByPosting(ctx context.Context, r store.Ru
 	if err != nil {
 		return nil, fmt.Errorf("scoring: scores of posting %d: %w", postingID, err)
 	}
+	return fromScoreRows(rows), nil
+}
+
+// GetMany returns the scores with the given ids that exist, in no order.
+func (repository *ScoreRepository) GetMany(ctx context.Context, r store.Runner, ids []int64) ([]domain.Score, error) {
+	rows, err := store.Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.PostingScore, error) {
+		return q.ListPostingScoresByID(ctx, ids)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("scoring: scores by id: %w", err)
+	}
+	return fromScoreRows(rows), nil
+}
+
+func fromScoreRows(rows []sqlcdb.PostingScore) []domain.Score {
 	scores := make([]domain.Score, len(rows))
 	for i, row := range rows {
 		scores[i] = domain.Score{
-			ID: row.ID,
+			ID:        row.ID,
+			PostingID: row.PostingID,
 			Provenance: domain.Provenance{
 				Model:         row.Model,
 				ClientName:    row.ClientName,
@@ -129,5 +145,5 @@ func (repository *ScoreRepository) ListByPosting(ctx context.Context, r store.Ru
 			ScoredAt:      row.ScoredAt,
 		}
 	}
-	return scores, nil
+	return scores
 }

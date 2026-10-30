@@ -55,6 +55,7 @@ type postingHistoryViewer interface {
 
 type markupViewer interface {
 	Get(ctx context.Context, r store.Runner, postingID int64) (*posting.Markup, error)
+	GetMany(ctx context.Context, r store.Runner, postingIDs []int64) ([]posting.Markup, error)
 }
 
 type markupWriter interface {
@@ -256,6 +257,12 @@ func (service *PostingService) Application(ctx context.Context, postingID int64)
 // Markup returns the user's triage on the posting, or store.ErrNotFound.
 func (service *PostingService) Markup(ctx context.Context, postingID int64) (*posting.Markup, error) {
 	return service.markupViewer.Get(ctx, service.db, postingID)
+}
+
+// MarkupMany returns the user's triage on the given postings, in no
+// order. A posting with none is left out.
+func (service *PostingService) MarkupMany(ctx context.Context, postingIDs []int64) ([]posting.Markup, error) {
+	return service.markupViewer.GetMany(ctx, service.db, postingIDs)
 }
 
 // SetInterested marks the posting interested, which also unarchives it.

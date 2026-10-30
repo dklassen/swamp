@@ -94,3 +94,20 @@ func (repository *DocumentReviewRepository) List(ctx context.Context, r store.Ru
 	}
 	return reviews, nil
 }
+
+// GetMany returns the reviews with the given ids that exist, in no order.
+func (repository *DocumentReviewRepository) GetMany(ctx context.Context, r store.Runner, ids []int64) ([]domain.Review, error) {
+	rows, err := store.Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.DocumentReview, error) {
+		return q.ListDocumentReviewsByID(ctx, ids)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("document: reviews by id: %w", err)
+	}
+	reviews := make([]domain.Review, len(rows))
+	for i, row := range rows {
+		if reviews[i], err = FromDocumentReviewRow(row); err != nil {
+			return nil, err
+		}
+	}
+	return reviews, nil
+}

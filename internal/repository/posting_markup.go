@@ -51,6 +51,22 @@ func (repository *PostingMarkupRepository) Get(ctx context.Context, r store.Runn
 	})
 }
 
+// GetMany returns the markup of the given postings that have it, in no
+// order.
+func (repository *PostingMarkupRepository) GetMany(ctx context.Context, r store.Runner, postingIDs []int64) ([]domain.Markup, error) {
+	rows, err := store.Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.PostingMarkup, error) {
+		return q.ListPostingMarkupByPostingID(ctx, postingIDs)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("postingmarkup: get many: %w", err)
+	}
+	markup := make([]domain.Markup, len(rows))
+	for i, row := range rows {
+		markup[i] = FromPostingMarkupRow(row)
+	}
+	return markup, nil
+}
+
 // SetInterested sets InterestedAt and also clears ArchivedAt -- see the
 // SetPostingInterested query comment for why.
 func (repository *PostingMarkupRepository) SetInterested(ctx context.Context, r store.Runner, postingID int64) (*domain.Markup, error) {

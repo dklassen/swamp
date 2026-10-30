@@ -11,6 +11,10 @@ RETURNING *;
 SELECT * FROM posting_markup
 WHERE posting_id = ?;
 
+-- name: ListPostingMarkupByPostingID :many
+SELECT * FROM posting_markup
+WHERE posting_id IN (sqlc.slice('posting_ids'));
+
 -- name: UnmarkPostingInterested :one
 UPDATE posting_markup
 SET interested_at = NULL, updated_at = CURRENT_TIMESTAMP

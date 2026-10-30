@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/testutil"
@@ -218,5 +219,87 @@ func TestDocumentService_LatestWrite_IsTheNewestOfThatDocument(t *testing.T) {
 	}
 	if got.WrittenAt.IsZero() {
 		t.Error("WrittenAt is zero, want when it was recorded")
+	}
+}
+
+func TestDocumentService_GetManyReviews_LeavesOutMissing(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+	cover, err := s.Documents.Review(ctx, app.ID, document.CoverLetter, "Dear Acme", document.Passed, "")
+	if err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+	resume, err := s.Documents.Review(ctx, app.ID, document.Resume, "Experience", document.Flagged, "too long")
+	if err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+
+	got, err := s.Documents.GetManyReviews(ctx, []int64{resume.ID, 9999, cover.ID})
+	if err != nil {
+		t.Fatalf("GetManyReviews: %v", err)
+	}
+	want := []document.Review{*cover, *resume}
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b document.Review) bool { return a.ID < b.ID })); diff != "" {
+		t.Errorf("GetManyReviews (-want +got):\n%s", diff)
+	}
+}
+
+func TestDocumentService_GetManyWrites_LeavesOutMissing(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+	var want []document.Write
+	ids := []int64{9999}
+	for _, documentType := range []document.Type{document.CoverLetter, document.Resume} {
+		if err := s.Documents.RecordWrite(ctx, app.ID, documentType, "draft", document.SourceWriteDocument); err != nil {
+			t.Fatalf("RecordWrite: %v", err)
+		}
+		w, err := s.Documents.LatestWrite(ctx, app.ID, documentType)
+		if err != nil {
+			t.Fatalf("LatestWrite: %v", err)
+		}
+		want = append(want, *w)
+		ids = append(ids, w.ID)
+	}
+
+	got, err := s.Documents.GetManyWrites(ctx, ids)
+	if err != nil {
+		t.Fatalf("GetManyWrites: %v", err)
+	}
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b document.Write) bool { return a.ID < b.ID })); diff != "" {
+		t.Errorf("GetManyWrites (-want +got):\n%s", diff)
+	}
+}
+
+func TestDocumentService_GetManyExports_LeavesOutMissing(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+	for _, documentType := range []document.Type{document.CoverLetter, document.Resume} {
+		if err := s.Documents.RecordExport(ctx, app.ID, documentType, "draft", "/out/"+documentType.String()+".pdf"); err != nil {
+			t.Fatalf("RecordExport: %v", err)
+		}
+	}
+	latest, err := s.Documents.LatestExports(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("LatestExports: %v", err)
+	}
+	var want []document.Export
+	ids := []int64{9999}
+	for _, e := range latest {
+		want = append(want, e)
+		ids = append(ids, e.ID)
+	}
+
+	got, err := s.Documents.GetManyExports(ctx, ids)
+	if err != nil {
+		t.Fatalf("GetManyExports: %v", err)
+	}
+	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b document.Export) bool { return a.ID < b.ID })); diff != "" {
+		t.Errorf("GetManyExports (-want +got):\n%s", diff)
 	}
 }

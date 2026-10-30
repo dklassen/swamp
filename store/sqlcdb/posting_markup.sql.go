@@ -7,6 +7,7 @@ package sqlcdb
 
 import (
 	"context"
+	"strings"
 )
 
 const createPostingMarkup = `-- name: CreatePostingMarkup :one
@@ -50,6 +51,51 @@ func (q *Queries) GetPostingMarkup(ctx context.Context, postingID int64) (Postin
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const listPostingMarkupByPostingID = `-- name: ListPostingMarkupByPostingID :many
+SELECT posting_id, interested_at, archived_at, notes, created_at, updated_at FROM posting_markup
+WHERE posting_id IN (/*SLICE:posting_ids*/?)
+`
+
+func (q *Queries) ListPostingMarkupByPostingID(ctx context.Context, postingIds []int64) ([]PostingMarkup, error) {
+	query := listPostingMarkupByPostingID
+	var queryParams []interface{}
+	if len(postingIds) > 0 {
+		for _, v := range postingIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:posting_ids*/?", strings.Repeat(",?", len(postingIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:posting_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []PostingMarkup
+	for rows.Next() {
+		var i PostingMarkup
+		if err := rows.Scan(
+			&i.PostingID,
+			&i.InterestedAt,
+			&i.ArchivedAt,
+			&i.Notes,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const setPostingArchived = `-- name: SetPostingArchived :one
