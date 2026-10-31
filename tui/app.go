@@ -219,6 +219,61 @@ func (a *App) Routes() []*model.Route {
 	}, a.navRoutes...)
 }
 
+// Table is what one Nav payload opens, as a route on an App.
+type Table func(*App) *model.Route
+
+// Opens is the Table for Nav[T]: each kind in table opens the screen its
+// function builds from the Nav's value.
+func Opens[T message.Body](table map[message.Screen]func(T) stackScreen) Table {
+	return func(a *App) *model.Route {
+		return model.Always(navTo(a, table))
+	}
+}
+
+// navTo opens what table has for each Nav[T] from the screen on top, and
+// closes the top on a pop or a replace. Any kind in table opens on a push
+// or a replace. A Nav from any other screen, such as a second esc typed
+// before the first one's close arrived, is dropped.
+func navTo[T message.Body](a *App, table map[message.Screen]func(T) stackScreen) func(message.Event[message.Nav[T]]) tea.Cmd {
+	return func(e message.Event[message.Nav[T]]) tea.Cmd {
+		if e.Meta.Source.Instance == 0 || e.Meta.Source.Instance != a.focused() {
+			return nil
+		}
+		nav := e.Payload
+		var opened stackScreen
+		if nav.Op != message.NavPop {
+			open, ok := table[nav.Screen]
+			if !ok || (nav.Op != message.NavPush && nav.Op != message.NavReplace) {
+				return a.fail(fmt.Errorf("tui: no screen opens on %+v", e))
+			}
+			opened = open(nav.Value)
+		}
+		if nav.Op != message.NavPush {
+			closed, err := a.stack.Pop()
+			if err != nil {
+				return a.fail(err)
+			}
+			if err := a.router.Deregister(closed); err != nil {
+				return a.fail(err)
+			}
+		}
+		if opened == nil {
+			return nil
+		}
+		// Routed before Init, so nothing Init starts can report before the
+		// screen can hear it.
+		if err := a.router.Register(opened); err != nil {
+			return a.fail(err)
+		}
+		a.stack.Push(nav.Screen, opened)
+		return opened.Init()
+	}
+}
+
+func (a *App) fail(err error) tea.Cmd {
+	return message.Fail(message.Source{Instance: a.instance}, err)
+}
+
 // browserOpened clears an earlier failure from the banner.
 func (a *App) browserOpened(message.Event[message.Ran[message.OpenBrowser]]) tea.Cmd {
 	a.err = nil
