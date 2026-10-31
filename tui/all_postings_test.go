@@ -1053,6 +1053,15 @@ func TestAllPostingsModel_ReadsItsPageAgain(t *testing.T) {
 		{name: "on a markup change", msg: func(*allPostingsModel) tea.Msg {
 			return message.Updated(message.Source{Instance: 9}, 1, time.Now().UTC(), message.Markup{PostingID: 1}, message.Markup{PostingID: 1, ArchivedAt: time.Now().UTC()})
 		}, read: true},
+		{name: "on a posting changed by another process", msg: func(*allPostingsModel) tea.Msg {
+			return message.Logged(1, mcp, message.Subject{Type: message.TypePosting, ID: 1}, message.OpUpdated, time.Now().UTC(), message.Posting{ID: 1, ListingStatus: message.ListingClosed})
+		}, read: true},
+		{name: "on a posting scored by another process", msg: func(*allPostingsModel) tea.Msg {
+			return message.Logged(1, mcp, message.Subject{Type: message.TypePosting, ID: 1}, message.OpCreated, time.Now().UTC(), message.Score{ID: 1, PostingID: 1, Score: 4})
+		}, read: true},
+		{name: "on a company changed by another process", msg: func(*allPostingsModel) tea.Msg {
+			return message.Logged(1, mcp, message.Subject{Type: message.TypeCompany, ID: 1}, message.OpDeleted, time.Now().UTC(), message.Company{})
+		}, read: true},
 		{name: "on fewer rows, in focus", focused: true, msg: func(*allPostingsModel) tea.Msg { return sizedTo(message.ContentSize{Width: 120, Rows: 20}) }, read: true},
 		{name: "not on the same rows, narrower", focused: true, msg: func(*allPostingsModel) tea.Msg { return sizedTo(message.ContentSize{Width: 80, Rows: 40}) }},
 		{name: "not on fewer rows, out of focus", msg: func(*allPostingsModel) tea.Msg { return sizedTo(message.ContentSize{Width: 120, Rows: 20}) }},
@@ -1103,4 +1112,14 @@ func TestAllPostingsModel_Enter_PushesDetailOnTheRowsPosting(t *testing.T) {
 	if diff := cmp.Diff(want, nav.Payload); diff != "" {
 		t.Errorf("Nav (-want +got):\n%s", diff)
 	}
+}
+
+func TestAllPostingsModel_ChangesElsewhere_ReadOnceAtATime(t *testing.T) {
+	t.Parallel()
+	m, r := storedAllPostings(t, false)
+	for _, msg := range runCmd(t, m.Init()) {
+		r.Dispatch(msg)
+	}
+	assertReadsOnceAtATime[message.PostingSearch](t, r,
+		message.Logged(1, mcp, message.Subject{Type: message.TypePosting, ID: 1}, message.OpUpdated, time.Now().UTC(), message.Posting{ID: 1}))
 }

@@ -95,6 +95,7 @@ type postingListModel struct {
 
 	company message.Company
 	list    message.PostingList
+	reading reading
 	// hideArchived starts as App's, which it tells when it flips.
 	hideArchived bool
 	cursor       int
@@ -124,10 +125,12 @@ func (m *postingListModel) Focused() bool { return m.focused }
 func (m *postingListModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(m.postingsRead, model.From(m.instance)),
+		model.Always(m.readFailed, model.From(m.instance)),
 		model.Always(m.loadRequested),
 		model.Always(m.synced, model.About(message.TypeCompany, m.company.ID)),
 		model.Always(m.filtersSaved, model.About(message.TypeCompany, m.company.ID)),
 		model.Always(m.markupChanged),
+		model.Always(m.postingChanged),
 		model.Always(m.detailOpened),
 		model.WhenFocused(m, m.keyPressed),
 		model.Always(m.resize),
@@ -140,6 +143,9 @@ func (m *postingListModel) Init() tea.Cmd { return m.load() }
 // Update has nothing to do: everything the list handles is registered.
 func (m *postingListModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
 
+// reload reads again for a write, once at a time for a run of them.
+func (m *postingListModel) reload() tea.Cmd { return m.reading.start(m.load) }
+
 func (m *postingListModel) load() tea.Cmd {
 	return loadPostings(m.companyService, m.postingService, message.Source{Instance: m.instance}, m.company.ID, m.hideArchived)
 }
@@ -150,7 +156,19 @@ func (m *postingListModel) postingsRead(e message.Event[message.Read[message.Pos
 	previous := m.selected()
 	m.list = e.Payload.Value
 	m.keepCursorOn(previous)
-	return nil
+	return m.reading.done(m.load)
+}
+
+func (m *postingListModel) readFailed(message.Event[message.Error]) tea.Cmd {
+	return m.reading.done(m.load)
+}
+
+// postingChanged reads again for a posting of its company.
+func (m *postingListModel) postingChanged(e message.Event[message.Changed[message.Posting]]) tea.Cmd {
+	if e.Payload.After.CompanyID != m.company.ID {
+		return nil
+	}
+	return m.reload()
 }
 
 func (m *postingListModel) loadRequested(message.Event[message.Load[message.PostingList]]) tea.Cmd {

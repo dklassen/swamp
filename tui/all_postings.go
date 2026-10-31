@@ -44,7 +44,8 @@ type allPostingsModel struct {
 	starts []pageStart
 	order  message.PostingOrder
 	// page is the page on screen, and the search it was read with.
-	page message.PostingSearch
+	page    message.PostingSearch
+	reading reading
 	// searching is whether the '/' line is open and taking keys; query is
 	// what's been typed into it, kept with its results once enter closes it.
 	searching bool
@@ -74,8 +75,12 @@ func (m *allPostingsModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(m.searchRead, model.From(m.instance)),
 		model.Always(m.paused, model.From(m.instance)),
+		model.Always(m.readFailed, model.From(m.instance)),
 		model.Always(m.loadRequested),
 		model.Always(m.markupChanged),
+		model.Always(m.postingChanged),
+		model.Always(m.scoreChanged),
+		model.Always(m.companyChanged),
 		model.WhenFocused(m, m.keyPressed),
 		model.WhenFocused(m, m.paste),
 		model.Always(m.resize),
@@ -119,6 +124,9 @@ func (m *allPostingsModel) load() tea.Cmd {
 	return m.loadAt(m.pageSize(m.rows))
 }
 
+// reload reads again for a write, once at a time for a run of them.
+func (m *allPostingsModel) reload() tea.Cmd { return m.reading.start(m.load) }
+
 // loadAt reads the page on screen again, size rows long, with the query
 // and the count without it.
 func (m *allPostingsModel) loadAt(size int) tea.Cmd {
@@ -157,10 +165,20 @@ func (m *allPostingsModel) loadAt(size int) tea.Cmd {
 	}
 }
 
-// searchRead shows the page read, if it's still the search on screen. A
+// searchRead shows the page read and ends the read in flight.
+func (m *allPostingsModel) searchRead(e message.Event[message.Read[message.PostingSearch]]) tea.Cmd {
+	shown := m.showSearch(e)
+	return tea.Batch(shown, m.reading.done(m.load))
+}
+
+func (m *allPostingsModel) readFailed(message.Event[message.Error]) tea.Cmd {
+	return m.reading.done(m.load)
+}
+
+// showSearch shows the page read, if it's still the search on screen. A
 // page past the first that has emptied, its postings archived or closed,
 // steps back.
-func (m *allPostingsModel) searchRead(e message.Event[message.Read[message.PostingSearch]]) tea.Cmd {
+func (m *allPostingsModel) showSearch(e message.Event[message.Read[message.PostingSearch]]) tea.Cmd {
 	read, start := e.Payload.Value, m.starts[len(m.starts)-1]
 	if read.Query != m.query || read.Order != m.order || read.AfterID != start.id || read.AfterScore != start.score {
 		return nil
@@ -180,7 +198,24 @@ func (m *allPostingsModel) loadRequested(message.Event[message.Load[message.Post
 
 // markupChanged reloads, since a posting archived leaves the page.
 func (m *allPostingsModel) markupChanged(message.Event[message.Changed[message.Markup]]) tea.Cmd {
-	return m.load()
+	return m.reload()
+}
+
+// postingChanged reloads, since a posting closed leaves the page.
+func (m *allPostingsModel) postingChanged(message.Event[message.Changed[message.Posting]]) tea.Cmd {
+	return m.reload()
+}
+
+// scoreChanged reloads, since a row shows its score and best fit orders by
+// it.
+func (m *allPostingsModel) scoreChanged(message.Event[message.Changed[message.Score]]) tea.Cmd {
+	return m.reload()
+}
+
+// companyChanged reloads, since a deleted company's postings leave the
+// page.
+func (m *allPostingsModel) companyChanged(message.Event[message.Changed[message.Company]]) tea.Cmd {
+	return m.reload()
 }
 
 // paused searches, unless the query has changed since the pause began.

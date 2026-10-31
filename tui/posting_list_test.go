@@ -576,3 +576,36 @@ func TestPostingListModel_View_AdvertisesRefresh(t *testing.T) {
 		t.Errorf("empty View() = %q, want it to point at r on this screen", got)
 	}
 }
+
+// A posting written elsewhere is read again if it's one of the list's
+// company's; a sync of another company's postings leaves it alone.
+func TestPostingListModel_ReadsAgainForItsCompanysPostingsWrittenElsewhere(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		of   func(m *postingListModel) int64
+		read bool
+	}{
+		{name: "its company's", of: func(m *postingListModel) int64 { return m.company.ID }, read: true},
+		{name: "another company's", of: func(m *postingListModel) int64 { return m.company.ID + 1 }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, r := listWith(t, false)
+			changed := message.Logged(1, mcp, message.Subject{Type: message.TypePosting, ID: 99}, message.OpCreated, time.Now().UTC(), message.Posting{ID: 99, CompanyID: tt.of(m)})
+
+			if got := readsFrom(t, m, runCmd(t, r.Dispatch(changed))); got != tt.read {
+				t.Errorf("read = %t, want %t", got, tt.read)
+			}
+		})
+	}
+}
+
+func TestPostingListModel_ChangesElsewhere_ReadOnceAtATime(t *testing.T) {
+	t.Parallel()
+	m, r := listWith(t, false)
+	assertReadsOnceAtATime[message.PostingList](t, r,
+		message.Logged(1, mcp, message.Subject{Type: message.TypePosting, ID: 99}, message.OpCreated, time.Now().UTC(), message.Posting{ID: 99, CompanyID: m.company.ID}))
+}
