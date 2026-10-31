@@ -84,9 +84,12 @@ Checked against the code:
 
 Application detail's own delete becomes one step: on its application's delete from its confirmation, it closes the confirmation and pops itself. Its focus-gained pop goes. `deleted` stays for a load that comes back `ErrNotFound` after the delete.
 
+## Decided
+
+- **A key after the close goes to the owner, unhandled.** The owner closes the confirmation in the same `Update` as the `n`, `esc` or `enter`, so the next key is the owner's: `n` and `y` are bound on none of the three, `enter` opens the company or application, `esc` clears a search or leaves application detail. A person shouldn't see a change: today's `Pop` is a command that returns at once into the same queue as keys, so it should land long before a second press (reasoned from Bubble Tea's loop, not measured). Only keys already queued together, as the double-`n` test sends them, used to be dropped, and the double close that test guards against can't happen without a `Pop`. No flag swallows a key after closing, and `esc` and `enter` still close.
+
 ## Decide before starting
 
-- **Keys typed just after closing.** Today `n`, `esc` or `enter` return a `Pop`, so a second key typed before it lands still goes to the confirmation and is dropped. With the owner closing it at once, the second key reaches the owner. `n` is bound on none of the three, but `enter` opens the company or application, and `esc` clears a search or, on application detail, leaves. Accept this (it's what a key after any close does), or have the confirmation's close come back as a message the owner applies.
 - **Pastes and other focused routes.** The company list's and active applications' `paste` would type into the search under the box. Each `WhenFocused` route on an owner checks `confirm` first.
 - **Glue in three owners.** The `confirm` field, key forwarding, drawing and closing happen in three places, twice for the application confirmation. Three is enough to share a small helper; decide once the second one is written.
 
@@ -101,7 +104,7 @@ Application detail's own delete becomes one step: on its application's delete fr
 - [ ] Neither confirmation is a `Routable`.
 - [ ] Each owner's tests cover: `d` (or `D`) opens it, `n`/`esc`/`enter` close it, `y` deletes once, a delete elsewhere closes it with its status, a failed delete closes it, and a paste with it open changes nothing.
 - [ ] Deleting from application detail returns to the screen beneath it, with "Deleted the application for …".
-- [ ] The App-level delete tests (`TestApp_CompanyDeleteConfirmation_*` and the like) move to the owners or go.
+- [ ] The App-level delete tests (`TestApp_CompanyDeleteConfirmation_*` and the like) move to the owners or go; `…_TwoQuickNs_CloseItOnce` goes, replaced by: a key after closing reaches the owner.
 - [ ] RFC 0012 open question 2 and section 8's `Dialog` updated: a confirmation belongs to the screen that opens it.
 - [ ] Manual check against real data: deleting a company, and an application from both owners.
 - [ ] Verification checklist clean.
