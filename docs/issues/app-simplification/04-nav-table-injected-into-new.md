@@ -11,6 +11,9 @@ depends_on: []
 ## Decided
 
 - **The table is a package-level value passed into `New`,** not built inside `New`. Go has no constant maps, so it's a `var` (or a func returning one). `cmd/swamp` and the tests pass the same value. RFC 0012's open question 3 ("Does `New` build the tabs, or take them?") is updated to match.
+- **Any screen in the table can be replaced,** as any can be pushed. The table is keyed by screen alone, with no list of allowed ops per entry. Today only `ScreenPostingDetail` and `ScreenDocumentReviewForm` accept `NavReplace`, and no test relies on any other being refused. What this gives up:
+  - Replacing with a kind already open lower on the stack panics (`screenStack.push`) instead of being refused by `unknownNav`. Push already does this.
+  - The table no longer records which replaces are meant. A comment on the table names the two that are.
 
 ## Change
 
@@ -27,15 +30,12 @@ A table can't close over services or `App`'s live state, because it's built befo
 ## Decide before starting
 
 - **One value holding a typed map per `T`, or one untyped map.** A struct of eight typed maps keeps handlers typed (RFC 0012: a handler wired to the wrong message doesn't compile). One `map[Screen]func(screenDeps, any)` is shorter, but brings back the type assertion the router removed.
-- **Which ops an entry allows.** Today only `ScreenPostingDetail` and `ScreenDocumentReviewForm` accept `NavReplace`; every other replace is reported by `unknownNav`. If a table keyed only by screen applied every op, any screen could be replaced. Its consequences:
-  - Replacing with a kind already open lower on the stack panics (`screenStack.push`), where today it's a reported fault. Push already behaves like this for every table screen.
-  - The table no longer records which transitions are meant, only which screens exist.
-  - No test relies on a replace being refused. Two screens send `Replace` today.
 
 ## Acceptance criteria
 
 - [ ] One generic nav handler; no `switch` on `Screen` in `app.go`.
 - [ ] `New` takes the table; `cmd/swamp` and the tests pass it in.
 - [ ] A `Nav` for a screen missing from the table is reported, as `unknownNav` does today. Tested.
+- [ ] A replace onto any screen in the table opens it. Tested.
 - [ ] RFC 0012 open question 3 updated.
 - [ ] Verification checklist clean.
