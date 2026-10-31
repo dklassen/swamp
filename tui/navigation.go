@@ -21,6 +21,8 @@ type opens[T message.Body] map[message.Screen]func(T) stackScreen
 // posting, and the review form taking the picker's place.
 type Navigation struct {
 	instance message.ScreenInstance
+	// app is whose stack the screens open on.
+	app *App
 
 	companies    *service.CompanyService
 	postings     *service.PostingService
@@ -147,8 +149,22 @@ func NewNavigation(
 
 func (n *Navigation) Instance() message.ScreenInstance { return n.instance }
 
+// Bind has n open its screens on a's stack. Routes needs it first.
+func (n *Navigation) Bind(a *App) {
+	n.app = a
+}
+
+// Routes open what each payload's table has, and keep the session state
+// screens open with.
 func (n *Navigation) Routes() []*model.Route {
 	return []*model.Route{
+		model.Always(navTo(n.app, n.none)),
+		model.Always(navTo(n.app, n.company)),
+		model.Always(navTo(n.app, n.filterSelection)),
+		model.Always(navTo(n.app, n.postingDetail)),
+		model.Always(navTo(n.app, n.application)),
+		model.Always(navTo(n.app, n.applicationDetail)),
+		model.Always(navTo(n.app, n.documentReview)),
 		model.Always(n.resized),
 		model.Always(n.exported),
 		model.Always(n.hideArchivedChanged),
@@ -170,18 +186,4 @@ func (n *Navigation) exported(e message.Event[message.Ran[message.ExportReport]]
 func (n *Navigation) hideArchivedChanged(e message.Event[message.Signal[message.HideArchived]]) tea.Cmd {
 	n.hideArchived = e.Payload.Value.Hidden
 	return nil
-}
-
-// NavRoutes are a's routes for each Nav, one per payload, opening what
-// its table has.
-func (n *Navigation) NavRoutes(a *App) []*model.Route {
-	return []*model.Route{
-		model.Always(navTo(a, n.none)),
-		model.Always(navTo(a, n.company)),
-		model.Always(navTo(a, n.filterSelection)),
-		model.Always(navTo(a, n.postingDetail)),
-		model.Always(navTo(a, n.application)),
-		model.Always(navTo(a, n.applicationDetail)),
-		model.Always(navTo(a, n.documentReview)),
-	}
 }

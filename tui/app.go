@@ -88,6 +88,7 @@ func New(
 		instance:              message.NewScreenInstance(),
 	}
 	a.stack = newScreenStack(a.router)
+	a.screens.Bind(a)
 
 	modules := []model.Routable{
 		a,
@@ -303,14 +304,14 @@ func (a *App) handle(msg tea.Msg) (tea.Cmd, bool) {
 // error stays up until the next error or notice, since a load that
 // succeeds sends neither and loads finish in any order.
 func (a *App) Routes() []*model.Route {
-	return append([]*model.Route{
+	return []*model.Route{
 		model.Always(a.errorReported),
 		model.Always(a.notified),
 		model.Always(a.applicationChanged),
 		model.Always(a.browserOpened),
 		model.Always(a.exported),
 		model.Always(a.changeTick, model.From(a.instance)),
-	}, a.screens.NavRoutes(a)...)
+	}
 }
 
 // browserOpened clears an earlier failure from the banner.
