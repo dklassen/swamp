@@ -172,9 +172,9 @@ func (n *Navigation) hideArchivedChanged(e message.Event[message.Signal[message.
 	return nil
 }
 
-// navRoutes are a's routes for each Nav, one per payload, opening what
+// NavRoutes are a's routes for each Nav, one per payload, opening what
 // its table has.
-func (n *Navigation) navRoutes(a *App) []*model.Route {
+func (n *Navigation) NavRoutes(a *App) []*model.Route {
 	return []*model.Route{
 		model.Always(navTo(a, n.none)),
 		model.Always(navTo(a, n.company)),

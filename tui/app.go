@@ -310,7 +310,7 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.browserOpened),
 		model.Always(a.exported),
 		model.Always(a.changeTick, model.From(a.instance)),
-	}, a.screens.navRoutes(a)...)
+	}, a.screens.NavRoutes(a)...)
 }
 
 // browserOpened clears an earlier failure from the banner.
