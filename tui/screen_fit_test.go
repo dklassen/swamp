@@ -57,9 +57,12 @@ func newFullTestApp(t *testing.T) *App {
 		applications = append(applications, mustCreateApplication(t, s, ingested.Posting.ID))
 	}
 
-	app := newTestApp(t, s, newTestSyncer(s, map[string][]jobboard.Posting{"acme": board}))
+	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, map[string][]jobboard.Posting{"acme": board}))
+	// Submit opens no browser and exports somewhere it can.
+	screens.openURL = func(message.Source, message.Subject, string) tea.Cmd { return nil }
+	screens.exportDir = t.TempDir()
 	for _, a := range applications {
-		status := app.screens.documents.Status(a.ID)
+		status := screens.documents.Status(a.ID)
 		for _, path := range []string{mustDoc(t, status, document.CoverLetter).Path, mustDoc(t, status, document.Resume).Path} {
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 				t.Fatalf("MkdirAll: %v", err)
@@ -118,7 +121,7 @@ func sizedScreens() []sizedScreen {
 			// notice (on by default). Filtering on every department
 			// keeps all 40 postings.
 			ctx := context.Background()
-			acme := app.companyList.companies[0]
+			acme := companiesTabOf(app).companies[0]
 			if _, err := app.companyService.SetDescription(ctx, acme.ID, "Acme makes everything."); err != nil {
 				t.Fatalf("SetDescription: %v", err)
 			}
@@ -129,7 +132,7 @@ func sizedScreens() []sizedScreen {
 			if err := app.companyService.SetFilters(ctx, acme.ID, filters); err != nil {
 				t.Fatalf("SetFilters: %v", err)
 			}
-			app = applyCmd(t, app, app.companyList.load())
+			app = applyCmd(t, app, companiesTabOf(app).load())
 			app = openPostingList(t, app)
 			if openList(t, app).company.Description == "" || len(openList(t, app).list.Departments) == 0 {
 				t.Fatalf("posting list isn't showing the description and filters (description %q, %d department filters)", openList(t, app).company.Description, len(openList(t, app).list.Departments))
@@ -173,8 +176,6 @@ func sizedScreens() []sizedScreen {
 			return applyCmd(t, app, cmd)
 		}},
 		{name: "application submit", screen: message.ScreenApplicationSubmit, open: func(t *testing.T, app *App) *App {
-			app.screens.openURL = func(message.Source, message.Subject, string) tea.Cmd { return nil }
-			app.screens.exportDir = t.TempDir()
 			app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 			app = applyCmd(t, app, cmd)
 			app, cmd = sendKey(app, runeKey('S'))
@@ -221,8 +222,8 @@ func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 				app := newFullTestApp(t)
 				app, _ = sendKey(app, tea.WindowSizeMsg{Width: width, Height: height})
 				app = sc.open(t, app)
-				if app.onScreen() != sc.screen {
-					t.Fatalf("screen = %v, want %v", app.onScreen(), sc.screen)
+				if app.nav.onScreen() != sc.screen {
+					t.Fatalf("screen = %v, want %v", app.nav.onScreen(), sc.screen)
 				}
 				// Clear whatever getting here left behind (openPostingList
 				// syncs, which sets a status), then show this case's banner.

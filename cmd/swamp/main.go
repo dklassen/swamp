@@ -42,6 +42,7 @@ import (
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 func main() {
@@ -140,7 +141,13 @@ func main() {
 	applications := service.NewApplicationService(db)
 	documentService := service.NewDocumentService(db)
 	scores := service.NewScoringService(db)
+	router := model.NewMsgRouter()
+	screens := tui.NewScreens(companies, postings, applications, documentService, scores, syncer, documentsStore)
+	if err := router.Register(screens); err != nil {
+		log.Fatalf("register the screens: %v", err)
+	}
 	app := tui.New(
+		router,
 		companies,
 		postings,
 		applications,
@@ -148,8 +155,7 @@ func main() {
 		scores,
 		changes,
 		syncer,
-		documentsStore,
-		tui.NewNavigation(companies, postings, applications, documentService, scores, syncer, documentsStore),
+		tui.NewNavigation(router, screens.Tabs(), screens.Tables()...),
 	).WithChangeLog(since, cfg.Origin)
 	program := tea.NewProgram(app)
 	stopMCP := func(context.Context) error { return nil }

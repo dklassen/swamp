@@ -1,189 +1,182 @@
 package tui
 
 import (
+	"fmt"
+	"slices"
+
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/internal/service"
-	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
-// opens has, for each kind a Nav[T] can name, the screen it opens.
-type opens[T message.Body] map[message.Screen]func(T) stackScreen
-
-// Navigation builds the screen each Nav names, from the services it's
-// built with and the session's state, which it keeps from the messages
-// that carry it. It has a table per payload, so a screen given the wrong
-// payload doesn't compile. Any screen in a table opens on a push or a
-// replace; the replaces meant are posting detail giving way to the next
-// posting, and the review form taking the picker's place.
-type Navigation struct {
-	instance message.ScreenInstance
-	// app is whose stack the screens open on.
-	app *App
-
-	companies    *service.CompanyService
-	postings     *service.PostingService
-	applications *service.ApplicationService
-	documentSvc  *service.DocumentService
-	scores       *service.ScoringService
-	syncer       *sync.Syncer
-	// documents resolves an application's document paths, hiding the
-	// path convention and base directory the same way store hides
-	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
-	// mirroring how SWAMP_DB_PATH configures the store.
-	documents *documents.Store
-	// openURL opens a URL in the browser: openInBrowser, swapped for a fake
-	// in tests so they don't launch one.
-	openURL func(src message.Source, about message.Subject, url string) tea.Cmd
-
-	// sized is the last size sent to the screens.
-	sized message.ContentSize
-	// exportDir is the destination the export screen prefills: the last
-	// directory successfully exported to this session, falling back to
-	// defaultExportDir. Ephemeral and in-memory only, like hideArchived
-	// -- a remembered path is a within-session convenience, not
-	// something worth a schema change to persist.
-	exportDir string
-	// hideArchived is what each posting list opens with: the last one's
-	// choice, for the session only. Defaults true: the point of archiving
-	// a posting is to declutter the list.
-	hideArchived bool
-
-	none              opens[message.None]
-	company           opens[message.Company]
-	filterSelection   opens[message.FilterSelection]
-	postingDetail     opens[message.PostingDetail]
-	application       opens[message.Application]
-	documentReview    opens[message.DocumentReview]
-	applicationDetail opens[message.ApplicationDetail]
+// Tab is a screen that's always open, one of those tab goes through.
+type Tab struct {
+	Kind   message.Screen
+	Screen stackScreen
 }
 
-// defaultExportDir is where the export screen points before anything has
-// been exported this session. Configured here rather than via the
-// environment or a flag: it's a starting point the user edits in the
-// prompt whenever they want elsewhere, so a code-level default is the
-// whole configuration surface it needs. A leading "~" is expanded when
-// the export actually runs (see expandPath).
-const defaultExportDir = "~/Desktop"
+// Table is what one Nav payload opens, as a route on a Navigation.
+type Table func(*Navigation) *model.Route
 
-func NewNavigation(
-	companies *service.CompanyService,
-	postings *service.PostingService,
-	applications *service.ApplicationService,
-	documentService *service.DocumentService,
-	scores *service.ScoringService,
-	syncer *sync.Syncer,
-	docs *documents.Store,
-) *Navigation {
+// Opens is the Table for Nav[T]: each kind in table opens the screen its
+// function builds from the Nav's value.
+func Opens[T message.Body](table map[message.Screen]func(T) stackScreen) Table {
+	return func(n *Navigation) *model.Route {
+		return model.Always(navTo(n, table))
+	}
+}
+
+// Navigation is the screens open: the tabs, and the stack pushed over the
+// tab up. It opens what its tables have for each Nav from the screen on
+// top. Any kind in a table opens on a push or a replace.
+type Navigation struct {
+	instance message.ScreenInstance
+	tabs     []Tab
+	// tab is the kind of the tab up, which the stack's screens are pushed
+	// over.
+	tab    message.Screen
+	stack  *screenStack
+	routes []*model.Route
+}
+
+// NewNavigation is tabs, registered with router, with the first up.
+// Screens pushed over them are registered while they're open.
+func NewNavigation(router model.Router, tabs []Tab, tables ...Table) *Navigation {
 	n := &Navigation{
-		instance:     message.NewScreenInstance(),
-		companies:    companies,
-		postings:     postings,
-		applications: applications,
-		documentSvc:  documentService,
-		scores:       scores,
-		syncer:       syncer,
-		documents:    docs,
-		openURL:      openInBrowser,
-		exportDir:    defaultExportDir,
-		hideArchived: true,
+		instance: message.NewScreenInstance(),
+		tabs:     tabs,
+		tab:      tabs[0].Kind,
+		stack:    newScreenStack(router),
 	}
-	n.none = opens[message.None]{
-		message.ScreenCompanyForm: func(message.None) stackScreen {
-			return newCompanyFormModel(n.syncer)
-		},
+	for _, tab := range tabs {
+		if err := router.Register(tab.Screen); err != nil {
+			panic(err)
+		}
 	}
-	n.company = opens[message.Company]{
-		message.ScreenCompanyEdit: func(c message.Company) stackScreen {
-			return newCompanyEditModel(n.companies, c.ID, c.Name)
-		},
-		message.ScreenCompanyPostings: func(c message.Company) stackScreen {
-			return newPostingListModel(n.companies, n.postings, c, n.hideArchived, n.sized)
-		},
-	}
-	n.filterSelection = opens[message.FilterSelection]{
-		message.ScreenFilterSelect: func(f message.FilterSelection) stackScreen {
-			return newFilterSelectModel(n.companies, f, n.sized)
-		},
-	}
-	n.postingDetail = opens[message.PostingDetail]{
-		message.ScreenPostingDetail: func(p message.PostingDetail) stackScreen {
-			return newPostingDetailModel(n.postings, n.documentSvc, n.scores, n.documents, p, n.sized)
-		},
-	}
-	n.application = opens[message.Application]{
-		message.ScreenApplicationStatus: func(a message.Application) stackScreen {
-			return newApplicationStatusModel(n.applications, a)
-		},
-		message.ScreenApplicationNotes: func(a message.Application) stackScreen {
-			return newApplicationNotesModel(n.applications, a, n.sized)
-		},
-		message.ScreenDocumentReviewSelect: func(a message.Application) stackScreen {
-			return newDocumentReviewSelectModel(n.documents, a)
-		},
-		message.ScreenApplicationForm: func(a message.Application) stackScreen {
-			return newApplicationFormModel(n.postings, a, n.sized)
-		},
-	}
-	n.documentReview = opens[message.DocumentReview]{
-		message.ScreenDocumentReviewForm: func(r message.DocumentReview) stackScreen {
-			return newDocumentReviewFormModel(n.documentSvc, n.documents, r, n.sized)
-		},
-	}
-	n.applicationDetail = opens[message.ApplicationDetail]{
-		message.ScreenApplicationDetail: func(a message.ApplicationDetail) stackScreen {
-			return newApplicationDetailModel(n.applications, n.postings, n.companies, n.documentSvc, n.documents, a, n.sized.Width)
-		},
-		message.ScreenApplicationExport: func(a message.ApplicationDetail) stackScreen {
-			return newApplicationExportModel(n.documentSvc, n.documents, a, n.exportDir, n.sized)
-		},
-		message.ScreenApplicationSubmit: func(a message.ApplicationDetail) stackScreen {
-			return newApplicationSubmitModel(n.applications, n.documentSvc, n.documents, n.openURL, a, n.exportDir)
-		},
+	for _, table := range tables {
+		n.routes = append(n.routes, table(n))
 	}
 	return n
 }
 
 func (n *Navigation) Instance() message.ScreenInstance { return n.instance }
 
-// Bind has n open its screens on a's stack. Routes needs it first.
-func (n *Navigation) Bind(a *App) {
-	n.app = a
+func (n *Navigation) Routes() []*model.Route { return n.routes }
+
+// Init starts each tab.
+func (n *Navigation) Init() tea.Cmd {
+	cmds := make([]tea.Cmd, len(n.tabs))
+	for i, tab := range n.tabs {
+		cmds[i] = tab.Screen.Init()
+	}
+	return tea.Batch(cmds...)
 }
 
-// Routes open what each payload's table has, and keep the session state
-// screens open with.
-func (n *Navigation) Routes() []*model.Route {
-	return []*model.Route{
-		model.Always(navTo(n.app, n.none)),
-		model.Always(navTo(n.app, n.company)),
-		model.Always(navTo(n.app, n.filterSelection)),
-		model.Always(navTo(n.app, n.postingDetail)),
-		model.Always(navTo(n.app, n.application)),
-		model.Always(navTo(n.app, n.applicationDetail)),
-		model.Always(navTo(n.app, n.documentReview)),
-		model.Always(n.resized),
-		model.Always(n.exported),
-		model.Always(n.hideArchivedChanged),
+// View is the screen on top's.
+func (n *Navigation) View() tea.View {
+	return n.screenOf(n.onScreen()).View()
+}
+
+// Focused is the instance of the screen on top.
+func (n *Navigation) Focused() message.ScreenInstance {
+	return n.screenOf(n.onScreen()).Instance()
+}
+
+// NextTab puts the next tab up, unless a screen is pushed over this one.
+func (n *Navigation) NextTab() bool {
+	if n.stack.len() > 0 {
+		return false
+	}
+	i := slices.IndexFunc(n.tabs, func(t Tab) bool { return t.Kind == n.tab })
+	n.tab = n.tabs[(i+1)%len(n.tabs)].Kind
+	return true
+}
+
+// Path is the tab up, then each screen pushed over it: the way esc goes
+// back, reversed.
+func (n *Navigation) Path() []message.Screen {
+	return append([]message.Screen{n.tab}, n.stack.kinds()...)
+}
+
+// Screen is the open screen of kind, or nil if none is.
+func (n *Navigation) Screen(kind message.Screen) stackScreen {
+	return n.screenOf(kind)
+}
+
+// onScreen is the kind of the screen on top.
+func (n *Navigation) onScreen() message.Screen {
+	path := n.Path()
+	return path[len(path)-1]
+}
+
+func (n *Navigation) screenOf(kind message.Screen) stackScreen {
+	for _, tab := range n.tabs {
+		if tab.Kind == kind {
+			return tab.Screen
+		}
+	}
+	return n.stack.open(kind)
+}
+
+// push opens s over the screen up: routes, then Init, so nothing Init
+// starts can report before s can hear it.
+func (n *Navigation) push(kind message.Screen, s stackScreen) tea.Cmd {
+	if err := n.stack.push(kind, s); err != nil {
+		return n.fail(err)
+	}
+	return s.Init()
+}
+
+func (n *Navigation) replace(kind message.Screen, s stackScreen) tea.Cmd {
+	if err := n.stack.replace(kind, s); err != nil {
+		return n.fail(err)
+	}
+	return s.Init()
+}
+
+func (n *Navigation) pop() tea.Cmd {
+	if err := n.stack.pop(); err != nil {
+		return n.fail(err)
+	}
+	return nil
+}
+
+func (n *Navigation) fail(err error) tea.Cmd {
+	return message.Fail(message.Source{Instance: n.instance}, err)
+}
+
+// onTop is whether meta is from the screen on top. A Nav from any other,
+// such as a second esc typed before the first one's close arrived, is
+// dropped.
+func (n *Navigation) onTop(meta message.Meta) bool {
+	return meta.Source.Instance != 0 && meta.Source.Instance == n.Focused()
+}
+
+// navTo opens what table has for each Nav[T] from the screen on top.
+func navTo[T message.Body](n *Navigation, table map[message.Screen]func(T) stackScreen) func(message.Event[message.Nav[T]]) tea.Cmd {
+	return func(e message.Event[message.Nav[T]]) tea.Cmd {
+		if !n.onTop(e.Meta) {
+			return nil
+		}
+		nav := e.Payload
+		if nav.Op == message.NavPop {
+			return n.pop()
+		}
+		open, ok := table[nav.Screen]
+		switch {
+		case !ok:
+			return n.unknownNav(e)
+		case nav.Op == message.NavPush:
+			return n.push(nav.Screen, open(nav.Value))
+		case nav.Op == message.NavReplace:
+			return n.replace(nav.Screen, open(nav.Value))
+		}
+		return n.unknownNav(e)
 	}
 }
 
-func (n *Navigation) resized(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {
-	n.sized = e.Payload.Value
-	return nil
-}
-
-// exported remembers where the export went, for the next export or submit
-// to start from.
-func (n *Navigation) exported(e message.Event[message.Ran[message.ExportReport]]) tea.Cmd {
-	n.exportDir = e.Payload.Value.Dir
-	return nil
-}
-
-func (n *Navigation) hideArchivedChanged(e message.Event[message.Signal[message.HideArchived]]) tea.Cmd {
-	n.hideArchived = e.Payload.Value.Hidden
-	return nil
+// unknownNav reports a Nav for a screen none of the tables opens that way.
+func (n *Navigation) unknownNav(nav tea.Msg) tea.Cmd {
+	return n.fail(fmt.Errorf("tui: no screen opens on %+v", nav))
 }

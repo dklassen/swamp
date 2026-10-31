@@ -10,13 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"slices"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
@@ -35,21 +33,15 @@ type App struct {
 	// on a tick every changePoll.
 	changes    *changeReader
 	changePoll time.Duration
-	// screens builds the screen each Nav opens.
-	screens     *Navigation
-	companyList *companyListModel
-	allPostings *allPostingsModel
-	// tab is the tab up, which the stack's screens are pushed over.
-	tab    message.Screen
-	stack  *screenStack
+	// nav is the screens open, and opens each one a Nav names.
+	nav    *Navigation
 	status string
 	err    error
 	// syncing runs sync all and refreshes, and draws their progress in the
 	// banner.
-	syncing               *model.Syncing
-	activeApplicationList *activeApplicationListModel
-	width                 int
-	height                int
+	syncing *model.Syncing
+	width   int
+	height  int
 
 	// router is a message router for Dispatching bubbletea tea.Msg's
 	router model.Router
@@ -60,7 +52,9 @@ type App struct {
 	sized message.ContentSize
 }
 
+// New is the App over nav, both routed by router.
 func New(
+	router model.Router,
 	companies *service.CompanyService,
 	postings *service.PostingService,
 	applications *service.ApplicationService,
@@ -68,38 +62,21 @@ func New(
 	scores *service.ScoringService,
 	changes *service.ChangeLog,
 	syncer *sync.Syncer,
-	docs *documents.Store,
-	screens *Navigation,
+	nav *Navigation,
 ) *App {
 	a := &App{
-		companyService:        companies,
-		postingService:        postings,
-		applicationService:    applications,
-		documentService:       documentService,
-		scoringService:        scores,
-		changeLogService:      changes,
-		screens:               screens,
-		tab:                   message.ScreenActiveApplications,
-		allPostings:           newAllPostingsModel(postings),
-		activeApplicationList: newActiveApplicationListModel(applications, documentService, docs),
-		companyList:           newCompanyListModel(companies, postings),
-		syncing:               model.NewSyncing(syncer),
-		router:                model.NewMsgRouter(),
-		instance:              message.NewScreenInstance(),
+		companyService:     companies,
+		postingService:     postings,
+		applicationService: applications,
+		documentService:    documentService,
+		scoringService:     scores,
+		changeLogService:   changes,
+		nav:                nav,
+		syncing:            model.NewSyncing(syncer),
+		router:             router,
+		instance:           message.NewScreenInstance(),
 	}
-	a.stack = newScreenStack(a.router)
-	a.screens.Bind(a)
-
-	modules := []model.Routable{
-		a,
-		a.screens,
-		a.activeApplicationList,
-		a.companyList,
-		a.allPostings,
-		a.syncing,
-	}
-
-	for _, module := range modules {
+	for _, module := range []model.Routable{a, a.nav, a.syncing} {
 		if err := a.router.Register(module); err != nil {
 			panic(err)
 		}
@@ -113,120 +90,7 @@ func New(
 
 func (a *App) focusSignal() tea.Msg {
 	return message.New(message.Source{Process: a.origin}, message.Subject{}, message.OpNone, time.Now().UTC(),
-		message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: a.focused()}})
-}
-
-// tabs are the persistent screens, in the order tab goes through them.
-var tabs = []message.Screen{message.ScreenActiveApplications, message.ScreenCompanyList, message.ScreenAllPostings}
-
-// path is the tab up, then each screen pushed over it: the way esc goes
-// back, reversed.
-func (a *App) path() []message.Screen {
-	return append([]message.Screen{a.tab}, a.stack.kinds()...)
-}
-
-// onScreen is the kind of the screen on top.
-func (a *App) onScreen() message.Screen {
-	path := a.path()
-	return path[len(path)-1]
-}
-
-// screenOf is the open screen of kind.
-func (a *App) screenOf(kind message.Screen) stackScreen {
-	switch kind {
-	case message.ScreenActiveApplications:
-		return a.activeApplicationList
-	case message.ScreenCompanyList:
-		return a.companyList
-	case message.ScreenAllPostings:
-		return a.allPostings
-	}
-	return a.stack.open(kind)
-}
-
-// push opens s over the screen up: routes, then Init, so nothing Init
-// starts can report before s can hear it.
-func (a *App) push(kind message.Screen, s stackScreen) tea.Cmd {
-	if err := a.stack.push(kind, s); err != nil {
-		return a.fail(err)
-	}
-	return s.Init()
-}
-
-func (a *App) replace(kind message.Screen, s stackScreen) tea.Cmd {
-	if err := a.stack.replace(kind, s); err != nil {
-		return a.fail(err)
-	}
-	return s.Init()
-}
-
-func (a *App) pop() tea.Cmd {
-	if err := a.stack.pop(); err != nil {
-		return a.fail(err)
-	}
-	return nil
-}
-
-func (a *App) fail(err error) tea.Cmd {
-	return message.Fail(message.Source{Process: a.origin}, err)
-}
-
-// focused is the instance of the screen on top.
-func (a *App) focused() message.ScreenInstance {
-	return a.screenOf(a.onScreen()).Instance()
-}
-
-// onTop is whether meta is from the screen on top. A Nav from any other,
-// such as a second esc typed before the first one's close arrived, is
-// dropped.
-func (a *App) onTop(meta message.Meta) bool {
-	return meta.Source.Instance != 0 && meta.Source.Instance == a.focused()
-}
-
-// navTo opens what table has for each Nav[T] from the screen on top.
-func navTo[T message.Body](a *App, table opens[T]) func(message.Event[message.Nav[T]]) tea.Cmd {
-	return func(e message.Event[message.Nav[T]]) tea.Cmd {
-		if !a.onTop(e.Meta) {
-			return nil
-		}
-		nav := e.Payload
-		if nav.Op == message.NavPop {
-			return a.pop()
-		}
-		open, ok := table[nav.Screen]
-		switch {
-		case !ok:
-			return a.unknownNav(e)
-		case nav.Op == message.NavPush:
-			return a.push(nav.Screen, open(nav.Value))
-		case nav.Op == message.NavReplace:
-			return a.replace(nav.Screen, open(nav.Value))
-		}
-		return a.unknownNav(e)
-	}
-}
-
-// unknownNav reports a Nav for a screen App doesn't open that way.
-func (a *App) unknownNav(nav tea.Msg) tea.Cmd {
-	return a.fail(fmt.Errorf("tui: no screen opens on %+v", nav))
-}
-
-// postingList is the open posting list, or nil.
-func (a *App) postingList() *postingListModel {
-	l, _ := a.stack.open(message.ScreenCompanyPostings).(*postingListModel)
-	return l
-}
-
-// postingDetail is the open posting detail, or nil.
-func (a *App) postingDetail() *postingDetailModel {
-	d, _ := a.stack.open(message.ScreenPostingDetail).(*postingDetailModel)
-	return d
-}
-
-// applicationDetail is the open application detail, or nil.
-func (a *App) applicationDetail() *applicationDetailModel {
-	d, _ := a.stack.open(message.ScreenApplicationDetail).(*applicationDetailModel)
-	return d
+		message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: a.nav.Focused()}})
 }
 
 // WithStatus starts the App with status on the status line.
@@ -236,7 +100,7 @@ func (a *App) WithStatus(status string) *App {
 }
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.activeApplicationList.Init(), a.companyList.Init(), a.allPostings.Init(), a.pollChanges())
+	return tea.Batch(a.nav.Init(), a.pollChanges())
 }
 
 // changePollInterval is how often the TUI reads the change log. Nothing is
@@ -284,8 +148,7 @@ func (a *App) handle(msg tea.Msg) (tea.Cmd, bool) {
 		switch {
 		case msg.String() == "ctrl+c":
 			return tea.Quit, true
-		case msg.String() == "tab" && a.stack.len() == 0:
-			a.tab = tabs[(slices.Index(tabs, a.tab)+1)%len(tabs)]
+		case msg.String() == "tab" && a.nav.NextTab():
 			// A stale error from the tab just left shouldn't show on the next.
 			a.err = nil
 			return nil, true
@@ -361,12 +224,12 @@ func (a *App) notified(e message.Event[message.Notify]) tea.Cmd {
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Before Dispatch, since a Nav's route moves the screen.
-	focusedBefore := a.focused()
+	focusedBefore := a.nav.Focused()
 	cmd, handled := a.handle(msg)
 	if !handled {
 		cmd = a.router.Dispatch(msg)
 	}
-	if a.focused() != focusedBefore {
+	if a.nav.Focused() != focusedBefore {
 		// Dispatched now, not as a Cmd, so keys already queued see it.
 		cmd = tea.Batch(cmd, a.router.Dispatch(a.focusSignal()))
 	}
@@ -406,7 +269,7 @@ func (a *App) screenRows() int {
 }
 
 func (a *App) View() tea.View {
-	v := tea.NewView(a.header() + a.screenOf(a.onScreen()).View().Content + a.banner())
+	v := tea.NewView(a.header() + a.nav.View().Content + a.banner())
 	v.AltScreen = true
 	return v
 }

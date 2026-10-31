@@ -15,7 +15,7 @@ import (
 // It ends in a newline, so screenRows can count its rows the way it
 // counts the banner's.
 func (a *App) header() string {
-	path := a.path()
+	path := a.nav.Path()
 	if len(path) == 1 {
 		return a.tabBar(path[0])
 	}
@@ -33,6 +33,36 @@ func (a *App) header() string {
 }
 
 const crumbSeparator = " › "
+
+// postingList is the open posting list, or nil.
+func (a *App) postingList() *postingListModel {
+	l, _ := a.nav.Screen(message.ScreenCompanyPostings).(*postingListModel)
+	return l
+}
+
+// postingDetail is the open posting detail, or nil.
+func (a *App) postingDetail() *postingDetailModel {
+	d, _ := a.nav.Screen(message.ScreenPostingDetail).(*postingDetailModel)
+	return d
+}
+
+// applicationDetail is the open application detail, or nil.
+func (a *App) applicationDetail() *applicationDetailModel {
+	d, _ := a.nav.Screen(message.ScreenApplicationDetail).(*applicationDetailModel)
+	return d
+}
+
+// activeApplications is the applications tab.
+func (a *App) activeApplications() *activeApplicationListModel {
+	l, _ := a.nav.Screen(message.ScreenActiveApplications).(*activeApplicationListModel)
+	return l
+}
+
+// allPostingsTab is the all postings tab.
+func (a *App) allPostingsTab() *allPostingsModel {
+	l, _ := a.nav.Screen(message.ScreenAllPostings).(*allPostingsModel)
+	return l
+}
 
 // fitCrumbs shortens crumbs to fit width once joined. The middle ones go
 // first, oldest first, behind a single "…", so the tab and the screen
@@ -99,7 +129,7 @@ func (a *App) crumbs(path []message.Screen) []string {
 		case message.ScreenDocumentReviewSelect:
 			crumbs = append(crumbs, "Review a document")
 		case message.ScreenDocumentReviewForm:
-			if f, ok := a.stack.open(message.ScreenDocumentReviewForm).(*documentReviewFormModel); ok {
+			if f, ok := a.nav.Screen(message.ScreenDocumentReviewForm).(*documentReviewFormModel); ok {
 				crumbs = append(crumbs, "Review "+documentTypeOf(f.review.DocumentType).Label())
 			}
 		case message.ScreenApplicationExport:
@@ -120,9 +150,9 @@ func (a *App) tabBar(active message.Screen) string {
 		screen message.Screen
 		label  string
 	}{
-		{message.ScreenActiveApplications, fmt.Sprintf(" Applications %d ", len(a.activeApplicationList.apps))},
+		{message.ScreenActiveApplications, fmt.Sprintf(" Applications %d ", len(a.activeApplications().apps))},
 		{message.ScreenCompanyList, " Companies "},
-		{message.ScreenAllPostings, fmt.Sprintf(" All postings %d ", a.allPostings.page.WithoutQuery)},
+		{message.ScreenAllPostings, fmt.Sprintf(" All postings %d ", a.allPostingsTab().page.WithoutQuery)},
 	}
 	const gap = "  "
 	var line, rule strings.Builder

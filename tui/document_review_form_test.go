@@ -273,14 +273,14 @@ func TestApp_ReviewSavedOfAnUnchangedDocument_DoesNotWarn(t *testing.T) {
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
-	app := newTestApp(t, s, syncer)
+	app, screens := newTestAppWithScreens(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 	app = openPostingList(t, app)
 	application, err := createApplicationIn(context.Background(), s, openList(t, app).list.Postings[0].ID)
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := app.screens.documents.Write(application.ID, document.CoverLetter, "# What you reviewed"); err != nil {
+	if _, err := screens.documents.Write(application.ID, document.CoverLetter, "# What you reviewed"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
@@ -306,14 +306,14 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
-	app := newTestApp(t, s, syncer)
+	app, screens := newTestAppWithScreens(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 40})
 	app = openPostingList(t, app)
 	application, err := createApplicationIn(context.Background(), s, openList(t, app).list.Postings[0].ID)
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	path, err := app.screens.documents.Write(application.ID, document.CoverLetter, "Dear team,\nWhat you reviewed\n")
+	path, err := screens.documents.Write(application.ID, document.CoverLetter, "Dear team,\nWhat you reviewed\n")
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -327,8 +327,8 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
-	if app.onScreen() != message.ScreenDocumentReviewForm {
-		t.Fatalf("screen after saving a changed document = %v, want still the review form", app.onScreen())
+	if app.nav.onScreen() != message.ScreenDocumentReviewForm {
+		t.Fatalf("screen after saving a changed document = %v, want still the review form", app.nav.onScreen())
 	}
 	reviews, err := s.Documents.LatestReviews(context.Background(), application.ID)
 	if err != nil {
@@ -346,7 +346,7 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
-	if app.onScreen() == message.ScreenDocumentReviewForm {
+	if app.nav.onScreen() == message.ScreenDocumentReviewForm {
 		t.Fatal("second save left the form open, want the review saved")
 	}
 	reviews, err = s.Documents.LatestReviews(context.Background(), application.ID)
@@ -365,14 +365,14 @@ func TestApp_ReviewOfADocumentDeletedMeanwhile_SavesNothingAndSaysSo(t *testing.
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
-	app := newTestApp(t, s, syncer)
+	app, screens := newTestAppWithScreens(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 40})
 	app = openPostingList(t, app)
 	application, err := createApplicationIn(context.Background(), s, openList(t, app).list.Postings[0].ID)
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	path, err := app.screens.documents.Write(application.ID, document.CoverLetter, "a draft")
+	path, err := screens.documents.Write(application.ID, document.CoverLetter, "a draft")
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -407,21 +407,21 @@ func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
-	app := newTestApp(t, s, syncer)
+	app, screens := newTestAppWithScreens(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 40})
 	app = openPostingList(t, app)
 	application, err := createApplicationIn(ctx, s, openList(t, app).list.Postings[0].ID)
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := app.screens.documents.Write(application.ID, document.CoverLetter, "What you reviewed\n"); err != nil {
+	if _, err := screens.documents.Write(application.ID, document.CoverLetter, "What you reviewed\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
 	app = openPostingDetail(t, app)
 	app = sendKeyAndApply(t, app, runeKey('r'))
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
-	if _, err := app.screens.documents.Write(application.ID, document.CoverLetter, "Rewritten by the agent\n"); err != nil {
+	if _, err := screens.documents.Write(application.ID, document.CoverLetter, "Rewritten by the agent\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	if err := s.Documents.RecordWrite(ctx, application.ID, document.CoverLetter, "Rewritten by the agent\n", document.SourceWriteDocument); err != nil {
@@ -452,14 +452,14 @@ func TestApp_ReviewOfADocumentChangedOutsideSwamp_DoesNotNameTheLastWriter(t *te
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
-	app := newTestApp(t, s, syncer)
+	app, screens := newTestAppWithScreens(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 40})
 	app = openPostingList(t, app)
 	application, err := createApplicationIn(ctx, s, openList(t, app).list.Postings[0].ID)
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	path, err := app.screens.documents.Write(application.ID, document.CoverLetter, "The agent's draft\n")
+	path, err := screens.documents.Write(application.ID, document.CoverLetter, "The agent's draft\n")
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}

@@ -5,37 +5,30 @@ import (
 	"testing"
 
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
 
-// newBareNavigation is a Navigation without services.
-func newBareNavigation(t *testing.T) *Navigation {
+// newBareApp is an App without services, with the Screens it opens.
+func newBareApp(t *testing.T) (*App, *Screens) {
 	t.Helper()
-	return NewNavigation(nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
+	return newAppWithScreensOn(testutil.TestApp{}, nil, documents.NewStore(t.TempDir()))
 }
 
-// newAppWith is an App without services that opens screens with screens.
-func newAppWith(screens *Navigation) *App {
-	return New(nil, nil, nil, nil, nil, nil, nil, screens.documents, screens)
-}
-
-// newBareApp is an App without services.
-func newBareApp(t *testing.T) *App {
-	t.Helper()
-	return newAppWith(newBareNavigation(t))
-}
-
-func TestApp_Nav_ToAScreenMissingFromTheTable_IsReported(t *testing.T) {
+func TestApp_Nav_ToAScreenMissingFromTheTables_IsReported(t *testing.T) {
 	t.Parallel()
-	screens := newBareNavigation(t)
-	delete(screens.none, message.ScreenCompanyForm)
-	app := newAppWith(screens)
-	from := message.Source{Instance: app.focused()}
+	router := model.NewMsgRouter()
+	screens := NewScreens(nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
+	noForm := Opens(map[message.Screen]func(message.None) stackScreen{})
+	app := New(router, nil, nil, nil, nil, nil, nil, nil, NewNavigation(router, screens.Tabs(), noForm))
+	home := app.nav.onScreen()
+	from := message.Source{Instance: app.nav.Focused()}
 
 	app, cmd := sendKey(app, message.Push(from, message.ScreenCompanyForm, message.Subject{}, message.None{})())
 
-	if app.onScreen() != tabs[0] {
-		t.Errorf("screen = %v, want %v left up", app.onScreen(), tabs[0])
+	if app.nav.onScreen() != home {
+		t.Errorf("screen = %v, want %v left up", app.nav.onScreen(), home)
 	}
 	if cmd == nil {
 		t.Fatal("no command, want an Error")
@@ -45,15 +38,16 @@ func TestApp_Nav_ToAScreenMissingFromTheTable_IsReported(t *testing.T) {
 	}
 }
 
-func TestApp_Nav_ReplaceOntoAScreenInTheTable_OpensIt(t *testing.T) {
+func TestApp_Nav_ReplaceOntoAScreenInTheTables_OpensIt(t *testing.T) {
 	t.Parallel()
-	app := newBareApp(t)
-	app, _ = sendKey(app, message.Push(message.Source{Instance: app.focused()}, message.ScreenCompanyForm, message.Subject{}, message.None{})())
-	from := message.Source{Instance: app.focused()}
+	app, _ := newBareApp(t)
+	home := app.nav.onScreen()
+	app, _ = sendKey(app, message.Push(message.Source{Instance: app.nav.Focused()}, message.ScreenCompanyForm, message.Subject{}, message.None{})())
+	from := message.Source{Instance: app.nav.Focused()}
 
 	app, _ = sendKey(app, message.Replace(from, message.ScreenCompanyEdit, message.Subject{}, message.Company{ID: 1, Name: "Acme"})())
 
-	if got, want := app.path(), []message.Screen{tabs[0], message.ScreenCompanyEdit}; !slices.Equal(got, want) {
+	if got, want := app.nav.Path(), []message.Screen{home, message.ScreenCompanyEdit}; !slices.Equal(got, want) {
 		t.Errorf("path = %v, want %v", got, want)
 	}
 }

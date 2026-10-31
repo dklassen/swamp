@@ -23,7 +23,7 @@ import (
 // application whose cover letter and resume are drafted, a fake browser
 // opener recording the URLs it's asked to open, and a temporary export
 // directory.
-func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, application.Application, *[]string) {
+func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, *Screens, application.Application, *[]string) {
 	t.Helper()
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
@@ -38,8 +38,8 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, applicati
 	}
 	target := mustCreateApplication(t, s, ingested.Posting.ID)
 
-	app := newTestApp(t, s, newTestSyncer(s, nil))
-	paths, err := app.screens.documents.EnsureDir(target.ID)
+	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, nil))
+	paths, err := screens.documents.EnsureDir(target.ID)
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
@@ -49,12 +49,12 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, applicati
 		}
 	}
 	var opened []string
-	app.screens.openURL = func(src message.Source, about message.Subject, url string) tea.Cmd {
+	screens.openURL = func(src message.Source, about message.Subject, url string) tea.Cmd {
 		opened = append(opened, url)
 		return func() tea.Msg { return browserOpened(src, about, url, nil) }
 	}
-	app.screens.exportDir = t.TempDir()
-	return app, target, &opened
+	screens.exportDir = t.TempDir()
+	return app, screens, target, &opened
 }
 
 // startSubmit goes from the home screen to the application's detail and
@@ -62,13 +62,13 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, applicati
 func startSubmit(t *testing.T, app *App) *App {
 	t.Helper()
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.onScreen() != message.ScreenApplicationDetail {
-		t.Fatalf("screen after enter = %v, want application detail", app.onScreen())
+	if app.nav.onScreen() != message.ScreenApplicationDetail {
+		t.Fatalf("screen after enter = %v, want application detail", app.nav.onScreen())
 	}
 	app, cmd := sendKey(app, runeKey('S'))
 	app = applyCmd(t, app, cmd)
-	if app.onScreen() != message.ScreenApplicationSubmit {
-		t.Fatalf("screen after S = %v, want the submit screen", app.onScreen())
+	if app.nav.onScreen() != message.ScreenApplicationSubmit {
+		t.Fatalf("screen after S = %v, want the submit screen", app.nav.onScreen())
 	}
 	return app
 }
@@ -80,7 +80,7 @@ func submitView(t *testing.T, app *App) string {
 
 func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T) {
 	t.Parallel()
-	app, target, opened := submitTestApp(t, "https://boards.example/job-1/apply", "https://boards.example/job-1")
+	app, screens, target, opened := submitTestApp(t, "https://boards.example/job-1/apply", "https://boards.example/job-1")
 
 	app = startSubmit(t, app)
 
@@ -88,7 +88,7 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 		t.Errorf("opened URLs mismatch (-want +got):\n%s", diff)
 	}
 	for _, name := range []string{"acme-engineer-cover_letter.pdf", "acme-engineer-resume.pdf"} {
-		if _, err := os.Stat(filepath.Join(app.screens.exportDir, name)); err != nil {
+		if _, err := os.Stat(filepath.Join(screens.exportDir, name)); err != nil {
 			t.Errorf("exported %s: %v", name, err)
 		}
 	}
@@ -106,8 +106,8 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 	if got.Status != application.Submitted {
 		t.Errorf("status after confirming = %s, want %s", got.Status, application.Submitted)
 	}
-	if app.onScreen() != message.ScreenApplicationDetail {
-		t.Errorf("screen after confirming = %v, want back on application detail", app.onScreen())
+	if app.nav.onScreen() != message.ScreenApplicationDetail {
+		t.Errorf("screen after confirming = %v, want back on application detail", app.nav.onScreen())
 	}
 	if want := "Marked Engineer submitted"; app.status != want {
 		t.Errorf("status line = %q, want %q", app.status, want)
@@ -118,8 +118,8 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 	}
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
-	if app.onScreen() != message.ScreenActiveApplications {
-		t.Fatalf("screen after esc = %v, want the home screen", app.onScreen())
+	if app.nav.onScreen() != message.ScreenActiveApplications {
+		t.Fatalf("screen after esc = %v, want the home screen", app.nav.onScreen())
 	}
 	if view := viewText(app); !strings.Contains(view, label) {
 		t.Errorf("home list = %q, want the new status %q", view, label)
@@ -131,7 +131,7 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 	for _, key := range []tea.KeyPressMsg{runeKey('n'), {Code: tea.KeyEsc}} {
 		t.Run(key.String(), func(t *testing.T) {
 			t.Parallel()
-			app, target, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+			app, _, target, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 			app = startSubmit(t, app)
 
 			app, cmd := sendKey(app, key)
@@ -144,8 +144,8 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 			if got.Status != application.Started {
 				t.Errorf("status = %s, want it left at %s", got.Status, application.Started)
 			}
-			if app.onScreen() != message.ScreenApplicationDetail {
-				t.Errorf("screen = %v, want back on application detail", app.onScreen())
+			if app.nav.onScreen() != message.ScreenApplicationDetail {
+				t.Errorf("screen = %v, want back on application detail", app.nav.onScreen())
 			}
 		})
 	}
@@ -155,7 +155,7 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 // to the screen they left, so the one open now stays.
 func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
 	t.Parallel()
-	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	app, _, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 	app = startSubmit(t, app)
 
 	app, saveCmd := sendKey(app, runeKey('y'))
@@ -165,14 +165,14 @@ func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc}) // back to application detail, save still in flight
 	app, cmd := sendKey(app, runeKey('S'))
 	app = applyCmd(t, app, cmd)
-	if app.onScreen() != message.ScreenApplicationSubmit {
-		t.Fatalf("screen after S again = %v, want the submit screen", app.onScreen())
+	if app.nav.onScreen() != message.ScreenApplicationSubmit {
+		t.Fatalf("screen after S again = %v, want the submit screen", app.nav.onScreen())
 	}
 
 	app = applyCmd(t, app, saveCmd)
 
-	if app.onScreen() != message.ScreenApplicationSubmit {
-		t.Errorf("screen after the earlier instance's save result = %v, want the submit screen (the reopened one stays open)", app.onScreen())
+	if app.nav.onScreen() != message.ScreenApplicationSubmit {
+		t.Errorf("screen after the earlier instance's save result = %v, want the submit screen (the reopened one stays open)", app.nav.onScreen())
 	}
 }
 
@@ -180,14 +180,14 @@ func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing
 // are where the user has been dragging them from.
 func TestSubmitFlow_ExportsToTheDirectoryJustExportedTo(t *testing.T) {
 	t.Parallel()
-	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	app, _, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 	dest := t.TempDir()
 
 	app = sendKeyAndApply(t, app, runeKey('e'))
 	pushed[*applicationExportModel](t, app).textinput.SetValue(dest)
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.onScreen() != message.ScreenActiveApplications {
-		t.Fatalf("screen after export = %v, want the home screen", app.onScreen())
+	if app.nav.onScreen() != message.ScreenActiveApplications {
+		t.Fatalf("screen after export = %v, want the home screen", app.nav.onScreen())
 	}
 	app = startSubmit(t, app)
 
@@ -200,12 +200,12 @@ func TestSubmitFlow_ExportsToTheDirectoryJustExportedTo(t *testing.T) {
 // still decides whether they submitted.
 func TestSubmitFlow_ShowsAFailedExport(t *testing.T) {
 	t.Parallel()
-	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	app, screens, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 	blocker := filepath.Join(t.TempDir(), "not-a-dir")
 	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	app.screens.exportDir = filepath.Join(blocker, "sub")
+	screens.exportDir = filepath.Join(blocker, "sub")
 
 	app = startSubmit(t, app)
 
@@ -220,7 +220,7 @@ func TestSubmitFlow_ShowsAFailedExport(t *testing.T) {
 
 func TestSubmitFlow_FallsBackToJobURL(t *testing.T) {
 	t.Parallel()
-	app, _, opened := submitTestApp(t, "", "https://boards.example/job-1")
+	app, _, _, opened := submitTestApp(t, "", "https://boards.example/job-1")
 
 	startSubmit(t, app)
 
@@ -231,7 +231,7 @@ func TestSubmitFlow_FallsBackToJobURL(t *testing.T) {
 
 func TestSubmitFlow_SaysTheLinkOpened(t *testing.T) {
 	t.Parallel()
-	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	app, _, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 
 	app = startSubmit(t, app)
 
@@ -244,8 +244,8 @@ func TestSubmitFlow_SaysTheLinkOpened(t *testing.T) {
 // would wait for a tab that never appears.
 func TestSubmitFlow_ReportsALinkThatFailedToOpen(t *testing.T) {
 	t.Parallel()
-	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
-	app.screens.openURL = func(src message.Source, about message.Subject, url string) tea.Cmd {
+	app, screens, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	screens.openURL = func(src message.Source, about message.Subject, url string) tea.Cmd {
 		return func() tea.Msg { return browserOpened(src, about, url, errors.New("no browser")) }
 	}
 
@@ -264,7 +264,7 @@ func TestSubmitFlow_ReportsALinkThatFailedToOpen(t *testing.T) {
 // than the screen saying it's marking submitted for good.
 func TestSubmitFlow_AFailedSaveLetsYTryAgain(t *testing.T) {
 	t.Parallel()
-	app, target, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	app, _, target, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 	app = startSubmit(t, app)
 	submit := pushed[*applicationSubmitModel](t, app)
 	app, _ = sendKey(app, runeKey('y'))
