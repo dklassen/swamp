@@ -195,15 +195,7 @@ These belong to every screen, so they stay on `App`:
 
 - **Overlays.** A confirmation screen implements `Dialog`. The router draws the screen beneath it and then the box, replacing `beneath`.
 - **Global keys.** ctrl+c, and tab on the three home tabs, both matched on `tea.KeyPressMsg` by `msg.String()`. Not `q`: the company form, notes, the application form and `/` search all take typed text, so a global `q` would quit while someone types. The home screen and the company list quit on `q` themselves today (`active_applications.go:107`, `company_list.go:79`), and they keep doing so by returning `tea.Quit`.
-- **The change log.** The router keeps each view's place in the log (`seen`) and when to read. A screen that follows the log implements:
-
-  ```go
-  type ChangeFollower interface {
-   ReloadFor(events []change.Event) tea.Cmd
-  }
-  ```
-
-  `reloads(s)` becomes "implements `ChangeFollower`", and `reloadFor`'s switch moves into the six screens that follow the log. The interface has six implementations from the start.
+- **The change log.** The router owns the tick: its `Init` sends the first `Signal[ChangeTick]` and its route on that tick sends the next. A change reader, a component of its own, keeps the place in the log and reads it on each tick, never two reads at once, sending the rows as a `tea.Sequence` so they arrive in order, then its new place. Each row is the `Changed[T]` it records (RFC 0013), sent to every component with a route for it, in the log's order. A screen hears another process's write on the routes it has for its own, covered or not, and decides for itself whether to read again; a run of writes reads at most once at a time. No screen implements anything for the log, and the router never reloads one.
 
 Sync all and single-company refresh don't stay with the router, even though they draw in the banner. They're `model.Syncing`:
 
@@ -246,7 +238,7 @@ Splitting the package also fixes the last point under Problem: a screen in `tui/
 
 What splitting the package costs:
 
-- **Every interface method the router calls is exported.** A type in `tui/model` can't satisfy an interface whose method is unexported in `tui`, so `dialog()` and `reloadFor` become `Dialog()` and `ReloadFor`.
+- **Every interface method the router calls is exported.** A type in `tui/model` can't satisfy an interface whose method is unexported in `tui`, so `dialog()` becomes `Dialog()`.
 - **The helpers screens draw with move to `tui/model`:** `visibleWindow`, `tableRows`, `searchLine`, the column-width helpers and the styles. Anything the header or banner also uses is exported from `tui/model` for the router to call. The styles have already moved, as one block (`model.CursorStyle`, `model.DimStyle`, …), when `Syncing` became the first thing in `tui/model` to draw with them.
 
 ## Template
@@ -290,8 +282,7 @@ type App struct {
  width, height int
  err           error
  status        string
- seen          map[message.Screen]int64
- // change-log fields, services the router itself uses
+ // changePoll is how often it ticks the change reader; services it uses
 }
 
 // One route per Nav[T], since each T is its own type, beside the banner's.
@@ -386,35 +377,30 @@ func (a *App) View() tea.View {
 ### The change log
 
 ```go
-// tui/model
+// tui
+// changeTick asks for the next tick; the change reader reads on this one.
+func (a *App) changeTick(message.Event[message.Signal[message.ChangeTick]]) tea.Cmd {
+ return a.pollChanges()
+}
 
-// ChangeFollower is a screen that reloads when other processes' changes
-// touch what it shows.
-type ChangeFollower interface {
- ReloadFor(events []change.Event) tea.Cmd
+// the change reader: each row's Changed, in the log's order, then its place
+func (r *changeReader) tick(message.Event[message.Signal[message.ChangeTick]]) tea.Cmd {
+ if r.reading {
+  return nil
+ }
+ r.reading = true
+ return r.read() // tea.Sequence(events..., Read[ChangePage]{After})
 }
 ```
 
 ```go
-// tui
-func (a *App) handleChanges(msg changesMsg) tea.Cmd {
- … // move the top screen's place in the log, as today
- if f, ok := a.screens[a.top().kind].(model.ChangeFollower); ok {
-  return tea.Batch(f.ReloadFor(others), next)
- }
- return next
-}
-
-// activate catches the screen now on top up on what changed while it wasn't.
-func (a *App) activate() tea.Cmd {
- if _, ok := a.screens[a.top().kind].(model.ChangeFollower); !ok {
-  return nil
- }
- return readChanges(a.changeLogService, a.top().kind, a.cursor(a.top().kind), false)
+// a screen: another process's write arrives as its own would
+func (m *companyListModel) postingChanged(message.Event[message.Changed[message.Posting]]) tea.Cmd {
+ return m.reading.start(m.load) // once at a time for a run of writes
 }
 ```
 
-Application detail also reloads every time it comes back on top, because its documents are files that change with no event. That stays a special case in `activate`, as it is today.
+Application detail also reads again every time it comes back on top, because its documents are files that change with no event. That's its own `focusChanged`.
 
 How this differs from the sketches:
 
