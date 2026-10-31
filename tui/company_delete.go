@@ -1,8 +1,10 @@
 package tui
 
 import (
+	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -85,7 +87,14 @@ func (m *companyDeleteModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	case "y":
 		if !m.confirmed {
 			m.confirmed = true
-			return deleteCompany(m.companyService, message.Source{Instance: m.instance}, m.company.ID)
+			companies, src, id := m.companyService, message.Source{Instance: m.instance}, m.company.ID
+			return func() tea.Msg {
+				deleted, err := companies.Delete(context.Background(), id)
+				if err != nil {
+					return message.New(src, message.Subject{Type: message.TypeCompany, ID: id}, message.OpDeleted, time.Now().UTC(), model.ErrorOf(err))
+				}
+				return message.Deleted(src, id, deleted.At, companySnapshot(deleted.Before))
+			}
 		}
 	}
 	return nil

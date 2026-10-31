@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -161,7 +162,9 @@ func (m *companyListModel) companyChanged(e message.Event[message.Changed[messag
 		m.clampCursor(len(m.companies))
 		return nil
 	}
-	sortCompaniesByName(m.companies)
+	// The order ListActiveCompanies' ORDER BY name returns: Go's < matches
+	// SQLite's default byte-wise collation.
+	sort.Slice(m.companies, func(i, j int) bool { return m.companies[i].Name < m.companies[j].Name })
 	return nil
 }
 

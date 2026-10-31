@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"context"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -37,15 +39,15 @@ const (
 )
 
 // companyFormModel drives the add-company screen. It holds the syncer it
-// needs to dispatch createCompany (which checks the board before
-// saving), and the form's own private input/focus state -- no other
+// needs to check the board before saving a company, and the form's own
+// private input/focus state -- no other
 // screen reads or writes this state.
 type companyFormModel struct {
 	syncer      *sync.Syncer
 	sourceIndex int
 	inputs      []textinput.Model
 	focus       int
-	// checking is true from the moment Enter dispatches createCompany
+	// checking is true from the moment Enter starts the board check
 	// until its result arrives. The form ignores keys meanwhile: bubbletea
 	// can't cancel a dispatched command, so Esc would race the save (as on
 	// the edit screen, #37) and a second Enter would start a duplicate
@@ -140,7 +142,17 @@ func (m *companyFormModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		m.checking = true
-		return createCompany(m.syncer, m.source(), name, companySources[m.sourceIndex], sourceRef)
+		syncer, src, source := m.syncer, m.source(), companySources[m.sourceIndex]
+		// Saved only once sourceRef resolves to a real board.
+		return func() tea.Msg {
+			ctx, cancel := context.WithTimeout(context.Background(), boardCheckTimeout)
+			defer cancel()
+			company, err := syncer.CreateCompany(ctx, name, source, sourceRef)
+			if err != nil {
+				return message.New(src, message.Subject{}, message.OpCreated, time.Now().UTC(), model.ErrorOf(err))
+			}
+			return message.Created(src, company.ID, company.CreatedAt, companySnapshot(*company))
+		}
 	}
 	if m.focus == formFieldSource {
 		return nil
@@ -221,3 +233,10 @@ func (m *companyFormModel) paste(msg tea.PasteMsg) tea.Cmd {
 	m.inputs[m.focus], cmd = m.inputs[m.focus].Update(msg)
 	return cmd
 }
+
+// boardCheckTimeout bounds the form's live board check, so an
+// unreachable API fails the add (closed) instead of leaving the form
+// waiting (#36). Syncer already gives up on any fetch
+// after sync.Config.FetchTimeout (#142); this is tighter because someone
+// is sitting at the form waiting for it.
+const boardCheckTimeout = 15 * time.Second

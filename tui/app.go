@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"log"
 	"slices"
-	"sort"
 	"strings"
 	"time"
 	"unicode"
@@ -460,17 +459,6 @@ func indexOfCompany(companies []message.Company, id int64) int {
 	return -1
 }
 
-// sortCompaniesByName keeps an in-memory companies slice in the same
-// order ListActiveCompanies' `ORDER BY name` would return -- called after
-// any in-place mutation (create, rename) that could change where an
-// entry belongs, since Go's string `<` matches SQLite's default byte-wise
-// collation.
-func sortCompaniesByName(companies []message.Company) {
-	sort.Slice(companies, func(i, j int) bool {
-		return companies[i].Name < companies[j].Name
-	})
-}
-
 func (a *App) Init() tea.Cmd {
 	return tea.Batch(a.activeApplicationList.Init(), a.companyList.Init(), a.allPostings.Init(), a.pollChanges())
 }
@@ -506,47 +494,6 @@ func (a *App) pollChanges() tea.Cmd {
 // changeTick asks for the next tick; the reader reads on this one.
 func (a *App) changeTick(message.Event[message.Signal[message.ChangeTick]]) tea.Cmd {
 	return a.pollChanges()
-}
-
-// boardCheckTimeout bounds createCompany's live board check, so an
-// unreachable API fails the add (closed) instead of leaving the form
-// waiting (#36). Syncer already gives up on any fetch
-// after sync.Config.FetchTimeout (#142); this is tighter because someone
-// is sitting at the form waiting for it.
-const boardCheckTimeout = 15 * time.Second
-
-// createCompany saves a company only once its source ref resolves to a
-// real board (see sync.Syncer.CreateCompany).
-func createCompany(syncer *sync.Syncer, src message.Source, name, source, sourceRef string) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), boardCheckTimeout)
-		defer cancel()
-		company, err := syncer.CreateCompany(ctx, name, source, sourceRef)
-		if err != nil {
-			return message.New(src, message.Subject{}, message.OpCreated, time.Now().UTC(), model.ErrorOf(err))
-		}
-		return message.Created(src, company.ID, company.CreatedAt, companySnapshot(*company))
-	}
-}
-
-func deleteCompany(companies *service.CompanyService, src message.Source, companyID int64) tea.Cmd {
-	return func() tea.Msg {
-		deleted, err := companies.Delete(context.Background(), companyID)
-		if err != nil {
-			return message.New(src, message.Subject{Type: message.TypeCompany, ID: companyID}, message.OpDeleted, time.Now().UTC(), model.ErrorOf(err))
-		}
-		return message.Deleted(src, companyID, deleted.At, companySnapshot(deleted.Before))
-	}
-}
-
-func updateCompanyName(companies *service.CompanyService, src message.Source, companyID int64, name string) tea.Cmd {
-	return func() tea.Msg {
-		renamed, err := companies.SetName(context.Background(), companyID, name)
-		if err != nil {
-			return message.New(src, message.Subject{Type: message.TypeCompany, ID: companyID}, message.OpUpdated, time.Now().UTC(), model.ErrorOf(err))
-		}
-		return message.Updated(src, companyID, renamed.At, companySnapshot(renamed.Before), companySnapshot(renamed.After))
-	}
 }
 
 func toggleInterested(postings *service.PostingService, src message.Source, postingID int64, currentlyInterested bool) tea.Cmd {
@@ -625,13 +572,6 @@ func currentReviews(documentService *service.DocumentService, docs *documents.St
 func updateApplicationStatus(applications *service.ApplicationService, src message.Source, applicationID int64, status application.Status) tea.Cmd {
 	return func() tea.Msg {
 		a, err := applications.SetStatus(context.Background(), applicationID, status)
-		return applicationWritten(src, applicationID, message.OpUpdated, a, err)
-	}
-}
-
-func updateApplicationNotes(applications *service.ApplicationService, src message.Source, applicationID int64, notes string) tea.Cmd {
-	return func() tea.Msg {
-		a, err := applications.SetNotes(context.Background(), applicationID, notes)
 		return applicationWritten(src, applicationID, message.OpUpdated, a, err)
 	}
 }
@@ -761,17 +701,6 @@ func toSet(values []string) map[string]bool {
 		set[v] = true
 	}
 	return set
-}
-
-func companyFiltersFrom(departments, locations []string) []filter.Filter {
-	filters := make([]filter.Filter, 0, len(departments)+len(locations))
-	for _, d := range departments {
-		filters = append(filters, filter.Filter{Field: filter.FieldDepartment, Value: d})
-	}
-	for _, l := range locations {
-		filters = append(filters, filter.Filter{Field: filter.FieldLocation, Value: l})
-	}
-	return filters
 }
 
 // errInternal is the banner for a fault: the error itself means nothing
