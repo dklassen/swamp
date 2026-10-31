@@ -60,7 +60,11 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 			if err != nil {
 				return nil, err
 			}
-			return message.Logged(row.ID, mcp, message.Subject{Type: message.TypeApplication, ID: a.ID}, message.OpUpdated, row.At, applicationSnapshot(*a)), nil
+			// A soft delete is logged as an update. Before is the row as it's
+			// left, since what it was is gone.
+			e := message.Logged(row.ID, mcp, message.Subject{Type: message.TypeApplication, ID: a.ID}, message.OpDeleted, row.At, message.Application{})
+			e.Payload.Before = applicationSnapshot(*a)
+			return e, nil
 		}},
 		{"posting closed", "postings", func(ctx context.Context, f fixture) error {
 			return service.NewPostingService(f.writer).Close(ctx, f.postingID, nil)
@@ -311,5 +315,42 @@ func TestChangeReader_EveryLoggedTable_HasAnEvent(t *testing.T) {
 		if len(got) != 1 {
 			t.Errorf("%s: a delete gave %d events, want 1", table, len(got))
 		}
+	}
+}
+
+// A company deleted by another process is a delete, as the TUI's own is,
+// though the log records its soft delete as an update.
+func TestChangeReader_ACompanyDeletedElsewhere_IsADelete(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	acme, err := s.Companies.Add(ctx, "Acme", jobboard.Ashby, "acme")
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	since, err := s.Changes.Latest(ctx)
+	if err != nil {
+		t.Fatalf("Latest: %v", err)
+	}
+	if _, err := service.NewCompanyService(testutil.OpenStore(t, s.Path, mcp.Process)).Delete(ctx, acme.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	rows, err := s.Changes.After(ctx, since)
+	if err != nil {
+		t.Fatalf("After: %v", err)
+	}
+
+	got, err := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, "tui:1").changed(ctx, rows)
+	if err != nil {
+		t.Fatalf("changed: %v", err)
+	}
+	var ops []message.Op
+	for _, e := range got {
+		if c, ok := e.(message.Event[message.Changed[message.Company]]); ok {
+			ops = append(ops, c.Meta.Op)
+		}
+	}
+	if diff := cmp.Diff([]message.Op{message.OpDeleted}, ops); diff != "" {
+		t.Errorf("company events' ops (-want +got):\n%s", diff)
 	}
 }
