@@ -10,7 +10,11 @@ depends_on: []
 
 ## Decided
 
-- **The table is a package-level value passed into `New`,** not built inside `New`. Go has no constant maps, so it's a `var` (or a func returning one). `cmd/swamp` and the tests pass the same value. RFC 0012's open question 3 ("Does `New` build the tabs, or take them?") is updated to match.
+- **`Navigation` holds the tabs; `Stack` is a plain stack of the screens pushed over them.** Both know screen kinds, not screens, take no router, and never refer to `App`. `Navigation.Routes` are its tabs', which keep their instances while another tab is up. `Stack` has no routes. `App` has the routes that open screens, one per table, and registers each stacked screen while it's open, since a stacked screen is new on each opening.
+- **The tables are preconfigured in `Screens`,** which holds the services and the session state screens open with (`sized`, `exportDir`, `hideArchived`, kept from the messages that carry them), and gives the tabs and one table per payload.
+- **`cmd/swamp` and the tests put them together:** a router, `NewScreens` (registered with the router), `NewNavigation(screens.Tabs())`, then `New(router, …, nav, NewStack(), screens.Tables()...)`. RFC 0012's open question 3 ("Does `New` build the tabs, or take them?") is updated to match.
+- **One typed map per `T`** (`Opens[T]`), not one untyped map, so a screen given the wrong payload doesn't compile (RFC 0012).
+- **The header still reads screens by kind** (`Navigation.Screen` and type assertions), as before. Crumbs taken from the `Nav` payload when a screen opens are a follow-up (the step 3 redo).
 - **Any screen in the table can be replaced,** as any can be pushed. The table is keyed by screen alone, with no list of allowed ops per entry. Today only `ScreenPostingDetail` and `ScreenDocumentReviewForm` accept `NavReplace`, and no test relies on any other being refused. What this gives up:
   - Replacing with a kind already open lower on the stack panics (`screenStack.push`) instead of being refused by `unknownNav`. Push already does this.
   - The table no longer records which replaces are meant. A comment on the table names the two that are.
@@ -20,16 +24,12 @@ depends_on: []
 One generic handler replaces the eight:
 
 ```go
-func navTo[T any](a *App, opens map[message.Screen]func(screenDeps, T) stackScreen) func(message.Event[message.Nav[T]]) tea.Cmd
+func navTo[T message.Body](a *App, table map[message.Screen]func(T) stackScreen) func(message.Event[message.Nav[T]]) tea.Cmd
 ```
 
-It keeps the `onTop` guard and `unknownNav`, and `Routes` registers one per `T`. `newPostingDetail` and `newDocumentReviewForm` go.
+It keeps the `onTop` guard and `unknownNav`, and `App.Routes` has one per table. `newPostingDetail` and `newDocumentReviewForm` go.
 
-A table can't close over services or `App`'s live state, because it's built before either exists. So each entry takes what it needs as an argument (`screenDeps` above): the services and stores, plus the state the constructors read when the screen opens (`sized`, `exportDir`, `hideArchived`, `openURL`). The service fields leave `App` for that struct, apart from those `WithChangeLog` needs (see step 5).
-
-## Decide before starting
-
-- **One value holding a typed map per `T`, or one untyped map.** A struct of eight typed maps keeps handlers typed (RFC 0012: a handler wired to the wrong message doesn't compile). One `map[Screen]func(screenDeps, any)` is shorter, but brings back the type assertion the router removed.
+The tabs, the stack, `tab`, `syncer`, `documents`, `openURL`, `exportDir` and `hideArchived` leave `App`. `App` keeps the services `WithChangeLog` needs (see step 5), the banner, and its own `sized`, which decides when to resend the size.
 
 ## Acceptance criteria
 

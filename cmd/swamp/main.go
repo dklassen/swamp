@@ -42,6 +42,7 @@ import (
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 func main() {
@@ -135,15 +136,28 @@ func main() {
 	if err != nil {
 		log.Fatalf("read the change log: %v", err)
 	}
+	companies := service.NewCompanyService(db)
+	postings := service.NewPostingService(db)
+	applications := service.NewApplicationService(db)
+	documentService := service.NewDocumentService(db)
+	scores := service.NewScoringService(db)
+	router := model.NewMsgRouter()
+	screens := tui.NewScreens(companies, postings, applications, documentService, scores, syncer, documentsStore)
+	if err := router.Register(screens); err != nil {
+		log.Fatalf("register the screens: %v", err)
+	}
 	app := tui.New(
-		service.NewCompanyService(db),
-		service.NewPostingService(db),
-		service.NewApplicationService(db),
-		service.NewDocumentService(db),
-		service.NewScoringService(db),
+		router,
+		companies,
+		postings,
+		applications,
+		documentService,
+		scores,
 		changes,
 		syncer,
-		documentsStore,
+		tui.NewNavigation(screens.Tabs()),
+		tui.NewStack(),
+		screens.Tables()...,
 	).WithChangeLog(since, cfg.Origin)
 	program := tea.NewProgram(app)
 	stopMCP := func(context.Context) error { return nil }

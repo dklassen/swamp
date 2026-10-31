@@ -100,7 +100,42 @@ func (f *fakeFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jo
 
 // newAppOn is an App on s's services, syncer and docs.
 func newAppOn(s testutil.TestApp, syncer *sync.Syncer, docs *documents.Store) *App {
-	return New(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, syncer, docs)
+	app, _ := newAppWithScreensOn(s, syncer, docs)
+	return app
+}
+
+// newAppWithScreensOn is newAppOn, with the Screens it opens, put
+// together as cmd/swamp does.
+func newAppWithScreensOn(s testutil.TestApp, syncer *sync.Syncer, docs *documents.Store) (*App, *Screens) {
+	router := model.NewMsgRouter()
+	screens := NewScreens(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, syncer, docs)
+	if err := router.Register(screens); err != nil {
+		panic(err)
+	}
+	app := New(router, s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, syncer,
+		NewNavigation(screens.Tabs()), NewStack(), screens.Tables()...)
+	return app, screens
+}
+
+// tabKinds are the kinds of the tabs, in order.
+func tabKinds() []message.Screen {
+	var kinds []message.Screen
+	for _, tab := range (&Screens{}).Tabs() {
+		kinds = append(kinds, tab.Kind)
+	}
+	return kinds
+}
+
+func companiesTabOf(app *App) *companyListModel {
+	return app.screen(message.ScreenCompanyList).(*companyListModel)
+}
+
+func allPostingsTabOf(app *App) *allPostingsModel {
+	return app.screen(message.ScreenAllPostings).(*allPostingsModel)
+}
+
+func applicationsTabOf(app *App) *activeApplicationListModel {
+	return app.screen(message.ScreenActiveApplications).(*activeApplicationListModel)
 }
 
 // storeOf is app's services, for tests that get only an App from their

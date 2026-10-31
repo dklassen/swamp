@@ -10,13 +10,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"slices"
 	"strings"
 	"time"
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
@@ -33,40 +31,20 @@ type App struct {
 	origin             string
 	// changes reads the log's rows as events, nil without a change log,
 	// on a tick every changePoll.
-	changes     *changeReader
-	changePoll  time.Duration
-	syncer      *sync.Syncer
-	companyList *companyListModel
-	allPostings *allPostingsModel
-	// tab is the tab up, which the stack's screens are pushed over.
-	tab    message.Screen
-	stack  *screenStack
-	status string
-	err    error
+	changes    *changeReader
+	changePoll time.Duration
+	// nav is the tabs, and stack the screens pushed over the tab up.
+	nav   *Navigation
+	stack *Stack
+	// navRoutes open what the tables have for each Nav.
+	navRoutes []*model.Route
+	status    string
+	err       error
 	// syncing runs sync all and refreshes, and draws their progress in the
 	// banner.
-	syncing               *model.Syncing
-	activeApplicationList *activeApplicationListModel
-	// exportDir is the destination the export screen prefills: the last
-	// directory successfully exported to this session, falling back to
-	// defaultExportDir. Ephemeral and in-memory only, like hideArchived
-	// -- a remembered path is a within-session convenience, not
-	// something worth a schema change to persist.
-	exportDir string
-	// openURL opens a URL in the browser: openInBrowser, swapped for a fake
-	// in tests so they don't launch one.
-	openURL func(src message.Source, about message.Subject, url string) tea.Cmd
-	// documents resolves an application's document paths, hiding the
-	// path convention and base directory the same way store hides
-	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
-	// mirroring how SWAMP_DB_PATH configures the store.
-	documents *documents.Store
-	// hideArchived is what each posting list opens with: the last one's
-	// choice, for the session only. Defaults true: the point of archiving
-	// a posting is to declutter the list.
-	hideArchived bool
-	width        int
-	height       int
+	syncing *model.Syncing
+	width   int
+	height  int
 
 	// router is a message router for Dispatching bubbletea tea.Msg's
 	router model.Router
@@ -77,15 +55,10 @@ type App struct {
 	sized message.ContentSize
 }
 
-// defaultExportDir is where the export screen points before anything has
-// been exported this session. Configured here rather than via the
-// environment or a flag: it's a starting point the user edits in the
-// prompt whenever they want elsewhere, so a code-level default is the
-// whole configuration surface it needs. A leading "~" is expanded when
-// the export actually runs (see expandPath).
-const defaultExportDir = "~/Desktop"
-
+// New is the App over nav and stack, routed by router, opening what
+// tables have for each Nav.
 func New(
+	router model.Router,
 	companies *service.CompanyService,
 	postings *service.PostingService,
 	applications *service.ApplicationService,
@@ -93,39 +66,27 @@ func New(
 	scores *service.ScoringService,
 	changes *service.ChangeLog,
 	syncer *sync.Syncer,
-	docs *documents.Store,
+	nav *Navigation,
+	stack *Stack,
+	tables ...Table,
 ) *App {
 	a := &App{
-		companyService:        companies,
-		postingService:        postings,
-		applicationService:    applications,
-		documentService:       documentService,
-		scoringService:        scores,
-		changeLogService:      changes,
-		syncer:                syncer,
-		tab:                   message.ScreenActiveApplications,
-		allPostings:           newAllPostingsModel(postings),
-		activeApplicationList: newActiveApplicationListModel(applications, documentService, docs),
-		hideArchived:          true,
-		documents:             docs,
-		exportDir:             defaultExportDir,
-		openURL:               openInBrowser,
-		companyList:           newCompanyListModel(companies, postings),
-		syncing:               model.NewSyncing(syncer),
-		router:                model.NewMsgRouter(),
-		instance:              message.NewScreenInstance(),
+		companyService:     companies,
+		postingService:     postings,
+		applicationService: applications,
+		documentService:    documentService,
+		scoringService:     scores,
+		changeLogService:   changes,
+		nav:                nav,
+		stack:              stack,
+		syncing:            model.NewSyncing(syncer),
+		router:             router,
+		instance:           message.NewScreenInstance(),
 	}
-	a.stack = newScreenStack(a.router)
-
-	modules := []model.Routable{
-		a,
-		a.activeApplicationList,
-		a.companyList,
-		a.allPostings,
-		a.syncing,
+	for _, table := range tables {
+		a.navRoutes = append(a.navRoutes, table(a))
 	}
-
-	for _, module := range modules {
+	for _, module := range []model.Routable{a, a.nav, a.syncing} {
 		if err := a.router.Register(module); err != nil {
 			panic(err)
 		}
@@ -142,13 +103,21 @@ func (a *App) focusSignal() tea.Msg {
 		message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: a.focused()}})
 }
 
-// tabs are the persistent screens, in the order tab goes through them.
-var tabs = []message.Screen{message.ScreenActiveApplications, message.ScreenCompanyList, message.ScreenAllPostings}
+// top is the screen on top: the stack's, or the tab up when nothing is
+// pushed.
+func (a *App) top() stackScreen {
+	if s := a.stack.Top(); s != nil {
+		return s
+	}
+	return a.nav.Screen(a.nav.Tab())
+}
+
+func (a *App) focused() message.ScreenInstance { return a.top().Instance() }
 
 // path is the tab up, then each screen pushed over it: the way esc goes
 // back, reversed.
 func (a *App) path() []message.Screen {
-	return append([]message.Screen{a.tab}, a.stack.kinds()...)
+	return append([]message.Screen{a.nav.Tab()}, a.stack.Kinds()...)
 }
 
 // onScreen is the kind of the screen on top.
@@ -157,194 +126,12 @@ func (a *App) onScreen() message.Screen {
 	return path[len(path)-1]
 }
 
-// screenOf is the open screen of kind.
-func (a *App) screenOf(kind message.Screen) stackScreen {
-	switch kind {
-	case message.ScreenActiveApplications:
-		return a.activeApplicationList
-	case message.ScreenCompanyList:
-		return a.companyList
-	case message.ScreenAllPostings:
-		return a.allPostings
+// screen is the open screen of kind, or nil if none is.
+func (a *App) screen(kind message.Screen) stackScreen {
+	if s := a.nav.Screen(kind); s != nil {
+		return s
 	}
-	return a.stack.open(kind)
-}
-
-// push opens s over the screen up: routes, then Init, so nothing Init
-// starts can report before s can hear it.
-func (a *App) push(kind message.Screen, s stackScreen) tea.Cmd {
-	if err := a.stack.push(kind, s); err != nil {
-		return a.fail(err)
-	}
-	return s.Init()
-}
-
-func (a *App) replace(kind message.Screen, s stackScreen) tea.Cmd {
-	if err := a.stack.replace(kind, s); err != nil {
-		return a.fail(err)
-	}
-	return s.Init()
-}
-
-func (a *App) pop() tea.Cmd {
-	if err := a.stack.pop(); err != nil {
-		return a.fail(err)
-	}
-	return nil
-}
-
-func (a *App) fail(err error) tea.Cmd {
-	return message.Fail(message.Source{Process: a.origin}, err)
-}
-
-// focused is the instance of the screen on top.
-func (a *App) focused() message.ScreenInstance {
-	return a.screenOf(a.onScreen()).Instance()
-}
-
-// onTop is whether meta is from the screen on top. A Nav from any other,
-// such as a second esc typed before the first one's close arrived, is
-// dropped.
-func (a *App) onTop(meta message.Meta) bool {
-	return meta.Source.Instance != 0 && meta.Source.Instance == a.focused()
-}
-
-// unknownNav reports a Nav for a screen App doesn't open that way.
-func (a *App) unknownNav(nav tea.Msg) tea.Cmd {
-	return a.fail(fmt.Errorf("tui: no screen opens on %+v", nav))
-}
-
-// navNone pops, or opens a screen that shows nothing yet.
-func (a *App) navNone(e message.Event[message.Nav[message.None]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	switch {
-	case e.Payload.Op == message.NavPop:
-		return a.pop()
-	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenCompanyForm:
-		return a.push(e.Payload.Screen, newCompanyFormModel(a.syncer))
-	}
-	return a.unknownNav(e)
-}
-
-func (a *App) navCompany(e message.Event[message.Nav[message.Company]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	c := e.Payload.Value
-	switch {
-	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenCompanyEdit:
-		return a.push(e.Payload.Screen, newCompanyEditModel(a.companyService, c.ID, c.Name))
-	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenCompanyPostings:
-		return a.push(e.Payload.Screen, newPostingListModel(a.companyService, a.postingService, c, a.hideArchived, a.sized))
-	}
-	return a.unknownNav(e)
-}
-
-func (a *App) navFilterSelection(e message.Event[message.Nav[message.FilterSelection]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	if e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenFilterSelect {
-		return a.push(e.Payload.Screen, newFilterSelectModel(a.companyService, e.Payload.Value, a.sized))
-	}
-	return a.unknownNav(e)
-}
-
-// postingList is the open posting list, or nil.
-func (a *App) postingList() *postingListModel {
-	l, _ := a.stack.open(message.ScreenCompanyPostings).(*postingListModel)
-	return l
-}
-
-func (a *App) navPostingDetail(e message.Event[message.Nav[message.PostingDetail]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	switch {
-	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenPostingDetail:
-		return a.push(e.Payload.Screen, a.newPostingDetail(e.Payload.Value))
-	case e.Payload.Op == message.NavReplace && e.Payload.Screen == message.ScreenPostingDetail:
-		return a.replace(e.Payload.Screen, a.newPostingDetail(e.Payload.Value))
-	}
-	return a.unknownNav(e)
-}
-
-func (a *App) newPostingDetail(d message.PostingDetail) *postingDetailModel {
-	return newPostingDetailModel(a.postingService, a.documentService, a.scoringService, a.documents, d, a.sized)
-}
-
-func (a *App) navApplication(e message.Event[message.Nav[message.Application]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	if e.Payload.Op == message.NavPush {
-		switch e.Payload.Screen {
-		case message.ScreenApplicationStatus:
-			return a.push(e.Payload.Screen, newApplicationStatusModel(a.applicationService, e.Payload.Value))
-		case message.ScreenApplicationNotes:
-			return a.push(e.Payload.Screen, newApplicationNotesModel(a.applicationService, e.Payload.Value, a.sized))
-		case message.ScreenDocumentReviewSelect:
-			return a.push(e.Payload.Screen, newDocumentReviewSelectModel(a.documents, e.Payload.Value))
-		case message.ScreenApplicationForm:
-			return a.push(e.Payload.Screen, newApplicationFormModel(a.postingService, e.Payload.Value, a.sized))
-		}
-	}
-	return a.unknownNav(e)
-}
-
-// navDocumentReview opens the review form, over application detail or in
-// place of the picker.
-func (a *App) navDocumentReview(e message.Event[message.Nav[message.DocumentReview]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	switch {
-	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenDocumentReviewForm:
-		return a.push(e.Payload.Screen, a.newDocumentReviewForm(e.Payload.Value))
-	case e.Payload.Op == message.NavReplace && e.Payload.Screen == message.ScreenDocumentReviewForm:
-		return a.replace(e.Payload.Screen, a.newDocumentReviewForm(e.Payload.Value))
-	}
-	return a.unknownNav(e)
-}
-
-func (a *App) newDocumentReviewForm(d message.DocumentReview) *documentReviewFormModel {
-	return newDocumentReviewFormModel(a.documentService, a.documents, d, a.sized)
-}
-
-// postingDetail is the open posting detail, or nil.
-func (a *App) postingDetail() *postingDetailModel {
-	d, _ := a.stack.open(message.ScreenPostingDetail).(*postingDetailModel)
-	return d
-}
-
-func (a *App) navApplicationDetail(e message.Event[message.Nav[message.ApplicationDetail]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	if e.Payload.Op == message.NavPush {
-		switch e.Payload.Screen {
-		case message.ScreenApplicationDetail:
-			return a.push(e.Payload.Screen, newApplicationDetailModel(a.applicationService, a.postingService, a.companyService, a.documentService, a.documents, e.Payload.Value, a.sized.Width))
-		case message.ScreenApplicationExport:
-			return a.push(e.Payload.Screen, newApplicationExportModel(a.documentService, a.documents, e.Payload.Value, a.exportDir, a.sized))
-		case message.ScreenApplicationSubmit:
-			return a.push(e.Payload.Screen, newApplicationSubmitModel(a.applicationService, a.documentService, a.documents, a.openURL, e.Payload.Value, a.exportDir))
-		}
-	}
-	return a.unknownNav(e)
-}
-
-// applicationDetail is the open application detail, or nil.
-func (a *App) applicationDetail() *applicationDetailModel {
-	d, _ := a.stack.open(message.ScreenApplicationDetail).(*applicationDetailModel)
-	return d
-}
-
-func (a *App) hideArchivedChanged(e message.Event[message.Signal[message.HideArchived]]) tea.Cmd {
-	a.hideArchived = e.Payload.Value.Hidden
-	return nil
+	return a.stack.Screen(kind)
 }
 
 // WithStatus starts the App with status on the status line.
@@ -354,7 +141,7 @@ func (a *App) WithStatus(status string) *App {
 }
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.activeApplicationList.Init(), a.companyList.Init(), a.allPostings.Init(), a.pollChanges())
+	return tea.Batch(a.nav.Init(), a.pollChanges())
 }
 
 // changePollInterval is how often the TUI reads the change log. Nothing is
@@ -402,8 +189,8 @@ func (a *App) handle(msg tea.Msg) (tea.Cmd, bool) {
 		switch {
 		case msg.String() == "ctrl+c":
 			return tea.Quit, true
-		case msg.String() == "tab" && a.stack.len() == 0:
-			a.tab = tabs[(slices.Index(tabs, a.tab)+1)%len(tabs)]
+		case msg.String() == "tab" && a.stack.Top() == nil:
+			a.nav.NextTab()
 			// A stale error from the tab just left shouldn't show on the next.
 			a.err = nil
 			return nil, true
@@ -418,26 +205,73 @@ func (a *App) handle(msg tea.Msg) (tea.Cmd, bool) {
 	return nil, false
 }
 
-// Routes are the banner's, which hears every error whoever it's for. An
-// error stays up until the next error or notice, since a load that
-// succeeds sends neither and loads finish in any order.
+// Routes are the Navs', and the banner's, which hears every error whoever
+// it's for. An error stays up until the next error or notice, since a
+// load that succeeds sends neither and loads finish in any order.
 func (a *App) Routes() []*model.Route {
-	return []*model.Route{
+	return append([]*model.Route{
 		model.Always(a.errorReported),
 		model.Always(a.notified),
-		model.Always(a.navNone),
-		model.Always(a.navCompany),
-		model.Always(a.navFilterSelection),
-		model.Always(a.navPostingDetail),
-		model.Always(a.navApplication),
-		model.Always(a.navApplicationDetail),
-		model.Always(a.navDocumentReview),
-		model.Always(a.hideArchivedChanged),
 		model.Always(a.applicationChanged),
 		model.Always(a.browserOpened),
 		model.Always(a.exported),
 		model.Always(a.changeTick, model.From(a.instance)),
+	}, a.navRoutes...)
+}
+
+// Table is what one Nav payload opens, as a route on an App.
+type Table func(*App) *model.Route
+
+// Opens is the Table for Nav[T]: each kind in table opens the screen its
+// function builds from the Nav's value.
+func Opens[T message.Body](table map[message.Screen]func(T) stackScreen) Table {
+	return func(a *App) *model.Route {
+		return model.Always(navTo(a, table))
 	}
+}
+
+// navTo opens what table has for each Nav[T] from the screen on top, and
+// closes the top on a pop or a replace. Any kind in table opens on a push
+// or a replace. A Nav from any other screen, such as a second esc typed
+// before the first one's close arrived, is dropped.
+func navTo[T message.Body](a *App, table map[message.Screen]func(T) stackScreen) func(message.Event[message.Nav[T]]) tea.Cmd {
+	return func(e message.Event[message.Nav[T]]) tea.Cmd {
+		if e.Meta.Source.Instance == 0 || e.Meta.Source.Instance != a.focused() {
+			return nil
+		}
+		nav := e.Payload
+		var opened stackScreen
+		if nav.Op != message.NavPop {
+			open, ok := table[nav.Screen]
+			if !ok || (nav.Op != message.NavPush && nav.Op != message.NavReplace) {
+				return a.fail(fmt.Errorf("tui: no screen opens on %+v", e))
+			}
+			opened = open(nav.Value)
+		}
+		if nav.Op != message.NavPush {
+			closed, err := a.stack.Pop()
+			if err != nil {
+				return a.fail(err)
+			}
+			if err := a.router.Deregister(closed); err != nil {
+				return a.fail(err)
+			}
+		}
+		if opened == nil {
+			return nil
+		}
+		// Routed before Init, so nothing Init starts can report before the
+		// screen can hear it.
+		if err := a.router.Register(opened); err != nil {
+			return a.fail(err)
+		}
+		a.stack.Push(nav.Screen, opened)
+		return opened.Init()
+	}
+}
+
+func (a *App) fail(err error) tea.Cmd {
+	return message.Fail(message.Source{Instance: a.instance}, err)
 }
 
 // browserOpened clears an earlier failure from the banner.
@@ -446,10 +280,9 @@ func (a *App) browserOpened(message.Event[message.Ran[message.OpenBrowser]]) tea
 	return nil
 }
 
-// exported remembers where the export went, for the next export or submit
-// to start from, and clears an earlier failure from the banner.
-func (a *App) exported(e message.Event[message.Ran[message.ExportReport]]) tea.Cmd {
-	a.err, a.exportDir = nil, e.Payload.Value.Dir
+// exported clears an earlier failure from the banner.
+func (a *App) exported(message.Event[message.Ran[message.ExportReport]]) tea.Cmd {
+	a.err = nil
 	return nil
 }
 
@@ -533,7 +366,7 @@ func (a *App) screenRows() int {
 }
 
 func (a *App) View() tea.View {
-	v := tea.NewView(a.header() + a.screenOf(a.onScreen()).View().Content + a.banner())
+	v := tea.NewView(a.header() + a.top().View().Content + a.banner())
 	v.AltScreen = true
 	return v
 }

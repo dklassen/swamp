@@ -35,20 +35,27 @@ import (
 // about refresh behavior can pass a syncer with no configured postings.
 // The App's documents.Store is rooted at a fresh t.TempDir() -- tests
 // that care about it (i.e. application document status) can read it back
-// via app.documents.
+// from newTestAppWithScreens's Screens.
 func newTestApp(t *testing.T, s testutil.TestApp, syncer *sync.Syncer) *App {
 	t.Helper()
-	app := newAppOn(s, syncer, documents.NewStore(t.TempDir()))
-	return applyCmd(t, app, app.Init())
+	app, _ := newTestAppWithScreens(t, s, syncer)
+	return app
+}
+
+// newTestAppWithScreens is newTestApp, with the Screens it opens.
+func newTestAppWithScreens(t *testing.T, s testutil.TestApp, syncer *sync.Syncer) (*App, *Screens) {
+	t.Helper()
+	app, screens := newAppWithScreensOn(s, syncer, documents.NewStore(t.TempDir()))
+	return applyCmd(t, app, app.Init()), screens
 }
 
 // pushed is the screen on top of app's stack, as a T.
 func pushed[T stackScreen](t *testing.T, app *App) T {
 	t.Helper()
-	if app.stack.len() == 0 {
+	if app.stack.Top() == nil {
 		t.Fatalf("no screen is pushed; %v is up", app.onScreen())
 	}
-	top := app.screenOf(app.onScreen())
+	top := app.top()
 	s, ok := top.(T)
 	if !ok {
 		t.Fatalf("the screen on top is %T, want %T", top, *new(T))
@@ -177,11 +184,11 @@ func TestApp_Init_LoadsCompanies(t *testing.T) {
 
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	if len(app.companyList.companies) != 1 {
-		t.Fatalf("app.companyList.companies = %+v, want 1 company", app.companyList.companies)
+	if len(companiesTabOf(app).companies) != 1 {
+		t.Fatalf("companiesTabOf(app).companies = %+v, want 1 company", companiesTabOf(app).companies)
 	}
-	if app.companyList.companies[0].ID != acme.ID {
-		t.Fatalf("app.companyList.companies[0].ID = %d, want %d", app.companyList.companies[0].ID, acme.ID)
+	if companiesTabOf(app).companies[0].ID != acme.ID {
+		t.Fatalf("companiesTabOf(app).companies[0].ID = %d, want %d", companiesTabOf(app).companies[0].ID, acme.ID)
 	}
 }
 
@@ -192,24 +199,24 @@ func TestApp_CursorDown_MovesSelectionWithinBounds(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 
-	if app.companyList.cursor != 0 {
-		t.Fatalf("initial cursor = %d, want 0", app.companyList.cursor)
+	if companiesTabOf(app).cursor != 0 {
+		t.Fatalf("initial cursor = %d, want 0", companiesTabOf(app).cursor)
 	}
 
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyDown})
-	if app.companyList.cursor != 1 {
-		t.Fatalf("cursor after down = %d, want 1", app.companyList.cursor)
+	if companiesTabOf(app).cursor != 1 {
+		t.Fatalf("cursor after down = %d, want 1", companiesTabOf(app).cursor)
 	}
 
 	// At the bottom, another down should not move past the last company.
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyDown})
-	if app.companyList.cursor != 1 {
-		t.Fatalf("cursor after down at bottom = %d, want 1 (clamped)", app.companyList.cursor)
+	if companiesTabOf(app).cursor != 1 {
+		t.Fatalf("cursor after down at bottom = %d, want 1 (clamped)", companiesTabOf(app).cursor)
 	}
 
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyUp})
-	if app.companyList.cursor != 0 {
-		t.Fatalf("cursor after up = %d, want 0", app.companyList.cursor)
+	if companiesTabOf(app).cursor != 0 {
+		t.Fatalf("cursor after up = %d, want 0", companiesTabOf(app).cursor)
 	}
 }
 
@@ -326,11 +333,11 @@ func TestApp_SubmitForm_CreatesCompanyAndReturnsToList(t *testing.T) {
 	if app.onScreen() != message.ScreenCompanyList {
 		t.Fatalf("screen after submit = %v, want message.ScreenCompanyList", app.onScreen())
 	}
-	if len(app.companyList.companies) != 1 {
-		t.Fatalf("app.companyList.companies = %+v, want 1 company", app.companyList.companies)
+	if len(companiesTabOf(app).companies) != 1 {
+		t.Fatalf("companiesTabOf(app).companies = %+v, want 1 company", companiesTabOf(app).companies)
 	}
-	if app.companyList.companies[0].Name != "Acme" || app.companyList.companies[0].Source != jobboard.Ashby || app.companyList.companies[0].SourceRef != "acme" {
-		t.Fatalf("created company = %+v, want Name=Acme Source=ashby SourceRef=acme", app.companyList.companies[0])
+	if companiesTabOf(app).companies[0].Name != "Acme" || companiesTabOf(app).companies[0].Source != jobboard.Ashby || companiesTabOf(app).companies[0].SourceRef != "acme" {
+		t.Fatalf("created company = %+v, want Name=Acme Source=ashby SourceRef=acme", companiesTabOf(app).companies[0])
 	}
 
 	stored, err := s.Companies.ListActive(context.Background())
@@ -387,7 +394,7 @@ func TestApp_RegisteredModels_HaveDistinctInstances(t *testing.T) {
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 
 	instances := map[string]message.ScreenInstance{
-		"company list": app.companyList.Instance(),
+		"company list": companiesTabOf(app).Instance(),
 		"syncing":      app.syncing.Instance(),
 	}
 	seen := map[message.ScreenInstance]string{}
@@ -490,7 +497,7 @@ func TestApp_CompanyDeleteFails_ShowsTheErrorOnTheList(t *testing.T) {
 	app = sendKeyAndApply(t, app, runeKey('d'))
 
 	failure := errors.New("disk full")
-	from := message.Source{Instance: app.companyList.confirm.instance}
+	from := message.Source{Instance: companiesTabOf(app).confirm.instance}
 	app = applyCmd(t, app, func() tea.Msg {
 		return message.New(from, message.Subject{Type: message.TypeCompany, ID: acme.ID}, message.OpDeleted, time.Now().UTC(), model.ErrorOf(failure))
 	})
@@ -498,7 +505,7 @@ func TestApp_CompanyDeleteFails_ShowsTheErrorOnTheList(t *testing.T) {
 	if app.onScreen() != message.ScreenCompanyList {
 		t.Errorf("screen after a failed delete = %v, want the company list", app.onScreen())
 	}
-	if app.companyList.confirm != nil {
+	if companiesTabOf(app).confirm != nil {
 		t.Error("the confirmation is still open after its delete failed, with its y spent")
 	}
 	if !strings.Contains(app.banner(), failure.Error()) {
@@ -541,8 +548,8 @@ func TestApp_PressDThenY_DeletesSelectedCompany(t *testing.T) {
 	if app.onScreen() != message.ScreenCompanyList {
 		t.Errorf("screen after deleting = %v, want the company list", app.onScreen())
 	}
-	if len(app.companyList.companies) != 0 {
-		t.Fatalf("app.companyList.companies after delete = %+v, want empty (soft-deleted, excluded from active list)", app.companyList.companies)
+	if len(companiesTabOf(app).companies) != 0 {
+		t.Fatalf("companiesTabOf(app).companies after delete = %+v, want empty (soft-deleted, excluded from active list)", companiesTabOf(app).companies)
 	}
 
 	_, err := s.Companies.Get(context.Background(), acme.ID)
@@ -575,11 +582,11 @@ func TestApp_PressE_EditsCompanyName(t *testing.T) {
 	if app.onScreen() != message.ScreenCompanyList {
 		t.Fatalf("screen after submit = %v, want message.ScreenCompanyList", app.onScreen())
 	}
-	if len(app.companyList.companies) != 1 || app.companyList.companies[0].Name != "Acme Corp" {
-		t.Fatalf("app.companyList.companies = %+v, want 1 company named %q", app.companyList.companies, "Acme Corp")
+	if len(companiesTabOf(app).companies) != 1 || companiesTabOf(app).companies[0].Name != "Acme Corp" {
+		t.Fatalf("companiesTabOf(app).companies = %+v, want 1 company named %q", companiesTabOf(app).companies, "Acme Corp")
 	}
-	if app.companyList.companies[0].Source != jobboard.Ashby || app.companyList.companies[0].SourceRef != "acme" {
-		t.Fatalf("app.companyList.companies[0] = %+v, want Source/SourceRef unchanged (ashby/acme)", app.companyList.companies[0])
+	if companiesTabOf(app).companies[0].Source != jobboard.Ashby || companiesTabOf(app).companies[0].SourceRef != "acme" {
+		t.Fatalf("companiesTabOf(app).companies[0] = %+v, want Source/SourceRef unchanged (ashby/acme)", companiesTabOf(app).companies[0])
 	}
 
 	stored, err := s.Companies.Get(context.Background(), acme.ID)
@@ -652,12 +659,12 @@ func TestApp_SubmitForm_KeepsCompanyListSorted(t *testing.T) {
 	}
 	app, _ = sendKey(app, cmd())
 
-	if len(app.companyList.companies) != 2 {
-		t.Fatalf("app.companyList.companies = %+v, want 2 companies", app.companyList.companies)
+	if len(companiesTabOf(app).companies) != 2 {
+		t.Fatalf("companiesTabOf(app).companies = %+v, want 2 companies", companiesTabOf(app).companies)
 	}
-	if app.companyList.companies[0].Name != "Acme" || app.companyList.companies[1].Name != "Globex" {
-		t.Fatalf("app.companyList.companies names = [%q, %q], want [Acme, Globex] (alphabetical)",
-			app.companyList.companies[0].Name, app.companyList.companies[1].Name)
+	if companiesTabOf(app).companies[0].Name != "Acme" || companiesTabOf(app).companies[1].Name != "Globex" {
+		t.Fatalf("companiesTabOf(app).companies names = [%q, %q], want [Acme, Globex] (alphabetical)",
+			companiesTabOf(app).companies[0].Name, companiesTabOf(app).companies[1].Name)
 	}
 }
 
@@ -684,12 +691,12 @@ func TestApp_PressE_RenameKeepsCompanyListSorted(t *testing.T) {
 	}
 	app, _ = sendKey(app, cmd())
 
-	if len(app.companyList.companies) != 2 {
-		t.Fatalf("app.companyList.companies = %+v, want 2 companies", app.companyList.companies)
+	if len(companiesTabOf(app).companies) != 2 {
+		t.Fatalf("companiesTabOf(app).companies = %+v, want 2 companies", companiesTabOf(app).companies)
 	}
-	if app.companyList.companies[0].Name != "Globex" || app.companyList.companies[1].Name != "Zzz" {
-		t.Fatalf("app.companyList.companies names = [%q, %q], want [Globex, Zzz] (alphabetical)",
-			app.companyList.companies[0].Name, app.companyList.companies[1].Name)
+	if companiesTabOf(app).companies[0].Name != "Globex" || companiesTabOf(app).companies[1].Name != "Zzz" {
+		t.Fatalf("companiesTabOf(app).companies names = [%q, %q], want [Globex, Zzz] (alphabetical)",
+			companiesTabOf(app).companies[0].Name, companiesTabOf(app).companies[1].Name)
 	}
 }
 
@@ -879,7 +886,7 @@ func TestApp_OpenPostingList_HidesArchivedPostingsByDefault(t *testing.T) {
 	}
 	app, _ = sendKey(app, refreshResult(t, cmd))
 
-	postings, err := s.Postings.ListByCompany(context.Background(), app.companyList.companies[0].ID)
+	postings, err := s.Postings.ListByCompany(context.Background(), companiesTabOf(app).companies[0].ID)
 	if err != nil {
 		t.Fatalf("ListPostingsByCompany: %v", err)
 	}
@@ -1077,8 +1084,8 @@ func TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications(t
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
 	app := newTestApp(t, s, syncer)
-	if len(app.activeApplicationList.apps) != 0 {
-		t.Fatalf("app.activeApplicationList.apps before starting one = %+v, want empty", app.activeApplicationList.apps)
+	if len(applicationsTabOf(app).apps) != 0 {
+		t.Fatalf("applicationsTabOf(app).apps before starting one = %+v, want empty", applicationsTabOf(app).apps)
 	}
 	app = openPostingList(t, app)
 	app = openPostingDetail(t, app)
@@ -1093,8 +1100,8 @@ func TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications(t
 	}
 	app = applyCmd(t, app, createdCmd)
 
-	if len(app.activeApplicationList.apps) != 1 {
-		t.Fatalf("app.activeApplicationList.apps after starting one = %+v, want 1", app.activeApplicationList.apps)
+	if len(applicationsTabOf(app).apps) != 1 {
+		t.Fatalf("applicationsTabOf(app).apps after starting one = %+v, want 1", applicationsTabOf(app).apps)
 	}
 }
 
@@ -1323,11 +1330,11 @@ func TestApp_StartsOnActiveApplicationsScreen(t *testing.T) {
 	if app.onScreen() != message.ScreenActiveApplications {
 		t.Fatalf("initial screen = %v, want message.ScreenActiveApplications", app.onScreen())
 	}
-	if len(app.activeApplicationList.apps) != 1 {
-		t.Fatalf("app.activeApplicationList.apps = %+v, want 1 (loaded on Init)", app.activeApplicationList.apps)
+	if len(applicationsTabOf(app).apps) != 1 {
+		t.Fatalf("applicationsTabOf(app).apps = %+v, want 1 (loaded on Init)", applicationsTabOf(app).apps)
 	}
-	if app.activeApplicationList.apps[0].CompanyName != "Acme" {
-		t.Fatalf("activeApplications[0].CompanyName = %q, want %q", app.activeApplicationList.apps[0].CompanyName, "Acme")
+	if applicationsTabOf(app).apps[0].CompanyName != "Acme" {
+		t.Fatalf("activeApplications[0].CompanyName = %q, want %q", applicationsTabOf(app).apps[0].CompanyName, "Acme")
 	}
 }
 
@@ -1372,7 +1379,7 @@ func TestApp_ActiveApplications_StatusChange_KeepsTheCursorOnItsRow(t *testing.T
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyDown})
-	chosen := app.activeApplicationList.apps[1]
+	chosen := applicationsTabOf(app).apps[1]
 
 	app = sendKeyAndApply(t, app, runeKey('s'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyDown}) // submitted
@@ -1380,7 +1387,7 @@ func TestApp_ActiveApplications_StatusChange_KeepsTheCursorOnItsRow(t *testing.T
 	if app.onScreen() != message.ScreenActiveApplications {
 		t.Fatalf("screen after saving status = %v, want the home list", app.onScreen())
 	}
-	if got := app.activeApplicationList.apps[len(app.activeApplicationList.apps)-1].ID; got != chosen.ID {
+	if got := applicationsTabOf(app).apps[len(applicationsTabOf(app).apps)-1].ID; got != chosen.ID {
 		t.Fatalf("last row is application %d, want %d, submitted and below the started ones", got, chosen.ID)
 	}
 
@@ -1473,8 +1480,8 @@ func TestApp_ActiveApplications_StatusChangeToRejected_RemovesFromList(t *testin
 	}
 	app = applyCmd(t, app, cmd)
 
-	if len(app.activeApplicationList.apps) != 0 {
-		t.Fatalf("app.activeApplicationList.apps after rejecting = %+v, want empty", app.activeApplicationList.apps)
+	if len(applicationsTabOf(app).apps) != 0 {
+		t.Fatalf("applicationsTabOf(app).apps after rejecting = %+v, want empty", applicationsTabOf(app).apps)
 	}
 }
 
@@ -1687,8 +1694,8 @@ func TestApp_PressEsc_CancelsFormBackToList(t *testing.T) {
 	if app.onScreen() != message.ScreenCompanyList {
 		t.Fatalf("screen after esc = %v, want message.ScreenCompanyList", app.onScreen())
 	}
-	if len(app.companyList.companies) != 0 {
-		t.Fatalf("app.companyList.companies after cancel = %+v, want empty (nothing submitted)", app.companyList.companies)
+	if len(companiesTabOf(app).companies) != 0 {
+		t.Fatalf("companiesTabOf(app).companies after cancel = %+v, want empty (nothing submitted)", companiesTabOf(app).companies)
 	}
 }
 
@@ -1736,7 +1743,7 @@ func TestApp_PressR_RefreshesSelectedCompanyAndShowsStatus(t *testing.T) {
 		t.Fatalf("app.err = %v, want nil", app.err)
 	}
 
-	postings, err := s.Postings.ListByCompany(context.Background(), app.companyList.companies[0].ID)
+	postings, err := s.Postings.ListByCompany(context.Background(), companiesTabOf(app).companies[0].ID)
 	if err != nil {
 		t.Fatalf("ListPostingsByCompany: %v", err)
 	}
@@ -2039,7 +2046,7 @@ func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testin
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
-	app := newTestApp(t, s, syncer)
+	app, screens := newTestAppWithScreens(t, s, syncer)
 	// Wide enough that the documents lines (which embed a full t.TempDir()
 	// path) aren't wrapped across lines -- wrapping itself is covered by
 	// other detail-view tests, not the concern here.
@@ -2051,7 +2058,7 @@ func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testin
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2079,7 +2086,7 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
-	app := newTestApp(t, s, syncer)
+	app, screens := newTestAppWithScreens(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 	app = openPostingList(t, app)
 
@@ -2091,7 +2098,7 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 	// Content must match what's on disk, or the staleness check (see
 	// document.Review.IsCurrent) treats this review
 	// as not describing the current document and omits it.
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2139,11 +2146,11 @@ func TestApp_LoadActiveApplications_DocumentReadFails_SetsErr(t *testing.T) {
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	app := newAppOn(s, newTestSyncer(s, nil), documents.NewStore(t.TempDir()))
+	app, screens := newAppWithScreensOn(s, newTestSyncer(s, nil), documents.NewStore(t.TempDir()))
 	if _, err := createReview(context.Background(), s, application.ID, document.CoverLetter, "letter", document.Flagged, "needs work"); err != nil {
 		t.Fatalf("CreateReview: %v", err)
 	}
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2215,7 +2222,7 @@ func TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag(t *testing.T) 
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
-	app := newTestApp(t, s, syncer)
+	app, screens := newTestAppWithScreens(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 	app = openPostingList(t, app)
 
@@ -2224,7 +2231,7 @@ func TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag(t *testing.T) 
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2275,7 +2282,7 @@ func TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T) {
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
-	app := newTestApp(t, s, syncer)
+	app, screens := newTestAppWithScreens(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 	app = openPostingList(t, app)
 
@@ -2284,7 +2291,7 @@ func TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2327,7 +2334,7 @@ func TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail(t *testing.T) 
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
-	app := newTestApp(t, s, syncer)
+	app, screens := newTestAppWithScreens(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 	app = openPostingList(t, app)
 
@@ -2336,7 +2343,7 @@ func TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail(t *testing.T) 
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2491,9 +2498,9 @@ func TestApp_ApplicationDetail_ShiftR_EntersReviewFormDirectly(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
-	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, nil))
 
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2513,9 +2520,9 @@ func TestApp_ApplicationDetail_CancelDocumentReview_ReturnsToApplicationDetail(t
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
-	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, nil))
 
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2541,10 +2548,10 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately(t
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
-	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2584,10 +2591,10 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplications
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
-	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2631,9 +2638,9 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_MovesTheHomeRowsNextStepO
 	if _, err := createReview(context.Background(), s, application.ID, document.CoverLetter, "# Cover Letter", document.Passed, ""); err != nil {
 		t.Fatalf("CreateReview: %v", err)
 	}
-	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, nil))
 
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2707,10 +2714,10 @@ func TestApp_SubmitDocumentReviewFromPostingDetailViaApplicationDetailFastPath_K
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
-	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2814,7 +2821,7 @@ func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testi
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}},
 	})
-	app := newTestApp(t, s, syncer)
+	app, screens := newTestAppWithScreens(t, s, syncer)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 	app = openPostingList(t, app)
 
@@ -2825,7 +2832,7 @@ func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testi
 	}
 	// Deliberately no files written -- the application row exists, but
 	// the documents don't yet.
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 
 	app = openPostingDetail(t, app)
 
@@ -2870,12 +2877,12 @@ func TestApp_CompanyList_VimJK_MoveCursorLikeArrows(t *testing.T) {
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 
 	app, _ = sendKey(app, runeKey('j'))
-	if app.companyList.cursor != 1 {
-		t.Fatalf("cursor after 'j' = %d, want 1", app.companyList.cursor)
+	if companiesTabOf(app).cursor != 1 {
+		t.Fatalf("cursor after 'j' = %d, want 1", companiesTabOf(app).cursor)
 	}
 	app, _ = sendKey(app, runeKey('k'))
-	if app.companyList.cursor != 0 {
-		t.Fatalf("cursor after 'k' = %d, want 0", app.companyList.cursor)
+	if companiesTabOf(app).cursor != 0 {
+		t.Fatalf("cursor after 'k' = %d, want 0", companiesTabOf(app).cursor)
 	}
 }
 
@@ -3361,39 +3368,39 @@ func TestApp_PostingsLoadFails_KeepsThePostingsAndShowsTheError(t *testing.T) {
 // exportTestApp builds an app sitting on the active-applications screen
 // with one application whose resume is drafted on disk -- the starting
 // point every export wiring test needs.
-func exportTestApp(t *testing.T) *App {
+func exportTestApp(t *testing.T) (*App, *Screens) {
 	t.Helper()
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Staff Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
-	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, nil))
 
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 	if err := os.WriteFile(mustDoc(t, status, document.Resume).Path, []byte("# Resume\n\nBody.\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile resume: %v", err)
 	}
-	return app
+	return app, screens
 }
 
 func TestApp_ActiveApplications_E_EntersExportScreenPrefilledWithDefaultDir(t *testing.T) {
-	app := exportTestApp(t)
+	app, screens := exportTestApp(t)
 
 	app = sendKeyAndApply(t, app, runeKey('e'))
 
 	if app.onScreen() != message.ScreenApplicationExport {
 		t.Fatalf("screen after 'e' = %v, want message.ScreenApplicationExport", app.onScreen())
 	}
-	if got := pushed[*applicationExportModel](t, app).textinput.Value(); got != app.exportDir {
-		t.Errorf("destination prefill = %q, want the app's default export dir %q", got, app.exportDir)
+	if got := pushed[*applicationExportModel](t, app).textinput.Value(); got != screens.exportDir {
+		t.Errorf("destination prefill = %q, want the app's default export dir %q", got, screens.exportDir)
 	}
 }
 
 func TestApp_ExportScreen_Esc_ReturnsToActiveApplications(t *testing.T) {
-	app := exportTestApp(t)
+	app, _ := exportTestApp(t)
 
 	app = sendKeyAndApply(t, app, runeKey('e'))
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
@@ -3404,7 +3411,7 @@ func TestApp_ExportScreen_Esc_ReturnsToActiveApplications(t *testing.T) {
 }
 
 func TestApp_Export_ReportsWhereFilesWentAndRemembersTheDirectory(t *testing.T) {
-	app := exportTestApp(t)
+	app, screens := exportTestApp(t)
 	dest := t.TempDir()
 
 	app = sendKeyAndApply(t, app, runeKey('e'))
@@ -3421,8 +3428,8 @@ func TestApp_Export_ReportsWhereFilesWentAndRemembersTheDirectory(t *testing.T) 
 	if !strings.Contains(app.status, dest) {
 		t.Errorf("status = %q, want it to name the destination %q so the user knows where to drag from", app.status, dest)
 	}
-	if app.exportDir != dest {
-		t.Errorf("exportDir = %q, want %q remembered for the next export", app.exportDir, dest)
+	if screens.exportDir != dest {
+		t.Errorf("exportDir = %q, want %q remembered for the next export", screens.exportDir, dest)
 	}
 	exported := filepath.Join(dest, "acme-staff-engineer-resume.pdf")
 	if _, err := os.Stat(exported); err != nil {
@@ -3431,8 +3438,8 @@ func TestApp_Export_ReportsWhereFilesWentAndRemembersTheDirectory(t *testing.T) 
 }
 
 func TestApp_Export_Failure_SurfacesErrorAndKeepsRememberedDir(t *testing.T) {
-	app := exportTestApp(t)
-	before := app.exportDir
+	app, screens := exportTestApp(t)
+	before := screens.exportDir
 
 	// A path under a regular file can't be created as a directory.
 	blocker := filepath.Join(t.TempDir(), "not-a-dir")
@@ -3448,8 +3455,8 @@ func TestApp_Export_Failure_SurfacesErrorAndKeepsRememberedDir(t *testing.T) {
 	if app.err == nil {
 		t.Fatal("app.err = nil, want the export failure surfaced")
 	}
-	if app.exportDir != before {
-		t.Errorf("exportDir = %q, want it left at %q -- a failed export shouldn't be remembered as the new default", app.exportDir, before)
+	if screens.exportDir != before {
+		t.Errorf("exportDir = %q, want it left at %q -- a failed export shouldn't be remembered as the new default", screens.exportDir, before)
 	}
 }
 
@@ -3575,9 +3582,9 @@ func TestApp_ReviewSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
-	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, nil))
 
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -3614,9 +3621,9 @@ func TestApp_ReviewSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
-	app := newTestApp(t, s, newTestSyncer(s, nil))
+	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, nil))
 
-	status := app.documents.Status(application.ID)
+	status := screens.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -3833,7 +3840,7 @@ func TestApp_TheCompanyListReloadsItselfAfterASync(t *testing.T) {
 					sources = append(sources, msg.Meta.Source)
 				}
 			}
-			want := []message.Source{{Instance: app.companyList.Instance()}}
+			want := []message.Source{{Instance: companiesTabOf(app).Instance()}}
 			if diff := cmp.Diff(want, sources); diff != "" {
 				t.Errorf("sources of the company reads (-want +got):\n%s", diff)
 			}
@@ -3872,7 +3879,7 @@ func TestApp_BackToCompanyList_AfterArchiving_ShowsUpdatedOpenCount(t *testing.T
 	if app.onScreen() != message.ScreenCompanyList {
 		t.Fatalf("screen = %v, want message.ScreenCompanyList", app.onScreen())
 	}
-	if got := app.companyList.openPostings[app.companyList.companies[0].ID]; got != 1 {
+	if got := companiesTabOf(app).openPostings[companiesTabOf(app).companies[0].ID]; got != 1 {
 		t.Errorf("open count after archiving one of two = %d, want 1", got)
 	}
 }
@@ -3976,16 +3983,7 @@ func TestApp_CompanyList_SearchEnterEnter_OpensMatchAndKeepsSearchOnReturn(t *te
 func TestApp_Resize_ClearsTheScreen(t *testing.T) {
 	t.Parallel()
 
-	app := New(
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		documents.NewStore(t.TempDir()),
-	)
+	app, _ := newBareApp(t)
 	_, cmd := sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 24})
 	if cmd == nil {
 		t.Fatal("resize returned no command, want tea.ClearScreen")

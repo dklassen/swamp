@@ -7,7 +7,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/tui/message"
@@ -38,34 +37,34 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 		open func(app *App)
 	}{
 		{name: "company form", open: func(app *App) {
-			app.tab = message.ScreenCompanyList
-			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenCompanyForm, message.Subject{}, message.None{})())
+			app.nav.tab = message.ScreenCompanyList
+			app.Update(message.Push(message.Source{Instance: companiesTabOf(app).Instance()}, message.ScreenCompanyForm, message.Subject{}, message.None{})())
 			// Past the source picker, which takes no text.
 			app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		}},
 		{name: "company edit", open: func(app *App) {
-			app.tab = message.ScreenCompanyList
-			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenCompanyEdit,
+			app.nav.tab = message.ScreenCompanyList
+			app.Update(message.Push(message.Source{Instance: companiesTabOf(app).Instance()}, message.ScreenCompanyEdit,
 				message.Subject{Type: message.TypeCompany, ID: 1}, message.Company{ID: 1})())
 		}},
 		{name: "export", open: func(app *App) {
-			app.Update(message.Push(message.Source{Instance: app.activeApplicationList.Instance()}, message.ScreenApplicationExport,
+			app.Update(message.Push(message.Source{Instance: applicationsTabOf(app).Instance()}, message.ScreenApplicationExport,
 				message.Subject{Type: message.TypeApplication, ID: 1}, message.ApplicationDetail{Application: message.Application{ID: 1}})())
 		}},
 		{name: "notes", open: func(app *App) {
-			app.tab = message.ScreenCompanyList
-			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenApplicationNotes,
+			app.nav.tab = message.ScreenCompanyList
+			app.Update(message.Push(message.Source{Instance: companiesTabOf(app).Instance()}, message.ScreenApplicationNotes,
 				message.Subject{Type: message.TypeApplication, ID: 1}, message.Application{ID: 1})())
 		}},
 		{name: "application form", open: func(app *App) {
-			app.tab = message.ScreenCompanyList
-			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenApplicationForm,
+			app.nav.tab = message.ScreenCompanyList
+			app.Update(message.Push(message.Source{Instance: companiesTabOf(app).Instance()}, message.ScreenApplicationForm,
 				message.Subject{Type: message.TypeApplication, ID: 1}, message.Application{ID: 1, PostingID: 1})())
-			app.Update(formReadBy(app.screenOf(app.onScreen()).Instance(), message.ApplicationForm{}))
+			app.Update(formReadBy(app.top().Instance(), message.ApplicationForm{}))
 		}},
 		{name: "document review", open: func(app *App) {
-			app.tab = message.ScreenCompanyList
-			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenDocumentReviewForm,
+			app.nav.tab = message.ScreenCompanyList
+			app.Update(message.Push(message.Source{Instance: companiesTabOf(app).Instance()}, message.ScreenDocumentReviewForm,
 				message.Subject{Type: message.TypeApplication, ID: 1}, message.DocumentReview{ApplicationID: 1, DocumentType: message.DocumentCoverLetter})())
 		}},
 	}
@@ -73,7 +72,7 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			app := New(nil, nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
+			app, _ := newBareApp(t)
 			app, _ = sendKey(app, tea.WindowSizeMsg{Width: 100, Height: 30})
 			tt.open(app)
 

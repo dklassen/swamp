@@ -31,103 +31,61 @@ func (f *stackedFake) Routes() []*model.Route {
 }
 
 // assertKinds fails unless stack holds exactly want, bottom first.
-func assertKinds(t *testing.T, stack *screenStack, want ...message.Screen) {
+func assertKinds(t *testing.T, stack *Stack, want ...message.Screen) {
 	t.Helper()
-	if diff := cmp.Diff(want, stack.kinds()); diff != "" {
+	if diff := cmp.Diff(want, stack.Kinds()); diff != "" {
 		t.Errorf("kinds mismatch (-want +got):\n%s", diff)
 	}
 }
 
-func TestScreenStack_Push_RoutesToTheScreen(t *testing.T) {
+func TestStack_Push_PutsTheScreenOnTop(t *testing.T) {
 	t.Parallel()
-	router := model.NewMsgRouter()
-	stack := newScreenStack(router)
-	screen := newStackedFake()
+	stack := NewStack()
+	under, over := newStackedFake(), newStackedFake()
 
-	if err := stack.push(message.ScreenCompanyForm, screen); err != nil {
-		t.Fatalf("push: %v", err)
-	}
-	router.Dispatch(stackPing{})
+	stack.Push(message.ScreenCompanyEdit, under)
+	stack.Push(message.ScreenFilterSelect, over)
 
-	if screen.heard != 1 {
-		t.Errorf("pings the pushed screen heard = %d, want 1", screen.heard)
+	if stack.Top() != over {
+		t.Errorf("top = %v, want the screen pushed last", stack.Top())
 	}
-	assertKinds(t, stack, message.ScreenCompanyForm)
+	assertKinds(t, stack, message.ScreenCompanyEdit, message.ScreenFilterSelect)
 }
 
-func TestScreenStack_Pop_StopsTheScreensRoutes(t *testing.T) {
+func TestStack_Pop_TakesTheTopOff(t *testing.T) {
 	t.Parallel()
-	router := model.NewMsgRouter()
-	stack := newScreenStack(router)
+	stack := NewStack()
 	under, over := newStackedFake(), newStackedFake()
-	if err := stack.push(message.ScreenCompanyEdit, under); err != nil {
-		t.Fatalf("push: %v", err)
-	}
-	if err := stack.push(message.ScreenFilterSelect, over); err != nil {
-		t.Fatalf("push: %v", err)
-	}
+	stack.Push(message.ScreenCompanyEdit, under)
+	stack.Push(message.ScreenFilterSelect, over)
 
-	if err := stack.pop(); err != nil {
+	popped, err := stack.Pop()
+	if err != nil {
 		t.Fatalf("pop: %v", err)
 	}
-	router.Dispatch(stackPing{})
 
-	if over.heard != 0 || under.heard != 1 {
-		t.Errorf("pings heard after the pop: popped %d, beneath %d; want 0 and 1", over.heard, under.heard)
+	if popped != over || stack.Top() != under {
+		t.Errorf("pop gave %v leaving %v on top; want the top, leaving the one beneath", popped, stack.Top())
 	}
 	assertKinds(t, stack, message.ScreenCompanyEdit)
 }
 
-func TestScreenStack_Replace_SwapsTheTopOverTheSameScreen(t *testing.T) {
+func TestStack_PopWithNothingPushed_Fails(t *testing.T) {
 	t.Parallel()
-	router := model.NewMsgRouter()
-	stack := newScreenStack(router)
-	old, replacement := newStackedFake(), newStackedFake()
-	if err := stack.push(message.ScreenPostingDetail, old); err != nil {
-		t.Fatalf("push: %v", err)
-	}
-
-	if err := stack.replace(message.ScreenPostingDetail, replacement); err != nil {
-		t.Fatalf("replace: %v", err)
-	}
-	router.Dispatch(stackPing{})
-
-	if old.heard != 0 || replacement.heard != 1 {
-		t.Errorf("pings heard after the replace: replaced %d, replacement %d; want 0 and 1", old.heard, replacement.heard)
-	}
-	assertKinds(t, stack, message.ScreenPostingDetail)
-}
-
-func TestScreenStack_WithNothingPushed_Fails(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name string
-		op   func(*screenStack) error
-	}{
-		{name: "pop", op: func(st *screenStack) error { return st.pop() }},
-		{name: "replace", op: func(st *screenStack) error { return st.replace(message.ScreenPostingDetail, newStackedFake()) }},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if err := tt.op(newScreenStack(model.NewMsgRouter())); err == nil {
-				t.Errorf("%s with nothing pushed: nil error, want one", tt.name)
-			}
-		})
+	if _, err := NewStack().Pop(); err == nil {
+		t.Error("pop with nothing pushed: nil error, want one")
 	}
 }
 
-func TestScreenStack_PushingAKindAlreadyOpen_Panics(t *testing.T) {
+func TestStack_PushingAKindAlreadyOpen_Panics(t *testing.T) {
 	t.Parallel()
-	stack := newScreenStack(model.NewMsgRouter())
-	if err := stack.push(message.ScreenCompanyForm, newStackedFake()); err != nil {
-		t.Fatalf("push: %v", err)
-	}
+	stack := NewStack()
+	stack.Push(message.ScreenCompanyForm, newStackedFake())
 
 	defer func() {
 		if recover() == nil {
 			t.Errorf("pushing %v while it's open didn't panic", message.ScreenCompanyForm)
 		}
 	}()
-	_ = stack.push(message.ScreenCompanyForm, newStackedFake())
+	stack.Push(message.ScreenCompanyForm, newStackedFake())
 }

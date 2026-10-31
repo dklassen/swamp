@@ -61,7 +61,7 @@ func TestApp_HomeListReload_KeepsTheCursorOnTheSameApplication(t *testing.T) {
 		}
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
-	rows := app.activeApplicationList.apps
+	rows := applicationsTabOf(app).apps
 	if len(rows) != 3 {
 		t.Fatalf("home list has %d rows, want 3", len(rows))
 	}
@@ -74,7 +74,7 @@ func TestApp_HomeListReload_KeepsTheCursorOnTheSameApplication(t *testing.T) {
 	}
 	app = readChangeLog(t, app)
 
-	if got := app.activeApplicationList.apps[app.activeApplicationList.cursor].ID; got != onLast {
+	if got := applicationsTabOf(app).apps[applicationsTabOf(app).cursor].ID; got != onLast {
 		t.Errorf("cursor is on application %d after the reload, want %d (the one it was on)", got, onLast)
 	}
 }
@@ -93,7 +93,7 @@ func TestApp_CompanyListReload_KeepsTheCursorOnTheSameCompany(t *testing.T) {
 	if app.onScreen() != message.ScreenCompanyList {
 		t.Fatalf("screen after c = %v, want the company list", app.onScreen())
 	}
-	companies := app.companyList.companies
+	companies := companiesTabOf(app).companies
 	app, _ = sendKey(app, runeKey('j'))
 	app, _ = sendKey(app, runeKey('j'))
 	onLast := companies[2].ID
@@ -103,10 +103,10 @@ func TestApp_CompanyListReload_KeepsTheCursorOnTheSameCompany(t *testing.T) {
 	}
 	app = readChangeLog(t, app)
 
-	if len(app.companyList.companies) != 2 {
-		t.Fatalf("company list has %d companies after the reload, want 2", len(app.companyList.companies))
+	if len(companiesTabOf(app).companies) != 2 {
+		t.Fatalf("company list has %d companies after the reload, want 2", len(companiesTabOf(app).companies))
 	}
-	if got := app.companyList.companies[app.companyList.cursor].ID; got != onLast {
+	if got := companiesTabOf(app).companies[companiesTabOf(app).cursor].ID; got != onLast {
 		t.Errorf("cursor is on company %d after the reload, want %d", got, onLast)
 	}
 }
@@ -153,7 +153,7 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	app, target := deleteTestApp(t) // resume drafted as "# Draft\n"
+	app, screens, target := deleteTestAppWithScreens(t) // resume drafted as "# Draft\n"
 	app.WithChangeLog(0, "tui:1")
 	if _, err := createReview(ctx, storeOf(app), target.ID, document.Resume, "# Draft\n", document.Passed, ""); err != nil {
 		t.Fatalf("CreateReview: %v", err)
@@ -164,7 +164,7 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 		t.Fatalf("application detail doesn't show the passed review:\n%s", viewText(app))
 	}
 
-	if _, err := app.documents.Write(target.ID, document.Resume, "# Revised by the agent\n"); err != nil {
+	if _, err := screens.documents.Write(target.ID, document.Resume, "# Revised by the agent\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	if err := storeOf(app).Documents.RecordWrite(ctx, target.ID, document.Resume, "# Revised by the agent\n", document.SourceWriteDocument); err != nil {

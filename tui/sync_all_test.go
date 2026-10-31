@@ -106,7 +106,7 @@ func TestApp_SyncAll_StepsThroughEveryCompanyThenSummarizes(t *testing.T) {
 	if syncBarShowing(app) {
 		t.Error("progress bar still showing after the last company")
 	}
-	for _, c := range app.companyList.companies {
+	for _, c := range companiesTabOf(app).companies {
 		postings, err := s.Postings.ListByCompany(t.Context(), c.ID)
 		if err != nil {
 			t.Fatalf("ListPostingsByCompany: %v", err)
@@ -208,7 +208,7 @@ func TestApp_SyncAll_MessageFromEarlierRun_Ignored(t *testing.T) {
 	app, _ = sendIntentKey(t, app, runeKey('R'))
 	banner := bannerLine(app)
 
-	app, stray := sendKey(app, synced(message.Source{Instance: app.syncing.Instance()}, app.companyList.companies[0].ID, 1, 0))
+	app, stray := sendKey(app, synced(message.Source{Instance: app.syncing.Instance()}, companiesTabOf(app).companies[0].ID, 1, 0))
 	for _, msg := range runCmd(t, stray) {
 		if _, isStep := msg.(message.Event[message.Ran[message.SyncReport]]); isStep {
 			t.Error("a message from run 1 issued a company's sync during run 2")
@@ -239,7 +239,7 @@ func TestApp_SyncAll_RDuringRun_Refused(t *testing.T) {
 // so a run in progress is no reason to refuse it.
 func TestApp_SyncAll_FilterSaveDuringRun_Saves(t *testing.T) {
 	app, s := newSyncAllTestApp(t)
-	if _, err := s.Postings.Ingest(t.Context(), app.companyList.companies[0].ID, jobboard.Ashby, "acme-eng", posting.IngestedFields{Title: "Engineer", Department: "Engineering"}); err != nil {
+	if _, err := s.Postings.Ingest(t.Context(), companiesTabOf(app).companies[0].ID, jobboard.Ashby, "acme-eng", posting.IngestedFields{Title: "Engineer", Department: "Engineering"}); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
 	app, _ = sendIntentKey(t, app, runeKey('R'))                  // a run under way, its first step not run
@@ -286,7 +286,7 @@ func TestApp_SyncAll_LeavingCompanyList_RunContinues(t *testing.T) {
 // run and reported as skipped, not failed.
 func TestApp_SyncAll_CompanySyncingElsewhere_SummarizedAsSkipped(t *testing.T) {
 	app, s := newSyncAllTestApp(t)
-	globex := app.companyList.companies[1]
+	globex := companiesTabOf(app).companies[1]
 	if taken, err := s.Companies.AcquireSyncLease(t.Context(), globex.ID, "swamp-fetch", time.Minute); err != nil || !taken {
 		t.Fatalf("AcquireSyncLease = %v, %v", taken, err)
 	}

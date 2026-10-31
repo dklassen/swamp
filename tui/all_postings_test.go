@@ -99,7 +99,7 @@ func TestAllPostings_ShowsOpenPostingsAcrossCompaniesNewestFirst(t *testing.T) {
 // pageTitles is the titles on the page on screen, top to bottom.
 func pageTitles(app *App) []string {
 	var titles []string
-	for _, l := range app.allPostings.page.Listings {
+	for _, l := range allPostingsTabOf(app).page.Listings {
 		titles = append(titles, l.Title)
 	}
 	return titles
@@ -116,7 +116,7 @@ func TestAllPostings_PagesForwardAndBack(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
 	app = openAllPostings(t, app)
-	size := app.allPostings.page.Limit
+	size := allPostingsTabOf(app).page.Limit
 	if size < 1 || size >= 7 {
 		t.Fatalf("page size = %d at height 13, want fewer than seven so they take several pages", size)
 	}
@@ -173,12 +173,12 @@ func TestAllPostings_ResizingReadsThePageAtTheNewSize(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
 	app = openAllPostings(t, app)
-	tall := app.allPostings.page.Limit
+	tall := allPostingsTabOf(app).page.Limit
 
 	app = sendKeyAndApply(t, app, tea.WindowSizeMsg{Width: 120, Height: 13})
 
-	if short := app.allPostings.pageSize(app.screenRows()); short >= tall || app.allPostings.page.Limit != short || len(app.allPostings.page.Listings) != short {
-		t.Errorf("after shrinking: page read at %d rows with %d listings, want %d (it was %d)", app.allPostings.page.Limit, len(app.allPostings.page.Listings), short, tall)
+	if short := allPostingsTabOf(app).pageSize(app.screenRows()); short >= tall || allPostingsTabOf(app).page.Limit != short || len(allPostingsTabOf(app).page.Listings) != short {
+		t.Errorf("after shrinking: page read at %d rows with %d listings, want %d (it was %d)", allPostingsTabOf(app).page.Limit, len(allPostingsTabOf(app).page.Listings), short, tall)
 	}
 }
 
@@ -196,7 +196,7 @@ func TestAllPostings_EnterOpensTheDetailAndEscComesBack(t *testing.T) {
 	for _, key := range []tea.KeyPressMsg{runeKey('l'), runeKey('j')} {
 		app = sendKeyAndApply(t, app, key)
 	}
-	want := app.allPostings.page.Listings[1]
+	want := allPostingsTabOf(app).page.Listings[1]
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
@@ -204,8 +204,8 @@ func TestAllPostings_EnterOpensTheDetailAndEscComesBack(t *testing.T) {
 		t.Fatalf("after enter: screen %v showing posting %d %q, want detail for %d %q", app.onScreen(), openDetail(t, app).posting.ID, openDetail(t, app).posting.Title, want.ID, want.Title)
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
-	if app.onScreen() != message.ScreenAllPostings || len(app.allPostings.starts) != 2 || app.allPostings.cursor != 1 {
-		t.Errorf("after esc: screen %v, page %d, row %d; want all postings, page 2, row 1", app.onScreen(), len(app.allPostings.starts), app.allPostings.cursor)
+	if app.onScreen() != message.ScreenAllPostings || len(allPostingsTabOf(app).starts) != 2 || allPostingsTabOf(app).cursor != 1 {
+		t.Errorf("after esc: screen %v, page %d, row %d; want all postings, page 2, row 1", app.onScreen(), len(allPostingsTabOf(app).starts), allPostingsTabOf(app).cursor)
 	}
 }
 
@@ -259,7 +259,7 @@ func TestAllPostings_IMarksAndUnmarksInterested(t *testing.T) {
 		if got := markup.InterestedAt != nil; got != want {
 			t.Errorf("after i: interested = %v, want %v", got, want)
 		}
-		if got := app.allPostings.page.Listings[0]; got.ID != posting.ID || got.Interested != want {
+		if got := allPostingsTabOf(app).page.Listings[0]; got.ID != posting.ID || got.Interested != want {
 			t.Errorf("after i: top row = %d interested %v, want %d interested %v", got.ID, got.Interested, posting.ID, want)
 		}
 		if got := strings.Contains(viewText(app), "★"); got != want {
@@ -280,7 +280,7 @@ func TestAllPostings_XArchivesAndThePostingLeavesThePage(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app = openAllPostings(t, app)
 	app = sendKeyAndApply(t, app, runeKey('j'))
-	archived := app.allPostings.page.Listings[1]
+	archived := allPostingsTabOf(app).page.Listings[1]
 
 	app = sendKeyAndApply(t, app, runeKey('x'))
 
@@ -294,8 +294,8 @@ func TestAllPostings_XArchivesAndThePostingLeavesThePage(t *testing.T) {
 	if diff := cmp.Diff([]string{"Role 3", "Role 1"}, pageTitles(app)); diff != "" {
 		t.Errorf("page after archiving %q (-want +got):\n%s", archived.Title, diff)
 	}
-	if app.allPostings.page.Total != 2 || app.allPostings.cursor != 1 {
-		t.Errorf("Total %d, cursor on row %d; want 2, on row 1", app.allPostings.page.Total, app.allPostings.cursor)
+	if allPostingsTabOf(app).page.Total != 2 || allPostingsTabOf(app).cursor != 1 {
+		t.Errorf("Total %d, cursor on row %d; want 2, on row 1", allPostingsTabOf(app).page.Total, allPostingsTabOf(app).cursor)
 	}
 }
 
@@ -306,21 +306,21 @@ func TestAllPostings_ArchivingTheLastPagesOnlyPostingStepsBack(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
-	size := app.allPostings.pageSize(app.screenRows())
+	size := allPostingsTabOf(app).pageSize(app.screenRows())
 	// One more than a page: the second page has one posting.
 	for i := 1; i <= size+1; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
 	}
 	app = openAllPostings(t, app)
 	app = sendKeyAndApply(t, app, runeKey('l'))
-	if len(app.allPostings.starts) != 2 || len(app.allPostings.page.Listings) != 1 {
-		t.Fatalf("on page %d with %d postings, want page 2 with 1", len(app.allPostings.starts), len(app.allPostings.page.Listings))
+	if len(allPostingsTabOf(app).starts) != 2 || len(allPostingsTabOf(app).page.Listings) != 1 {
+		t.Fatalf("on page %d with %d postings, want page 2 with 1", len(allPostingsTabOf(app).starts), len(allPostingsTabOf(app).page.Listings))
 	}
 
 	app = sendKeyAndApply(t, app, runeKey('x'))
 
-	if len(app.allPostings.starts) != 1 || len(app.allPostings.page.Listings) != size {
-		t.Errorf("after archiving page 2's only posting: page %d with %d postings, want page 1 with %d", len(app.allPostings.starts), len(app.allPostings.page.Listings), size)
+	if len(allPostingsTabOf(app).starts) != 1 || len(allPostingsTabOf(app).page.Listings) != size {
+		t.Errorf("after archiving page 2's only posting: page %d with %d postings, want page 1 with %d", len(allPostingsTabOf(app).starts), len(allPostingsTabOf(app).page.Listings), size)
 	}
 }
 
@@ -334,7 +334,7 @@ func TestAllPostings_OOpensTheJobURL(t *testing.T) {
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	var opened []string
-	app.allPostings.openURL = func(_ message.Source, _ message.Subject, url string) tea.Cmd {
+	allPostingsTabOf(app).openURL = func(_ message.Source, _ message.Subject, url string) tea.Cmd {
 		opened = append(opened, url)
 		return nil
 	}
@@ -372,8 +372,8 @@ func TestAllPostings_ANewPostingElsewhere_KeepsThePageAndCountsIt(t *testing.T) 
 	if diff := cmp.Diff(page2, pageTitles(app)); diff != "" {
 		t.Errorf("page 2 changed under the user (-before +after):\n%s", diff)
 	}
-	if len(app.allPostings.starts) != 2 || app.allPostings.cursor != 1 || app.allPostings.page.Total != 8 {
-		t.Errorf("page %d, row %d, Total %d; want page 2, row 1, Total 8", len(app.allPostings.starts), app.allPostings.cursor, app.allPostings.page.Total)
+	if len(allPostingsTabOf(app).starts) != 2 || allPostingsTabOf(app).cursor != 1 || allPostingsTabOf(app).page.Total != 8 {
+		t.Errorf("page %d, row %d, Total %d; want page 2, row 1, Total 8", len(allPostingsTabOf(app).starts), allPostingsTabOf(app).cursor, allPostingsTabOf(app).page.Total)
 	}
 	app = sendKeyAndApply(t, app, runeKey('h'))
 	if titles := pageTitles(app); len(titles) == 0 || titles[0] != "Role 8" {
@@ -416,8 +416,8 @@ func TestAllPostings_SlashOpensTheSearchLine(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, runeKey('/'))
 
-	if !app.allPostings.searching || !strings.Contains(viewText(app), "🔍 ▏") {
-		t.Errorf("after /: searching %v, view:\n%s", app.allPostings.searching, viewText(app))
+	if !allPostingsTabOf(app).searching || !strings.Contains(viewText(app), "🔍 ▏") {
+		t.Errorf("after /: searching %v, view:\n%s", allPostingsTabOf(app).searching, viewText(app))
 	}
 }
 
@@ -443,8 +443,8 @@ func TestAllPostings_TypingSearchesAfterAPause(t *testing.T) {
 		app, cmd = sendKey(app, runeKey(r))
 		timers = append(timers, cmd)
 	}
-	if app.allPostings.query != "plat" || len(pageTitles(app)) != 3 {
-		t.Fatalf("while typing: query %q, %d postings; want \"plat\" and the page not yet reloaded", app.allPostings.query, len(pageTitles(app)))
+	if allPostingsTabOf(app).query != "plat" || len(pageTitles(app)) != 3 {
+		t.Fatalf("while typing: query %q, %d postings; want \"plat\" and the page not yet reloaded", allPostingsTabOf(app).query, len(pageTitles(app)))
 	}
 
 	app = applyCmd(t, app, timers[0])
@@ -497,8 +497,8 @@ func searchAllPostings(t *testing.T, app *App, query string) *App {
 	for _, r := range query {
 		app, _ = sendKey(app, runeKey(r))
 	}
-	return sendKeyAndApply(t, app, message.New(message.Source{Instance: app.allPostings.Instance()}, message.Subject{}, message.OpNone, time.Now().UTC(),
-		message.Signal[message.SearchDebounce]{Value: message.SearchDebounce{Query: app.allPostings.query}}))
+	return sendKeyAndApply(t, app, message.New(message.Source{Instance: allPostingsTabOf(app).Instance()}, message.Subject{}, message.OpNone, time.Now().UTC(),
+		message.Signal[message.SearchDebounce]{Value: message.SearchDebounce{Query: allPostingsTabOf(app).query}}))
 }
 
 func TestAllPostings_EscClearsTheSearch(t *testing.T) {
@@ -518,8 +518,8 @@ func TestAllPostings_EscClearsTheSearch(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
-	if app.allPostings.searching || app.allPostings.query != "" {
-		t.Errorf("after esc: searching %v, query %q; want closed and empty", app.allPostings.searching, app.allPostings.query)
+	if allPostingsTabOf(app).searching || allPostingsTabOf(app).query != "" {
+		t.Errorf("after esc: searching %v, query %q; want closed and empty", allPostingsTabOf(app).searching, allPostingsTabOf(app).query)
 	}
 	if diff := cmp.Diff([]string{"Designer", "Platform Engineer"}, pageTitles(app)); diff != "" {
 		t.Errorf("after esc (-want +got):\n%s", diff)
@@ -544,8 +544,8 @@ func TestAllPostings_EnterKeepsTheResultsAndKeysActOnThem(t *testing.T) {
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = sendKeyAndApply(t, app, runeKey('i'))
 
-	if app.onScreen() != message.ScreenAllPostings || app.allPostings.searching || app.allPostings.query != "design" {
-		t.Errorf("after enter, i: screen %v, searching %v, query %q; want the view, not typing, query \"design\"", app.onScreen(), app.allPostings.searching, app.allPostings.query)
+	if app.onScreen() != message.ScreenAllPostings || allPostingsTabOf(app).searching || allPostingsTabOf(app).query != "design" {
+		t.Errorf("after enter, i: screen %v, searching %v, query %q; want the view, not typing, query \"design\"", app.onScreen(), allPostingsTabOf(app).searching, allPostingsTabOf(app).query)
 	}
 	markup, err := s.Postings.Markup(context.Background(), designer.ID)
 	if err != nil {
@@ -602,8 +602,8 @@ func TestAllPostings_SlashEditsKeptResultsQuery(t *testing.T) {
 	app = sendKeyAndApply(t, app, runeKey('/'))
 	app, _ = sendKey(app, runeKey('i'))
 
-	if !app.allPostings.searching || app.allPostings.query != "designi" {
-		t.Errorf("after /, i: searching %v, query %q; want typing, \"designi\"", app.allPostings.searching, app.allPostings.query)
+	if !allPostingsTabOf(app).searching || allPostingsTabOf(app).query != "designi" {
+		t.Errorf("after /, i: searching %v, query %q; want typing, \"designi\"", allPostingsTabOf(app).searching, allPostingsTabOf(app).query)
 	}
 }
 
@@ -622,8 +622,8 @@ func TestAllPostings_EscClearsKeptResults(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
-	if app.onScreen() != message.ScreenAllPostings || app.allPostings.query != "" {
-		t.Errorf("after esc: screen %v, query %q; want the view, query cleared", app.onScreen(), app.allPostings.query)
+	if app.onScreen() != message.ScreenAllPostings || allPostingsTabOf(app).query != "" {
+		t.Errorf("after esc: screen %v, query %q; want the view, query cleared", app.onScreen(), allPostingsTabOf(app).query)
 	}
 	if diff := cmp.Diff([]string{"Designer", "Platform Engineer"}, pageTitles(app)); diff != "" {
 		t.Errorf("after esc (-want +got):\n%s", diff)
@@ -643,7 +643,7 @@ func TestAllPostings_PagesThroughSearchResults(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
 	app = openAllPostings(t, app)
 	app = searchAllPostings(t, app, "platform")
-	size := app.allPostings.page.Limit
+	size := allPostingsTabOf(app).page.Limit
 	if size >= 7 {
 		t.Fatalf("page size %d, want fewer than the 7 matches", size)
 	}
@@ -661,12 +661,12 @@ func TestAllPostings_PagesThroughSearchResults(t *testing.T) {
 	if diff := cmp.Diff(want, seen); diff != "" {
 		t.Errorf("paging through the matches (-want +got):\n%s", diff)
 	}
-	if !app.allPostings.searching || app.allPostings.query != "platform" {
-		t.Errorf("paging closed the search: searching %v, query %q", app.allPostings.searching, app.allPostings.query)
+	if !allPostingsTabOf(app).searching || allPostingsTabOf(app).query != "platform" {
+		t.Errorf("paging closed the search: searching %v, query %q", allPostingsTabOf(app).searching, allPostingsTabOf(app).query)
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyLeft})
-	if len(app.allPostings.starts) != pages-1 {
-		t.Errorf("← went to page %d, want %d", len(app.allPostings.starts), pages-1)
+	if len(allPostingsTabOf(app).starts) != pages-1 {
+		t.Errorf("← went to page %d, want %d", len(allPostingsTabOf(app).starts), pages-1)
 	}
 }
 
@@ -751,13 +751,13 @@ func TestAllPostings_SSortsByFitAndBack(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, runeKey('s'))
 
-	if len(app.allPostings.starts) != 1 || !strings.Contains(viewText(app), "best fit first") {
-		t.Fatalf("after s: page %d, view:\n%s", len(app.allPostings.starts), viewText(app))
+	if len(allPostingsTabOf(app).starts) != 1 || !strings.Contains(viewText(app), "best fit first") {
+		t.Fatalf("after s: page %d, view:\n%s", len(allPostingsTabOf(app).starts), viewText(app))
 	}
 	var seen []string
 	for {
 		seen = append(seen, pageTitles(app)...)
-		if !app.allPostings.page.HasMore {
+		if !allPostingsTabOf(app).page.HasMore {
 			break
 		}
 		app = sendKeyAndApply(t, app, runeKey('l'))
@@ -769,8 +769,8 @@ func TestAllPostings_SSortsByFitAndBack(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, runeKey('s'))
 
-	if titles := pageTitles(app); len(app.allPostings.starts) != 1 || len(titles) == 0 || titles[0] != "Role 6" {
-		t.Errorf("after s again: page %d starting %q, want page 1 newest first", len(app.allPostings.starts), titles)
+	if titles := pageTitles(app); len(allPostingsTabOf(app).starts) != 1 || len(titles) == 0 || titles[0] != "Role 6" {
+		t.Errorf("after s again: page %d starting %q, want page 1 newest first", len(allPostingsTabOf(app).starts), titles)
 	}
 }
 
@@ -787,7 +787,7 @@ func TestAllPostings_AScoreRecordedElsewhere_Shows(t *testing.T) {
 	mustScore(t, s, p, 4, "p")
 	app = readChangeLog(t, app)
 
-	if got := app.allPostings.page.Listings[0].Score; got != 4 {
+	if got := allPostingsTabOf(app).page.Listings[0].Score; got != 4 {
 		t.Errorf("score after the agent recorded one = %d, want 4", got)
 	}
 }
@@ -848,7 +848,7 @@ func TestAllPostings_ArchivedWhileDetailIsUp_LeavesThePageUnderIt(t *testing.T) 
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app = openAllPostings(t, app)
-	shown := app.allPostings.page.Listings[0]
+	shown := allPostingsTabOf(app).page.Listings[0]
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	app = applyCmd(t, app, toggleArchived(s.Postings, message.Source{}, shown.ID, false))
