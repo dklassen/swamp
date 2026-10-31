@@ -135,16 +135,21 @@ func main() {
 	if err != nil {
 		log.Fatalf("read the change log: %v", err)
 	}
+	companies := service.NewCompanyService(db)
+	postings := service.NewPostingService(db)
+	applications := service.NewApplicationService(db)
+	documentService := service.NewDocumentService(db)
+	scores := service.NewScoringService(db)
 	app := tui.New(
-		service.NewCompanyService(db),
-		service.NewPostingService(db),
-		service.NewApplicationService(db),
-		service.NewDocumentService(db),
-		service.NewScoringService(db),
+		companies,
+		postings,
+		applications,
+		documentService,
+		scores,
 		changes,
 		syncer,
 		documentsStore,
-		tui.Screens,
+		tui.NewNavigation(companies, postings, applications, documentService, scores, syncer, documentsStore),
 	).WithChangeLog(since, cfg.Origin)
 	program := tea.NewProgram(app)
 	stopMCP := func(context.Context) error { return nil }

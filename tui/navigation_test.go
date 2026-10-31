@@ -8,15 +8,28 @@ import (
 	"github.com/dklassen/swamp/tui/message"
 )
 
-// newAppWith is an App without services that opens screens from screens.
-func newAppWith(t *testing.T, screens Navigation) *App {
+// newBareNavigation is a Navigation without services.
+func newBareNavigation(t *testing.T) *Navigation {
 	t.Helper()
-	return New(nil, nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()), screens)
+	return NewNavigation(nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
+}
+
+// newAppWith is an App without services that opens screens with screens.
+func newAppWith(screens *Navigation) *App {
+	return New(nil, nil, nil, nil, nil, nil, nil, screens.documents, screens)
+}
+
+// newBareApp is an App without services.
+func newBareApp(t *testing.T) *App {
+	t.Helper()
+	return newAppWith(newBareNavigation(t))
 }
 
 func TestApp_Nav_ToAScreenMissingFromTheTable_IsReported(t *testing.T) {
 	t.Parallel()
-	app := newAppWith(t, Navigation{})
+	screens := newBareNavigation(t)
+	delete(screens.none, message.ScreenCompanyForm)
+	app := newAppWith(screens)
 	from := message.Source{Instance: app.focused()}
 
 	app, cmd := sendKey(app, message.Push(from, message.ScreenCompanyForm, message.Subject{}, message.None{})())
@@ -34,7 +47,7 @@ func TestApp_Nav_ToAScreenMissingFromTheTable_IsReported(t *testing.T) {
 
 func TestApp_Nav_ReplaceOntoAScreenInTheTable_OpensIt(t *testing.T) {
 	t.Parallel()
-	app := newAppWith(t, Screens)
+	app := newBareApp(t)
 	app, _ = sendKey(app, message.Push(message.Source{Instance: app.focused()}, message.ScreenCompanyForm, message.Subject{}, message.None{})())
 	from := message.Source{Instance: app.focused()}
 

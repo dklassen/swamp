@@ -24,16 +24,19 @@ import (
 )
 
 type App struct {
-	// deps is what the screens are opened with.
-	deps screenDeps
-	// screens is what each Nav opens.
-	screens          Navigation
-	changeLogService *service.ChangeLog
-	origin           string
+	companyService     *service.CompanyService
+	postingService     *service.PostingService
+	applicationService *service.ApplicationService
+	documentService    *service.DocumentService
+	scoringService     *service.ScoringService
+	changeLogService   *service.ChangeLog
+	origin             string
 	// changes reads the log's rows as events, nil without a change log,
 	// on a tick every changePoll.
-	changes     *changeReader
-	changePoll  time.Duration
+	changes    *changeReader
+	changePoll time.Duration
+	// screens builds the screen each Nav opens.
+	screens     *Navigation
 	companyList *companyListModel
 	allPostings *allPostingsModel
 	// tab is the tab up, which the stack's screens are pushed over.
@@ -52,15 +55,10 @@ type App struct {
 	router model.Router
 	// instance is the banner's, which App registers routes for.
 	instance message.ScreenInstance
-}
 
-// defaultExportDir is where the export screen points before anything has
-// been exported this session. Configured here rather than via the
-// environment or a flag: it's a starting point the user edits in the
-// prompt whenever they want elsewhere, so a code-level default is the
-// whole configuration surface it needs. A leading "~" is expanded when
-// the export actually runs (see expandPath).
-const defaultExportDir = "~/Desktop"
+	// sized is the last size sent to the screens.
+	sized message.ContentSize
+}
 
 func New(
 	companies *service.CompanyService,
@@ -71,23 +69,16 @@ func New(
 	changes *service.ChangeLog,
 	syncer *sync.Syncer,
 	docs *documents.Store,
-	screens Navigation,
+	screens *Navigation,
 ) *App {
 	a := &App{
-		deps: screenDeps{
-			companies:    companies,
-			postings:     postings,
-			applications: applications,
-			documentSvc:  documentService,
-			scores:       scores,
-			syncer:       syncer,
-			documents:    docs,
-			openURL:      openInBrowser,
-			exportDir:    defaultExportDir,
-			hideArchived: true,
-		},
-		screens:               screens,
+		companyService:        companies,
+		postingService:        postings,
+		applicationService:    applications,
+		documentService:       documentService,
+		scoringService:        scores,
 		changeLogService:      changes,
+		screens:               screens,
 		tab:                   message.ScreenActiveApplications,
 		allPostings:           newAllPostingsModel(postings),
 		activeApplicationList: newActiveApplicationListModel(applications, documentService, docs),
@@ -100,6 +91,7 @@ func New(
 
 	modules := []model.Routable{
 		a,
+		a.screens,
 		a.activeApplicationList,
 		a.companyList,
 		a.allPostings,
@@ -208,11 +200,6 @@ func (a *App) applicationDetail() *applicationDetailModel {
 	return d
 }
 
-func (a *App) hideArchivedChanged(e message.Event[message.Signal[message.HideArchived]]) tea.Cmd {
-	a.deps.hideArchived = e.Payload.Value.Hidden
-	return nil
-}
-
 // WithStatus starts the App with status on the status line.
 func (a *App) WithStatus(status string) *App {
 	a.status = status
@@ -232,7 +219,7 @@ const changePollInterval = 500 * time.Millisecond
 // rows its commands already sent as events.
 func (a *App) WithChangeLog(since int64, origin string) *App {
 	a.origin = origin
-	a.changes = newChangeReader(a.deps.companies, a.deps.postings, a.deps.applications, a.deps.documentSvc, a.deps.scores, a.changeLogService, origin, since)
+	a.changes = newChangeReader(a.companyService, a.postingService, a.applicationService, a.documentService, a.scoringService, a.changeLogService, origin, since)
 	if err := a.router.Register(a.changes); err != nil {
 		panic(err)
 	}
@@ -298,7 +285,6 @@ func (a *App) Routes() []*model.Route {
 		model.Always(navTo(a, a.screens.application)),
 		model.Always(navTo(a, a.screens.applicationDetail)),
 		model.Always(navTo(a, a.screens.documentReview)),
-		model.Always(a.hideArchivedChanged),
 		model.Always(a.applicationChanged),
 		model.Always(a.browserOpened),
 		model.Always(a.exported),
@@ -312,10 +298,9 @@ func (a *App) browserOpened(message.Event[message.Ran[message.OpenBrowser]]) tea
 	return nil
 }
 
-// exported remembers where the export went, for the next export or submit
-// to start from, and clears an earlier failure from the banner.
-func (a *App) exported(e message.Event[message.Ran[message.ExportReport]]) tea.Cmd {
-	a.err, a.deps.exportDir = nil, e.Payload.Value.Dir
+// exported clears an earlier failure from the banner.
+func (a *App) exported(message.Event[message.Ran[message.ExportReport]]) tea.Cmd {
+	a.err = nil
 	return nil
 }
 
@@ -364,8 +349,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = tea.Batch(cmd, a.router.Dispatch(a.focusSignal()))
 	}
 	// The window or the banner may have changed size, on any message.
-	if size := (message.ContentSize{Width: a.width, Rows: a.screenRows()}); size != a.deps.sized {
-		a.deps.sized = size
+	if size := (message.ContentSize{Width: a.width, Rows: a.screenRows()}); size != a.sized {
+		a.sized = size
 		cmd = tea.Batch(cmd, a.router.Dispatch(message.New(message.Source{Process: a.origin}, message.Subject{}, message.OpNone, time.Now().UTC(),
 			message.Signal[message.ContentSize]{Value: size})))
 	}

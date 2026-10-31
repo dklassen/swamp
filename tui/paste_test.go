@@ -72,7 +72,7 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			app := newAppWith(t, Screens)
+			app := newBareApp(t)
 			app, _ = sendKey(app, tea.WindowSizeMsg{Width: 100, Height: 30})
 			tt.open(app)
 

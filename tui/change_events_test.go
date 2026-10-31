@@ -164,7 +164,7 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 		t.Fatalf("application detail doesn't show the passed review:\n%s", viewText(app))
 	}
 
-	if _, err := app.deps.documents.Write(target.ID, document.Resume, "# Revised by the agent\n"); err != nil {
+	if _, err := app.screens.documents.Write(target.ID, document.Resume, "# Revised by the agent\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	if err := storeOf(app).Documents.RecordWrite(ctx, target.ID, document.Resume, "# Revised by the agent\n", document.SourceWriteDocument); err != nil {
