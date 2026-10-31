@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"slices"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -39,86 +38,54 @@ func assertKinds(t *testing.T, stack *Stack, want ...message.Screen) {
 	}
 }
 
-// assertMoved fails unless stack moved exactly the screens closed and
-// opened, the same instances.
-func assertMoved(t *testing.T, stack *Stack, closed, opened []stackScreen) {
-	t.Helper()
-	gotClosed, gotOpened := stack.Moved()
-	if !slices.Equal(gotClosed, closed) || !slices.Equal(gotOpened, opened) {
-		t.Errorf("moved: closed %v, opened %v; want %v and %v", gotClosed, gotOpened, closed, opened)
-	}
-}
-
-func TestStack_Push_OpensTheScreen(t *testing.T) {
-	t.Parallel()
-	stack := NewStack()
-	screen := newStackedFake()
-
-	stack.push(message.ScreenCompanyForm, screen)
-
-	assertKinds(t, stack, message.ScreenCompanyForm)
-	assertMoved(t, stack, nil, []stackScreen{screen})
-}
-
-func TestStack_Pop_ClosesTheTop(t *testing.T) {
+func TestStack_Push_PutsTheScreenOnTop(t *testing.T) {
 	t.Parallel()
 	stack := NewStack()
 	under, over := newStackedFake(), newStackedFake()
-	stack.push(message.ScreenCompanyEdit, under)
-	stack.push(message.ScreenFilterSelect, over)
-	stack.Moved()
 
-	if err := stack.pop(); err != nil {
+	stack.Push(message.ScreenCompanyEdit, under)
+	stack.Push(message.ScreenFilterSelect, over)
+
+	if stack.Top() != over {
+		t.Errorf("top = %v, want the screen pushed last", stack.Top())
+	}
+	assertKinds(t, stack, message.ScreenCompanyEdit, message.ScreenFilterSelect)
+}
+
+func TestStack_Pop_TakesTheTopOff(t *testing.T) {
+	t.Parallel()
+	stack := NewStack()
+	under, over := newStackedFake(), newStackedFake()
+	stack.Push(message.ScreenCompanyEdit, under)
+	stack.Push(message.ScreenFilterSelect, over)
+
+	popped, err := stack.Pop()
+	if err != nil {
 		t.Fatalf("pop: %v", err)
 	}
 
+	if popped != over || stack.Top() != under {
+		t.Errorf("pop gave %v leaving %v on top; want the top, leaving the one beneath", popped, stack.Top())
+	}
 	assertKinds(t, stack, message.ScreenCompanyEdit)
-	assertMoved(t, stack, []stackScreen{over}, nil)
 }
 
-func TestStack_Replace_SwapsTheTopOverTheSameScreen(t *testing.T) {
+func TestStack_PopWithNothingPushed_Fails(t *testing.T) {
 	t.Parallel()
-	stack := NewStack()
-	old, replacement := newStackedFake(), newStackedFake()
-	stack.push(message.ScreenPostingDetail, old)
-	stack.Moved()
-
-	if err := stack.replace(message.ScreenPostingDetail, replacement); err != nil {
-		t.Fatalf("replace: %v", err)
-	}
-
-	assertKinds(t, stack, message.ScreenPostingDetail)
-	assertMoved(t, stack, []stackScreen{old}, []stackScreen{replacement})
-}
-
-func TestStack_WithNothingPushed_Fails(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name string
-		op   func(*Stack) error
-	}{
-		{name: "pop", op: func(st *Stack) error { return st.pop() }},
-		{name: "replace", op: func(st *Stack) error { return st.replace(message.ScreenPostingDetail, newStackedFake()) }},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			if err := tt.op(NewStack()); err == nil {
-				t.Errorf("%s with nothing pushed: nil error, want one", tt.name)
-			}
-		})
+	if _, err := NewStack().Pop(); err == nil {
+		t.Error("pop with nothing pushed: nil error, want one")
 	}
 }
 
 func TestStack_PushingAKindAlreadyOpen_Panics(t *testing.T) {
 	t.Parallel()
 	stack := NewStack()
-	stack.push(message.ScreenCompanyForm, newStackedFake())
+	stack.Push(message.ScreenCompanyForm, newStackedFake())
 
 	defer func() {
 		if recover() == nil {
 			t.Errorf("pushing %v while it's open didn't panic", message.ScreenCompanyForm)
 		}
 	}()
-	stack.push(message.ScreenCompanyForm, newStackedFake())
+	stack.Push(message.ScreenCompanyForm, newStackedFake())
 }

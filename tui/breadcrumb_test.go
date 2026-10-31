@@ -85,7 +85,7 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 			app.width = 120
 			app.nav.tab = tt.tab
 			for _, kind := range tt.pushed {
-				app.stack.push(kind, screens[kind]())
+				app.stack.Push(kind, screens[kind]())
 			}
 
 			if got := strings.TrimSpace(strings.Split(ansi.Strip(app.header()), "\n")[0]); got != tt.want {
@@ -210,7 +210,7 @@ func TestApp_Header_LongBreadcrumbLosesItsMiddleFirst(t *testing.T) {
 			app.width = tt.width
 			pushApplicationDetail(t, app, view)
 			d := newPostingDetailModel(nil, nil, nil, nil, message.PostingDetail{Posting: message.Posting{ID: 9}}, message.ContentSize{})
-			app.stack.push(message.ScreenPostingDetail, d)
+			app.stack.Push(message.ScreenPostingDetail, d)
 
 			line := strings.Split(ansi.Strip(app.header()), "\n")[0]
 			if got := strings.TrimSpace(line); got != tt.want {
@@ -228,7 +228,7 @@ func TestApp_Header_LongBreadcrumbLosesItsMiddleFirst(t *testing.T) {
 func pushApplicationDetail(t *testing.T, app *App, a posting.ActiveApplication) {
 	t.Helper()
 	d := newApplicationDetailModel(nil, nil, nil, nil, documents.NewStore(t.TempDir()), applicationDetailOf(a), 0)
-	app.stack.push(message.ScreenApplicationDetail, d)
+	app.stack.Push(message.ScreenApplicationDetail, d)
 }
 
 // shownDetail is what the open application detail shows, zero if none is

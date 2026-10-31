@@ -37,13 +37,13 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 		open func(app *App)
 	}{
 		{name: "company form", open: func(app *App) {
-			app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+			app.nav.tab = message.ScreenCompanyList
 			app.Update(message.Push(message.Source{Instance: companiesTabOf(app).Instance()}, message.ScreenCompanyForm, message.Subject{}, message.None{})())
 			// Past the source picker, which takes no text.
 			app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		}},
 		{name: "company edit", open: func(app *App) {
-			app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+			app.nav.tab = message.ScreenCompanyList
 			app.Update(message.Push(message.Source{Instance: companiesTabOf(app).Instance()}, message.ScreenCompanyEdit,
 				message.Subject{Type: message.TypeCompany, ID: 1}, message.Company{ID: 1})())
 		}},
@@ -52,18 +52,18 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 				message.Subject{Type: message.TypeApplication, ID: 1}, message.ApplicationDetail{Application: message.Application{ID: 1}})())
 		}},
 		{name: "notes", open: func(app *App) {
-			app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+			app.nav.tab = message.ScreenCompanyList
 			app.Update(message.Push(message.Source{Instance: companiesTabOf(app).Instance()}, message.ScreenApplicationNotes,
 				message.Subject{Type: message.TypeApplication, ID: 1}, message.Application{ID: 1})())
 		}},
 		{name: "application form", open: func(app *App) {
-			app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+			app.nav.tab = message.ScreenCompanyList
 			app.Update(message.Push(message.Source{Instance: companiesTabOf(app).Instance()}, message.ScreenApplicationForm,
 				message.Subject{Type: message.TypeApplication, ID: 1}, message.Application{ID: 1, PostingID: 1})())
 			app.Update(formReadBy(app.top().Instance(), message.ApplicationForm{}))
 		}},
 		{name: "document review", open: func(app *App) {
-			app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
+			app.nav.tab = message.ScreenCompanyList
 			app.Update(message.Push(message.Source{Instance: companiesTabOf(app).Instance()}, message.ScreenDocumentReviewForm,
 				message.Subject{Type: message.TypeApplication, ID: 1}, message.DocumentReview{ApplicationID: 1, DocumentType: message.DocumentCoverLetter})())
 		}},

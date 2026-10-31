@@ -156,7 +156,8 @@ func main() {
 		changes,
 		syncer,
 		tui.NewNavigation(screens.Tabs()),
-		tui.NewStack(screens.Tables()...),
+		tui.NewStack(),
+		screens.Tables()...,
 	).WithChangeLog(since, cfg.Origin)
 	program := tea.NewProgram(app)
 	stopMCP := func(context.Context) error { return nil }

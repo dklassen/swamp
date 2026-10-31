@@ -34,10 +34,12 @@ type App struct {
 	changes    *changeReader
 	changePoll time.Duration
 	// nav is the tabs, and stack the screens pushed over the tab up.
-	nav    *Navigation
-	stack  *Stack
-	status string
-	err    error
+	nav   *Navigation
+	stack *Stack
+	// navRoutes open what the tables have for each Nav.
+	navRoutes []*model.Route
+	status    string
+	err       error
 	// syncing runs sync all and refreshes, and draws their progress in the
 	// banner.
 	syncing *model.Syncing
@@ -53,7 +55,8 @@ type App struct {
 	sized message.ContentSize
 }
 
-// New is the App over nav and stack, routed by router.
+// New is the App over nav and stack, routed by router, opening what
+// tables have for each Nav.
 func New(
 	router model.Router,
 	companies *service.CompanyService,
@@ -65,6 +68,7 @@ func New(
 	syncer *sync.Syncer,
 	nav *Navigation,
 	stack *Stack,
+	tables ...Table,
 ) *App {
 	a := &App{
 		companyService:     companies,
@@ -79,7 +83,10 @@ func New(
 		router:             router,
 		instance:           message.NewScreenInstance(),
 	}
-	for _, module := range []model.Routable{a, a.nav, a.stack, a.syncing} {
+	for _, table := range tables {
+		a.navRoutes = append(a.navRoutes, table(a))
+	}
+	for _, module := range []model.Routable{a, a.nav, a.syncing} {
 		if err := a.router.Register(module); err != nil {
 			panic(err)
 		}
@@ -94,27 +101,6 @@ func New(
 func (a *App) focusSignal() tea.Msg {
 	return message.New(message.Source{Process: a.origin}, message.Subject{}, message.OpNone, time.Now().UTC(),
 		message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: a.focused()}})
-}
-
-// settle routes the screens the stack opened, then starts them, so nothing
-// Init starts can report before they can hear it, and stops routing those
-// it closed.
-func (a *App) settle() tea.Cmd {
-	closed, opened := a.stack.Moved()
-	var cmds []tea.Cmd
-	for _, s := range closed {
-		if err := a.router.Deregister(s); err != nil {
-			cmds = append(cmds, message.Fail(message.Source{Instance: a.instance}, err))
-		}
-	}
-	for _, s := range opened {
-		if err := a.router.Register(s); err != nil {
-			cmds = append(cmds, message.Fail(message.Source{Instance: a.instance}, err))
-			continue
-		}
-		cmds = append(cmds, s.Init())
-	}
-	return tea.Batch(cmds...)
 }
 
 // top is the screen on top: the stack's, or the tab up when nothing is
@@ -219,18 +205,18 @@ func (a *App) handle(msg tea.Msg) (tea.Cmd, bool) {
 	return nil, false
 }
 
-// Routes are the banner's, which hears every error whoever it's for. An
-// error stays up until the next error or notice, since a load that
-// succeeds sends neither and loads finish in any order.
+// Routes are the Navs', and the banner's, which hears every error whoever
+// it's for. An error stays up until the next error or notice, since a
+// load that succeeds sends neither and loads finish in any order.
 func (a *App) Routes() []*model.Route {
-	return []*model.Route{
+	return append([]*model.Route{
 		model.Always(a.errorReported),
 		model.Always(a.notified),
 		model.Always(a.applicationChanged),
 		model.Always(a.browserOpened),
 		model.Always(a.exported),
 		model.Always(a.changeTick, model.From(a.instance)),
-	}
+	}, a.navRoutes...)
 }
 
 // browserOpened clears an earlier failure from the banner.
@@ -284,7 +270,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	cmd, handled := a.handle(msg)
 	if !handled {
 		cmd = a.router.Dispatch(msg)
-		cmd = tea.Batch(cmd, a.settle())
 	}
 	if a.focused() != focusedBefore {
 		// Dispatched now, not as a Cmd, so keys already queued see it.

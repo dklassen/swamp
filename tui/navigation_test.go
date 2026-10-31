@@ -26,7 +26,7 @@ func newFakesApp(t *testing.T, form, edit *stackedFake) *App {
 		message.ScreenCompanyForm: func(message.None) stackScreen { return form },
 		message.ScreenCompanyEdit: func(message.None) stackScreen { return edit },
 	})
-	return New(router, nil, nil, nil, nil, nil, nil, nil, NewNavigation(screens.Tabs()), NewStack(fakes))
+	return New(router, nil, nil, nil, nil, nil, nil, nil, NewNavigation(screens.Tabs()), NewStack(), fakes)
 }
 
 func TestNavigation_Routes_AreItsTabs(t *testing.T) {
@@ -86,12 +86,31 @@ func TestApp_Nav_Replace_SwapsWhichScreenHears(t *testing.T) {
 	}
 }
 
+func TestApp_Nav_ReplaceWithNothingPushed_IsReported(t *testing.T) {
+	t.Parallel()
+	form := newStackedFake()
+	app := newFakesApp(t, form, newStackedFake())
+	home := app.onScreen()
+
+	app, cmd := sendKey(app, message.Replace(message.Source{Instance: app.focused()}, message.ScreenCompanyForm, message.Subject{}, message.None{})())
+
+	if app.onScreen() != home {
+		t.Errorf("screen = %v, want %v left up", app.onScreen(), home)
+	}
+	if cmd == nil {
+		t.Fatal("no command, want an Error")
+	}
+	if got, ok := cmd().(message.Event[message.Error]); !ok || got.Payload.Code != message.ErrFault {
+		t.Errorf("command sent %#v, want an Event[Error] with code %v", got, message.ErrFault)
+	}
+}
+
 func TestApp_Nav_ToAScreenMissingFromTheTables_IsReported(t *testing.T) {
 	t.Parallel()
 	router := model.NewMsgRouter()
 	screens := NewScreens(nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
 	noForm := Opens(map[message.Screen]func(message.None) stackScreen{})
-	app := New(router, nil, nil, nil, nil, nil, nil, nil, NewNavigation(screens.Tabs()), NewStack(noForm))
+	app := New(router, nil, nil, nil, nil, nil, nil, nil, NewNavigation(screens.Tabs()), NewStack(), noForm)
 	home := app.onScreen()
 	from := message.Source{Instance: app.focused()}
 

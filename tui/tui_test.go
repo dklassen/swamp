@@ -113,7 +113,7 @@ func newAppWithScreensOn(s testutil.TestApp, syncer *sync.Syncer, docs *document
 		panic(err)
 	}
 	app := New(router, s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, syncer,
-		NewNavigation(screens.Tabs()), NewStack(screens.Tables()...))
+		NewNavigation(screens.Tabs()), NewStack(), screens.Tables()...)
 	return app, screens
 }
 
