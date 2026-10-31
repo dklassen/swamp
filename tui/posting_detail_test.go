@@ -326,6 +326,11 @@ func TestPostingDetailModel_ApplicationChanged_AboutItsPosting_PatchesIt(t *test
 		{name: "created", changed: message.Created(message.Source{Instance: 7}, 9, time.Now().UTC(), interviewing), want: interviewing},
 		{name: "updated", start: testDetailApplication, changed: message.Updated(message.Source{Instance: 7}, 9, time.Now().UTC(), testDetailApplication, interviewing), want: interviewing},
 		{name: "deleted", start: testDetailApplication, changed: message.Deleted(message.Source{Instance: 7}, 9, time.Now().UTC(), testDetailApplication)},
+		{name: "deleted by another process", start: testDetailApplication, changed: func() tea.Msg {
+			e := message.Logged(1, mcp, message.Subject{Type: message.TypeApplication, ID: 9}, message.OpDeleted, time.Now().UTC(), message.Application{})
+			e.Payload.Before = testDetailApplication
+			return e
+		}()},
 		{name: "another posting's", start: testDetailApplication, changed: message.Updated(message.Source{Instance: 7}, 10, time.Now().UTC(),
 			message.Application{ID: 10, PostingID: 6}, message.Application{ID: 10, PostingID: 6, Status: message.ApplicationRejected}), want: testDetailApplication},
 	}
@@ -633,4 +638,76 @@ func TestPostingDetailModel_View_FitsTheTerminal(t *testing.T) {
 			}
 		})
 	}
+}
+
+// A write elsewhere to its posting or a score of it reads that again;
+// another posting's doesn't.
+func TestPostingDetailModel_ReadsAgainForItsPostingWrittenElsewhere(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		changed func(postingID int64) tea.Msg
+		read    func(msgs []tea.Msg) bool
+	}{
+		{name: "its posting", changed: func(id int64) tea.Msg { return postingChangedElsewhere(id) }, read: readPostingApplication},
+		{name: "another posting", changed: func(id int64) tea.Msg { return postingChangedElsewhere(id + 1) }},
+		{name: "a score of its posting", changed: func(id int64) tea.Msg { return scoredElsewhere(id) }, read: readPostingScores},
+		{name: "a score of another posting", changed: func(id int64) tea.Msg { return scoredElsewhere(id + 1) }},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, r, _ := detailWith(t)
+			settle(t, r, runCmd(t, m.Init()))
+
+			got := runCmd(t, r.Dispatch(tt.changed(m.posting.ID)))
+			if tt.read == nil {
+				if len(got) != 0 {
+					t.Errorf("sent %#v, want nothing", got)
+				}
+				return
+			}
+			if len(got) != 1 || !tt.read(got) {
+				t.Errorf("sent %#v, want its read", got)
+			}
+		})
+	}
+}
+
+func TestPostingDetailModel_ChangesElsewhere_ReadOnceAtATime(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name   string
+		assert func(t *testing.T, r *model.MsgRouter, changed tea.Msg)
+		of     func(postingID int64) tea.Msg
+	}{
+		{name: "posting", assert: assertReadsOnceAtATime[message.PostingApplication], of: func(id int64) tea.Msg { return postingChangedElsewhere(id) }},
+		{name: "scores", assert: assertReadsOnceAtATime[message.PostingScores], of: func(id int64) tea.Msg { return scoredElsewhere(id) }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m, r, _ := detailWith(t)
+			settle(t, r, runCmd(t, m.Init()))
+			tt.assert(t, r, tt.of(m.posting.ID))
+		})
+	}
+}
+
+func postingChangedElsewhere(id int64) message.Event[message.Changed[message.Posting]] {
+	return message.Logged(1, mcp, message.Subject{Type: message.TypePosting, ID: id}, message.OpUpdated, time.Now().UTC(), message.Posting{ID: id, Title: "Staff Engineer"})
+}
+
+func scoredElsewhere(postingID int64) message.Event[message.Changed[message.Score]] {
+	return message.Logged(1, mcp, message.Subject{Type: message.TypePosting, ID: postingID}, message.OpCreated, time.Now().UTC(), message.Score{ID: 1, PostingID: postingID, Score: 5})
+}
+
+func readPostingApplication(msgs []tea.Msg) bool {
+	_, ok := msgs[0].(message.Event[message.Read[message.PostingApplication]])
+	return ok
+}
+
+func readPostingScores(msgs []tea.Msg) bool {
+	_, ok := msgs[0].(message.Event[message.Read[message.PostingScores]])
+	return ok
 }

@@ -30,6 +30,7 @@ type applicationDetailModel struct {
 	// deleted is set once its application is, so it leaves rather than
 	// reading what's gone.
 	deleted bool
+	reading reading
 
 	focused  bool
 	instance message.ScreenInstance
@@ -59,6 +60,9 @@ func (m *applicationDetailModel) Routes() []*model.Route {
 		model.Always(m.applicationChanged, model.About(message.TypeApplication, m.detail.Application.ID)),
 		model.Always(m.reviewChanged, model.About(message.TypeApplication, m.detail.Application.ID)),
 		model.Always(m.documentEdited, model.From(m.instance)),
+		model.Always(m.documentWritten, model.About(message.TypeApplication, m.detail.Application.ID)),
+		model.Always(m.documentExported, model.About(message.TypeApplication, m.detail.Application.ID)),
+		model.Always(m.postingChanged),
 		model.WhenFocused(m, m.keyPressed),
 		model.Always(m.focusChanged),
 	}
@@ -80,13 +84,14 @@ func (m *applicationDetailModel) load() tea.Cmd {
 
 func (m *applicationDetailModel) detailRead(e message.Event[message.Read[message.ApplicationDetail]]) tea.Cmd {
 	m.detail = e.Payload.Value
-	return nil
+	return m.reading.done(m.load)
 }
 
 // readFailed leaves an application that's gone, deleted elsewhere.
 func (m *applicationDetailModel) readFailed(e message.Event[message.Error]) tea.Cmd {
+	next := m.reading.done(m.load)
 	if e.Payload.Code != message.ErrNotFound || m.deleted {
-		return nil
+		return next
 	}
 	return m.goneElsewhere()
 }
@@ -119,6 +124,25 @@ func (m *applicationDetailModel) applicationChanged(e message.Event[message.Chan
 func (m *applicationDetailModel) reviewChanged(e message.Event[message.Changed[message.Review]]) tea.Cmd {
 	m.detail.Reviews = withReview(m.detail.Reviews, e.Payload.After)
 	return nil
+}
+
+// documentWritten and documentExported read again, since what's drafted
+// and exported decides what's next.
+func (m *applicationDetailModel) documentWritten(message.Event[message.Changed[message.DocumentWrite]]) tea.Cmd {
+	return m.reading.start(m.load)
+}
+
+func (m *applicationDetailModel) documentExported(message.Event[message.Changed[message.DocumentExport]]) tea.Cmd {
+	return m.reading.start(m.load)
+}
+
+// postingChanged reads again for its posting, which it learns only once
+// it has read, so isn't filtered by About.
+func (m *applicationDetailModel) postingChanged(e message.Event[message.Changed[message.Posting]]) tea.Cmd {
+	if e.Meta.Subject.ID != m.detail.Posting.ID {
+		return nil
+	}
+	return m.reading.start(m.load)
 }
 
 // documentEdited reads again, for the review an edit may have made stale.

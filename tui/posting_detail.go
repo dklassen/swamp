@@ -33,6 +33,8 @@ type postingDetailModel struct {
 	application message.Application
 	reviews     message.ReviewList
 	scores      []message.Score
+	// postingReading and scoresReading are the reads for writes elsewhere.
+	postingReading, scoresReading reading
 	// siblings is the postings previous and next step through, by ID in
 	// list order; empty when opened outside the posting list.
 	siblings []int64
@@ -69,10 +71,13 @@ func (m *postingDetailModel) Routes() []*model.Route {
 		model.Always(m.postingRead, model.From(m.instance)),
 		model.Always(m.reviewsRead, model.From(m.instance)),
 		model.Always(m.scoresRead, model.From(m.instance)),
+		model.Always(m.readFailed, model.From(m.instance)),
 		model.Always(m.postingLoadRequested),
 		model.Always(m.scoresLoadRequested),
 		model.Always(m.applicationChanged),
 		model.Always(m.reviewChanged),
+		model.Always(m.postingChanged, model.About(message.TypePosting, m.posting.ID)),
+		model.Always(m.scoreChanged, model.About(message.TypePosting, m.posting.ID)),
 		model.WhenFocused(m, m.keyPressed),
 		model.Always(m.resize),
 		model.Always(m.focusChanged),
@@ -115,7 +120,7 @@ func (m *postingDetailModel) postingRead(e message.Event[message.Read[message.Po
 	}
 	m.posting, m.application = e.Payload.Value.Posting, e.Payload.Value.Application
 	m.setContent()
-	return m.loadReviews()
+	return tea.Batch(m.loadReviews(), m.postingReading.done(m.loadPosting))
 }
 
 // reviewsRead drops a read for an application this posting no longer has.
@@ -131,7 +136,24 @@ func (m *postingDetailModel) reviewsRead(e message.Event[message.Read[message.Re
 func (m *postingDetailModel) scoresRead(e message.Event[message.Read[message.PostingScores]]) tea.Cmd {
 	m.scores = e.Payload.Value.Scores
 	m.setContent()
-	return nil
+	return m.scoresReading.done(m.loadScores)
+}
+
+// readFailed ends both reads, since it can't tell which failed.
+func (m *postingDetailModel) readFailed(message.Event[message.Error]) tea.Cmd {
+	return tea.Batch(m.postingReading.done(m.loadPosting), m.scoresReading.done(m.loadScores))
+}
+
+// postingChanged reads the posting again, once at a time for a run of
+// writes.
+func (m *postingDetailModel) postingChanged(message.Event[message.Changed[message.Posting]]) tea.Cmd {
+	return m.postingReading.start(m.loadPosting)
+}
+
+// scoreChanged reads the scores again, once at a time for a run of
+// writes.
+func (m *postingDetailModel) scoreChanged(message.Event[message.Changed[message.Score]]) tea.Cmd {
+	return m.scoresReading.start(m.loadScores)
 }
 
 func (m *postingDetailModel) postingLoadRequested(message.Event[message.Load[message.PostingApplication]]) tea.Cmd {

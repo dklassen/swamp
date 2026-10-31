@@ -320,6 +320,22 @@ func TestApplicationDetailModel_ReadsAgain(t *testing.T) {
 		{name: "not on staying on top", msgs: func(m *applicationDetailModel) []tea.Msg {
 			return []tea.Msg{focusOn(m.Instance())}
 		}},
+		{name: "on its document written elsewhere", want: true, msgs: func(m *applicationDetailModel) []tea.Msg {
+			return []tea.Msg{documentWrittenElsewhere(m.detail.Application.ID)}
+		}},
+		{name: "not on another application's document written elsewhere", msgs: func(m *applicationDetailModel) []tea.Msg {
+			return []tea.Msg{documentWrittenElsewhere(m.detail.Application.ID + 1)}
+		}},
+		{name: "on its document exported elsewhere", want: true, msgs: func(m *applicationDetailModel) []tea.Msg {
+			return []tea.Msg{message.Logged(1, mcp, message.Subject{Type: message.TypeApplication, ID: m.detail.Application.ID}, message.OpCreated, time.Now().UTC(),
+				message.DocumentExport{ID: 1, ApplicationID: m.detail.Application.ID, DocumentType: message.DocumentResume})}
+		}},
+		{name: "on its posting written elsewhere", want: true, msgs: func(m *applicationDetailModel) []tea.Msg {
+			return []tea.Msg{postingChangedElsewhere(m.detail.Posting.ID)}
+		}},
+		{name: "not on another posting written elsewhere", msgs: func(m *applicationDetailModel) []tea.Msg {
+			return []tea.Msg{postingChangedElsewhere(m.detail.Posting.ID + 1)}
+		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -548,4 +564,16 @@ func TestApplicationDetailModel_Deleted_IgnoresLoadsAndItsLateRead(t *testing.T)
 			}
 		})
 	}
+}
+
+func TestApplicationDetailModel_ChangesElsewhere_ReadOnceAtATime(t *testing.T) {
+	t.Parallel()
+	m, r, _ := applicationDetailWith(t)
+	settle(t, r, runCmd(t, m.Init()))
+	assertReadsOnceAtATime[message.ApplicationDetail](t, r, documentWrittenElsewhere(m.detail.Application.ID))
+}
+
+func documentWrittenElsewhere(applicationID int64) message.Event[message.Changed[message.DocumentWrite]] {
+	return message.Logged(1, mcp, message.Subject{Type: message.TypeApplication, ID: applicationID}, message.OpCreated, time.Now().UTC(),
+		message.DocumentWrite{ID: 1, ApplicationID: applicationID, DocumentType: message.DocumentResume})
 }
