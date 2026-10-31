@@ -182,6 +182,34 @@ func (a *App) onTop(meta message.Meta) bool {
 	return meta.Source.Instance != 0 && meta.Source.Instance == a.focused()
 }
 
+// navTo opens what table has for each Nav[T] from the screen on top.
+func navTo[T message.Body](a *App, table opens[T]) func(message.Event[message.Nav[T]]) tea.Cmd {
+	return func(e message.Event[message.Nav[T]]) tea.Cmd {
+		if !a.onTop(e.Meta) {
+			return nil
+		}
+		nav := e.Payload
+		if nav.Op == message.NavPop {
+			return a.pop()
+		}
+		open, ok := table[nav.Screen]
+		switch {
+		case !ok:
+			return a.unknownNav(e)
+		case nav.Op == message.NavPush:
+			return a.push(nav.Screen, open(nav.Value))
+		case nav.Op == message.NavReplace:
+			return a.replace(nav.Screen, open(nav.Value))
+		}
+		return a.unknownNav(e)
+	}
+}
+
+// unknownNav reports a Nav for a screen App doesn't open that way.
+func (a *App) unknownNav(nav tea.Msg) tea.Cmd {
+	return a.fail(fmt.Errorf("tui: no screen opens on %+v", nav))
+}
+
 // postingList is the open posting list, or nil.
 func (a *App) postingList() *postingListModel {
 	l, _ := a.stack.open(message.ScreenCompanyPostings).(*postingListModel)
@@ -275,21 +303,14 @@ func (a *App) handle(msg tea.Msg) (tea.Cmd, bool) {
 // error stays up until the next error or notice, since a load that
 // succeeds sends neither and loads finish in any order.
 func (a *App) Routes() []*model.Route {
-	return []*model.Route{
+	return append([]*model.Route{
 		model.Always(a.errorReported),
 		model.Always(a.notified),
-		model.Always(navTo(a, a.screens.none)),
-		model.Always(navTo(a, a.screens.company)),
-		model.Always(navTo(a, a.screens.filterSelection)),
-		model.Always(navTo(a, a.screens.postingDetail)),
-		model.Always(navTo(a, a.screens.application)),
-		model.Always(navTo(a, a.screens.applicationDetail)),
-		model.Always(navTo(a, a.screens.documentReview)),
 		model.Always(a.applicationChanged),
 		model.Always(a.browserOpened),
 		model.Always(a.exported),
 		model.Always(a.changeTick, model.From(a.instance)),
-	}
+	}, a.screens.navRoutes(a)...)
 }
 
 // browserOpened clears an earlier failure from the banner.

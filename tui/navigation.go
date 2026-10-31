@@ -1,8 +1,6 @@
 package tui
 
 import (
-	"fmt"
-
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/documents"
@@ -174,30 +172,16 @@ func (n *Navigation) hideArchivedChanged(e message.Event[message.Signal[message.
 	return nil
 }
 
-// navTo opens what table has for each Nav[T] from the screen on top.
-func navTo[T message.Body](a *App, table opens[T]) func(message.Event[message.Nav[T]]) tea.Cmd {
-	return func(e message.Event[message.Nav[T]]) tea.Cmd {
-		if !a.onTop(e.Meta) {
-			return nil
-		}
-		nav := e.Payload
-		if nav.Op == message.NavPop {
-			return a.pop()
-		}
-		open, ok := table[nav.Screen]
-		switch {
-		case !ok:
-			return a.unknownNav(e)
-		case nav.Op == message.NavPush:
-			return a.push(nav.Screen, open(nav.Value))
-		case nav.Op == message.NavReplace:
-			return a.replace(nav.Screen, open(nav.Value))
-		}
-		return a.unknownNav(e)
+// navRoutes are a's routes for each Nav, one per payload, opening what
+// its table has.
+func (n *Navigation) navRoutes(a *App) []*model.Route {
+	return []*model.Route{
+		model.Always(navTo(a, n.none)),
+		model.Always(navTo(a, n.company)),
+		model.Always(navTo(a, n.filterSelection)),
+		model.Always(navTo(a, n.postingDetail)),
+		model.Always(navTo(a, n.application)),
+		model.Always(navTo(a, n.applicationDetail)),
+		model.Always(navTo(a, n.documentReview)),
 	}
-}
-
-// unknownNav reports a Nav for a screen App doesn't open that way.
-func (a *App) unknownNav(nav tea.Msg) tea.Cmd {
-	return a.fail(fmt.Errorf("tui: no screen opens on %+v", nav))
 }
