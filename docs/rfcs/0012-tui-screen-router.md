@@ -417,7 +417,7 @@ How this differs from the sketches:
 
 1. **Which screens are persistent?** Decided: the three tabs. The posting list is stacked, built for each company it opens on, and `hideArchived` moves to the router, which passes it in and keeps what the list last set.
 2. **Where do overlays live?** Decided: in the screen that opens one (section 6). Neither a stacked screen that reports it is an overlay nor an overlay slot on the router: both keep a confirmation apart from the screen it acts for, so that screen can't leave in the same step as its delete.
-3. **Does `New` build the tabs, or take them?** Decided: `New` builds the tabs, and takes what each `Nav` opens as a table, the package-level `Screens`, which `cmd/swamp` and the tests pass in. An entry builds a fresh screen from the services and the session's state, so a shared table shares no screens.
+3. **Does `New` build the tabs, or take them?** Decided: `New` builds the tabs, and takes a `Navigation` (`NewNavigation`), which `cmd/swamp` and the tests build. It owns the services its screens use and keeps its own copy of the session state they open with, from the messages that carry it, so nothing it reads sits on `App`.
 
 ## Progress
 
@@ -445,7 +445,7 @@ Where the code differs from the Template:
 
 - **The tabs aren't on the stack.** `App` keeps the tab up, the three tabs are fields registered once in `New`, and the screen on top is the stack's top, or the tab when nothing is pushed. A stacked screen doesn't record what it was pushed over: the header's path is the tab, then the stack.
 - **Focus is sent after any message that changed the screen in focus,** not by `push`, `pop` and `replace`. `New` sends it once for the home list, which is up first.
-- **What a `Nav` opens is a table, not a handler per `Nav[T]`.** `Navigation` holds one typed map per payload, from screen kind to constructor, and one generic handler serves them all. A kind missing from its map is reported as `unknownNav`. Any kind in the table opens on a push or a replace, and any `Nav[T]` pops.
+- **What a `Nav` opens is `Navigation`'s, not a handler per `Nav[T]`.** It holds one typed map per payload, from screen kind to constructor, and one generic handler on `App` serves them all, pushing what it returns. A kind missing from its map is reported as `unknownNav`. Any kind in a map opens on a push or a replace, and any `Nav[T]` pops.
 - **A pop leaves the banner alone.** Switching tabs clears a stale error; leaving a stacked screen doesn't, since its own esc sends an empty `Notify` when it should.
 - **App tests wait a message for a screen's intent.** A screen's key comes back as a command, so tests that press one use `sendIntentKey` or `applyCmd`. This is section 4's "keys typed in between" cost, as seen from a test.
 
