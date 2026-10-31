@@ -2,7 +2,6 @@ package tui
 
 import (
 	"fmt"
-	"slices"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -17,12 +16,12 @@ import (
 // counts the banner's.
 func (a *App) header() string {
 	// A confirmation box keeps the header of the screen it's drawn over.
-	s := a.beneath()
-	if isTab(s) {
-		return a.tabBar(s)
+	path := a.beneath()
+	if len(path) == 1 {
+		return a.tabBar(path[0])
 	}
 	// Less the leading space.
-	crumbs := fitCrumbs(a.crumbs(a.path(s)), tableWidth(a.width)-1)
+	crumbs := fitCrumbs(a.crumbs(path), tableWidth(a.width)-1)
 	for i, crumb := range crumbs {
 		style := model.DimStyle
 		if i == len(crumbs)-1 {
@@ -62,95 +61,53 @@ func fitCrumbs(crumbs []string, width int) []string {
 	return fitted
 }
 
-func isTab(s screen) bool {
-	return s == screenActiveApplications || s == screenCompanyList || s == screenAllPostings
-}
-
-// parents maps each of App's own screens to the one it's entered from,
-// which is where esc goes. A stacked screen goes back to the one it was
-// pushed over instead.
-var parents = map[screen]screen{
-	screenCompanyForm:  screenCompanyList,
-	screenCompanyEdit:  screenCompanyList,
-	screenPostingList:  screenCompanyList,
-	screenFilterSelect: screenPostingList,
-}
-
-// stackedUnder is the screen a stacked screen showing as s was pushed
-// over.
-func (a *App) stackedUnder(s screen) (screen, bool) {
-	for kind, as := range stackedAs {
-		if as == s {
-			return a.stack.under(kind)
-		}
-	}
-	return 0, false
-}
-
-// path is the screens from a tab to on: the way esc goes back, reversed.
-func (a *App) path(on screen) []screen {
-	path := []screen{on}
-	for s := on; !isTab(s); path = append(path, s) {
-		if p, ok := parents[s]; ok {
-			s = p
-		} else if under, ok := a.stackedUnder(s); ok {
-			s = under
-		} else {
-			// A screen with no way back still ends at a tab.
-			s = screenActiveApplications
-		}
-	}
-	slices.Reverse(path)
-	return path
-}
-
 // crumbs names each screen in path, the way its title used to.
-func (a *App) crumbs(path []screen) []string {
+func (a *App) crumbs(path []message.Screen) []string {
 	var crumbs []string
 	for i, s := range path {
 		switch s {
-		case screenActiveApplications:
+		case message.ScreenActiveApplications:
 			crumbs = append(crumbs, "Applications")
-		case screenCompanyList:
+		case message.ScreenCompanyList:
 			crumbs = append(crumbs, "Companies")
-		case screenAllPostings:
+		case message.ScreenAllPostings:
 			crumbs = append(crumbs, "All postings")
-		case screenPostingList:
+		case message.ScreenCompanyPostings:
 			if l := a.postingList(); l != nil {
 				crumbs = append(crumbs, l.company.Name)
 			}
-		case screenPostingDetail:
+		case message.ScreenPostingDetail:
 			// Application detail has already named it.
-			if i > 0 && path[i-1] == screenApplicationDetail {
+			if i > 0 && path[i-1] == message.ScreenApplicationDetail {
 				crumbs = append(crumbs, "Posting")
 			} else if d := a.postingDetail(); d != nil {
 				crumbs = append(crumbs, d.posting.Title)
 			}
-		case screenApplicationDetail:
+		case message.ScreenApplicationDetail:
 			if d := a.applicationDetail(); d != nil {
 				crumbs = append(crumbs, d.detail.CompanyName, d.detail.Posting.Title)
 			}
-		case screenCompanyForm:
+		case message.ScreenCompanyForm:
 			crumbs = append(crumbs, "Add company")
-		case screenCompanyEdit:
+		case message.ScreenCompanyEdit:
 			crumbs = append(crumbs, "Edit company")
-		case screenFilterSelect:
+		case message.ScreenFilterSelect:
 			crumbs = append(crumbs, "Filters")
-		case screenApplicationStatusSelect:
+		case message.ScreenApplicationStatus:
 			crumbs = append(crumbs, "Set status")
-		case screenApplicationNotesEdit:
+		case message.ScreenApplicationNotes:
 			crumbs = append(crumbs, "Edit notes")
-		case screenDocumentReviewSelect:
+		case message.ScreenDocumentReviewSelect:
 			crumbs = append(crumbs, "Review a document")
-		case screenDocumentReviewForm:
+		case message.ScreenDocumentReviewForm:
 			if f, ok := a.stack.open(message.ScreenDocumentReviewForm).(*documentReviewFormModel); ok {
 				crumbs = append(crumbs, "Review "+documentTypeOf(f.review.DocumentType).Label())
 			}
-		case screenApplicationExport:
+		case message.ScreenApplicationExport:
 			crumbs = append(crumbs, "Export PDFs")
-		case screenApplicationSubmit:
+		case message.ScreenApplicationSubmit:
 			crumbs = append(crumbs, "Submit")
-		case screenApplicationForm:
+		case message.ScreenApplicationForm:
 			crumbs = append(crumbs, "Application form")
 		}
 	}
@@ -159,14 +116,14 @@ func (a *App) crumbs(path []screen) []string {
 
 // tabBar names every tab, with a count on all but the companies tab, and
 // underlines active.
-func (a *App) tabBar(active screen) string {
+func (a *App) tabBar(active message.Screen) string {
 	tabs := []struct {
-		screen screen
+		screen message.Screen
 		label  string
 	}{
-		{screenActiveApplications, fmt.Sprintf(" Applications %d ", len(a.activeApplicationList.apps))},
-		{screenCompanyList, " Companies "},
-		{screenAllPostings, fmt.Sprintf(" All postings %d ", a.allPostings.page.WithoutQuery)},
+		{message.ScreenActiveApplications, fmt.Sprintf(" Applications %d ", len(a.activeApplicationList.apps))},
+		{message.ScreenCompanyList, " Companies "},
+		{message.ScreenAllPostings, fmt.Sprintf(" All postings %d ", a.allPostings.page.WithoutQuery)},
 	}
 	const gap = "  "
 	var line, rule strings.Builder

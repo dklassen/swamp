@@ -249,8 +249,8 @@ func TestApp_SyncAll_FilterSaveDuringRun_Saves(t *testing.T) {
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeySpace, Text: " "})
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.currentScreen != screenPostingList {
-		t.Errorf("screen = %v, want screenPostingList", app.currentScreen)
+	if app.onScreen() != message.ScreenCompanyPostings {
+		t.Errorf("screen = %v, want message.ScreenCompanyPostings", app.onScreen())
 	}
 	saved, err := s.Companies.Filters(t.Context(), openList(t, app).company.ID)
 	if err != nil {
@@ -269,8 +269,8 @@ func TestApp_SyncAll_LeavingCompanyList_RunContinues(t *testing.T) {
 
 	app, cmd := sendIntentKey(t, app, runeKey('R'))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
-	if app.currentScreen != screenAllPostings {
-		t.Fatalf("screen after tab = %v, want screenAllPostings", app.currentScreen)
+	if app.onScreen() != message.ScreenAllPostings {
+		t.Fatalf("screen after tab = %v, want message.ScreenAllPostings", app.onScreen())
 	}
 	for range 3 {
 		app, cmd = step(t, app, cmd)
@@ -309,8 +309,8 @@ func TestApp_SyncAll_PostingListRefreshUnavailable(t *testing.T) {
 	app, _ = sendIntentKey(t, app, runeKey('R')) // the run's first step isn't run
 	app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = applyCmd(t, app, cmd)
-	if app.currentScreen != screenPostingList {
-		t.Fatalf("screen = %v, want the posting list", app.currentScreen)
+	if app.onScreen() != message.ScreenCompanyPostings {
+		t.Fatalf("screen = %v, want the posting list", app.onScreen())
 	}
 	app, cmd = sendIntentKey(t, app, runeKey('r'))
 	if cmd != nil {

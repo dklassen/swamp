@@ -15,16 +15,14 @@ type stackScreen interface {
 	model.Routable
 }
 
-// stacked is a screen pushed over the one under named; popping it puts
-// under back.
+// stacked is a screen pushed over the one before it, or over the tab.
 type stacked struct {
 	kind   message.Screen
 	screen stackScreen
-	under  screen
 }
 
-// screenStack is the screens a Nav has pushed, top last. A screen's routes
-// are registered for exactly as long as it's on the stack.
+// screenStack is the screens a Nav has pushed over the tab, top last. A
+// screen's routes are registered for exactly as long as it's on the stack.
 type screenStack struct {
 	router  model.Router
 	entries []stacked
@@ -34,55 +32,46 @@ func newScreenStack(router model.Router) *screenStack {
 	return &screenStack{router: router}
 }
 
-// push registers s's routes and puts it on top, over under. A kind is open
-// at most once, so pushing one that's open is a bug in the caller.
-func (st *screenStack) push(kind message.Screen, s stackScreen, under screen) error {
+// push registers s's routes and puts it on top. A kind is open at most
+// once, so pushing one that's open is a bug in the caller.
+func (st *screenStack) push(kind message.Screen, s stackScreen) error {
 	if slices.ContainsFunc(st.entries, func(e stacked) bool { return e.kind == kind }) {
 		panic(fmt.Sprintf("tui: %v is already open", kind))
 	}
 	if err := st.router.Register(s); err != nil {
 		return err
 	}
-	st.entries = append(st.entries, stacked{kind: kind, screen: s, under: under})
+	st.entries = append(st.entries, stacked{kind: kind, screen: s})
 	return nil
 }
 
-// pop deregisters the screen on top and returns the one it was pushed over.
-func (st *screenStack) pop() (screen, error) {
+// pop deregisters the screen on top.
+func (st *screenStack) pop() error {
 	n := len(st.entries)
 	if n == 0 {
-		return 0, fmt.Errorf("tui: no screen is pushed to pop")
+		return fmt.Errorf("tui: no screen is pushed to pop")
 	}
-	top := st.entries[n-1]
-	if err := st.router.Deregister(top.screen); err != nil {
-		return 0, err
+	if err := st.router.Deregister(st.entries[n-1].screen); err != nil {
+		return err
 	}
 	st.entries = st.entries[:n-1]
-	return top.under, nil
+	return nil
 }
 
-// replace pops the screen on top and pushes s over the same screen, in one
-// step.
+// replace pops the screen on top and pushes s in its place, in one step.
 func (st *screenStack) replace(kind message.Screen, s stackScreen) error {
 	if len(st.entries) == 0 {
 		return fmt.Errorf("tui: no screen is pushed to replace")
 	}
-	under := st.entries[len(st.entries)-1].under
-	if _, err := st.pop(); err != nil {
+	if err := st.pop(); err != nil {
 		return err
 	}
-	return st.push(kind, s, under)
+	return st.push(kind, s)
 }
 
 // top is the screen pushed last. Only call it while len is above 0.
 func (st *screenStack) top() stackScreen {
 	return st.entries[len(st.entries)-1].screen
-}
-
-// topKind is the kind of the screen pushed last. Only call it while len is
-// above 0.
-func (st *screenStack) topKind() message.Screen {
-	return st.entries[len(st.entries)-1].kind
 }
 
 // open is the screen of kind on the stack, or nil if none is.
@@ -95,14 +84,13 @@ func (st *screenStack) open(kind message.Screen) stackScreen {
 	return nil
 }
 
-// under is the screen the one of kind was pushed over, if it's open.
-func (st *screenStack) under(kind message.Screen) (screen, bool) {
-	for _, e := range st.entries {
-		if e.kind == kind {
-			return e.under, true
-		}
+// kinds is the kind of each screen pushed, bottom first.
+func (st *screenStack) kinds() []message.Screen {
+	kinds := make([]message.Screen, len(st.entries))
+	for i, e := range st.entries {
+		kinds[i] = e.kind
 	}
-	return 0, false
+	return kinds
 }
 
 func (st *screenStack) len() int { return len(st.entries) }
