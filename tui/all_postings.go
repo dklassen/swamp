@@ -76,7 +76,6 @@ func (m *allPostingsModel) Routes() []*model.Route {
 		model.Always(m.searchRead, model.From(m.instance)),
 		model.Always(m.paused, model.From(m.instance)),
 		model.Always(m.readFailed, model.From(m.instance)),
-		model.Always(m.loadRequested),
 		model.Always(m.markupChanged),
 		model.Always(m.postingChanged),
 		model.Always(m.scoreChanged),
@@ -190,10 +189,6 @@ func (m *allPostingsModel) showSearch(e message.Event[message.Read[message.Posti
 	m.page = read
 	m.cursor = min(m.cursor, max(len(m.page.Listings)-1, 0))
 	return nil
-}
-
-func (m *allPostingsModel) loadRequested(message.Event[message.Load[message.PostingSearch]]) tea.Cmd {
-	return m.load()
 }
 
 // markupChanged reloads, since a posting archived leaves the page.

@@ -14,7 +14,6 @@ const (
 	_ Kind = iota
 	KindChanged
 	KindRead
-	KindLoad
 	KindRun
 	KindRan
 	KindError
@@ -26,7 +25,6 @@ const (
 var kindNames = [...]string{
 	KindChanged: "changed",
 	KindRead:    "read",
-	KindLoad:    "load",
 	KindRun:     "run",
 	KindRan:     "ran",
 	KindError:   "error",
@@ -80,6 +78,8 @@ const (
 	TypeScore
 	TypeDocumentWrite
 	TypeDocumentExport
+	TypeChangeTick
+	TypeChangePage
 )
 
 var typeNames = [...]string{
@@ -119,6 +119,8 @@ var typeNames = [...]string{
 	TypeScore:              "score",
 	TypeDocumentWrite:      "document_write",
 	TypeDocumentExport:     "document_export",
+	TypeChangeTick:         "change_tick",
+	TypeChangePage:         "change_page",
 }
 
 func (t Type) String() string                { return nameOf(t, typeNames[:]) }

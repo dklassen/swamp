@@ -274,43 +274,6 @@ func TestPostingDetailModel_Init_ReadsThePostingItsApplicationReviewsAndScores(t
 	}
 }
 
-func TestPostingDetailModel_LoadRequests_SendTheirReads(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		load tea.Msg
-		want func(msg tea.Msg) bool
-	}{
-		{
-			name: "posting application",
-			load: message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.PostingApplication]{}),
-			want: func(msg tea.Msg) bool {
-				_, ok := msg.(message.Event[message.Read[message.PostingApplication]])
-				return ok
-			},
-		},
-		{
-			name: "posting scores",
-			load: message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.PostingScores]{}),
-			want: func(msg tea.Msg) bool { _, ok := msg.(message.Event[message.Read[message.PostingScores]]); return ok },
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			m, r, _ := detailWith(t)
-			settle(t, r, runCmd(t, m.Init()))
-
-			got := runCmd(t, r.Dispatch(tt.load))
-			if len(got) != 1 || !tt.want(got[0]) {
-				t.Fatalf("a %s load sent %#v, want its read", tt.name, got)
-			}
-			assertEventFrom(t, got[0].(interface{ Metadata() message.Meta }).Metadata(), m.src())
-		})
-	}
-}
-
 // A write to the posting's application shows whoever made it, including
 // one made while another screen covers the detail.
 func TestPostingDetailModel_ApplicationChanged_AboutItsPosting_PatchesIt(t *testing.T) {

@@ -126,7 +126,6 @@ func (m *postingListModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(m.postingsRead, model.From(m.instance)),
 		model.Always(m.readFailed, model.From(m.instance)),
-		model.Always(m.loadRequested),
 		model.Always(m.synced, model.About(message.TypeCompany, m.company.ID)),
 		model.Always(m.filtersSaved, model.About(message.TypeCompany, m.company.ID)),
 		model.Always(m.markupChanged),
@@ -169,10 +168,6 @@ func (m *postingListModel) postingChanged(e message.Event[message.Changed[messag
 		return nil
 	}
 	return m.reload()
-}
-
-func (m *postingListModel) loadRequested(message.Event[message.Load[message.PostingList]]) tea.Cmd {
-	return m.load()
 }
 
 // synced reloads even when the sync failed, since one can fail after

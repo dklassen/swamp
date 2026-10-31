@@ -57,7 +57,6 @@ func (m *companyListModel) Focused() bool { return m.focused }
 
 func (m *companyListModel) Routes() []*model.Route {
 	return []*model.Route{
-		model.Always(m.loadRequested),
 		model.Always(m.companiesRead),
 		model.Always(m.readFailed, model.From(m.instance)),
 		model.Always(m.postingChanged),
@@ -82,10 +81,6 @@ func (m *companyListModel) focusChanged(e message.Event[message.Signal[message.F
 }
 
 func (m *companyListModel) Init() tea.Cmd {
-	return m.load()
-}
-
-func (m *companyListModel) loadRequested(message.Event[message.Load[message.CompanyList]]) tea.Cmd {
 	return m.load()
 }
 
@@ -149,7 +144,12 @@ func (m *companyListModel) postingChanged(message.Event[message.Changed[message.
 func (m *companyListModel) companyChanged(e message.Event[message.Changed[message.Company]]) tea.Cmd {
 	switch e.Meta.Op {
 	case message.OpCreated:
-		m.companies = append(m.companies, e.Payload.After)
+		// One it shows already: the log can replay a create its read saw.
+		if i := indexOfCompany(m.companies, e.Meta.Subject.ID); i != -1 {
+			m.companies[i] = e.Payload.After
+		} else {
+			m.companies = append(m.companies, e.Payload.After)
+		}
 	case message.OpUpdated:
 		if i := indexOfCompany(m.companies, e.Meta.Subject.ID); i != -1 {
 			m.companies[i] = e.Payload.After

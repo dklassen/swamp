@@ -89,7 +89,6 @@ func (m *activeApplicationListModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(m.applicationsRead, model.From(m.instance)),
 		model.Always(m.readFailed, model.From(m.instance)),
-		model.Always(m.loadRequested),
 		model.Always(m.applicationChanged),
 		model.Always(m.reviewChanged),
 		model.Always(m.postingChanged),
@@ -161,10 +160,6 @@ func (m *activeApplicationListModel) applicationsRead(e message.Event[message.Re
 
 func (m *activeApplicationListModel) readFailed(message.Event[message.Error]) tea.Cmd {
 	return m.reading.done(m.load)
-}
-
-func (m *activeApplicationListModel) loadRequested(message.Event[message.Load[message.ActiveApplications]]) tea.Cmd {
-	return m.load()
 }
 
 // applicationChanged reads again, since a write can move an application

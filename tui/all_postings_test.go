@@ -11,7 +11,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
@@ -367,8 +366,8 @@ func TestAllPostings_ANewPostingElsewhere_KeepsThePageAndCountsIt(t *testing.T) 
 	}
 	page2 := pageTitles(app)
 
-	added := mustUpsertPosting(t, s, acme.ID, "8", "Role 8")
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "postings", RowID: added.ID, Op: "insert", Origin: "fetch:9"}}})
+	mustUpsertPosting(t, s, acme.ID, "8", "Role 8")
+	app = readChangeLog(t, app)
 
 	if diff := cmp.Diff(page2, pageTitles(app)); diff != "" {
 		t.Errorf("page 2 changed under the user (-before +after):\n%s", diff)
@@ -395,7 +394,7 @@ func TestAllPostings_MarkedInterestedElsewhere_ShowsTheStar(t *testing.T) {
 	if _, err := s.Postings.SetInterested(context.Background(), posting.ID); err != nil {
 		t.Fatalf("SetInterested: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "posting_markup", RowID: posting.ID, Op: "update", Origin: "tui:2"}}})
+	app = readChangeLog(t, app)
 
 	if !strings.Contains(viewText(app), "★") {
 		t.Errorf("view doesn't star the posting another window marked interested:\n%s", viewText(app))
@@ -786,7 +785,7 @@ func TestAllPostings_AScoreRecordedElsewhere_Shows(t *testing.T) {
 	app = openAllPostings(t, app)
 
 	mustScore(t, s, p, 4, "p")
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "posting_scores", RowID: 1, Op: "insert", Origin: "mcp:7"}}})
+	app = readChangeLog(t, app)
 
 	if got := app.allPostings.page.Listings[0].Score; got != 4 {
 		t.Errorf("score after the agent recorded one = %d, want 4", got)
@@ -829,7 +828,7 @@ func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("recordScores: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "posting_scores", RowID: 3, Op: "insert", New: fmt.Sprintf(`{"posting_id":%d,"score":5}`, p.ID), Origin: "mcp:7"}}})
+	app = readChangeLog(t, app)
 
 	if view := ansi.Strip(viewText(app)); !strings.Contains(view, "5 · after the rewrite") {
 		t.Errorf("detail doesn't show the score the agent just recorded:\n%s", view)
@@ -1047,9 +1046,6 @@ func TestAllPostingsModel_ReadsItsPageAgain(t *testing.T) {
 		{name: "on coming into focus", msg: func(m *allPostingsModel) tea.Msg { return focusOn(m.Instance()) }, read: true},
 		{name: "not on staying in focus", focused: true, msg: func(m *allPostingsModel) tea.Msg { return focusOn(m.Instance()) }},
 		{name: "not on another screen's focus", msg: func(*allPostingsModel) tea.Msg { return focusOn(9) }},
-		{name: "on a load request", msg: func(*allPostingsModel) tea.Msg {
-			return message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.PostingSearch]{})
-		}, read: true},
 		{name: "on a markup change", msg: func(*allPostingsModel) tea.Msg {
 			return message.Updated(message.Source{Instance: 9}, 1, time.Now().UTC(), message.Markup{PostingID: 1}, message.Markup{PostingID: 1, ArchivedAt: time.Now().UTC()})
 		}, read: true},

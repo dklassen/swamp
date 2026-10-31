@@ -63,20 +63,21 @@ type App struct {
 	documentService    *service.DocumentService
 	scoringService     *service.ScoringService
 	changeLogService   *service.ChangeLog
-	changeLog          bool
 	origin             string
-	// seen is each view's place in the change log (see cursor); a view
-	// not in it is at since. latestSeen is the newest event read so far.
-	seen          map[screen]int64
-	since         int64
-	latestSeen    int64
-	syncer        *sync.Syncer
-	companyList   *companyListModel
-	allPostings   *allPostingsModel
-	currentScreen screen
-	stack         *screenStack
-	status        string
-	err           error
+	// changes reads the log's rows as events, nil without a change log.
+	// after is App's place in the log, changePoll how often it reads, and
+	// readingChanges whether a read is in flight.
+	changes        *changeReader
+	after          int64
+	changePoll     time.Duration
+	readingChanges bool
+	syncer         *sync.Syncer
+	companyList    *companyListModel
+	allPostings    *allPostingsModel
+	currentScreen  screen
+	stack          *screenStack
+	status         string
+	err            error
 	// syncing runs sync all and refreshes, and draws their progress in the
 	// banner.
 	syncing               *model.Syncing
@@ -158,7 +159,6 @@ func New(
 		documentService:       documentService,
 		scoringService:        scores,
 		changeLogService:      changes,
-		seen:                  map[screen]int64{},
 		syncer:                syncer,
 		currentScreen:         screenActiveApplications,
 		allPostings:           newAllPostingsModel(postings),
@@ -353,8 +353,6 @@ func (a *App) navPostingDetail(e message.Event[message.Nav[message.PostingDetail
 	}
 	switch {
 	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenPostingDetail:
-		// It reads in Init, so it's as up to date as the change log read so far.
-		a.seen[screenPostingDetail] = a.latestSeen
 		return a.push(e.Payload.Screen, a.newPostingDetail(e.Payload.Value))
 	case e.Payload.Op == message.NavReplace && e.Payload.Screen == message.ScreenPostingDetail:
 		return a.replace(e.Payload.Screen, a.newPostingDetail(e.Payload.Value))
@@ -418,8 +416,6 @@ func (a *App) navApplicationDetail(e message.Event[message.Nav[message.Applicati
 	if e.Payload.Op == message.NavPush {
 		switch e.Payload.Screen {
 		case message.ScreenApplicationDetail:
-			// It reads in Init, so it's as up to date as the change log read so far.
-			a.seen[screenApplicationDetail] = a.latestSeen
 			return a.push(e.Payload.Screen, newApplicationDetailModel(a.applicationService, a.postingService, a.companyService, a.documentService, a.documents, e.Payload.Value))
 		case message.ScreenApplicationDelete:
 			return a.push(e.Payload.Screen, newApplicationDeleteModel(a.applicationService, e.Payload.Value, a.sized.Width))
@@ -614,18 +610,6 @@ func indexOfCompany(companies []message.Company, id int64) int {
 		}
 	}
 	return -1
-}
-
-// reloadCompanies asks the company list to read its companies again.
-func (a *App) reloadCompanies() tea.Cmd {
-	return requestLoad[message.CompanyList](message.Source{Instance: a.instance})
-}
-
-// requestLoad asks the model that shows T to read it again.
-func requestLoad[T message.Body](src message.Source) tea.Cmd {
-	return func() tea.Msg {
-		return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[T]{})
-	}
 }
 
 // sortCompaniesByName keeps an in-memory companies slice in the same
@@ -943,6 +927,9 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.applicationChanged),
 		model.Always(a.browserOpened),
 		model.Always(a.exported),
+		model.Always(a.changeTick, model.From(a.instance)),
+		model.Always(a.changesRead, model.From(a.instance)),
+		model.Always(a.changesFailed, model.From(a.instance)),
 	}
 }
 
@@ -1007,7 +994,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	if a.currentScreen != before || a.focused() != focusedBefore {
 		// Dispatched now, not as a Cmd, so keys already queued see it.
 		focused := a.router.Dispatch(a.focusSignal())
-		cmd = tea.Batch(cmd, focused, a.activate())
+		cmd = tea.Batch(cmd, focused)
 	}
 	// The window or the banner may have changed size, on any message.
 	if size := (message.ContentSize{Width: a.width, Rows: a.screenRows()}); size != a.sized {
@@ -1020,10 +1007,6 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
-	case changeTickMsg:
-		return a, a.handleTick()
-	case changesMsg:
-		return a, a.handleChanges(msg)
 	case tea.WindowSizeMsg:
 		a.width = msg.Width
 		a.height = msg.Height

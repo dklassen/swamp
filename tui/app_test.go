@@ -4013,8 +4013,6 @@ func TestApp_TheCompanyListReloadsItselfAfterASync(t *testing.T) {
 			var sources []message.Source
 			for _, msg := range runCmd(t, cmd) {
 				switch msg := msg.(type) {
-				case message.Event[message.Load[message.CompanyList]]:
-					t.Errorf("App asked the list to reload, want the list to decide")
 				case message.Event[message.Read[message.CompanyList]]:
 					sources = append(sources, msg.Meta.Source)
 				}

@@ -92,32 +92,6 @@ func TestCompanyListModel_Init_ReadsTheCompaniesAndTheirOpenPostings(t *testing.
 	}
 }
 
-func TestCompanyListModel_LoadRequest_SendsItsRead(t *testing.T) {
-	t.Parallel()
-
-	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	m := newCompanyListModel(s.Companies, s.Postings)
-	r := model.NewMsgRouter()
-	if err := r.Register(m); err != nil {
-		t.Fatalf("Register: %v", err)
-	}
-
-	cmd := r.Dispatch(message.New(message.Source{Instance: message.NewScreenInstance()}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.CompanyList]{}))
-	if cmd == nil {
-		t.Fatal("a load request sent nothing, want the companies read")
-	}
-
-	got, ok := cmd().(message.Event[message.Read[message.CompanyList]])
-	if !ok {
-		t.Fatalf("a load request sent %T, want message.Event[message.Read[message.CompanyList]]", got)
-	}
-	assertEventFrom(t, got.Meta, message.Source{Instance: m.Instance()})
-	if diff := cmp.Diff([]message.Company{companySnapshot(acme)}, got.Payload.Value.Companies); diff != "" {
-		t.Errorf("companies read (-want +got):\n%s", diff)
-	}
-}
-
 func TestCompanyListModel_CompanyChanged_KeepsTheRowsInStep(t *testing.T) {
 	t.Parallel()
 
@@ -134,6 +108,7 @@ func TestCompanyListModel_CompanyChanged_KeepsTheRowsInStep(t *testing.T) {
 		{name: "created", event: message.Created(src, 3, at, message.Company{ID: 3, Name: "Bluth"}), want: []string{"Acme", "Bluth", "Globex"}},
 		{name: "renamed", event: message.Updated(src, acme.ID, at, companySnapshot(acme), message.Company{ID: acme.ID, Name: "Zeta"}), want: []string{"Globex", "Zeta"}},
 		{name: "deleted, not shown", event: message.Deleted(src, 3, at, message.Company{ID: 3, Name: "Initech"}), want: []string{"Acme", "Globex"}},
+		{name: "created, already shown", event: message.Created(src, acme.ID, at, message.Company{ID: acme.ID, Name: "Acme Corp"}), want: []string{"Acme Corp", "Globex"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

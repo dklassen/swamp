@@ -56,7 +56,6 @@ func (m *applicationDetailModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(m.detailRead, model.From(m.instance)),
 		model.Always(m.readFailed, model.From(m.instance)),
-		model.Always(m.loadRequested),
 		model.Always(m.applicationChanged, model.About(message.TypeApplication, m.detail.Application.ID)),
 		model.Always(m.reviewChanged, model.About(message.TypeApplication, m.detail.Application.ID)),
 		model.Always(m.documentEdited, model.From(m.instance)),
@@ -98,10 +97,6 @@ func (m *applicationDetailModel) readFailed(e message.Event[message.Error]) tea.
 
 func (m *applicationDetailModel) goneElsewhere() tea.Cmd {
 	return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), "The application you were viewing was deleted elsewhere"))
-}
-
-func (m *applicationDetailModel) loadRequested(message.Event[message.Load[message.ApplicationDetail]]) tea.Cmd {
-	return m.load()
 }
 
 // applicationChanged takes a write to its application, whoever made it. A

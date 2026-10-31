@@ -72,8 +72,6 @@ func (m *postingDetailModel) Routes() []*model.Route {
 		model.Always(m.reviewsRead, model.From(m.instance)),
 		model.Always(m.scoresRead, model.From(m.instance)),
 		model.Always(m.readFailed, model.From(m.instance)),
-		model.Always(m.postingLoadRequested),
-		model.Always(m.scoresLoadRequested),
 		model.Always(m.applicationChanged),
 		model.Always(m.reviewChanged),
 		model.Always(m.postingChanged, model.About(message.TypePosting, m.posting.ID)),
@@ -154,14 +152,6 @@ func (m *postingDetailModel) postingChanged(message.Event[message.Changed[messag
 // writes.
 func (m *postingDetailModel) scoreChanged(message.Event[message.Changed[message.Score]]) tea.Cmd {
 	return m.scoresReading.start(m.loadScores)
-}
-
-func (m *postingDetailModel) postingLoadRequested(message.Event[message.Load[message.PostingApplication]]) tea.Cmd {
-	return m.loadPosting()
-}
-
-func (m *postingDetailModel) scoresLoadRequested(message.Event[message.Load[message.PostingScores]]) tea.Cmd {
-	return m.loadScores()
 }
 
 // applicationChanged takes a write to its posting's application, whoever

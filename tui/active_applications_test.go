@@ -989,9 +989,6 @@ func TestActiveApplicationListModel_ReadsItsApplicationsAgain(t *testing.T) {
 		{name: "on coming into focus", msg: func(m *activeApplicationListModel) tea.Msg { return focusOn(m.Instance()) }, read: true},
 		{name: "not on staying in focus", focused: true, msg: func(m *activeApplicationListModel) tea.Msg { return focusOn(m.Instance()) }},
 		{name: "not on another screen's focus", msg: func(*activeApplicationListModel) tea.Msg { return focusOn(9) }},
-		{name: "on a load request", msg: func(*activeApplicationListModel) tea.Msg {
-			return message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.ActiveApplications]{})
-		}, read: true},
 		{name: "on an application changed elsewhere, out of focus", msg: func(*activeApplicationListModel) tea.Msg {
 			return message.Updated(message.Source{Instance: 9}, 1, time.Now().UTC(),
 				message.Application{ID: 1, Status: message.ApplicationStarted}, message.Application{ID: 1, Status: message.ApplicationRejected})

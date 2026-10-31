@@ -305,9 +305,6 @@ func TestApplicationDetailModel_ReadsAgain(t *testing.T) {
 		msgs func(m *applicationDetailModel) []tea.Msg
 		want bool
 	}{
-		{name: "on a load request", want: true, msgs: func(*applicationDetailModel) []tea.Msg {
-			return []tea.Msg{message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.ApplicationDetail]{})}
-		}},
 		{name: "on its own edit", want: true, msgs: func(m *applicationDetailModel) []tea.Msg {
 			return []tea.Msg{edited(m.Instance(), m.detail.Application.ID)}
 		}},
@@ -533,18 +530,18 @@ func TestApplicationDetailModel_DeletedWhileOnTop_PopsAndSaysSo(t *testing.T) {
 	}
 }
 
-// Once its application is deleted, a load the change log asks for or a
-// read already on its way doesn't say it was deleted elsewhere over the
+// Once its application is deleted, a write elsewhere or a read already
+// on its way doesn't say it was deleted elsewhere over the
 // confirmation's word.
-func TestApplicationDetailModel_Deleted_IgnoresLoadsAndItsLateRead(t *testing.T) {
+func TestApplicationDetailModel_Deleted_IgnoresWritesElsewhereAndItsLateRead(t *testing.T) {
 	t.Parallel()
 
 	for _, tt := range []struct {
 		name string
 		msg  func(m *applicationDetailModel) tea.Msg
 	}{
-		{name: "a load request", msg: func(*applicationDetailModel) tea.Msg {
-			return message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.ApplicationDetail]{})
+		{name: "a document written elsewhere", msg: func(m *applicationDetailModel) tea.Msg {
+			return documentWrittenElsewhere(m.detail.Application.ID)
 		}},
 		{name: "its read, finding nothing", msg: func(m *applicationDetailModel) tea.Msg {
 			return message.New(m.src(), message.Subject{Type: message.TypeApplication, ID: 1}, message.OpNone, time.Now().UTC(), model.ErrorOf(store.ErrNotFound))

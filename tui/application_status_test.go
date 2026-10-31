@@ -9,7 +9,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/application"
-	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
@@ -160,7 +159,7 @@ func TestStatusPicker_OpensOnAStatusChangedElsewhere(t *testing.T) {
 	if err := updateApplicationStatusIn(t.Context(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "applications", RowID: target.ID, Op: "update", Origin: "mcp:7"}}})
+	app = readChangeLog(t, app)
 
 	app = sendKeyAndApply(t, app, runeKey('s'))
 

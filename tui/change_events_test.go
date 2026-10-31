@@ -2,18 +2,20 @@ package tui
 
 import (
 	"context"
-	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/application"
-	"github.com/dklassen/swamp/internal/domain/change"
+	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/tui/message"
 )
 
 // TestApp_AnotherProcessesChange_ReloadsTheHomeListQuietly: the agent
@@ -26,73 +28,20 @@ func TestApp_AnotherProcessesChange_ReloadsTheHomeListQuietly(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Staff Engineer")
-	target, err := createApplicationIn(context.Background(), s, posting.ID)
-	if err != nil {
+	if _, err := createApplicationIn(context.Background(), s, posting.ID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
 	if strings.Contains(viewText(app), "Staff Engineer") {
 		t.Fatal("the home list shows the application before any reload; the test can't tell a reload happened")
 	}
 
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "applications", RowID: target.ID, Op: "insert", Origin: "mcp:7"}}})
+	app = readChangeLog(t, app)
 
 	if view := viewText(app); !strings.Contains(view, "Staff Engineer") {
 		t.Errorf("home list after the agent's change doesn't show it:\n%s", view)
 	}
 	if app.status != "" {
 		t.Errorf("status line = %q after a background reload, want none", app.status)
-	}
-}
-
-// TestApp_ItsOwnChange_IsSkipped: the TUI reloads after its own actions
-// already; announcing them as updates would be false.
-func TestApp_ItsOwnChange_IsSkipped(t *testing.T) {
-	t.Parallel()
-
-	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
-	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Staff Engineer")
-	target, err := createApplicationIn(context.Background(), s, posting.ID)
-	if err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "applications", RowID: target.ID, Op: "insert", Origin: "tui:1"}}})
-
-	if view := viewText(app); strings.Contains(view, "Staff Engineer") || strings.Contains(view, "Updated by") {
-		t.Errorf("the TUI's own change was treated as another process's:\n%s", view)
-	}
-}
-
-// TestApp_ATickReadsTheFeed: each tick reads what's new in the change log;
-// the reply schedules the next tick.
-func TestApp_ATickReadsTheFeed(t *testing.T) {
-	t.Parallel()
-
-	ctx := context.Background()
-	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Staff Engineer")
-	since, err := s.Changes.Latest(ctx)
-	if err != nil {
-		t.Fatalf("LatestChangeEventID: %v", err)
-	}
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(since, "tui:1")
-	if _, err := createApplicationIn(ctx, s, posting.ID); err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-
-	app, read := sendKey(app, changeTickMsg{})
-	if read == nil {
-		t.Fatal("a tick returned no command, want one reading the feed")
-	}
-	got, ok := read().(changesMsg)
-	if !ok || got.err != nil || len(got.events) != 1 || got.events[0].Table != "applications" {
-		t.Fatalf("reading the feed = %+v, want one applications event", got)
-	}
-	if _, next := sendKey(app, got); next == nil {
-		t.Error("handling the events scheduled nothing, want the next tick")
 	}
 }
 
@@ -123,7 +72,7 @@ func TestApp_HomeListReload_KeepsTheCursorOnTheSameApplication(t *testing.T) {
 	if _, err := s.Applications.Delete(ctx, rows[0].ID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "applications", RowID: rows[0].ID, Op: "update", Origin: "tui:2"}}})
+	app = readChangeLog(t, app)
 
 	if got := app.activeApplicationList.apps[app.activeApplicationList.cursor].ID; got != onLast {
 		t.Errorf("cursor is on application %d after the reload, want %d (the one it was on)", got, onLast)
@@ -152,7 +101,7 @@ func TestApp_CompanyListReload_KeepsTheCursorOnTheSameCompany(t *testing.T) {
 	if _, err := s.Companies.Delete(context.Background(), companies[0].ID); err != nil {
 		t.Fatalf("SoftDeleteCompany: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "companies", RowID: companies[0].ID, Op: "update", Origin: "tui:2"}}})
+	app = readChangeLog(t, app)
 
 	if len(app.companyList.companies) != 2 {
 		t.Fatalf("company list has %d companies after the reload, want 2", len(app.companyList.companies))
@@ -187,7 +136,7 @@ func TestApp_PostingListReload_KeepsTheCursorAndShowsTheChange(t *testing.T) {
 	if _, err := s.Postings.Ingest(context.Background(), renamed.CompanyID, renamed.Source, renamed.SourceID, posting.IngestedFields{Title: "Renamed by sync", RawPayload: renamed.RawPayload}); err != nil {
 		t.Fatalf("UpsertPosting: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "postings", RowID: renamed.ID, Op: "update", Origin: "fetch:9"}}})
+	app = readChangeLog(t, app)
 
 	if !strings.Contains(viewText(app), "Renamed by sync") {
 		t.Errorf("posting list doesn't show the new title:\n%s", viewText(app))
@@ -218,7 +167,7 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 	if _, err := app.documents.Write(target.ID, document.Resume, "# Revised by the agent\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "document_writes", RowID: 1, Op: "insert", New: `{"application_id":` + strconv.FormatInt(target.ID, 10) + `,"document_type":"resume","source":"write_document"}`, Origin: "mcp:7"}}})
+	app = readChangeLog(t, app)
 
 	view := viewText(app)
 	if strings.Contains(view, "[PASSED]") {
@@ -239,7 +188,7 @@ func TestApp_ApplicationDeletedElsewhere_GoesBackAndSaysSo(t *testing.T) {
 		t.Fatalf("application.Delete: %v", err)
 	}
 
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "applications", RowID: target.ID, Op: "update", Origin: "tui:2"}}})
+	app = readChangeLog(t, app)
 
 	if app.currentScreen != screenActiveApplications {
 		t.Errorf("screen = %v, want the home list", app.currentScreen)
@@ -276,7 +225,7 @@ func TestApp_PostingDetailReload_ShowsTheChangeAndKeepsTheScroll(t *testing.T) {
 	if _, err := s.Postings.Ingest(context.Background(), p.CompanyID, p.Source, p.SourceID, posting.IngestedFields{Title: "Senior Engineer", DescriptionText: long, RawPayload: p.RawPayload}); err != nil {
 		t.Fatalf("UpsertPosting: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "postings", RowID: p.ID, Op: "update", Origin: "fetch:9"}}})
+	app = readChangeLog(t, app)
 
 	if got := openDetail(t, app).posting.Title; got != "Senior Engineer" {
 		t.Errorf("posting detail title = %q, want the renamed %q", got, "Senior Engineer")
@@ -307,7 +256,7 @@ func TestApp_PostingDetailFromApplicationDetail_ReloadKeepsThePosting(t *testing
 	if _, err := s.Postings.Ingest(context.Background(), stored.CompanyID, stored.Source, stored.SourceID, posting.IngestedFields{Title: "Engineer", Location: "Remote", RawPayload: stored.RawPayload}); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "postings", RowID: p.ID, Op: "update", Origin: "fetch:9"}}})
+	app = readChangeLog(t, app)
 
 	if view := viewText(app); !strings.Contains(view, "Remote") || strings.Contains(view, "No application started") {
 		t.Errorf("posting detail after the reload doesn't show the posting's new location with its application:\n%s", view)
@@ -331,28 +280,21 @@ func TestApp_ApplicationStartedElsewhere_PostingDetailShowsIt(t *testing.T) {
 	if !strings.Contains(viewText(app), "No application started") {
 		t.Fatalf("posting detail already shows an application; the test can't tell a reload happened:\n%s", viewText(app))
 	}
-	since, err := s.Changes.Latest(ctx)
-	if err != nil {
-		t.Fatalf("Latest: %v", err)
-	}
+	app = readChangeLog(t, app)
 
 	if _, err := createApplicationIn(ctx, s, openDetail(t, app).posting.ID); err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	events, err := s.Changes.After(ctx, since)
-	if err != nil {
-		t.Fatalf("After: %v", err)
-	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: events})
+	app = readChangeLog(t, app)
 
 	if view := viewText(app); strings.Contains(view, "No application started") || !strings.Contains(view, applicationStatusLabel(application.Started)) {
 		t.Errorf("posting detail doesn't show the application started elsewhere:\n%s", view)
 	}
 }
 
-// TestApp_ChangesWhileAFormIsOpen_WaitUntilItCloses: a form you're filling
-// in is never rebuilt; the screen beneath catches up once you're back.
-func TestApp_ChangesWhileAFormIsOpen_WaitUntilItCloses(t *testing.T) {
+// TestApp_ChangesWhileAFormIsOpen_LeaveItAlone: a form you're filling in
+// is never rebuilt; the screen beneath shows the change once you're back.
+func TestApp_ChangesWhileAFormIsOpen_LeaveItAlone(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
@@ -374,11 +316,7 @@ func TestApp_ChangesWhileAFormIsOpen_WaitUntilItCloses(t *testing.T) {
 		t.Fatalf("application.Create: %v", err)
 	}
 
-	// A tick while the form is open reads nothing: forms don't follow the log.
-	app, next := sendKey(app, changeTickMsg{})
-	if _, isTick := next().(changeTickMsg); !isTick {
-		t.Fatal("a tick on the form did more than schedule the next tick")
-	}
+	app = readChangeLog(t, app)
 	if app.currentScreen != screenApplicationStatusSelect || statusPicker(t, app).cursor != cursor {
 		t.Fatalf("the status form changed under you: screen %v, cursor %d (was %d)", app.currentScreen, statusPicker(t, app).cursor, cursor)
 	}
@@ -447,7 +385,7 @@ func TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere(t *testing.T) {
 	if err := updateApplicationStatusIn(ctx, s, other.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "applications", RowID: other.ID, Op: "update", Origin: "mcp:7"}}})
+	app = readChangeLog(t, app)
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
@@ -474,7 +412,7 @@ func TestApp_TabBackToTheHomeList_ShowsAChangeClearedOnTheCompanyList(t *testing
 	if err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
-	app = sendKeyAndApply(t, app, changesMsg{view: app.currentScreen, events: []change.Event{{Table: "applications", RowID: target.ID, Op: "update", Origin: "mcp:7"}}})
+	app = readChangeLog(t, app)
 
 	for range 2 {
 		app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
@@ -485,5 +423,154 @@ func TestApp_TabBackToTheHomeList_ShowsAChangeClearedOnTheCompanyList(t *testing
 	}
 	if view := viewText(app); !strings.Contains(view, "Interviewing") {
 		t.Errorf("the home list doesn't show the change made while on the company list:\n%s", view)
+	}
+}
+
+// A write by another process shows on the screen that shows it.
+func TestApp_AnotherProcessesWrite_ShowsOnTheScreenThatShowsIt(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		// open goes to the screen, from the home list.
+		open  func(t *testing.T, app *App) *App
+		write func(t *testing.T, s testutil.TestApp, acme company.Company)
+		want  string
+	}{
+		{name: "a company renamed, on the company list", open: func(t *testing.T, app *App) *App {
+			app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
+			return app
+		}, write: func(t *testing.T, s testutil.TestApp, acme company.Company) {
+			if _, err := s.Companies.SetName(context.Background(), acme.ID, "Acme Corp"); err != nil {
+				t.Fatalf("SetName: %v", err)
+			}
+		}, want: "Acme Corp"},
+		{name: "an application started, on the home list", open: func(t *testing.T, app *App) *App { return app }, write: func(t *testing.T, s testutil.TestApp, acme company.Company) {
+			mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-2", "Staff Engineer").ID)
+		}, want: "Staff Engineer"},
+		{name: "a posting synced, on its company's posting list", open: openPostingList, write: func(t *testing.T, s testutil.TestApp, acme company.Company) {
+			mustUpsertPosting(t, s, acme.ID, "job-1", "Principal Engineer")
+		}, want: "Principal Engineer"},
+		{name: "a posting synced, on its detail", open: func(t *testing.T, app *App) *App {
+			return openPostingDetail(t, openPostingList(t, app))
+		}, write: func(t *testing.T, s testutil.TestApp, acme company.Company) {
+			mustUpsertPosting(t, s, acme.ID, "job-1", "Principal Engineer")
+		}, want: "Principal Engineer"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+			syncer := newTestSyncer(s, map[string][]jobboard.Posting{"acme": {{SourceID: "job-1", Title: "Engineer"}}})
+			app := tt.open(t, newTestApp(t, s, syncer).WithChangeLog(0, "tui:1"))
+			// Past what opening it wrote, such as a sync.
+			app = readChangeLog(t, app)
+			if strings.Contains(viewText(app), tt.want) {
+				t.Fatalf("the screen shows %q before the write; the test can't tell it was heard:\n%s", tt.want, viewText(app))
+			}
+
+			tt.write(t, s, acme)
+			app = readChangeLog(t, app)
+
+			if view := viewText(app); !strings.Contains(view, tt.want) {
+				t.Errorf("after another process's write, the screen doesn't show %q:\n%s", tt.want, view)
+			}
+		})
+	}
+}
+
+// readChangeLog has app read the change log once, as a tick does, and
+// applies what that sends.
+func readChangeLog(t *testing.T, app *App) *App {
+	t.Helper()
+	page := app.readChanges()()
+	return applyCmd(t, app, func() tea.Msg { return page })
+}
+
+// Each tick reads the change log and asks for the next, but a tick while
+// a read is in flight only asks for the next, so a page is never read
+// twice.
+func TestApp_ATick_ReadsTheLogOnceAtATime(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
+	app.changePoll = time.Millisecond
+	tick := func() tea.Msg {
+		return message.New(message.Source{Instance: app.Instance()}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Signal[message.ChangeTick]{})
+	}
+	// sent is how many reads and ticks msgs hold, and the read.
+	sent := func(msgs []tea.Msg) (reads, ticks int, read tea.Msg) {
+		for _, msg := range msgs {
+			switch msg.(type) {
+			case message.Event[message.Read[message.ChangePage]]:
+				reads, read = reads+1, msg
+			case message.Event[message.Signal[message.ChangeTick]]:
+				ticks++
+			}
+		}
+		return reads, ticks, read
+	}
+
+	app, cmd := sendKey(app, tick())
+	reads, ticks, read := sent(runCmd(t, cmd))
+	if reads != 1 || ticks != 1 {
+		t.Fatalf("a tick sent %d reads and %d ticks, want 1 of each", reads, ticks)
+	}
+	app, cmd = sendKey(app, tick())
+	if reads, ticks, _ := sent(runCmd(t, cmd)); reads != 0 || ticks != 1 {
+		t.Errorf("a tick during a read sent %d reads and %d ticks, want only the tick", reads, ticks)
+	}
+	app, _ = sendKey(app, read)
+	_, cmd = sendKey(app, tick())
+	if reads, _, _ := sent(runCmd(t, cmd)); reads != 1 {
+		t.Errorf("a tick once the read is in sent %d reads, want 1", reads)
+	}
+}
+
+// The TUI's own write comes back through the change log too, but the
+// command that made it already sent its event: reading the log after it
+// sends nothing more.
+func TestApp_ItsOwnWrite_IsAppliedOnce(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
+	tui := servicesAs(t, s.Path, "tui:1")
+	app := newTestApp(t, tui, newTestSyncer(tui, nil)).WithChangeLog(0, "tui:1")
+	app = readChangeLog(t, app)
+
+	app = sendKeyAndApply(t, app, runeKey('s'))
+	app, _ = sendKey(app, runeKey('j'))
+	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
+
+	page, ok := app.readChanges()().(message.Event[message.Read[message.ChangePage]])
+	if !ok {
+		t.Fatalf("reading the log after the TUI's own write failed: %#v", page)
+	}
+	if n := len(page.Payload.Value.Events); n != 0 {
+		t.Errorf("the log read after the TUI's own write has %d events, want none: %#v", n, page.Payload.Value.Events)
+	}
+	if page.Payload.Value.After == app.after {
+		t.Error("the TUI's own write wasn't in the log; the test can't tell it was skipped")
+	}
+}
+
+// servicesAs is every service on the database at path, as a process
+// whose writes are stamped with origin.
+func servicesAs(t *testing.T, path, origin string) testutil.TestApp {
+	t.Helper()
+	db := testutil.OpenStore(t, path, origin)
+	return testutil.TestApp{
+		Path:         path,
+		Store:        db,
+		Companies:    service.NewCompanyService(db),
+		Postings:     service.NewPostingService(db),
+		Applications: service.NewApplicationService(db),
+		Documents:    service.NewDocumentService(db),
+		Scores:       service.NewScoringService(db),
+		Changes:      service.NewChangeLog(db),
 	}
 }

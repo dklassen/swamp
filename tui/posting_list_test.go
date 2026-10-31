@@ -254,17 +254,6 @@ func TestPostingListModel_ReloadsAfterASyncOfItsCompany(t *testing.T) {
 	}
 }
 
-func TestPostingListModel_LoadRequest_SendsItsRead(t *testing.T) {
-	t.Parallel()
-
-	m, r := listWith(t, false)
-	load := message.New(message.Source{Instance: 9}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Load[message.PostingList]{})
-
-	if !readsFrom(t, m, runCmd(t, r.Dispatch(load))) {
-		t.Error("a load request sent no read of the postings")
-	}
-}
-
 func TestPostingListModel_A_FlipsHideArchivedAndTellsApp(t *testing.T) {
 	t.Parallel()
 
