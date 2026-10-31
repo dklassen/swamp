@@ -193,7 +193,7 @@ func (c ErrorCode) String() string                { return nameOf(c, errorCodeNa
 func (c ErrorCode) MarshalText() ([]byte, error)  { return marshalName(c, errorCodeNames[:]) }
 func (c *ErrorCode) UnmarshalText(b []byte) error { return unmarshalName(c, b, errorCodeNames[:]) }
 
-// Screen is a kind of screen a Nav opens. A pop opens none.
+// Screen is a kind of screen: a tab, or one a Nav opens. A pop opens none.
 type Screen int
 
 const (
@@ -213,6 +213,9 @@ const (
 	ScreenApplicationExport
 	ScreenApplicationSubmit
 	ScreenApplicationForm
+	ScreenActiveApplications
+	ScreenCompanyList
+	ScreenAllPostings
 )
 
 var screenNames = [...]string{
@@ -232,6 +235,9 @@ var screenNames = [...]string{
 	ScreenApplicationExport:    "application_export",
 	ScreenApplicationSubmit:    "application_submit",
 	ScreenApplicationForm:      "application_form",
+	ScreenActiveApplications:   "active_applications",
+	ScreenCompanyList:          "company_list",
+	ScreenAllPostings:          "all_postings",
 }
 
 func (s Screen) String() string                { return nameOf(s, screenNames[:]) }

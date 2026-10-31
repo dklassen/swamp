@@ -13,6 +13,7 @@ import (
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
+	"github.com/dklassen/swamp/tui/message"
 )
 
 func TestEditorCommand_EditorSet_ReturnsEditorAndPath(t *testing.T) {
@@ -40,8 +41,8 @@ func TestEditorCommand_EditorUnset_ReturnsError(t *testing.T) {
 func onApplicationDetail(t *testing.T, app *App) *applicationDetailModel {
 	t.Helper()
 	d := app.applicationDetail()
-	if d == nil || app.currentScreen != screenApplicationDetail {
-		t.Fatalf("screen = %v, want application detail", app.currentScreen)
+	if d == nil || app.onScreen() != message.ScreenApplicationDetail {
+		t.Fatalf("screen = %v, want application detail", app.onScreen())
 	}
 	return d
 }
@@ -92,8 +93,8 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	}
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
-	if app.currentScreen != screenActiveApplications {
-		t.Fatalf("screen after esc = %v, want the home list", app.currentScreen)
+	if app.onScreen() != message.ScreenActiveApplications {
+		t.Fatalf("screen after esc = %v, want the home list", app.onScreen())
 	}
 	if view := viewText(app); strings.Contains(view, "R:✓") {
 		t.Errorf("home list row still shows the resume as passed:\n%s", view)

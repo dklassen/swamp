@@ -38,13 +38,13 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 		open func(app *App)
 	}{
 		{name: "company form", open: func(app *App) {
-			app.currentScreen = screenCompanyList
+			app.tab = message.ScreenCompanyList
 			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenCompanyForm, message.Subject{}, message.None{})())
 			// Past the source picker, which takes no text.
 			app.Update(tea.KeyPressMsg{Code: tea.KeyTab})
 		}},
 		{name: "company edit", open: func(app *App) {
-			app.currentScreen = screenCompanyList
+			app.tab = message.ScreenCompanyList
 			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenCompanyEdit,
 				message.Subject{Type: message.TypeCompany, ID: 1}, message.Company{ID: 1})())
 		}},
@@ -53,18 +53,18 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 				message.Subject{Type: message.TypeApplication, ID: 1}, message.ApplicationDetail{Application: message.Application{ID: 1}})())
 		}},
 		{name: "notes", open: func(app *App) {
-			app.currentScreen = screenCompanyList
+			app.tab = message.ScreenCompanyList
 			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenApplicationNotes,
 				message.Subject{Type: message.TypeApplication, ID: 1}, message.Application{ID: 1})())
 		}},
 		{name: "application form", open: func(app *App) {
-			app.currentScreen = screenCompanyList
+			app.tab = message.ScreenCompanyList
 			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenApplicationForm,
 				message.Subject{Type: message.TypeApplication, ID: 1}, message.Application{ID: 1, PostingID: 1})())
 			app.Update(formReadBy(app.stack.top().Instance(), message.ApplicationForm{}))
 		}},
 		{name: "document review", open: func(app *App) {
-			app.currentScreen = screenCompanyList
+			app.tab = message.ScreenCompanyList
 			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenDocumentReviewForm,
 				message.Subject{Type: message.TypeApplication, ID: 1}, message.DocumentReview{ApplicationID: 1, DocumentType: message.DocumentCoverLetter})())
 		}},
@@ -117,8 +117,8 @@ func TestApp_CompanyList_PasteWithSearchClosed_IsNotACommand(t *testing.T) {
 	if cmd != nil {
 		t.Errorf("paste returned a command (%T), want none", cmd())
 	}
-	if app.currentScreen != screenCompanyList {
-		t.Errorf("screen = %v, want the company list", app.currentScreen)
+	if app.onScreen() != message.ScreenCompanyList {
+		t.Errorf("screen = %v, want the company list", app.onScreen())
 	}
 }
 
@@ -133,8 +133,8 @@ func TestApp_ActiveApplications_PasteIntoSearch_FiltersByIt(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.currentScreen != screenApplicationDetail || shownDetail(app).Posting.Title != "Engineer 07" {
-		t.Fatalf("after paste, enter, enter: screen %v showing %q, want application detail for Engineer 07", app.currentScreen, shownDetail(app).Posting.Title)
+	if app.onScreen() != message.ScreenApplicationDetail || shownDetail(app).Posting.Title != "Engineer 07" {
+		t.Fatalf("after paste, enter, enter: screen %v showing %q, want application detail for Engineer 07", app.onScreen(), shownDetail(app).Posting.Title)
 	}
 }
 

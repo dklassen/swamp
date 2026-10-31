@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"sort"
 	"strings"
 	"time"
@@ -33,29 +34,6 @@ import (
 	"github.com/dklassen/swamp/tui/model"
 )
 
-type screen int
-
-const (
-	screenCompanyList screen = iota
-	screenCompanyForm
-	screenCompanyEdit
-	screenPostingList
-	screenPostingDetail
-	screenFilterSelect
-	screenApplicationStatusSelect
-	screenApplicationNotesEdit
-	screenDocumentReviewSelect
-	screenDocumentReviewForm
-	screenActiveApplications
-	screenApplicationDetail
-	screenApplicationExport
-	screenApplicationSubmit
-	screenApplicationForm
-	screenApplicationDelete
-	screenCompanyDelete
-	screenAllPostings
-)
-
 type App struct {
 	companyService     *service.CompanyService
 	postingService     *service.PostingService
@@ -66,15 +44,16 @@ type App struct {
 	origin             string
 	// changes reads the log's rows as events, nil without a change log,
 	// on a tick every changePoll.
-	changes       *changeReader
-	changePoll    time.Duration
-	syncer        *sync.Syncer
-	companyList   *companyListModel
-	allPostings   *allPostingsModel
-	currentScreen screen
-	stack         *screenStack
-	status        string
-	err           error
+	changes     *changeReader
+	changePoll  time.Duration
+	syncer      *sync.Syncer
+	companyList *companyListModel
+	allPostings *allPostingsModel
+	// tab is the tab up, which the stack's screens are pushed over.
+	tab    message.Screen
+	stack  *screenStack
+	status string
+	err    error
 	// syncing runs sync all and refreshes, and draws their progress in the
 	// banner.
 	syncing               *model.Syncing
@@ -157,7 +136,7 @@ func New(
 		scoringService:        scores,
 		changeLogService:      changes,
 		syncer:                syncer,
-		currentScreen:         screenActiveApplications,
+		tab:                   message.ScreenActiveApplications,
 		allPostings:           newAllPostingsModel(postings),
 		activeApplicationList: newActiveApplicationListModel(applications, documentService, docs),
 		hideArchived:          true,
@@ -196,58 +175,64 @@ func (a *App) focusSignal() tea.Msg {
 		message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: a.focused()}})
 }
 
-// stackedAs is the screen each kind a Nav pushes shows as, for the paths
-// that still switch on currentScreen.
-var stackedAs = map[message.Screen]screen{
-	message.ScreenCompanyForm:          screenCompanyForm,
-	message.ScreenCompanyEdit:          screenCompanyEdit,
-	message.ScreenCompanyDelete:        screenCompanyDelete,
-	message.ScreenCompanyPostings:      screenPostingList,
-	message.ScreenFilterSelect:         screenFilterSelect,
-	message.ScreenPostingDetail:        screenPostingDetail,
-	message.ScreenApplicationStatus:    screenApplicationStatusSelect,
-	message.ScreenApplicationNotes:     screenApplicationNotesEdit,
-	message.ScreenApplicationDetail:    screenApplicationDetail,
-	message.ScreenApplicationDelete:    screenApplicationDelete,
-	message.ScreenDocumentReviewSelect: screenDocumentReviewSelect,
-	message.ScreenDocumentReviewForm:   screenDocumentReviewForm,
-	message.ScreenApplicationExport:    screenApplicationExport,
-	message.ScreenApplicationSubmit:    screenApplicationSubmit,
-	message.ScreenApplicationForm:      screenApplicationForm,
+// tabs are the persistent screens, in the order tab goes through them.
+var tabs = []message.Screen{message.ScreenActiveApplications, message.ScreenCompanyList, message.ScreenAllPostings}
+
+func isTab(kind message.Screen) bool { return slices.Contains(tabs, kind) }
+
+// tabScreen is the tab of kind.
+func (a *App) tabScreen(kind message.Screen) stackScreen {
+	switch kind {
+	case message.ScreenActiveApplications:
+		return a.activeApplicationList
+	case message.ScreenCompanyList:
+		return a.companyList
+	case message.ScreenAllPostings:
+		return a.allPostings
+	}
+	panic(fmt.Sprintf("tui: %v isn't a tab", kind))
+}
+
+// path is the tab up, then each screen pushed over it: the way esc goes
+// back, reversed.
+func (a *App) path() []message.Screen {
+	return append([]message.Screen{a.tab}, a.stack.kinds()...)
+}
+
+// onScreen is the kind of the screen on top.
+func (a *App) onScreen() message.Screen {
+	path := a.path()
+	return path[len(path)-1]
+}
+
+// screenOf is the open screen of kind.
+func (a *App) screenOf(kind message.Screen) stackScreen {
+	if isTab(kind) {
+		return a.tabScreen(kind)
+	}
+	return a.stack.open(kind)
 }
 
 // push opens s over the screen up: routes, then Init, so nothing Init
 // starts can report before s can hear it.
 func (a *App) push(kind message.Screen, s stackScreen) tea.Cmd {
-	as, ok := stackedAs[kind]
-	if !ok {
-		return a.fail(fmt.Errorf("tui: %v isn't a screen a Nav pushes", kind))
-	}
-	if err := a.stack.push(kind, s, a.currentScreen); err != nil {
+	if err := a.stack.push(kind, s); err != nil {
 		return a.fail(err)
 	}
-	a.currentScreen = as
 	return s.Init()
 }
 
 func (a *App) replace(kind message.Screen, s stackScreen) tea.Cmd {
-	as, ok := stackedAs[kind]
-	if !ok {
-		return a.fail(fmt.Errorf("tui: %v isn't a screen a Nav pushes", kind))
-	}
 	if err := a.stack.replace(kind, s); err != nil {
 		return a.fail(err)
 	}
-	a.currentScreen = as
 	return s.Init()
 }
 
 func (a *App) pop() tea.Cmd {
-	under, err := a.stack.pop()
-	if err != nil {
+	if err := a.stack.pop(); err != nil {
 		return a.fail(err)
 	}
-	a.currentScreen = under
 	return nil
 }
 
@@ -255,25 +240,9 @@ func (a *App) fail(err error) tea.Cmd {
 	return message.Fail(message.Source{Process: a.origin}, err)
 }
 
-// focused is the instance of the converted screen on screen, or 0 when
-// the screen up hasn't registered routes yet, including one of App's own
-// shown over a pushed screen.
+// focused is the instance of the screen on top.
 func (a *App) focused() message.ScreenInstance {
-	if a.stack.len() > 0 {
-		if stackedAs[a.stack.topKind()] == a.currentScreen {
-			return a.stack.top().Instance()
-		}
-		return 0
-	}
-	switch a.currentScreen {
-	case screenActiveApplications:
-		return a.activeApplicationList.Instance()
-	case screenCompanyList:
-		return a.companyList.Instance()
-	case screenAllPostings:
-		return a.allPostings.Instance()
-	}
-	return 0
+	return a.screenOf(a.onScreen()).Instance()
 }
 
 // onTop is whether meta is from the screen on top. A Nav from any other,
@@ -337,8 +306,7 @@ func (a *App) navFilterSelection(e message.Event[message.Nav[message.FilterSelec
 	return a.unknownNav(e)
 }
 
-// postingList is the open posting list, or nil, for the screens over it
-// that are still App's.
+// postingList is the open posting list, or nil.
 func (a *App) postingList() *postingListModel {
 	l, _ := a.stack.open(message.ScreenCompanyPostings).(*postingListModel)
 	return l
@@ -399,8 +367,7 @@ func (a *App) newDocumentReviewForm(d message.DocumentReview) *documentReviewFor
 	return newDocumentReviewFormModel(a.documentService, a.documents, d, a.sized)
 }
 
-// postingDetail is the open posting detail, or nil, for the screens over
-// it that are still App's.
+// postingDetail is the open posting detail, or nil.
 func (a *App) postingDetail() *postingDetailModel {
 	d, _ := a.stack.open(message.ScreenPostingDetail).(*postingDetailModel)
 	return d
@@ -927,13 +894,26 @@ func companyFiltersFrom(departments, locations []string) []filter.Filter {
 // to the user, so it says where the details went.
 var errInternal = errors.New("internal error, see swamp.log")
 
-// handle is the routers handler for global control messages
+// handle does what's App's alone, ahead of the screens: quitting, the
+// window's size and switching tabs.
 func (a *App) handle(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
-		if msg.String() == "ctrl+c" {
+		switch {
+		case msg.String() == "ctrl+c":
 			return tea.Quit, true
+		case msg.String() == "tab" && a.stack.len() == 0:
+			a.tab = tabs[(slices.Index(tabs, a.tab)+1)%len(tabs)]
+			// A stale error from the tab just left shouldn't show on the next.
+			a.err = nil
+			return nil, true
 		}
+	case tea.WindowSizeMsg:
+		a.width, a.height = msg.Width, msg.Height
+		// The terminal rewraps the old frame when it narrows, pushing rows
+		// below where the new one ends. The renderer only clears below a
+		// frame that got shorter, so without this they stay on screen.
+		return tea.ClearScreen, true
 	}
 	return nil, false
 }
@@ -1008,21 +988,15 @@ func (a *App) notified(e message.Event[message.Notify]) tea.Cmd {
 }
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	cmd, handled := a.handle(msg)
-	if handled {
-		return a, cmd
-	}
-
 	// Before Dispatch, since a Nav's route moves the screen.
-	before, focusedBefore := a.currentScreen, a.focused()
-	routed := a.router.Dispatch(msg)
-	model, cmd := a.update(msg)
-	cmd = tea.Batch(routed, cmd)
-	// A replace changes the screen in focus but not currentScreen.
-	if a.currentScreen != before || a.focused() != focusedBefore {
+	focusedBefore := a.focused()
+	cmd, handled := a.handle(msg)
+	if !handled {
+		cmd = a.router.Dispatch(msg)
+	}
+	if a.focused() != focusedBefore {
 		// Dispatched now, not as a Cmd, so keys already queued see it.
-		focused := a.router.Dispatch(a.focusSignal())
-		cmd = tea.Batch(cmd, focused)
+		cmd = tea.Batch(cmd, a.router.Dispatch(a.focusSignal()))
 	}
 	// The window or the banner may have changed size, on any message.
 	if size := (message.ContentSize{Width: a.width, Rows: a.screenRows()}); size != a.sized {
@@ -1030,49 +1004,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = tea.Batch(cmd, a.router.Dispatch(message.New(message.Source{Process: a.origin}, message.Subject{}, message.OpNone, time.Now().UTC(),
 			message.Signal[message.ContentSize]{Value: size})))
 	}
-	return model, cmd
-}
-
-func (a *App) update(msg tea.Msg) (tea.Model, tea.Cmd) {
-	switch msg := msg.(type) {
-	case tea.WindowSizeMsg:
-		a.width = msg.Width
-		a.height = msg.Height
-		// The terminal rewraps the old frame when it narrows, pushing rows
-		// below where the new one ends. The renderer only clears below a
-		// frame that got shorter, so without this they stay on screen.
-		return a, tea.ClearScreen
-	case tea.KeyPressMsg:
-		prevScreen := a.currentScreen
-		model, cmd := a.updateKeyMsg(msg)
-		if a.currentScreen != prevScreen {
-			// A stale error from whatever screen the user just left (e.g.
-			// a failed save they then cancelled out of) shouldn't keep
-			// showing on the screen they land on next -- see #41.
-			a.err = nil
-		}
-		return model, cmd
-	}
-	return a, nil
-}
-
-func (a *App) updateKeyMsg(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	// Ahead of the screen's own keys, so it works with the company search
-	// open too.
-	if msg.String() == "tab" {
-		switch a.currentScreen {
-		case screenActiveApplications:
-			a.currentScreen = screenCompanyList
-			return a, nil
-		case screenCompanyList:
-			a.currentScreen = screenAllPostings
-			return a, nil
-		case screenAllPostings:
-			a.currentScreen = screenActiveApplications
-			return a, nil
-		}
-	}
-	return a, nil
+	return a, cmd
 }
 
 // banner is the error or status message View() draws below the active
@@ -1102,58 +1034,26 @@ func (a *App) screenRows() int {
 }
 
 func (a *App) View() tea.View {
-	body := a.body(a.beneath())
-	switch a.currentScreen {
-	case screenCompanyDelete, screenApplicationDelete:
-		body = overlay(body, a.stack.top().View().Content, a.width)
+	path := a.path()
+	top := path[len(path)-1]
+	body := a.screenOf(top).View().Content
+	if top == message.ScreenCompanyDelete || top == message.ScreenApplicationDelete {
+		body = overlay(a.screenOf(path[len(path)-2]).View().Content, body, a.width)
 	}
 	v := tea.NewView(a.header() + body + a.banner())
 	v.AltScreen = true
 	return v
 }
 
-// beneath is the screen drawn on screen: a.screen, or the one a
-// confirmation's box is drawn over.
-func (a *App) beneath() screen {
-	switch a.currentScreen {
-	case screenCompanyDelete:
-		return screenCompanyList
-	case screenApplicationDelete:
-		under, _ := a.stack.under(message.ScreenApplicationDelete)
-		return under
+// beneath is the path to the screen drawn on screen: to the one on top,
+// or to the one a confirmation's box is drawn over.
+func (a *App) beneath() []message.Screen {
+	path := a.path()
+	switch path[len(path)-1] {
+	case message.ScreenCompanyDelete, message.ScreenApplicationDelete:
+		return path[:len(path)-1]
 	}
-	return a.currentScreen
-}
-
-// body draws s, between the header and the banner.
-func (a *App) body(s screen) string {
-	var b strings.Builder
-	switch s {
-	case screenActiveApplications:
-		b.WriteString(a.activeApplicationList.View().Content)
-	case screenApplicationDetail:
-		if d := a.applicationDetail(); d != nil {
-			b.WriteString(d.View().Content)
-		}
-	case screenAllPostings:
-		b.WriteString(a.allPostings.View().Content)
-	case screenCompanyList:
-		b.WriteString(a.companyList.View().Content)
-	case screenCompanyForm:
-		b.WriteString(a.stack.top().View().Content)
-	case screenCompanyEdit, screenFilterSelect, screenApplicationStatusSelect, screenApplicationNotesEdit,
-		screenDocumentReviewSelect, screenDocumentReviewForm, screenApplicationExport, screenApplicationSubmit, screenApplicationForm:
-		b.WriteString(a.stack.top().View().Content)
-	case screenPostingList:
-		if l := a.postingList(); l != nil {
-			b.WriteString(l.View().Content)
-		}
-	case screenPostingDetail:
-		if d := a.postingDetail(); d != nil {
-			b.WriteString(d.View().Content)
-		}
-	}
-	return b.String()
+	return path
 }
 
 // sectionHeading renders a posting-detail section heading: name, then a

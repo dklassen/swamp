@@ -35,7 +35,7 @@ func TestScreenStack_Push_RoutesToTheScreen(t *testing.T) {
 	stack := newScreenStack(router)
 	screen := newStackedFake()
 
-	if err := stack.push(message.ScreenCompanyForm, screen, screenCompanyList); err != nil {
+	if err := stack.push(message.ScreenCompanyForm, screen); err != nil {
 		t.Fatalf("push: %v", err)
 	}
 	router.Dispatch(stackPing{})
@@ -48,27 +48,23 @@ func TestScreenStack_Push_RoutesToTheScreen(t *testing.T) {
 	}
 }
 
-func TestScreenStack_Pop_StopsTheScreensRoutesAndReturnsWhatItCovered(t *testing.T) {
+func TestScreenStack_Pop_StopsTheScreensRoutes(t *testing.T) {
 	t.Parallel()
 	router := model.NewMsgRouter()
 	stack := newScreenStack(router)
 	under, over := newStackedFake(), newStackedFake()
-	if err := stack.push(message.ScreenCompanyEdit, under, screenCompanyList); err != nil {
+	if err := stack.push(message.ScreenCompanyEdit, under); err != nil {
 		t.Fatalf("push: %v", err)
 	}
-	if err := stack.push(message.ScreenCompanyDelete, over, screenCompanyEdit); err != nil {
+	if err := stack.push(message.ScreenCompanyDelete, over); err != nil {
 		t.Fatalf("push: %v", err)
 	}
 
-	covered, err := stack.pop()
-	if err != nil {
+	if err := stack.pop(); err != nil {
 		t.Fatalf("pop: %v", err)
 	}
 	router.Dispatch(stackPing{})
 
-	if covered != screenCompanyEdit {
-		t.Errorf("pop returned %v, want %v, the screen it was pushed over", covered, screenCompanyEdit)
-	}
 	if over.heard != 0 || under.heard != 1 {
 		t.Errorf("pings heard after the pop: popped %d, beneath %d; want 0 and 1", over.heard, under.heard)
 	}
@@ -82,7 +78,7 @@ func TestScreenStack_Replace_SwapsTheTopOverTheSameScreen(t *testing.T) {
 	router := model.NewMsgRouter()
 	stack := newScreenStack(router)
 	old, replacement := newStackedFake(), newStackedFake()
-	if err := stack.push(message.ScreenPostingDetail, old, screenPostingList); err != nil {
+	if err := stack.push(message.ScreenPostingDetail, old); err != nil {
 		t.Fatalf("push: %v", err)
 	}
 
@@ -96,13 +92,6 @@ func TestScreenStack_Replace_SwapsTheTopOverTheSameScreen(t *testing.T) {
 	}
 	if stack.top() != replacement || stack.len() != 1 {
 		t.Errorf("top = %v of %d, want the replacement alone", stack.top(), stack.len())
-	}
-	covered, err := stack.pop()
-	if err != nil {
-		t.Fatalf("pop: %v", err)
-	}
-	if covered != screenPostingList {
-		t.Errorf("pop returned %v, want %v, the screen the replaced one was pushed over", covered, screenPostingList)
 	}
 }
 
@@ -119,7 +108,7 @@ func TestScreenStack_PopWithNothingPushed_Fails(t *testing.T) {
 	t.Parallel()
 	stack := newScreenStack(model.NewMsgRouter())
 
-	if _, err := stack.pop(); err == nil {
+	if err := stack.pop(); err == nil {
 		t.Error("pop with nothing pushed: nil error, want one")
 	}
 }
@@ -127,7 +116,7 @@ func TestScreenStack_PopWithNothingPushed_Fails(t *testing.T) {
 func TestScreenStack_PushingAKindAlreadyOpen_Panics(t *testing.T) {
 	t.Parallel()
 	stack := newScreenStack(model.NewMsgRouter())
-	if err := stack.push(message.ScreenCompanyForm, newStackedFake(), screenCompanyList); err != nil {
+	if err := stack.push(message.ScreenCompanyForm, newStackedFake()); err != nil {
 		t.Fatalf("push: %v", err)
 	}
 
@@ -136,5 +125,5 @@ func TestScreenStack_PushingAKindAlreadyOpen_Panics(t *testing.T) {
 			t.Errorf("pushing %v while it's open didn't panic", message.ScreenCompanyForm)
 		}
 	}()
-	_ = stack.push(message.ScreenCompanyForm, newStackedFake(), screenCompanyForm)
+	_ = stack.push(message.ScreenCompanyForm, newStackedFake())
 }

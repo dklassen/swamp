@@ -1,6 +1,6 @@
 # RFC 0012: The TUI's `App` becomes a router over screens that own their state
 
-- **Status:** Draft
+- **Status:** Implemented, 2026-10-31, through RFC 0013's work order (steps 7, 11, 12 and 13 to 29).
 - **Date:** 2026-10-17 (revised 2026-10-19)
 - **Related:** #55 (screen navigation and transition logic is scattered across two switches in `tui/app.go`); #89 (the return stack); #115 (screen instances); #41 (a stale error clears on a screen change); RFC 0008 (the change log, which each view follows); RFC 0013 (every routed message is an `Event[P]`, which replaces this RFC's message naming, `NavMsg`, `FocusChangedMsg`, `BannerMsg` and `ErrMsg`)
 - **Bubble Tea:** v2 (`charm.land/bubbletea/v2`, `charm.land/bubbles/v2`). The first draft was written against v1. The text and the Template now use v2's interfaces.
@@ -18,7 +18,7 @@ This RFC proposes:
 5. **Three packages.** The router stays in `tui`. Screens move to `tui/model`, and every message moves to `tui/message` (section 8).
 6. **Work that isn't a screen is a `SubComponent` too.** Sync all and refresh are `model.Syncing`: it registers routes like a screen, but never goes on the stack, and the banner draws its view (section 6).
 
-The router, `Router` and `SubComponent` come from the sketches this RFC started from. The routing is built (`tui/model/router.go`); the Template section has the stack, still to build. The rest of this document is where `tui/app.go` makes those sketches change shape.
+The router, `Router` and `SubComponent` come from the sketches this RFC started from. The routing is built (`tui/model/router.go`); the stack is `tui/stack.go`, as the Template sketches it. The rest of this document is where `tui/app.go` makes those sketches change shape.
 
 ## Decisions
 
@@ -243,7 +243,7 @@ What splitting the package costs:
 
 ## Template
 
-The routing is built: `tui/model/router.go` has `MsgRouter`, `Routable`, `Always`, `WhenFocused` and the filters, and RFC 0013's Template has the events, the banner's `Error` and `Notify`, and a screen's `Routes()`. What follows is the part still to build, the stack, in today's names. Bodies left as `…` are today's code moved.
+The routing is built: `tui/model/router.go` has `MsgRouter`, `Routable`, `Always`, `WhenFocused` and the filters, and RFC 0013's Template has the events, the banner's `Error` and `Notify`, and a screen's `Routes()`. What follows is the stack as it was planned. Bodies left as `…` are code moved from the old `App`; where the code ended up differing is listed after the Progress table.
 
 A screen opens another by returning `Push` with what the new screen shows. Its loads go in its own `Init`, not in the opener's command:
 
@@ -446,15 +446,12 @@ Where the conversion stands. Each step keeps `go build`, `go test`, the linter a
 | Company navigation is `Event[Nav[T]]` | The seven `Open…` and `Close…` structs become RFC 0013's `Nav[T]` (`message.Push`, `message.Pop`), which carries the snapshot the screen opens on, so `App` builds a screen from the message without a read. `App` acts on a `Nav` only from the screen on top, section 4's `From` check, which replaces the second-esc guards. Tested by `TestCompanyListModel_KeysPushScreensWithWhatTheyShow`, `TestApp_NavFromAModelNoLongerOnTop_IsDropped` and `TestApp_CompanyDeleteConfirmation_TwoQuickNs_CloseItOnce`. |
 | Names follow RFC 0013 | The rows above use the names of their time. `Register(msg, scope, handler)`, `model.Handle` and the scopes are now `Routes()` with `model.Always`/`model.WhenFocused` on `model.MsgRouter`; screens draw their own instance; every `…Msg` in `tui/message` is an `Event[P]`. |
 
-While screens are partly converted, the code works in ways the Template doesn't:
+Where the code differs from the Template:
 
-- **`App` still does its own part of a routed message.** `Update` routes a message to its registered handlers and also runs `App`'s old `update` switch on it, which still sets `a.err` and `a.currentScreen` for the screens not yet converted.
-- **Tab reaches the company list before `App` switches tabs.** `route` runs before the old `updateKeyMsg`, which still handles tab, so the list's key handler sees tab first and ignores it. A tab press has no `Text` in v2, so an open search doesn't type it. In the Template, `handle` takes tab before `route`.
-- **The stack holds only converted screens.** Each records the `currentScreen` it was pushed over and `pop` puts it back; screens on `App`'s old paths still go by `currentScreen`, and focus is sent when `currentScreen` or the screen in focus changes (a replace keeps `currentScreen`) rather than by `push`, `pop` and `replace`. `New` sends it once for the home list, which is up first.
-- **Screens not yet converted are still `App`'s fields,** called directly, and the company list is still a typed field, not an entry in `screens`.
-- **App tests wait a message for a converted screen's intent.** A converted screen's key comes back as a command, so tests that press one use `sendIntentKey`, which delivers the intent, or `applyCmd`. This is section 4's "keys typed in between" cost, as seen from a test.
-
-`go test -race ./tui/...` is clean through "Company list keys are routed". Last run against real data after "Company list registers its routes". Resizing the window on the Companies tab checked by hand after "Company list size is routed".
+- **The tabs aren't on the stack.** `App` keeps the tab up, the three tabs are fields registered once in `New`, and the screen on top is the stack's top, or the tab when nothing is pushed. A stacked screen doesn't record what it was pushed over: the header's path is the tab, then the stack.
+- **Focus is sent after any message that changed the screen in focus,** not by `push`, `pop` and `replace`. `New` sends it once for the home list, which is up first.
+- **A pop leaves the banner alone.** Switching tabs clears a stale error; leaving a stacked screen doesn't, since its own esc sends an empty `Notify` when it should.
+- **App tests wait a message for a screen's intent.** A screen's key comes back as a command, so tests that press one use `sendIntentKey` or `applyCmd`. This is section 4's "keys typed in between" cost, as seen from a test.
 
 
 ## Out of scope
