@@ -91,7 +91,7 @@ There's no default, because either default has a silent failure. If "always" wer
 
 Focus belongs to the route, not the message type, so the router needs no list of which messages are input. A new message type needs nothing from the router. A screen knows whether it's in focus from the `Event[Signal[FocusChanged]]` `App` sends whenever the top screen changes, which names the `ScreenInstance` now in focus, 0 for none (RFC 0013).
 
-A route can also filter on an event's `Meta` with RFC 0013's `About`, `From` and `OnOp`, so a dialog hears only its own company's delete, or only its own request's failure, without looking at the payload.
+A route can also filter on an event's `Meta` with RFC 0013's `About`, `From` and `OnOp`, so a screen hears only its own company's delete, or only its own request's failure, without looking at the payload.
 
 `Register` refuses only what it couldn't route or tell apart: a nil owner, an instance of 0 or one it has seen, a nil or zero route, a handler that takes an interface such as `tea.KeyMsg` (its zero value is nil, so the route would have no type and never be called), and a filter on a type with no `Meta`. Any component may otherwise route any message type, either way. That includes a component that's never in focus, such as `model.Syncing`: its `Always` routes let it follow what other views do. A component that registers for what it can never get is a bug its own tests catch, not something the router guards against.
 
@@ -193,7 +193,7 @@ These belong to every screen, so they stay on `App`:
 
 - **Terminal options.** In Bubble Tea v2 a `View` is a `tea.View`, which carries the terminal's options (the alternate screen, cursor and mouse mode) as well as content. Only the router's `View` reaches the terminal, so the options are set there (`v.AltScreen = true`). A screen's `View` sets only `Content`, and the router ignores the rest.
 
-- **Overlays.** A confirmation screen implements `Dialog`. The router draws the screen beneath it and then the box, replacing `beneath`.
+- **Overlays.** A confirmation belongs to the screen that opens it: a field the screen passes keys to, closes on its result and draws over itself. It is never on the stack, so the router draws only the screen on top, and the screen leaves on its own delete in one step.
 - **Global keys.** ctrl+c, and tab on the three home tabs, both matched on `tea.KeyPressMsg` by `msg.String()`. Not `q`: the company form, notes, the application form and `/` search all take typed text, so a global `q` would quit while someone types. The home screen and the company list quit on `q` themselves today (`active_applications.go:107`, `company_list.go:79`), and they keep doing so by returning `tea.Quit`.
 - **The change log.** The router owns the tick: its `Init` sends the first `Signal[ChangeTick]` and its route on that tick sends the next. A change reader, a component of its own, keeps the place in the log and reads it on each tick, never two reads at once, sending the rows as a `tea.Sequence` so they arrive in order, then its new place. Each row is the `Changed[T]` it records (RFC 0013), sent to every component with a route for it, in the log's order. A screen hears another process's write on the routes it has for its own, covered or not, and decides for itself whether to read again; a run of writes reads at most once at a time. No screen implements anything for the log, and the router never reloads one.
 
@@ -225,7 +225,7 @@ The router, the screens and the messages each get a package:
 | Package       | Holds                                                                                                                                                                        | Imports                     |
 | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------- |
 | `tui`         | `App`: the stack, the lookup table, the header, tabs and banner, the change log                                                                                              | `tui/model`, `tui/message` |
-| `tui/model`  | one exported type per screen, and `Syncing`; `Router`, `MsgRouter`, `Routable`, `SubComponent`, `Focusable`, `Dialog` and `ChangeFollower`, the types the router and screens meet at; `Route`, made only by `Always` and `WhenFocused`, its filters (`About`, `From`, `OnOp`), and `RouteID`/`RouteIDOf`; the styles and view helpers the screens draw with | `tui/message`               |
+| `tui/model`  | one exported type per screen, and `Syncing`; `Router`, `MsgRouter`, `Routable`, `SubComponent`, `Focusable` and `ChangeFollower`, the types the router and screens meet at; `Route`, made only by `Always` and `WhenFocused`, its filters (`About`, `From`, `OnOp`), and `RouteID`/`RouteIDOf`; the styles and view helpers the screens draw with | `tui/message`               |
 | `tui/message` | every message type, as RFC 0013's `Event[P]` and its primitives and bodies; `Screen` and `ScreenInstance`; the commands screens return to the router (`Push`, `Pop`, `ReportStatus`, `Fail`, …)                | the standard library, and Bubble Tea for the commands |
 
 `tui/message` imports neither of the other two, so a screen and the router both depend on it and never on each other's internals. A `Nav` names a screen by `message.Screen`, which is why the screen kinds live there and are exported.
@@ -238,7 +238,7 @@ Splitting the package also fixes the last point under Problem: a screen in `tui/
 
 What splitting the package costs:
 
-- **Every interface method the router calls is exported.** A type in `tui/model` can't satisfy an interface whose method is unexported in `tui`, so `dialog()` becomes `Dialog()`.
+- **Every interface method the router calls is exported.** A type in `tui/model` can't satisfy an interface whose method is unexported in `tui`, so `focused()` becomes `Focused()`.
 - **The helpers screens draw with move to `tui/model`:** `visibleWindow`, `tableRows`, `searchLine`, the column-width helpers and the styles. Anything the header or banner also uses is exported from `tui/model` for the router to call. The styles have already moved, as one block (`model.CursorStyle`, `model.DimStyle`, …), when `Syncing` became the first thing in `tui/model` to draw with them.
 
 ## Template
@@ -362,12 +362,7 @@ func (a *App) route(msg tea.Msg) tea.Cmd { … }
 // View composes the screens' content strings: in Bubble Tea v2 a View is a
 // tea.View, and only the router's goes to the terminal.
 func (a *App) View() tea.View {
- top := a.top().kind
- body := a.screens[top].View().Content
- if _, ok := a.screens[top].(model.Dialog); ok {
-  beneath := a.stack[len(a.stack)-2].kind
-  body = overlay(a.screens[beneath].View().Content, body, a.width)
- }
+ body := a.screens[a.top().kind].View().Content
  v := tea.NewView(a.header() + body + a.banner())
  v.AltScreen = true // terminal options are the router's (section 6)
  return v
@@ -421,7 +416,7 @@ How this differs from the sketches:
 ## Open questions
 
 1. **Which screens are persistent?** Decided: the three tabs. The posting list is stacked, built for each company it opens on, and `hideArchived` moves to the router, which passes it in and keeps what the list last set.
-2. **Where do overlays live?** This RFC makes them stacked screens that report they're overlays. The alternative is a separate overlay slot on the router, which is simpler while there's never more than one at a time.
+2. **Where do overlays live?** Decided: in the screen that opens one (section 6). Neither a stacked screen that reports it is an overlay nor an overlay slot on the router: both keep a confirmation apart from the screen it acts for, so that screen can't leave in the same step as its delete.
 3. **Does `New` build the tabs, or take them?** `New` builds them from the services it's given, as today. Passing them in instead would let tests choose which screens exist. But `cmd/swamp` would then have to build every screen, and each test needs fresh screens, never a shared package-level map.
 
 ## Progress
