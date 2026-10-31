@@ -64,20 +64,17 @@ type App struct {
 	scoringService     *service.ScoringService
 	changeLogService   *service.ChangeLog
 	origin             string
-	// changes reads the log's rows as events, nil without a change log.
-	// after is App's place in the log, changePoll how often it reads, and
-	// readingChanges whether a read is in flight.
-	changes        *changeReader
-	after          int64
-	changePoll     time.Duration
-	readingChanges bool
-	syncer         *sync.Syncer
-	companyList    *companyListModel
-	allPostings    *allPostingsModel
-	currentScreen  screen
-	stack          *screenStack
-	status         string
-	err            error
+	// changes reads the log's rows as events, nil without a change log,
+	// on a tick every changePoll.
+	changes       *changeReader
+	changePoll    time.Duration
+	syncer        *sync.Syncer
+	companyList   *companyListModel
+	allPostings   *allPostingsModel
+	currentScreen screen
+	stack         *screenStack
+	status        string
+	err           error
 	// syncing runs sync all and refreshes, and draws their progress in the
 	// banner.
 	syncing               *model.Syncing
@@ -627,6 +624,39 @@ func (a *App) Init() tea.Cmd {
 	return tea.Batch(a.activeApplicationList.Init(), a.companyList.Init(), a.allPostings.Init(), a.pollChanges())
 }
 
+// changePollInterval is how often the TUI reads the change log. Nothing is
+// lost between reads, so this only decides how soon a change appears.
+const changePollInterval = 500 * time.Millisecond
+
+// WithChangeLog makes the App show changes other processes make, read
+// from the change log after since. origin is this process's own, whose
+// rows its commands already sent as events.
+func (a *App) WithChangeLog(since int64, origin string) *App {
+	a.origin = origin
+	a.changes = newChangeReader(a.companyService, a.postingService, a.applicationService, a.documentService, a.scoringService, a.changeLogService, origin, since)
+	if err := a.router.Register(a.changes); err != nil {
+		panic(err)
+	}
+	a.changePoll = changePollInterval
+	return a
+}
+
+// pollChanges asks for the next tick; nil without a change log.
+func (a *App) pollChanges() tea.Cmd {
+	if a.changes == nil {
+		return nil
+	}
+	src := message.Source{Instance: a.instance}
+	return tea.Tick(a.changePoll, func(at time.Time) tea.Msg {
+		return message.New(src, message.Subject{}, message.OpNone, at.UTC(), message.Signal[message.ChangeTick]{})
+	})
+}
+
+// changeTick asks for the next tick; the reader reads on this one.
+func (a *App) changeTick(message.Event[message.Signal[message.ChangeTick]]) tea.Cmd {
+	return a.pollChanges()
+}
+
 // boardCheckTimeout bounds createCompany's live board check, so an
 // unreachable API fails the add (closed) instead of leaving the form
 // waiting (#36). Syncer already gives up on any fetch
@@ -928,8 +958,6 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.browserOpened),
 		model.Always(a.exported),
 		model.Always(a.changeTick, model.From(a.instance)),
-		model.Always(a.changesRead, model.From(a.instance)),
-		model.Always(a.changesFailed, model.From(a.instance)),
 	}
 }
 

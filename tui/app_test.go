@@ -6,6 +6,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
 	"testing"
@@ -90,8 +91,8 @@ func applyCmd(t *testing.T, app *App, cmd tea.Cmd) *App {
 		return app
 	}
 	msg := cmd()
-	if batch, ok := msg.(tea.BatchMsg); ok {
-		for _, c := range batch {
+	if cmds, ok := cmdsOf(msg); ok {
+		for _, c := range cmds {
 			app = applyCmd(t, app, c)
 		}
 		return app
@@ -2781,21 +2782,31 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_MovesTheHomeRowsNextStepO
 	}
 }
 
+// cmdsOf is the commands a Batch or Sequence runs, in order. By
+// reflection, since a Sequence's message type is unexported.
+func cmdsOf(msg tea.Msg) ([]tea.Cmd, bool) {
+	v := reflect.ValueOf(msg)
+	if !v.IsValid() || v.Kind() != reflect.Slice || v.Type().Elem() != reflect.TypeFor[tea.Cmd]() {
+		return nil, false
+	}
+	return v.Convert(reflect.TypeFor[[]tea.Cmd]()).Interface().([]tea.Cmd), true
+}
+
 // runCmd runs cmd and returns the messages it produces, flattening any
-// tea.BatchMsg, without applying them -- for a test that inspects which
-// messages a Cmd sends.
+// Batch or Sequence, without applying them -- for a test that inspects
+// which messages a Cmd sends.
 func runCmd(t *testing.T, cmd tea.Cmd) []tea.Msg {
 	t.Helper()
 	if cmd == nil {
 		return nil
 	}
 	msg := cmd()
-	batch, ok := msg.(tea.BatchMsg)
+	cmds, ok := cmdsOf(msg)
 	if !ok {
 		return []tea.Msg{msg}
 	}
 	var msgs []tea.Msg
-	for _, c := range batch {
+	for _, c := range cmds {
 		msgs = append(msgs, runCmd(t, c)...)
 	}
 	return msgs

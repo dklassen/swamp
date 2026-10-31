@@ -1,10 +1,6 @@
 package message
 
-import (
-	"time"
-
-	tea "charm.land/bubbletea/v2"
-)
+import "time"
 
 // Company is what an event carries for a company. LastFetchedAt is zero
 // until its postings are first fetched, and DeletedAt while it isn't
@@ -427,11 +423,10 @@ type ChangeTick struct{}
 
 func (ChangeTick) Type() Type { return TypeChangeTick }
 
-// ChangePage is the change log's rows after a place in it, as the events
-// they record, and the place after them.
+// ChangePage is that the change log's rows up to After were read and
+// their events sent.
 type ChangePage struct {
-	Events []tea.Msg `json:"events"`
-	After  int64     `json:"after"`
+	After int64 `json:"after"`
 }
 
 func (ChangePage) Type() Type { return TypeChangePage }

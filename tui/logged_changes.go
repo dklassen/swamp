@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"slices"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // changeReader reads the change log's rows as the Changed events they
@@ -23,14 +25,20 @@ type changeReader struct {
 	tables map[string]loggedTable
 	// origin is this process's, whose rows its own commands already sent.
 	origin string
+	log    *service.ChangeLog
+	// after is the reader's place in the log, and reading whether a read is
+	// in flight.
+	after    int64
+	reading  bool
+	instance message.ScreenInstance
 }
 
 // loggedTable reads a table's rows by ID, giving each row's event, or nil
 // for a row whose entity is gone since.
 type loggedTable func(ctx context.Context, ids []int64) (func(row change.Event, op message.Op) tea.Msg, error)
 
-func newChangeReader(companies *service.CompanyService, postings *service.PostingService, applications *service.ApplicationService, documents *service.DocumentService, scores *service.ScoringService, origin string) *changeReader {
-	return &changeReader{origin: origin, tables: map[string]loggedTable{
+func newChangeReader(companies *service.CompanyService, postings *service.PostingService, applications *service.ApplicationService, documents *service.DocumentService, scores *service.ScoringService, log *service.ChangeLog, origin string, since int64) *changeReader {
+	return &changeReader{origin: origin, log: log, after: since, instance: message.NewScreenInstance(), tables: map[string]loggedTable{
 		"companies":        logged(companies.GetManyIncludingDeleted, func(c company.Company) int64 { return c.ID }, func(c company.Company) bool { return c.DeletedAt != nil }, companySnapshot, rowSubject[message.Company](message.TypeCompany)),
 		"applications":     logged(applications.GetManyIncludingDeleted, func(a application.Application) int64 { return a.ID }, func(a application.Application) bool { return !a.DeletedAt.IsZero() }, applicationSnapshot, rowSubject[message.Application](message.TypeApplication)),
 		"postings":         logged(postings.GetMany, func(p posting.Posting) int64 { return p.ID }, nil, postingSnapshot, rowSubject[message.Posting](message.TypePosting)),
@@ -40,6 +48,71 @@ func newChangeReader(companies *service.CompanyService, postings *service.Postin
 		"document_writes":  logged(documents.GetManyWrites, func(w document.Write) int64 { return w.ID }, nil, documentWriteSnapshot, documentWriteSubject),
 		"document_exports": logged(documents.GetManyExports, func(e document.Export) int64 { return e.ID }, nil, documentExportSnapshot, documentExportSubject),
 	}}
+}
+
+func (r *changeReader) Instance() message.ScreenInstance { return r.instance }
+
+func (r *changeReader) Routes() []*model.Route {
+	return []*model.Route{
+		model.Always(r.tick),
+		model.Always(r.pageRead, model.From(r.instance)),
+		model.Always(r.readFailed, model.From(r.instance)),
+	}
+}
+
+// tick reads the log, unless a read is still in flight.
+func (r *changeReader) tick(message.Event[message.Signal[message.ChangeTick]]) tea.Cmd {
+	if r.reading {
+		return nil
+	}
+	r.reading = true
+	return r.read()
+}
+
+// read sends the events of the log's rows after the reader's place, in the
+// log's order, then the place after them. A Sequence, since a command
+// sends one message and the router routes each event by its type.
+func (r *changeReader) read() tea.Cmd {
+	src, after := message.Source{Instance: r.instance}, r.after
+	return func() tea.Msg {
+		ctx := context.Background()
+		failed := func(err error) tea.Msg {
+			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
+		}
+		rows, err := r.log.After(ctx, after)
+		if err != nil {
+			return failed(err)
+		}
+		events, err := r.changed(ctx, rows)
+		if err != nil {
+			return failed(err)
+		}
+		page := message.ChangePage{After: after}
+		if n := len(rows); n > 0 {
+			page.After = rows[n-1].ID
+		}
+		cmds := make([]tea.Cmd, 0, len(events)+1)
+		for _, e := range events {
+			cmds = append(cmds, func() tea.Msg { return e })
+		}
+		cmds = append(cmds, func() tea.Msg {
+			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Read[message.ChangePage]{Value: page})
+		})
+		return tea.Sequence(cmds...)()
+	}
+}
+
+// pageRead moves the reader's place past the events just sent.
+func (r *changeReader) pageRead(e message.Event[message.Read[message.ChangePage]]) tea.Cmd {
+	r.reading, r.after = false, e.Payload.Value.After
+	return nil
+}
+
+// readFailed lets the next tick read from the same place. The banner shows
+// the error.
+func (r *changeReader) readFailed(message.Event[message.Error]) tea.Cmd {
+	r.reading = false
+	return nil
 }
 
 // changed is each of rows not from origin as its Changed, in the log's

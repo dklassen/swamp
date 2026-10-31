@@ -167,6 +167,9 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 	if _, err := app.documents.Write(target.ID, document.Resume, "# Revised by the agent\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
+	if err := storeOf(app).Documents.RecordWrite(ctx, target.ID, document.Resume, "# Revised by the agent\n", document.SourceWriteDocument); err != nil {
+		t.Fatalf("RecordWrite: %v", err)
+	}
 	app = readChangeLog(t, app)
 
 	view := viewText(app)
@@ -484,8 +487,7 @@ func TestApp_AnotherProcessesWrite_ShowsOnTheScreenThatShowsIt(t *testing.T) {
 // applies what that sends.
 func readChangeLog(t *testing.T, app *App) *App {
 	t.Helper()
-	page := app.readChanges()()
-	return applyCmd(t, app, func() tea.Msg { return page })
+	return applyCmd(t, app, app.changes.read())
 }
 
 // Each tick reads the change log and asks for the next, but a tick while
@@ -546,14 +548,15 @@ func TestApp_ItsOwnWrite_IsAppliedOnce(t *testing.T) {
 	app, _ = sendKey(app, runeKey('j'))
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	page, ok := app.readChanges()().(message.Event[message.Read[message.ChangePage]])
+	msgs := runCmd(t, app.changes.read())
+	page, ok := msgs[len(msgs)-1].(message.Event[message.Read[message.ChangePage]])
 	if !ok {
-		t.Fatalf("reading the log after the TUI's own write failed: %#v", page)
+		t.Fatalf("reading the log after the TUI's own write failed: %#v", msgs)
 	}
-	if n := len(page.Payload.Value.Events); n != 0 {
-		t.Errorf("the log read after the TUI's own write has %d events, want none: %#v", n, page.Payload.Value.Events)
+	if n := len(msgs) - 1; n != 0 {
+		t.Errorf("the log read after the TUI's own write sent %d events, want none: %#v", n, msgs[:n])
 	}
-	if page.Payload.Value.After == app.after {
+	if page.Payload.Value.After == app.changes.after {
 		t.Error("the TUI's own write wasn't in the log; the test can't tell it was skipped")
 	}
 }
