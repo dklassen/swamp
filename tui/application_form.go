@@ -198,6 +198,10 @@ func (m *applicationFormModel) paste(msg tea.PasteMsg) tea.Cmd {
 	return cmd
 }
 
+func (m *applicationFormModel) crumbs(message.Screen) []string {
+	return []string{"Application form"}
+}
+
 func (m *applicationFormModel) View() tea.View {
 	var b strings.Builder
 	b.WriteString(applicationFormIntro() + "\n")

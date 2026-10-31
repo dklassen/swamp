@@ -228,6 +228,10 @@ func filterWindow(cursor, deptCount, locCount, rows int) (deptStart, deptEnd, lo
 
 // View renders the options in the rows of the last content size: what
 // the help line leaves, less a row for each section label in view.
+func (m *filterSelectModel) crumbs(message.Screen) []string {
+	return []string{"Filters"}
+}
+
 func (m *filterSelectModel) View() tea.View {
 	var b strings.Builder
 	help := model.HelpStyle.Render("↑/↓ (j/k): select  space: toggle  enter: save  esc/b: cancel")

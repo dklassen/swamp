@@ -56,6 +56,24 @@ func pushed[T stackScreen](t *testing.T, app *App) T {
 	return s
 }
 
+// postingList is the open posting list, or nil.
+func (a *App) postingList() *postingListModel {
+	l, _ := a.stack.open(message.ScreenCompanyPostings).(*postingListModel)
+	return l
+}
+
+// postingDetail is the open posting detail, or nil.
+func (a *App) postingDetail() *postingDetailModel {
+	d, _ := a.stack.open(message.ScreenPostingDetail).(*postingDetailModel)
+	return d
+}
+
+// applicationDetail is the open application detail, or nil.
+func (a *App) applicationDetail() *applicationDetailModel {
+	d, _ := a.stack.open(message.ScreenApplicationDetail).(*applicationDetailModel)
+	return d
+}
+
 // openList is app's open posting list, whatever is shown over it.
 func openList(t *testing.T, app *App) *postingListModel {
 	t.Helper()

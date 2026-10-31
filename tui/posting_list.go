@@ -332,6 +332,10 @@ func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 // drawn above or below the table -- the description, filter summary and
 // archived notice included -- costs the table a row, so the list still
 // fits.
+func (m *postingListModel) crumbs(message.Screen) []string {
+	return []string{m.company.Name}
+}
+
 func (m *postingListModel) View() tea.View {
 	var b strings.Builder
 	help := model.HelpStyle.Render("↑/↓ (j/k): select  enter: view detail  o: open in browser  r: refresh  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back")

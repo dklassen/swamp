@@ -355,6 +355,14 @@ func (m *activeApplicationListModel) visible() []posting.ActiveApplication {
 }
 
 // View renders the list in the last content size.
+func (m *activeApplicationListModel) crumbs(message.Screen) []string {
+	return []string{"Applications"}
+}
+
+func (m *activeApplicationListModel) tabLabel() string {
+	return fmt.Sprintf("Applications %d", len(m.apps))
+}
+
 func (m *activeApplicationListModel) View() tea.View {
 	body := m.render(time.Now())
 	if m.confirm != nil {

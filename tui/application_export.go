@@ -107,6 +107,10 @@ func (m *applicationExportModel) paste(msg tea.PasteMsg) tea.Cmd {
 	return cmd
 }
 
+func (m *applicationExportModel) crumbs(message.Screen) []string {
+	return []string{"Export PDFs"}
+}
+
 func (m *applicationExportModel) View() tea.View {
 	var b strings.Builder
 	b.WriteString(model.FieldLabel.Render("Application:") + " " + m.detail.CompanyName + " -- " + m.detail.Posting.Title + "\n\n")

@@ -26,6 +26,7 @@ func (f *stackedFake) Init() tea.Cmd                       { return nil }
 func (f *stackedFake) Update(tea.Msg) (tea.Model, tea.Cmd) { return f, nil }
 func (f *stackedFake) View() tea.View                      { return tea.NewView("") }
 func (f *stackedFake) Instance() message.ScreenInstance    { return f.instance }
+func (f *stackedFake) crumbs(message.Screen) []string      { return nil }
 func (f *stackedFake) Routes() []*model.Route {
 	return []*model.Route{model.Always(func(stackPing) tea.Cmd { f.heard++; return nil })}
 }

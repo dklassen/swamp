@@ -107,6 +107,10 @@ func openDocumentReview(src message.Source, nav func(message.Source, message.Scr
 		message.DocumentReview{ApplicationID: applicationID, DocumentType: documentTypeSnapshots[documentType], Content: string(content)})
 }
 
+func (m *documentReviewSelectModel) crumbs(message.Screen) []string {
+	return []string{"Review a document"}
+}
+
 func (m *documentReviewSelectModel) View() tea.View {
 	var b strings.Builder
 	for i, opt := range m.options {

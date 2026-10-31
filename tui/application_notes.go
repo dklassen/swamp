@@ -144,6 +144,10 @@ func (m *applicationNotesModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	return cmd
 }
 
+func (m *applicationNotesModel) crumbs(message.Screen) []string {
+	return []string{"Edit notes"}
+}
+
 func (m *applicationNotesModel) View() tea.View {
 	var b strings.Builder
 	b.WriteString(m.textarea.View() + "\n")

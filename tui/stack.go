@@ -13,6 +13,9 @@ import (
 type stackScreen interface {
 	model.SubComponent
 	model.Routable
+	// crumbs names the screen in the header, over a screen of kind
+	// beneath, or over none if it's a tab.
+	crumbs(beneath message.Screen) []string
 }
 
 // stacked is a screen pushed over the one before it, or over the tab.

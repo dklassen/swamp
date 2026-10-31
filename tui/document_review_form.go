@@ -177,6 +177,10 @@ func (m *documentReviewFormModel) paste(msg tea.PasteMsg) tea.Cmd {
 	return cmd
 }
 
+func (m *documentReviewFormModel) crumbs(message.Screen) []string {
+	return []string{"Review " + documentTypeOf(m.review.DocumentType).Label()}
+}
+
 func (m *documentReviewFormModel) View() tea.View {
 	var b strings.Builder
 	if m.changes != "" {

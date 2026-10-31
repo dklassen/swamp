@@ -348,6 +348,14 @@ func indentLines(s string, n int) string {
 	return strings.Join(lines, "\n")
 }
 
+func (m *postingDetailModel) crumbs(beneath message.Screen) []string {
+	// Application detail has already named it.
+	if beneath == message.ScreenApplicationDetail {
+		return []string{"Posting"}
+	}
+	return []string{m.posting.Title}
+}
+
 func (m *postingDetailModel) View() tea.View {
 	return tea.NewView(m.viewport.View() + "\n" + model.HelpStyle.Render(m.help))
 }

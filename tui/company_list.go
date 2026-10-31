@@ -336,6 +336,14 @@ func (m *companyListModel) visible() []message.Company {
 }
 
 // View renders the list in the rows of the last content size.
+func (m *companyListModel) crumbs(message.Screen) []string {
+	return []string{"Companies"}
+}
+
+func (m *companyListModel) tabLabel() string {
+	return "Companies"
+}
+
 func (m *companyListModel) View() tea.View {
 	var b strings.Builder
 	help := model.HelpStyle.Render("↑/↓ (j/k): select  enter: view postings  /: search  i: info  a: add  e: edit  d: delete  r: refresh  R: sync all  tab: applications  q: quit")

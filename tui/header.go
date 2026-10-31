@@ -1,7 +1,6 @@
 package tui
 
 import (
-	"fmt"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -60,69 +59,26 @@ func fitCrumbs(crumbs []string, width int) []string {
 	return fitted
 }
 
-// crumbs names each screen in path, the way its title used to.
+// crumbs is what each screen in path names itself.
 func (a *App) crumbs(path []message.Screen) []string {
 	var crumbs []string
-	for i, s := range path {
-		switch s {
-		case message.ScreenActiveApplications:
-			crumbs = append(crumbs, "Applications")
-		case message.ScreenCompanyList:
-			crumbs = append(crumbs, "Companies")
-		case message.ScreenAllPostings:
-			crumbs = append(crumbs, "All postings")
-		case message.ScreenCompanyPostings:
-			if l := a.postingList(); l != nil {
-				crumbs = append(crumbs, l.company.Name)
-			}
-		case message.ScreenPostingDetail:
-			// Application detail has already named it.
-			if i > 0 && path[i-1] == message.ScreenApplicationDetail {
-				crumbs = append(crumbs, "Posting")
-			} else if d := a.postingDetail(); d != nil {
-				crumbs = append(crumbs, d.posting.Title)
-			}
-		case message.ScreenApplicationDetail:
-			if d := a.applicationDetail(); d != nil {
-				crumbs = append(crumbs, d.detail.CompanyName, d.detail.Posting.Title)
-			}
-		case message.ScreenCompanyForm:
-			crumbs = append(crumbs, "Add company")
-		case message.ScreenCompanyEdit:
-			crumbs = append(crumbs, "Edit company")
-		case message.ScreenFilterSelect:
-			crumbs = append(crumbs, "Filters")
-		case message.ScreenApplicationStatus:
-			crumbs = append(crumbs, "Set status")
-		case message.ScreenApplicationNotes:
-			crumbs = append(crumbs, "Edit notes")
-		case message.ScreenDocumentReviewSelect:
-			crumbs = append(crumbs, "Review a document")
-		case message.ScreenDocumentReviewForm:
-			if f, ok := a.stack.open(message.ScreenDocumentReviewForm).(*documentReviewFormModel); ok {
-				crumbs = append(crumbs, "Review "+documentTypeOf(f.review.DocumentType).Label())
-			}
-		case message.ScreenApplicationExport:
-			crumbs = append(crumbs, "Export PDFs")
-		case message.ScreenApplicationSubmit:
-			crumbs = append(crumbs, "Submit")
-		case message.ScreenApplicationForm:
-			crumbs = append(crumbs, "Application form")
-		}
+	beneath := message.ScreenNone
+	for _, kind := range path {
+		crumbs = append(crumbs, a.screenOf(kind).crumbs(beneath)...)
+		beneath = kind
 	}
 	return crumbs
 }
 
-// tabBar names every tab, with a count on all but the companies tab, and
-// underlines active.
+// tabBar names every tab and underlines active.
 func (a *App) tabBar(active message.Screen) string {
 	tabs := []struct {
 		screen message.Screen
 		label  string
 	}{
-		{message.ScreenActiveApplications, fmt.Sprintf(" Applications %d ", len(a.activeApplicationList.apps))},
-		{message.ScreenCompanyList, " Companies "},
-		{message.ScreenAllPostings, fmt.Sprintf(" All postings %d ", a.allPostings.page.WithoutQuery)},
+		{message.ScreenActiveApplications, a.activeApplicationList.tabLabel()},
+		{message.ScreenCompanyList, a.companyList.tabLabel()},
+		{message.ScreenAllPostings, a.allPostings.tabLabel()},
 	}
 	const gap = "  "
 	var line, rule strings.Builder
@@ -135,8 +91,9 @@ func (a *App) tabBar(active message.Screen) string {
 		if tab.screen == active {
 			style, stroke = model.SectionStyle, "━"
 		}
-		line.WriteString(style.Render(tab.label))
-		rule.WriteString(style.Render(strings.Repeat(stroke, lipgloss.Width(tab.label))))
+		label := " " + tab.label + " "
+		line.WriteString(style.Render(label))
+		rule.WriteString(style.Render(strings.Repeat(stroke, lipgloss.Width(label))))
 	}
 	if rest := tableWidth(a.width) - lipgloss.Width(rule.String()); rest > 0 {
 		rule.WriteString(model.DimStyle.Render(strings.Repeat("─", rest)))

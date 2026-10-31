@@ -240,6 +240,10 @@ func (m *applicationDetailModel) openReview(documentType document.Type) tea.Cmd 
 	return openDocumentReview(m.src(), message.Push[message.DocumentReview], id, documentType, doc.Path)
 }
 
+func (m *applicationDetailModel) crumbs(message.Screen) []string {
+	return []string{m.detail.CompanyName, m.detail.Posting.Title}
+}
+
 func (m *applicationDetailModel) View() tea.View {
 	var b strings.Builder
 	b.WriteString(model.FieldLabel.Render("Company:") + " " + m.detail.CompanyName + "\n")

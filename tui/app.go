@@ -252,12 +252,6 @@ func (a *App) navFilterSelection(e message.Event[message.Nav[message.FilterSelec
 	return a.unknownNav(e)
 }
 
-// postingList is the open posting list, or nil.
-func (a *App) postingList() *postingListModel {
-	l, _ := a.stack.open(message.ScreenCompanyPostings).(*postingListModel)
-	return l
-}
-
 func (a *App) navPostingDetail(e message.Event[message.Nav[message.PostingDetail]]) tea.Cmd {
 	if !a.onTop(e.Meta) {
 		return nil
@@ -313,12 +307,6 @@ func (a *App) newDocumentReviewForm(d message.DocumentReview) *documentReviewFor
 	return newDocumentReviewFormModel(a.documentService, a.documents, d, a.sized)
 }
 
-// postingDetail is the open posting detail, or nil.
-func (a *App) postingDetail() *postingDetailModel {
-	d, _ := a.stack.open(message.ScreenPostingDetail).(*postingDetailModel)
-	return d
-}
-
 func (a *App) navApplicationDetail(e message.Event[message.Nav[message.ApplicationDetail]]) tea.Cmd {
 	if !a.onTop(e.Meta) {
 		return nil
@@ -334,12 +322,6 @@ func (a *App) navApplicationDetail(e message.Event[message.Nav[message.Applicati
 		}
 	}
 	return a.unknownNav(e)
-}
-
-// applicationDetail is the open application detail, or nil.
-func (a *App) applicationDetail() *applicationDetailModel {
-	d, _ := a.stack.open(message.ScreenApplicationDetail).(*applicationDetailModel)
-	return d
 }
 
 func (a *App) hideArchivedChanged(e message.Event[message.Signal[message.HideArchived]]) tea.Cmd {

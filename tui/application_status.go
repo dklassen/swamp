@@ -105,6 +105,10 @@ func (m *applicationStatusModel) close() tea.Cmd {
 	return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), ""))
 }
 
+func (m *applicationStatusModel) crumbs(message.Screen) []string {
+	return []string{"Set status"}
+}
+
 func (m *applicationStatusModel) View() tea.View {
 	var b strings.Builder
 	for i, st := range applicationStatuses {

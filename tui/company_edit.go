@@ -116,6 +116,10 @@ func (m *companyEditModel) renameFailed(message.Event[message.Error]) tea.Cmd {
 	return nil
 }
 
+func (m *companyEditModel) crumbs(message.Screen) []string {
+	return []string{"Edit company"}
+}
+
 func (m *companyEditModel) View() tea.View {
 	var b strings.Builder
 	b.WriteString(model.FocusedLabel.Render("Name:") + " " + m.nameInput.View() + "\n")

@@ -140,6 +140,10 @@ func (m *applicationSubmitModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
+func (m *applicationSubmitModel) crumbs(message.Screen) []string {
+	return []string{"Submit"}
+}
+
 func (m *applicationSubmitModel) View() tea.View {
 	var b strings.Builder
 	b.WriteString(model.FieldLabel.Render("Company:") + " " + m.detail.CompanyName + "\n\n")

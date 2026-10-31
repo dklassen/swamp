@@ -197,6 +197,10 @@ func renderSourcePicker(selected int) string {
 	return strings.Join(parts, "  ")
 }
 
+func (m *companyFormModel) crumbs(message.Screen) []string {
+	return []string{"Add company"}
+}
+
 func (m *companyFormModel) View() tea.View {
 	var b strings.Builder
 

@@ -326,6 +326,14 @@ func locationLabel(l message.Listing) string {
 }
 
 // View renders the view in the last content size.
+func (m *allPostingsModel) crumbs(message.Screen) []string {
+	return []string{"All postings"}
+}
+
+func (m *allPostingsModel) tabLabel() string {
+	return fmt.Sprintf("All postings %d", m.page.WithoutQuery)
+}
+
 func (m *allPostingsModel) View() tea.View {
 	var b strings.Builder
 	help := model.HelpStyle.Render(allPostingsHelp)
