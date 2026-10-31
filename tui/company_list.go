@@ -466,3 +466,13 @@ func (m *companyListModel) keepCursorOn(id int64) {
 	}
 	m.cursor = min(m.cursor, max(len(visible)-1, 0))
 }
+
+// indexOfCompany returns id's index in companies, or -1 if not present.
+func indexOfCompany(companies []message.Company, id int64) int {
+	for i, c := range companies {
+		if c.ID == id {
+			return i
+		}
+	}
+	return -1
+}

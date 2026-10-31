@@ -1,30 +1,22 @@
 // Package tui is the terminal UI: Bubble Tea model for browsing and
-// managing companies and their postings. Markup editing (status, notes,
-// tags, interview stages) is a later increment. Update stays
-// side-effect-free -- store calls are wrapped in tea.Cmd so the
-// message-passing logic is testable without a real terminal; View
+// managing companies and their postings. Update stays side-effect-free --
+// store calls are wrapped in tea.Cmd so the message-passing logic is
+// testable without a real terminal; View
 // (rendering) is not held to automated test coverage, per this project's
 // testing decisions.
 package tui
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log"
 	"slices"
 	"strings"
 	"time"
-	"unicode"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/internal/domain/application"
-	"github.com/dklassen/swamp/internal/domain/change"
-	"github.com/dklassen/swamp/internal/domain/document"
-	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
@@ -92,18 +84,6 @@ type App struct {
 // whole configuration surface it needs. A leading "~" is expanded when
 // the export actually runs (see expandPath).
 const defaultExportDir = "~/Desktop"
-
-func renderFilterOption(label string, checked, isCursor bool) string {
-	box := "[ ]"
-	if checked {
-		box = "[x]"
-	}
-	line := box + " " + label
-	if isCursor {
-		return model.CursorStyle.Render("> "+line) + "\n"
-	}
-	return "  " + line + "\n"
-}
 
 func New(
 	companies *service.CompanyService,
@@ -386,78 +366,6 @@ func (a *App) WithStatus(status string) *App {
 	return a
 }
 
-// outcomeDisplay is how each review outcome looks: its style, shared by
-// reviewBadge and reviewGlyphSummary, and its glyph. An outcome missing here
-// renders dim, as "[<outcome>]" and "?"; a test checks every
-// document.Outcomes() has an entry.
-var outcomeDisplay = map[document.Outcome]struct {
-	style lipgloss.Style
-	glyph string
-}{
-	document.Passed:  {model.PassStyle, "✓"},
-	document.Flagged: {model.ErrStyle, "✗"},
-}
-
-// reviewBadge renders a document's latest review outcome as a short
-// styled tag: dim "[not reviewed]" when hasReview is false (no review
-// recorded yet), otherwise the outcome's name in capitals, styled per
-// outcomeDisplay: green "[PASSED]", red "[FLAGGED]".
-func reviewBadge(review document.Review, hasReview bool) string {
-	if !hasReview {
-		return model.DimStyle.Render("[not reviewed]")
-	}
-	display, ok := outcomeDisplay[review.Outcome]
-	if !ok {
-		return model.DimStyle.Render("[" + review.Outcome.String() + "]")
-	}
-	return display.style.Render("[" + strings.ToUpper(review.Outcome.String()) + "]")
-}
-
-// reviewGlyphSummary renders a compact, single-line summary of an
-// application's latest cover-letter/resume review outcomes, for list
-// rows (e.g. the active-applications table) that don't have room for
-// reviewBadge's full "[FLAGGED]"/notes rendering (#83).
-// Each document is abbreviated to its label's initials ("CL", "R"), then
-// its outcome's glyph: a dim "-" with no review recorded yet.
-func reviewGlyphSummary(reviews map[document.Type]document.Review) string {
-	entries := make([]string, 0, len(document.Types()))
-	for _, documentType := range document.Types() {
-		var initials []rune
-		for _, word := range strings.Fields(documentType.Label()) {
-			initials = append(initials, unicode.ToUpper([]rune(word)[0]))
-		}
-		glyph := model.DimStyle.Render("-")
-		if review, ok := reviews[documentType]; ok {
-			glyph = model.DimStyle.Render("?")
-			if display, ok := outcomeDisplay[review.Outcome]; ok {
-				glyph = display.style.Render(display.glyph)
-			}
-		}
-		entries = append(entries, string(initials)+":"+glyph)
-	}
-	return strings.Join(entries, " ")
-}
-
-// indexOfPosting returns id's index in postings, or -1 if not present.
-func indexOfPosting(postings []message.Posting, id int64) int {
-	for i, p := range postings {
-		if p.ID == id {
-			return i
-		}
-	}
-	return -1
-}
-
-// indexOfCompany returns id's index in companies, or -1 if not present.
-func indexOfCompany(companies []message.Company, id int64) int {
-	for i, c := range companies {
-		if c.ID == id {
-			return i
-		}
-	}
-	return -1
-}
-
 func (a *App) Init() tea.Cmd {
 	return tea.Batch(a.activeApplicationList.Init(), a.companyList.Init(), a.allPostings.Init(), a.pollChanges())
 }
@@ -493,94 +401,6 @@ func (a *App) pollChanges() tea.Cmd {
 // changeTick asks for the next tick; the reader reads on this one.
 func (a *App) changeTick(message.Event[message.Signal[message.ChangeTick]]) tea.Cmd {
 	return a.pollChanges()
-}
-
-func toggleInterested(postings *service.PostingService, src message.Source, postingID int64, currentlyInterested bool) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
-		var (
-			m   *change.Of[posting.Markup]
-			err error
-		)
-		if currentlyInterested {
-			m, err = postings.UnmarkInterested(ctx, postingID)
-		} else {
-			m, err = postings.SetInterested(ctx, postingID)
-		}
-		return markupChanged(src, postingID, m, err)
-	}
-}
-
-func toggleArchived(postings *service.PostingService, src message.Source, postingID int64, currentlyArchived bool) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
-		var (
-			m   *change.Of[posting.Markup]
-			err error
-		)
-		if currentlyArchived {
-			m, err = postings.Unarchive(ctx, postingID)
-		} else {
-			m, err = postings.SetArchived(ctx, postingID)
-		}
-		return markupChanged(src, postingID, m, err)
-	}
-}
-
-func markupChanged(src message.Source, postingID int64, m *change.Of[posting.Markup], err error) tea.Msg {
-	subject := message.Subject{Type: message.TypePosting, ID: postingID}
-	if err != nil {
-		return message.New(src, subject, message.OpUpdated, time.Now().UTC(), model.ErrorOf(err))
-	}
-	return message.New(src, subject, message.OpUpdated, m.At,
-		message.Changed[message.Markup]{Before: markupSnapshot(m.Before), After: markupSnapshot(m.After)})
-}
-
-// createApplication's error is about the posting, since there's no
-// application yet.
-func createApplication(postings *service.PostingService, src message.Source, postingID int64) tea.Cmd {
-	return func() tea.Msg {
-		app, err := postings.ApplyTo(context.Background(), postingID)
-		if err != nil {
-			return message.New(src, message.Subject{Type: message.TypePosting, ID: postingID}, message.OpCreated, time.Now().UTC(), model.ErrorOf(err))
-		}
-		return message.Created(src, app.ID, app.CreatedAt, applicationSnapshot(*app))
-	}
-}
-
-func applicationWritten(src message.Source, applicationID int64, op message.Op, a *change.Of[application.Application], err error) tea.Msg {
-	if err != nil {
-		return message.New(src, message.Subject{Type: message.TypeApplication, ID: applicationID}, op, time.Now().UTC(), model.ErrorOf(err))
-	}
-	if op == message.OpDeleted {
-		return message.Deleted(src, applicationID, a.At, applicationSnapshot(a.Before))
-	}
-	return message.Updated(src, applicationID, a.At, applicationSnapshot(a.Before), applicationSnapshot(a.After))
-}
-
-// currentReviews is the latest review of each of an application's
-// documents, leaving out one whose document has changed since.
-func currentReviews(documentService *service.DocumentService, docs *documents.Store, applicationID int64) (map[document.Type]document.Review, error) {
-	reviews, err := documentService.LatestReviews(context.Background(), applicationID)
-	if err != nil {
-		return nil, err
-	}
-	return documents.Current(docs.Status(applicationID), reviews, document.Review.IsCurrent)
-}
-
-func updateApplicationStatus(applications *service.ApplicationService, src message.Source, applicationID int64, status application.Status) tea.Cmd {
-	return func() tea.Msg {
-		a, err := applications.SetStatus(context.Background(), applicationID, status)
-		return applicationWritten(src, applicationID, message.OpUpdated, a, err)
-	}
-}
-
-func toSet(values []string) map[string]bool {
-	set := make(map[string]bool, len(values))
-	for _, v := range values {
-		set[v] = true
-	}
-	return set
 }
 
 // errInternal is the banner for a fault: the error itself means nothing

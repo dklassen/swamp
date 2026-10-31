@@ -409,3 +409,13 @@ func (m *postingListModel) keepCursorOn(id int64) {
 	}
 	m.clampCursor(len(m.list.Postings))
 }
+
+// indexOfPosting returns id's index in postings, or -1 if not present.
+func indexOfPosting(postings []message.Posting, id int64) int {
+	for i, p := range postings {
+		if p.ID == id {
+			return i
+		}
+	}
+	return -1
+}

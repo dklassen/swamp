@@ -258,3 +258,23 @@ func (m *filterSelectModel) View() tea.View {
 	b.WriteString(help)
 	return tea.NewView(b.String())
 }
+
+func toSet(values []string) map[string]bool {
+	set := make(map[string]bool, len(values))
+	for _, v := range values {
+		set[v] = true
+	}
+	return set
+}
+
+func renderFilterOption(label string, checked, isCursor bool) string {
+	box := "[ ]"
+	if checked {
+		box = "[x]"
+	}
+	line := box + " " + label
+	if isCursor {
+		return model.CursorStyle.Render("> "+line) + "\n"
+	}
+	return "  " + line + "\n"
+}
