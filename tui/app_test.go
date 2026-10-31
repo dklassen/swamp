@@ -43,24 +43,16 @@ func newTestApp(t *testing.T, s testutil.TestApp, syncer *sync.Syncer) *App {
 	return applyCmd(t, app, app.Init())
 }
 
-// applyCmd runs cmd and feeds the resulting message through app.Update,
-// then keeps chasing whatever Cmd that Update call itself returns -- the
-// same way a real tea.Program's runtime loop keeps running until nothing
-// further is queued. If cmd is itself a tea.Batch (App.Init returns one,
-// to load companies and active applications concurrently; posting
-// detail's Init does too), its BatchMsg
-// unpacks into per-command messages applied individually. These tests
-// drive App directly without a real tea.Program, so this replicates both
-// behaviors by hand.
 // pushed is the screen on top of app's stack, as a T.
 func pushed[T stackScreen](t *testing.T, app *App) T {
 	t.Helper()
 	if app.stack.len() == 0 {
 		t.Fatalf("no screen is pushed; %v is up", app.onScreen())
 	}
-	s, ok := app.stack.top().(T)
+	top := app.screenOf(app.onScreen())
+	s, ok := top.(T)
 	if !ok {
-		t.Fatalf("the screen on top is %T, want %T", app.stack.top(), *new(T))
+		t.Fatalf("the screen on top is %T, want %T", top, *new(T))
 	}
 	return s
 }
@@ -85,6 +77,15 @@ func openDetail(t *testing.T, app *App) *postingDetailModel {
 	return d
 }
 
+// applyCmd runs cmd and feeds the resulting message through app.Update,
+// then keeps chasing whatever Cmd that Update call itself returns -- the
+// same way a real tea.Program's runtime loop keeps running until nothing
+// further is queued. If cmd is itself a tea.Batch (App.Init returns one,
+// to load companies and active applications concurrently; posting
+// detail's Init does too), its BatchMsg
+// unpacks into per-command messages applied individually. These tests
+// drive App directly without a real tea.Program, so this replicates both
+// behaviors by hand.
 func applyCmd(t *testing.T, app *App, cmd tea.Cmd) *App {
 	t.Helper()
 	if cmd == nil {
