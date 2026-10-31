@@ -10,9 +10,9 @@ depends_on: []
 
 ## Decided
 
-- **`Navigation` is generic: it knows screen kinds, not screens.** It owns the tabs, the stack and the routes that open screens, and is configured with tabs and tables. It holds no services, session state, payload or screen types, and never refers to `App`. `App` uses only its exported methods.
+- **`Navigation` holds the tabs; `Stack` holds the screens pushed over them.** Both know screen kinds, not screens, take no router, and never refer to `App`. `Navigation.Routes` are its tabs', which keep their instances while another tab is up. `Stack` has the routes that open screens; it reports what it opened and closed, and `App` registers those, since a stacked screen is new on each opening. `App` uses only their exported methods.
 - **The tables are preconfigured in `Screens`,** which holds the services and the session state screens open with (`sized`, `exportDir`, `hideArchived`, kept from the messages that carry them), and gives the tabs and one table per payload.
-- **`cmd/swamp` and the tests put them together:** a router, `NewScreens` (registered with the router), `NewNavigation(router, screens.Tabs(), screens.Tables()...)`, then `New(router, …, nav)`. RFC 0012's open question 3 ("Does `New` build the tabs, or take them?") is updated to match.
+- **`cmd/swamp` and the tests put them together:** a router, `NewScreens` (registered with the router), `NewNavigation(screens.Tabs())`, `NewStack(screens.Tables()...)`, then `New(router, …, nav, stack)`. RFC 0012's open question 3 ("Does `New` build the tabs, or take them?") is updated to match.
 - **One typed map per `T`** (`Opens[T]`), not one untyped map, so a screen given the wrong payload doesn't compile (RFC 0012).
 - **The header still reads screens by kind** (`Navigation.Screen` and type assertions), as before. Crumbs taken from the `Nav` payload when a screen opens are a follow-up (the step 3 redo).
 - **Any screen in the table can be replaced,** as any can be pushed. The table is keyed by screen alone, with no list of allowed ops per entry. Today only `ScreenPostingDetail` and `ScreenDocumentReviewForm` accept `NavReplace`, and no test relies on any other being refused. What this gives up:
@@ -24,10 +24,10 @@ depends_on: []
 One generic handler replaces the eight:
 
 ```go
-func navTo[T message.Body](n *Navigation, table map[message.Screen]func(T) stackScreen) func(message.Event[message.Nav[T]]) tea.Cmd
+func navTo[T message.Body](st *Stack, table map[message.Screen]func(T) stackScreen) func(message.Event[message.Nav[T]]) tea.Cmd
 ```
 
-It keeps the `onTop` guard and `unknownNav`, and `Navigation.Routes` has one per table. `newPostingDetail` and `newDocumentReviewForm` go.
+It keeps the `onTop` guard and `unknownNav`, and `Stack.Routes` has one per table. `newPostingDetail` and `newDocumentReviewForm` go.
 
 The tabs, the stack, `tab`, `syncer`, `documents`, `openURL`, `exportDir` and `hideArchived` leave `App`. `App` keeps the services `WithChangeLog` needs (see step 5), the banner, and its own `sized`, which decides when to resend the size.
 
