@@ -35,7 +35,7 @@ import (
 // about refresh behavior can pass a syncer with no configured postings.
 // The App's documents.Store is rooted at a fresh t.TempDir() -- tests
 // that care about it (i.e. application document status) can read it back
-// via app.documents.
+// via app.deps.documents.
 func newTestApp(t *testing.T, s testutil.TestApp, syncer *sync.Syncer) *App {
 	t.Helper()
 	app := newAppOn(s, syncer, documents.NewStore(t.TempDir()))
@@ -2051,7 +2051,7 @@ func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testin
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2091,7 +2091,7 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 	// Content must match what's on disk, or the staleness check (see
 	// document.Review.IsCurrent) treats this review
 	// as not describing the current document and omits it.
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2143,7 +2143,7 @@ func TestApp_LoadActiveApplications_DocumentReadFails_SetsErr(t *testing.T) {
 	if _, err := createReview(context.Background(), s, application.ID, document.CoverLetter, "letter", document.Flagged, "needs work"); err != nil {
 		t.Fatalf("CreateReview: %v", err)
 	}
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2224,7 +2224,7 @@ func TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag(t *testing.T) 
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2284,7 +2284,7 @@ func TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2336,7 +2336,7 @@ func TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail(t *testing.T) 
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2493,7 +2493,7 @@ func TestApp_ApplicationDetail_ShiftR_EntersReviewFormDirectly(t *testing.T) {
 	application := mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2515,7 +2515,7 @@ func TestApp_ApplicationDetail_CancelDocumentReview_ReturnsToApplicationDetail(t
 	application := mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2544,7 +2544,7 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately(t
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2587,7 +2587,7 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplications
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2633,7 +2633,7 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_MovesTheHomeRowsNextStepO
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2710,7 +2710,7 @@ func TestApp_SubmitDocumentReviewFromPostingDetailViaApplicationDetailFastPath_K
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 300, Height: 20})
 
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -2825,7 +2825,7 @@ func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testi
 	}
 	// Deliberately no files written -- the application row exists, but
 	// the documents don't yet.
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 
 	app = openPostingDetail(t, app)
 
@@ -3369,7 +3369,7 @@ func exportTestApp(t *testing.T) *App {
 	application := mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.Resume).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -3387,8 +3387,8 @@ func TestApp_ActiveApplications_E_EntersExportScreenPrefilledWithDefaultDir(t *t
 	if app.onScreen() != message.ScreenApplicationExport {
 		t.Fatalf("screen after 'e' = %v, want message.ScreenApplicationExport", app.onScreen())
 	}
-	if got := pushed[*applicationExportModel](t, app).textinput.Value(); got != app.exportDir {
-		t.Errorf("destination prefill = %q, want the app's default export dir %q", got, app.exportDir)
+	if got := pushed[*applicationExportModel](t, app).textinput.Value(); got != app.deps.exportDir {
+		t.Errorf("destination prefill = %q, want the app's default export dir %q", got, app.deps.exportDir)
 	}
 }
 
@@ -3421,8 +3421,8 @@ func TestApp_Export_ReportsWhereFilesWentAndRemembersTheDirectory(t *testing.T) 
 	if !strings.Contains(app.status, dest) {
 		t.Errorf("status = %q, want it to name the destination %q so the user knows where to drag from", app.status, dest)
 	}
-	if app.exportDir != dest {
-		t.Errorf("exportDir = %q, want %q remembered for the next export", app.exportDir, dest)
+	if app.deps.exportDir != dest {
+		t.Errorf("exportDir = %q, want %q remembered for the next export", app.deps.exportDir, dest)
 	}
 	exported := filepath.Join(dest, "acme-staff-engineer-resume.pdf")
 	if _, err := os.Stat(exported); err != nil {
@@ -3432,7 +3432,7 @@ func TestApp_Export_ReportsWhereFilesWentAndRemembersTheDirectory(t *testing.T) 
 
 func TestApp_Export_Failure_SurfacesErrorAndKeepsRememberedDir(t *testing.T) {
 	app := exportTestApp(t)
-	before := app.exportDir
+	before := app.deps.exportDir
 
 	// A path under a regular file can't be created as a directory.
 	blocker := filepath.Join(t.TempDir(), "not-a-dir")
@@ -3448,8 +3448,8 @@ func TestApp_Export_Failure_SurfacesErrorAndKeepsRememberedDir(t *testing.T) {
 	if app.err == nil {
 		t.Fatal("app.err = nil, want the export failure surfaced")
 	}
-	if app.exportDir != before {
-		t.Errorf("exportDir = %q, want it left at %q -- a failed export shouldn't be remembered as the new default", app.exportDir, before)
+	if app.deps.exportDir != before {
+		t.Errorf("exportDir = %q, want it left at %q -- a failed export shouldn't be remembered as the new default", app.deps.exportDir, before)
 	}
 }
 
@@ -3577,7 +3577,7 @@ func TestApp_ReviewSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 	application := mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -3616,7 +3616,7 @@ func TestApp_ReviewSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.
 	application := mustCreateApplication(t, s, posting.ID)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
-	status := app.documents.Status(application.ID)
+	status := app.deps.documents.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)
 	}
@@ -3976,16 +3976,7 @@ func TestApp_CompanyList_SearchEnterEnter_OpensMatchAndKeepsSearchOnReturn(t *te
 func TestApp_Resize_ClearsTheScreen(t *testing.T) {
 	t.Parallel()
 
-	app := New(
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		nil,
-		documents.NewStore(t.TempDir()),
-	)
+	app := newAppWith(t, Screens)
 	_, cmd := sendKey(app, tea.WindowSizeMsg{Width: 80, Height: 24})
 	if cmd == nil {
 		t.Fatal("resize returned no command, want tea.ClearScreen")

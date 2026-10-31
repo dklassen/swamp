@@ -39,7 +39,7 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, applicati
 	target := mustCreateApplication(t, s, ingested.Posting.ID)
 
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	paths, err := app.documents.EnsureDir(target.ID)
+	paths, err := app.deps.documents.EnsureDir(target.ID)
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
@@ -49,11 +49,11 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, applicati
 		}
 	}
 	var opened []string
-	app.openURL = func(src message.Source, about message.Subject, url string) tea.Cmd {
+	app.deps.openURL = func(src message.Source, about message.Subject, url string) tea.Cmd {
 		opened = append(opened, url)
 		return func() tea.Msg { return browserOpened(src, about, url, nil) }
 	}
-	app.exportDir = t.TempDir()
+	app.deps.exportDir = t.TempDir()
 	return app, target, &opened
 }
 
@@ -88,7 +88,7 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 		t.Errorf("opened URLs mismatch (-want +got):\n%s", diff)
 	}
 	for _, name := range []string{"acme-engineer-cover_letter.pdf", "acme-engineer-resume.pdf"} {
-		if _, err := os.Stat(filepath.Join(app.exportDir, name)); err != nil {
+		if _, err := os.Stat(filepath.Join(app.deps.exportDir, name)); err != nil {
 			t.Errorf("exported %s: %v", name, err)
 		}
 	}
@@ -205,7 +205,7 @@ func TestSubmitFlow_ShowsAFailedExport(t *testing.T) {
 	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	app.exportDir = filepath.Join(blocker, "sub")
+	app.deps.exportDir = filepath.Join(blocker, "sub")
 
 	app = startSubmit(t, app)
 
@@ -245,7 +245,7 @@ func TestSubmitFlow_SaysTheLinkOpened(t *testing.T) {
 func TestSubmitFlow_ReportsALinkThatFailedToOpen(t *testing.T) {
 	t.Parallel()
 	app, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
-	app.openURL = func(src message.Source, about message.Subject, url string) tea.Cmd {
+	app.deps.openURL = func(src message.Source, about message.Subject, url string) tea.Cmd {
 		return func() tea.Msg { return browserOpened(src, about, url, errors.New("no browser")) }
 	}
 

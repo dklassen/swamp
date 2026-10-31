@@ -144,6 +144,7 @@ func main() {
 		changes,
 		syncer,
 		documentsStore,
+		tui.Screens,
 	).WithChangeLog(since, cfg.Origin)
 	program := tea.NewProgram(app)
 	stopMCP := func(context.Context) error { return nil }

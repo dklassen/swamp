@@ -59,7 +59,7 @@ func newFullTestApp(t *testing.T) *App {
 
 	app := newTestApp(t, s, newTestSyncer(s, map[string][]jobboard.Posting{"acme": board}))
 	for _, a := range applications {
-		status := app.documents.Status(a.ID)
+		status := app.deps.documents.Status(a.ID)
 		for _, path := range []string{mustDoc(t, status, document.CoverLetter).Path, mustDoc(t, status, document.Resume).Path} {
 			if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 				t.Fatalf("MkdirAll: %v", err)
@@ -119,14 +119,14 @@ func sizedScreens() []sizedScreen {
 			// keeps all 40 postings.
 			ctx := context.Background()
 			acme := app.companyList.companies[0]
-			if _, err := app.companyService.SetDescription(ctx, acme.ID, "Acme makes everything."); err != nil {
+			if _, err := app.deps.companies.SetDescription(ctx, acme.ID, "Acme makes everything."); err != nil {
 				t.Fatalf("SetDescription: %v", err)
 			}
 			var filters []filter.Filter
 			for i := 1; i <= 40; i++ {
 				filters = append(filters, filter.Filter{Field: filter.FieldDepartment, Value: fmt.Sprintf("Department %02d", i)})
 			}
-			if err := app.companyService.SetFilters(ctx, acme.ID, filters); err != nil {
+			if err := app.deps.companies.SetFilters(ctx, acme.ID, filters); err != nil {
 				t.Fatalf("SetFilters: %v", err)
 			}
 			app = applyCmd(t, app, app.companyList.load())
@@ -173,8 +173,8 @@ func sizedScreens() []sizedScreen {
 			return applyCmd(t, app, cmd)
 		}},
 		{name: "application submit", screen: message.ScreenApplicationSubmit, open: func(t *testing.T, app *App) *App {
-			app.openURL = func(message.Source, message.Subject, string) tea.Cmd { return nil }
-			app.exportDir = t.TempDir()
+			app.deps.openURL = func(message.Source, message.Subject, string) tea.Cmd { return nil }
+			app.deps.exportDir = t.TempDir()
 			app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 			app = applyCmd(t, app, cmd)
 			app, cmd = sendKey(app, runeKey('S'))

@@ -51,11 +51,11 @@ func onApplicationDetail(t *testing.T, app *App) *applicationDetailModel {
 // reports once the editor closes, given its hash before the edit.
 func editorClosed(t *testing.T, app *App, applicationID int64, documentType document.Type, before string) tea.Cmd {
 	t.Helper()
-	path, err := app.documents.Path(applicationID, documentType)
+	path, err := app.deps.documents.Path(applicationID, documentType)
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
-	return recordEditorWrite(app.documentService, onApplicationDetail(t, app).src(), applicationID, documentType, path, before)
+	return recordEditorWrite(app.deps.documentSvc, onApplicationDetail(t, app).src(), applicationID, documentType, path, before)
 }
 
 // TestApp_EditorClosed_ReloadsTheApplicationsReviews: editing a draft from
@@ -125,7 +125,7 @@ func TestApp_EditorClosedAfterAChange_RecordsTheWrite(t *testing.T) {
 	ctx := context.Background()
 	app, target := deleteTestApp(t) // resume drafted as "# Draft\n"
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if _, err := app.documents.Write(target.ID, document.Resume, "# Edited\n"); err != nil {
+	if _, err := app.deps.documents.Write(target.ID, document.Resume, "# Edited\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 

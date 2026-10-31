@@ -32,7 +32,7 @@ func deleteTestApp(t *testing.T) (*App, application.Application) {
 	target := mustCreateApplication(t, s, posting.ID)
 
 	app := newTestApp(t, s, newTestSyncer(s, nil))
-	status, err := app.documents.EnsureDir(target.ID)
+	status, err := app.deps.documents.EnsureDir(target.ID)
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}
@@ -68,7 +68,7 @@ func startDelete(t *testing.T, app *App) *App {
 // resumeDir is the application's document directory.
 func resumeDir(t *testing.T, app *App, applicationID int64) string {
 	t.Helper()
-	return filepath.Dir(mustDoc(t, app.documents.Status(applicationID), document.Resume).Path)
+	return filepath.Dir(mustDoc(t, app.deps.documents.Status(applicationID), document.Resume).Path)
 }
 
 func TestDeleteFlow_ConfirmingDeletesTheApplicationAndKeepsItsDocuments(t *testing.T) {
@@ -113,7 +113,7 @@ func TestDeleteFlow_DecliningKeepsTheApplication(t *testing.T) {
 			if _, err := storeOf(app).Applications.Get(context.Background(), target.ID); err != nil {
 				t.Errorf("application.GetByID after declining: %v, want the application kept", err)
 			}
-			if !mustDoc(t, app.documents.Status(target.ID), document.Resume).Exists {
+			if !mustDoc(t, app.deps.documents.Status(target.ID), document.Resume).Exists {
 				t.Error("resume gone after declining, want it kept")
 			}
 			if app.onScreen() != message.ScreenApplicationDetail {

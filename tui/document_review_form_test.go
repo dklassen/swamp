@@ -280,7 +280,7 @@ func TestApp_ReviewSavedOfAnUnchangedDocument_DoesNotWarn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := app.documents.Write(application.ID, document.CoverLetter, "# What you reviewed"); err != nil {
+	if _, err := app.deps.documents.Write(application.ID, document.CoverLetter, "# What you reviewed"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
@@ -313,7 +313,7 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	path, err := app.documents.Write(application.ID, document.CoverLetter, "Dear team,\nWhat you reviewed\n")
+	path, err := app.deps.documents.Write(application.ID, document.CoverLetter, "Dear team,\nWhat you reviewed\n")
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -372,7 +372,7 @@ func TestApp_ReviewOfADocumentDeletedMeanwhile_SavesNothingAndSaysSo(t *testing.
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	path, err := app.documents.Write(application.ID, document.CoverLetter, "a draft")
+	path, err := app.deps.documents.Write(application.ID, document.CoverLetter, "a draft")
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -414,14 +414,14 @@ func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := app.documents.Write(application.ID, document.CoverLetter, "What you reviewed\n"); err != nil {
+	if _, err := app.deps.documents.Write(application.ID, document.CoverLetter, "What you reviewed\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
 	app = openPostingDetail(t, app)
 	app = sendKeyAndApply(t, app, runeKey('r'))
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
-	if _, err := app.documents.Write(application.ID, document.CoverLetter, "Rewritten by the agent\n"); err != nil {
+	if _, err := app.deps.documents.Write(application.ID, document.CoverLetter, "Rewritten by the agent\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	if err := s.Documents.RecordWrite(ctx, application.ID, document.CoverLetter, "Rewritten by the agent\n", document.SourceWriteDocument); err != nil {
@@ -459,7 +459,7 @@ func TestApp_ReviewOfADocumentChangedOutsideSwamp_DoesNotNameTheLastWriter(t *te
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	path, err := app.documents.Write(application.ID, document.CoverLetter, "The agent's draft\n")
+	path, err := app.deps.documents.Write(application.ID, document.CoverLetter, "The agent's draft\n")
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}

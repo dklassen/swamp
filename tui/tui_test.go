@@ -100,18 +100,18 @@ func (f *fakeFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jo
 
 // newAppOn is an App on s's services, syncer and docs.
 func newAppOn(s testutil.TestApp, syncer *sync.Syncer, docs *documents.Store) *App {
-	return New(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, syncer, docs)
+	return New(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, syncer, docs, Screens)
 }
 
 // storeOf is app's services, for tests that get only an App from their
 // setup. Its Store and Path are empty.
 func storeOf(app *App) testutil.TestApp {
 	return testutil.TestApp{
-		Companies:    app.companyService,
-		Postings:     app.postingService,
-		Applications: app.applicationService,
-		Documents:    app.documentService,
-		Scores:       app.scoringService,
+		Companies:    app.deps.companies,
+		Postings:     app.deps.postings,
+		Applications: app.deps.applications,
+		Documents:    app.deps.documentSvc,
+		Scores:       app.deps.scores,
 		Changes:      app.changeLogService,
 	}
 }

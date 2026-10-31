@@ -24,18 +24,16 @@ import (
 )
 
 type App struct {
-	companyService     *service.CompanyService
-	postingService     *service.PostingService
-	applicationService *service.ApplicationService
-	documentService    *service.DocumentService
-	scoringService     *service.ScoringService
-	changeLogService   *service.ChangeLog
-	origin             string
+	// deps is what the screens are opened with.
+	deps screenDeps
+	// screens is what each Nav opens.
+	screens          Navigation
+	changeLogService *service.ChangeLog
+	origin           string
 	// changes reads the log's rows as events, nil without a change log,
 	// on a tick every changePoll.
 	changes     *changeReader
 	changePoll  time.Duration
-	syncer      *sync.Syncer
 	companyList *companyListModel
 	allPostings *allPostingsModel
 	// tab is the tab up, which the stack's screens are pushed over.
@@ -47,34 +45,13 @@ type App struct {
 	// banner.
 	syncing               *model.Syncing
 	activeApplicationList *activeApplicationListModel
-	// exportDir is the destination the export screen prefills: the last
-	// directory successfully exported to this session, falling back to
-	// defaultExportDir. Ephemeral and in-memory only, like hideArchived
-	// -- a remembered path is a within-session convenience, not
-	// something worth a schema change to persist.
-	exportDir string
-	// openURL opens a URL in the browser: openInBrowser, swapped for a fake
-	// in tests so they don't launch one.
-	openURL func(src message.Source, about message.Subject, url string) tea.Cmd
-	// documents resolves an application's document paths, hiding the
-	// path convention and base directory the same way store hides
-	// schema/SQL details -- threaded through from SWAMP_DOCUMENTS_PATH,
-	// mirroring how SWAMP_DB_PATH configures the store.
-	documents *documents.Store
-	// hideArchived is what each posting list opens with: the last one's
-	// choice, for the session only. Defaults true: the point of archiving
-	// a posting is to declutter the list.
-	hideArchived bool
-	width        int
-	height       int
+	width                 int
+	height                int
 
 	// router is a message router for Dispatching bubbletea tea.Msg's
 	router model.Router
 	// instance is the banner's, which App registers routes for.
 	instance message.ScreenInstance
-
-	// sized is the last size sent to the screens.
-	sized message.ContentSize
 }
 
 // defaultExportDir is where the export screen points before anything has
@@ -94,22 +71,26 @@ func New(
 	changes *service.ChangeLog,
 	syncer *sync.Syncer,
 	docs *documents.Store,
+	screens Navigation,
 ) *App {
 	a := &App{
-		companyService:        companies,
-		postingService:        postings,
-		applicationService:    applications,
-		documentService:       documentService,
-		scoringService:        scores,
+		deps: screenDeps{
+			companies:    companies,
+			postings:     postings,
+			applications: applications,
+			documentSvc:  documentService,
+			scores:       scores,
+			syncer:       syncer,
+			documents:    docs,
+			openURL:      openInBrowser,
+			exportDir:    defaultExportDir,
+			hideArchived: true,
+		},
+		screens:               screens,
 		changeLogService:      changes,
-		syncer:                syncer,
 		tab:                   message.ScreenActiveApplications,
 		allPostings:           newAllPostingsModel(postings),
 		activeApplicationList: newActiveApplicationListModel(applications, documentService, docs),
-		hideArchived:          true,
-		documents:             docs,
-		exportDir:             defaultExportDir,
-		openURL:               openInBrowser,
 		companyList:           newCompanyListModel(companies, postings),
 		syncing:               model.NewSyncing(syncer),
 		router:                model.NewMsgRouter(),
@@ -209,131 +190,16 @@ func (a *App) onTop(meta message.Meta) bool {
 	return meta.Source.Instance != 0 && meta.Source.Instance == a.focused()
 }
 
-// unknownNav reports a Nav for a screen App doesn't open that way.
-func (a *App) unknownNav(nav tea.Msg) tea.Cmd {
-	return a.fail(fmt.Errorf("tui: no screen opens on %+v", nav))
-}
-
-// navNone pops, or opens a screen that shows nothing yet.
-func (a *App) navNone(e message.Event[message.Nav[message.None]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	switch {
-	case e.Payload.Op == message.NavPop:
-		return a.pop()
-	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenCompanyForm:
-		return a.push(e.Payload.Screen, newCompanyFormModel(a.syncer))
-	}
-	return a.unknownNav(e)
-}
-
-func (a *App) navCompany(e message.Event[message.Nav[message.Company]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	c := e.Payload.Value
-	switch {
-	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenCompanyEdit:
-		return a.push(e.Payload.Screen, newCompanyEditModel(a.companyService, c.ID, c.Name))
-	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenCompanyPostings:
-		return a.push(e.Payload.Screen, newPostingListModel(a.companyService, a.postingService, c, a.hideArchived, a.sized))
-	}
-	return a.unknownNav(e)
-}
-
-func (a *App) navFilterSelection(e message.Event[message.Nav[message.FilterSelection]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	if e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenFilterSelect {
-		return a.push(e.Payload.Screen, newFilterSelectModel(a.companyService, e.Payload.Value, a.sized))
-	}
-	return a.unknownNav(e)
-}
-
 // postingList is the open posting list, or nil.
 func (a *App) postingList() *postingListModel {
 	l, _ := a.stack.open(message.ScreenCompanyPostings).(*postingListModel)
 	return l
 }
 
-func (a *App) navPostingDetail(e message.Event[message.Nav[message.PostingDetail]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	switch {
-	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenPostingDetail:
-		return a.push(e.Payload.Screen, a.newPostingDetail(e.Payload.Value))
-	case e.Payload.Op == message.NavReplace && e.Payload.Screen == message.ScreenPostingDetail:
-		return a.replace(e.Payload.Screen, a.newPostingDetail(e.Payload.Value))
-	}
-	return a.unknownNav(e)
-}
-
-func (a *App) newPostingDetail(d message.PostingDetail) *postingDetailModel {
-	return newPostingDetailModel(a.postingService, a.documentService, a.scoringService, a.documents, d, a.sized)
-}
-
-func (a *App) navApplication(e message.Event[message.Nav[message.Application]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	if e.Payload.Op == message.NavPush {
-		switch e.Payload.Screen {
-		case message.ScreenApplicationStatus:
-			return a.push(e.Payload.Screen, newApplicationStatusModel(a.applicationService, e.Payload.Value))
-		case message.ScreenApplicationNotes:
-			return a.push(e.Payload.Screen, newApplicationNotesModel(a.applicationService, e.Payload.Value, a.sized))
-		case message.ScreenDocumentReviewSelect:
-			return a.push(e.Payload.Screen, newDocumentReviewSelectModel(a.documents, e.Payload.Value))
-		case message.ScreenApplicationForm:
-			return a.push(e.Payload.Screen, newApplicationFormModel(a.postingService, e.Payload.Value, a.sized))
-		}
-	}
-	return a.unknownNav(e)
-}
-
-// navDocumentReview opens the review form, over application detail or in
-// place of the picker.
-func (a *App) navDocumentReview(e message.Event[message.Nav[message.DocumentReview]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	switch {
-	case e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenDocumentReviewForm:
-		return a.push(e.Payload.Screen, a.newDocumentReviewForm(e.Payload.Value))
-	case e.Payload.Op == message.NavReplace && e.Payload.Screen == message.ScreenDocumentReviewForm:
-		return a.replace(e.Payload.Screen, a.newDocumentReviewForm(e.Payload.Value))
-	}
-	return a.unknownNav(e)
-}
-
-func (a *App) newDocumentReviewForm(d message.DocumentReview) *documentReviewFormModel {
-	return newDocumentReviewFormModel(a.documentService, a.documents, d, a.sized)
-}
-
 // postingDetail is the open posting detail, or nil.
 func (a *App) postingDetail() *postingDetailModel {
 	d, _ := a.stack.open(message.ScreenPostingDetail).(*postingDetailModel)
 	return d
-}
-
-func (a *App) navApplicationDetail(e message.Event[message.Nav[message.ApplicationDetail]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	if e.Payload.Op == message.NavPush {
-		switch e.Payload.Screen {
-		case message.ScreenApplicationDetail:
-			return a.push(e.Payload.Screen, newApplicationDetailModel(a.applicationService, a.postingService, a.companyService, a.documentService, a.documents, e.Payload.Value, a.sized.Width))
-		case message.ScreenApplicationExport:
-			return a.push(e.Payload.Screen, newApplicationExportModel(a.documentService, a.documents, e.Payload.Value, a.exportDir, a.sized))
-		case message.ScreenApplicationSubmit:
-			return a.push(e.Payload.Screen, newApplicationSubmitModel(a.applicationService, a.documentService, a.documents, a.openURL, e.Payload.Value, a.exportDir))
-		}
-	}
-	return a.unknownNav(e)
 }
 
 // applicationDetail is the open application detail, or nil.
@@ -343,7 +209,7 @@ func (a *App) applicationDetail() *applicationDetailModel {
 }
 
 func (a *App) hideArchivedChanged(e message.Event[message.Signal[message.HideArchived]]) tea.Cmd {
-	a.hideArchived = e.Payload.Value.Hidden
+	a.deps.hideArchived = e.Payload.Value.Hidden
 	return nil
 }
 
@@ -366,7 +232,7 @@ const changePollInterval = 500 * time.Millisecond
 // rows its commands already sent as events.
 func (a *App) WithChangeLog(since int64, origin string) *App {
 	a.origin = origin
-	a.changes = newChangeReader(a.companyService, a.postingService, a.applicationService, a.documentService, a.scoringService, a.changeLogService, origin, since)
+	a.changes = newChangeReader(a.deps.companies, a.deps.postings, a.deps.applications, a.deps.documentSvc, a.deps.scores, a.changeLogService, origin, since)
 	if err := a.router.Register(a.changes); err != nil {
 		panic(err)
 	}
@@ -425,13 +291,13 @@ func (a *App) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(a.errorReported),
 		model.Always(a.notified),
-		model.Always(a.navNone),
-		model.Always(a.navCompany),
-		model.Always(a.navFilterSelection),
-		model.Always(a.navPostingDetail),
-		model.Always(a.navApplication),
-		model.Always(a.navApplicationDetail),
-		model.Always(a.navDocumentReview),
+		model.Always(navTo(a, a.screens.none)),
+		model.Always(navTo(a, a.screens.company)),
+		model.Always(navTo(a, a.screens.filterSelection)),
+		model.Always(navTo(a, a.screens.postingDetail)),
+		model.Always(navTo(a, a.screens.application)),
+		model.Always(navTo(a, a.screens.applicationDetail)),
+		model.Always(navTo(a, a.screens.documentReview)),
 		model.Always(a.hideArchivedChanged),
 		model.Always(a.applicationChanged),
 		model.Always(a.browserOpened),
@@ -449,7 +315,7 @@ func (a *App) browserOpened(message.Event[message.Ran[message.OpenBrowser]]) tea
 // exported remembers where the export went, for the next export or submit
 // to start from, and clears an earlier failure from the banner.
 func (a *App) exported(e message.Event[message.Ran[message.ExportReport]]) tea.Cmd {
-	a.err, a.exportDir = nil, e.Payload.Value.Dir
+	a.err, a.deps.exportDir = nil, e.Payload.Value.Dir
 	return nil
 }
 
@@ -498,8 +364,8 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		cmd = tea.Batch(cmd, a.router.Dispatch(a.focusSignal()))
 	}
 	// The window or the banner may have changed size, on any message.
-	if size := (message.ContentSize{Width: a.width, Rows: a.screenRows()}); size != a.sized {
-		a.sized = size
+	if size := (message.ContentSize{Width: a.width, Rows: a.screenRows()}); size != a.deps.sized {
+		a.deps.sized = size
 		cmd = tea.Batch(cmd, a.router.Dispatch(message.New(message.Source{Process: a.origin}, message.Subject{}, message.OpNone, time.Now().UTC(),
 			message.Signal[message.ContentSize]{Value: size})))
 	}

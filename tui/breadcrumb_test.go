@@ -8,7 +8,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
@@ -81,16 +80,7 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			app := New(
-				nil,
-				nil,
-				nil,
-				nil,
-				nil,
-				nil,
-				nil,
-				documents.NewStore(t.TempDir()),
-			)
+			app := newAppWith(t, Screens)
 			app.width = 120
 			app.tab = tt.tab
 			for _, kind := range tt.pushed {
@@ -217,16 +207,7 @@ func TestApp_Header_LongBreadcrumbLosesItsMiddleFirst(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			app := New(
-				nil,
-				nil,
-				nil,
-				nil,
-				nil,
-				nil,
-				nil,
-				documents.NewStore(t.TempDir()),
-			)
+			app := newAppWith(t, Screens)
 			app.width = tt.width
 			pushApplicationDetail(t, app, view)
 			d := newPostingDetailModel(nil, nil, nil, nil, message.PostingDetail{Posting: message.Posting{ID: 9}}, message.ContentSize{})
@@ -249,7 +230,7 @@ func TestApp_Header_LongBreadcrumbLosesItsMiddleFirst(t *testing.T) {
 // there would.
 func pushApplicationDetail(t *testing.T, app *App, a posting.ActiveApplication) {
 	t.Helper()
-	d := newApplicationDetailModel(nil, nil, nil, nil, app.documents, applicationDetailOf(a), 0)
+	d := newApplicationDetailModel(nil, nil, nil, nil, app.deps.documents, applicationDetailOf(a), 0)
 	if err := app.stack.push(message.ScreenApplicationDetail, d); err != nil {
 		t.Fatalf("push: %v", err)
 	}

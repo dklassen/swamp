@@ -7,7 +7,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/tui/message"
@@ -73,7 +72,7 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			app := New(nil, nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
+			app := newAppWith(t, Screens)
 			app, _ = sendKey(app, tea.WindowSizeMsg{Width: 100, Height: 30})
 			tt.open(app)
 
