@@ -81,7 +81,7 @@ func (r *changeReader) changed(ctx context.Context, rows []change.Event) ([]tea.
 // whose entity isn't found is left out, since its delete is a later row.
 // deleted, nil for a table with no soft delete, makes an update to a row
 // now soft deleted a delete, Before the row as it's left, so it reads as
-// the TUI's own delete does.
+// the TUI's own delete does, and leaves out its insert, as gone.
 func logged[D any, S message.Snapshot](read func(context.Context, []int64) ([]D, error), key func(D) int64, deleted func(D) bool, snapshot func(D) S, subject func(change.Event, S) message.Subject) loggedTable {
 	return func(ctx context.Context, ids []int64) (func(change.Event, message.Op) tea.Msg, error) {
 		values, err := read(ctx, ids)
@@ -100,7 +100,10 @@ func logged[D any, S message.Snapshot](read func(context.Context, []int64) ([]D,
 				if !ok {
 					return nil
 				}
-				if op == message.OpUpdated && deleted != nil && deleted(d) {
+				if deleted != nil && deleted(d) {
+					if op == message.OpCreated {
+						return nil
+					}
 					e := message.Logged(row.ID, src, subject(row, snapshot(d)), message.OpDeleted, row.At, after)
 					e.Payload.Before = snapshot(d)
 					return e

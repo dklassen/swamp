@@ -354,3 +354,41 @@ func TestChangeReader_ACompanyDeletedElsewhere_IsADelete(t *testing.T) {
 		t.Errorf("company events' ops (-want +got):\n%s", diff)
 	}
 }
+
+// A company created and deleted elsewhere since the last read is only its
+// delete: the create, read as it is now, would show a deleted company.
+func TestChangeReader_ACompanyCreatedThenDeletedElsewhere_IsOnlyADelete(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	since, err := s.Changes.Latest(ctx)
+	if err != nil {
+		t.Fatalf("Latest: %v", err)
+	}
+	agent := service.NewCompanyService(testutil.OpenStore(t, s.Path, mcp.Process))
+	acme, err := agent.Add(ctx, "Acme", jobboard.Ashby, "acme")
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := agent.Delete(ctx, acme.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	rows, err := s.Changes.After(ctx, since)
+	if err != nil {
+		t.Fatalf("After: %v", err)
+	}
+
+	got, err := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, "tui:1").changed(ctx, rows)
+	if err != nil {
+		t.Fatalf("changed: %v", err)
+	}
+	var ops []message.Op
+	for _, e := range got {
+		if c, ok := e.(message.Event[message.Changed[message.Company]]); ok {
+			ops = append(ops, c.Meta.Op)
+		}
+	}
+	if diff := cmp.Diff([]message.Op{message.OpDeleted}, ops); diff != "" {
+		t.Errorf("company events' ops (-want +got):\n%s", diff)
+	}
+}
