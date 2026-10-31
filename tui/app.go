@@ -242,17 +242,6 @@ func (a *App) navCompany(e message.Event[message.Nav[message.Company]]) tea.Cmd 
 	return a.unknownNav(e)
 }
 
-func (a *App) navCompanyRow(e message.Event[message.Nav[message.CompanyRow]]) tea.Cmd {
-	if !a.onTop(e.Meta) {
-		return nil
-	}
-	row := e.Payload.Value
-	if e.Payload.Op == message.NavPush && e.Payload.Screen == message.ScreenCompanyDelete {
-		return a.push(e.Payload.Screen, newCompanyDeleteModel(a.companyService, companyOf(row.Company), row.OpenPostings, a.sized.Width))
-	}
-	return a.unknownNav(e)
-}
-
 func (a *App) navFilterSelection(e message.Event[message.Nav[message.FilterSelection]]) tea.Cmd {
 	if !a.onTop(e.Meta) {
 		return nil
@@ -440,7 +429,6 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.notified),
 		model.Always(a.navNone),
 		model.Always(a.navCompany),
-		model.Always(a.navCompanyRow),
 		model.Always(a.navFilterSelection),
 		model.Always(a.navPostingDetail),
 		model.Always(a.navApplication),
@@ -550,7 +538,7 @@ func (a *App) View() tea.View {
 	path := a.path()
 	top := path[len(path)-1]
 	body := a.screenOf(top).View().Content
-	if top == message.ScreenCompanyDelete || top == message.ScreenApplicationDelete {
+	if top == message.ScreenApplicationDelete {
 		body = overlay(a.screenOf(path[len(path)-2]).View().Content, body, a.width)
 	}
 	v := tea.NewView(a.header() + body + a.banner())
@@ -563,7 +551,7 @@ func (a *App) View() tea.View {
 func (a *App) beneath() []message.Screen {
 	path := a.path()
 	switch path[len(path)-1] {
-	case message.ScreenCompanyDelete, message.ScreenApplicationDelete:
+	case message.ScreenApplicationDelete:
 		return path[:len(path)-1]
 	}
 	return path

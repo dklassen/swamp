@@ -358,8 +358,8 @@ func TestApp_PressD_AsksBeforeDeletingACompany(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, runeKey('d'))
 
-	if app.onScreen() != message.ScreenCompanyDelete {
-		t.Errorf("screen after d = %v, want the delete confirmation", app.onScreen())
+	if app.onScreen() != message.ScreenCompanyList {
+		t.Errorf("screen after d = %v, want the company list, under its confirmation", app.onScreen())
 	}
 	view := viewText(app)
 	if !strings.Contains(view, "Delete Acme") || !strings.Contains(view, "y: delete") {
@@ -377,28 +377,6 @@ func TestApp_PressD_AsksBeforeDeletingACompany(t *testing.T) {
 	}
 }
 
-// A result for a confirmation the user closed must not reach the one they
-// opened next, so each opening is numbered anew.
-func TestApp_CompanyDeleteConfirmation_ReopeningGetsANewInstance(t *testing.T) {
-	t.Parallel()
-	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
-	app = sendKeyAndApply(t, app, runeKey('d'))
-	first := pushed[*companyDeleteModel](t, app).Instance()
-	app = sendKeyAndApply(t, app, runeKey('n'))
-
-	app = sendKeyAndApply(t, app, runeKey('d'))
-
-	if app.onScreen() != message.ScreenCompanyDelete {
-		t.Fatalf("screen after the second d = %v, want the delete confirmation", app.onScreen())
-	}
-	if second := pushed[*companyDeleteModel](t, app).Instance(); second == first || first == 0 || second == 0 {
-		t.Errorf("instances of the two openings = %d and %d, want two different nonzero numbers", first, second)
-	}
-}
-
 // Every model App registers has its own number, so an event's Source
 // names exactly one of them.
 func TestApp_RegisteredModels_HaveDistinctInstances(t *testing.T) {
@@ -408,12 +386,9 @@ func TestApp_RegisteredModels_HaveDistinctInstances(t *testing.T) {
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 
-	app = sendKeyAndApply(t, app, runeKey('d'))
-
 	instances := map[string]message.ScreenInstance{
-		"company list":        app.companyList.Instance(),
-		"syncing":             app.syncing.Instance(),
-		"delete confirmation": pushed[*companyDeleteModel](t, app).Instance(),
+		"company list": app.companyList.Instance(),
+		"syncing":      app.syncing.Instance(),
 	}
 	seen := map[message.ScreenInstance]string{}
 	for name, instance := range instances {
@@ -466,74 +441,6 @@ func TestApp_ContentSize_SentOnlyWhenItChanges(t *testing.T) {
 	}
 }
 
-// TestApp_CompanyDeleteConfirmation_AnythingButYKeepsIt: keeping is the
-// default, so enter can't delete by habit.
-func TestApp_CompanyDeleteConfirmation_AnythingButYKeepsIt(t *testing.T) {
-	t.Parallel()
-
-	for _, tt := range []struct {
-		name string
-		key  tea.KeyPressMsg
-	}{
-		{"n", runeKey('n')},
-		{"esc", tea.KeyPressMsg{Code: tea.KeyEsc}},
-		{"enter", tea.KeyPressMsg{Code: tea.KeyEnter}},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-
-			s := testutil.NewTestApp(t)
-			for _, name := range []string{"Acme", "Globex", "Initech"} {
-				mustCreateCompany(t, s, name, jobboard.Ashby, strings.ToLower(name))
-			}
-			app := newTestApp(t, s, newTestSyncer(s, nil))
-			app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
-			app, _ = sendKey(app, runeKey('j'))
-
-			app = sendKeyAndApply(t, app, runeKey('d'))
-			app = sendKeyAndApply(t, app, tt.key)
-
-			if app.onScreen() != message.ScreenCompanyList {
-				t.Errorf("screen after %s = %v, want the company list", tt.name, app.onScreen())
-			}
-			if app.companyList.cursor != 1 {
-				t.Errorf("cursor after %s = %d, want 1 (where it was)", tt.name, app.companyList.cursor)
-			}
-			companies, err := s.Companies.ListActive(context.Background())
-			if err != nil {
-				t.Fatalf("ListActiveCompanies: %v", err)
-			}
-			if len(companies) != 3 {
-				t.Errorf("%d companies after %s, want all 3 kept", len(companies), tt.name)
-			}
-		})
-	}
-}
-
-// TestApp_CompanyDeleteConfirmation_TwoQuickNs_CloseItOnce: the second n
-// reaches the confirmation before the first one's close does.
-func TestApp_CompanyDeleteConfirmation_TwoQuickNs_CloseItOnce(t *testing.T) {
-	t.Parallel()
-
-	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
-	app = sendKeyAndApply(t, app, runeKey('d'))
-
-	app, first := sendKey(app, runeKey('n'))
-	app, second := sendKey(app, runeKey('n'))
-	app = applyCmd(t, app, first)
-	app = applyCmd(t, app, second)
-
-	if app.onScreen() != message.ScreenCompanyList {
-		t.Errorf("screen after n, n = %v, want the company list", app.onScreen())
-	}
-	if app.err != nil {
-		t.Errorf("err after n, n = %v, want none", app.err)
-	}
-}
-
 // The second enter is pressed before the first one's posting list opens,
 // so it comes from a list that is no longer on top.
 func TestApp_NavFromAModelNoLongerOnTop_IsDropped(t *testing.T) {
@@ -573,28 +480,6 @@ func TestApp_PushingAScreenAlreadyOpen_Panics(t *testing.T) {
 	app.Update(again)
 }
 
-func TestApp_CompanyDeleteConfirmation_HoldsTheListsKeysUntilItCloses(t *testing.T) {
-	t.Parallel()
-
-	s := testutil.NewTestApp(t)
-	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	mustCreateCompany(t, s, "Globex", jobboard.Lever, "globex")
-	app := newTestApp(t, s, newTestSyncer(s, nil))
-	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
-	app = sendKeyAndApply(t, app, runeKey('d'))
-
-	app = sendKeyAndApply(t, app, runeKey('j'))
-	if app.companyList.cursor != 0 {
-		t.Errorf("list cursor after j on the confirmation = %d, want 0", app.companyList.cursor)
-	}
-
-	app = sendKeyAndApply(t, app, runeKey('n'))
-	app = sendKeyAndApply(t, app, runeKey('j'))
-	if app.companyList.cursor != 1 {
-		t.Errorf("list cursor after closing and j = %d, want 1", app.companyList.cursor)
-	}
-}
-
 func TestApp_CompanyDeleteFails_ShowsTheErrorOnTheList(t *testing.T) {
 	t.Parallel()
 
@@ -605,13 +490,16 @@ func TestApp_CompanyDeleteFails_ShowsTheErrorOnTheList(t *testing.T) {
 	app = sendKeyAndApply(t, app, runeKey('d'))
 
 	failure := errors.New("disk full")
-	from := message.Source{Instance: pushed[*companyDeleteModel](t, app).Instance()}
+	from := message.Source{Instance: app.companyList.confirm.instance}
 	app = applyCmd(t, app, func() tea.Msg {
 		return message.New(from, message.Subject{Type: message.TypeCompany, ID: acme.ID}, message.OpDeleted, time.Now().UTC(), model.ErrorOf(failure))
 	})
 
 	if app.onScreen() != message.ScreenCompanyList {
 		t.Errorf("screen after a failed delete = %v, want the company list", app.onScreen())
+	}
+	if app.companyList.confirm != nil {
+		t.Error("the confirmation is still open after its delete failed, with its y spent")
 	}
 	if !strings.Contains(app.banner(), failure.Error()) {
 		t.Errorf("banner after a failed delete = %q, want it to show %q", app.banner(), failure)

@@ -21,22 +21,3 @@ func companySnapshot(c company.Company) message.Company {
 	}
 	return s
 }
-
-// companyOf is the company a snapshot is of, for screens that still hold
-// company.Company.
-func companyOf(s message.Company) company.Company {
-	c := company.Company{
-		ID:            s.ID,
-		Name:          s.Name,
-		Source:        s.Source,
-		SourceRef:     s.SourceRef,
-		Description:   s.Description,
-		LastFetchedAt: s.LastFetchedAt,
-		CreatedAt:     s.CreatedAt,
-		UpdatedAt:     s.UpdatedAt,
-	}
-	if !s.DeletedAt.IsZero() {
-		c.DeletedAt = &s.DeletedAt
-	}
-	return c
-}

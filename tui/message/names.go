@@ -44,7 +44,6 @@ const (
 	_ Type = iota
 	TypeCompany
 	TypeCompanyList
-	TypeCompanyRow
 	TypeSyncCompany
 	TypeSyncAll
 	TypeSyncReport
@@ -85,7 +84,6 @@ const (
 var typeNames = [...]string{
 	TypeCompany:            "company",
 	TypeCompanyList:        "company_list",
-	TypeCompanyRow:         "company_row",
 	TypeSyncCompany:        "sync_company",
 	TypeSyncAll:            "sync_all",
 	TypeSyncReport:         "sync_report",
@@ -200,7 +198,6 @@ const (
 	ScreenNone Screen = iota
 	ScreenCompanyForm
 	ScreenCompanyEdit
-	ScreenCompanyDelete
 	ScreenCompanyPostings
 	ScreenFilterSelect
 	ScreenPostingDetail
@@ -222,7 +219,6 @@ var screenNames = [...]string{
 	ScreenNone:                 "none",
 	ScreenCompanyForm:          "company_form",
 	ScreenCompanyEdit:          "company_edit",
-	ScreenCompanyDelete:        "company_delete",
 	ScreenCompanyPostings:      "company_postings",
 	ScreenFilterSelect:         "filter_select",
 	ScreenPostingDetail:        "posting_detail",

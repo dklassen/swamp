@@ -63,7 +63,7 @@ func TestScreenStack_Pop_StopsTheScreensRoutes(t *testing.T) {
 	if err := stack.push(message.ScreenCompanyEdit, under); err != nil {
 		t.Fatalf("push: %v", err)
 	}
-	if err := stack.push(message.ScreenCompanyDelete, over); err != nil {
+	if err := stack.push(message.ScreenFilterSelect, over); err != nil {
 		t.Fatalf("push: %v", err)
 	}
 

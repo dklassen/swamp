@@ -215,8 +215,6 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "error", check: roundTrip(message.New(src, subject, message.OpUpdated, at, message.Error{Code: message.ErrSyncInProgress, Text: "a sync is already running"}))},
 		{name: "nav", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Nav[message.Company]{Op: message.NavReplace, Screen: message.ScreenCompanyEdit,
 			Value: message.Company{ID: 3, Name: "Acme", CreatedAt: at, UpdatedAt: at}}))},
-		{name: "company row nav", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Nav[message.CompanyRow]{Op: message.NavPush, Screen: message.ScreenCompanyDelete,
-			Value: message.CompanyRow{Company: message.Company{ID: 3, Name: "Acme", CreatedAt: at, UpdatedAt: at}, OpenPostings: 2}}))},
 		{name: "pop", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Nav[message.None]{Op: message.NavPop}))},
 		{name: "notify", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Notify{Status: "saved"}))},
 		{name: "signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.ContentSize]{Value: r}))},
