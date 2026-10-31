@@ -20,7 +20,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/cellbuf"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
@@ -108,16 +107,6 @@ func renderFilterOption(label string, checked, isCursor bool) string {
 	return "  " + line + "\n"
 }
 
-// renderCursorLine renders one line of a plain (non-checkbox) cursor
-// list, highlighted when isCursor -- the shape applicationStatusModel's
-// and documentReviewSelectModel's option lists both use.
-func renderCursorLine(line string, isCursor bool) string {
-	if isCursor {
-		return model.CursorStyle.Render("> "+line) + "\n"
-	}
-	return "  " + line + "\n"
-}
-
 func New(
 	companies *service.CompanyService,
 	postings *service.PostingService,
@@ -178,21 +167,6 @@ func (a *App) focusSignal() tea.Msg {
 // tabs are the persistent screens, in the order tab goes through them.
 var tabs = []message.Screen{message.ScreenActiveApplications, message.ScreenCompanyList, message.ScreenAllPostings}
 
-func isTab(kind message.Screen) bool { return slices.Contains(tabs, kind) }
-
-// tabScreen is the tab of kind.
-func (a *App) tabScreen(kind message.Screen) stackScreen {
-	switch kind {
-	case message.ScreenActiveApplications:
-		return a.activeApplicationList
-	case message.ScreenCompanyList:
-		return a.companyList
-	case message.ScreenAllPostings:
-		return a.allPostings
-	}
-	panic(fmt.Sprintf("tui: %v isn't a tab", kind))
-}
-
 // path is the tab up, then each screen pushed over it: the way esc goes
 // back, reversed.
 func (a *App) path() []message.Screen {
@@ -207,8 +181,13 @@ func (a *App) onScreen() message.Screen {
 
 // screenOf is the open screen of kind.
 func (a *App) screenOf(kind message.Screen) stackScreen {
-	if isTab(kind) {
-		return a.tabScreen(kind)
+	switch kind {
+	case message.ScreenActiveApplications:
+		return a.activeApplicationList
+	case message.ScreenCompanyList:
+		return a.companyList
+	case message.ScreenAllPostings:
+		return a.allPostings
 	}
 	return a.stack.open(kind)
 }
@@ -409,26 +388,8 @@ func (a *App) WithStatus(status string) *App {
 	return a
 }
 
-// documentStatusLine renders a single "<label>: found (<path>)" or
-// "<label>: not found (<path>)" line for the documents section, followed
-// by that document's latest review outcome (see reviewBadge) and, when
-// the review left notes, an indented "Notes:" line -- the reviewer's
-// record of what specifically to fix before the next cycle (see
-// #83).
-func documentStatusLine(label string, exists bool, path string, review document.Review, hasReview bool) string {
-	status := "not found"
-	if exists {
-		status = "found"
-	}
-	line := model.FieldLabel.Render(label+":") + " " + status + " (" + path + ") " + reviewBadge(review, hasReview) + "\n"
-	if hasReview && review.Notes != "" {
-		line += "  " + model.DimStyle.Render("Notes: "+review.Notes) + "\n"
-	}
-	return line
-}
-
 // outcomeDisplay is how each review outcome looks: its style, shared by
-// reviewBadge and reviewGlyph, and its glyph. An outcome missing here
+// reviewBadge and reviewGlyphSummary, and its glyph. An outcome missing here
 // renders dim, as "[<outcome>]" and "?"; a test checks every
 // document.Outcomes() has an entry.
 var outcomeDisplay = map[document.Outcome]struct {
@@ -458,102 +419,25 @@ func reviewBadge(review document.Review, hasReview bool) string {
 // application's latest cover-letter/resume review outcomes, for list
 // rows (e.g. the active-applications table) that don't have room for
 // reviewBadge's full "[FLAGGED]"/notes rendering (#83).
-// A document with no entry in reviews (no review recorded yet)
-// renders as a dim "-".
+// Each document is abbreviated to its label's initials ("CL", "R"), then
+// its outcome's glyph: a dim "-" with no review recorded yet.
 func reviewGlyphSummary(reviews map[document.Type]document.Review) string {
 	entries := make([]string, 0, len(document.Types()))
 	for _, documentType := range document.Types() {
-		review, ok := reviews[documentType]
-		entries = append(entries, documentAbbreviation(documentType)+":"+reviewGlyph(review, ok))
+		var initials []rune
+		for _, word := range strings.Fields(documentType.Label()) {
+			initials = append(initials, unicode.ToUpper([]rune(word)[0]))
+		}
+		glyph := model.DimStyle.Render("-")
+		if review, ok := reviews[documentType]; ok {
+			glyph = model.DimStyle.Render("?")
+			if display, ok := outcomeDisplay[review.Outcome]; ok {
+				glyph = display.style.Render(display.glyph)
+			}
+		}
+		entries = append(entries, string(initials)+":"+glyph)
 	}
 	return strings.Join(entries, " ")
-}
-
-// documentAbbreviation is the initials of documentType's label, for the
-// review column: "CL" for cover letter, "R" for resume.
-func documentAbbreviation(documentType document.Type) string {
-	var initials []rune
-	for _, word := range strings.Fields(documentType.Label()) {
-		initials = append(initials, unicode.ToUpper([]rune(word)[0]))
-	}
-	return string(initials)
-}
-
-// reviewGlyph is reviewBadge's one-character form, for list rows: dim "-"
-// with no review, otherwise the outcome's glyph from outcomeDisplay.
-func reviewGlyph(review document.Review, hasReview bool) string {
-	if !hasReview {
-		return model.DimStyle.Render("-")
-	}
-	display, ok := outcomeDisplay[review.Outcome]
-	if !ok {
-		return model.DimStyle.Render("?")
-	}
-	return display.style.Render(display.glyph)
-}
-
-// postingDetailContent renders a posting's fields, application state, and
-// description as the scrollable body of the detail view (title is rendered
-// separately, as a fixed header outside the viewport). application/
-// hasApplication are passed in rather than fetched here so this stays a
-// pure function of already-loaded state.
-//
-// docs resolves the application's document paths and their presence via
-// os.Stat -- done inline here rather than through a separate
-// tea.Cmd/tea.Msg round trip like the rest of this file's store-backed
-// state, since checking whether two local files exist is cheap/local
-// enough that a second async fetch just to avoid it here would be
-// over-applying that convention. When hasApplication
-// is false, no documents section is rendered at all -- "no application
-// -> show nothing".
-//
-// latestReviews is, like application, read by posting detail and passed
-// in rather than queried here -- a DB read, unlike docs.Status's local
-// os.Stat, follows the same tea.Cmd/tea.Msg convention as the rest of
-// this file's store-backed state (#83). A document with no entry in the
-// map renders as "not reviewed".
-func postingDetailContent(p posting.Posting, application application.Application, hasApplication bool, docs *documents.Store, latestReviews map[document.Type]document.Review, width int) string {
-	var b strings.Builder
-	b.WriteString(sectionHeading("Posting", width) + "\n")
-	fields := []struct{ label, value string }{
-		{"Department", p.Department},
-		{"Team", p.Team},
-		{"Location", p.Location},
-		{"Employment type", p.EmploymentType},
-		{"Workplace type", p.WorkplaceType},
-		{"Status", p.ListingStatus.String()},
-		{"Job URL", p.JobURL},
-		{"Application URL", p.ApplicationURL},
-	}
-	for _, f := range fields {
-		if f.value == "" {
-			continue
-		}
-		b.WriteString(detailField(f.label, f.value, width))
-	}
-	b.WriteString("\n" + sectionHeading("Application", width) + "\n")
-	if hasApplication {
-		b.WriteString(detailField("Status", applicationStatusLabel(application.Status), width))
-		if application.Notes != "" {
-			b.WriteString(detailField("Notes", application.Notes, width))
-		}
-		status := docs.Status(application.ID)
-		b.WriteString("\n")
-		for _, documentType := range document.Types() {
-			doc, err := status.Doc(documentType)
-			if err != nil {
-				continue
-			}
-			review, hasReview := latestReviews[documentType]
-			b.WriteString(detailDocumentField(documentTitle(documentType), doc.Exists, doc.Path, review, hasReview, width))
-		}
-	} else {
-		b.WriteString(model.HelpStyle.Render("No application started -- press 'a' to start one.") + "\n")
-	}
-	if desc := p.DescriptionText; desc != "" {
-		b.WriteString("\n" + sectionHeading("Description", width) + "\n" + desc + "\n")
-	}
-	return b.String()
 }
 
 // indexOfPosting returns id's index in postings, or -1 if not present.
@@ -1054,90 +938,4 @@ func (a *App) beneath() []message.Screen {
 		return path[:len(path)-1]
 	}
 	return path
-}
-
-// sectionHeading renders a posting-detail section heading: name, then a
-// dim horizontal rule filling the rest of width, so each section reads as
-// its own block. width <= 0 (before the first tea.WindowSizeMsg) gets a
-// short fixed rule rather than none.
-func sectionHeading(name string, width int) string {
-	ruleWidth := 3
-	if rest := width - lipgloss.Width(name) - 1; rest > ruleWidth {
-		ruleWidth = rest
-	}
-	return model.SectionStyle.Render(name) + " " + model.DimStyle.Render(strings.Repeat("─", ruleWidth))
-}
-
-// detailLabelWidth is the width of posting detail's label column, sized
-// to its longest label ("Application URL") plus a gap, so every value in
-// the Posting and Application sections starts in the same column.
-const detailLabelWidth = len("Application URL") + 2
-
-// detailField renders one posting-detail row: label in a fixed-width
-// column, then value word-wrapped to the rest of width, with continuation
-// lines indented to the value column instead of falling back under the
-// label. width <= 0 (before the first tea.WindowSizeMsg) leaves the value
-// unwrapped.
-func detailField(label, value string, width int) string {
-	return detailRow(label, wrapDetailValue(value, width))
-}
-
-// detailValueWidth is the width left for a value after the label column,
-// or 0 (unconstrained) when width is unknown or too narrow to fit one.
-func detailValueWidth(width int) int {
-	return max(width-detailLabelWidth, 0)
-}
-
-// wrapDetailValue word-wraps value to the value column's width, as lines.
-func wrapDetailValue(value string, width int) []string {
-	if valueWidth := detailValueWidth(width); valueWidth > 0 {
-		value = cellbuf.Wrap(value, valueWidth, "")
-	}
-	return strings.Split(value, "\n")
-}
-
-// detailRow lays out a label and its already-wrapped value lines: the
-// label padded to detailLabelWidth, then the value, with continuation
-// lines indented to the value column.
-func detailRow(label string, lines []string) string {
-	indent := strings.Repeat(" ", detailLabelWidth)
-	for i := 1; i < len(lines); i++ {
-		lines[i] = indent + lines[i]
-	}
-	gap := strings.Repeat(" ", detailLabelWidth-lipgloss.Width(label))
-	return model.FieldLabel.Render(label) + gap + strings.Join(lines, "\n") + "\n"
-}
-
-// detailDocumentField is detailField for a drafted document: its presence
-// and path, the latest review's badge, and the review's notes on their
-// own line under the value column -- the aligned counterpart of
-// documentStatusLine, which application detail still uses.
-func detailDocumentField(label string, exists bool, path string, review document.Review, hasReview bool, width int) string {
-	status := "not found"
-	if exists {
-		status = "found"
-	}
-	// The badge is placed after wrapping rather than wrapped with the path:
-	// "[not reviewed]" contains a space, and word wrapping could split it.
-	lines := wrapDetailValue(status+" ("+path+")", width)
-	badge := reviewBadge(review, hasReview)
-	last := len(lines) - 1
-	var row string
-	switch valueWidth := detailValueWidth(width); {
-	case width > 0 && valueWidth < lipgloss.Width(badge):
-		// The value column is narrower than the badge (or there's no room
-		// for one at all), so indenting the badge to it would overrun the
-		// width and get it wrapped anyway. Give it a line of its own from
-		// the left edge instead: out of alignment, but in one piece.
-		row = detailRow(label, lines) + badge + "\n"
-	case valueWidth > 0 && lipgloss.Width(lines[last])+1+lipgloss.Width(badge) > valueWidth:
-		row = detailRow(label, append(lines, badge))
-	default:
-		lines[last] += " " + badge
-		row = detailRow(label, lines)
-	}
-	if hasReview && review.Notes != "" {
-		row += detailField("", model.DimStyle.Render("Notes: "+review.Notes), width)
-	}
-	return row
 }

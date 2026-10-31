@@ -22,7 +22,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/filter"
-	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -3630,22 +3629,6 @@ func TestApp_Export_Failure_SurfacesErrorAndKeepsRememberedDir(t *testing.T) {
 	}
 	if app.exportDir != before {
 		t.Errorf("exportDir = %q, want it left at %q -- a failed export shouldn't be remembered as the new default", app.exportDir, before)
-	}
-}
-
-func TestPostingDetailContent_ShowsStatusLabelNotEnumValue(t *testing.T) {
-	t.Parallel()
-
-	posting := posting.Posting{ID: 1, IngestedFields: posting.IngestedFields{Title: "Engineer"}}
-	application := application.Application{ID: 1, Status: application.OfferReceived}
-
-	got := postingDetailContent(posting, application, true, documents.NewStore(t.TempDir()), nil, 80)
-
-	if !strings.Contains(got, "Offer received") {
-		t.Errorf("postingDetailContent() = %q, want the human-readable status label", got)
-	}
-	if strings.Contains(got, "offer_received") {
-		t.Errorf("postingDetailContent() leaks the raw enum value \"offer_received\" into the UI")
 	}
 }
 

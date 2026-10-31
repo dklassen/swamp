@@ -492,23 +492,28 @@ func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 	}
 }
 
-// The home screen's review column has an entry for every document type
-// in documents' table (RFC 0004), abbreviated from its label.
-func TestReviewGlyphSummary_HasEveryDocumentType(t *testing.T) {
-	t.Parallel()
-	got := reviewGlyphSummary(nil)
-	for _, documentType := range document.Types() {
-		if want := documentAbbreviation(documentType) + ":"; !strings.Contains(got, want) {
-			t.Errorf("reviewGlyphSummary(nil) = %q, want an entry %q for the %s", got, want, documentType.Label())
-		}
+// summaryGlyphs is the glyph of each document type's entry in the review
+// column, in document.Types() order.
+func summaryGlyphs(t *testing.T, reviews map[document.Type]document.Review) []string {
+	t.Helper()
+	entries := strings.Fields(ansi.Strip(reviewGlyphSummary(reviews)))
+	if len(entries) != len(document.Types()) {
+		t.Fatalf("review column %q has %d entries, want one for each of the %d document types", entries, len(entries), len(document.Types()))
 	}
+	glyphs := make([]string, len(entries))
+	for i, entry := range entries {
+		_, glyphs[i], _ = strings.Cut(entry, ":")
+	}
+	return glyphs
 }
 
-func TestReviewBadgeAndGlyph_Text(t *testing.T) {
+// A review's outcome shows as a badge in detail views and a glyph in the
+// review column, on its own document's entry only.
+func TestReviewDisplay(t *testing.T) {
 	t.Parallel()
 
 	unknown := document.Outcome(99)
-	for _, tc := range []struct {
+	tests := []struct {
 		name      string
 		review    document.Review
 		hasReview bool
@@ -519,14 +524,26 @@ func TestReviewBadgeAndGlyph_Text(t *testing.T) {
 		{"passed", document.Review{Outcome: document.Passed}, true, "[PASSED]", "✓"},
 		{"flagged", document.Review{Outcome: document.Flagged}, true, "[FLAGGED]", "✗"},
 		{"unknown outcome", document.Review{Outcome: unknown}, true, "[" + unknown.String() + "]", "?"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if got := ansi.Strip(reviewBadge(tc.review, tc.hasReview)); got != tc.badge {
-				t.Errorf("reviewBadge() = %q, want %q", got, tc.badge)
+			if got := ansi.Strip(reviewBadge(tt.review, tt.hasReview)); got != tt.badge {
+				t.Errorf("badge = %q, want %q", got, tt.badge)
 			}
-			if got := ansi.Strip(reviewGlyph(tc.review, tc.hasReview)); got != tc.glyph {
-				t.Errorf("reviewGlyph() = %q, want %q", got, tc.glyph)
+			for i, reviewed := range document.Types() {
+				reviews := map[document.Type]document.Review{}
+				if tt.hasReview {
+					reviews[reviewed] = tt.review
+				}
+				want := make([]string, len(document.Types()))
+				for j := range want {
+					want[j] = "-"
+				}
+				want[i] = tt.glyph
+				if diff := cmp.Diff(want, summaryGlyphs(t, reviews)); diff != "" {
+					t.Errorf("review column with the %s reviewed (-want +got):\n%s", reviewed.Label(), diff)
+				}
 			}
 		})
 	}
@@ -534,12 +551,13 @@ func TestReviewBadgeAndGlyph_Text(t *testing.T) {
 
 // A new document.Outcome needs a display of its own, or it renders as
 // the unknown-outcome fallback ("?").
-func TestReviewGlyph_EveryOutcomeHasItsOwn(t *testing.T) {
+func TestReviewDisplay_EveryOutcomeHasItsOwnGlyph(t *testing.T) {
 	t.Parallel()
 
+	reviewed := document.Types()[0]
 	seen := make(map[string]document.Outcome)
 	for _, outcome := range document.Outcomes() {
-		glyph := ansi.Strip(reviewGlyph(document.Review{Outcome: outcome}, true))
+		glyph := summaryGlyphs(t, map[document.Type]document.Review{reviewed: {Outcome: outcome}})[0]
 		if glyph == "?" {
 			t.Errorf("%s renders as the unknown-outcome glyph %q; give it a display", outcome, glyph)
 		}

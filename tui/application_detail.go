@@ -217,8 +217,16 @@ func (m *applicationDetailModel) View() tea.View {
 		if err != nil {
 			continue
 		}
+		presence := "not found"
+		if doc.Exists {
+			presence = "found"
+		}
 		review, hasReview := reviews[documentType]
-		b.WriteString(documentStatusLine(documentTitle(documentType), doc.Exists, doc.Path, review, hasReview))
+		b.WriteString(model.FieldLabel.Render(documentTitle(documentType)+":") + " " + presence + " (" + doc.Path + ") " + reviewBadge(review, hasReview) + "\n")
+		// The reviewer's record of what to fix before the next cycle.
+		if hasReview && review.Notes != "" {
+			b.WriteString("  " + model.DimStyle.Render("Notes: "+review.Notes) + "\n")
+		}
 	}
 
 	help := []string{"p: view posting"}

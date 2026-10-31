@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"strings"
 	"testing"
 
@@ -139,7 +140,7 @@ func TestApp_Screens_BreadcrumbReplacesTheTitle(t *testing.T) {
 		},
 	}
 	for _, sc := range append(sizedScreens(), unsizedScreens()...) {
-		if isTab(sc.screen) {
+		if slices.Contains(tabs, sc.screen) {
 			continue
 		}
 		t.Run(sc.name, func(t *testing.T) {
