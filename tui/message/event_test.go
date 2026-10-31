@@ -215,8 +215,6 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "error", check: roundTrip(message.New(src, subject, message.OpUpdated, at, message.Error{Code: message.ErrSyncInProgress, Text: "a sync is already running"}))},
 		{name: "nav", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Nav[message.Company]{Op: message.NavReplace, Screen: message.ScreenCompanyEdit,
 			Value: message.Company{ID: 3, Name: "Acme", CreatedAt: at, UpdatedAt: at}}))},
-		{name: "company row nav", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Nav[message.CompanyRow]{Op: message.NavPush, Screen: message.ScreenCompanyDelete,
-			Value: message.CompanyRow{Company: message.Company{ID: 3, Name: "Acme", CreatedAt: at, UpdatedAt: at}, OpenPostings: 2}}))},
 		{name: "pop", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Nav[message.None]{Op: message.NavPop}))},
 		{name: "notify", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Notify{Status: "saved"}))},
 		{name: "signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.ContentSize]{Value: r}))},
@@ -287,9 +285,6 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		}}))},
 		{name: "application detail nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.ApplicationDetail]{
 			Op: message.NavPush, Screen: message.ScreenApplicationDetail, Value: message.ApplicationDetail{Application: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted}, Posting: message.Posting{ID: 5, Title: "Engineer", ListingStatus: message.ListingOpen}, CompanyName: "Acme"},
-		}))},
-		{name: "application delete nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.ApplicationDetail]{
-			Op: message.NavPush, Screen: message.ScreenApplicationDelete, Value: message.ApplicationDetail{Application: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted}, Posting: message.Posting{ID: 5, Title: "Engineer", ListingStatus: message.ListingOpen}, CompanyName: "Acme"},
 		}))},
 		{name: "logged posting changed", check: roundTrip(message.Logged(12, message.Source{Process: "sync:9"}, message.Subject{Type: message.TypePosting, ID: 5}, message.OpUpdated, at,
 			message.Posting{ID: 5, CompanyID: 3, Title: "Engineer", ListingStatus: message.ListingClosed, ContentSHA256: "abc"}))},

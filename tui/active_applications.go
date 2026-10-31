@@ -65,6 +65,8 @@ type activeApplicationListModel struct {
 	// is what's been typed into it.
 	searching bool
 	query     string
+	// confirm is the delete being confirmed, or nil.
+	confirm *applicationDeleteModel
 
 	width    int
 	rows     int
@@ -89,6 +91,7 @@ func (m *activeApplicationListModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(m.applicationsRead, model.From(m.instance)),
 		model.Always(m.readFailed, model.From(m.instance)),
+		model.Always(m.deleteFailed),
 		model.Always(m.applicationChanged),
 		model.Always(m.reviewChanged),
 		model.Always(m.postingChanged),
@@ -163,9 +166,26 @@ func (m *activeApplicationListModel) readFailed(message.Event[message.Error]) te
 }
 
 // applicationChanged reads again, since a write can move an application
-// to or from a dead end, or delete it.
-func (m *activeApplicationListModel) applicationChanged(message.Event[message.Changed[message.Application]]) tea.Cmd {
-	return m.reload()
+// to or from a dead end, or delete it. A delete closes the confirmation of
+// it, whoever made it.
+func (m *activeApplicationListModel) applicationChanged(e message.Event[message.Changed[message.Application]]) tea.Cmd {
+	var cmd tea.Cmd
+	if m.confirm != nil && e.Meta.Op == message.OpDeleted && e.Meta.Subject.ID == m.confirm.detail.Application.ID {
+		cmd = m.confirm.deleted(e)
+		m.confirm = nil
+	}
+	return tea.Batch(cmd, m.reload())
+}
+
+// deleteFailed closes the confirmation whose delete failed: its y is
+// spent.
+func (m *activeApplicationListModel) deleteFailed(e message.Event[message.Error]) tea.Cmd {
+	if m.confirm == nil || e.Meta.Source.Instance != m.confirm.instance {
+		return nil
+	}
+	cmd := m.confirm.failed(e)
+	m.confirm = nil
+	return cmd
 }
 
 // reviewChanged reads again, since a row's next step and review glyphs
@@ -211,6 +231,13 @@ func (m *activeApplicationListModel) focusChanged(e message.Event[message.Signal
 }
 
 func (m *activeApplicationListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
+	if m.confirm != nil {
+		cmd, closed := m.confirm.keyPressed(msg)
+		if closed {
+			m.confirm = nil
+		}
+		return cmd
+	}
 	if m.searching {
 		return m.updateSearch(msg)
 	}
@@ -244,8 +271,7 @@ func (m *activeApplicationListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 		}
 	case "d":
 		if onRow {
-			a := visible[m.cursor]
-			return message.Push(m.src(), message.ScreenApplicationDelete, message.Subject{Type: message.TypeApplication, ID: a.ID}, applicationDetailOf(a))
+			m.confirm = newApplicationDeleteModel(m.applications, applicationDetailOf(visible[m.cursor]))
 		}
 	case "enter":
 		if onRow {
@@ -330,7 +356,11 @@ func (m *activeApplicationListModel) visible() []posting.ActiveApplication {
 
 // View renders the list in the last content size.
 func (m *activeApplicationListModel) View() tea.View {
-	return tea.NewView(m.render(time.Now()))
+	body := m.render(time.Now())
+	if m.confirm != nil {
+		body = overlay(body, m.confirm.View(m.width), m.width)
+	}
+	return tea.NewView(body)
 }
 
 // render draws the list, each row's Age counting up to now.

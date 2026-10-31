@@ -169,10 +169,6 @@ func TestCompanyListModel_KeysPushScreensWithWhatTheyShow(t *testing.T) {
 			return message.New(from, about, message.OpNone, time.Time{},
 				message.Nav[message.Company]{Op: message.NavPush, Screen: message.ScreenCompanyEdit, Value: companySnapshot(acme)})
 		}},
-		{name: "d", key: runeKey('d'), want: func(from message.Source) tea.Msg {
-			return message.New(from, about, message.OpNone, time.Time{},
-				message.Nav[message.CompanyRow]{Op: message.NavPush, Screen: message.ScreenCompanyDelete, Value: message.CompanyRow{Company: companySnapshot(acme), OpenPostings: 3}})
-		}},
 		{name: "a", key: runeKey('a'), want: func(from message.Source) tea.Msg {
 			return message.New(from, message.Subject{}, message.OpNone, time.Time{},
 				message.Nav[message.None]{Op: message.NavPush, Screen: message.ScreenCompanyForm})

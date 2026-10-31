@@ -59,8 +59,8 @@ func startDelete(t *testing.T, app *App) *App {
 	}
 	app, cmd = sendKey(app, runeKey('D'))
 	app = applyCmd(t, app, cmd)
-	if app.onScreen() != message.ScreenApplicationDelete {
-		t.Fatalf("screen after D = %v, want the delete confirmation", app.onScreen())
+	if app.onScreen() != message.ScreenApplicationDetail || app.applicationDetail().confirm == nil {
+		t.Fatalf("after D: screen %v, want application detail with its delete confirmation open", app.onScreen())
 	}
 	return app
 }
@@ -129,17 +129,20 @@ func TestDeleteFlow_FailureReturnsToDetailWithTheError(t *testing.T) {
 	t.Parallel()
 	app, target := deleteTestApp(t)
 	app = startDelete(t, app)
-	confirmation := pushed[*applicationDeleteModel](t, app)
+	confirmation := app.applicationDetail().confirm
 	app, _ = sendKey(app, runeKey('y'))
 
 	failure := errors.New("disk on fire")
-	app = sendKeyAndApply(t, app, message.New(message.Source{Instance: confirmation.Instance()}, message.Subject{Type: message.TypeApplication, ID: target.ID}, message.OpDeleted, time.Now().UTC(), model.ErrorOf(failure)))
+	app = sendKeyAndApply(t, app, message.New(confirmation.src(), message.Subject{Type: message.TypeApplication, ID: target.ID}, message.OpDeleted, time.Now().UTC(), model.ErrorOf(failure)))
 
 	if app.onScreen() != message.ScreenApplicationDetail {
 		t.Errorf("screen = %v, want back on application detail", app.onScreen())
 	}
 	if app.err == nil || app.err.Error() != failure.Error() {
 		t.Errorf("err = %v, want %v shown", app.err, failure)
+	}
+	if app.applicationDetail().confirm != nil {
+		t.Error("the confirmation is still open after its delete failed, with its y spent")
 	}
 }
 
@@ -200,8 +203,8 @@ func TestDeleteFlow_FromTheHomeList(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, runeKey('d'))
 
-	if app.onScreen() != message.ScreenApplicationDelete {
-		t.Fatalf("screen after d = %v, want the delete confirmation", app.onScreen())
+	if app.onScreen() != message.ScreenActiveApplications || app.activeApplicationList.confirm == nil {
+		t.Fatalf("after d: screen %v, want the home list with its delete confirmation open", app.onScreen())
 	}
 	view := ansi.Strip(viewText(app))
 	if after := strings.SplitN(view, "\n", 3)[:2]; !slices.Equal(after, before) {
@@ -219,164 +222,6 @@ func TestDeleteFlow_FromTheHomeList(t *testing.T) {
 	if _, err := storeOf(app).Applications.Get(context.Background(), target.ID); err != nil {
 		t.Errorf("application.GetByID after n: %v, want the application kept", err)
 	}
-}
-
-// testDeleteDetail is the application the unit tests confirm deleting.
-func testDeleteDetail() message.ApplicationDetail {
-	return message.ApplicationDetail{
-		Application: message.Application{ID: 1, PostingID: 5, Status: message.ApplicationStarted},
-		Posting:     message.Posting{ID: 5, Title: "Engineer", ListingStatus: message.ListingOpen},
-		CompanyName: "Acme",
-	}
-}
-
-// Keeping is the default, so enter can't delete by habit.
-func TestApplicationDeleteModel_KeepKeys_AskToClose(t *testing.T) {
-	t.Parallel()
-
-	for _, tt := range []struct {
-		name string
-		key  tea.KeyPressMsg
-	}{
-		{"n", runeKey('n')},
-		{"esc", tea.KeyPressMsg{Code: tea.KeyEsc}},
-		{"enter", tea.KeyPressMsg{Code: tea.KeyEnter}},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			m := newApplicationDeleteModel(nil, testDeleteDetail(), 80)
-
-			cmd := m.keyPressed(tt.key)
-			if cmd == nil {
-				t.Fatalf("keyPressed(%s) returned no command, want one asking to close", tt.name)
-			}
-			if got := cmd(); !pops(got, m.Instance()) {
-				t.Errorf("keyPressed(%s) sent %#v, want a pop of the confirmation", tt.name, got)
-			}
-		})
-	}
-}
-
-// The confirmation closes once its application is gone, whoever deleted
-// it, and when its own delete fails, saying which. A late result from an
-// earlier confirmation leaves this one up.
-func TestApplicationDeleteModel_ClosesWhenItsApplicationIsDeletedOrItsDeleteFails(t *testing.T) {
-	t.Parallel()
-
-	d := testDeleteDetail()
-	other := message.Source{Instance: message.NewScreenInstance()}
-	failed := func(src message.Source, err error) tea.Msg {
-		return message.New(src, message.Subject{Type: message.TypeApplication, ID: d.Application.ID}, message.OpDeleted, time.Now().UTC(), model.ErrorOf(err))
-	}
-	for _, tt := range []struct {
-		name       string
-		event      func(m *applicationDeleteModel) tea.Msg
-		wantClose  bool
-		wantStatus string
-	}{
-		{name: "its application, deleted by it", event: func(m *applicationDeleteModel) tea.Msg {
-			return message.Deleted(m.src(), d.Application.ID, time.Now().UTC(), d.Application)
-		}, wantClose: true, wantStatus: "Deleted the application for Engineer"},
-		{name: "its application, deleted elsewhere", event: func(*applicationDeleteModel) tea.Msg {
-			return message.Deleted(other, d.Application.ID, time.Now().UTC(), d.Application)
-		}, wantClose: true, wantStatus: "The application for Engineer was deleted elsewhere"},
-		{name: "its delete, finding it already gone", event: func(m *applicationDeleteModel) tea.Msg {
-			return failed(m.src(), store.ErrNotFound)
-		}, wantClose: true, wantStatus: "The application for Engineer was deleted elsewhere"},
-		{name: "its delete, failed", event: func(m *applicationDeleteModel) tea.Msg {
-			return failed(m.src(), errors.New("disk full"))
-		}, wantClose: true},
-		{name: "another application, deleted", event: func(*applicationDeleteModel) tea.Msg {
-			return message.Deleted(other, 2, time.Now().UTC(), message.Application{ID: 2, PostingID: 6})
-		}},
-		{name: "its application, updated", event: func(*applicationDeleteModel) tea.Msg {
-			after := d.Application
-			after.Status = message.ApplicationInterviewing
-			return message.Updated(other, d.Application.ID, time.Now().UTC(), d.Application, after)
-		}},
-		{name: "an earlier confirmation's delete, failed", event: func(*applicationDeleteModel) tea.Msg {
-			return failed(other, errors.New("disk full"))
-		}},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			m := newApplicationDeleteModel(nil, d, 80)
-			r := model.NewMsgRouter()
-			if err := r.Register(m); err != nil {
-				t.Fatalf("Register: %v", err)
-			}
-
-			got := runCmd(t, r.Dispatch(tt.event(m)))
-
-			if closed := popsIn(got, m.Instance()); closed != tt.wantClose {
-				t.Errorf("asked to close = %v, want %v (sent %#v)", closed, tt.wantClose, got)
-			}
-			if tt.wantStatus != "" && !notifiesIn(got, tt.wantStatus) {
-				t.Errorf("sent %#v, want the status %q", got, tt.wantStatus)
-			}
-		})
-	}
-}
-
-func TestApplicationDeleteModel_Y_SendsTheApplicationDeletedOnce(t *testing.T) {
-	t.Parallel()
-
-	s := testutil.NewTestApp(t)
-	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	target := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
-	d := testDeleteDetail()
-	d.Application = applicationSnapshot(target)
-	m := newApplicationDeleteModel(s.Applications, d, 80)
-
-	msg := m.keyPressed(runeKey('y'))()
-
-	got, ok := msg.(message.Event[message.Changed[message.Application]])
-	if !ok {
-		t.Fatalf("y sent %T, want message.Event[message.Changed[message.Application]]", msg)
-	}
-	assertEventFrom(t, got.Meta, m.src())
-	if got.Meta.Op != message.OpDeleted || got.Meta.Subject != (message.Subject{Type: message.TypeApplication, ID: target.ID}) {
-		t.Errorf("y sent %v about %+v, want a delete of application %d", got.Meta.Op, got.Meta.Subject, target.ID)
-	}
-	if again := m.keyPressed(runeKey('y')); again != nil {
-		t.Error("a second y sent another delete while the first is in flight")
-	}
-}
-
-// The confirmation takes keys only while the last focus signal named it.
-func TestApplicationDeleteModel_TakesKeysOnlyWhileFocused(t *testing.T) {
-	t.Parallel()
-
-	for _, tt := range []struct {
-		name      string
-		focused   func(m *applicationDeleteModel) message.ScreenInstance
-		wantClose bool
-	}{
-		{name: "the confirmation in focus", focused: func(m *applicationDeleteModel) message.ScreenInstance { return m.Instance() }, wantClose: true},
-		{name: "another screen in focus", focused: func(*applicationDeleteModel) message.ScreenInstance { return message.NewScreenInstance() }},
-		{name: "nothing in focus", focused: func(*applicationDeleteModel) message.ScreenInstance { return 0 }},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			m := newApplicationDeleteModel(nil, testDeleteDetail(), 80)
-			r := model.NewMsgRouter()
-			if err := r.Register(m); err != nil {
-				t.Fatalf("Register: %v", err)
-			}
-
-			r.Dispatch(focusOn(tt.focused(m)))
-			cmd := r.Dispatch(runeKey('n'))
-
-			if closed := cmd != nil && pops(cmd(), m.Instance()); closed != tt.wantClose {
-				t.Errorf("n asked to close = %v, want %v", closed, tt.wantClose)
-			}
-		})
-	}
-}
-
-func TestApplicationDeleteModel_Handlers_FailOnTheWrongMessage(t *testing.T) {
-	t.Parallel()
-	assertHandlersFailOnWrongMessage(t, newApplicationDeleteModel(nil, testDeleteDetail(), 80))
 }
 
 func TestDeleteFlow_ConfirmingFromTheHomeList_StaysThereWithoutTheRow(t *testing.T) {
@@ -398,5 +243,218 @@ func TestDeleteFlow_ConfirmingFromTheHomeList_StaysThereWithoutTheRow(t *testing
 	}
 	if want := "Deleted the application for Engineer"; app.status != want {
 		t.Errorf("status = %q, want %q", app.status, want)
+	}
+}
+
+// d opens the confirmation on the row at the cursor, over the list, which
+// stays in view behind it.
+func TestActiveApplicationListModel_D_OpensTheDeleteConfirmation(t *testing.T) {
+	t.Parallel()
+	m := homeWith(t, testActiveApplications())
+	pressHome(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
+
+	if got := pressHome(t, m, runeKey('d')); got != nil {
+		t.Errorf("d sent %#v, want nothing: the list opens the confirmation itself", got)
+	}
+
+	view := ansi.Strip(m.View().Content)
+	if !strings.Contains(view, "Delete the application for Designer?") || !strings.Contains(view, "y: delete") {
+		t.Errorf("no confirmation for the Designer application:\n%s", view)
+	}
+	if !strings.Contains(view, "enter: application detail") {
+		t.Errorf("the list isn't in view behind the confirmation:\n%s", view)
+	}
+}
+
+// confirmingOwner is a screen with its delete confirmation open on its
+// stored application, in focus and registered with r.
+type confirmingOwner struct {
+	r       *model.MsgRouter
+	confirm func() *applicationDeleteModel
+	view    func() string
+	// next is a key the screen acts on, and took whether it did, given
+	// what it sent.
+	next tea.KeyPressMsg
+	took func(sent []tea.Msg) bool
+}
+
+// deleteOwners are the screens that confirm deleting an application.
+var deleteOwners = []struct {
+	name string
+	open func(t *testing.T) confirmingOwner
+}{
+	{name: "home list", open: func(t *testing.T) confirmingOwner {
+		m, r := storedHome(t, true)
+		settle(t, r, runCmd(t, m.Init()))
+		runCmd(t, r.Dispatch(runeKey('d')))
+		return confirmingOwner{r: r, confirm: func() *applicationDeleteModel { return m.confirm },
+			view: func() string { return m.View().Content },
+			next: runeKey('/'), took: func([]tea.Msg) bool { return m.searching }}
+	}},
+	{name: "application detail", open: func(t *testing.T) confirmingOwner {
+		m, r, _ := applicationDetailWith(t)
+		settle(t, r, runCmd(t, m.Init()))
+		r.Dispatch(focusOn(m.Instance()))
+		runCmd(t, r.Dispatch(runeKey('D')))
+		return confirmingOwner{r: r, confirm: func() *applicationDeleteModel { return m.confirm },
+			view: func() string { return m.View().Content },
+			next: runeKey('b'), took: func(sent []tea.Msg) bool { return popsIn(sent, m.Instance()) }}
+	}},
+}
+
+// Keeping is the default, so enter can't delete by habit. The key closes
+// the confirmation and goes no further.
+func TestApplicationDeleteConfirmation_KeepKeysCloseIt(t *testing.T) {
+	t.Parallel()
+	for _, owner := range deleteOwners {
+		for _, key := range []tea.KeyPressMsg{runeKey('n'), {Code: tea.KeyEsc}, {Code: tea.KeyEnter}} {
+			t.Run(owner.name+"/"+key.String(), func(t *testing.T) {
+				t.Parallel()
+				o := owner.open(t)
+				if o.confirm() == nil {
+					t.Fatal("no confirmation open")
+				}
+
+				if got := runCmd(t, o.r.Dispatch(key)); got != nil {
+					t.Errorf("%s sent %#v, want nothing", key, got)
+				}
+
+				if o.confirm() != nil {
+					t.Errorf("the confirmation is still open after %s", key)
+				}
+			})
+		}
+	}
+}
+
+// The confirmation takes every key while it's open; the first one after
+// it closes is its owner's.
+func TestApplicationDeleteConfirmation_HoldsItsOwnersKeysUntilItCloses(t *testing.T) {
+	t.Parallel()
+	for _, owner := range deleteOwners {
+		t.Run(owner.name, func(t *testing.T) {
+			t.Parallel()
+			o := owner.open(t)
+
+			if sent := runCmd(t, o.r.Dispatch(o.next)); o.took(sent) {
+				t.Errorf("%s reached the screen with the confirmation open", o.next)
+			}
+
+			runCmd(t, o.r.Dispatch(runeKey('n')))
+			if sent := runCmd(t, o.r.Dispatch(o.next)); !o.took(sent) {
+				t.Errorf("%s after closing didn't reach the screen (sent %#v)", o.next, sent)
+			}
+		})
+	}
+}
+
+// The confirmation closes once its application is gone, whoever deleted
+// it, and when its own delete fails, saying which. A late failure from an
+// earlier confirmation leaves this one up.
+func TestApplicationDeleteConfirmation_ClosesWhenItsApplicationIsDeletedOrItsDeleteFails(t *testing.T) {
+	t.Parallel()
+
+	other := message.Source{Instance: message.NewScreenInstance()}
+	failed := func(src message.Source, id int64, err error) tea.Msg {
+		return message.New(src, message.Subject{Type: message.TypeApplication, ID: id}, message.OpDeleted, time.Now().UTC(), model.ErrorOf(err))
+	}
+	for _, owner := range deleteOwners {
+		for _, tt := range []struct {
+			name       string
+			event      func(c *applicationDeleteModel) tea.Msg
+			wantClose  bool
+			wantStatus string
+		}{
+			{name: "its application, deleted by it", event: func(c *applicationDeleteModel) tea.Msg {
+				return message.Deleted(c.src(), c.detail.Application.ID, time.Now().UTC(), c.detail.Application)
+			}, wantClose: true, wantStatus: "Deleted the application for Engineer"},
+			{name: "its application, deleted elsewhere", event: func(c *applicationDeleteModel) tea.Msg {
+				return message.Deleted(other, c.detail.Application.ID, time.Now().UTC(), c.detail.Application)
+			}, wantClose: true, wantStatus: "The application for Engineer was deleted elsewhere"},
+			{name: "its delete, finding it already gone", event: func(c *applicationDeleteModel) tea.Msg {
+				return failed(c.src(), c.detail.Application.ID, store.ErrNotFound)
+			}, wantClose: true, wantStatus: "The application for Engineer was deleted elsewhere"},
+			{name: "its delete, failed", event: func(c *applicationDeleteModel) tea.Msg {
+				return failed(c.src(), c.detail.Application.ID, errors.New("disk full"))
+			}, wantClose: true},
+			{name: "another application, deleted", event: func(c *applicationDeleteModel) tea.Msg {
+				id := c.detail.Application.ID + 1
+				return message.Deleted(other, id, time.Now().UTC(), message.Application{ID: id})
+			}},
+			{name: "its application, updated", event: func(c *applicationDeleteModel) tea.Msg {
+				after := c.detail.Application
+				after.Status = message.ApplicationInterviewing
+				return message.Updated(other, c.detail.Application.ID, time.Now().UTC(), c.detail.Application, after)
+			}},
+			{name: "an earlier confirmation's delete, failed", event: func(c *applicationDeleteModel) tea.Msg {
+				return failed(other, c.detail.Application.ID, errors.New("disk full"))
+			}},
+		} {
+			t.Run(owner.name+"/"+tt.name, func(t *testing.T) {
+				t.Parallel()
+				o := owner.open(t)
+
+				got := runCmd(t, o.r.Dispatch(tt.event(o.confirm())))
+
+				if closed := o.confirm() == nil; closed != tt.wantClose {
+					t.Errorf("closed = %v, want %v", closed, tt.wantClose)
+				}
+				if tt.wantStatus != "" && !notifiesIn(got, tt.wantStatus) {
+					t.Errorf("sent %#v, want the status %q", got, tt.wantStatus)
+				}
+			})
+		}
+	}
+}
+
+// y deletes the application once, from the confirmation, so its result is
+// told from an earlier one's; a second y while it's in flight sends
+// nothing.
+func TestApplicationDeleteConfirmation_Y_DeletesOnce(t *testing.T) {
+	t.Parallel()
+	for _, owner := range deleteOwners {
+		t.Run(owner.name, func(t *testing.T) {
+			t.Parallel()
+			o := owner.open(t)
+			c := o.confirm()
+
+			got := runCmd(t, o.r.Dispatch(runeKey('y')))
+
+			if len(got) != 1 {
+				t.Fatalf("y sent %#v, want the delete", got)
+			}
+			deleted, ok := got[0].(message.Event[message.Changed[message.Application]])
+			if !ok {
+				t.Fatalf("y sent %T, want message.Event[message.Changed[message.Application]]", got[0])
+			}
+			assertEventFrom(t, deleted.Meta, c.src())
+			if deleted.Meta.Op != message.OpDeleted || deleted.Meta.Subject != (message.Subject{Type: message.TypeApplication, ID: c.detail.Application.ID}) {
+				t.Errorf("y sent %v about %+v, want a delete of application %d", deleted.Meta.Op, deleted.Meta.Subject, c.detail.Application.ID)
+			}
+			if again := runCmd(t, o.r.Dispatch(runeKey('y'))); again != nil {
+				t.Errorf("a second y sent %#v, want nothing while the first is in flight", again)
+			}
+		})
+	}
+}
+
+// Nothing under the box takes a paste.
+func TestApplicationDeleteConfirmation_PasteChangesNothing(t *testing.T) {
+	t.Parallel()
+	for _, owner := range deleteOwners {
+		t.Run(owner.name, func(t *testing.T) {
+			t.Parallel()
+			o := owner.open(t)
+			before := o.view()
+
+			got := runCmd(t, o.r.Dispatch(tea.PasteMsg{Content: "acme"}))
+
+			if got != nil {
+				t.Errorf("a paste sent %#v, want nothing", got)
+			}
+			if after := o.view(); after != before {
+				t.Errorf("view changed on a paste with the confirmation open:\nbefore:\n%s\nafter:\n%s", before, after)
+			}
+		})
 	}
 }

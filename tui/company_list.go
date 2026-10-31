@@ -38,6 +38,8 @@ type companyListModel struct {
 	// openPostings is each company's open, unarchived posting count.
 	openPostings map[int64]int
 	reading      reading
+	// confirm is the delete being confirmed, or nil.
+	confirm *companyDeleteModel
 
 	width    int
 	height   int
@@ -60,6 +62,7 @@ func (m *companyListModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(m.companiesRead),
 		model.Always(m.readFailed, model.From(m.instance)),
+		model.Always(m.deleteFailed),
 		model.Always(m.postingChanged),
 		model.Always(m.synced),
 		model.Always(m.companyChanged),
@@ -143,6 +146,13 @@ func (m *companyListModel) postingChanged(message.Event[message.Changed[message.
 }
 
 func (m *companyListModel) companyChanged(e message.Event[message.Changed[message.Company]]) tea.Cmd {
+	var cmd tea.Cmd
+	if m.confirm != nil && e.Meta.Op == message.OpDeleted && e.Meta.Subject.ID == m.confirm.company.ID {
+		// Closed whoever deleted it, clearing an earlier failure from the
+		// banner.
+		m.confirm = nil
+		cmd = message.ReportStatus(message.Source{Instance: m.instance}, "")
+	}
 	switch e.Meta.Op {
 	case message.OpCreated:
 		// One it shows already: the log can replay a create its read saw.
@@ -160,11 +170,20 @@ func (m *companyListModel) companyChanged(e message.Event[message.Changed[messag
 			m.companies = append(m.companies[:i], m.companies[i+1:]...)
 		}
 		m.clampCursor(len(m.companies))
-		return nil
+		return cmd
 	}
 	// The order ListActiveCompanies' ORDER BY name returns: Go's < matches
 	// SQLite's default byte-wise collation.
 	sort.Slice(m.companies, func(i, j int) bool { return m.companies[i].Name < m.companies[j].Name })
+	return nil
+}
+
+// deleteFailed closes the confirmation whose delete failed: its y is
+// spent, and the banner shows the error.
+func (m *companyListModel) deleteFailed(e message.Event[message.Error]) tea.Cmd {
+	if m.confirm != nil && e.Meta.Source.Instance == m.confirm.instance {
+		m.confirm = nil
+	}
 	return nil
 }
 
@@ -181,6 +200,13 @@ func (m *companyListModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil 
 // keyPressed handles a key. Each command carries a copy of what it needs,
 // since it runs off the event loop.
 func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
+	if m.confirm != nil {
+		cmd, closed := m.confirm.keyPressed(key)
+		if closed {
+			m.confirm = nil
+		}
+		return cmd
+	}
 	if m.searching {
 		m.updateSearch(key)
 		return nil
@@ -207,7 +233,7 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 		return tea.Quit
 	case "d":
 		if onCompany {
-			return message.Push(src, message.ScreenCompanyDelete, about, message.CompanyRow{Company: current, OpenPostings: m.openPostings[current.ID]})
+			m.confirm = newCompanyDeleteModel(m.companyService, current, m.openPostings[current.ID])
 		}
 	case "r":
 		if onCompany {
@@ -366,6 +392,9 @@ func (m *companyListModel) View() tea.View {
 		b.WriteString(infoBox + "\n")
 	}
 	b.WriteString(help)
+	if m.confirm != nil {
+		return tea.NewView(overlay(b.String(), m.confirm.View(m.width), m.width))
+	}
 	return tea.NewView(b.String())
 }
 

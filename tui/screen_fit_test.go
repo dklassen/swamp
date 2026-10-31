@@ -180,7 +180,7 @@ func sizedScreens() []sizedScreen {
 			app, cmd = sendKey(app, runeKey('S'))
 			return applyCmd(t, app, cmd)
 		}},
-		{name: "application delete", screen: message.ScreenApplicationDelete, open: func(t *testing.T, app *App) *App {
+		{name: "application delete", screen: message.ScreenApplicationDetail, open: func(t *testing.T, app *App) *App {
 			app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 			app = applyCmd(t, app, cmd)
 			app, cmd = sendKey(app, runeKey('D'))

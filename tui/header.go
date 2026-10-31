@@ -15,8 +15,7 @@ import (
 // It ends in a newline, so screenRows can count its rows the way it
 // counts the banner's.
 func (a *App) header() string {
-	// A confirmation box keeps the header of the screen it's drawn over.
-	path := a.beneath()
+	path := a.path()
 	if len(path) == 1 {
 		return a.tabBar(path[0])
 	}
