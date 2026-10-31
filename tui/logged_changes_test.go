@@ -392,3 +392,43 @@ func TestChangeReader_ACompanyCreatedThenDeletedElsewhere_IsOnlyADelete(t *testi
 		t.Errorf("company events' ops (-want +got):\n%s", diff)
 	}
 }
+
+// A company restored by another process is a create, as the TUI's own is,
+// though the log records its restore as an update.
+func TestChangeReader_ACompanyRestoredElsewhere_IsACreate(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	acme, err := s.Companies.Add(ctx, "Acme", jobboard.Ashby, "acme")
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if _, err := s.Companies.Delete(ctx, acme.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	since, err := s.Changes.Latest(ctx)
+	if err != nil {
+		t.Fatalf("Latest: %v", err)
+	}
+	if _, err := service.NewCompanyService(testutil.OpenStore(t, s.Path, mcp.Process)).Add(ctx, "Acme", jobboard.Ashby, "acme"); err != nil {
+		t.Fatalf("Add again: %v", err)
+	}
+	rows, err := s.Changes.After(ctx, since)
+	if err != nil {
+		t.Fatalf("After: %v", err)
+	}
+
+	got, err := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0).changed(ctx, rows)
+	if err != nil {
+		t.Fatalf("changed: %v", err)
+	}
+	var ops []message.Op
+	for _, e := range got {
+		if c, ok := e.(message.Event[message.Changed[message.Company]]); ok {
+			ops = append(ops, c.Meta.Op)
+		}
+	}
+	if diff := cmp.Diff([]message.Op{message.OpCreated}, ops); diff != "" {
+		t.Errorf("company events' ops (-want +got):\n%s", diff)
+	}
+}

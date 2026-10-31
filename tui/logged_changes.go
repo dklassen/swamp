@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"slices"
 	"time"
@@ -35,7 +36,7 @@ type changeReader struct {
 
 // loggedTable reads a table's rows by ID, giving each row's event, or nil
 // for a row whose entity is gone since.
-type loggedTable func(ctx context.Context, ids []int64) (func(row change.Event, op message.Op) tea.Msg, error)
+type loggedTable func(ctx context.Context, ids []int64) (func(row change.Event, op message.Op) (tea.Msg, error), error)
 
 func newChangeReader(companies *service.CompanyService, postings *service.PostingService, applications *service.ApplicationService, documents *service.DocumentService, scores *service.ScoringService, log *service.ChangeLog, origin string, since int64) *changeReader {
 	return &changeReader{origin: origin, log: log, after: since, instance: message.NewScreenInstance(), tables: map[string]loggedTable{
@@ -127,7 +128,7 @@ func (r *changeReader) changed(ctx context.Context, rows []change.Event) ([]tea.
 		}
 		ids[row.Table] = append(ids[row.Table], row.RowID)
 	}
-	eventOf := make(map[string]func(change.Event, message.Op) tea.Msg, len(ids))
+	eventOf := make(map[string]func(change.Event, message.Op) (tea.Msg, error), len(ids))
 	for table, tableIDs := range ids {
 		read, err := r.tables[table](ctx, tableIDs)
 		if err != nil {
@@ -142,7 +143,11 @@ func (r *changeReader) changed(ctx context.Context, rows []change.Event) ([]tea.
 		if err != nil {
 			return nil, err
 		}
-		if e := eventOf[row.Table](row, op); e != nil {
+		e, err := eventOf[row.Table](row, op)
+		if err != nil {
+			return nil, err
+		}
+		if e != nil {
 			events = append(events, e)
 		}
 	}
@@ -154,9 +159,10 @@ func (r *changeReader) changed(ctx context.Context, rows []change.Event) ([]tea.
 // whose entity isn't found is left out, since its delete is a later row.
 // deleted, nil for a table with no soft delete, makes an update to a row
 // now soft deleted a delete, Before the row as it's left, so it reads as
-// the TUI's own delete does, and leaves out its insert, as gone.
+// the TUI's own delete does, and leaves out its insert, as gone. An update
+// from soft deleted to live is a restore, so a create, as the TUI's own is.
 func logged[D any, S message.Snapshot](read func(context.Context, []int64) ([]D, error), key func(D) int64, deleted func(D) bool, snapshot func(D) S, subject func(change.Event, S) message.Subject) loggedTable {
-	return func(ctx context.Context, ids []int64) (func(change.Event, message.Op) tea.Msg, error) {
+	return func(ctx context.Context, ids []int64) (func(change.Event, message.Op) (tea.Msg, error), error) {
 		values, err := read(ctx, ids)
 		if err != nil {
 			return nil, err
@@ -165,27 +171,47 @@ func logged[D any, S message.Snapshot](read func(context.Context, []int64) ([]D,
 		for _, v := range values {
 			found[key(v)] = v
 		}
-		return func(row change.Event, op message.Op) tea.Msg {
+		return func(row change.Event, op message.Op) (tea.Msg, error) {
 			src := message.Source{Process: row.Origin}
 			var after S
 			if op != message.OpDeleted {
 				d, ok := found[row.RowID]
 				if !ok {
-					return nil
+					return nil, nil
 				}
 				if deleted != nil && deleted(d) {
 					if op == message.OpCreated {
-						return nil
+						return nil, nil
 					}
 					e := message.Logged(row.ID, src, subject(row, snapshot(d)), message.OpDeleted, row.At, after)
 					e.Payload.Before = snapshot(d)
-					return e
+					return e, nil
+				}
+				if deleted != nil && op == message.OpUpdated {
+					restored, err := wasDeleted(row)
+					if err != nil {
+						return nil, err
+					}
+					if restored {
+						op = message.OpCreated
+					}
 				}
 				after = snapshot(d)
 			}
-			return message.Logged(row.ID, src, subject(row, after), op, row.At, after)
+			return message.Logged(row.ID, src, subject(row, after), op, row.At, after), nil
 		}, nil
 	}
+}
+
+// wasDeleted is whether the row was soft deleted before its update.
+func wasDeleted(row change.Event) (bool, error) {
+	var old struct {
+		DeletedAt string `json:"deleted_at"`
+	}
+	if err := json.Unmarshal([]byte(row.Old), &old); err != nil {
+		return false, fmt.Errorf("change log: row %d's old %s: %w", row.ID, row.Table, err)
+	}
+	return old.DeletedAt != "", nil
 }
 
 // rowSubject is a Subject of type t named by the row's ID.
