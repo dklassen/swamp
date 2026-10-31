@@ -18,6 +18,7 @@ import (
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
+	"github.com/dklassen/swamp/tui/model"
 )
 
 // assertEventFrom checks what every event a command sends has: an ID, a
@@ -161,4 +162,37 @@ func updateApplicationStatusIn(ctx context.Context, s testutil.TestApp, postingI
 	}
 	_, err = s.Applications.SetStatus(ctx, app.ID, status)
 	return err
+}
+
+// readsOf is the Read[T]s cmd sends.
+func readsOf[T message.Body](t *testing.T, cmd tea.Cmd) []message.Event[message.Read[T]] {
+	t.Helper()
+	var reads []message.Event[message.Read[T]]
+	for _, msg := range runCmd(t, cmd) {
+		if read, ok := msg.(message.Event[message.Read[T]]); ok {
+			reads = append(reads, read)
+		}
+	}
+	return reads
+}
+
+// assertReadsOnceAtATime checks that changed, heard twice in a row, reads
+// T once, and once more when that read arrives, and no more after.
+func assertReadsOnceAtATime[T message.Body](t *testing.T, r *model.MsgRouter, changed tea.Msg) {
+	t.Helper()
+	first := r.Dispatch(changed)
+	if more := readsOf[T](t, r.Dispatch(changed)); len(more) != 0 {
+		t.Errorf("a second write while the read was in flight sent %d reads, want 0", len(more))
+	}
+	read := readsOf[T](t, first)
+	if len(read) != 1 {
+		t.Fatalf("a write sent %d reads, want 1", len(read))
+	}
+	again := readsOf[T](t, r.Dispatch(read[0]))
+	if len(again) != 1 {
+		t.Fatalf("the read arriving sent %d more, want 1 for the write heard during it", len(again))
+	}
+	if more := readsOf[T](t, r.Dispatch(again[0])); len(more) != 0 {
+		t.Errorf("the second read arriving sent %d more, want 0", len(more))
+	}
 }

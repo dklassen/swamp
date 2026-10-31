@@ -984,3 +984,63 @@ func TestCompanyListModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 		})
 	}
 }
+
+// Another process's posting write can change a company's open count, and a
+// sync logs many: the list reads again, at most once at a time.
+func TestCompanyListModel_PostingsChangedElsewhere_ReadsAgainOnceAtATime(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	m := newCompanyListModel(s.Companies, s.Postings)
+	r := model.NewMsgRouter()
+	if err := r.Register(m); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	p := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	changed := message.Logged(1, mcp, message.Subject{Type: message.TypePosting, ID: p.ID}, message.OpCreated, time.Now().UTC(), postingSnapshot(p))
+
+	first := r.Dispatch(changed)
+	if r.Dispatch(changed) != nil {
+		t.Error("a second write while the read is in flight started another")
+	}
+	read := readsOf[message.CompanyList](t, first)
+	if len(read) != 1 {
+		t.Fatalf("a posting written elsewhere sent %d reads, want 1", len(read))
+	}
+	if got := read[0].Payload.Value.OpenPostings[acme.ID]; got != 1 {
+		t.Errorf("open postings read = %d, want 1", got)
+	}
+	again := readsOf[message.CompanyList](t, r.Dispatch(read[0]))
+	if len(again) != 1 {
+		t.Fatalf("the read for the first write sent %d more, want 1 for the write that came during it", len(again))
+	}
+	if more := r.Dispatch(again[0]); more != nil {
+		t.Error("the second read started another, with nothing written since")
+	}
+}
+
+// A read that fails ends like one that succeeds, so the next write is
+// still heard.
+func TestCompanyListModel_AFailedRead_DoesntStopTheNext(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	m := newCompanyListModel(s.Companies, s.Postings)
+	r := model.NewMsgRouter()
+	if err := r.Register(m); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	p := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
+	changed := message.Logged(1, mcp, message.Subject{Type: message.TypePosting, ID: p.ID}, message.OpCreated, time.Now().UTC(), postingSnapshot(p))
+	if r.Dispatch(changed) == nil {
+		t.Fatal("a posting written elsewhere started no read")
+	}
+
+	r.Dispatch(message.New(message.Source{Instance: m.Instance()}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Error{Code: message.ErrOther, Text: "database is locked"}))
+
+	if r.Dispatch(changed) == nil {
+		t.Error("a write after a failed read started no read")
+	}
+}

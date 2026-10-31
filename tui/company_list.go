@@ -36,6 +36,7 @@ type companyListModel struct {
 	companies []message.Company
 	// openPostings is each company's open, unarchived posting count.
 	openPostings map[int64]int
+	reading      reading
 
 	width    int
 	height   int
@@ -58,6 +59,8 @@ func (m *companyListModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(m.loadRequested),
 		model.Always(m.companiesRead),
+		model.Always(m.readFailed, model.From(m.instance)),
+		model.Always(m.postingChanged),
 		model.Always(m.synced),
 		model.Always(m.companyChanged),
 		model.WhenFocused(m, m.keyPressed),
@@ -100,6 +103,9 @@ func syncCompany(src message.Source, c message.Company) tea.Cmd {
 	}
 }
 
+// reload reads again for a write, once at a time for a run of them.
+func (m *companyListModel) reload() tea.Cmd { return m.reading.start(m.load) }
+
 // load reads the active companies along with each one's open posting count
 // for the Open column.
 func (m *companyListModel) load() tea.Cmd {
@@ -127,7 +133,17 @@ func (m *companyListModel) companiesRead(e message.Event[message.Read[message.Co
 	m.companies = e.Payload.Value.Companies
 	m.openPostings = e.Payload.Value.OpenPostings
 	m.keepCursorOn(previous)
-	return nil
+	return m.reading.done(m.load)
+}
+
+func (m *companyListModel) readFailed(message.Event[message.Error]) tea.Cmd {
+	return m.reading.done(m.load)
+}
+
+// postingChanged reads again, since the list shows each company's open
+// postings.
+func (m *companyListModel) postingChanged(message.Event[message.Changed[message.Posting]]) tea.Cmd {
+	return m.reload()
 }
 
 func (m *companyListModel) companyChanged(e message.Event[message.Changed[message.Company]]) tea.Cmd {

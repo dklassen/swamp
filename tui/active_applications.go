@@ -59,6 +59,7 @@ type activeApplicationListModel struct {
 	// from which, with its LatestReviews, each row's next step is derived.
 	apps     []posting.ActiveApplication
 	progress map[int64]map[document.Type]documentProgress
+	reading  reading
 	cursor   int
 	// searching is whether the '/' prompt is open and taking keys; query
 	// is what's been typed into it.
@@ -87,9 +88,14 @@ func (m *activeApplicationListModel) Focused() bool { return m.focused }
 func (m *activeApplicationListModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(m.applicationsRead, model.From(m.instance)),
+		model.Always(m.readFailed, model.From(m.instance)),
 		model.Always(m.loadRequested),
 		model.Always(m.applicationChanged),
 		model.Always(m.reviewChanged),
+		model.Always(m.postingChanged),
+		model.Always(m.companyChanged),
+		model.Always(m.documentWritten),
+		model.Always(m.documentExported),
 		model.WhenFocused(m, m.keyPressed),
 		model.WhenFocused(m, m.paste),
 		model.Always(m.resize),
@@ -105,6 +111,9 @@ func (m *activeApplicationListModel) Update(tea.Msg) (tea.Model, tea.Cmd) { retu
 func (m *activeApplicationListModel) src() message.Source {
 	return message.Source{Instance: m.instance}
 }
+
+// reload reads again for a write, once at a time for a run of them.
+func (m *activeApplicationListModel) reload() tea.Cmd { return m.reading.start(m.load) }
 
 // load reads every active application, keeping only the reviews that
 // still describe each document as it is on disk, which the services
@@ -147,7 +156,11 @@ func (m *activeApplicationListModel) applicationsRead(e message.Event[message.Re
 		m.apps[i], m.progress[row.Application.ID] = activeApplicationOf(row)
 	}
 	m.keepCursorOn(previous)
-	return nil
+	return m.reading.done(m.load)
+}
+
+func (m *activeApplicationListModel) readFailed(message.Event[message.Error]) tea.Cmd {
+	return m.reading.done(m.load)
 }
 
 func (m *activeApplicationListModel) loadRequested(message.Event[message.Load[message.ActiveApplications]]) tea.Cmd {
@@ -157,13 +170,33 @@ func (m *activeApplicationListModel) loadRequested(message.Event[message.Load[me
 // applicationChanged reads again, since a write can move an application
 // to or from a dead end, or delete it.
 func (m *activeApplicationListModel) applicationChanged(message.Event[message.Changed[message.Application]]) tea.Cmd {
-	return m.load()
+	return m.reload()
 }
 
 // reviewChanged reads again, since a row's next step and review glyphs
 // follow its reviews.
 func (m *activeApplicationListModel) reviewChanged(message.Event[message.Changed[message.Review]]) tea.Cmd {
-	return m.load()
+	return m.reload()
+}
+
+// postingChanged and companyChanged read again, since a row shows its
+// posting and company.
+func (m *activeApplicationListModel) postingChanged(message.Event[message.Changed[message.Posting]]) tea.Cmd {
+	return m.reload()
+}
+
+func (m *activeApplicationListModel) companyChanged(message.Event[message.Changed[message.Company]]) tea.Cmd {
+	return m.reload()
+}
+
+// documentWritten and documentExported read again, since a row's next
+// step follows its documents.
+func (m *activeApplicationListModel) documentWritten(message.Event[message.Changed[message.DocumentWrite]]) tea.Cmd {
+	return m.reload()
+}
+
+func (m *activeApplicationListModel) documentExported(message.Event[message.Changed[message.DocumentExport]]) tea.Cmd {
+	return m.reload()
 }
 
 func (m *activeApplicationListModel) resize(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {

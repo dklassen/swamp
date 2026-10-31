@@ -1000,6 +1000,18 @@ func TestActiveApplicationListModel_ReadsItsApplicationsAgain(t *testing.T) {
 			return reviewCreated(message.Source{Instance: 9}, time.Now().UTC(),
 				message.Review{ID: 4, ApplicationID: 1, DocumentType: message.DocumentResume, Outcome: message.ReviewFlagged})
 		}, read: true},
+		{name: "on a posting changed by another process", msg: func(*activeApplicationListModel) tea.Msg {
+			return message.Logged(1, mcp, message.Subject{Type: message.TypePosting, ID: 1}, message.OpUpdated, time.Now().UTC(), message.Posting{ID: 1, Title: "Staff Engineer"})
+		}, read: true},
+		{name: "on a company changed by another process", msg: func(*activeApplicationListModel) tea.Msg {
+			return message.Logged(1, mcp, message.Subject{Type: message.TypeCompany, ID: 1}, message.OpUpdated, time.Now().UTC(), message.Company{ID: 1, Name: "Acme Corp"})
+		}, read: true},
+		{name: "on a document written by another process", msg: func(*activeApplicationListModel) tea.Msg {
+			return message.Logged(1, mcp, message.Subject{Type: message.TypeApplication, ID: 1}, message.OpCreated, time.Now().UTC(), message.DocumentWrite{ID: 1, ApplicationID: 1, DocumentType: message.DocumentResume})
+		}, read: true},
+		{name: "on a document exported by another process", msg: func(*activeApplicationListModel) tea.Msg {
+			return message.Logged(1, mcp, message.Subject{Type: message.TypeApplication, ID: 1}, message.OpCreated, time.Now().UTC(), message.DocumentExport{ID: 1, ApplicationID: 1, DocumentType: message.DocumentResume})
+		}, read: true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -1011,4 +1023,11 @@ func TestActiveApplicationListModel_ReadsItsApplicationsAgain(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestActiveApplicationListModel_ChangesElsewhere_ReadOnceAtATime(t *testing.T) {
+	t.Parallel()
+	_, r := storedHome(t, false)
+	assertReadsOnceAtATime[message.ActiveApplications](t, r,
+		message.Logged(1, mcp, message.Subject{Type: message.TypePosting, ID: 1}, message.OpUpdated, time.Now().UTC(), message.Posting{ID: 1}))
 }
