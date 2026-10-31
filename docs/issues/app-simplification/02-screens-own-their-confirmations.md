@@ -87,11 +87,8 @@ Application detail's own delete becomes one step: on its application's delete fr
 ## Decided
 
 - **A key after the close goes to the owner, unhandled.** The owner closes the confirmation in the same `Update` as the `n`, `esc` or `enter`, so the next key is the owner's: `n` and `y` are bound on none of the three, `enter` opens the company or application, `esc` clears a search or leaves application detail. A person shouldn't see a change: today's `Pop` is a command that returns at once into the same queue as keys, so it should land long before a second press (reasoned from Bubble Tea's loop, not measured). Only keys already queued together, as the double-`n` test sends them, used to be dropped, and the double close that test guards against can't happen without a `Pop`. No flag swallows a key after closing, and `esc` and `enter` still close.
-
-## Decide before starting
-
-- **Pastes and other focused routes.** The company list's and active applications' `paste` would type into the search under the box. Each `WhenFocused` route on an owner checks `confirm` first.
-- **Glue in three owners.** The `confirm` field, key forwarding, drawing and closing happen in three places, twice for the application confirmation. Three is enough to share a small helper; decide once the second one is written.
+- **A paste with a confirmation open does nothing.** The company list's and active applications' `paste` would otherwise type into the search under the box. Each owner's `paste`, and any other `WhenFocused` route besides keys, returns early while `confirm` is set.
+- **The glue is repeated in each owner, not shared.** The `confirm` field, passing keys on, drawing the box and closing it are written out in each of the three owners, twice for the application confirmation. A helper waits until the repetition shows what it would be.
 
 ## Rejected
 
