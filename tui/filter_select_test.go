@@ -7,6 +7,7 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"github.com/google/go-cmp/cmp"
 
+	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
@@ -167,7 +168,8 @@ func TestFilterSelectModel_Enter_SavesTheSelectionAndReportsARan(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Filters: %v", err)
 	}
-	if diff := cmp.Diff(companyFiltersFrom(want.Departments, want.Locations), saved); diff != "" {
+	wantSaved := []filter.Filter{{Field: filter.FieldDepartment, Value: "Sales"}, {Field: filter.FieldLocation, Value: "Remote"}}
+	if diff := cmp.Diff(wantSaved, saved); diff != "" {
 		t.Errorf("saved filters (-want +got):\n%s", diff)
 	}
 }

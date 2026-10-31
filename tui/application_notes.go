@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"strings"
 
 	"charm.land/bubbles/v2/textarea"
@@ -132,7 +133,11 @@ func (m *applicationNotesModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 		return m.close()
 	case "ctrl+s":
 		m.saving = true
-		return updateApplicationNotes(m.applications, m.src(), m.application.ID, m.textarea.Value())
+		applications, src, id, notes := m.applications, m.src(), m.application.ID, m.textarea.Value()
+		return func() tea.Msg {
+			a, err := applications.SetNotes(context.Background(), id, notes)
+			return applicationWritten(src, id, message.OpUpdated, a, err)
+		}
 	}
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)

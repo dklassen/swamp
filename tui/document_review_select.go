@@ -114,7 +114,12 @@ func (m *documentReviewSelectModel) View() tea.View {
 		if opt.exists {
 			status = "found"
 		}
-		b.WriteString(renderCursorLine(opt.label+" ("+status+")", i == m.cursor))
+		line := opt.label + " (" + status + ")"
+		if i == m.cursor {
+			b.WriteString(model.CursorStyle.Render("> "+line) + "\n")
+		} else {
+			b.WriteString("  " + line + "\n")
+		}
 	}
 	b.WriteString(model.HelpStyle.Render("↑/↓ (j/k): select  enter: review  esc/b: cancel"))
 	return tea.NewView(b.String())

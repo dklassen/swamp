@@ -178,7 +178,14 @@ func loadFilterOptions(companies *service.CompanyService, src message.Source, co
 func saveFilters(companies *service.CompanyService, src message.Source, sel message.FilterSelection) tea.Cmd {
 	subject := message.Subject{Type: message.TypeCompany, ID: sel.Company.ID}
 	return func() tea.Msg {
-		if err := companies.SetFilters(context.Background(), sel.Company.ID, companyFiltersFrom(sel.Departments, sel.Locations)); err != nil {
+		filters := make([]filter.Filter, 0, len(sel.Departments)+len(sel.Locations))
+		for _, d := range sel.Departments {
+			filters = append(filters, filter.Filter{Field: filter.FieldDepartment, Value: d})
+		}
+		for _, l := range sel.Locations {
+			filters = append(filters, filter.Filter{Field: filter.FieldLocation, Value: l})
+		}
+		if err := companies.SetFilters(context.Background(), sel.Company.ID, filters); err != nil {
 			return message.New(src, subject, message.OpUpdated, time.Now().UTC(), model.ErrorOf(err))
 		}
 		return message.New(src, subject, message.OpNone, time.Now().UTC(), message.Ran[message.FilterSelection]{Value: sel})
@@ -250,4 +257,24 @@ func (m *filterSelectModel) View() tea.View {
 	}
 	b.WriteString(help)
 	return tea.NewView(b.String())
+}
+
+func toSet(values []string) map[string]bool {
+	set := make(map[string]bool, len(values))
+	for _, v := range values {
+		set[v] = true
+	}
+	return set
+}
+
+func renderFilterOption(label string, checked, isCursor bool) string {
+	box := "[ ]"
+	if checked {
+		box = "[x]"
+	}
+	line := box + " " + label
+	if isCursor {
+		return model.CursorStyle.Render("> "+line) + "\n"
+	}
+	return "  " + line + "\n"
 }

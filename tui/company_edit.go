@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"context"
 	"strings"
+	"time"
 
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
@@ -19,7 +21,7 @@ type companyEditModel struct {
 	companies *service.CompanyService
 	companyID int64
 	nameInput textinput.Model
-	// saving is true from the moment Enter dispatches updateCompanyName
+	// saving is true from the moment Enter starts the rename
 	// until its result arrives. bubbletea has no way to cancel an
 	// already-dispatched command, so Esc can't actually stop an in-flight
 	// save -- it's blocked instead, so "esc: cancel" stays true rather
@@ -80,7 +82,14 @@ func (m *companyEditModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		m.saving = true
-		return updateCompanyName(m.companies, m.source(), m.companyID, name)
+		companies, src, id := m.companies, m.source(), m.companyID
+		return func() tea.Msg {
+			renamed, err := companies.SetName(context.Background(), id, name)
+			if err != nil {
+				return message.New(src, message.Subject{Type: message.TypeCompany, ID: id}, message.OpUpdated, time.Now().UTC(), model.ErrorOf(err))
+			}
+			return message.Updated(src, id, renamed.At, companySnapshot(renamed.Before), companySnapshot(renamed.After))
+		}
 	}
 	var cmd tea.Cmd
 	m.nameInput, cmd = m.nameInput.Update(msg)

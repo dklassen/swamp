@@ -69,11 +69,6 @@ func (st *screenStack) replace(kind message.Screen, s stackScreen) error {
 	return st.push(kind, s)
 }
 
-// top is the screen pushed last. Only call it while len is above 0.
-func (st *screenStack) top() stackScreen {
-	return st.entries[len(st.entries)-1].screen
-}
-
 // open is the screen of kind on the stack, or nil if none is.
 func (st *screenStack) open(kind message.Screen) stackScreen {
 	for _, e := range st.entries {

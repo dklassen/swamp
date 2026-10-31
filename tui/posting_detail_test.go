@@ -78,6 +78,21 @@ func TestPostingDetailModel_WithReviews_ShowsOutcomeAndNotes(t *testing.T) {
 	}
 }
 
+func TestPostingDetailModel_View_ShowsStatusLabelNotEnumValue(t *testing.T) {
+	t.Parallel()
+
+	app := testDetailApplication
+	app.Status = message.ApplicationOfferReceived
+	got := detailView(detailOf(documents.NewStore(t.TempDir()), testDetailPosting, app, nil, 80, 20))
+
+	if want := applicationStatusLabel(application.OfferReceived); !strings.Contains(got, want) {
+		t.Errorf("View() = %q, want the human-readable status label %q", got, want)
+	}
+	if raw := application.OfferReceived.String(); strings.Contains(got, raw) {
+		t.Errorf("View() leaks the raw enum value %q into the UI", raw)
+	}
+}
+
 // A late read for an application the posting no longer has mustn't show.
 func TestPostingDetailModel_ReviewsOfAnotherApplication_AreDropped(t *testing.T) {
 	t.Parallel()

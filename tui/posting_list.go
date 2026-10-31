@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"context"
 	"slices"
 	"strings"
 	"time"
@@ -10,6 +11,8 @@ import (
 	"charm.land/lipgloss/v2/table"
 	"github.com/charmbracelet/x/ansi"
 
+	"github.com/dklassen/swamp/internal/domain/filter"
+	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
@@ -145,8 +148,63 @@ func (m *postingListModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil 
 // reload reads again for a write, once at a time for a run of them.
 func (m *postingListModel) reload() tea.Cmd { return m.reading.start(m.load) }
 
+// load reads the company's postings as the list shows them: open ones
+// only, since a closed listing can't be applied to; narrowed by the
+// company's saved filters, since sync stores every posting; and without
+// archived ones while they're hidden.
 func (m *postingListModel) load() tea.Cmd {
-	return loadPostings(m.companyService, m.postingService, message.Source{Instance: m.instance}, m.company.ID, m.hideArchived)
+	companies, postings, hideArchived := m.companyService, m.postingService, m.hideArchived
+	src, companyID := message.Source{Instance: m.instance}, m.company.ID
+	subject := message.Subject{Type: message.TypeCompany, ID: companyID}
+	failed := func(err error) tea.Msg {
+		return message.New(src, subject, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
+	}
+	return func() tea.Msg {
+		ctx := context.Background()
+		stored, err := postings.ListByCompany(ctx, companyID)
+		if err != nil {
+			return failed(err)
+		}
+		companyFilters, err := companies.Filters(ctx, companyID)
+		if err != nil {
+			return failed(err)
+		}
+		var list message.PostingList
+		for _, f := range companyFilters {
+			switch f.Field {
+			case filter.FieldDepartment:
+				list.Departments = append(list.Departments, f.Value)
+			case filter.FieldLocation:
+				list.Locations = append(list.Locations, f.Value)
+			}
+		}
+		list.Postings = make([]message.Posting, 0, len(stored))
+		list.Markup = make(map[int64]message.Markup, len(stored))
+		for _, p := range stored {
+			if p.ListingStatus == posting.ListingClosed {
+				continue
+			}
+			// An unsupported field is an error rather than a filter left out.
+			match, err := filter.Match(filter.Posting{Department: p.Department, Location: p.Location}, companyFilters)
+			if err != nil {
+				return failed(err)
+			}
+			if !match {
+				continue
+			}
+			mk, err := postings.Markup(ctx, p.ID)
+			if err != nil {
+				return failed(err)
+			}
+			snapshot := markupSnapshot(*mk)
+			list.Markup[p.ID] = snapshot
+			if hideArchived && !snapshot.ArchivedAt.IsZero() {
+				continue
+			}
+			list.Postings = append(list.Postings, postingSnapshot(p))
+		}
+		return message.New(src, subject, message.OpNone, time.Now().UTC(), message.Read[message.PostingList]{Value: list})
+	}
 }
 
 // postingsRead keeps the cursor on its posting, since a sync can add some
@@ -350,4 +408,14 @@ func (m *postingListModel) keepCursorOn(id int64) {
 		return
 	}
 	m.clampCursor(len(m.list.Postings))
+}
+
+// indexOfPosting returns id's index in postings, or -1 if not present.
+func indexOfPosting(postings []message.Posting, id int64) int {
+	for i, p := range postings {
+		if p.ID == id {
+			return i
+		}
+	}
+	return -1
 }

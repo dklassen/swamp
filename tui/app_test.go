@@ -22,7 +22,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/filter"
-	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
@@ -43,24 +42,16 @@ func newTestApp(t *testing.T, s testutil.TestApp, syncer *sync.Syncer) *App {
 	return applyCmd(t, app, app.Init())
 }
 
-// applyCmd runs cmd and feeds the resulting message through app.Update,
-// then keeps chasing whatever Cmd that Update call itself returns -- the
-// same way a real tea.Program's runtime loop keeps running until nothing
-// further is queued. If cmd is itself a tea.Batch (App.Init returns one,
-// to load companies and active applications concurrently; posting
-// detail's Init does too), its BatchMsg
-// unpacks into per-command messages applied individually. These tests
-// drive App directly without a real tea.Program, so this replicates both
-// behaviors by hand.
 // pushed is the screen on top of app's stack, as a T.
 func pushed[T stackScreen](t *testing.T, app *App) T {
 	t.Helper()
 	if app.stack.len() == 0 {
 		t.Fatalf("no screen is pushed; %v is up", app.onScreen())
 	}
-	s, ok := app.stack.top().(T)
+	top := app.screenOf(app.onScreen())
+	s, ok := top.(T)
 	if !ok {
-		t.Fatalf("the screen on top is %T, want %T", app.stack.top(), *new(T))
+		t.Fatalf("the screen on top is %T, want %T", top, *new(T))
 	}
 	return s
 }
@@ -85,6 +76,15 @@ func openDetail(t *testing.T, app *App) *postingDetailModel {
 	return d
 }
 
+// applyCmd runs cmd and feeds the resulting message through app.Update,
+// then keeps chasing whatever Cmd that Update call itself returns -- the
+// same way a real tea.Program's runtime loop keeps running until nothing
+// further is queued. If cmd is itself a tea.Batch (App.Init returns one,
+// to load companies and active applications concurrently; posting
+// detail's Init does too), its BatchMsg
+// unpacks into per-command messages applied individually. These tests
+// drive App directly without a real tea.Program, so this replicates both
+// behaviors by hand.
 func applyCmd(t *testing.T, app *App, cmd tea.Cmd) *App {
 	t.Helper()
 	if cmd == nil {
@@ -3442,72 +3442,6 @@ func TestFilterSummaryLine_DepartmentsAndLocations(t *testing.T) {
 	}
 }
 
-func TestFilterPostingsByCompanyFilters_MatchSemantics(t *testing.T) {
-	t.Parallel()
-
-	eng := message.Posting{ID: 1, Department: "Engineering", Location: "Remote"}
-	sales := message.Posting{ID: 2, Department: "Sales", Location: "Remote"}
-	engNYC := message.Posting{ID: 3, Department: "Engineering", Location: "New York"}
-	postings := []message.Posting{eng, sales, engNYC}
-
-	tests := []struct {
-		name    string
-		filters []filter.Filter
-		want    []message.Posting
-	}{
-		{
-			name:    "no filters matches everything",
-			filters: nil,
-			want:    postings,
-		},
-		{
-			name:    "department filter alone",
-			filters: []filter.Filter{{Field: filter.FieldDepartment, Value: "Engineering"}},
-			want:    []message.Posting{eng, engNYC},
-		},
-		{
-			name:    "location filter alone",
-			filters: []filter.Filter{{Field: filter.FieldLocation, Value: "Remote"}},
-			want:    []message.Posting{eng, sales},
-		},
-		{
-			name: "department and location AND together, OR within a field",
-			filters: []filter.Filter{
-				{Field: filter.FieldDepartment, Value: "Engineering"},
-				{Field: filter.FieldDepartment, Value: "Sales"},
-				{Field: filter.FieldLocation, Value: "Remote"},
-			},
-			want: []message.Posting{eng, sales},
-		},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got, err := filterPostingsByCompanyFilters(postings, tt.filters)
-			if err != nil {
-				t.Fatalf("filterPostingsByCompanyFilters: %v", err)
-			}
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Fatalf("filterPostingsByCompanyFilters mismatch (-want +got):\n%s", diff)
-			}
-		})
-	}
-}
-
-// splitCompanyFilters ignores fields it doesn't know, so without this an
-// unsupported field would be silently not applied rather than an error.
-func TestFilterPostingsByCompanyFilters_UnsupportedField_ReturnsError(t *testing.T) {
-	t.Parallel()
-
-	postings := []message.Posting{{ID: 1, Department: "Engineering"}}
-	filters := []filter.Filter{{Field: "not_a_real_field", Value: "x"}}
-
-	_, err := filterPostingsByCompanyFilters(postings, filters)
-	if err == nil {
-		t.Fatal("filterPostingsByCompanyFilters err = nil, want an error for an unsupported field")
-	}
-}
-
 // A failed reload of the postings is an error for the banner alone: the
 // list keeps showing what it last read.
 func TestApp_PostingsLoadFails_KeepsThePostingsAndShowsTheError(t *testing.T) {
@@ -3629,22 +3563,6 @@ func TestApp_Export_Failure_SurfacesErrorAndKeepsRememberedDir(t *testing.T) {
 	}
 	if app.exportDir != before {
 		t.Errorf("exportDir = %q, want it left at %q -- a failed export shouldn't be remembered as the new default", app.exportDir, before)
-	}
-}
-
-func TestPostingDetailContent_ShowsStatusLabelNotEnumValue(t *testing.T) {
-	t.Parallel()
-
-	posting := posting.Posting{ID: 1, IngestedFields: posting.IngestedFields{Title: "Engineer"}}
-	application := application.Application{ID: 1, Status: application.OfferReceived}
-
-	got := postingDetailContent(posting, application, true, documents.NewStore(t.TempDir()), nil, 80)
-
-	if !strings.Contains(got, "Offer received") {
-		t.Errorf("postingDetailContent() = %q, want the human-readable status label", got)
-	}
-	if strings.Contains(got, "offer_received") {
-		t.Errorf("postingDetailContent() leaks the raw enum value \"offer_received\" into the UI")
 	}
 }
 

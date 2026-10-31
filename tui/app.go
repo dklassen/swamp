@@ -1,33 +1,22 @@
 // Package tui is the terminal UI: Bubble Tea model for browsing and
-// managing companies and their postings. Markup editing (status, notes,
-// tags, interview stages) is a later increment. Update stays
-// side-effect-free -- store calls are wrapped in tea.Cmd so the
-// message-passing logic is testable without a real terminal; View
+// managing companies and their postings. Update stays side-effect-free --
+// store calls are wrapped in tea.Cmd so the message-passing logic is
+// testable without a real terminal; View
 // (rendering) is not held to automated test coverage, per this project's
 // testing decisions.
 package tui
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log"
 	"slices"
-	"sort"
 	"strings"
 	"time"
-	"unicode"
 
 	tea "charm.land/bubbletea/v2"
-	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/cellbuf"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/internal/domain/application"
-	"github.com/dklassen/swamp/internal/domain/change"
-	"github.com/dklassen/swamp/internal/domain/document"
-	"github.com/dklassen/swamp/internal/domain/filter"
-	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
@@ -96,28 +85,6 @@ type App struct {
 // the export actually runs (see expandPath).
 const defaultExportDir = "~/Desktop"
 
-func renderFilterOption(label string, checked, isCursor bool) string {
-	box := "[ ]"
-	if checked {
-		box = "[x]"
-	}
-	line := box + " " + label
-	if isCursor {
-		return model.CursorStyle.Render("> "+line) + "\n"
-	}
-	return "  " + line + "\n"
-}
-
-// renderCursorLine renders one line of a plain (non-checkbox) cursor
-// list, highlighted when isCursor -- the shape applicationStatusModel's
-// and documentReviewSelectModel's option lists both use.
-func renderCursorLine(line string, isCursor bool) string {
-	if isCursor {
-		return model.CursorStyle.Render("> "+line) + "\n"
-	}
-	return "  " + line + "\n"
-}
-
 func New(
 	companies *service.CompanyService,
 	postings *service.PostingService,
@@ -178,21 +145,6 @@ func (a *App) focusSignal() tea.Msg {
 // tabs are the persistent screens, in the order tab goes through them.
 var tabs = []message.Screen{message.ScreenActiveApplications, message.ScreenCompanyList, message.ScreenAllPostings}
 
-func isTab(kind message.Screen) bool { return slices.Contains(tabs, kind) }
-
-// tabScreen is the tab of kind.
-func (a *App) tabScreen(kind message.Screen) stackScreen {
-	switch kind {
-	case message.ScreenActiveApplications:
-		return a.activeApplicationList
-	case message.ScreenCompanyList:
-		return a.companyList
-	case message.ScreenAllPostings:
-		return a.allPostings
-	}
-	panic(fmt.Sprintf("tui: %v isn't a tab", kind))
-}
-
 // path is the tab up, then each screen pushed over it: the way esc goes
 // back, reversed.
 func (a *App) path() []message.Screen {
@@ -207,8 +159,13 @@ func (a *App) onScreen() message.Screen {
 
 // screenOf is the open screen of kind.
 func (a *App) screenOf(kind message.Screen) stackScreen {
-	if isTab(kind) {
-		return a.tabScreen(kind)
+	switch kind {
+	case message.ScreenActiveApplications:
+		return a.activeApplicationList
+	case message.ScreenCompanyList:
+		return a.companyList
+	case message.ScreenAllPostings:
+		return a.allPostings
 	}
 	return a.stack.open(kind)
 }
@@ -409,184 +366,6 @@ func (a *App) WithStatus(status string) *App {
 	return a
 }
 
-// documentStatusLine renders a single "<label>: found (<path>)" or
-// "<label>: not found (<path>)" line for the documents section, followed
-// by that document's latest review outcome (see reviewBadge) and, when
-// the review left notes, an indented "Notes:" line -- the reviewer's
-// record of what specifically to fix before the next cycle (see
-// #83).
-func documentStatusLine(label string, exists bool, path string, review document.Review, hasReview bool) string {
-	status := "not found"
-	if exists {
-		status = "found"
-	}
-	line := model.FieldLabel.Render(label+":") + " " + status + " (" + path + ") " + reviewBadge(review, hasReview) + "\n"
-	if hasReview && review.Notes != "" {
-		line += "  " + model.DimStyle.Render("Notes: "+review.Notes) + "\n"
-	}
-	return line
-}
-
-// outcomeDisplay is how each review outcome looks: its style, shared by
-// reviewBadge and reviewGlyph, and its glyph. An outcome missing here
-// renders dim, as "[<outcome>]" and "?"; a test checks every
-// document.Outcomes() has an entry.
-var outcomeDisplay = map[document.Outcome]struct {
-	style lipgloss.Style
-	glyph string
-}{
-	document.Passed:  {model.PassStyle, "✓"},
-	document.Flagged: {model.ErrStyle, "✗"},
-}
-
-// reviewBadge renders a document's latest review outcome as a short
-// styled tag: dim "[not reviewed]" when hasReview is false (no review
-// recorded yet), otherwise the outcome's name in capitals, styled per
-// outcomeDisplay: green "[PASSED]", red "[FLAGGED]".
-func reviewBadge(review document.Review, hasReview bool) string {
-	if !hasReview {
-		return model.DimStyle.Render("[not reviewed]")
-	}
-	display, ok := outcomeDisplay[review.Outcome]
-	if !ok {
-		return model.DimStyle.Render("[" + review.Outcome.String() + "]")
-	}
-	return display.style.Render("[" + strings.ToUpper(review.Outcome.String()) + "]")
-}
-
-// reviewGlyphSummary renders a compact, single-line summary of an
-// application's latest cover-letter/resume review outcomes, for list
-// rows (e.g. the active-applications table) that don't have room for
-// reviewBadge's full "[FLAGGED]"/notes rendering (#83).
-// A document with no entry in reviews (no review recorded yet)
-// renders as a dim "-".
-func reviewGlyphSummary(reviews map[document.Type]document.Review) string {
-	entries := make([]string, 0, len(document.Types()))
-	for _, documentType := range document.Types() {
-		review, ok := reviews[documentType]
-		entries = append(entries, documentAbbreviation(documentType)+":"+reviewGlyph(review, ok))
-	}
-	return strings.Join(entries, " ")
-}
-
-// documentAbbreviation is the initials of documentType's label, for the
-// review column: "CL" for cover letter, "R" for resume.
-func documentAbbreviation(documentType document.Type) string {
-	var initials []rune
-	for _, word := range strings.Fields(documentType.Label()) {
-		initials = append(initials, unicode.ToUpper([]rune(word)[0]))
-	}
-	return string(initials)
-}
-
-// reviewGlyph is reviewBadge's one-character form, for list rows: dim "-"
-// with no review, otherwise the outcome's glyph from outcomeDisplay.
-func reviewGlyph(review document.Review, hasReview bool) string {
-	if !hasReview {
-		return model.DimStyle.Render("-")
-	}
-	display, ok := outcomeDisplay[review.Outcome]
-	if !ok {
-		return model.DimStyle.Render("?")
-	}
-	return display.style.Render(display.glyph)
-}
-
-// postingDetailContent renders a posting's fields, application state, and
-// description as the scrollable body of the detail view (title is rendered
-// separately, as a fixed header outside the viewport). application/
-// hasApplication are passed in rather than fetched here so this stays a
-// pure function of already-loaded state.
-//
-// docs resolves the application's document paths and their presence via
-// os.Stat -- done inline here rather than through a separate
-// tea.Cmd/tea.Msg round trip like the rest of this file's store-backed
-// state, since checking whether two local files exist is cheap/local
-// enough that a second async fetch just to avoid it here would be
-// over-applying that convention. When hasApplication
-// is false, no documents section is rendered at all -- "no application
-// -> show nothing".
-//
-// latestReviews is, like application, read by posting detail and passed
-// in rather than queried here -- a DB read, unlike docs.Status's local
-// os.Stat, follows the same tea.Cmd/tea.Msg convention as the rest of
-// this file's store-backed state (#83). A document with no entry in the
-// map renders as "not reviewed".
-func postingDetailContent(p posting.Posting, application application.Application, hasApplication bool, docs *documents.Store, latestReviews map[document.Type]document.Review, width int) string {
-	var b strings.Builder
-	b.WriteString(sectionHeading("Posting", width) + "\n")
-	fields := []struct{ label, value string }{
-		{"Department", p.Department},
-		{"Team", p.Team},
-		{"Location", p.Location},
-		{"Employment type", p.EmploymentType},
-		{"Workplace type", p.WorkplaceType},
-		{"Status", p.ListingStatus.String()},
-		{"Job URL", p.JobURL},
-		{"Application URL", p.ApplicationURL},
-	}
-	for _, f := range fields {
-		if f.value == "" {
-			continue
-		}
-		b.WriteString(detailField(f.label, f.value, width))
-	}
-	b.WriteString("\n" + sectionHeading("Application", width) + "\n")
-	if hasApplication {
-		b.WriteString(detailField("Status", applicationStatusLabel(application.Status), width))
-		if application.Notes != "" {
-			b.WriteString(detailField("Notes", application.Notes, width))
-		}
-		status := docs.Status(application.ID)
-		b.WriteString("\n")
-		for _, documentType := range document.Types() {
-			doc, err := status.Doc(documentType)
-			if err != nil {
-				continue
-			}
-			review, hasReview := latestReviews[documentType]
-			b.WriteString(detailDocumentField(documentTitle(documentType), doc.Exists, doc.Path, review, hasReview, width))
-		}
-	} else {
-		b.WriteString(model.HelpStyle.Render("No application started -- press 'a' to start one.") + "\n")
-	}
-	if desc := p.DescriptionText; desc != "" {
-		b.WriteString("\n" + sectionHeading("Description", width) + "\n" + desc + "\n")
-	}
-	return b.String()
-}
-
-// indexOfPosting returns id's index in postings, or -1 if not present.
-func indexOfPosting(postings []message.Posting, id int64) int {
-	for i, p := range postings {
-		if p.ID == id {
-			return i
-		}
-	}
-	return -1
-}
-
-// indexOfCompany returns id's index in companies, or -1 if not present.
-func indexOfCompany(companies []message.Company, id int64) int {
-	for i, c := range companies {
-		if c.ID == id {
-			return i
-		}
-	}
-	return -1
-}
-
-// sortCompaniesByName keeps an in-memory companies slice in the same
-// order ListActiveCompanies' `ORDER BY name` would return -- called after
-// any in-place mutation (create, rename) that could change where an
-// entry belongs, since Go's string `<` matches SQLite's default byte-wise
-// collation.
-func sortCompaniesByName(companies []message.Company) {
-	sort.Slice(companies, func(i, j int) bool {
-		return companies[i].Name < companies[j].Name
-	})
-}
-
 func (a *App) Init() tea.Cmd {
 	return tea.Batch(a.activeApplicationList.Init(), a.companyList.Init(), a.allPostings.Init(), a.pollChanges())
 }
@@ -622,272 +401,6 @@ func (a *App) pollChanges() tea.Cmd {
 // changeTick asks for the next tick; the reader reads on this one.
 func (a *App) changeTick(message.Event[message.Signal[message.ChangeTick]]) tea.Cmd {
 	return a.pollChanges()
-}
-
-// boardCheckTimeout bounds createCompany's live board check, so an
-// unreachable API fails the add (closed) instead of leaving the form
-// waiting (#36). Syncer already gives up on any fetch
-// after sync.Config.FetchTimeout (#142); this is tighter because someone
-// is sitting at the form waiting for it.
-const boardCheckTimeout = 15 * time.Second
-
-// createCompany saves a company only once its source ref resolves to a
-// real board (see sync.Syncer.CreateCompany).
-func createCompany(syncer *sync.Syncer, src message.Source, name, source, sourceRef string) tea.Cmd {
-	return func() tea.Msg {
-		ctx, cancel := context.WithTimeout(context.Background(), boardCheckTimeout)
-		defer cancel()
-		company, err := syncer.CreateCompany(ctx, name, source, sourceRef)
-		if err != nil {
-			return message.New(src, message.Subject{}, message.OpCreated, time.Now().UTC(), model.ErrorOf(err))
-		}
-		return message.Created(src, company.ID, company.CreatedAt, companySnapshot(*company))
-	}
-}
-
-func deleteCompany(companies *service.CompanyService, src message.Source, companyID int64) tea.Cmd {
-	return func() tea.Msg {
-		deleted, err := companies.Delete(context.Background(), companyID)
-		if err != nil {
-			return message.New(src, message.Subject{Type: message.TypeCompany, ID: companyID}, message.OpDeleted, time.Now().UTC(), model.ErrorOf(err))
-		}
-		return message.Deleted(src, companyID, deleted.At, companySnapshot(deleted.Before))
-	}
-}
-
-func updateCompanyName(companies *service.CompanyService, src message.Source, companyID int64, name string) tea.Cmd {
-	return func() tea.Msg {
-		renamed, err := companies.SetName(context.Background(), companyID, name)
-		if err != nil {
-			return message.New(src, message.Subject{Type: message.TypeCompany, ID: companyID}, message.OpUpdated, time.Now().UTC(), model.ErrorOf(err))
-		}
-		return message.Updated(src, companyID, renamed.At, companySnapshot(renamed.Before), companySnapshot(renamed.After))
-	}
-}
-
-func toggleInterested(postings *service.PostingService, src message.Source, postingID int64, currentlyInterested bool) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
-		var (
-			m   *change.Of[posting.Markup]
-			err error
-		)
-		if currentlyInterested {
-			m, err = postings.UnmarkInterested(ctx, postingID)
-		} else {
-			m, err = postings.SetInterested(ctx, postingID)
-		}
-		return markupChanged(src, postingID, m, err)
-	}
-}
-
-func toggleArchived(postings *service.PostingService, src message.Source, postingID int64, currentlyArchived bool) tea.Cmd {
-	return func() tea.Msg {
-		ctx := context.Background()
-		var (
-			m   *change.Of[posting.Markup]
-			err error
-		)
-		if currentlyArchived {
-			m, err = postings.Unarchive(ctx, postingID)
-		} else {
-			m, err = postings.SetArchived(ctx, postingID)
-		}
-		return markupChanged(src, postingID, m, err)
-	}
-}
-
-func markupChanged(src message.Source, postingID int64, m *change.Of[posting.Markup], err error) tea.Msg {
-	subject := message.Subject{Type: message.TypePosting, ID: postingID}
-	if err != nil {
-		return message.New(src, subject, message.OpUpdated, time.Now().UTC(), model.ErrorOf(err))
-	}
-	return message.New(src, subject, message.OpUpdated, m.At,
-		message.Changed[message.Markup]{Before: markupSnapshot(m.Before), After: markupSnapshot(m.After)})
-}
-
-// createApplication's error is about the posting, since there's no
-// application yet.
-func createApplication(postings *service.PostingService, src message.Source, postingID int64) tea.Cmd {
-	return func() tea.Msg {
-		app, err := postings.ApplyTo(context.Background(), postingID)
-		if err != nil {
-			return message.New(src, message.Subject{Type: message.TypePosting, ID: postingID}, message.OpCreated, time.Now().UTC(), model.ErrorOf(err))
-		}
-		return message.Created(src, app.ID, app.CreatedAt, applicationSnapshot(*app))
-	}
-}
-
-func applicationWritten(src message.Source, applicationID int64, op message.Op, a *change.Of[application.Application], err error) tea.Msg {
-	if err != nil {
-		return message.New(src, message.Subject{Type: message.TypeApplication, ID: applicationID}, op, time.Now().UTC(), model.ErrorOf(err))
-	}
-	if op == message.OpDeleted {
-		return message.Deleted(src, applicationID, a.At, applicationSnapshot(a.Before))
-	}
-	return message.Updated(src, applicationID, a.At, applicationSnapshot(a.Before), applicationSnapshot(a.After))
-}
-
-// currentReviews is the latest review of each of an application's
-// documents, leaving out one whose document has changed since.
-func currentReviews(documentService *service.DocumentService, docs *documents.Store, applicationID int64) (map[document.Type]document.Review, error) {
-	reviews, err := documentService.LatestReviews(context.Background(), applicationID)
-	if err != nil {
-		return nil, err
-	}
-	return documents.Current(docs.Status(applicationID), reviews, document.Review.IsCurrent)
-}
-
-func updateApplicationStatus(applications *service.ApplicationService, src message.Source, applicationID int64, status application.Status) tea.Cmd {
-	return func() tea.Msg {
-		a, err := applications.SetStatus(context.Background(), applicationID, status)
-		return applicationWritten(src, applicationID, message.OpUpdated, a, err)
-	}
-}
-
-func updateApplicationNotes(applications *service.ApplicationService, src message.Source, applicationID int64, notes string) tea.Cmd {
-	return func() tea.Msg {
-		a, err := applications.SetNotes(context.Background(), applicationID, notes)
-		return applicationWritten(src, applicationID, message.OpUpdated, a, err)
-	}
-}
-
-// loadPostings re-applies the company's currently-saved filters after
-// fetching, since ListPostingsByCompany returns every stored posting:
-// sync stores them all, and filters only decide what's shown. Without
-// this, any reload (including the one triggered right after saving a new
-// filter selection) would silently undo the narrowing by loading
-// everything unfiltered.
-//
-// Also loads each visible posting's markup (interested/archived) so the
-// list can render it inline -- one PostingService.Markup call per posting.
-// Every posting always has exactly one markup row (created alongside it
-// in UpsertPosting), so N+1 here is N cheap local sqlite reads, not N
-// round trips to a remote service.
-//
-// Closed postings are always dropped: a listing that has closed on the job
-// board can't be applied to, so it has no place in a list for finding
-// postings to act on. They stay in the db (never deleted),
-// applications on them stay reachable from the
-// active-applications screen, and a posting that reopens reappears on the
-// next load. Filtered here rather than in ListPostingsByCompany because
-// sync also uses that query and needs every posting, closed ones included.
-//
-// hideArchived additionally drops archived postings from the result --
-// ephemeral TUI display state (see the App.hideArchived field), not a
-// company_filters row, so it's applied here rather than at the
-// ingestion-gating layer.
-func loadPostings(companies *service.CompanyService, postings *service.PostingService, src message.Source, companyID int64, hideArchived bool) tea.Cmd {
-	subject := message.Subject{Type: message.TypeCompany, ID: companyID}
-	failed := func(err error) tea.Msg {
-		return message.New(src, subject, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
-	}
-	return func() tea.Msg {
-		ctx := context.Background()
-		stored, err := postings.ListByCompany(ctx, companyID)
-		if err != nil {
-			return failed(err)
-		}
-		companyFilters, err := companies.Filters(ctx, companyID)
-		if err != nil {
-			return failed(err)
-		}
-		var list message.PostingList
-		list.Departments, list.Locations = splitCompanyFilters(companyFilters)
-		list.Postings, err = filterPostingsByCompanyFilters(openSnapshots(stored), companyFilters)
-		if err != nil {
-			return failed(err)
-		}
-
-		list.Markup = make(map[int64]message.Markup, len(list.Postings))
-		for _, p := range list.Postings {
-			m, err := postings.Markup(ctx, p.ID)
-			if err != nil {
-				return failed(err)
-			}
-			list.Markup[p.ID] = markupSnapshot(*m)
-		}
-
-		if hideArchived {
-			list.Postings = filterOutArchived(list.Postings, list.Markup)
-		}
-
-		return message.New(src, subject, message.OpNone, time.Now().UTC(), message.Read[message.PostingList]{Value: list})
-	}
-}
-
-// openSnapshots is the postings whose listing hasn't closed on the job
-// board.
-func openSnapshots(postings []posting.Posting) []message.Posting {
-	visible := make([]message.Posting, 0, len(postings))
-	for _, p := range postings {
-		if p.ListingStatus == posting.ListingClosed {
-			continue
-		}
-		visible = append(visible, postingSnapshot(p))
-	}
-	return visible
-}
-
-// filterOutArchived drops postings whose markup has ArchivedAt set.
-func filterOutArchived(postings []message.Posting, markup map[int64]message.Markup) []message.Posting {
-	visible := make([]message.Posting, 0, len(postings))
-	for _, p := range postings {
-		if !markup[p.ID].ArchivedAt.IsZero() {
-			continue
-		}
-		visible = append(visible, p)
-	}
-	return visible
-}
-
-// filterPostingsByCompanyFilters keeps only postings matching
-// companyFilters. An unsupported field is returned as an error rather
-// than ignored.
-func filterPostingsByCompanyFilters(postings []message.Posting, companyFilters []filter.Filter) ([]message.Posting, error) {
-	narrowed := make([]message.Posting, 0, len(postings))
-	for _, p := range postings {
-		match, err := filter.Match(filter.Posting{Department: p.Department, Location: p.Location}, companyFilters)
-		if err != nil {
-			return nil, err
-		}
-		if match {
-			narrowed = append(narrowed, p)
-		}
-	}
-	return narrowed, nil
-}
-
-// splitCompanyFilters separates a company's saved filter rows by field.
-func splitCompanyFilters(filters []filter.Filter) (departments, locations []string) {
-	for _, f := range filters {
-		switch f.Field {
-		case filter.FieldDepartment:
-			departments = append(departments, f.Value)
-		case filter.FieldLocation:
-			locations = append(locations, f.Value)
-		}
-	}
-	return departments, locations
-}
-
-func toSet(values []string) map[string]bool {
-	set := make(map[string]bool, len(values))
-	for _, v := range values {
-		set[v] = true
-	}
-	return set
-}
-
-func companyFiltersFrom(departments, locations []string) []filter.Filter {
-	filters := make([]filter.Filter, 0, len(departments)+len(locations))
-	for _, d := range departments {
-		filters = append(filters, filter.Filter{Field: filter.FieldDepartment, Value: d})
-	}
-	for _, l := range locations {
-		filters = append(filters, filter.Filter{Field: filter.FieldLocation, Value: l})
-	}
-	return filters
 }
 
 // errInternal is the banner for a fault: the error itself means nothing
@@ -1054,90 +567,4 @@ func (a *App) beneath() []message.Screen {
 		return path[:len(path)-1]
 	}
 	return path
-}
-
-// sectionHeading renders a posting-detail section heading: name, then a
-// dim horizontal rule filling the rest of width, so each section reads as
-// its own block. width <= 0 (before the first tea.WindowSizeMsg) gets a
-// short fixed rule rather than none.
-func sectionHeading(name string, width int) string {
-	ruleWidth := 3
-	if rest := width - lipgloss.Width(name) - 1; rest > ruleWidth {
-		ruleWidth = rest
-	}
-	return model.SectionStyle.Render(name) + " " + model.DimStyle.Render(strings.Repeat("─", ruleWidth))
-}
-
-// detailLabelWidth is the width of posting detail's label column, sized
-// to its longest label ("Application URL") plus a gap, so every value in
-// the Posting and Application sections starts in the same column.
-const detailLabelWidth = len("Application URL") + 2
-
-// detailField renders one posting-detail row: label in a fixed-width
-// column, then value word-wrapped to the rest of width, with continuation
-// lines indented to the value column instead of falling back under the
-// label. width <= 0 (before the first tea.WindowSizeMsg) leaves the value
-// unwrapped.
-func detailField(label, value string, width int) string {
-	return detailRow(label, wrapDetailValue(value, width))
-}
-
-// detailValueWidth is the width left for a value after the label column,
-// or 0 (unconstrained) when width is unknown or too narrow to fit one.
-func detailValueWidth(width int) int {
-	return max(width-detailLabelWidth, 0)
-}
-
-// wrapDetailValue word-wraps value to the value column's width, as lines.
-func wrapDetailValue(value string, width int) []string {
-	if valueWidth := detailValueWidth(width); valueWidth > 0 {
-		value = cellbuf.Wrap(value, valueWidth, "")
-	}
-	return strings.Split(value, "\n")
-}
-
-// detailRow lays out a label and its already-wrapped value lines: the
-// label padded to detailLabelWidth, then the value, with continuation
-// lines indented to the value column.
-func detailRow(label string, lines []string) string {
-	indent := strings.Repeat(" ", detailLabelWidth)
-	for i := 1; i < len(lines); i++ {
-		lines[i] = indent + lines[i]
-	}
-	gap := strings.Repeat(" ", detailLabelWidth-lipgloss.Width(label))
-	return model.FieldLabel.Render(label) + gap + strings.Join(lines, "\n") + "\n"
-}
-
-// detailDocumentField is detailField for a drafted document: its presence
-// and path, the latest review's badge, and the review's notes on their
-// own line under the value column -- the aligned counterpart of
-// documentStatusLine, which application detail still uses.
-func detailDocumentField(label string, exists bool, path string, review document.Review, hasReview bool, width int) string {
-	status := "not found"
-	if exists {
-		status = "found"
-	}
-	// The badge is placed after wrapping rather than wrapped with the path:
-	// "[not reviewed]" contains a space, and word wrapping could split it.
-	lines := wrapDetailValue(status+" ("+path+")", width)
-	badge := reviewBadge(review, hasReview)
-	last := len(lines) - 1
-	var row string
-	switch valueWidth := detailValueWidth(width); {
-	case width > 0 && valueWidth < lipgloss.Width(badge):
-		// The value column is narrower than the badge (or there's no room
-		// for one at all), so indenting the badge to it would overrun the
-		// width and get it wrapped anyway. Give it a line of its own from
-		// the left edge instead: out of alignment, but in one piece.
-		row = detailRow(label, lines) + badge + "\n"
-	case valueWidth > 0 && lipgloss.Width(lines[last])+1+lipgloss.Width(badge) > valueWidth:
-		row = detailRow(label, append(lines, badge))
-	default:
-		lines[last] += " " + badge
-		row = detailRow(label, lines)
-	}
-	if hasReview && review.Notes != "" {
-		row += detailField("", model.DimStyle.Render("Notes: "+review.Notes), width)
-	}
-	return row
 }

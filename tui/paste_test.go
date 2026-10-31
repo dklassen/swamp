@@ -61,7 +61,7 @@ func TestApp_Paste_GoesIntoTheScreensTextField(t *testing.T) {
 			app.tab = message.ScreenCompanyList
 			app.Update(message.Push(message.Source{Instance: app.companyList.Instance()}, message.ScreenApplicationForm,
 				message.Subject{Type: message.TypeApplication, ID: 1}, message.Application{ID: 1, PostingID: 1})())
-			app.Update(formReadBy(app.stack.top().Instance(), message.ApplicationForm{}))
+			app.Update(formReadBy(app.screenOf(app.onScreen()).Instance(), message.ApplicationForm{}))
 		}},
 		{name: "document review", open: func(app *App) {
 			app.tab = message.ScreenCompanyList

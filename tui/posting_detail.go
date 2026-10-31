@@ -11,8 +11,12 @@ import (
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
+	"github.com/charmbracelet/x/cellbuf"
 
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/tui/message"
@@ -411,4 +415,145 @@ func loadPostingScores(scores *service.ScoringService, src message.Source, posti
 		}
 		return message.New(src, subject, message.OpNone, time.Now().UTC(), message.Read[message.PostingScores]{Value: read})
 	}
+}
+
+// postingDetailContent renders a posting's fields, application state, and
+// description as the scrollable body of the detail view (title is rendered
+// separately, as a fixed header outside the viewport). application/
+// hasApplication are passed in rather than fetched here so this stays a
+// pure function of already-loaded state.
+//
+// docs resolves the application's document paths and their presence via
+// os.Stat -- done inline here rather than through a separate
+// tea.Cmd/tea.Msg round trip like the rest of this file's store-backed
+// state, since checking whether two local files exist is cheap/local
+// enough that a second async fetch just to avoid it here would be
+// over-applying that convention. When hasApplication
+// is false, no documents section is rendered at all -- "no application
+// -> show nothing".
+//
+// latestReviews is, like application, read by posting detail and passed
+// in rather than queried here -- a DB read, unlike docs.Status's local
+// os.Stat, follows the same tea.Cmd/tea.Msg convention as the rest of
+// this file's store-backed state (#83). A document with no entry in the
+// map renders as "not reviewed".
+func postingDetailContent(p posting.Posting, application application.Application, hasApplication bool, docs *documents.Store, latestReviews map[document.Type]document.Review, width int) string {
+	var b strings.Builder
+	b.WriteString(sectionHeading("Posting", width) + "\n")
+	fields := []struct{ label, value string }{
+		{"Department", p.Department},
+		{"Team", p.Team},
+		{"Location", p.Location},
+		{"Employment type", p.EmploymentType},
+		{"Workplace type", p.WorkplaceType},
+		{"Status", p.ListingStatus.String()},
+		{"Job URL", p.JobURL},
+		{"Application URL", p.ApplicationURL},
+	}
+	for _, f := range fields {
+		if f.value == "" {
+			continue
+		}
+		b.WriteString(detailField(f.label, f.value, width))
+	}
+	b.WriteString("\n" + sectionHeading("Application", width) + "\n")
+	if hasApplication {
+		b.WriteString(detailField("Status", applicationStatusLabel(application.Status), width))
+		if application.Notes != "" {
+			b.WriteString(detailField("Notes", application.Notes, width))
+		}
+		status := docs.Status(application.ID)
+		b.WriteString("\n")
+		for _, documentType := range document.Types() {
+			doc, err := status.Doc(documentType)
+			if err != nil {
+				continue
+			}
+			presence := "not found"
+			if doc.Exists {
+				presence = "found"
+			}
+			label := documentTitle(documentType)
+			// The badge is placed after wrapping rather than wrapped with the path:
+			// "[not reviewed]" contains a space, and word wrapping could split it.
+			lines := wrapDetailValue(presence+" ("+doc.Path+")", width)
+			review, hasReview := latestReviews[documentType]
+			badge := reviewBadge(review, hasReview)
+			last := len(lines) - 1
+			switch valueWidth := detailValueWidth(width); {
+			case width > 0 && valueWidth < lipgloss.Width(badge):
+				// The value column is narrower than the badge (or there's no room
+				// for one at all), so indenting the badge to it would overrun the
+				// width and get it wrapped anyway. Give it a line of its own from
+				// the left edge instead: out of alignment, but in one piece.
+				b.WriteString(detailRow(label, lines) + badge + "\n")
+			case valueWidth > 0 && lipgloss.Width(lines[last])+1+lipgloss.Width(badge) > valueWidth:
+				b.WriteString(detailRow(label, append(lines, badge)))
+			default:
+				lines[last] += " " + badge
+				b.WriteString(detailRow(label, lines))
+			}
+			if hasReview && review.Notes != "" {
+				b.WriteString(detailField("", model.DimStyle.Render("Notes: "+review.Notes), width))
+			}
+		}
+	} else {
+		b.WriteString(model.HelpStyle.Render("No application started -- press 'a' to start one.") + "\n")
+	}
+	if desc := p.DescriptionText; desc != "" {
+		b.WriteString("\n" + sectionHeading("Description", width) + "\n" + desc + "\n")
+	}
+	return b.String()
+}
+
+// sectionHeading renders a posting-detail section heading: name, then a
+// dim horizontal rule filling the rest of width, so each section reads as
+// its own block. width <= 0 (before the first tea.WindowSizeMsg) gets a
+// short fixed rule rather than none.
+func sectionHeading(name string, width int) string {
+	ruleWidth := 3
+	if rest := width - lipgloss.Width(name) - 1; rest > ruleWidth {
+		ruleWidth = rest
+	}
+	return model.SectionStyle.Render(name) + " " + model.DimStyle.Render(strings.Repeat("─", ruleWidth))
+}
+
+// detailLabelWidth is the width of posting detail's label column, sized
+// to its longest label ("Application URL") plus a gap, so every value in
+// the Posting and Application sections starts in the same column.
+const detailLabelWidth = len("Application URL") + 2
+
+// detailField renders one posting-detail row: label in a fixed-width
+// column, then value word-wrapped to the rest of width, with continuation
+// lines indented to the value column instead of falling back under the
+// label. width <= 0 (before the first tea.WindowSizeMsg) leaves the value
+// unwrapped.
+func detailField(label, value string, width int) string {
+	return detailRow(label, wrapDetailValue(value, width))
+}
+
+// detailValueWidth is the width left for a value after the label column,
+// or 0 (unconstrained) when width is unknown or too narrow to fit one.
+func detailValueWidth(width int) int {
+	return max(width-detailLabelWidth, 0)
+}
+
+// wrapDetailValue word-wraps value to the value column's width, as lines.
+func wrapDetailValue(value string, width int) []string {
+	if valueWidth := detailValueWidth(width); valueWidth > 0 {
+		value = cellbuf.Wrap(value, valueWidth, "")
+	}
+	return strings.Split(value, "\n")
+}
+
+// detailRow lays out a label and its already-wrapped value lines: the
+// label padded to detailLabelWidth, then the value, with continuation
+// lines indented to the value column.
+func detailRow(label string, lines []string) string {
+	indent := strings.Repeat(" ", detailLabelWidth)
+	for i := 1; i < len(lines); i++ {
+		lines[i] = indent + lines[i]
+	}
+	gap := strings.Repeat(" ", detailLabelWidth-lipgloss.Width(label))
+	return model.FieldLabel.Render(label) + gap + strings.Join(lines, "\n") + "\n"
 }

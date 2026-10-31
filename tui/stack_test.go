@@ -4,6 +4,7 @@ import (
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
@@ -29,6 +30,14 @@ func (f *stackedFake) Routes() []*model.Route {
 	return []*model.Route{model.Always(func(stackPing) tea.Cmd { f.heard++; return nil })}
 }
 
+// assertKinds fails unless stack holds exactly want, bottom first.
+func assertKinds(t *testing.T, stack *screenStack, want ...message.Screen) {
+	t.Helper()
+	if diff := cmp.Diff(want, stack.kinds()); diff != "" {
+		t.Errorf("kinds mismatch (-want +got):\n%s", diff)
+	}
+}
+
 func TestScreenStack_Push_RoutesToTheScreen(t *testing.T) {
 	t.Parallel()
 	router := model.NewMsgRouter()
@@ -43,9 +52,7 @@ func TestScreenStack_Push_RoutesToTheScreen(t *testing.T) {
 	if screen.heard != 1 {
 		t.Errorf("pings the pushed screen heard = %d, want 1", screen.heard)
 	}
-	if stack.top() != screen {
-		t.Errorf("top = %v, want the pushed screen", stack.top())
-	}
+	assertKinds(t, stack, message.ScreenCompanyForm)
 }
 
 func TestScreenStack_Pop_StopsTheScreensRoutes(t *testing.T) {
@@ -68,9 +75,7 @@ func TestScreenStack_Pop_StopsTheScreensRoutes(t *testing.T) {
 	if over.heard != 0 || under.heard != 1 {
 		t.Errorf("pings heard after the pop: popped %d, beneath %d; want 0 and 1", over.heard, under.heard)
 	}
-	if stack.top() != under {
-		t.Errorf("top after the pop = %v, want the screen beneath", stack.top())
-	}
+	assertKinds(t, stack, message.ScreenCompanyEdit)
 }
 
 func TestScreenStack_Replace_SwapsTheTopOverTheSameScreen(t *testing.T) {
@@ -90,26 +95,25 @@ func TestScreenStack_Replace_SwapsTheTopOverTheSameScreen(t *testing.T) {
 	if old.heard != 0 || replacement.heard != 1 {
 		t.Errorf("pings heard after the replace: replaced %d, replacement %d; want 0 and 1", old.heard, replacement.heard)
 	}
-	if stack.top() != replacement || stack.len() != 1 {
-		t.Errorf("top = %v of %d, want the replacement alone", stack.top(), stack.len())
-	}
+	assertKinds(t, stack, message.ScreenPostingDetail)
 }
 
-func TestScreenStack_ReplaceWithNothingPushed_Fails(t *testing.T) {
+func TestScreenStack_WithNothingPushed_Fails(t *testing.T) {
 	t.Parallel()
-	stack := newScreenStack(model.NewMsgRouter())
-
-	if err := stack.replace(message.ScreenPostingDetail, newStackedFake()); err == nil {
-		t.Error("replace with nothing pushed: nil error, want one")
+	tests := []struct {
+		name string
+		op   func(*screenStack) error
+	}{
+		{name: "pop", op: func(st *screenStack) error { return st.pop() }},
+		{name: "replace", op: func(st *screenStack) error { return st.replace(message.ScreenPostingDetail, newStackedFake()) }},
 	}
-}
-
-func TestScreenStack_PopWithNothingPushed_Fails(t *testing.T) {
-	t.Parallel()
-	stack := newScreenStack(model.NewMsgRouter())
-
-	if err := stack.pop(); err == nil {
-		t.Error("pop with nothing pushed: nil error, want one")
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if err := tt.op(newScreenStack(model.NewMsgRouter())); err == nil {
+				t.Errorf("%s with nothing pushed: nil error, want one", tt.name)
+			}
+		})
 	}
 }
 
