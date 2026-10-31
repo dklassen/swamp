@@ -43,8 +43,8 @@ func openAllPostings(t *testing.T, app *App) *App {
 	for range 2 {
 		app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 	}
-	if app.nav.onScreen() != message.ScreenAllPostings {
-		t.Fatalf("screen after two tabs = %v, want all postings", app.nav.onScreen())
+	if app.onScreen() != message.ScreenAllPostings {
+		t.Fatalf("screen after two tabs = %v, want all postings", app.onScreen())
 	}
 	return app
 }
@@ -200,12 +200,12 @@ func TestAllPostings_EnterOpensTheDetailAndEscComesBack(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	if app.nav.onScreen() != message.ScreenPostingDetail || openDetail(t, app).posting.ID != want.ID || openDetail(t, app).posting.Title != want.Title {
-		t.Fatalf("after enter: screen %v showing posting %d %q, want detail for %d %q", app.nav.onScreen(), openDetail(t, app).posting.ID, openDetail(t, app).posting.Title, want.ID, want.Title)
+	if app.onScreen() != message.ScreenPostingDetail || openDetail(t, app).posting.ID != want.ID || openDetail(t, app).posting.Title != want.Title {
+		t.Fatalf("after enter: screen %v showing posting %d %q, want detail for %d %q", app.onScreen(), openDetail(t, app).posting.ID, openDetail(t, app).posting.Title, want.ID, want.Title)
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
-	if app.nav.onScreen() != message.ScreenAllPostings || len(allPostingsTabOf(app).starts) != 2 || allPostingsTabOf(app).cursor != 1 {
-		t.Errorf("after esc: screen %v, page %d, row %d; want all postings, page 2, row 1", app.nav.onScreen(), len(allPostingsTabOf(app).starts), allPostingsTabOf(app).cursor)
+	if app.onScreen() != message.ScreenAllPostings || len(allPostingsTabOf(app).starts) != 2 || allPostingsTabOf(app).cursor != 1 {
+		t.Errorf("after esc: screen %v, page %d, row %d; want all postings, page 2, row 1", app.onScreen(), len(allPostingsTabOf(app).starts), allPostingsTabOf(app).cursor)
 	}
 }
 
@@ -223,16 +223,16 @@ func TestAllPostings_DetailDoesNotStepThroughACompanyListBrowsedEarlier(t *testi
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.nav.onScreen() != message.ScreenCompanyPostings || len(openList(t, app).list.Postings) != 3 {
-		t.Fatalf("screen %v with %d postings, want Acme's posting list with 3", app.nav.onScreen(), len(openList(t, app).list.Postings))
+	if app.onScreen() != message.ScreenCompanyPostings || len(openList(t, app).list.Postings) != 3 {
+		t.Fatalf("screen %v with %d postings, want Acme's posting list with 3", app.onScreen(), len(openList(t, app).list.Postings))
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	if app.nav.onScreen() != message.ScreenPostingDetail {
-		t.Fatalf("screen = %v, want posting detail", app.nav.onScreen())
+	if app.onScreen() != message.ScreenPostingDetail {
+		t.Fatalf("screen = %v, want posting detail", app.onScreen())
 	}
 	if openDetail(t, app).canStep() {
 		t.Error("posting detail opened from all postings offers stepping through Acme's posting list")
@@ -524,8 +524,8 @@ func TestAllPostings_EscClearsTheSearch(t *testing.T) {
 	if diff := cmp.Diff([]string{"Designer", "Platform Engineer"}, pageTitles(app)); diff != "" {
 		t.Errorf("after esc (-want +got):\n%s", diff)
 	}
-	if app.nav.onScreen() != message.ScreenAllPostings {
-		t.Errorf("esc left the view: screen %v", app.nav.onScreen())
+	if app.onScreen() != message.ScreenAllPostings {
+		t.Errorf("esc left the view: screen %v", app.onScreen())
 	}
 }
 
@@ -544,8 +544,8 @@ func TestAllPostings_EnterKeepsTheResultsAndKeysActOnThem(t *testing.T) {
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = sendKeyAndApply(t, app, runeKey('i'))
 
-	if app.nav.onScreen() != message.ScreenAllPostings || allPostingsTabOf(app).searching || allPostingsTabOf(app).query != "design" {
-		t.Errorf("after enter, i: screen %v, searching %v, query %q; want the view, not typing, query \"design\"", app.nav.onScreen(), allPostingsTabOf(app).searching, allPostingsTabOf(app).query)
+	if app.onScreen() != message.ScreenAllPostings || allPostingsTabOf(app).searching || allPostingsTabOf(app).query != "design" {
+		t.Errorf("after enter, i: screen %v, searching %v, query %q; want the view, not typing, query \"design\"", app.onScreen(), allPostingsTabOf(app).searching, allPostingsTabOf(app).query)
 	}
 	markup, err := s.Postings.Markup(context.Background(), designer.ID)
 	if err != nil {
@@ -622,8 +622,8 @@ func TestAllPostings_EscClearsKeptResults(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
-	if app.nav.onScreen() != message.ScreenAllPostings || allPostingsTabOf(app).query != "" {
-		t.Errorf("after esc: screen %v, query %q; want the view, query cleared", app.nav.onScreen(), allPostingsTabOf(app).query)
+	if app.onScreen() != message.ScreenAllPostings || allPostingsTabOf(app).query != "" {
+		t.Errorf("after esc: screen %v, query %q; want the view, query cleared", app.onScreen(), allPostingsTabOf(app).query)
 	}
 	if diff := cmp.Diff([]string{"Designer", "Platform Engineer"}, pageTitles(app)); diff != "" {
 		t.Errorf("after esc (-want +got):\n%s", diff)
@@ -853,8 +853,8 @@ func TestAllPostings_ArchivedWhileDetailIsUp_LeavesThePageUnderIt(t *testing.T) 
 
 	app = applyCmd(t, app, toggleArchived(s.Postings, message.Source{}, shown.ID, false))
 
-	if app.nav.onScreen() != message.ScreenPostingDetail {
-		t.Fatalf("screen = %v, want posting detail still up", app.nav.onScreen())
+	if app.onScreen() != message.ScreenPostingDetail {
+		t.Fatalf("screen = %v, want posting detail still up", app.onScreen())
 	}
 	if diff := cmp.Diff([]string{"Role 2", "Role 1"}, pageTitles(app)); diff != "" {
 		t.Errorf("all postings under the detail (-want +got):\n%s", diff)

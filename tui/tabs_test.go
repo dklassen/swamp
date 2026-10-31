@@ -32,8 +32,8 @@ func TestApp_Tab_SwitchesBetweenTheLists(t *testing.T) {
 			app := newTestApp(t, s, newTestSyncer(s, nil))
 			app.nav.tab = tt.from
 			app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
-			if app.nav.onScreen() != tt.want {
-				t.Errorf("screen after tab = %v, want %v", app.nav.onScreen(), tt.want)
+			if app.onScreen() != tt.want {
+				t.Errorf("screen after tab = %v, want %v", app.onScreen(), tt.want)
 			}
 		})
 	}
@@ -50,8 +50,8 @@ func TestApp_Tab_KeepsTheCompanySearch(t *testing.T) {
 	for _, key := range []tea.KeyPressMsg{runeKey('/'), runeKey('g'), {Code: tea.KeyTab}} {
 		app = sendKeyAndApply(t, app, key)
 	}
-	if app.nav.onScreen() != message.ScreenAllPostings {
-		t.Fatalf("screen after tab while searching = %v, want all postings", app.nav.onScreen())
+	if app.onScreen() != message.ScreenAllPostings {
+		t.Fatalf("screen after tab while searching = %v, want all postings", app.onScreen())
 	}
 	for range 2 {
 		app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
@@ -135,8 +135,8 @@ func TestApp_Esc_OnATab_StaysPut(t *testing.T) {
 		app := newTabsTestApp(t, 100)
 		app.nav.tab = sc
 		app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
-		if app.nav.onScreen() != sc {
-			t.Errorf("screen after esc on %v = %v, want it unchanged", sc, app.nav.onScreen())
+		if app.onScreen() != sc {
+			t.Errorf("screen after esc on %v = %v, want it unchanged", sc, app.onScreen())
 		}
 	}
 }
@@ -153,14 +153,14 @@ func TestApp_ActiveApplications_SearchSurvivesDetailAndTab(t *testing.T) {
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.nav.onScreen() != message.ScreenApplicationDetail || shownDetail(app).Posting.Title != "Engineer 07" {
-		t.Fatalf("after enter, enter: screen %v showing %q, want application detail for Engineer 07", app.nav.onScreen(), shownDetail(app).Posting.Title)
+	if app.onScreen() != message.ScreenApplicationDetail || shownDetail(app).Posting.Title != "Engineer 07" {
+		t.Fatalf("after enter, enter: screen %v showing %q, want application detail for Engineer 07", app.onScreen(), shownDetail(app).Posting.Title)
 	}
 	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEsc}, {Code: tea.KeyTab}, {Code: tea.KeyTab}, {Code: tea.KeyTab}} {
 		app = sendKeyAndApply(t, app, key)
 	}
-	if app.nav.onScreen() != message.ScreenActiveApplications || applicationsTabOf(app).searching || applicationsTabOf(app).query != "engineer 07" {
+	if app.onScreen() != message.ScreenActiveApplications || applicationsTabOf(app).searching || applicationsTabOf(app).query != "engineer 07" {
 		t.Errorf("back on the home list: screen %v, searching %v, query %q; want the matches for %q still kept",
-			app.nav.onScreen(), applicationsTabOf(app).searching, applicationsTabOf(app).query, "engineer 07")
+			app.onScreen(), applicationsTabOf(app).searching, applicationsTabOf(app).query, "engineer 07")
 	}
 }

@@ -222,8 +222,8 @@ func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 				app := newFullTestApp(t)
 				app, _ = sendKey(app, tea.WindowSizeMsg{Width: width, Height: height})
 				app = sc.open(t, app)
-				if app.nav.onScreen() != sc.screen {
-					t.Fatalf("screen = %v, want %v", app.nav.onScreen(), sc.screen)
+				if app.onScreen() != sc.screen {
+					t.Fatalf("screen = %v, want %v", app.onScreen(), sc.screen)
 				}
 				// Clear whatever getting here left behind (openPostingList
 				// syncs, which sets a status), then show this case's banner.

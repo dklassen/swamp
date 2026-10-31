@@ -33,8 +33,9 @@ type App struct {
 	// on a tick every changePoll.
 	changes    *changeReader
 	changePoll time.Duration
-	// nav is the screens open, and opens each one a Nav names.
+	// nav is the tabs, and stack the screens pushed over the tab up.
 	nav    *Navigation
+	stack  *Stack
 	status string
 	err    error
 	// syncing runs sync all and refreshes, and draws their progress in the
@@ -52,7 +53,7 @@ type App struct {
 	sized message.ContentSize
 }
 
-// New is the App over nav, both routed by router.
+// New is the App over nav and stack, routed by router.
 func New(
 	router model.Router,
 	companies *service.CompanyService,
@@ -63,6 +64,7 @@ func New(
 	changes *service.ChangeLog,
 	syncer *sync.Syncer,
 	nav *Navigation,
+	stack *Stack,
 ) *App {
 	a := &App{
 		companyService:     companies,
@@ -72,11 +74,12 @@ func New(
 		scoringService:     scores,
 		changeLogService:   changes,
 		nav:                nav,
+		stack:              stack,
 		syncing:            model.NewSyncing(syncer),
 		router:             router,
 		instance:           message.NewScreenInstance(),
 	}
-	for _, module := range []model.Routable{a, a.nav, a.syncing} {
+	for _, module := range []model.Routable{a, a.nav, a.stack, a.syncing} {
 		if err := a.router.Register(module); err != nil {
 			panic(err)
 		}
@@ -90,7 +93,59 @@ func New(
 
 func (a *App) focusSignal() tea.Msg {
 	return message.New(message.Source{Process: a.origin}, message.Subject{}, message.OpNone, time.Now().UTC(),
-		message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: a.nav.Focused()}})
+		message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: a.focused()}})
+}
+
+// settle routes the screens the stack opened, then starts them, so nothing
+// Init starts can report before they can hear it, and stops routing those
+// it closed.
+func (a *App) settle() tea.Cmd {
+	closed, opened := a.stack.Moved()
+	var cmds []tea.Cmd
+	for _, s := range closed {
+		if err := a.router.Deregister(s); err != nil {
+			cmds = append(cmds, message.Fail(message.Source{Instance: a.instance}, err))
+		}
+	}
+	for _, s := range opened {
+		if err := a.router.Register(s); err != nil {
+			cmds = append(cmds, message.Fail(message.Source{Instance: a.instance}, err))
+			continue
+		}
+		cmds = append(cmds, s.Init())
+	}
+	return tea.Batch(cmds...)
+}
+
+// top is the screen on top: the stack's, or the tab up when nothing is
+// pushed.
+func (a *App) top() stackScreen {
+	if s := a.stack.Top(); s != nil {
+		return s
+	}
+	return a.nav.Screen(a.nav.Tab())
+}
+
+func (a *App) focused() message.ScreenInstance { return a.top().Instance() }
+
+// path is the tab up, then each screen pushed over it: the way esc goes
+// back, reversed.
+func (a *App) path() []message.Screen {
+	return append([]message.Screen{a.nav.Tab()}, a.stack.Kinds()...)
+}
+
+// onScreen is the kind of the screen on top.
+func (a *App) onScreen() message.Screen {
+	path := a.path()
+	return path[len(path)-1]
+}
+
+// screen is the open screen of kind, or nil if none is.
+func (a *App) screen(kind message.Screen) stackScreen {
+	if s := a.nav.Screen(kind); s != nil {
+		return s
+	}
+	return a.stack.Screen(kind)
 }
 
 // WithStatus starts the App with status on the status line.
@@ -148,7 +203,8 @@ func (a *App) handle(msg tea.Msg) (tea.Cmd, bool) {
 		switch {
 		case msg.String() == "ctrl+c":
 			return tea.Quit, true
-		case msg.String() == "tab" && a.nav.NextTab():
+		case msg.String() == "tab" && a.stack.Top() == nil:
+			a.nav.NextTab()
 			// A stale error from the tab just left shouldn't show on the next.
 			a.err = nil
 			return nil, true
@@ -224,12 +280,13 @@ func (a *App) notified(e message.Event[message.Notify]) tea.Cmd {
 
 func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// Before Dispatch, since a Nav's route moves the screen.
-	focusedBefore := a.nav.Focused()
+	focusedBefore := a.focused()
 	cmd, handled := a.handle(msg)
 	if !handled {
 		cmd = a.router.Dispatch(msg)
+		cmd = tea.Batch(cmd, a.settle())
 	}
-	if a.nav.Focused() != focusedBefore {
+	if a.focused() != focusedBefore {
 		// Dispatched now, not as a Cmd, so keys already queued see it.
 		cmd = tea.Batch(cmd, a.router.Dispatch(a.focusSignal()))
 	}
@@ -269,7 +326,7 @@ func (a *App) screenRows() int {
 }
 
 func (a *App) View() tea.View {
-	v := tea.NewView(a.header() + a.nav.View().Content + a.banner())
+	v := tea.NewView(a.header() + a.top().View().Content + a.banner())
 	v.AltScreen = true
 	return v
 }

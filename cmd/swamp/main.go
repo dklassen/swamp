@@ -155,7 +155,8 @@ func main() {
 		scores,
 		changes,
 		syncer,
-		tui.NewNavigation(router, screens.Tabs(), screens.Tables()...),
+		tui.NewNavigation(screens.Tabs()),
+		tui.NewStack(screens.Tables()...),
 	).WithChangeLog(since, cfg.Origin)
 	program := tea.NewProgram(app)
 	stopMCP := func(context.Context) error { return nil }

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"slices"
 	"testing"
 
 	tea "charm.land/bubbletea/v2"
@@ -31,103 +32,93 @@ func (f *stackedFake) Routes() []*model.Route {
 }
 
 // assertKinds fails unless stack holds exactly want, bottom first.
-func assertKinds(t *testing.T, stack *screenStack, want ...message.Screen) {
+func assertKinds(t *testing.T, stack *Stack, want ...message.Screen) {
 	t.Helper()
-	if diff := cmp.Diff(want, stack.kinds()); diff != "" {
+	if diff := cmp.Diff(want, stack.Kinds()); diff != "" {
 		t.Errorf("kinds mismatch (-want +got):\n%s", diff)
 	}
 }
 
-func TestScreenStack_Push_RoutesToTheScreen(t *testing.T) {
-	t.Parallel()
-	router := model.NewMsgRouter()
-	stack := newScreenStack(router)
-	screen := newStackedFake()
-
-	if err := stack.push(message.ScreenCompanyForm, screen); err != nil {
-		t.Fatalf("push: %v", err)
+// assertMoved fails unless stack moved exactly the screens closed and
+// opened, the same instances.
+func assertMoved(t *testing.T, stack *Stack, closed, opened []stackScreen) {
+	t.Helper()
+	gotClosed, gotOpened := stack.Moved()
+	if !slices.Equal(gotClosed, closed) || !slices.Equal(gotOpened, opened) {
+		t.Errorf("moved: closed %v, opened %v; want %v and %v", gotClosed, gotOpened, closed, opened)
 	}
-	router.Dispatch(stackPing{})
-
-	if screen.heard != 1 {
-		t.Errorf("pings the pushed screen heard = %d, want 1", screen.heard)
-	}
-	assertKinds(t, stack, message.ScreenCompanyForm)
 }
 
-func TestScreenStack_Pop_StopsTheScreensRoutes(t *testing.T) {
+func TestStack_Push_OpensTheScreen(t *testing.T) {
 	t.Parallel()
-	router := model.NewMsgRouter()
-	stack := newScreenStack(router)
+	stack := NewStack()
+	screen := newStackedFake()
+
+	stack.push(message.ScreenCompanyForm, screen)
+
+	assertKinds(t, stack, message.ScreenCompanyForm)
+	assertMoved(t, stack, nil, []stackScreen{screen})
+}
+
+func TestStack_Pop_ClosesTheTop(t *testing.T) {
+	t.Parallel()
+	stack := NewStack()
 	under, over := newStackedFake(), newStackedFake()
-	if err := stack.push(message.ScreenCompanyEdit, under); err != nil {
-		t.Fatalf("push: %v", err)
-	}
-	if err := stack.push(message.ScreenFilterSelect, over); err != nil {
-		t.Fatalf("push: %v", err)
-	}
+	stack.push(message.ScreenCompanyEdit, under)
+	stack.push(message.ScreenFilterSelect, over)
+	stack.Moved()
 
 	if err := stack.pop(); err != nil {
 		t.Fatalf("pop: %v", err)
 	}
-	router.Dispatch(stackPing{})
 
-	if over.heard != 0 || under.heard != 1 {
-		t.Errorf("pings heard after the pop: popped %d, beneath %d; want 0 and 1", over.heard, under.heard)
-	}
 	assertKinds(t, stack, message.ScreenCompanyEdit)
+	assertMoved(t, stack, []stackScreen{over}, nil)
 }
 
-func TestScreenStack_Replace_SwapsTheTopOverTheSameScreen(t *testing.T) {
+func TestStack_Replace_SwapsTheTopOverTheSameScreen(t *testing.T) {
 	t.Parallel()
-	router := model.NewMsgRouter()
-	stack := newScreenStack(router)
+	stack := NewStack()
 	old, replacement := newStackedFake(), newStackedFake()
-	if err := stack.push(message.ScreenPostingDetail, old); err != nil {
-		t.Fatalf("push: %v", err)
-	}
+	stack.push(message.ScreenPostingDetail, old)
+	stack.Moved()
 
 	if err := stack.replace(message.ScreenPostingDetail, replacement); err != nil {
 		t.Fatalf("replace: %v", err)
 	}
-	router.Dispatch(stackPing{})
 
-	if old.heard != 0 || replacement.heard != 1 {
-		t.Errorf("pings heard after the replace: replaced %d, replacement %d; want 0 and 1", old.heard, replacement.heard)
-	}
 	assertKinds(t, stack, message.ScreenPostingDetail)
+	assertMoved(t, stack, []stackScreen{old}, []stackScreen{replacement})
 }
 
-func TestScreenStack_WithNothingPushed_Fails(t *testing.T) {
+func TestStack_WithNothingPushed_Fails(t *testing.T) {
 	t.Parallel()
 	tests := []struct {
 		name string
-		op   func(*screenStack) error
+		op   func(*Stack) error
 	}{
-		{name: "pop", op: func(st *screenStack) error { return st.pop() }},
-		{name: "replace", op: func(st *screenStack) error { return st.replace(message.ScreenPostingDetail, newStackedFake()) }},
+		{name: "pop", op: func(st *Stack) error { return st.pop() }},
+		{name: "replace", op: func(st *Stack) error { return st.replace(message.ScreenPostingDetail, newStackedFake()) }},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			if err := tt.op(newScreenStack(model.NewMsgRouter())); err == nil {
+			if err := tt.op(NewStack()); err == nil {
 				t.Errorf("%s with nothing pushed: nil error, want one", tt.name)
 			}
 		})
 	}
 }
 
-func TestScreenStack_PushingAKindAlreadyOpen_Panics(t *testing.T) {
+func TestStack_PushingAKindAlreadyOpen_Panics(t *testing.T) {
 	t.Parallel()
-	stack := newScreenStack(model.NewMsgRouter())
-	if err := stack.push(message.ScreenCompanyForm, newStackedFake()); err != nil {
-		t.Fatalf("push: %v", err)
-	}
+	stack := NewStack()
+	stack.push(message.ScreenCompanyForm, newStackedFake())
 
 	defer func() {
 		if recover() == nil {
 			t.Errorf("pushing %v while it's open didn't panic", message.ScreenCompanyForm)
 		}
 	}()
-	_ = stack.push(message.ScreenCompanyForm, newStackedFake())
+	stack.push(message.ScreenCompanyForm, newStackedFake())
 }

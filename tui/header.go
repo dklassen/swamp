@@ -15,7 +15,7 @@ import (
 // It ends in a newline, so screenRows can count its rows the way it
 // counts the banner's.
 func (a *App) header() string {
-	path := a.nav.Path()
+	path := a.path()
 	if len(path) == 1 {
 		return a.tabBar(path[0])
 	}
@@ -36,31 +36,31 @@ const crumbSeparator = " › "
 
 // postingList is the open posting list, or nil.
 func (a *App) postingList() *postingListModel {
-	l, _ := a.nav.Screen(message.ScreenCompanyPostings).(*postingListModel)
+	l, _ := a.screen(message.ScreenCompanyPostings).(*postingListModel)
 	return l
 }
 
 // postingDetail is the open posting detail, or nil.
 func (a *App) postingDetail() *postingDetailModel {
-	d, _ := a.nav.Screen(message.ScreenPostingDetail).(*postingDetailModel)
+	d, _ := a.screen(message.ScreenPostingDetail).(*postingDetailModel)
 	return d
 }
 
 // applicationDetail is the open application detail, or nil.
 func (a *App) applicationDetail() *applicationDetailModel {
-	d, _ := a.nav.Screen(message.ScreenApplicationDetail).(*applicationDetailModel)
+	d, _ := a.screen(message.ScreenApplicationDetail).(*applicationDetailModel)
 	return d
 }
 
 // activeApplications is the applications tab.
 func (a *App) activeApplications() *activeApplicationListModel {
-	l, _ := a.nav.Screen(message.ScreenActiveApplications).(*activeApplicationListModel)
+	l, _ := a.screen(message.ScreenActiveApplications).(*activeApplicationListModel)
 	return l
 }
 
 // allPostingsTab is the all postings tab.
 func (a *App) allPostingsTab() *allPostingsModel {
-	l, _ := a.nav.Screen(message.ScreenAllPostings).(*allPostingsModel)
+	l, _ := a.screen(message.ScreenAllPostings).(*allPostingsModel)
 	return l
 }
 
@@ -129,7 +129,7 @@ func (a *App) crumbs(path []message.Screen) []string {
 		case message.ScreenDocumentReviewSelect:
 			crumbs = append(crumbs, "Review a document")
 		case message.ScreenDocumentReviewForm:
-			if f, ok := a.nav.Screen(message.ScreenDocumentReviewForm).(*documentReviewFormModel); ok {
+			if f, ok := a.screen(message.ScreenDocumentReviewForm).(*documentReviewFormModel); ok {
 				crumbs = append(crumbs, "Review "+documentTypeOf(f.review.DocumentType).Label())
 			}
 		case message.ScreenApplicationExport:

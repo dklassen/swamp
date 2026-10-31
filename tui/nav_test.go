@@ -31,14 +31,14 @@ func popsIn(msgs []tea.Msg, from message.ScreenInstance) bool {
 
 // reviewForm is the open review form, or nil.
 func reviewForm(app *App) *documentReviewFormModel {
-	f, _ := app.nav.stack.open(message.ScreenDocumentReviewForm).(*documentReviewFormModel)
+	f, _ := app.stack.Screen(message.ScreenDocumentReviewForm).(*documentReviewFormModel)
 	return f
 }
 
 // statusPicker is the open status picker, failing the test if none is.
 func statusPicker(t *testing.T, app *App) *applicationStatusModel {
 	t.Helper()
-	m, ok := app.nav.stack.open(message.ScreenApplicationStatus).(*applicationStatusModel)
+	m, ok := app.stack.Screen(message.ScreenApplicationStatus).(*applicationStatusModel)
 	if !ok {
 		t.Fatal("no status picker is open")
 	}
@@ -48,7 +48,7 @@ func statusPicker(t *testing.T, app *App) *applicationStatusModel {
 // notesEditor is the open notes editor, failing the test if none is.
 func notesEditor(t *testing.T, app *App) *applicationNotesModel {
 	t.Helper()
-	m, ok := app.nav.stack.open(message.ScreenApplicationNotes).(*applicationNotesModel)
+	m, ok := app.stack.Screen(message.ScreenApplicationNotes).(*applicationNotesModel)
 	if !ok {
 		t.Fatal("no notes editor is open")
 	}
@@ -57,7 +57,7 @@ func notesEditor(t *testing.T, app *App) *applicationNotesModel {
 
 func applicationForm(t *testing.T, app *App) *applicationFormModel {
 	t.Helper()
-	m, ok := app.nav.stack.open(message.ScreenApplicationForm).(*applicationFormModel)
+	m, ok := app.stack.Screen(message.ScreenApplicationForm).(*applicationFormModel)
 	if !ok {
 		t.Fatal("no application form is open")
 	}

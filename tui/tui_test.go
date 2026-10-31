@@ -113,7 +113,7 @@ func newAppWithScreensOn(s testutil.TestApp, syncer *sync.Syncer, docs *document
 		panic(err)
 	}
 	app := New(router, s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, syncer,
-		NewNavigation(router, screens.Tabs(), screens.Tables()...))
+		NewNavigation(screens.Tabs()), NewStack(screens.Tables()...))
 	return app, screens
 }
 
@@ -127,15 +127,15 @@ func tabKinds() []message.Screen {
 }
 
 func companiesTabOf(app *App) *companyListModel {
-	return app.nav.Screen(message.ScreenCompanyList).(*companyListModel)
+	return app.screen(message.ScreenCompanyList).(*companyListModel)
 }
 
 func allPostingsTabOf(app *App) *allPostingsModel {
-	return app.nav.Screen(message.ScreenAllPostings).(*allPostingsModel)
+	return app.screen(message.ScreenAllPostings).(*allPostingsModel)
 }
 
 func applicationsTabOf(app *App) *activeApplicationListModel {
-	return app.nav.Screen(message.ScreenActiveApplications).(*activeApplicationListModel)
+	return app.screen(message.ScreenActiveApplications).(*activeApplicationListModel)
 }
 
 // storeOf is app's services, for tests that get only an App from their
