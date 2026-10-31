@@ -24,7 +24,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/domain/document"
-	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/sync"
@@ -574,125 +573,6 @@ func updateApplicationStatus(applications *service.ApplicationService, src messa
 		a, err := applications.SetStatus(context.Background(), applicationID, status)
 		return applicationWritten(src, applicationID, message.OpUpdated, a, err)
 	}
-}
-
-// loadPostings re-applies the company's currently-saved filters after
-// fetching, since ListPostingsByCompany returns every stored posting:
-// sync stores them all, and filters only decide what's shown. Without
-// this, any reload (including the one triggered right after saving a new
-// filter selection) would silently undo the narrowing by loading
-// everything unfiltered.
-//
-// Also loads each visible posting's markup (interested/archived) so the
-// list can render it inline -- one PostingService.Markup call per posting.
-// Every posting always has exactly one markup row (created alongside it
-// in UpsertPosting), so N+1 here is N cheap local sqlite reads, not N
-// round trips to a remote service.
-//
-// Closed postings are always dropped: a listing that has closed on the job
-// board can't be applied to, so it has no place in a list for finding
-// postings to act on. They stay in the db (never deleted),
-// applications on them stay reachable from the
-// active-applications screen, and a posting that reopens reappears on the
-// next load. Filtered here rather than in ListPostingsByCompany because
-// sync also uses that query and needs every posting, closed ones included.
-//
-// hideArchived additionally drops archived postings from the result --
-// ephemeral TUI display state (see the App.hideArchived field), not a
-// company_filters row, so it's applied here rather than at the
-// ingestion-gating layer.
-func loadPostings(companies *service.CompanyService, postings *service.PostingService, src message.Source, companyID int64, hideArchived bool) tea.Cmd {
-	subject := message.Subject{Type: message.TypeCompany, ID: companyID}
-	failed := func(err error) tea.Msg {
-		return message.New(src, subject, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
-	}
-	return func() tea.Msg {
-		ctx := context.Background()
-		stored, err := postings.ListByCompany(ctx, companyID)
-		if err != nil {
-			return failed(err)
-		}
-		companyFilters, err := companies.Filters(ctx, companyID)
-		if err != nil {
-			return failed(err)
-		}
-		var list message.PostingList
-		list.Departments, list.Locations = splitCompanyFilters(companyFilters)
-		list.Postings, err = filterPostingsByCompanyFilters(openSnapshots(stored), companyFilters)
-		if err != nil {
-			return failed(err)
-		}
-
-		list.Markup = make(map[int64]message.Markup, len(list.Postings))
-		for _, p := range list.Postings {
-			m, err := postings.Markup(ctx, p.ID)
-			if err != nil {
-				return failed(err)
-			}
-			list.Markup[p.ID] = markupSnapshot(*m)
-		}
-
-		if hideArchived {
-			list.Postings = filterOutArchived(list.Postings, list.Markup)
-		}
-
-		return message.New(src, subject, message.OpNone, time.Now().UTC(), message.Read[message.PostingList]{Value: list})
-	}
-}
-
-// openSnapshots is the postings whose listing hasn't closed on the job
-// board.
-func openSnapshots(postings []posting.Posting) []message.Posting {
-	visible := make([]message.Posting, 0, len(postings))
-	for _, p := range postings {
-		if p.ListingStatus == posting.ListingClosed {
-			continue
-		}
-		visible = append(visible, postingSnapshot(p))
-	}
-	return visible
-}
-
-// filterOutArchived drops postings whose markup has ArchivedAt set.
-func filterOutArchived(postings []message.Posting, markup map[int64]message.Markup) []message.Posting {
-	visible := make([]message.Posting, 0, len(postings))
-	for _, p := range postings {
-		if !markup[p.ID].ArchivedAt.IsZero() {
-			continue
-		}
-		visible = append(visible, p)
-	}
-	return visible
-}
-
-// filterPostingsByCompanyFilters keeps only postings matching
-// companyFilters. An unsupported field is returned as an error rather
-// than ignored.
-func filterPostingsByCompanyFilters(postings []message.Posting, companyFilters []filter.Filter) ([]message.Posting, error) {
-	narrowed := make([]message.Posting, 0, len(postings))
-	for _, p := range postings {
-		match, err := filter.Match(filter.Posting{Department: p.Department, Location: p.Location}, companyFilters)
-		if err != nil {
-			return nil, err
-		}
-		if match {
-			narrowed = append(narrowed, p)
-		}
-	}
-	return narrowed, nil
-}
-
-// splitCompanyFilters separates a company's saved filter rows by field.
-func splitCompanyFilters(filters []filter.Filter) (departments, locations []string) {
-	for _, f := range filters {
-		switch f.Field {
-		case filter.FieldDepartment:
-			departments = append(departments, f.Value)
-		case filter.FieldLocation:
-			locations = append(locations, f.Value)
-		}
-	}
-	return departments, locations
 }
 
 func toSet(values []string) map[string]bool {
