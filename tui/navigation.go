@@ -24,6 +24,11 @@ type Navigation struct {
 	tab message.Screen
 }
 
+var (
+	_ model.SubComponent = (*Navigation)(nil)
+	_ model.Routable     = (*Navigation)(nil)
+)
+
 // NewNavigation is tabs, with the first up.
 func NewNavigation(tabs []Tab) *Navigation {
 	return &Navigation{
@@ -52,6 +57,8 @@ func (n *Navigation) Init() tea.Cmd {
 	}
 	return tea.Batch(cmds...)
 }
+
+func (n *Navigation) Update(tea.Msg) (tea.Model, tea.Cmd) { return n, nil }
 
 // View is the tab up's.
 func (n *Navigation) View() tea.View {
