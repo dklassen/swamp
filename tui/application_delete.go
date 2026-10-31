@@ -11,11 +11,11 @@ import (
 	"github.com/dklassen/swamp/tui/model"
 )
 
-// applicationDeleteModel is the delete confirmation, a box over the screen
-// it was opened from (d on the home list, D on application detail), for an
-// application started by accident. Confirming soft-deletes it: it leaves
-// every list and the posting can start a fresh one, while its history,
-// reviews and drafts are kept.
+// applicationDeleteModel is the delete confirmation a screen draws over
+// itself (d on the home list, D on application detail), for an application
+// started by accident. Confirming soft-deletes it: it leaves every list and
+// the posting can start a fresh one, while its history, reviews and drafts
+// are kept.
 type applicationDeleteModel struct {
 	applications *service.ApplicationService
 
@@ -24,84 +24,54 @@ type applicationDeleteModel struct {
 	// is in flight doesn't send another.
 	confirmed bool
 
-	focused  bool
-	width    int
+	// instance is the delete's source, so its result is told from an
+	// earlier confirmation's.
 	instance message.ScreenInstance
 }
 
-func newApplicationDeleteModel(applications *service.ApplicationService, d message.ApplicationDetail, width int) *applicationDeleteModel {
-	return &applicationDeleteModel{applications: applications, detail: d, width: width, instance: message.NewScreenInstance()}
-}
-
-func (m *applicationDeleteModel) Instance() message.ScreenInstance { return m.instance }
-
-func (m *applicationDeleteModel) Focused() bool { return m.focused }
-
-func (m *applicationDeleteModel) Routes() []*model.Route {
-	return []*model.Route{
-		model.WhenFocused(m, m.keyPressed),
-		model.Always(m.applicationDeleted, model.About(message.TypeApplication, m.detail.Application.ID), model.OnOp(message.OpDeleted)),
-		model.Always(m.deleteFailed, model.From(m.instance)),
-		model.Always(m.resize),
-		model.Always(m.focusChanged),
-	}
+func newApplicationDeleteModel(applications *service.ApplicationService, d message.ApplicationDetail) *applicationDeleteModel {
+	return &applicationDeleteModel{applications: applications, detail: d, instance: message.NewScreenInstance()}
 }
 
 func (m *applicationDeleteModel) src() message.Source { return message.Source{Instance: m.instance} }
 
-func (m *applicationDeleteModel) focusChanged(e message.Event[message.Signal[message.FocusChanged]]) tea.Cmd {
-	m.focused = e.Payload.Value.Focused == m.instance
-	return nil
-}
-
-// applicationDeleted closes the confirmation, whoever deleted its
-// application, and says which it was.
-func (m *applicationDeleteModel) applicationDeleted(e message.Event[message.Changed[message.Application]]) tea.Cmd {
+// deleted says who deleted its application: it, or someone elsewhere.
+func (m *applicationDeleteModel) deleted(e message.Event[message.Changed[message.Application]]) tea.Cmd {
 	if e.Meta.Source.Instance != m.instance {
 		return m.goneElsewhere()
 	}
-	return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), "Deleted the application for "+m.detail.Posting.Title))
+	return message.ReportStatus(m.src(), "Deleted the application for "+m.detail.Posting.Title)
 }
 
-// deleteFailed closes the confirmation too: a failed delete's y is spent,
-// and the banner shows the error.
-func (m *applicationDeleteModel) deleteFailed(e message.Event[message.Error]) tea.Cmd {
+// failed says the application was already gone, if that's why its delete
+// failed; otherwise the banner shows the error.
+func (m *applicationDeleteModel) failed(e message.Event[message.Error]) tea.Cmd {
 	if e.Payload.Code == message.ErrNotFound {
 		return m.goneElsewhere()
 	}
-	return message.Pop(m.src())
+	return nil
 }
 
 func (m *applicationDeleteModel) goneElsewhere() tea.Cmd {
-	return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), "The application for "+m.detail.Posting.Title+" was deleted elsewhere"))
+	return message.ReportStatus(m.src(), "The application for "+m.detail.Posting.Title+" was deleted elsewhere")
 }
 
-func (m *applicationDeleteModel) resize(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {
-	m.width = e.Payload.Value.Width
-	return nil
-}
-
-func (m *applicationDeleteModel) Init() tea.Cmd { return nil }
-
-// Update has nothing to do: everything the confirmation handles is
-// registered.
-func (m *applicationDeleteModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
-
-func (m *applicationDeleteModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
+// keyPressed handles a key, and says whether the confirmation closes.
+func (m *applicationDeleteModel) keyPressed(key tea.KeyPressMsg) (tea.Cmd, bool) {
 	switch key.String() {
 	case "esc", "enter", "n":
-		return message.Pop(m.src())
+		return nil, true
 	case "y":
 		if !m.confirmed {
 			m.confirmed = true
-			return deleteApplication(m.applications, m.src(), m.detail.Application.ID)
+			return deleteApplication(m.applications, m.src(), m.detail.Application.ID), false
 		}
 	}
-	return nil
+	return nil, false
 }
 
-// View is a box for App to draw over the screen it was opened from.
-func (m *applicationDeleteModel) View() tea.View {
+// View is a box, at most width wide, for its owner to draw over itself.
+func (m *applicationDeleteModel) View(width int) string {
 	var b strings.Builder
 	b.WriteString(model.FieldLabel.Render("Delete the application for "+m.detail.Posting.Title+"?") + " (" + m.detail.CompanyName + ")\n")
 	b.WriteString("Status: " + applicationStatusLabel(applicationOf(m.detail.Application).Status) + "\n")
@@ -111,7 +81,7 @@ func (m *applicationDeleteModel) View() tea.View {
 	} else {
 		b.WriteString(model.FieldLabel.Render("y") + ": delete  " + model.FieldLabel.Render("n/esc/enter") + ": keep it")
 	}
-	return tea.NewView(confirmBox(b.String(), m.width))
+	return confirmBox(b.String(), width)
 }
 
 // deleteApplication soft-deletes an application. Its documents stay on

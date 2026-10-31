@@ -286,9 +286,6 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "application detail nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.ApplicationDetail]{
 			Op: message.NavPush, Screen: message.ScreenApplicationDetail, Value: message.ApplicationDetail{Application: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted}, Posting: message.Posting{ID: 5, Title: "Engineer", ListingStatus: message.ListingOpen}, CompanyName: "Acme"},
 		}))},
-		{name: "application delete nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.ApplicationDetail]{
-			Op: message.NavPush, Screen: message.ScreenApplicationDelete, Value: message.ApplicationDetail{Application: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted}, Posting: message.Posting{ID: 5, Title: "Engineer", ListingStatus: message.ListingOpen}, CompanyName: "Acme"},
-		}))},
 		{name: "logged posting changed", check: roundTrip(message.Logged(12, message.Source{Process: "sync:9"}, message.Subject{Type: message.TypePosting, ID: 5}, message.OpUpdated, at,
 			message.Posting{ID: 5, CompanyID: 3, Title: "Engineer", ListingStatus: message.ListingClosed, ContentSHA256: "abc"}))},
 		{name: "logged score changed", check: roundTrip(message.Logged(13, message.Source{Process: "mcp:9"}, message.Subject{Type: message.TypePosting, ID: 5}, message.OpCreated, at,

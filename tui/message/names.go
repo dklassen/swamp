@@ -204,7 +204,6 @@ const (
 	ScreenApplicationStatus
 	ScreenApplicationNotes
 	ScreenApplicationDetail
-	ScreenApplicationDelete
 	ScreenDocumentReviewSelect
 	ScreenDocumentReviewForm
 	ScreenApplicationExport
@@ -225,7 +224,6 @@ var screenNames = [...]string{
 	ScreenApplicationStatus:    "application_status",
 	ScreenApplicationNotes:     "application_notes",
 	ScreenApplicationDetail:    "application_detail",
-	ScreenApplicationDelete:    "application_delete",
 	ScreenDocumentReviewSelect: "document_review_select",
 	ScreenDocumentReviewForm:   "document_review_form",
 	ScreenApplicationExport:    "application_export",

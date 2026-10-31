@@ -31,12 +31,15 @@ type applicationDetailModel struct {
 	// reading what's gone.
 	deleted bool
 	reading reading
+	// confirm is the delete being confirmed, or nil.
+	confirm *applicationDeleteModel
 
+	width    int
 	focused  bool
 	instance message.ScreenInstance
 }
 
-func newApplicationDetailModel(applications *service.ApplicationService, postings *service.PostingService, companies *service.CompanyService, documentService *service.DocumentService, docs *documents.Store, d message.ApplicationDetail) *applicationDetailModel {
+func newApplicationDetailModel(applications *service.ApplicationService, postings *service.PostingService, companies *service.CompanyService, documentService *service.DocumentService, docs *documents.Store, d message.ApplicationDetail, width int) *applicationDetailModel {
 	return &applicationDetailModel{
 		applications:    applications,
 		postings:        postings,
@@ -44,6 +47,7 @@ func newApplicationDetailModel(applications *service.ApplicationService, posting
 		documentService: documentService,
 		documents:       docs,
 		detail:          d,
+		width:           width,
 		instance:        message.NewScreenInstance(),
 	}
 }
@@ -56,6 +60,7 @@ func (m *applicationDetailModel) Routes() []*model.Route {
 	return []*model.Route{
 		model.Always(m.detailRead, model.From(m.instance)),
 		model.Always(m.readFailed, model.From(m.instance)),
+		model.Always(m.deleteFailed),
 		model.Always(m.applicationChanged, model.About(message.TypeApplication, m.detail.Application.ID)),
 		model.Always(m.reviewChanged, model.About(message.TypeApplication, m.detail.Application.ID)),
 		model.Always(m.documentEdited, model.From(m.instance)),
@@ -63,6 +68,7 @@ func (m *applicationDetailModel) Routes() []*model.Route {
 		model.Always(m.documentExported, model.About(message.TypeApplication, m.detail.Application.ID)),
 		model.Always(m.postingChanged),
 		model.WhenFocused(m, m.keyPressed),
+		model.Always(m.resize),
 		model.Always(m.focusChanged),
 	}
 }
@@ -100,18 +106,43 @@ func (m *applicationDetailModel) goneElsewhere() tea.Cmd {
 }
 
 // applicationChanged takes a write to its application, whoever made it. A
-// delete closes it once it's on top, since the confirmation over it closes
-// first.
+// delete closes it, with its confirmation if that's open, or once it's
+// back on top if another screen is over it.
 func (m *applicationDetailModel) applicationChanged(e message.Event[message.Changed[message.Application]]) tea.Cmd {
 	switch e.Meta.Op {
 	case message.OpUpdated:
 		m.detail.Application = e.Payload.After
 	case message.OpDeleted:
 		m.deleted = true
+		if m.confirm != nil {
+			cmd := m.confirm.deleted(e)
+			m.confirm = nil
+			return tea.Batch(message.Pop(m.src()), cmd)
+		}
 		if m.focused {
 			return m.goneElsewhere()
 		}
 	}
+	return nil
+}
+
+// deleteFailed closes the confirmation whose delete failed, since its y is
+// spent, and leaves too if it found the application already gone.
+func (m *applicationDetailModel) deleteFailed(e message.Event[message.Error]) tea.Cmd {
+	if m.confirm == nil || e.Meta.Source.Instance != m.confirm.instance {
+		return nil
+	}
+	cmd := m.confirm.failed(e)
+	m.confirm = nil
+	if e.Payload.Code != message.ErrNotFound {
+		return cmd
+	}
+	m.deleted = true
+	return tea.Batch(message.Pop(m.src()), cmd)
+}
+
+func (m *applicationDetailModel) resize(e message.Event[message.Signal[message.ContentSize]]) tea.Cmd {
+	m.width = e.Payload.Value.Width
 	return nil
 }
 
@@ -160,6 +191,13 @@ func (m *applicationDetailModel) focusChanged(e message.Event[message.Signal[mes
 }
 
 func (m *applicationDetailModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
+	if m.confirm != nil {
+		cmd, closed := m.confirm.keyPressed(msg)
+		if closed {
+			m.confirm = nil
+		}
+		return cmd
+	}
 	switch msg.String() {
 	case "esc", "b":
 		return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), ""))
@@ -173,7 +211,8 @@ func (m *applicationDetailModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	case "f":
 		return message.Push(m.src(), message.ScreenApplicationForm, message.Subject{Type: message.TypeApplication, ID: m.detail.Application.ID}, m.detail.Application)
 	case "D":
-		return message.Push(m.src(), message.ScreenApplicationDelete, message.Subject{Type: message.TypeApplication, ID: m.detail.Application.ID}, m.detail)
+		m.confirm = newApplicationDeleteModel(m.applications, m.detail)
+		return nil
 	}
 	// Each document type's key edits it, and the uppercase key reviews it.
 	for _, documentType := range document.Types() {
@@ -238,6 +277,9 @@ func (m *applicationDetailModel) View() tea.View {
 	}
 	help = append(help, "f: application form", "S: submit", "D: delete", "u: refresh", "esc/b: back")
 	b.WriteString(model.HelpStyle.Render(strings.Join(help, "  ")))
+	if m.confirm != nil {
+		return tea.NewView(overlay(b.String(), m.confirm.View(m.width), m.width))
+	}
 	return tea.NewView(b.String())
 }
 

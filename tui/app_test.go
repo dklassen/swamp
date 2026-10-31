@@ -1430,7 +1430,6 @@ func TestApp_ApplicationDetail_RequestAfterLeaving_StaysWhereTheUserWent(t *test
 	}{
 		{"submit", runeKey('S')},
 		{"form", runeKey('f')},
-		{"delete", runeKey('D')},
 		{"review", runeKey(unicode.ToUpper(document.Resume.Key()))},
 	}
 	for _, tt := range tests {

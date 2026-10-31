@@ -35,7 +35,7 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 			return newPostingDetailModel(nil, nil, nil, nil, message.PostingDetail{Posting: p}, message.ContentSize{})
 		},
 		message.ScreenApplicationDetail: func() stackScreen {
-			return newApplicationDetailModel(nil, nil, nil, nil, nil, applicationDetailOf(view))
+			return newApplicationDetailModel(nil, nil, nil, nil, nil, applicationDetailOf(view), 0)
 		},
 		message.ScreenApplicationNotes: func() stackScreen {
 			return newApplicationNotesModel(nil, message.Application{ID: 1}, message.ContentSize{})
@@ -249,7 +249,7 @@ func TestApp_Header_LongBreadcrumbLosesItsMiddleFirst(t *testing.T) {
 // there would.
 func pushApplicationDetail(t *testing.T, app *App, a posting.ActiveApplication) {
 	t.Helper()
-	d := newApplicationDetailModel(nil, nil, nil, nil, app.documents, applicationDetailOf(a))
+	d := newApplicationDetailModel(nil, nil, nil, nil, app.documents, applicationDetailOf(a), 0)
 	if err := app.stack.push(message.ScreenApplicationDetail, d); err != nil {
 		t.Fatalf("push: %v", err)
 	}

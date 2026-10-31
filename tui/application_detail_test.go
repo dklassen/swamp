@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	tea "charm.land/bubbletea/v2"
+	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
 	"github.com/dklassen/swamp/documents"
@@ -34,7 +35,7 @@ func testApplicationDetail() message.ApplicationDetail {
 // applicationDetailOn is detail on d, with no services, its documents in
 // docs.
 func applicationDetailOn(docs *documents.Store, d message.ApplicationDetail) *applicationDetailModel {
-	return newApplicationDetailModel(nil, nil, nil, nil, docs, d)
+	return newApplicationDetailModel(nil, nil, nil, nil, docs, d, 80)
 }
 
 func applicationDetailView(m *applicationDetailModel) string { return m.View().Content }
@@ -81,24 +82,21 @@ func TestApplicationDetailModel_P_PushesItsPostingsDetailWithTheApplication(t *t
 	}
 }
 
-func TestApplicationDetailModel_D_PushesTheDeleteConfirmationOnWhatItShows(t *testing.T) {
+// D opens the confirmation over the detail, which stays in view behind it.
+func TestApplicationDetailModel_D_OpensTheDeleteConfirmation(t *testing.T) {
 	t.Parallel()
+	m := applicationDetailOn(documents.NewStore(t.TempDir()), testApplicationDetail())
 
-	d := testApplicationDetail()
-	m := applicationDetailOn(documents.NewStore(t.TempDir()), d)
+	if got := pressApplicationDetail(t, m, runeKey('D')); got != nil {
+		t.Errorf("D sent %#v, want nothing: the detail opens the confirmation itself", got)
+	}
 
-	got := pressApplicationDetail(t, m, runeKey('D'))
-	if len(got) != 1 {
-		t.Fatalf("D sent %#v, want one Nav", got)
+	view := ansi.Strip(applicationDetailView(m))
+	if !strings.Contains(view, "Delete the application for Engineer?") || !strings.Contains(view, "y: delete") {
+		t.Errorf("no confirmation for the application:\n%s", view)
 	}
-	nav, ok := got[0].(message.Event[message.Nav[message.ApplicationDetail]])
-	if !ok {
-		t.Fatalf("D sent %#v, want a Nav to the delete confirmation", got[0])
-	}
-	assertEventFrom(t, nav.Meta, m.src())
-	want := message.Nav[message.ApplicationDetail]{Op: message.NavPush, Screen: message.ScreenApplicationDelete, Value: d}
-	if diff := cmp.Diff(want, nav.Payload); diff != "" {
-		t.Errorf("Nav (-want +got):\n%s", diff)
+	if !strings.Contains(view, "Company: Acme") {
+		t.Errorf("the detail isn't in view behind the confirmation:\n%s", view)
 	}
 }
 
@@ -250,7 +248,7 @@ func applicationDetailWith(t *testing.T) (*applicationDetailModel, *model.MsgRou
 	if _, err := createReview(context.Background(), s, app.ID, document.Resume, "# Draft\n", document.Passed, "reads well"); err != nil {
 		t.Fatalf("CreateReview: %v", err)
 	}
-	m := newApplicationDetailModel(s.Applications, s.Postings, s.Companies, s.Documents, docs, message.ApplicationDetail{Application: message.Application{ID: app.ID}})
+	m := newApplicationDetailModel(s.Applications, s.Postings, s.Companies, s.Documents, docs, message.ApplicationDetail{Application: message.Application{ID: app.ID}}, 80)
 	r := model.NewMsgRouter()
 	if err := r.Register(m); err != nil {
 		t.Fatalf("Register: %v", err)
@@ -486,20 +484,20 @@ func TestApplicationDetailModel_Handlers_FailOnTheWrongMessage(t *testing.T) {
 	assertHandlersFailOnWrongMessage(t, applicationDetailOn(documents.NewStore(t.TempDir()), testApplicationDetail()))
 }
 
-// Deleted from the confirmation over it, the detail has nothing left to
-// show: it leaves once it's back on top, without a read that would say the
-// application was deleted elsewhere.
+// Deleted while another screen is over it, such as its posting, the detail
+// has nothing left to show: it leaves once it's back on top, without a
+// read that would fail.
 func TestApplicationDetailModel_DeletedWhileCovered_PopsOnComingBackWithoutReading(t *testing.T) {
 	t.Parallel()
 
 	m, r, s := applicationDetailWith(t)
-	confirmation := message.Source{Instance: message.NewScreenInstance()}
-	r.Dispatch(focusOn(confirmation.Instance))
+	over := message.Source{Instance: message.NewScreenInstance()}
+	r.Dispatch(focusOn(over.Instance))
 	deleted, err := s.Applications.Delete(context.Background(), m.detail.Application.ID)
 	if err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if got := runCmd(t, r.Dispatch(applicationWritten(confirmation, m.detail.Application.ID, message.OpDeleted, deleted, nil))); got != nil {
+	if got := runCmd(t, r.Dispatch(applicationWritten(over, m.detail.Application.ID, message.OpDeleted, deleted, nil))); got != nil {
 		t.Errorf("the delete sent %#v while covered, want nothing until it's back on top", got)
 	}
 

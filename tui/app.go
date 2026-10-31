@@ -326,9 +326,7 @@ func (a *App) navApplicationDetail(e message.Event[message.Nav[message.Applicati
 	if e.Payload.Op == message.NavPush {
 		switch e.Payload.Screen {
 		case message.ScreenApplicationDetail:
-			return a.push(e.Payload.Screen, newApplicationDetailModel(a.applicationService, a.postingService, a.companyService, a.documentService, a.documents, e.Payload.Value))
-		case message.ScreenApplicationDelete:
-			return a.push(e.Payload.Screen, newApplicationDeleteModel(a.applicationService, e.Payload.Value, a.sized.Width))
+			return a.push(e.Payload.Screen, newApplicationDetailModel(a.applicationService, a.postingService, a.companyService, a.documentService, a.documents, e.Payload.Value, a.sized.Width))
 		case message.ScreenApplicationExport:
 			return a.push(e.Payload.Screen, newApplicationExportModel(a.documentService, a.documents, e.Payload.Value, a.exportDir, a.sized))
 		case message.ScreenApplicationSubmit:
@@ -535,24 +533,7 @@ func (a *App) screenRows() int {
 }
 
 func (a *App) View() tea.View {
-	path := a.path()
-	top := path[len(path)-1]
-	body := a.screenOf(top).View().Content
-	if top == message.ScreenApplicationDelete {
-		body = overlay(a.screenOf(path[len(path)-2]).View().Content, body, a.width)
-	}
-	v := tea.NewView(a.header() + body + a.banner())
+	v := tea.NewView(a.header() + a.screenOf(a.onScreen()).View().Content + a.banner())
 	v.AltScreen = true
 	return v
-}
-
-// beneath is the path to the screen drawn on screen: to the one on top,
-// or to the one a confirmation's box is drawn over.
-func (a *App) beneath() []message.Screen {
-	path := a.path()
-	switch path[len(path)-1] {
-	case message.ScreenApplicationDelete:
-		return path[:len(path)-1]
-	}
-	return path
 }
