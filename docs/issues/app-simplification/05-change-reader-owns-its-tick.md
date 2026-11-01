@@ -15,7 +15,7 @@ depends_on: []
 ## Decided
 
 - **`cmd/swamp` builds the reader,** with `NewChangeReader(services…, origin, since, poll)`, as it builds `Screens`. `App` holds none of the six services, nor `origin`.
-- **`WithChangeLog` takes the reader,** registers it and has `Init` batch its `Init`. Bubble Tea calls only `App.Init`, so the reader can't start its own tick by being registered elsewhere. Tests without a change log don't call it.
+- **`New` takes the reader as the `WithChangeReader` option,** registers it and has `Init` batch its `Init`. Bubble Tea calls only `App.Init`, so the reader can't start its own tick by being registered elsewhere. Tests without a change log leave the option out.
 - **The tick's source is the reader's instance,** and its `tick` route is `From` it.
 - **The focus and size signals carry no `Process`.** `App` set it from `origin`, but nothing reads it there, and a signal has no writer.
 - **Tests take the services from their setup,** not from `App`: `deleteTestApp`, `submitTestApp` and `newFullTestApp` return their `testutil.TestApp`, and `storeOf` goes.

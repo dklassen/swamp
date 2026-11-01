@@ -36,16 +36,16 @@ import (
 // The App's documents.Store is rooted at a fresh t.TempDir() -- tests
 // that care about it (i.e. application document status) can read it back
 // from newTestAppWithScreens's Screens.
-func newTestApp(t *testing.T, s testutil.TestApp, syncer *sync.Syncer) *App {
+func newTestApp(t *testing.T, s testutil.TestApp, syncer *sync.Syncer, opts ...Option) *App {
 	t.Helper()
-	app, _ := newTestAppWithScreens(t, s, syncer)
+	app, _ := newTestAppWithScreens(t, s, syncer, opts...)
 	return app
 }
 
 // newTestAppWithScreens is newTestApp, with the Screens it opens.
-func newTestAppWithScreens(t *testing.T, s testutil.TestApp, syncer *sync.Syncer) (*App, *Screens) {
+func newTestAppWithScreens(t *testing.T, s testutil.TestApp, syncer *sync.Syncer, opts ...Option) (*App, *Screens) {
 	t.Helper()
-	app, screens := newAppWithScreensOn(s, syncer, documents.NewStore(t.TempDir()))
+	app, screens := newAppWithScreensOn(s, syncer, documents.NewStore(t.TempDir()), opts...)
 	return applyCmd(t, app, app.Init()), screens
 }
 
@@ -98,6 +98,11 @@ func applyCmd(t *testing.T, app *App, cmd tea.Cmd) *App {
 		return app
 	}
 	msg := cmd()
+	// Each tick asks for the next, so applying them never ends; tests read
+	// the change log with readChangeLog instead.
+	if _, ok := msg.(message.Event[message.Signal[message.ChangeTick]]); ok {
+		return app
+	}
 	if cmds, ok := cmdsOf(msg); ok {
 		for _, c := range cmds {
 			app = applyCmd(t, app, c)

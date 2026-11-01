@@ -358,7 +358,7 @@ func TestAllPostings_ANewPostingElsewhere_KeepsThePageAndCountsIt(t *testing.T) 
 	for i := 1; i <= 7; i++ {
 		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
 	}
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(newTestChangeReader(s))
+	app := newTestApp(t, s, newTestSyncer(s, nil), WithChangeReader(newTestChangeReader(s)))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
 	app = openAllPostings(t, app)
 	for _, key := range []tea.KeyPressMsg{runeKey('l'), runeKey('j')} {
@@ -387,7 +387,7 @@ func TestAllPostings_MarkedInterestedElsewhere_ShowsTheStar(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "1", "Role 1")
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(newTestChangeReader(s))
+	app := newTestApp(t, s, newTestSyncer(s, nil), WithChangeReader(newTestChangeReader(s)))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app = openAllPostings(t, app)
 
@@ -780,7 +780,7 @@ func TestAllPostings_AScoreRecordedElsewhere_Shows(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	p := mustUpsertPosting(t, s, acme.ID, "1", "Role 1")
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(newTestChangeReader(s))
+	app := newTestApp(t, s, newTestSyncer(s, nil), WithChangeReader(newTestChangeReader(s)))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 140, Height: 30})
 	app = openAllPostings(t, app)
 
@@ -808,7 +808,7 @@ func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
 	}); err != nil {
 		t.Fatalf("recordScores: %v", err)
 	}
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(newTestChangeReader(s))
+	app := newTestApp(t, s, newTestSyncer(s, nil), WithChangeReader(newTestChangeReader(s)))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 140, Height: 60})
 	app = openAllPostings(t, app)
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})

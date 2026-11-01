@@ -45,26 +45,43 @@ type App struct {
 	sized message.ContentSize
 }
 
+// Option configures an App.
+type Option func(*App)
+
+// WithSyncer has the App run sync all with syncer.
+func WithSyncer(syncer *sync.Syncer) Option {
+	return func(a *App) { a.syncing = model.NewSyncing(syncer) }
+}
+
+// WithChangeReader makes the App show changes other processes make, as
+// changes reads them.
+func WithChangeReader(changes *ChangeReader) Option {
+	return func(a *App) { a.changes = changes }
+}
+
 // New is the App over nav and stack, routed by router, opening what
 // tables have for each Nav.
-func New(
-	router model.Router,
-	syncer *sync.Syncer,
-	nav *Navigation,
-	stack *Stack,
-	tables ...Table,
-) *App {
+func New(router model.Router, nav *Navigation, stack *Stack, tables []Table, opts ...Option) *App {
 	a := &App{
 		nav:      nav,
 		stack:    stack,
-		syncing:  model.NewSyncing(syncer),
 		router:   router,
 		instance: message.NewScreenInstance(),
+	}
+	for _, opt := range opts {
+		opt(a)
+	}
+	if a.syncing == nil {
+		a.syncing = model.NewSyncing(nil)
 	}
 	for _, table := range tables {
 		a.navRoutes = append(a.navRoutes, table(a))
 	}
-	for _, module := range []model.Routable{a, a.nav, a.syncing} {
+	modules := []model.Routable{a, a.nav, a.syncing}
+	if a.changes != nil {
+		modules = append(modules, a.changes)
+	}
+	for _, module := range modules {
 		if err := a.router.Register(module); err != nil {
 			panic(err)
 		}
@@ -123,16 +140,6 @@ func (a *App) Init() tea.Cmd {
 		return a.nav.Init()
 	}
 	return tea.Batch(a.nav.Init(), a.changes.Init())
-}
-
-// WithChangeLog makes the App show changes other processes make, as
-// changes reads them.
-func (a *App) WithChangeLog(changes *ChangeReader) *App {
-	a.changes = changes
-	if err := a.router.Register(a.changes); err != nil {
-		panic(err)
-	}
-	return a
 }
 
 // errInternal is the banner for a fault: the error itself means nothing

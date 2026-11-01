@@ -24,21 +24,25 @@ import (
 
 // deleteTestApp is an App on the home screen with one started
 // application whose resume is drafted, and the services it's over.
-func deleteTestApp(t *testing.T) (*App, testutil.TestApp, application.Application) {
+func deleteTestApp(t *testing.T, opts ...func(testutil.TestApp) Option) (*App, testutil.TestApp, application.Application) {
 	t.Helper()
-	app, s, _, target := deleteTestAppWithScreens(t)
+	app, s, _, target := deleteTestAppWithScreens(t, opts...)
 	return app, s, target
 }
 
 // deleteTestAppWithScreens is deleteTestApp, with the Screens it opens.
-func deleteTestAppWithScreens(t *testing.T) (*App, testutil.TestApp, *Screens, application.Application) {
+func deleteTestAppWithScreens(t *testing.T, opts ...func(testutil.TestApp) Option) (*App, testutil.TestApp, *Screens, application.Application) {
 	t.Helper()
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	target := mustCreateApplication(t, s, posting.ID)
 
-	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, nil))
+	var appOpts []Option
+	for _, opt := range opts {
+		appOpts = append(appOpts, opt(s))
+	}
+	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, nil), appOpts...)
 	status, err := screens.documents.EnsureDir(target.ID)
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)

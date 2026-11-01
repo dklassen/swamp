@@ -149,11 +149,12 @@ func main() {
 	reader := tui.NewChangeReader(companies, postings, applications, documentService, scores, changes, cfg.Origin, since, tui.ChangePollInterval)
 	app := tui.New(
 		router,
-		syncer,
 		tui.NewNavigation(screens.Tabs()),
 		tui.NewStack(),
-		screens.Tables()...,
-	).WithChangeLog(reader)
+		screens.Tables(),
+		tui.WithSyncer(syncer),
+		tui.WithChangeReader(reader),
+	)
 	program := tea.NewProgram(app)
 	stopMCP := func(context.Context) error { return nil }
 	if rf.mcp {

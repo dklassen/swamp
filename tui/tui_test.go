@@ -106,14 +106,14 @@ func newAppOn(s testutil.TestApp, syncer *sync.Syncer, docs *documents.Store) *A
 
 // newAppWithScreensOn is newAppOn, with the Screens it opens, put
 // together as cmd/swamp does.
-func newAppWithScreensOn(s testutil.TestApp, syncer *sync.Syncer, docs *documents.Store) (*App, *Screens) {
+func newAppWithScreensOn(s testutil.TestApp, syncer *sync.Syncer, docs *documents.Store, opts ...Option) (*App, *Screens) {
 	router := model.NewMsgRouter()
 	screens := NewScreens(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, syncer, docs)
 	if err := router.Register(screens); err != nil {
 		panic(err)
 	}
-	app := New(router, syncer,
-		NewNavigation(screens.Tabs()), NewStack(), screens.Tables()...)
+	app := New(router, NewNavigation(screens.Tabs()), NewStack(), screens.Tables(),
+		append([]Option{WithSyncer(syncer)}, opts...)...)
 	return app, screens
 }
 
@@ -219,7 +219,13 @@ func assertReadsOnceAtATime[T message.Body](t *testing.T, r *model.MsgRouter, ch
 	}
 }
 
+// withTestChangeReader has the App read s's change log with
+// newTestChangeReader.
+func withTestChangeReader(s testutil.TestApp) Option {
+	return WithChangeReader(newTestChangeReader(s))
+}
+
 // newTestChangeReader reads s's change log from its start, as "tui:1".
 func newTestChangeReader(s testutil.TestApp) *ChangeReader {
-	return NewChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0, ChangePollInterval)
+	return NewChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0, time.Millisecond)
 }

@@ -154,8 +154,7 @@ func TestApplicationStatusModel_ClosesOnItsOwnSaveOnly(t *testing.T) {
 func TestStatusPicker_OpensOnAStatusChangedElsewhere(t *testing.T) {
 	t.Parallel()
 
-	app, s, target := deleteTestApp(t)
-	app.WithChangeLog(newTestChangeReader(s))
+	app, s, target := deleteTestApp(t, withTestChangeReader)
 	if err := updateApplicationStatusIn(t.Context(), s, target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
