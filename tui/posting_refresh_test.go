@@ -34,7 +34,7 @@ func TestApp_PostingList_R_RefreshesTheCompany(t *testing.T) {
 		t.Fatalf("screen after r = %v, want the posting list", app.onScreen())
 	}
 	var titles []string
-	for _, p := range openList(t, app).list.Postings {
+	for _, p := range openList(t, app).list.Listings {
 		titles = append(titles, p.Title)
 	}
 	if len(titles) != 3 || !strings.Contains(strings.Join(titles, ","), "Analyst") {

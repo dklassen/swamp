@@ -124,7 +124,7 @@ func TestApp_PostingListReload_KeepsTheCursorAndShowsTheChange(t *testing.T) {
 	app := newTestApp(t, s, syncer, WithChangeReader(newTestChangeReader(s)))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 200, Height: 40})
 	app = openPostingList(t, app)
-	postings := openList(t, app).list.Postings
+	postings := openList(t, app).list.Listings
 	if len(postings) != 3 {
 		t.Fatalf("posting list has %d postings, want 3", len(postings))
 	}
@@ -141,7 +141,7 @@ func TestApp_PostingListReload_KeepsTheCursorAndShowsTheChange(t *testing.T) {
 	if !strings.Contains(viewText(app), "Renamed by sync") {
 		t.Errorf("posting list doesn't show the new title:\n%s", viewText(app))
 	}
-	if got := openList(t, app).list.Postings[openList(t, app).cursor].ID; got != onLast {
+	if got := openList(t, app).list.Listings[openList(t, app).cursor].ID; got != onLast {
 		t.Errorf("cursor is on posting %d after the reload, want %d", got, onLast)
 	}
 }
@@ -222,7 +222,7 @@ func TestApp_PostingDetailReload_ShowsTheChangeAndKeepsTheScroll(t *testing.T) {
 		t.Fatal("posting detail didn't scroll; the test can't tell the scroll was kept")
 	}
 
-	p := storedPosting(t, s, openList(t, app).list.Postings[0].ID)
+	p := storedPosting(t, s, openList(t, app).list.Listings[0].ID)
 	if _, err := s.Postings.Ingest(context.Background(), p.CompanyID, p.Source, p.SourceID, posting.IngestedFields{Title: "Senior Engineer", DescriptionText: long, RawPayload: p.RawPayload}); err != nil {
 		t.Fatalf("UpsertPosting: %v", err)
 	}

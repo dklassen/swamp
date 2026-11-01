@@ -18,8 +18,8 @@ import (
 
 var testListCompany = message.Company{ID: 1, Name: "Acme"}
 
-func testPostings() []message.Posting {
-	return []message.Posting{
+func testPostings() []message.Listing {
+	return []message.Listing{
 		{ID: 1, Title: "Engineer", ListingStatus: message.ListingOpen},
 		{ID: 2, Title: "Designer", ListingStatus: message.ListingOpen},
 	}
@@ -27,16 +27,16 @@ func testPostings() []message.Posting {
 
 // postingListOf is c's posting list, drawn in width by 40 rows, once it has
 // read postings.
-func postingListOf(t *testing.T, c message.Company, postings []message.Posting, hideArchived bool, width int) *postingListModel {
+func postingListOf(t *testing.T, c message.Company, postings []message.Listing, hideArchived bool, width int) *postingListModel {
 	t.Helper()
 	m := newPostingListModel(nil, nil, c, hideArchived, message.ContentSize{Width: width, Rows: 40})
 	m.postingsRead(postingsReadOf(m, postings))
 	return m
 }
 
-func postingsReadOf(m *postingListModel, postings []message.Posting) message.Event[message.Read[message.PostingList]] {
+func postingsReadOf(m *postingListModel, postings []message.Listing) message.Event[message.Read[message.PostingList]] {
 	return message.New(message.Source{Instance: m.Instance()}, message.Subject{Type: message.TypeCompany, ID: m.company.ID}, message.OpNone, time.Now().UTC(),
-		message.Read[message.PostingList]{Value: message.PostingList{Postings: postings, Markup: map[int64]message.Markup{}}})
+		message.Read[message.PostingList]{Value: message.PostingList{Listings: postings}})
 }
 
 // pressOn sends key to m and returns the messages its command produces.
@@ -87,7 +87,7 @@ func TestPostingListModel_Enter_PushesDetailSteppingThroughTheList(t *testing.T)
 		t.Errorf("Subject = %+v, want %+v", nav.Meta.Subject, want)
 	}
 	want := message.Nav[message.PostingDetail]{Op: message.NavPush, Screen: message.ScreenPostingDetail,
-		Value: message.PostingDetail{Posting: designer, Siblings: []int64{1, 2}}}
+		Value: message.PostingDetail{Posting: listingPosting(designer), Siblings: []int64{1, 2}}}
 	if diff := cmp.Diff(want, nav.Payload); diff != "" {
 		t.Errorf("Nav (-want +got):\n%s", diff)
 	}
@@ -186,11 +186,17 @@ func TestPostingListModel_R_AsksToSyncItsCompany(t *testing.T) {
 // two postings in the store.
 func listWith(t *testing.T, hideArchived bool) (*postingListModel, *model.MsgRouter) {
 	t.Helper()
+	return listIn(t, hideArchived, 40)
+}
+
+// listIn is listWith drawn in rows.
+func listIn(t *testing.T, hideArchived bool, rows int) (*postingListModel, *model.MsgRouter) {
+	t.Helper()
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	mustUpsertPosting(t, s, acme.ID, "job-2", "Designer")
-	m := newPostingListModel(s.Companies, s.Postings, companySnapshot(acme), hideArchived, message.ContentSize{Rows: 40})
+	m := newPostingListModel(s.Companies, s.Postings, companySnapshot(acme), hideArchived, message.ContentSize{Rows: rows})
 	r := model.NewMsgRouter()
 	if err := r.Register(m); err != nil {
 		t.Fatalf("Register: %v", err)
@@ -220,11 +226,51 @@ func TestPostingListModel_Init_ReadsItsCompanysPostings(t *testing.T) {
 	}
 
 	var titles []string
-	for _, p := range m.list.Postings {
+	for _, p := range m.list.Listings {
 		titles = append(titles, p.Title)
 	}
 	if len(titles) != 2 {
 		t.Errorf("postings after Init = %v, want Engineer and Designer", titles)
+	}
+}
+
+// The list reads as many postings as fit, and says how many there are when
+// that's not all of them.
+func TestPostingListModel_Init_ReadsAPageThatFits(t *testing.T) {
+	t.Parallel()
+
+	m, r := listIn(t, false, 1)
+	for _, msg := range runCmd(t, m.Init()) {
+		r.Dispatch(msg)
+	}
+
+	if got := len(m.list.Listings); got != 1 {
+		t.Errorf("postings read = %d, want 1, as many as fit", got)
+	}
+	if view := postingListView(m); !strings.Contains(view, "Showing 1 of 2 postings") {
+		t.Errorf("view doesn't say how many postings there are:\n%s", view)
+	}
+}
+
+// Growing the terminal reads again, as many postings as now fit.
+func TestPostingListModel_Resize_ReadsAsManyAsNowFit(t *testing.T) {
+	t.Parallel()
+
+	m, r := listIn(t, false, 1)
+	for _, msg := range runCmd(t, m.Init()) {
+		r.Dispatch(msg)
+	}
+
+	resized := message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Signal[message.ContentSize]{Value: message.ContentSize{Rows: 40}})
+	for _, msg := range runCmd(t, r.Dispatch(resized)) {
+		r.Dispatch(msg)
+	}
+
+	if got := len(m.list.Listings); got != 2 {
+		t.Errorf("postings read = %d, want both now they fit", got)
+	}
+	if view := postingListView(m); strings.Contains(view, "Showing") {
+		t.Errorf("view says how many of the postings it shows, though it shows them all:\n%s", view)
 	}
 }
 
@@ -285,56 +331,38 @@ func TestPostingListModel_Read_KeepsTheCursorOnItsPosting(t *testing.T) {
 	m := postingListOf(t, testListCompany, testPostings(), false, 0)
 	pressOn(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 
-	m.postingsRead(postingsReadOf(m, append([]message.Posting{{ID: 3, Title: "Analyst"}}, testPostings()...)))
+	m.postingsRead(postingsReadOf(m, append([]message.Listing{{ID: 3, Title: "Analyst"}}, testPostings()...)))
 	if got := m.selected(); got != 2 {
 		t.Errorf("posting under the cursor = %d, want 2, the one it was on", got)
 	}
 }
 
-// The list hears a markup change whether or not it's on top.
-func TestPostingListModel_MarkupChanged_PatchesItsRow(t *testing.T) {
+// The list hears a markup change whether or not it's on top, and reads
+// again for a posting on its page, which is drawn with its markup.
+func TestPostingListModel_MarkupChanged_ReadsAgainForAPostingOnThePage(t *testing.T) {
 	t.Parallel()
 
-	now := time.Now().UTC()
 	tests := []struct {
-		name         string
-		hideArchived bool
-		after        message.Markup
-		wantTitles   []string
-		wantMarker   string
+		name     string
+		posting  func(m *postingListModel) int64
+		wantRead bool
 	}{
-		{name: "interested", after: message.Markup{PostingID: 2, InterestedAt: now}, wantTitles: []string{"Engineer", "Designer"}, wantMarker: "★"},
-		{name: "archived, archived shown", after: message.Markup{PostingID: 2, ArchivedAt: now}, wantTitles: []string{"Engineer", "Designer"}, wantMarker: "✕"},
-		{name: "archived, archived hidden", hideArchived: true, after: message.Markup{PostingID: 2, ArchivedAt: now}, wantTitles: []string{"Engineer"}},
-		{name: "a posting it doesn't list", after: message.Markup{PostingID: 9, InterestedAt: now}, wantTitles: []string{"Engineer", "Designer"}, wantMarker: " "},
+		{name: "a posting on the page", posting: func(m *postingListModel) int64 { return m.list.Listings[1].ID }, wantRead: true},
+		{name: "a posting it doesn't list", posting: func(*postingListModel) int64 { return 999 }, wantRead: false},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := postingListOf(t, testListCompany, testPostings(), tt.hideArchived, 0)
-			pressOn(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
-			r := model.NewMsgRouter()
-			if err := r.Register(m); err != nil {
-				t.Fatalf("Register: %v", err)
+			m, r := listWith(t, false)
+			for _, msg := range runCmd(t, m.Init()) {
+				r.Dispatch(msg)
 			}
+			id := tt.posting(m)
 
-			r.Dispatch(message.New(message.Source{}, message.Subject{Type: message.TypePosting, ID: tt.after.PostingID}, message.OpUpdated, now,
-				message.Changed[message.Markup]{Before: message.Markup{PostingID: tt.after.PostingID}, After: tt.after}))
-
-			var titles []string
-			for _, p := range m.list.Postings {
-				titles = append(titles, p.Title)
-			}
-			if diff := cmp.Diff(tt.wantTitles, titles); diff != "" {
-				t.Errorf("postings (-want +got):\n%s", diff)
-			}
-			if m.cursor >= len(m.list.Postings) {
-				t.Errorf("cursor = %d, past the %d postings", m.cursor, len(m.list.Postings))
-			}
-			if tt.wantMarker != "" {
-				if got := postingMarker(m.list.Markup[2]); got != tt.wantMarker {
-					t.Errorf("Designer's marker = %q, want %q", got, tt.wantMarker)
-				}
+			got := runCmd(t, r.Dispatch(message.New(message.Source{}, message.Subject{Type: message.TypePosting, ID: id}, message.OpUpdated, time.Now().UTC(),
+				message.Changed[message.Markup]{Before: message.Markup{PostingID: id}, After: message.Markup{PostingID: id, InterestedAt: time.Now().UTC()}})))
+			if read := readsFrom(t, m, got); read != tt.wantRead {
+				t.Errorf("read again = %v, want %v", read, tt.wantRead)
 			}
 		})
 	}
@@ -357,7 +385,7 @@ func TestPostingListModel_IAndX_MarkThePostingUnderTheCursor(t *testing.T) {
 			for _, msg := range runCmd(t, m.Init()) {
 				r.Dispatch(msg)
 			}
-			marked := m.list.Postings[0]
+			marked := m.list.Listings[0]
 
 			got := pressOn(t, m, runeKey(tt.key))
 			if len(got) != 1 {
@@ -374,8 +402,10 @@ func TestPostingListModel_IAndX_MarkThePostingUnderTheCursor(t *testing.T) {
 			if diff := cmp.Diff(message.Markup{PostingID: marked.ID}, e.Payload.Before); diff != "" {
 				t.Errorf("Before (-want +got):\n%s", diff)
 			}
-			r.Dispatch(e)
-			if got := postingMarker(m.list.Markup[marked.ID]); got != tt.wantMarker {
+			for _, msg := range runCmd(t, r.Dispatch(e)) {
+				r.Dispatch(msg)
+			}
+			if got := postingMarker(listedOn(t, m, marked.ID)); got != tt.wantMarker {
 				t.Errorf("%s's marker = %q, want %q", marked.Title, got, tt.wantMarker)
 			}
 		})
@@ -597,4 +627,14 @@ func TestPostingListModel_ChangesElsewhere_ReadOnceAtATime(t *testing.T) {
 	m, r := listWith(t, false)
 	assertReadsOnceAtATime[message.PostingList](t, r,
 		message.Logged(1, mcp, message.Subject{Type: message.TypePosting, ID: 99}, message.OpCreated, time.Now().UTC(), message.Posting{ID: 99, CompanyID: m.company.ID}))
+}
+
+// listedOn is posting id's row on m's page.
+func listedOn(t *testing.T, m *postingListModel, id int64) message.Listing {
+	t.Helper()
+	i := indexOfListing(m.list.Listings, id)
+	if i < 0 {
+		t.Fatalf("posting %d isn't on the page", id)
+	}
+	return m.list.Listings[i]
 }
