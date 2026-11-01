@@ -12,10 +12,13 @@ depends_on: []
 
 `changeReader` asks for its own next tick and reads on it. `App` registers it and batches its `Init`. `changes`, `changePoll`, `pollChanges` and `changeTick` leave `App`.
 
-## Decide before starting
+## Decided
 
-- **Who builds the reader.** `App` today, from its services. If `cmd/swamp` builds it and passes it in (as step 4 does with the nav table), `App` needs none of the services that remain after step 4.
-- **The tick's source.** Today it's `App`'s instance, filtered by `model.From(a.instance)`. It becomes the reader's instance.
+- **`cmd/swamp` builds the reader,** with `NewChangeReader(services…, origin, since, poll)`, as it builds `Screens`. `App` holds none of the six services, nor `origin`.
+- **`WithChangeLog` takes the reader,** registers it and has `Init` batch its `Init`. Bubble Tea calls only `App.Init`, so the reader can't start its own tick by being registered elsewhere. Tests without a change log don't call it.
+- **The tick's source is the reader's instance,** and its `tick` route is `From` it.
+- **The focus and size signals carry no `Process`.** `App` set it from `origin`, but nothing reads it there, and a signal has no writer.
+- **Tests take the services from their setup,** not from `App`: `deleteTestApp`, `submitTestApp` and `newFullTestApp` return their `testutil.TestApp`, and `storeOf` goes.
 
 ## Acceptance criteria
 
