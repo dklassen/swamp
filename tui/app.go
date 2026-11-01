@@ -29,10 +29,8 @@ type App struct {
 	scoringService     *service.ScoringService
 	changeLogService   *service.ChangeLog
 	origin             string
-	// changes reads the log's rows as events, nil without a change log,
-	// on a tick every changePoll.
-	changes    *changeReader
-	changePoll time.Duration
+	// changes reads the log's rows as events, nil without a change log.
+	changes *changeReader
 	// nav is the tabs, and stack the screens pushed over the tab up.
 	nav   *Navigation
 	stack *Stack
@@ -141,7 +139,10 @@ func (a *App) WithStatus(status string) *App {
 }
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.nav.Init(), a.pollChanges())
+	if a.changes == nil {
+		return a.nav.Init()
+	}
+	return tea.Batch(a.nav.Init(), a.changes.Init())
 }
 
 // changePollInterval is how often the TUI reads the change log. Nothing is
@@ -153,28 +154,11 @@ const changePollInterval = 500 * time.Millisecond
 // rows its commands already sent as events.
 func (a *App) WithChangeLog(since int64, origin string) *App {
 	a.origin = origin
-	a.changes = newChangeReader(a.companyService, a.postingService, a.applicationService, a.documentService, a.scoringService, a.changeLogService, origin, since)
+	a.changes = newChangeReader(a.companyService, a.postingService, a.applicationService, a.documentService, a.scoringService, a.changeLogService, origin, since, changePollInterval)
 	if err := a.router.Register(a.changes); err != nil {
 		panic(err)
 	}
-	a.changePoll = changePollInterval
 	return a
-}
-
-// pollChanges asks for the next tick; nil without a change log.
-func (a *App) pollChanges() tea.Cmd {
-	if a.changes == nil {
-		return nil
-	}
-	src := message.Source{Instance: a.instance}
-	return tea.Tick(a.changePoll, func(at time.Time) tea.Msg {
-		return message.New(src, message.Subject{}, message.OpNone, at.UTC(), message.Signal[message.ChangeTick]{})
-	})
-}
-
-// changeTick asks for the next tick; the reader reads on this one.
-func (a *App) changeTick(message.Event[message.Signal[message.ChangeTick]]) tea.Cmd {
-	return a.pollChanges()
 }
 
 // errInternal is the banner for a fault: the error itself means nothing
@@ -215,7 +199,6 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.applicationChanged),
 		model.Always(a.browserOpened),
 		model.Always(a.exported),
-		model.Always(a.changeTick, model.From(a.instance)),
 	}, a.navRoutes...)
 }
 

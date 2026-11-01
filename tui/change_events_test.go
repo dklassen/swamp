@@ -498,9 +498,9 @@ func TestApp_ATick_ReadsTheLogOnceAtATime(t *testing.T) {
 
 	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
-	app.changePoll = time.Millisecond
+	app.changes.poll = time.Millisecond
 	tick := func() tea.Msg {
-		return message.New(message.Source{Instance: app.Instance()}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Signal[message.ChangeTick]{})
+		return message.New(message.Source{Instance: app.changes.Instance()}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Signal[message.ChangeTick]{})
 	}
 	// sent is how many reads and ticks msgs hold, and the read.
 	sent := func(msgs []tea.Msg) (reads, ticks int, read tea.Msg) {

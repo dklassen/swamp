@@ -32,14 +32,16 @@ type changeReader struct {
 	after    int64
 	reading  bool
 	instance message.ScreenInstance
+	// poll is how long the reader waits between reads.
+	poll time.Duration
 }
 
 // loggedTable reads a table's rows by ID, giving each row's event, or nil
 // for a row whose entity is gone since.
 type loggedTable func(ctx context.Context, ids []int64) (func(row change.Event, op message.Op) (tea.Msg, error), error)
 
-func newChangeReader(companies *service.CompanyService, postings *service.PostingService, applications *service.ApplicationService, documents *service.DocumentService, scores *service.ScoringService, log *service.ChangeLog, origin string, since int64) *changeReader {
-	return &changeReader{origin: origin, log: log, after: since, instance: message.NewScreenInstance(), tables: map[string]loggedTable{
+func newChangeReader(companies *service.CompanyService, postings *service.PostingService, applications *service.ApplicationService, documents *service.DocumentService, scores *service.ScoringService, log *service.ChangeLog, origin string, since int64, poll time.Duration) *changeReader {
+	return &changeReader{origin: origin, log: log, after: since, poll: poll, instance: message.NewScreenInstance(), tables: map[string]loggedTable{
 		"companies":        logged(companies.GetManyIncludingDeleted, func(c company.Company) int64 { return c.ID }, func(c company.Company) bool { return c.DeletedAt != nil }, companySnapshot, rowSubject[message.Company](message.TypeCompany)),
 		"applications":     logged(applications.GetManyIncludingDeleted, func(a application.Application) int64 { return a.ID }, func(a application.Application) bool { return !a.DeletedAt.IsZero() }, applicationSnapshot, rowSubject[message.Application](message.TypeApplication)),
 		"postings":         logged(postings.GetMany, func(p posting.Posting) int64 { return p.ID }, nil, postingSnapshot, rowSubject[message.Posting](message.TypePosting)),
@@ -55,19 +57,31 @@ func (r *changeReader) Instance() message.ScreenInstance { return r.instance }
 
 func (r *changeReader) Routes() []*model.Route {
 	return []*model.Route{
-		model.Always(r.tick),
+		model.Always(r.tick, model.From(r.instance)),
 		model.Always(r.pageRead, model.From(r.instance)),
 		model.Always(r.readFailed, model.From(r.instance)),
 	}
 }
 
-// tick reads the log, unless a read is still in flight.
+// Init asks for the first tick.
+func (r *changeReader) Init() tea.Cmd { return r.next() }
+
+// next asks for a tick after poll.
+func (r *changeReader) next() tea.Cmd {
+	src := message.Source{Instance: r.instance}
+	return tea.Tick(r.poll, func(at time.Time) tea.Msg {
+		return message.New(src, message.Subject{}, message.OpNone, at.UTC(), message.Signal[message.ChangeTick]{})
+	})
+}
+
+// tick asks for the next tick, and reads the log unless a read is still in
+// flight.
 func (r *changeReader) tick(message.Event[message.Signal[message.ChangeTick]]) tea.Cmd {
 	if r.reading {
-		return nil
+		return r.next()
 	}
 	r.reading = true
-	return r.read()
+	return tea.Batch(r.next(), r.read())
 }
 
 // read sends the events of the log's rows after the reader's place, in the
