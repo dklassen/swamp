@@ -155,7 +155,7 @@ func TestStatusPicker_OpensOnAStatusChangedElsewhere(t *testing.T) {
 	t.Parallel()
 
 	app, s, target := deleteTestApp(t)
-	app.WithChangeLog(0, "tui:1")
+	app.WithChangeLog(newTestChangeReader(s))
 	if err := updateApplicationStatusIn(t.Context(), s, target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}

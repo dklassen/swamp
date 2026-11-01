@@ -112,7 +112,7 @@ func newAppWithScreensOn(s testutil.TestApp, syncer *sync.Syncer, docs *document
 	if err := router.Register(screens); err != nil {
 		panic(err)
 	}
-	app := New(router, s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, syncer,
+	app := New(router, syncer,
 		NewNavigation(screens.Tabs()), NewStack(), screens.Tables()...)
 	return app, screens
 }
@@ -217,4 +217,9 @@ func assertReadsOnceAtATime[T message.Body](t *testing.T, r *model.MsgRouter, ch
 	if more := readsOf[T](t, r.Dispatch(again[0])); len(more) != 0 {
 		t.Errorf("the second read arriving sent %d more, want 0", len(more))
 	}
+}
+
+// newTestChangeReader reads s's change log from its start, as "tui:1".
+func newTestChangeReader(s testutil.TestApp) *ChangeReader {
+	return NewChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0, ChangePollInterval)
 }

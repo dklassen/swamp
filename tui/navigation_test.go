@@ -26,7 +26,7 @@ func newFakesApp(t *testing.T, form, edit *stackedFake) *App {
 		message.ScreenCompanyForm: func(message.None) stackScreen { return form },
 		message.ScreenCompanyEdit: func(message.None) stackScreen { return edit },
 	})
-	return New(router, nil, nil, nil, nil, nil, nil, nil, NewNavigation(screens.Tabs()), NewStack(), fakes)
+	return New(router, nil, NewNavigation(screens.Tabs()), NewStack(), fakes)
 }
 
 func TestNavigation_Routes_AreItsTabs(t *testing.T) {
@@ -110,7 +110,7 @@ func TestApp_Nav_ToAScreenMissingFromTheTables_IsReported(t *testing.T) {
 	router := model.NewMsgRouter()
 	screens := NewScreens(nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
 	noForm := Opens(map[message.Screen]func(message.None) stackScreen{})
-	app := New(router, nil, nil, nil, nil, nil, nil, nil, NewNavigation(screens.Tabs()), NewStack(), noForm)
+	app := New(router, nil, NewNavigation(screens.Tabs()), NewStack(), noForm)
 	home := app.onScreen()
 	from := message.Source{Instance: app.focused()}
 
