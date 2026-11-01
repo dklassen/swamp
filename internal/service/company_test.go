@@ -451,3 +451,49 @@ func TestCompanyService_ListedPostings_TotalIsTheOpenCount(t *testing.T) {
 		t.Errorf("Total = %d, Open count = %d; want them equal and not 0", got.Page.Total, counts[acme.ID])
 	}
 }
+
+// A company's filters on one field let through a posting that equals any
+// of them, ignoring case; filters on two fields must both let it through.
+func TestCompanyService_ListedPostings_AppliesTheCompanysFilters(t *testing.T) {
+	t.Parallel()
+	department := func(v string) filter.Filter { return filter.Filter{Field: filter.FieldDepartment, Value: v} }
+	location := func(v string) filter.Filter { return filter.Filter{Field: filter.FieldLocation, Value: v} }
+	type where struct{ department, location string }
+	for _, tt := range []struct {
+		name    string
+		filters []filter.Filter
+		posting where
+		listed  bool
+	}{
+		{"no filters", nil, where{"Sales", "Remote"}, true},
+		{"its department", []filter.Filter{department("Engineering")}, where{"Engineering", "Remote"}, true},
+		{"another department", []filter.Filter{department("Engineering")}, where{"Sales", "Remote"}, false},
+		{"its department in another case", []filter.Filter{department("Engineering")}, where{"engineering", "Remote"}, true},
+		{"one of two departments", []filter.Filter{department("Engineering"), department("Data Engineering")}, where{"Data Engineering", ""}, true},
+		{"neither of two departments", []filter.Filter{department("Engineering"), department("Data Engineering")}, where{"Sales", ""}, false},
+		{"its department and location", []filter.Filter{department("Engineering"), location("Remote")}, where{"Engineering", "Remote"}, true},
+		{"its department, another location", []filter.Filter{department("Engineering"), location("Remote")}, where{"Engineering", "New York"}, false},
+		{"another department, its location", []filter.Filter{department("Engineering"), location("Remote")}, where{"Sales", "Remote"}, false},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			s := testutil.NewTestApp(t)
+			acme := testutil.MustAddCompany(t, s, "Acme")
+			if _, err := s.Postings.Ingest(ctx, acme.ID, jobboard.Ashby, "job-1", posting.IngestedFields{Title: "Engineer", Department: tt.posting.department, Location: tt.posting.location, RawPayload: "{}"}); err != nil {
+				t.Fatalf("Ingest: %v", err)
+			}
+			if err := s.Companies.SetFilters(ctx, acme.ID, tt.filters); err != nil {
+				t.Fatalf("SetFilters: %v", err)
+			}
+
+			got, err := s.Companies.ListedPostings(ctx, acme.ID, service.PostingListPage{Limit: 10})
+			if err != nil {
+				t.Fatalf("ListedPostings: %v", err)
+			}
+			if listed := len(got.Page.Listings) == 1; listed != tt.listed {
+				t.Errorf("listed = %v, want %v", listed, tt.listed)
+			}
+		})
+	}
+}

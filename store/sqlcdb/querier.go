@@ -199,8 +199,8 @@ type Querier interface {
 	// filter on this". Postings of a company the user deleted are never
 	// included.
 	//
-	// Each company's filters apply as filter.Match's do: a field with filters
-	// must equal one of them, ignoring case. equal_fold is strings.EqualFold,
+	// Each company's filters apply: a field with filters must equal one of
+	// them, ignoring case, for every field. equal_fold is strings.EqualFold,
 	// which store registers; NOCASE folds ASCII only.
 	//
 	// Every query term must appear somewhere in the title, company, department

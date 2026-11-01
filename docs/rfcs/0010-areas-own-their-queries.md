@@ -137,7 +137,7 @@ Not covered: **several reads that must see one consistent snapshot** need a tran
 There are two kinds of domain package:
 
 - **Areas** own queries. An area owns its types, its rules and its reads and writes, as functions that take a `store.Runner`, or a `store.Tx` when their statements must succeed together. It imports `store` and `store/sqlcdb`. Example: `companyfilter`.
-- **Pure packages** own rules and value types and do no I/O. They import nothing else from this project. Examples: `filter` (`filter.Match`, `filter.Filter`), and later a package for `ApplicationStatus` when two areas need it.
+- **Pure packages** own rules and value types and do no I/O. They import nothing else from this project. Examples: `filter` (`filter.Filter` and its field names), and later a package for `ApplicationStatus` when two areas need it.
 
 The rules:
 - An area may import pure packages, never another area. A value type two areas need moves into a pure package.
