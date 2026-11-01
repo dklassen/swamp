@@ -26,7 +26,7 @@ func TestApp_AnotherProcessesChange_ReloadsTheHomeListQuietly(t *testing.T) {
 
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
+	app := newTestApp(t, s, newTestSyncer(s, nil), WithChangeReader(newTestChangeReader(s)))
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Staff Engineer")
 	if _, err := createApplicationIn(context.Background(), s, posting.ID); err != nil {
 		t.Fatalf("application.Create: %v", err)
@@ -60,7 +60,7 @@ func TestApp_HomeListReload_KeepsTheCursorOnTheSameApplication(t *testing.T) {
 			t.Fatalf("application.Create: %v", err)
 		}
 	}
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
+	app := newTestApp(t, s, newTestSyncer(s, nil), WithChangeReader(newTestChangeReader(s)))
 	rows := applicationsTabOf(app).apps
 	if len(rows) != 3 {
 		t.Fatalf("home list has %d rows, want 3", len(rows))
@@ -88,7 +88,7 @@ func TestApp_CompanyListReload_KeepsTheCursorOnTheSameCompany(t *testing.T) {
 	for _, name := range []string{"Acme", "Globex", "Initech"} {
 		mustCreateCompany(t, s, name, jobboard.Ashby, strings.ToLower(name))
 	}
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
+	app := newTestApp(t, s, newTestSyncer(s, nil), WithChangeReader(newTestChangeReader(s)))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 	if app.onScreen() != message.ScreenCompanyList {
 		t.Fatalf("screen after c = %v, want the company list", app.onScreen())
@@ -121,7 +121,7 @@ func TestApp_PostingListReload_KeepsTheCursorAndShowsTheChange(t *testing.T) {
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "First"}, {SourceID: "job-2", Title: "Second"}, {SourceID: "job-3", Title: "Third"}},
 	})
-	app := newTestApp(t, s, syncer).WithChangeLog(0, "tui:1")
+	app := newTestApp(t, s, syncer, WithChangeReader(newTestChangeReader(s)))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 200, Height: 40})
 	app = openPostingList(t, app)
 	postings := openList(t, app).list.Postings
@@ -153,9 +153,8 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	app, screens, target := deleteTestAppWithScreens(t) // resume drafted as "# Draft\n"
-	app.WithChangeLog(0, "tui:1")
-	if _, err := createReview(ctx, storeOf(app), target.ID, document.Resume, "# Draft\n", document.Passed, ""); err != nil {
+	app, s, screens, target := deleteTestAppWithScreens(t, withTestChangeReader) // resume drafted as "# Draft\n"
+	if _, err := createReview(ctx, s, target.ID, document.Resume, "# Draft\n", document.Passed, ""); err != nil {
 		t.Fatalf("CreateReview: %v", err)
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -167,7 +166,7 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 	if _, err := screens.documents.Write(target.ID, document.Resume, "# Revised by the agent\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if err := storeOf(app).Documents.RecordWrite(ctx, target.ID, document.Resume, "# Revised by the agent\n", document.SourceWriteDocument); err != nil {
+	if err := s.Documents.RecordWrite(ctx, target.ID, document.Resume, "# Revised by the agent\n", document.SourceWriteDocument); err != nil {
 		t.Fatalf("RecordWrite: %v", err)
 	}
 	app = readChangeLog(t, app)
@@ -184,10 +183,9 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 func TestApp_ApplicationDeletedElsewhere_GoesBackAndSaysSo(t *testing.T) {
 	t.Parallel()
 
-	app, target := deleteTestApp(t)
-	app.WithChangeLog(0, "tui:1")
+	app, s, target := deleteTestApp(t, withTestChangeReader)
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if _, err := storeOf(app).Applications.Delete(context.Background(), target.ID); err != nil {
+	if _, err := s.Applications.Delete(context.Background(), target.ID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
 
@@ -212,7 +210,7 @@ func TestApp_PostingDetailReload_ShowsTheChangeAndKeepsTheScroll(t *testing.T) {
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer", DescriptionText: long}},
 	})
-	app := newTestApp(t, s, syncer).WithChangeLog(0, "tui:1")
+	app := newTestApp(t, s, syncer, WithChangeReader(newTestChangeReader(s)))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app = openPostingList(t, app)
 	app = openPostingDetail(t, app)
@@ -247,7 +245,7 @@ func TestApp_PostingDetailFromApplicationDetail_ReloadKeepsThePosting(t *testing
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	p := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	mustCreateApplication(t, s, p.ID)
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
+	app := newTestApp(t, s, newTestSyncer(s, nil), WithChangeReader(newTestChangeReader(s)))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // home -> application detail
 	app = sendKeyAndApply(t, app, runeKey('p'))                        // -> posting detail
@@ -276,7 +274,7 @@ func TestApp_ApplicationStartedElsewhere_PostingDetailShowsIt(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{"acme": {{SourceID: "job-1", Title: "Engineer"}}})
-	app := newTestApp(t, s, syncer).WithChangeLog(0, "tui:1")
+	app := newTestApp(t, s, syncer, WithChangeReader(newTestChangeReader(s)))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
 	app = openPostingList(t, app)
 	app = openPostingDetail(t, app)
@@ -301,15 +299,13 @@ func TestApp_ChangesWhileAFormIsOpen_LeaveItAlone(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	app, target := deleteTestApp(t)
-	app.WithChangeLog(0, "tui:1")
+	app, s, target := deleteTestApp(t, withTestChangeReader)
 	app = sendKeyAndApply(t, app, runeKey('s'))
 	if app.onScreen() != message.ScreenApplicationStatus {
 		t.Fatalf("screen after s = %v, want the status form", app.onScreen())
 	}
 	app, _ = sendKey(app, runeKey('j'))
 	cursor := statusPicker(t, app).cursor
-	s := storeOf(app)
 	acme, err := s.Companies.Get(ctx, mustPosting(t, s, target.PostingID).CompanyID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
@@ -345,9 +341,8 @@ func mustPosting(t *testing.T, s testutil.TestApp, id int64) posting.Posting {
 func TestApp_EnteringApplicationDetail_ShowsAChangeMadeBeforeIt(t *testing.T) {
 	t.Parallel()
 
-	app, target := deleteTestApp(t)
-	app.WithChangeLog(0, "tui:1")
-	if err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
+	app, s, target := deleteTestApp(t, withTestChangeReader)
+	if err := updateApplicationStatusIn(context.Background(), s, target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
@@ -372,7 +367,7 @@ func TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	first := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
 	second := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-2", "Designer").ID)
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
+	app := newTestApp(t, s, newTestSyncer(s, nil), WithChangeReader(newTestChangeReader(s)))
 	if strings.Contains(viewText(app), "Interviewing") {
 		t.Fatal("the home list shows Interviewing before any change; the test can't tell a reload happened")
 	}
@@ -406,13 +401,12 @@ func TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere(t *testing.T) {
 func TestApp_TabBackToTheHomeList_ShowsAChangeClearedOnTheCompanyList(t *testing.T) {
 	t.Parallel()
 
-	app, target := deleteTestApp(t)
-	app.WithChangeLog(0, "tui:1")
+	app, s, target := deleteTestApp(t, withTestChangeReader)
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 	if app.onScreen() != message.ScreenCompanyList {
 		t.Fatalf("screen = %v, want the company list", app.onScreen())
 	}
-	if err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
+	if err := updateApplicationStatusIn(context.Background(), s, target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 	app = readChangeLog(t, app)
@@ -466,7 +460,7 @@ func TestApp_AnotherProcessesWrite_ShowsOnTheScreenThatShowsIt(t *testing.T) {
 			s := testutil.NewTestApp(t)
 			acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 			syncer := newTestSyncer(s, map[string][]jobboard.Posting{"acme": {{SourceID: "job-1", Title: "Engineer"}}})
-			app := tt.open(t, newTestApp(t, s, syncer).WithChangeLog(0, "tui:1"))
+			app := tt.open(t, newTestApp(t, s, syncer, WithChangeReader(newTestChangeReader(s))))
 			// Past what opening it wrote, such as a sync.
 			app = readChangeLog(t, app)
 			if strings.Contains(viewText(app), tt.want) {
@@ -497,10 +491,10 @@ func TestApp_ATick_ReadsTheLogOnceAtATime(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	app := newTestApp(t, s, newTestSyncer(s, nil)).WithChangeLog(0, "tui:1")
-	app.changePoll = time.Millisecond
+	reader := NewChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0, time.Millisecond)
+	app := newTestApp(t, s, newTestSyncer(s, nil), WithChangeReader(reader))
 	tick := func() tea.Msg {
-		return message.New(message.Source{Instance: app.Instance()}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Signal[message.ChangeTick]{})
+		return message.New(message.Source{Instance: reader.Instance()}, message.Subject{}, message.OpNone, time.Now().UTC(), message.Signal[message.ChangeTick]{})
 	}
 	// sent is how many reads and ticks msgs hold, and the read.
 	sent := func(msgs []tea.Msg) (reads, ticks int, read tea.Msg) {
@@ -541,7 +535,7 @@ func TestApp_ItsOwnWrite_IsAppliedOnce(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
 	tui := servicesAs(t, s.Path, "tui:1")
-	app := newTestApp(t, tui, newTestSyncer(tui, nil)).WithChangeLog(0, "tui:1")
+	app := newTestApp(t, tui, newTestSyncer(tui, nil), WithChangeReader(newTestChangeReader(tui)))
 	app = readChangeLog(t, app)
 
 	app = sendKeyAndApply(t, app, runeKey('s'))

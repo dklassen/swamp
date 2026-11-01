@@ -106,14 +106,14 @@ func newAppOn(s testutil.TestApp, syncer *sync.Syncer, docs *documents.Store) *A
 
 // newAppWithScreensOn is newAppOn, with the Screens it opens, put
 // together as cmd/swamp does.
-func newAppWithScreensOn(s testutil.TestApp, syncer *sync.Syncer, docs *documents.Store) (*App, *Screens) {
+func newAppWithScreensOn(s testutil.TestApp, syncer *sync.Syncer, docs *documents.Store, opts ...Option) (*App, *Screens) {
 	router := model.NewMsgRouter()
 	screens := NewScreens(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, syncer, docs)
 	if err := router.Register(screens); err != nil {
 		panic(err)
 	}
-	app := New(router, s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, syncer,
-		NewNavigation(screens.Tabs()), NewStack(), screens.Tables()...)
+	app := New(router, NewNavigation(screens.Tabs()), NewStack(), screens.Tables(),
+		append([]Option{WithSyncer(syncer)}, opts...)...)
 	return app, screens
 }
 
@@ -136,19 +136,6 @@ func allPostingsTabOf(app *App) *allPostingsModel {
 
 func applicationsTabOf(app *App) *activeApplicationListModel {
 	return app.screen(message.ScreenActiveApplications).(*activeApplicationListModel)
-}
-
-// storeOf is app's services, for tests that get only an App from their
-// setup. Its Store and Path are empty.
-func storeOf(app *App) testutil.TestApp {
-	return testutil.TestApp{
-		Companies:    app.companyService,
-		Postings:     app.postingService,
-		Applications: app.applicationService,
-		Documents:    app.documentService,
-		Scores:       app.scoringService,
-		Changes:      app.changeLogService,
-	}
 }
 
 func newTestSyncer(s testutil.TestApp, postings map[string][]jobboard.Posting) *sync.Syncer {
@@ -230,4 +217,15 @@ func assertReadsOnceAtATime[T message.Body](t *testing.T, r *model.MsgRouter, ch
 	if more := readsOf[T](t, r.Dispatch(again[0])); len(more) != 0 {
 		t.Errorf("the second read arriving sent %d more, want 0", len(more))
 	}
+}
+
+// withTestChangeReader has the App read s's change log with
+// newTestChangeReader.
+func withTestChangeReader(s testutil.TestApp) Option {
+	return WithChangeReader(newTestChangeReader(s))
+}
+
+// newTestChangeReader reads s's change log from its start, as "tui:1".
+func newTestChangeReader(s testutil.TestApp) *ChangeReader {
+	return NewChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0, time.Millisecond)
 }

@@ -49,13 +49,13 @@ func onApplicationDetail(t *testing.T, app *App) *applicationDetailModel {
 
 // editorClosed is what editing documentType from the detail on screen
 // reports once the editor closes, given its hash before the edit.
-func editorClosed(t *testing.T, app *App, screens *Screens, applicationID int64, documentType document.Type, before string) tea.Cmd {
+func editorClosed(t *testing.T, app *App, s testutil.TestApp, screens *Screens, applicationID int64, documentType document.Type, before string) tea.Cmd {
 	t.Helper()
 	path, err := screens.documents.Path(applicationID, documentType)
 	if err != nil {
 		t.Fatalf("Path: %v", err)
 	}
-	return recordEditorWrite(app.documentService, onApplicationDetail(t, app).src(), applicationID, documentType, path, before)
+	return recordEditorWrite(s.Documents, onApplicationDetail(t, app).src(), applicationID, documentType, path, before)
 }
 
 // TestApp_EditorClosed_ReloadsTheApplicationsReviews: editing a draft from
@@ -86,7 +86,7 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	if _, err := docs.Write(target.ID, document.Resume, "# Edited in $EDITOR\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	app = applyCmd(t, app, editorClosed(t, app, screens, target.ID, document.Resume, documents.ContentSHA256("# Draft\n")))
+	app = applyCmd(t, app, editorClosed(t, app, s, screens, target.ID, document.Resume, documents.ContentSHA256("# Draft\n")))
 
 	if view := viewText(app); strings.Contains(view, "[PASSED]") {
 		t.Errorf("application detail still shows the review of the old version as [PASSED]:\n%s", view)
@@ -104,7 +104,7 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 func TestApp_EditorClosedWithAnError_ShowsIt(t *testing.T) {
 	t.Parallel()
 
-	app, target := deleteTestApp(t)
+	app, _, target := deleteTestApp(t)
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
 	src := onApplicationDetail(t, app).src()
@@ -123,15 +123,15 @@ func TestApp_EditorClosedAfterAChange_RecordsTheWrite(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	app, screens, target := deleteTestAppWithScreens(t) // resume drafted as "# Draft\n"
+	app, s, screens, target := deleteTestAppWithScreens(t) // resume drafted as "# Draft\n"
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	if _, err := screens.documents.Write(target.ID, document.Resume, "# Edited\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
-	app = applyCmd(t, app, editorClosed(t, app, screens, target.ID, document.Resume, documents.ContentSHA256("# Draft\n")))
+	applyCmd(t, app, editorClosed(t, app, s, screens, target.ID, document.Resume, documents.ContentSHA256("# Draft\n")))
 
-	write, err := storeOf(app).Documents.LatestWrite(ctx, target.ID, document.Resume)
+	write, err := s.Documents.LatestWrite(ctx, target.ID, document.Resume)
 	if err != nil {
 		t.Fatalf("LatestWrite: %v; want the edit recorded", err)
 	}
@@ -143,12 +143,12 @@ func TestApp_EditorClosedAfterAChange_RecordsTheWrite(t *testing.T) {
 func TestApp_EditorClosedWithoutAChange_RecordsNothing(t *testing.T) {
 	t.Parallel()
 
-	app, screens, target := deleteTestAppWithScreens(t) // resume drafted as "# Draft\n"
+	app, s, screens, target := deleteTestAppWithScreens(t) // resume drafted as "# Draft\n"
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	app = applyCmd(t, app, editorClosed(t, app, screens, target.ID, document.Resume, documents.ContentSHA256("# Draft\n")))
+	applyCmd(t, app, editorClosed(t, app, s, screens, target.ID, document.Resume, documents.ContentSHA256("# Draft\n")))
 
-	if _, err := storeOf(app).Documents.LatestWrite(context.Background(), target.ID, document.Resume); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.Documents.LatestWrite(context.Background(), target.ID, document.Resume); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("LatestWrite: err = %v, want store.ErrNotFound: nothing recorded for an unchanged document", err)
 	}
 }

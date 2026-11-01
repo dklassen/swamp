@@ -26,7 +26,7 @@ func TestApp_Banner_ShowsBelowTheScreen(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			app := newFullTestApp(t)
+			app, _ := newFullTestApp(t)
 			app, _ = sendKey(app, tea.WindowSizeMsg{Width: 100, Height: 24})
 			app = clearBanner(app)
 			tt.set(app)

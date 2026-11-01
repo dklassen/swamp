@@ -26,7 +26,7 @@ import (
 // screen at any reasonable terminal height: 40 companies, and 40 postings
 // for Acme, each with its own department and location (filling the
 // filter screen) and an application with both documents on disk.
-func newFullTestApp(t *testing.T) *App {
+func newFullTestApp(t *testing.T) (*App, testutil.TestApp) {
 	t.Helper()
 	ctx := context.Background()
 
@@ -72,23 +72,23 @@ func newFullTestApp(t *testing.T) *App {
 			}
 		}
 	}
-	return app
+	return app, s
 }
 
 // sizedScreen is a screen that sizes itself to the terminal, and how to
 // open it on an app from newFullTestApp.
 type sizedScreen struct {
 	name   string
-	open   func(t *testing.T, app *App) *App
+	open   func(t *testing.T, app *App, s testutil.TestApp) *App
 	screen message.Screen
 }
 
 func sizedScreens() []sizedScreen {
 	return []sizedScreen{
-		{name: "active applications", screen: message.ScreenActiveApplications, open: func(t *testing.T, app *App) *App {
+		{name: "active applications", screen: message.ScreenActiveApplications, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			return app
 		}},
-		{name: "active applications searching", screen: message.ScreenActiveApplications, open: func(t *testing.T, app *App) *App {
+		{name: "active applications searching", screen: message.ScreenActiveApplications, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			// "eng" matches all 40 applications, enough to fill the table
 			// under the prompt line.
 			for _, r := range "/eng" {
@@ -96,14 +96,14 @@ func sizedScreens() []sizedScreen {
 			}
 			return app
 		}},
-		{name: "all postings", screen: message.ScreenAllPostings, open: func(t *testing.T, app *App) *App {
+		{name: "all postings", screen: message.ScreenAllPostings, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			return openAllPostings(t, app)
 		}},
-		{name: "company list", screen: message.ScreenCompanyList, open: func(t *testing.T, app *App) *App {
+		{name: "company list", screen: message.ScreenCompanyList, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 			return app
 		}},
-		{name: "company list searching, with info box", screen: message.ScreenCompanyList, open: func(t *testing.T, app *App) *App {
+		{name: "company list searching, with info box", screen: message.ScreenCompanyList, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			// "co" still matches 39 of the 40 companies, enough to fill
 			// the table under the prompt line.
 			app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
@@ -112,24 +112,24 @@ func sizedScreens() []sizedScreen {
 			}
 			return app
 		}},
-		{name: "posting list", screen: message.ScreenCompanyPostings, open: func(t *testing.T, app *App) *App {
+		{name: "posting list", screen: message.ScreenCompanyPostings, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			return openPostingList(t, app)
 		}},
-		{name: "posting list with description and filters", screen: message.ScreenCompanyPostings, open: func(t *testing.T, app *App) *App {
+		{name: "posting list with description and filters", screen: message.ScreenCompanyPostings, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			// Every line the posting list can draw above its table: the
 			// company description, the filter summary and the archived
 			// notice (on by default). Filtering on every department
 			// keeps all 40 postings.
 			ctx := context.Background()
 			acme := companiesTabOf(app).companies[0]
-			if _, err := app.companyService.SetDescription(ctx, acme.ID, "Acme makes everything."); err != nil {
+			if _, err := s.Companies.SetDescription(ctx, acme.ID, "Acme makes everything."); err != nil {
 				t.Fatalf("SetDescription: %v", err)
 			}
 			var filters []filter.Filter
 			for i := 1; i <= 40; i++ {
 				filters = append(filters, filter.Filter{Field: filter.FieldDepartment, Value: fmt.Sprintf("Department %02d", i)})
 			}
-			if err := app.companyService.SetFilters(ctx, acme.ID, filters); err != nil {
+			if err := s.Companies.SetFilters(ctx, acme.ID, filters); err != nil {
 				t.Fatalf("SetFilters: %v", err)
 			}
 			app = applyCmd(t, app, companiesTabOf(app).load())
@@ -139,14 +139,14 @@ func sizedScreens() []sizedScreen {
 			}
 			return app
 		}},
-		{name: "posting detail", screen: message.ScreenPostingDetail, open: func(t *testing.T, app *App) *App {
+		{name: "posting detail", screen: message.ScreenPostingDetail, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			return openPostingDetail(t, openPostingList(t, app))
 		}},
-		{name: "filter select", screen: message.ScreenFilterSelect, open: func(t *testing.T, app *App) *App {
+		{name: "filter select", screen: message.ScreenFilterSelect, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			app, cmd := sendKey(openPostingList(t, app), runeKey('f'))
 			return applyCmd(t, app, cmd)
 		}},
-		{name: "filter select across both sections", screen: message.ScreenFilterSelect, open: func(t *testing.T, app *App) *App {
+		{name: "filter select across both sections", screen: message.ScreenFilterSelect, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			// With the cursor on the first location, the window spans the
 			// end of the departments and the start of the locations, so
 			// both section labels take a row.
@@ -161,7 +161,7 @@ func sizedScreens() []sizedScreen {
 			}
 			return app
 		}},
-		{name: "application notes", screen: message.ScreenApplicationNotes, open: func(t *testing.T, app *App) *App {
+		{name: "application notes", screen: message.ScreenApplicationNotes, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			// The editors keep their size from when they're opened, so
 			// open them with no banner up: one that appears afterwards
 			// has to be fitted by App's refit, not by luck.
@@ -169,25 +169,25 @@ func sizedScreens() []sizedScreen {
 			app = sendKeyAndApply(t, app, runeKey('n'))
 			return app
 		}},
-		{name: "review form from application detail", screen: message.ScreenDocumentReviewForm, open: func(t *testing.T, app *App) *App {
+		{name: "review form from application detail", screen: message.ScreenDocumentReviewForm, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 			app = applyCmd(t, app, cmd)
 			app, cmd = sendKey(app, runeKey('R'))
 			return applyCmd(t, app, cmd)
 		}},
-		{name: "application submit", screen: message.ScreenApplicationSubmit, open: func(t *testing.T, app *App) *App {
+		{name: "application submit", screen: message.ScreenApplicationSubmit, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 			app = applyCmd(t, app, cmd)
 			app, cmd = sendKey(app, runeKey('S'))
 			return applyCmd(t, app, cmd)
 		}},
-		{name: "application delete", screen: message.ScreenApplicationDetail, open: func(t *testing.T, app *App) *App {
+		{name: "application delete", screen: message.ScreenApplicationDetail, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 			app = applyCmd(t, app, cmd)
 			app, cmd = sendKey(app, runeKey('D'))
 			return applyCmd(t, app, cmd)
 		}},
-		{name: "review form from review select", screen: message.ScreenDocumentReviewForm, open: func(t *testing.T, app *App) *App {
+		{name: "review form from review select", screen: message.ScreenDocumentReviewForm, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
 			app = clearBanner(openPostingDetail(t, openPostingList(t, app)))
 			app, cmd := sendKey(app, runeKey('r'))
 			app = applyCmd(t, app, cmd)
@@ -219,9 +219,9 @@ func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 	for _, sc := range sizedScreens() {
 		for _, bn := range banners {
 			t.Run(sc.name+"/"+bn.name, func(t *testing.T) {
-				app := newFullTestApp(t)
+				app, s := newFullTestApp(t)
 				app, _ = sendKey(app, tea.WindowSizeMsg{Width: width, Height: height})
-				app = sc.open(t, app)
+				app = sc.open(t, app, s)
 				if app.onScreen() != sc.screen {
 					t.Fatalf("screen = %v, want %v", app.onScreen(), sc.screen)
 				}

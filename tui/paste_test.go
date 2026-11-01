@@ -124,7 +124,7 @@ func TestApp_CompanyList_PasteWithSearchClosed_IsNotACommand(t *testing.T) {
 func TestApp_ActiveApplications_PasteIntoSearch_FiltersByIt(t *testing.T) {
 	t.Parallel()
 
-	app := newFullTestApp(t)
+	app, _ := newFullTestApp(t)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 100, Height: 24})
 	app = sendKeyAndApply(t, app, runeKey('/'))
 

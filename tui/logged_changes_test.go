@@ -181,7 +181,7 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 				t.Fatalf("the write logged %d %s rows, want 1: %+v", len(want), tt.table, rows)
 			}
 
-			reader := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0)
+			reader := NewChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0, ChangePollInterval)
 			got, err := reader.changed(ctx, []change.Event{row})
 			if err != nil {
 				t.Fatalf("changed: %v", err)
@@ -218,7 +218,7 @@ func TestChangeReader_ItsOwnRows_AreSkipped(t *testing.T) {
 		t.Fatalf("After: %v", err)
 	}
 
-	reader := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0)
+	reader := NewChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0, ChangePollInterval)
 	got, err := reader.changed(ctx, rows)
 	if err != nil {
 		t.Fatalf("changed: %v", err)
@@ -256,7 +256,7 @@ func TestChangeReader_TheSameRowsReadTwice_AreTheSameEvents(t *testing.T) {
 	if err != nil {
 		t.Fatalf("After: %v", err)
 	}
-	reader := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0)
+	reader := NewChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0, ChangePollInterval)
 
 	first, err := reader.changed(ctx, rows)
 	if err != nil {
@@ -288,7 +288,7 @@ func TestChangeReader_AGoneRowIsLeftOutAndADeleteHasNoAfter(t *testing.T) {
 		{ID: 1, Table: "postings", RowID: 9999, Op: "update", Origin: mcp.Process, At: at},
 		{ID: 2, Table: "companies", RowID: 5, Op: "delete", Origin: mcp.Process, At: at},
 	}
-	reader := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0)
+	reader := NewChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0, ChangePollInterval)
 
 	got, err := reader.changed(ctx, rows)
 	if err != nil {
@@ -305,7 +305,7 @@ func TestChangeReader_AGoneRowIsLeftOutAndADeleteHasNoAfter(t *testing.T) {
 func TestChangeReader_EveryLoggedTable_HasAnEvent(t *testing.T) {
 	t.Parallel()
 	s := testutil.NewTestApp(t)
-	reader := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0)
+	reader := NewChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0, ChangePollInterval)
 	for _, table := range slices.Sorted(maps.Keys(migrations.Logged)) {
 		got, err := reader.changed(context.Background(), []change.Event{{ID: 1, Table: table, RowID: 5, Op: "delete", Origin: mcp.Process}})
 		if err != nil {
@@ -340,7 +340,7 @@ func TestChangeReader_ACompanyDeletedElsewhere_IsADelete(t *testing.T) {
 		t.Fatalf("After: %v", err)
 	}
 
-	got, err := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0).changed(ctx, rows)
+	got, err := NewChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0, ChangePollInterval).changed(ctx, rows)
 	if err != nil {
 		t.Fatalf("changed: %v", err)
 	}
@@ -378,7 +378,7 @@ func TestChangeReader_ACompanyCreatedThenDeletedElsewhere_IsOnlyADelete(t *testi
 		t.Fatalf("After: %v", err)
 	}
 
-	got, err := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0).changed(ctx, rows)
+	got, err := NewChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0, ChangePollInterval).changed(ctx, rows)
 	if err != nil {
 		t.Fatalf("changed: %v", err)
 	}
@@ -418,7 +418,7 @@ func TestChangeReader_ACompanyRestoredElsewhere_IsACreate(t *testing.T) {
 		t.Fatalf("After: %v", err)
 	}
 
-	got, err := newChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0).changed(ctx, rows)
+	got, err := NewChangeReader(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Changes, "tui:1", 0, ChangePollInterval).changed(ctx, rows)
 	if err != nil {
 		t.Fatalf("changed: %v", err)
 	}

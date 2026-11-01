@@ -23,22 +23,26 @@ import (
 )
 
 // deleteTestApp is an App on the home screen with one started
-// application whose resume is drafted.
-func deleteTestApp(t *testing.T) (*App, application.Application) {
+// application whose resume is drafted, and the services it's over.
+func deleteTestApp(t *testing.T, opts ...func(testutil.TestApp) Option) (*App, testutil.TestApp, application.Application) {
 	t.Helper()
-	app, _, target := deleteTestAppWithScreens(t)
-	return app, target
+	app, s, _, target := deleteTestAppWithScreens(t, opts...)
+	return app, s, target
 }
 
 // deleteTestAppWithScreens is deleteTestApp, with the Screens it opens.
-func deleteTestAppWithScreens(t *testing.T) (*App, *Screens, application.Application) {
+func deleteTestAppWithScreens(t *testing.T, opts ...func(testutil.TestApp) Option) (*App, testutil.TestApp, *Screens, application.Application) {
 	t.Helper()
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	target := mustCreateApplication(t, s, posting.ID)
 
-	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, nil))
+	var appOpts []Option
+	for _, opt := range opts {
+		appOpts = append(appOpts, opt(s))
+	}
+	app, screens := newTestAppWithScreens(t, s, newTestSyncer(s, nil), appOpts...)
 	status, err := screens.documents.EnsureDir(target.ID)
 	if err != nil {
 		t.Fatalf("EnsureDir: %v", err)
@@ -46,7 +50,7 @@ func deleteTestAppWithScreens(t *testing.T) (*App, *Screens, application.Applica
 	if err := os.WriteFile(mustDoc(t, status, document.Resume).Path, []byte("# Draft\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	return app, screens, target
+	return app, s, screens, target
 }
 
 // startDelete goes from the home screen to the application's detail,
@@ -80,13 +84,13 @@ func resumeDir(t *testing.T, screens *Screens, applicationID int64) string {
 
 func TestDeleteFlow_ConfirmingDeletesTheApplicationAndKeepsItsDocuments(t *testing.T) {
 	t.Parallel()
-	app, screens, target := deleteTestAppWithScreens(t)
+	app, s, screens, target := deleteTestAppWithScreens(t)
 	app = startDelete(t, app)
 
 	app, cmd := sendKey(app, runeKey('y'))
 	app = applyCmd(t, app, cmd)
 
-	if _, err := storeOf(app).Applications.Get(context.Background(), target.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.Applications.Get(context.Background(), target.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("application.GetByID after confirming: err = %v, want ErrNotFound", err)
 	}
 	if _, err := os.Stat(resumeDir(t, screens, target.ID)); err != nil {
@@ -111,13 +115,13 @@ func TestDeleteFlow_DecliningKeepsTheApplication(t *testing.T) {
 	for _, key := range []tea.KeyPressMsg{runeKey('n'), {Code: tea.KeyEsc}, {Code: tea.KeyEnter}} {
 		t.Run(key.String(), func(t *testing.T) {
 			t.Parallel()
-			app, screens, target := deleteTestAppWithScreens(t)
+			app, s, screens, target := deleteTestAppWithScreens(t)
 			app = startDelete(t, app)
 
 			app, cmd := sendKey(app, key)
 			app = applyCmd(t, app, cmd)
 
-			if _, err := storeOf(app).Applications.Get(context.Background(), target.ID); err != nil {
+			if _, err := s.Applications.Get(context.Background(), target.ID); err != nil {
 				t.Errorf("application.GetByID after declining: %v, want the application kept", err)
 			}
 			if !mustDoc(t, screens.documents.Status(target.ID), document.Resume).Exists {
@@ -134,7 +138,7 @@ func TestDeleteFlow_DecliningKeepsTheApplication(t *testing.T) {
 // rather than staying on a confirmation whose y is already spent.
 func TestDeleteFlow_FailureReturnsToDetailWithTheError(t *testing.T) {
 	t.Parallel()
-	app, target := deleteTestApp(t)
+	app, _, target := deleteTestApp(t)
 	app = startDelete(t, app)
 	confirmation := app.applicationDetail().confirm
 	app, _ = sendKey(app, runeKey('y'))
@@ -158,10 +162,10 @@ func TestDeleteFlow_FailureReturnsToDetailWithTheError(t *testing.T) {
 func TestDeleteFlow_AlreadyDeletedElsewhere_GoesHomeAndSaysSo(t *testing.T) {
 	t.Parallel()
 
-	app, target := deleteTestApp(t)
+	app, s, target := deleteTestApp(t)
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = sendKeyAndApply(t, app, runeKey('D'))
-	if _, err := storeOf(app).Applications.Delete(context.Background(), target.ID); err != nil {
+	if _, err := s.Applications.Delete(context.Background(), target.ID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
 
@@ -180,7 +184,7 @@ func TestDeleteFlow_AlreadyDeletedElsewhere_GoesHomeAndSaysSo(t *testing.T) {
 func TestDeleteFlow_ConfirmationIsDrawnOverDetail(t *testing.T) {
 	t.Parallel()
 
-	app, _ := deleteTestApp(t)
+	app, _, _ := deleteTestApp(t)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	before := strings.SplitN(ansi.Strip(viewText(app)), "\n", 3)[:2]
@@ -204,7 +208,7 @@ func TestDeleteFlow_ConfirmationIsDrawnOverDetail(t *testing.T) {
 func TestDeleteFlow_FromTheHomeList(t *testing.T) {
 	t.Parallel()
 
-	app, target := deleteTestApp(t)
+	app, s, target := deleteTestApp(t)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
 	before := strings.SplitN(ansi.Strip(viewText(app)), "\n", 3)[:2]
 
@@ -226,7 +230,7 @@ func TestDeleteFlow_FromTheHomeList(t *testing.T) {
 	if app.onScreen() != message.ScreenActiveApplications {
 		t.Errorf("screen after n = %v, want the home list", app.onScreen())
 	}
-	if _, err := storeOf(app).Applications.Get(context.Background(), target.ID); err != nil {
+	if _, err := s.Applications.Get(context.Background(), target.ID); err != nil {
 		t.Errorf("application.GetByID after n: %v, want the application kept", err)
 	}
 }
@@ -234,12 +238,12 @@ func TestDeleteFlow_FromTheHomeList(t *testing.T) {
 func TestDeleteFlow_ConfirmingFromTheHomeList_StaysThereWithoutTheRow(t *testing.T) {
 	t.Parallel()
 
-	app, target := deleteTestApp(t)
+	app, s, target := deleteTestApp(t)
 	app = sendKeyAndApply(t, app, runeKey('d'))
 
 	app = sendKeyAndApply(t, app, runeKey('y'))
 
-	if _, err := storeOf(app).Applications.Get(context.Background(), target.ID); !errors.Is(err, store.ErrNotFound) {
+	if _, err := s.Applications.Get(context.Background(), target.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("application.Get after confirming: err = %v, want ErrNotFound", err)
 	}
 	if app.onScreen() != message.ScreenActiveApplications || !applicationsTabOf(app).Focused() {

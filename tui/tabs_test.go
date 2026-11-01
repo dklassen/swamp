@@ -146,7 +146,7 @@ func TestApp_Esc_OnATab_StaysPut(t *testing.T) {
 func TestApp_ActiveApplications_SearchSurvivesDetailAndTab(t *testing.T) {
 	t.Parallel()
 
-	app := newFullTestApp(t)
+	app, _ := newFullTestApp(t)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 100, Height: 24})
 	for _, r := range "/engineer 07" {
 		app = sendKeyAndApply(t, app, runeKey(r))

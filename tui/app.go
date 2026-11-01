@@ -15,24 +15,14 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
 
 type App struct {
-	companyService     *service.CompanyService
-	postingService     *service.PostingService
-	applicationService *service.ApplicationService
-	documentService    *service.DocumentService
-	scoringService     *service.ScoringService
-	changeLogService   *service.ChangeLog
-	origin             string
-	// changes reads the log's rows as events, nil without a change log,
-	// on a tick every changePoll.
-	changes    *changeReader
-	changePoll time.Duration
+	// changes reads the log's rows as events, nil without a change log.
+	changes *ChangeReader
 	// nav is the tabs, and stack the screens pushed over the tab up.
 	nav   *Navigation
 	stack *Stack
@@ -55,38 +45,43 @@ type App struct {
 	sized message.ContentSize
 }
 
+// Option configures an App.
+type Option func(*App)
+
+// WithSyncer has the App run sync all with syncer.
+func WithSyncer(syncer *sync.Syncer) Option {
+	return func(a *App) { a.syncing = model.NewSyncing(syncer) }
+}
+
+// WithChangeReader makes the App show changes other processes make, as
+// changes reads them.
+func WithChangeReader(changes *ChangeReader) Option {
+	return func(a *App) { a.changes = changes }
+}
+
 // New is the App over nav and stack, routed by router, opening what
 // tables have for each Nav.
-func New(
-	router model.Router,
-	companies *service.CompanyService,
-	postings *service.PostingService,
-	applications *service.ApplicationService,
-	documentService *service.DocumentService,
-	scores *service.ScoringService,
-	changes *service.ChangeLog,
-	syncer *sync.Syncer,
-	nav *Navigation,
-	stack *Stack,
-	tables ...Table,
-) *App {
+func New(router model.Router, nav *Navigation, stack *Stack, tables []Table, opts ...Option) *App {
 	a := &App{
-		companyService:     companies,
-		postingService:     postings,
-		applicationService: applications,
-		documentService:    documentService,
-		scoringService:     scores,
-		changeLogService:   changes,
-		nav:                nav,
-		stack:              stack,
-		syncing:            model.NewSyncing(syncer),
-		router:             router,
-		instance:           message.NewScreenInstance(),
+		nav:      nav,
+		stack:    stack,
+		router:   router,
+		instance: message.NewScreenInstance(),
+	}
+	for _, opt := range opts {
+		opt(a)
+	}
+	if a.syncing == nil {
+		a.syncing = model.NewSyncing(nil)
 	}
 	for _, table := range tables {
 		a.navRoutes = append(a.navRoutes, table(a))
 	}
-	for _, module := range []model.Routable{a, a.nav, a.syncing} {
+	modules := []model.Routable{a, a.nav, a.syncing}
+	if a.changes != nil {
+		modules = append(modules, a.changes)
+	}
+	for _, module := range modules {
 		if err := a.router.Register(module); err != nil {
 			panic(err)
 		}
@@ -99,7 +94,7 @@ func New(
 }
 
 func (a *App) focusSignal() tea.Msg {
-	return message.New(message.Source{Process: a.origin}, message.Subject{}, message.OpNone, time.Now().UTC(),
+	return message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(),
 		message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: a.focused()}})
 }
 
@@ -141,40 +136,10 @@ func (a *App) WithStatus(status string) *App {
 }
 
 func (a *App) Init() tea.Cmd {
-	return tea.Batch(a.nav.Init(), a.pollChanges())
-}
-
-// changePollInterval is how often the TUI reads the change log. Nothing is
-// lost between reads, so this only decides how soon a change appears.
-const changePollInterval = 500 * time.Millisecond
-
-// WithChangeLog makes the App show changes other processes make, read
-// from the change log after since. origin is this process's own, whose
-// rows its commands already sent as events.
-func (a *App) WithChangeLog(since int64, origin string) *App {
-	a.origin = origin
-	a.changes = newChangeReader(a.companyService, a.postingService, a.applicationService, a.documentService, a.scoringService, a.changeLogService, origin, since)
-	if err := a.router.Register(a.changes); err != nil {
-		panic(err)
-	}
-	a.changePoll = changePollInterval
-	return a
-}
-
-// pollChanges asks for the next tick; nil without a change log.
-func (a *App) pollChanges() tea.Cmd {
 	if a.changes == nil {
-		return nil
+		return a.nav.Init()
 	}
-	src := message.Source{Instance: a.instance}
-	return tea.Tick(a.changePoll, func(at time.Time) tea.Msg {
-		return message.New(src, message.Subject{}, message.OpNone, at.UTC(), message.Signal[message.ChangeTick]{})
-	})
-}
-
-// changeTick asks for the next tick; the reader reads on this one.
-func (a *App) changeTick(message.Event[message.Signal[message.ChangeTick]]) tea.Cmd {
-	return a.pollChanges()
+	return tea.Batch(a.nav.Init(), a.changes.Init())
 }
 
 // errInternal is the banner for a fault: the error itself means nothing
@@ -215,7 +180,6 @@ func (a *App) Routes() []*model.Route {
 		model.Always(a.applicationChanged),
 		model.Always(a.browserOpened),
 		model.Always(a.exported),
-		model.Always(a.changeTick, model.From(a.instance)),
 	}, a.navRoutes...)
 }
 
@@ -333,7 +297,7 @@ func (a *App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	// The window or the banner may have changed size, on any message.
 	if size := (message.ContentSize{Width: a.width, Rows: a.screenRows()}); size != a.sized {
 		a.sized = size
-		cmd = tea.Batch(cmd, a.router.Dispatch(message.New(message.Source{Process: a.origin}, message.Subject{}, message.OpNone, time.Now().UTC(),
+		cmd = tea.Batch(cmd, a.router.Dispatch(message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(),
 			message.Signal[message.ContentSize]{Value: size})))
 	}
 	return a, cmd

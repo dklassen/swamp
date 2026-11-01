@@ -146,19 +146,15 @@ func main() {
 	if err := router.Register(screens); err != nil {
 		log.Fatalf("register the screens: %v", err)
 	}
+	reader := tui.NewChangeReader(companies, postings, applications, documentService, scores, changes, cfg.Origin, since, tui.ChangePollInterval)
 	app := tui.New(
 		router,
-		companies,
-		postings,
-		applications,
-		documentService,
-		scores,
-		changes,
-		syncer,
 		tui.NewNavigation(screens.Tabs()),
 		tui.NewStack(),
-		screens.Tables()...,
-	).WithChangeLog(since, cfg.Origin)
+		screens.Tables(),
+		tui.WithSyncer(syncer),
+		tui.WithChangeReader(reader),
+	)
 	program := tea.NewProgram(app)
 	stopMCP := func(context.Context) error { return nil }
 	if rf.mcp {

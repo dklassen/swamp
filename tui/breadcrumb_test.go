@@ -12,6 +12,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/tui/message"
 )
 
@@ -139,9 +140,9 @@ func TestApp_Screens_BreadcrumbReplacesTheTitle(t *testing.T) {
 			if !ok {
 				t.Fatalf("no former title for %q; add it to formerTitles", sc.name)
 			}
-			app := newFullTestApp(t)
+			app, s := newFullTestApp(t)
 			app, _ = sendKey(app, tea.WindowSizeMsg{Width: 100, Height: 24})
-			app = clearBanner(sc.open(t, app))
+			app = clearBanner(sc.open(t, app, s))
 			if app.onScreen() != sc.screen {
 				t.Fatalf("screen = %v, want %v", app.onScreen(), sc.screen)
 			}
@@ -156,25 +157,25 @@ func TestApp_Screens_BreadcrumbReplacesTheTitle(t *testing.T) {
 // unsizedScreens are the screens below the tabs that sizedScreens leaves
 // out, opened the same way.
 func unsizedScreens() []sizedScreen {
-	openApplication := func(t *testing.T, app *App) *App {
+	openApplication := func(t *testing.T, app *App, _ testutil.TestApp) *App {
 		app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 		return applyCmd(t, app, cmd)
 	}
-	keys := func(open func(*testing.T, *App) *App, keys ...tea.KeyPressMsg) func(*testing.T, *App) *App {
-		return func(t *testing.T, app *App) *App {
-			app = open(t, app)
+	keys := func(open func(*testing.T, *App, testutil.TestApp) *App, keys ...tea.KeyPressMsg) func(*testing.T, *App, testutil.TestApp) *App {
+		return func(t *testing.T, app *App, s testutil.TestApp) *App {
+			app = open(t, app, s)
 			for _, key := range keys {
 				app = sendKeyAndApply(t, app, key)
 			}
 			return app
 		}
 	}
-	home := func(_ *testing.T, app *App) *App { return app }
+	home := func(_ *testing.T, app *App, _ testutil.TestApp) *App { return app }
 	return []sizedScreen{
 		{name: "application detail", screen: message.ScreenApplicationDetail, open: openApplication},
 		{name: "export", screen: message.ScreenApplicationExport, open: keys(home, runeKey('e'))},
 		{name: "status", screen: message.ScreenApplicationStatus, open: keys(home, runeKey('s'))},
-		{name: "review select", screen: message.ScreenDocumentReviewSelect, open: keys(func(t *testing.T, app *App) *App {
+		{name: "review select", screen: message.ScreenDocumentReviewSelect, open: keys(func(t *testing.T, app *App, _ testutil.TestApp) *App {
 			return clearBanner(openPostingDetail(t, openPostingList(t, app)))
 		}, runeKey('r'))},
 		{name: "add company", screen: message.ScreenCompanyForm, open: keys(home, tea.KeyPressMsg{Code: tea.KeyTab}, runeKey('a'))},
