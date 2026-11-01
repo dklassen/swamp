@@ -154,9 +154,9 @@ func TestApplicationStatusModel_ClosesOnItsOwnSaveOnly(t *testing.T) {
 func TestStatusPicker_OpensOnAStatusChangedElsewhere(t *testing.T) {
 	t.Parallel()
 
-	app, target := deleteTestApp(t)
+	app, s, target := deleteTestApp(t)
 	app.WithChangeLog(0, "tui:1")
-	if err := updateApplicationStatusIn(t.Context(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
+	if err := updateApplicationStatusIn(t.Context(), s, target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
 	app = readChangeLog(t, app)
@@ -173,9 +173,9 @@ func TestStatusPicker_OpensOnAStatusChangedElsewhere(t *testing.T) {
 func TestStatusPicker_SaveFails_ShowsWhyAndStaysOpen(t *testing.T) {
 	t.Parallel()
 
-	app, target := deleteTestApp(t)
+	app, s, target := deleteTestApp(t)
 	app = sendKeyAndApply(t, app, runeKey('s'))
-	if _, err := storeOf(app).Applications.Delete(t.Context(), target.ID); err != nil {
+	if _, err := s.Applications.Delete(t.Context(), target.ID); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
 

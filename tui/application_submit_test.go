@@ -22,8 +22,8 @@ import (
 // submitTestApp is an App on the home screen with one started
 // application whose cover letter and resume are drafted, a fake browser
 // opener recording the URLs it's asked to open, and a temporary export
-// directory.
-func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, *Screens, application.Application, *[]string) {
+// directory, and the services it's over.
+func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, testutil.TestApp, *Screens, application.Application, *[]string) {
 	t.Helper()
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
@@ -54,7 +54,7 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) (*App, *Screens,
 		return func() tea.Msg { return browserOpened(src, about, url, nil) }
 	}
 	screens.exportDir = t.TempDir()
-	return app, screens, target, &opened
+	return app, s, screens, target, &opened
 }
 
 // startSubmit goes from the home screen to the application's detail and
@@ -80,7 +80,7 @@ func submitView(t *testing.T, app *App) string {
 
 func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T) {
 	t.Parallel()
-	app, screens, target, opened := submitTestApp(t, "https://boards.example/job-1/apply", "https://boards.example/job-1")
+	app, s, screens, target, opened := submitTestApp(t, "https://boards.example/job-1/apply", "https://boards.example/job-1")
 
 	app = startSubmit(t, app)
 
@@ -92,14 +92,14 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 			t.Errorf("exported %s: %v", name, err)
 		}
 	}
-	if got, err := storeOf(app).Applications.Get(context.Background(), target.ID); err != nil || got.Status != application.Started {
+	if got, err := s.Applications.Get(context.Background(), target.ID); err != nil || got.Status != application.Started {
 		t.Fatalf("status before confirming = %v (err %v), want still started", got.Status, err)
 	}
 
 	app, cmd := sendKey(app, runeKey('y'))
 	app = applyCmd(t, app, cmd)
 
-	got, err := storeOf(app).Applications.Get(context.Background(), target.ID)
+	got, err := s.Applications.Get(context.Background(), target.ID)
 	if err != nil {
 		t.Fatalf("application.GetByID: %v", err)
 	}
@@ -131,13 +131,13 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 	for _, key := range []tea.KeyPressMsg{runeKey('n'), {Code: tea.KeyEsc}} {
 		t.Run(key.String(), func(t *testing.T) {
 			t.Parallel()
-			app, _, target, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+			app, s, _, target, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 			app = startSubmit(t, app)
 
 			app, cmd := sendKey(app, key)
 			app = applyCmd(t, app, cmd)
 
-			got, err := storeOf(app).Applications.Get(context.Background(), target.ID)
+			got, err := s.Applications.Get(context.Background(), target.ID)
 			if err != nil {
 				t.Fatalf("application.GetByID: %v", err)
 			}
@@ -155,7 +155,7 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 // to the screen they left, so the one open now stays.
 func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
 	t.Parallel()
-	app, _, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	app, _, _, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 	app = startSubmit(t, app)
 
 	app, saveCmd := sendKey(app, runeKey('y'))
@@ -180,7 +180,7 @@ func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing
 // are where the user has been dragging them from.
 func TestSubmitFlow_ExportsToTheDirectoryJustExportedTo(t *testing.T) {
 	t.Parallel()
-	app, _, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	app, _, _, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 	dest := t.TempDir()
 
 	app = sendKeyAndApply(t, app, runeKey('e'))
@@ -200,7 +200,7 @@ func TestSubmitFlow_ExportsToTheDirectoryJustExportedTo(t *testing.T) {
 // still decides whether they submitted.
 func TestSubmitFlow_ShowsAFailedExport(t *testing.T) {
 	t.Parallel()
-	app, screens, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	app, _, screens, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 	blocker := filepath.Join(t.TempDir(), "not-a-dir")
 	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -220,7 +220,7 @@ func TestSubmitFlow_ShowsAFailedExport(t *testing.T) {
 
 func TestSubmitFlow_FallsBackToJobURL(t *testing.T) {
 	t.Parallel()
-	app, _, _, opened := submitTestApp(t, "", "https://boards.example/job-1")
+	app, _, _, _, opened := submitTestApp(t, "", "https://boards.example/job-1")
 
 	startSubmit(t, app)
 
@@ -231,7 +231,7 @@ func TestSubmitFlow_FallsBackToJobURL(t *testing.T) {
 
 func TestSubmitFlow_SaysTheLinkOpened(t *testing.T) {
 	t.Parallel()
-	app, _, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	app, _, _, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 
 	app = startSubmit(t, app)
 
@@ -244,7 +244,7 @@ func TestSubmitFlow_SaysTheLinkOpened(t *testing.T) {
 // would wait for a tab that never appears.
 func TestSubmitFlow_ReportsALinkThatFailedToOpen(t *testing.T) {
 	t.Parallel()
-	app, screens, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	app, _, screens, _, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 	screens.openURL = func(src message.Source, about message.Subject, url string) tea.Cmd {
 		return func() tea.Msg { return browserOpened(src, about, url, errors.New("no browser")) }
 	}
@@ -264,7 +264,7 @@ func TestSubmitFlow_ReportsALinkThatFailedToOpen(t *testing.T) {
 // than the screen saying it's marking submitted for good.
 func TestSubmitFlow_AFailedSaveLetsYTryAgain(t *testing.T) {
 	t.Parallel()
-	app, _, target, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
+	app, s, _, target, _ := submitTestApp(t, "https://boards.example/job-1/apply", "")
 	app = startSubmit(t, app)
 	submit := pushed[*applicationSubmitModel](t, app)
 	app, _ = sendKey(app, runeKey('y'))
@@ -274,8 +274,8 @@ func TestSubmitFlow_AFailedSaveLetsYTryAgain(t *testing.T) {
 	if view := submitView(t, app); strings.Contains(view, "Marking submitted") {
 		t.Errorf("submit screen = %q, want y offered again after the failure", view)
 	}
-	app = sendKeyAndApply(t, app, runeKey('y'))
-	got, err := storeOf(app).Applications.Get(context.Background(), target.ID)
+	sendKeyAndApply(t, app, runeKey('y'))
+	got, err := s.Applications.Get(context.Background(), target.ID)
 	if err != nil {
 		t.Fatalf("application.GetByID: %v", err)
 	}

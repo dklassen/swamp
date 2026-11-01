@@ -1442,7 +1442,7 @@ func TestApp_ApplicationDetail_RequestAfterLeaving_StaysWhereTheUserWent(t *test
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			app, _ := deleteTestApp(t) // resume drafted, so it can be reviewed
+			app, _, _ := deleteTestApp(t) // resume drafted, so it can be reviewed
 			app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
 			app, request := sendKey(app, tt.key)

@@ -138,19 +138,6 @@ func applicationsTabOf(app *App) *activeApplicationListModel {
 	return app.screen(message.ScreenActiveApplications).(*activeApplicationListModel)
 }
 
-// storeOf is app's services, for tests that get only an App from their
-// setup. Its Store and Path are empty.
-func storeOf(app *App) testutil.TestApp {
-	return testutil.TestApp{
-		Companies:    app.companyService,
-		Postings:     app.postingService,
-		Applications: app.applicationService,
-		Documents:    app.documentService,
-		Scores:       app.scoringService,
-		Changes:      app.changeLogService,
-	}
-}
-
 func newTestSyncer(s testutil.TestApp, postings map[string][]jobboard.Posting) *sync.Syncer {
 	return sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{jobboard.Ashby: &fakeFetcher{postings: postings}}, sync.DefaultConfig())
 }

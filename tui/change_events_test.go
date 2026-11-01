@@ -153,9 +153,9 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	app, screens, target := deleteTestAppWithScreens(t) // resume drafted as "# Draft\n"
+	app, s, screens, target := deleteTestAppWithScreens(t) // resume drafted as "# Draft\n"
 	app.WithChangeLog(0, "tui:1")
-	if _, err := createReview(ctx, storeOf(app), target.ID, document.Resume, "# Draft\n", document.Passed, ""); err != nil {
+	if _, err := createReview(ctx, s, target.ID, document.Resume, "# Draft\n", document.Passed, ""); err != nil {
 		t.Fatalf("CreateReview: %v", err)
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -167,7 +167,7 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 	if _, err := screens.documents.Write(target.ID, document.Resume, "# Revised by the agent\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	if err := storeOf(app).Documents.RecordWrite(ctx, target.ID, document.Resume, "# Revised by the agent\n", document.SourceWriteDocument); err != nil {
+	if err := s.Documents.RecordWrite(ctx, target.ID, document.Resume, "# Revised by the agent\n", document.SourceWriteDocument); err != nil {
 		t.Fatalf("RecordWrite: %v", err)
 	}
 	app = readChangeLog(t, app)
@@ -184,10 +184,10 @@ func TestApp_TheAgentRevisesADraft_ApplicationDetailShowsIt(t *testing.T) {
 func TestApp_ApplicationDeletedElsewhere_GoesBackAndSaysSo(t *testing.T) {
 	t.Parallel()
 
-	app, target := deleteTestApp(t)
+	app, s, target := deleteTestApp(t)
 	app.WithChangeLog(0, "tui:1")
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if _, err := storeOf(app).Applications.Delete(context.Background(), target.ID); err != nil {
+	if _, err := s.Applications.Delete(context.Background(), target.ID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
 
@@ -301,7 +301,7 @@ func TestApp_ChangesWhileAFormIsOpen_LeaveItAlone(t *testing.T) {
 	t.Parallel()
 
 	ctx := context.Background()
-	app, target := deleteTestApp(t)
+	app, s, target := deleteTestApp(t)
 	app.WithChangeLog(0, "tui:1")
 	app = sendKeyAndApply(t, app, runeKey('s'))
 	if app.onScreen() != message.ScreenApplicationStatus {
@@ -309,7 +309,6 @@ func TestApp_ChangesWhileAFormIsOpen_LeaveItAlone(t *testing.T) {
 	}
 	app, _ = sendKey(app, runeKey('j'))
 	cursor := statusPicker(t, app).cursor
-	s := storeOf(app)
 	acme, err := s.Companies.Get(ctx, mustPosting(t, s, target.PostingID).CompanyID)
 	if err != nil {
 		t.Fatalf("GetCompany: %v", err)
@@ -345,9 +344,9 @@ func mustPosting(t *testing.T, s testutil.TestApp, id int64) posting.Posting {
 func TestApp_EnteringApplicationDetail_ShowsAChangeMadeBeforeIt(t *testing.T) {
 	t.Parallel()
 
-	app, target := deleteTestApp(t)
+	app, s, target := deleteTestApp(t)
 	app.WithChangeLog(0, "tui:1")
-	if err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
+	if err := updateApplicationStatusIn(context.Background(), s, target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
@@ -406,13 +405,13 @@ func TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere(t *testing.T) {
 func TestApp_TabBackToTheHomeList_ShowsAChangeClearedOnTheCompanyList(t *testing.T) {
 	t.Parallel()
 
-	app, target := deleteTestApp(t)
+	app, s, target := deleteTestApp(t)
 	app.WithChangeLog(0, "tui:1")
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 	if app.onScreen() != message.ScreenCompanyList {
 		t.Fatalf("screen = %v, want the company list", app.onScreen())
 	}
-	if err := updateApplicationStatusIn(context.Background(), storeOf(app), target.PostingID, application.Interviewing); err != nil {
+	if err := updateApplicationStatusIn(context.Background(), s, target.PostingID, application.Interviewing); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 	app = readChangeLog(t, app)
