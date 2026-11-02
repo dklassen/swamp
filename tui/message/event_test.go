@@ -220,8 +220,10 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.ContentSize]{Value: r}))},
 		{name: "focus signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: 7}}))},
 		{name: "posting list read", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Read[message.PostingList]{Value: message.PostingList{
-			Postings:    []message.Posting{{ID: 5, CompanyID: 3, Title: "Engineer", Department: "Platform", Location: "Remote", JobURL: "https://example.com/5", ListingStatus: message.ListingOpen}},
-			Markup:      map[int64]message.Markup{5: {PostingID: 5, InterestedAt: at}},
+			Limit:       20,
+			Listings:    []message.Listing{{ID: 5, CompanyName: "Acme", Title: "Engineer", Department: "Platform", Location: "Remote", JobURL: "https://example.com/5", ListingStatus: message.ListingOpen, FirstSeenAt: at, Interested: true}},
+			HasMore:     true,
+			Total:       21,
 			Departments: []string{"Platform"},
 		}}))},
 		{name: "markup changed", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpUpdated, at, message.Changed[message.Markup]{

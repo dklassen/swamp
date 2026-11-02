@@ -53,6 +53,10 @@ type companyPostingViewer interface {
 	Locations(ctx context.Context, r store.Runner, companyID int64) ([]string, error)
 }
 
+type companyPostingSearcher interface {
+	Search(ctx context.Context, r store.Runner, search posting.Search) (*posting.SearchPage, error)
+}
+
 type companyPostingStatusWriter interface {
 	Close(ctx context.Context, r store.Runner, id int64) (bool, error)
 }
@@ -69,6 +73,7 @@ type CompanyService struct {
 	filterViewer         filterViewer
 	filterWriter         filterWriter
 	postingViewer        companyPostingViewer
+	postingSearcher      companyPostingSearcher
 	postingStatusWriter  companyPostingStatusWriter
 	postingHistoryWriter companyPostingHistoryWriter
 }
@@ -85,6 +90,7 @@ func NewCompanyService(db store.Store) *CompanyService {
 		filterViewer:         filters,
 		filterWriter:         filters,
 		postingViewer:        postings,
+		postingSearcher:      &repository.PostingSearchRepository{},
 		postingStatusWriter:  postings,
 		postingHistoryWriter: &repository.PostingHistoryRepository{},
 	}
@@ -281,4 +287,47 @@ func (service *CompanyService) AcquireSyncLease(ctx context.Context, id int64, t
 // ReleaseSyncLease frees id's sync lease if token still holds it.
 func (service *CompanyService) ReleaseSyncLease(ctx context.Context, id int64, token string) error {
 	return service.syncLeaser.ReleaseSyncLease(ctx, service.db, id, token)
+}
+
+// PostingListPage is what a caller chooses about a company's posting list.
+type PostingListPage struct {
+	IncludeArchived bool
+	Limit           int
+}
+
+// CompanyPostings is one page of a company's posting list, with the
+// filters that narrowed it.
+type CompanyPostings struct {
+	Page    posting.SearchPage
+	Filters []filter.Filter
+}
+
+// ListedPostings returns one page of the postings a company's list shows:
+// its open ones its filters let through, newest first, archived ones only
+// when included.
+func (service *CompanyService) ListedPostings(ctx context.Context, companyID int64, page PostingListPage) (*CompanyPostings, error) {
+	open := posting.ListingOpen
+	var listed *CompanyPostings
+	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
+		filters, err := service.filterViewer.List(ctx, tx, companyID)
+		if err != nil {
+			return err
+		}
+		found, err := service.postingSearcher.Search(ctx, tx, posting.Search{
+			CompanyID:       companyID,
+			ListingStatus:   &open,
+			IncludeArchived: page.IncludeArchived,
+			Order:           posting.OrderIDDesc,
+			Limit:           page.Limit,
+		})
+		if err != nil {
+			return err
+		}
+		listed = &CompanyPostings{Page: *found, Filters: filters}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return listed, nil
 }

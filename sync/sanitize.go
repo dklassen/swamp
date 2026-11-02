@@ -10,7 +10,7 @@ import (
 // free-text field a source's API returns before it's persisted. Job
 // board data is inconsistent in practice -- e.g. Initech's Greenhouse
 // listings have shown up as both "Dublin" and "Dublin " -- and
-// filter.Match does an exact (case-insensitive) comparison against the
+// company filters compare exactly (ignoring case) against the
 // stored values, so untrimmed padding would silently break filters in
 // addition to leaving messy values in storage.
 //

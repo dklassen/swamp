@@ -149,7 +149,7 @@ func TestOpen_WritesTimesInTheConfiguredFormat(t *testing.T) {
 }
 
 // TestOpen_EqualFold_AgreesWithGo: SQL that matches values ignoring case
-// must agree with filter.Match, which uses strings.EqualFold; SQLite's
+// must agree with strings.EqualFold, for every script; SQLite's
 // NOCASE and lower() fold ASCII only.
 func TestOpen_EqualFold_AgreesWithGo(t *testing.T) {
 	t.Parallel()

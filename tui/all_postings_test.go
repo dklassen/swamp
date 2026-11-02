@@ -223,8 +223,8 @@ func TestAllPostings_DetailDoesNotStepThroughACompanyListBrowsedEarlier(t *testi
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.onScreen() != message.ScreenCompanyPostings || len(openList(t, app).list.Postings) != 3 {
-		t.Fatalf("screen %v with %d postings, want Acme's posting list with 3", app.onScreen(), len(openList(t, app).list.Postings))
+	if app.onScreen() != message.ScreenCompanyPostings || len(openList(t, app).list.Listings) != 3 {
+		t.Fatalf("screen %v with %d postings, want Acme's posting list with 3", app.onScreen(), len(openList(t, app).list.Listings))
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})

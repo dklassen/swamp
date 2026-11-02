@@ -99,8 +99,8 @@ var sharedDriver = func() driver.Driver {
 }()
 
 func init() {
-	// equal_fold(a, b) is strings.EqualFold, so SQL ignores case the way
-	// filter.Match does; SQLite's NOCASE and lower() fold ASCII only.
+	// equal_fold(a, b) is strings.EqualFold, so SQL ignores case in every
+	// script; SQLite's NOCASE and lower() fold ASCII only.
 	sqlite.MustRegisterDeterministicScalarFunction("equal_fold", 2, func(_ *sqlite.FunctionContext, args []driver.Value) (driver.Value, error) {
 		a, aok := args[0].(string)
 		b, bok := args[1].(string)
