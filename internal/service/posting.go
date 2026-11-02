@@ -459,7 +459,7 @@ func (service *PostingService) restoreApplication(ctx context.Context, tx store.
 	return nil
 }
 
-// PostingsPage is what a caller chooses about the postings ListedPostings
+// PostingsPage is what a caller chooses about the postings AllPostings
 // lists.
 type PostingsPage struct {
 	Query      string
@@ -469,20 +469,20 @@ type PostingsPage struct {
 	Limit      int
 }
 
-// ListedPostings is one page of every company's listed postings, and how
+// AllPostings is one page of every company's listed postings, and how
 // many are listed with no query.
-type ListedPostings struct {
+type AllPostings struct {
 	Page         posting.SearchPage
 	WithoutQuery int
 }
 
-// ListedPostings returns one page of every company's open postings their
+// AllPostings returns one page of every company's open postings their
 // filters let through, leaving out archived ones, and counts them all
 // without the query in the same transaction, so a sync can't make the two
 // disagree.
-func (service *PostingService) ListedPostings(ctx context.Context, page PostingsPage) (*ListedPostings, error) {
+func (service *PostingService) AllPostings(ctx context.Context, page PostingsPage) (*AllPostings, error) {
 	open := posting.ListingOpen
-	var listed *ListedPostings
+	var listed *AllPostings
 	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
 		found, err := service.postingSearcher.Search(ctx, tx, posting.Search{
 			ListingStatus: &open,
@@ -495,7 +495,7 @@ func (service *PostingService) ListedPostings(ctx context.Context, page Postings
 		if err != nil {
 			return err
 		}
-		listed = &ListedPostings{Page: *found, WithoutQuery: found.Total}
+		listed = &AllPostings{Page: *found, WithoutQuery: found.Total}
 		if page.Query == "" {
 			return nil
 		}

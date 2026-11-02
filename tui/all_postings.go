@@ -132,7 +132,7 @@ func (m *allPostingsModel) loadAt(size int) tea.Cmd {
 	s, src, start := m.postings, m.src(), m.starts[len(m.starts)-1]
 	read := message.PostingSearch{Query: m.query, Order: m.order, AfterID: start.id, AfterScore: start.score, Limit: size}
 	return func() tea.Msg {
-		listed, err := s.ListedPostings(context.Background(), service.PostingsPage{
+		listed, err := s.AllPostings(context.Background(), service.PostingsPage{
 			Query:      read.Query,
 			Order:      searchOrders[read.Order],
 			AfterID:    read.AfterID,

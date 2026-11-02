@@ -760,9 +760,9 @@ func TestPostingService_MarkupMany_LeavesOutPostingsNotThere(t *testing.T) {
 	}
 }
 
-// ListedPostings lists every company's open postings their filters let
+// AllPostings lists every company's open postings their filters let
 // through, newest first, leaving out archived ones.
-func TestPostingService_ListedPostings_ListsWhatTheAllPostingsTabShows(t *testing.T) {
+func TestPostingService_AllPostings_ListsWhatTheAllPostingsTabShows(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
 		name string
@@ -812,9 +812,9 @@ func TestPostingService_ListedPostings_ListsWhatTheAllPostingsTabShows(t *testin
 			globex := ingest(globexCompany.ID, "job-3", "Sales")
 			tt.hide(t, s, acme.ID, other)
 
-			got, err := s.Postings.ListedPostings(ctx, service.PostingsPage{Order: posting.OrderIDDesc, Limit: 10})
+			got, err := s.Postings.AllPostings(ctx, service.PostingsPage{Order: posting.OrderIDDesc, Limit: 10})
 			if err != nil {
-				t.Fatalf("ListedPostings: %v", err)
+				t.Fatalf("AllPostings: %v", err)
 			}
 			var ids []int64
 			for _, l := range got.Page.Listings {
@@ -829,7 +829,7 @@ func TestPostingService_ListedPostings_ListsWhatTheAllPostingsTabShows(t *testin
 
 // A query narrows the page and its Total, but WithoutQuery still counts
 // every listed posting.
-func TestPostingService_ListedPostings_QueryNarrowsThePageNotWithoutQuery(t *testing.T) {
+func TestPostingService_AllPostings_QueryNarrowsThePageNotWithoutQuery(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
@@ -838,9 +838,9 @@ func TestPostingService_ListedPostings_QueryNarrowsThePageNotWithoutQuery(t *tes
 	designer := testutil.MustIngestPostingFor(t, s, acme.ID, "job-2", "Designer")
 	testutil.MustIngestPostingFor(t, s, acme.ID, "job-3", "Engineer")
 
-	got, err := s.Postings.ListedPostings(ctx, service.PostingsPage{Query: "designer", Limit: 10})
+	got, err := s.Postings.AllPostings(ctx, service.PostingsPage{Query: "designer", Limit: 10})
 	if err != nil {
-		t.Fatalf("ListedPostings: %v", err)
+		t.Fatalf("AllPostings: %v", err)
 	}
 	var ids []int64
 	for _, l := range got.Page.Listings {
@@ -856,7 +856,7 @@ func TestPostingService_ListedPostings_QueryNarrowsThePageNotWithoutQuery(t *tes
 
 // Paging by the last row's ID and score, the pages together hold each
 // listed posting once, across companies, in the order asked for.
-func TestPostingService_ListedPostings_PagesInOrder(t *testing.T) {
+func TestPostingService_AllPostings_PagesInOrder(t *testing.T) {
 	t.Parallel()
 	for _, tt := range []struct {
 		order posting.Order
@@ -890,9 +890,9 @@ func TestPostingService_ListedPostings_PagesInOrder(t *testing.T) {
 			var got []int64
 			page := service.PostingsPage{Order: tt.order, Limit: 2}
 			for range postings {
-				listed, err := s.Postings.ListedPostings(ctx, page)
+				listed, err := s.Postings.AllPostings(ctx, page)
 				if err != nil {
-					t.Fatalf("ListedPostings: %v", err)
+					t.Fatalf("AllPostings: %v", err)
 				}
 				for _, l := range listed.Page.Listings {
 					got = append(got, l.ID)
@@ -916,7 +916,7 @@ func TestPostingService_ListedPostings_PagesInOrder(t *testing.T) {
 
 // With no query, as many postings are listed in all as the companies'
 // Open counts add up to.
-func TestPostingService_ListedPostings_WithoutQueryIsTheOpenCounts(t *testing.T) {
+func TestPostingService_AllPostings_WithoutQueryIsTheOpenCounts(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
@@ -949,9 +949,9 @@ func TestPostingService_ListedPostings_WithoutQueryIsTheOpenCounts(t *testing.T)
 		t.Fatalf("Delete: %v", err)
 	}
 
-	got, err := postings.ListedPostings(ctx, service.PostingsPage{Limit: 1})
+	got, err := postings.AllPostings(ctx, service.PostingsPage{Limit: 1})
 	if err != nil {
-		t.Fatalf("ListedPostings: %v", err)
+		t.Fatalf("AllPostings: %v", err)
 	}
 	counts, err := postings.CountOpenByCompany(ctx)
 	if err != nil {
