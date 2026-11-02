@@ -12,7 +12,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/internal/domain/filter"
-	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
@@ -97,6 +96,10 @@ type postingListModel struct {
 	postingService *service.PostingService
 
 	company message.Company
+	// starts is where each page so far began, page 1's being the zero
+	// start; the last is the page on screen.
+	starts  []pageStart
+	order   message.PostingOrder
 	list    message.PostingList
 	reading reading
 	// hideArchived starts as App's, which it tells when it flips.
@@ -114,6 +117,8 @@ func newPostingListModel(companies *service.CompanyService, postings *service.Po
 		companyService: companies,
 		postingService: postings,
 		company:        c,
+		starts:         []pageStart{{}},
+		order:          message.OrderNewest,
 		hideArchived:   hideArchived,
 		width:          size.Width,
 		height:         size.Rows,
@@ -148,11 +153,11 @@ func (m *postingListModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil 
 // reload reads again for a write, once at a time for a run of them.
 func (m *postingListModel) reload() tea.Cmd { return m.reading.start(m.load) }
 
-// load reads a page of the company's postings as the list shows them, as
-// many as fit.
+// load reads the page on screen again, as many postings as fit.
 func (m *postingListModel) load() tea.Cmd {
-	companies, companyID := m.companyService, m.company.ID
-	page := service.PostingListPage{IncludeArchived: !m.hideArchived, Order: posting.OrderIDDesc, Limit: m.pageSize()}
+	companies, companyID, start := m.companyService, m.company.ID, m.starts[len(m.starts)-1]
+	read := message.PostingList{Order: m.order, AfterID: start.id, AfterScore: start.score, Limit: m.pageSize()}
+	page := service.PostingListPage{IncludeArchived: !m.hideArchived, Order: searchOrders[read.Order], AfterID: read.AfterID, AfterScore: read.AfterScore, Limit: read.Limit}
 	src := message.Source{Instance: m.instance}
 	subject := message.Subject{Type: message.TypeCompany, ID: companyID}
 	return func() tea.Msg {
@@ -160,7 +165,8 @@ func (m *postingListModel) load() tea.Cmd {
 		if err != nil {
 			return message.New(src, subject, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
 		}
-		list := message.PostingList{Limit: page.Limit, HasMore: listed.Page.HasMore, Total: listed.Page.Total}
+		list := read
+		list.HasMore, list.Total = listed.Page.HasMore, listed.Page.Total
 		for _, f := range listed.Filters {
 			switch f.Field {
 			case filter.FieldDepartment:
@@ -177,18 +183,70 @@ func (m *postingListModel) load() tea.Cmd {
 	}
 }
 
-// postingsRead keeps the cursor on its posting, since a sync can add some
-// ahead of it, and reads again when what's drawn around the table now
-// leaves room for a different number of rows.
+// postingsRead shows the page read, if it's still the page on screen. A
+// page past the first that has emptied steps back. Otherwise it keeps the
+// cursor on its posting, since a sync can add some ahead of it, and reads
+// again when what's drawn around the table now leaves room for a
+// different number of rows.
 func (m *postingListModel) postingsRead(e message.Event[message.Read[message.PostingList]]) tea.Cmd {
-	previous := m.selected()
-	m.list = e.Payload.Value
-	m.keepCursorOn(previous)
+	read, start := e.Payload.Value, m.starts[len(m.starts)-1]
 	cmd := m.reading.done(m.load)
+	if read.Order != m.order || read.AfterID != start.id || read.AfterScore != start.score {
+		return cmd
+	}
+	if len(read.Listings) == 0 && len(m.starts) > 1 {
+		m.starts = m.starts[:len(m.starts)-1]
+		return tea.Batch(cmd, m.load())
+	}
+	previous := m.selected()
+	m.list = read
+	m.keepCursorOn(previous)
 	if cmd == nil && m.pageSize() != m.list.Limit {
 		cmd = m.reload()
 	}
 	return cmd
+}
+
+func (m *postingListModel) firstPage() tea.Cmd {
+	m.starts = []pageStart{{}}
+	m.cursor = 0
+	return m.load()
+}
+
+func (m *postingListModel) nextPage() tea.Cmd {
+	n := len(m.list.Listings)
+	if n == 0 || !m.list.HasMore {
+		return nil
+	}
+	last := m.list.Listings[n-1]
+	m.starts = append(m.starts, pageStart{id: last.ID, score: last.Score})
+	m.cursor = 0
+	return m.load()
+}
+
+func (m *postingListModel) previousPage() tea.Cmd {
+	if len(m.starts) == 1 {
+		return nil
+	}
+	m.starts = m.starts[:len(m.starts)-1]
+	m.cursor = 0
+	return m.load()
+}
+
+// orderLabel names the order the pages are in.
+func (m *postingListModel) orderLabel() string {
+	if m.order == message.OrderBestFit {
+		return "best fit first"
+	}
+	return "newest first"
+}
+
+// pages is how many pages Total fills at the page size.
+func (m *postingListModel) pages() int {
+	if m.list.Limit <= 0 {
+		return 1
+	}
+	return max((m.list.Total+m.list.Limit-1)/m.list.Limit, 1)
 }
 
 func (m *postingListModel) readFailed(message.Event[message.Error]) tea.Cmd {
@@ -262,6 +320,17 @@ func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 		if m.cursor > 0 {
 			m.cursor--
 		}
+	case "right", "l":
+		return m.nextPage()
+	case "left", "h":
+		return m.previousPage()
+	case "s":
+		if m.order == message.OrderBestFit {
+			m.order = message.OrderNewest
+		} else {
+			m.order = message.OrderBestFit
+		}
+		return m.firstPage()
 	case "esc", "b":
 		return tea.Batch(message.Pop(src), message.ReportStatus(src, ""))
 	case "enter":
@@ -300,14 +369,13 @@ func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-const postingListHelp = "↑/↓ (j/k): select  enter: view detail  o: open in browser  r: refresh  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back"
+const postingListHelp = "↑/↓ (j/k): select  ←/→ (h/l): page  s: sort  enter: view detail  o: open in browser  r: refresh  f: filters  i: interested  x: archive  A: toggle archived visibility  esc/b: back"
 
 // aroundTable is the lines drawn above the table, each "" when it isn't
 // drawn: the company's description, truncated to the table's width, the
-// filters, the archived notice and how many postings there are when the
-// page isn't all of them.
+// filters, the archived notice and which page this is of how many.
 func (m *postingListModel) aroundTable() []string {
-	var description, summary, archived, showing string
+	var description, summary, archived string
 	if m.company.Description != "" {
 		description = model.DimStyle.Render(truncateCol(strings.Join(strings.Fields(m.company.Description), " "), tableWidth(m.width)))
 	}
@@ -317,10 +385,8 @@ func (m *postingListModel) aroundTable() []string {
 	if m.hideArchived {
 		archived = model.HelpStyle.Render("Archived postings hidden (press 'A' to show)")
 	}
-	if m.list.HasMore {
-		showing = model.DimStyle.Render(fmt.Sprintf("Showing %d of %d postings", len(m.list.Listings), m.list.Total))
-	}
-	return []string{description, summary, archived, showing}
+	pages := model.DimStyle.Render(fmt.Sprintf("Page %d of %d · %d postings · %s", len(m.starts), m.pages(), m.list.Total, m.orderLabel()))
+	return []string{description, summary, archived, pages}
 }
 
 // pageSize is how many postings fit: the table's rows once the lines

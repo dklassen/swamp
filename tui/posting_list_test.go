@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"context"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -36,7 +38,7 @@ func postingListOf(t *testing.T, c message.Company, postings []message.Listing, 
 
 func postingsReadOf(m *postingListModel, postings []message.Listing) message.Event[message.Read[message.PostingList]] {
 	return message.New(message.Source{Instance: m.Instance()}, message.Subject{Type: message.TypeCompany, ID: m.company.ID}, message.OpNone, time.Now().UTC(),
-		message.Read[message.PostingList]{Value: message.PostingList{Listings: postings}})
+		message.Read[message.PostingList]{Value: message.PostingList{Order: m.order, Listings: postings}})
 }
 
 // pressOn sends key to m and returns the messages its command produces.
@@ -234,8 +236,8 @@ func TestPostingListModel_Init_ReadsItsCompanysPostings(t *testing.T) {
 	}
 }
 
-// The list reads as many postings as fit, and says how many there are when
-// that's not all of them.
+// The list reads as many postings as fit, and says which page of how many
+// that is.
 func TestPostingListModel_Init_ReadsAPageThatFits(t *testing.T) {
 	t.Parallel()
 
@@ -247,7 +249,7 @@ func TestPostingListModel_Init_ReadsAPageThatFits(t *testing.T) {
 	if got := len(m.list.Listings); got != 1 {
 		t.Errorf("postings read = %d, want 1, as many as fit", got)
 	}
-	if view := postingListView(m); !strings.Contains(view, "Showing 1 of 2 postings") {
+	if view := postingListView(m); !strings.Contains(view, "Page 1 of 2 · 2 postings") {
 		t.Errorf("view doesn't say how many postings there are:\n%s", view)
 	}
 }
@@ -269,8 +271,8 @@ func TestPostingListModel_Resize_ReadsAsManyAsNowFit(t *testing.T) {
 	if got := len(m.list.Listings); got != 2 {
 		t.Errorf("postings read = %d, want both now they fit", got)
 	}
-	if view := postingListView(m); strings.Contains(view, "Showing") {
-		t.Errorf("view says how many of the postings it shows, though it shows them all:\n%s", view)
+	if view := postingListView(m); !strings.Contains(view, "Page 1 of 1 · 2 postings") {
+		t.Errorf("view doesn't say the postings fit on one page:\n%s", view)
 	}
 }
 
@@ -627,6 +629,131 @@ func TestPostingListModel_ChangesElsewhere_ReadOnceAtATime(t *testing.T) {
 	m, r := listWith(t, false)
 	assertReadsOnceAtATime[message.PostingList](t, r,
 		message.Logged(1, mcp, message.Subject{Type: message.TypePosting, ID: 99}, message.OpCreated, time.Now().UTC(), message.Posting{ID: 99, CompanyID: m.company.ID}))
+}
+
+// listOfRoles is app on the posting list of a company with Role 1 to Role
+// n, in a terminal height rows tall.
+func listOfRoles(t *testing.T, n, height int) *App {
+	t.Helper()
+	s := testutil.NewTestApp(t)
+	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	var board []jobboard.Posting
+	for i := 1; i <= n; i++ {
+		board = append(board, jobboard.Posting{SourceID: fmt.Sprint(i), Title: fmt.Sprintf("Role %d", i)})
+	}
+	app := newTestApp(t, s, newTestSyncer(s, map[string][]jobboard.Posting{"acme": board}))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: height})
+	return openPostingList(t, app)
+}
+
+// listTitles is the titles on the posting list's page, top to bottom.
+func listTitles(t *testing.T, app *App) []string {
+	t.Helper()
+	var titles []string
+	for _, l := range openList(t, app).list.Listings {
+		titles = append(titles, l.Title)
+	}
+	return titles
+}
+
+func TestPostingList_PagesForwardAndBack(t *testing.T) {
+	t.Parallel()
+
+	app := listOfRoles(t, 7, 16)
+	size := openList(t, app).list.Limit
+	if size < 1 || size >= 7 {
+		t.Fatalf("page size = %d at height 16, want fewer than seven so they take several pages", size)
+	}
+	pages := (7 + size - 1) / size
+	// want is page n's titles, newest first.
+	want := func(n int) []string {
+		var titles []string
+		for i := 7 - (n-1)*size; i >= 1 && len(titles) < size; i-- {
+			titles = append(titles, fmt.Sprintf("Role %d", i))
+		}
+		return titles
+	}
+	check := func(n int) {
+		t.Helper()
+		if diff := cmp.Diff(want(n), listTitles(t, app)); diff != "" {
+			t.Errorf("page %d titles (-want +got):\n%s", n, diff)
+		}
+		if line := fmt.Sprintf("Page %d of %d · 7 postings · newest first", n, pages); !strings.Contains(viewText(app), line) {
+			t.Errorf("view doesn't say %q:\n%s", line, viewText(app))
+		}
+	}
+
+	check(1)
+	app = sendKeyAndApply(t, app, runeKey('h'))
+	check(1) // no page before the first
+	for n := 2; n <= pages; n++ {
+		key := runeKey('l')
+		if n%2 == 0 {
+			key = tea.KeyPressMsg{Code: tea.KeyRight}
+		}
+		app = sendKeyAndApply(t, app, key)
+		check(n)
+	}
+	app = sendKeyAndApply(t, app, runeKey('l'))
+	check(pages) // no page after the last
+	for n := pages - 1; n >= 1; n-- {
+		key := runeKey('h')
+		if n%2 == 0 {
+			key = tea.KeyPressMsg{Code: tea.KeyLeft}
+		}
+		app = sendKeyAndApply(t, app, key)
+		check(n)
+	}
+}
+
+func TestPostingList_SSortsByFitAndBack(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
+	var board []jobboard.Posting
+	for i := 1; i <= 6; i++ {
+		board = append(board, jobboard.Posting{SourceID: fmt.Sprint(i), Title: fmt.Sprintf("Role %d", i)})
+	}
+	app := newTestApp(t, s, newTestSyncer(s, map[string][]jobboard.Posting{"acme": board}))
+	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 16})
+	app = openPostingList(t, app)
+	listed, err := s.Postings.ListByCompany(context.Background(), acme.ID)
+	if err != nil {
+		t.Fatalf("ListByCompany: %v", err)
+	}
+	// Scores by title: Role 1:3, Role 2:5, Role 3:none, Role 4:1, Role 5:5, Role 6:none.
+	scores := map[string]int{"Role 1": 3, "Role 2": 5, "Role 4": 1, "Role 5": 5}
+	for _, p := range listed {
+		if fit, ok := scores[p.Title]; ok {
+			mustScore(t, s, p, fit, "p")
+		}
+	}
+	app = sendKeyAndApply(t, app, runeKey('l')) // leave page 1, which s returns to
+
+	app = sendKeyAndApply(t, app, runeKey('s'))
+
+	if len(openList(t, app).starts) != 1 || !strings.Contains(viewText(app), "Page 1 of 2 · 6 postings · best fit first") {
+		t.Fatalf("after s: page %d, view:\n%s", len(openList(t, app).starts), viewText(app))
+	}
+	var seen []string
+	for {
+		seen = append(seen, listTitles(t, app)...)
+		if !openList(t, app).list.HasMore {
+			break
+		}
+		app = sendKeyAndApply(t, app, runeKey('l'))
+	}
+	want := []string{"Role 5", "Role 2", "Role 1", "Role 4", "Role 6", "Role 3"}
+	if diff := cmp.Diff(want, seen); diff != "" {
+		t.Errorf("by fit, page by page (-want +got):\n%s", diff)
+	}
+
+	app = sendKeyAndApply(t, app, runeKey('s'))
+
+	if titles := listTitles(t, app); len(openList(t, app).starts) != 1 || len(titles) == 0 || titles[0] != "Role 6" {
+		t.Errorf("after s again: page %d starting %q, want page 1 newest first", len(openList(t, app).starts), titles)
+	}
 }
 
 // listedOn is posting id's row on m's page.

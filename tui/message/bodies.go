@@ -123,15 +123,19 @@ type Markup struct {
 func (Markup) Type() Type { return TypeMarkup }
 
 // PostingList is a page of what the posting list of the event's Subject, a
-// company, shows, read Limit rows at most. Total is how many it shows in
-// all. Departments and Locations are the company's filters.
+// company, shows, in Order, after the row AfterID (and AfterScore, by fit),
+// read Limit rows at most. Total is how many it shows in all. Departments
+// and Locations are the company's filters.
 type PostingList struct {
-	Limit       int       `json:"limit"`
-	Listings    []Listing `json:"listings"`
-	HasMore     bool      `json:"has_more"`
-	Total       int       `json:"total"`
-	Departments []string  `json:"departments,omitempty"`
-	Locations   []string  `json:"locations,omitempty"`
+	Order       PostingOrder `json:"order"`
+	AfterID     int64        `json:"after_id,omitzero"`
+	AfterScore  int          `json:"after_score,omitzero"`
+	Limit       int          `json:"limit"`
+	Listings    []Listing    `json:"listings"`
+	HasMore     bool         `json:"has_more"`
+	Total       int          `json:"total"`
+	Departments []string     `json:"departments,omitempty"`
+	Locations   []string     `json:"locations,omitempty"`
 }
 
 func (PostingList) Type() Type { return TypePostingList }
