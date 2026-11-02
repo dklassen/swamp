@@ -289,9 +289,13 @@ func (service *CompanyService) ReleaseSyncLease(ctx context.Context, id int64, t
 	return service.syncLeaser.ReleaseSyncLease(ctx, service.db, id, token)
 }
 
-// PostingListPage is what a caller chooses about a company's posting list.
+// PostingListPage is what a caller chooses about a company's posting list:
+// the order, and the row the page starts after (AfterScore by fit only).
 type PostingListPage struct {
 	IncludeArchived bool
+	Order           posting.Order
+	AfterID         int64
+	AfterScore      int
 	Limit           int
 }
 
@@ -303,8 +307,8 @@ type CompanyPostings struct {
 }
 
 // ListedPostings returns one page of the postings a company's list shows:
-// its open ones its filters let through, newest first, archived ones only
-// when included.
+// its open ones its filters let through, in the order asked for, archived
+// ones only when included.
 func (service *CompanyService) ListedPostings(ctx context.Context, companyID int64, page PostingListPage) (*CompanyPostings, error) {
 	open := posting.ListingOpen
 	var listed *CompanyPostings
@@ -317,7 +321,9 @@ func (service *CompanyService) ListedPostings(ctx context.Context, companyID int
 			CompanyID:       companyID,
 			ListingStatus:   &open,
 			IncludeArchived: page.IncludeArchived,
-			Order:           posting.OrderIDDesc,
+			Order:           page.Order,
+			AfterID:         page.AfterID,
+			AfterScore:      page.AfterScore,
 			Limit:           page.Limit,
 		})
 		if err != nil {

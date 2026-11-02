@@ -220,6 +220,9 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.ContentSize]{Value: r}))},
 		{name: "focus signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.FocusChanged]{Value: message.FocusChanged{Focused: 7}}))},
 		{name: "posting list read", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Read[message.PostingList]{Value: message.PostingList{
+			Order:       message.OrderBestFit,
+			AfterID:     9,
+			AfterScore:  4,
 			Limit:       20,
 			Listings:    []message.Listing{{ID: 5, CompanyName: "Acme", Title: "Engineer", Department: "Platform", Location: "Remote", JobURL: "https://example.com/5", ListingStatus: message.ListingOpen, FirstSeenAt: at, Interested: true}},
 			HasMore:     true,
