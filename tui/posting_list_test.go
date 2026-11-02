@@ -756,6 +756,95 @@ func TestPostingList_SSortsByFitAndBack(t *testing.T) {
 	}
 }
 
+func TestPostingList_ArchivingTheLastPagesOnlyPostingStepsBack(t *testing.T) {
+	t.Parallel()
+
+	app := listOfRoles(t, 6, 16)
+	size := openList(t, app).list.Limit
+	if size != 5 {
+		t.Fatalf("page size = %d at height 16, want 5 so page 2 holds one posting", size)
+	}
+	if !openList(t, app).hideArchived {
+		t.Fatal("archived postings are shown, want them hidden so archiving one leaves the page")
+	}
+	app = sendKeyAndApply(t, app, runeKey('l'))
+	if len(openList(t, app).starts) != 2 || len(openList(t, app).list.Listings) != 1 {
+		t.Fatalf("on page %d with %d postings, want page 2 with 1", len(openList(t, app).starts), len(openList(t, app).list.Listings))
+	}
+
+	app = sendKeyAndApply(t, app, runeKey('x'))
+
+	if len(openList(t, app).starts) != 1 || len(openList(t, app).list.Listings) != size {
+		t.Errorf("after archiving page 2's only posting: page %d with %d postings, want page 1 with %d", len(openList(t, app).starts), len(openList(t, app).list.Listings), size)
+	}
+}
+
+// Showing archived postings or saving filters changes what every page
+// holds, so the list starts again from page 1.
+func TestPostingList_ReturnsToPageOne(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		msg  func(app *App) tea.Msg
+	}{
+		{"A", func(*App) tea.Msg { return runeKey('A') }},
+		{"filters saved", func(app *App) tea.Msg {
+			c := openList(t, app).company
+			return message.New(message.Source{Instance: 9}, message.Subject{Type: message.TypeCompany, ID: c.ID}, message.OpNone, time.Now().UTC(),
+				message.Ran[message.FilterSelection]{Value: message.FilterSelection{Company: c}})
+		}},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			app := listOfRoles(t, 7, 16)
+			app = sendKeyAndApply(t, app, runeKey('l'))
+			if len(openList(t, app).starts) != 2 {
+				t.Fatalf("on page %d, want 2", len(openList(t, app).starts))
+			}
+
+			app = sendKeyAndApply(t, app, tt.msg(app))
+
+			if titles := listTitles(t, app); len(openList(t, app).starts) != 1 || len(titles) == 0 || titles[0] != "Role 7" {
+				t.Errorf("page %d starting %q, want page 1 starting Role 7", len(openList(t, app).starts), titles)
+			}
+		})
+	}
+}
+
+func TestPostingListModel_Read_ShowsOnlyThePageOnScreen(t *testing.T) {
+	t.Parallel()
+
+	late := []message.Listing{{ID: 9, Title: "Late"}}
+	for _, tt := range []struct {
+		name  string
+		edit  func(*message.PostingList)
+		shown bool
+	}{
+		{name: "a read of the page on screen", edit: func(*message.PostingList) {}, shown: true},
+		{name: "a late one in the other order", edit: func(l *message.PostingList) { l.Order = message.OrderBestFit }},
+		{name: "a late one for another page", edit: func(l *message.PostingList) { l.AfterID = 40 }},
+		{name: "a late one for another page by fit", edit: func(l *message.PostingList) { l.AfterScore = 4 }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			m := postingListOf(t, testListCompany, testPostings(), false, 0)
+			e := postingsReadOf(m, late)
+			tt.edit(&e.Payload.Value)
+
+			m.postingsRead(e)
+
+			want := testPostings()
+			if tt.shown {
+				want = late
+			}
+			if diff := cmp.Diff(want, m.list.Listings); diff != "" {
+				t.Errorf("page (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 // listedOn is posting id's row on m's page.
 func listedOn(t *testing.T, m *postingListModel, id int64) message.Listing {
 	t.Helper()

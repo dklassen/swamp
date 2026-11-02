@@ -268,7 +268,7 @@ func (m *postingListModel) synced(message.Event[message.Ran[message.SyncReport]]
 }
 
 func (m *postingListModel) filtersSaved(message.Event[message.Ran[message.FilterSelection]]) tea.Cmd {
-	return m.load()
+	return m.firstPage()
 }
 
 // markupChanged reads again for a posting on the page, since it's drawn
@@ -362,7 +362,7 @@ func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	case "A":
 		m.hideArchived = !m.hideArchived
 		hidden := message.HideArchived{Hidden: m.hideArchived}
-		return tea.Batch(m.load(), func() tea.Msg {
+		return tea.Batch(m.firstPage(), func() tea.Msg {
 			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Signal[message.HideArchived]{Value: hidden})
 		})
 	}
