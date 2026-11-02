@@ -14,6 +14,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
@@ -756,5 +757,211 @@ func TestPostingService_MarkupMany_LeavesOutPostingsNotThere(t *testing.T) {
 	want := []posting.Markup{*untouched, interested.After}
 	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b posting.Markup) bool { return a.PostingID < b.PostingID })); diff != "" {
 		t.Errorf("MarkupMany (-want +got):\n%s", diff)
+	}
+}
+
+// ListedPostings lists every company's open postings their filters let
+// through, newest first, leaving out archived ones.
+func TestPostingService_ListedPostings_ListsWhatTheAllPostingsTabShows(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		name string
+		// hide hides other, a Sales posting at Acme, or Acme itself.
+		hide   func(t *testing.T, s testutil.TestApp, companyID, other int64)
+		listed func(kept, other, globex int64) []int64
+	}{
+		{"nothing hidden", func(*testing.T, testutil.TestApp, int64, int64) {},
+			func(kept, other, globex int64) []int64 { return []int64{globex, other, kept} }},
+		{"closed", func(t *testing.T, s testutil.TestApp, _, other int64) {
+			if err := s.Postings.Close(context.Background(), other, nil); err != nil {
+				t.Fatalf("Close: %v", err)
+			}
+		}, func(kept, _, globex int64) []int64 { return []int64{globex, kept} }},
+		{"archived", func(t *testing.T, s testutil.TestApp, _, other int64) {
+			if _, err := s.Postings.SetArchived(context.Background(), other); err != nil {
+				t.Fatalf("SetArchived: %v", err)
+			}
+		}, func(kept, _, globex int64) []int64 { return []int64{globex, kept} }},
+		{"filtered out", func(t *testing.T, s testutil.TestApp, companyID, _ int64) {
+			if err := s.Companies.SetFilters(context.Background(), companyID, []filter.Filter{{Field: filter.FieldDepartment, Value: "Engineering"}}); err != nil {
+				t.Fatalf("SetFilters: %v", err)
+			}
+		}, func(kept, _, globex int64) []int64 { return []int64{globex, kept} }},
+		{"company deleted", func(t *testing.T, s testutil.TestApp, companyID, _ int64) {
+			if _, err := s.Companies.Delete(context.Background(), companyID); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+		}, func(_, _, globex int64) []int64 { return []int64{globex} }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			s := testutil.NewTestApp(t)
+			acme := testutil.MustAddCompany(t, s, "Acme")
+			globexCompany := testutil.MustAddCompany(t, s, "Globex")
+			ingest := func(companyID int64, sourceID, department string) int64 {
+				t.Helper()
+				ingested, err := s.Postings.Ingest(ctx, companyID, jobboard.Ashby, sourceID, posting.IngestedFields{Title: "Engineer", Department: department, RawPayload: "{}"})
+				if err != nil {
+					t.Fatalf("Ingest: %v", err)
+				}
+				return ingested.Posting.ID
+			}
+			kept := ingest(acme.ID, "job-1", "Engineering")
+			other := ingest(acme.ID, "job-2", "Sales")
+			globex := ingest(globexCompany.ID, "job-3", "Sales")
+			tt.hide(t, s, acme.ID, other)
+
+			got, err := s.Postings.ListedPostings(ctx, service.PostingsPage{Order: posting.OrderIDDesc, Limit: 10})
+			if err != nil {
+				t.Fatalf("ListedPostings: %v", err)
+			}
+			var ids []int64
+			for _, l := range got.Page.Listings {
+				ids = append(ids, l.ID)
+			}
+			if diff := cmp.Diff(tt.listed(kept, other, globex), ids); diff != "" {
+				t.Errorf("listed postings (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// A query narrows the page and its Total, but WithoutQuery still counts
+// every listed posting.
+func TestPostingService_ListedPostings_QueryNarrowsThePageNotWithoutQuery(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	acme := testutil.MustAddCompany(t, s, "Acme")
+	testutil.MustIngestPostingFor(t, s, acme.ID, "job-1", "Engineer")
+	designer := testutil.MustIngestPostingFor(t, s, acme.ID, "job-2", "Designer")
+	testutil.MustIngestPostingFor(t, s, acme.ID, "job-3", "Engineer")
+
+	got, err := s.Postings.ListedPostings(ctx, service.PostingsPage{Query: "designer", Limit: 10})
+	if err != nil {
+		t.Fatalf("ListedPostings: %v", err)
+	}
+	var ids []int64
+	for _, l := range got.Page.Listings {
+		ids = append(ids, l.ID)
+	}
+	if diff := cmp.Diff([]int64{designer.ID}, ids); diff != "" {
+		t.Errorf("listed postings (-want +got):\n%s", diff)
+	}
+	if got.Page.Total != 1 || got.WithoutQuery != 3 {
+		t.Errorf("Total, WithoutQuery = %d, %d; want 1, 3", got.Page.Total, got.WithoutQuery)
+	}
+}
+
+// Paging by the last row's ID and score, the pages together hold each
+// listed posting once, across companies, in the order asked for.
+func TestPostingService_ListedPostings_PagesInOrder(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		order posting.Order
+		// listed is the order the postings are listed in, by their index.
+		listed []int
+	}{
+		{posting.OrderIDDesc, []int{4, 3, 2, 1, 0}},
+		{posting.OrderScoreDesc, []int{1, 3, 0, 4, 2}},
+	} {
+		t.Run(tt.order.String(), func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			s := testutil.NewTestApp(t)
+			acme := testutil.MustAddCompany(t, s, "Acme")
+			globex := testutil.MustAddCompany(t, s, "Globex")
+			var postings []posting.Posting
+			for i, sourceID := range []string{"job-0", "job-1", "job-2", "job-3", "job-4"} {
+				companyID := acme.ID
+				if i%2 == 1 {
+					companyID = globex.ID
+				}
+				postings = append(postings, testutil.MustIngestPostingFor(t, s, companyID, sourceID, "Engineer"))
+			}
+			scored := func(i, value int) score.Entry {
+				return score.Entry{PostingID: postings[i].ID, Score: value, Reason: "fit", ContentSHA256: postings[i].ContentSHA256}
+			}
+			if _, err := s.Scores.Record(ctx, score.Provenance{Model: "m", ProfileSHA256: "p"}, []score.Entry{scored(0, 3), scored(1, 5), scored(3, 3)}); err != nil {
+				t.Fatalf("Record: %v", err)
+			}
+
+			var got []int64
+			page := service.PostingsPage{Order: tt.order, Limit: 2}
+			for range postings {
+				listed, err := s.Postings.ListedPostings(ctx, page)
+				if err != nil {
+					t.Fatalf("ListedPostings: %v", err)
+				}
+				for _, l := range listed.Page.Listings {
+					got = append(got, l.ID)
+				}
+				if !listed.Page.HasMore {
+					break
+				}
+				last := listed.Page.Listings[len(listed.Page.Listings)-1]
+				page.AfterID, page.AfterScore = last.ID, last.Score
+			}
+			var want []int64
+			for _, i := range tt.listed {
+				want = append(want, postings[i].ID)
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("listed postings (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// With no query, as many postings are listed in all as the companies'
+// Open counts add up to.
+func TestPostingService_ListedPostings_WithoutQueryIsTheOpenCounts(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	postings := s.Postings
+	acme := testutil.MustAddCompany(t, s, "Acme")
+	globex := testutil.MustAddCompany(t, s, "Globex")
+	gone := testutil.MustAddCompany(t, s, "Initech")
+	ingest := func(companyID int64, sourceID, department string) int64 {
+		t.Helper()
+		ingested, err := postings.Ingest(ctx, companyID, jobboard.Ashby, sourceID, posting.IngestedFields{Title: "Engineer", Department: department, RawPayload: "{}"})
+		if err != nil {
+			t.Fatalf("Ingest: %v", err)
+		}
+		return ingested.Posting.ID
+	}
+	ingest(acme.ID, "job-1", "Engineering")
+	ingest(acme.ID, "job-2", "Sales")
+	ingest(globex.ID, "job-3", "Sales")
+	ingest(gone.ID, "job-4", "Engineering")
+	if err := postings.Close(ctx, ingest(globex.ID, "job-5", "Sales"), nil); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := postings.SetArchived(ctx, ingest(globex.ID, "job-6", "Sales")); err != nil {
+		t.Fatalf("SetArchived: %v", err)
+	}
+	if err := s.Companies.SetFilters(ctx, acme.ID, []filter.Filter{{Field: filter.FieldDepartment, Value: "Engineering"}}); err != nil {
+		t.Fatalf("SetFilters: %v", err)
+	}
+	if _, err := s.Companies.Delete(ctx, gone.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	got, err := postings.ListedPostings(ctx, service.PostingsPage{Limit: 1})
+	if err != nil {
+		t.Fatalf("ListedPostings: %v", err)
+	}
+	counts, err := postings.CountOpenByCompany(ctx)
+	if err != nil {
+		t.Fatalf("CountOpenByCompany: %v", err)
+	}
+	var open int
+	for _, n := range counts {
+		open += n
+	}
+	if got.WithoutQuery != open || open == 0 {
+		t.Errorf("WithoutQuery = %d, Open counts add up to %d; want them equal and not 0", got.WithoutQuery, open)
 	}
 }

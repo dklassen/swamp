@@ -458,3 +458,56 @@ func (service *PostingService) restoreApplication(ctx context.Context, tx store.
 	}
 	return nil
 }
+
+// PostingsPage is what a caller chooses about the postings ListedPostings
+// lists.
+type PostingsPage struct {
+	Query      string
+	Order      posting.Order
+	AfterID    int64
+	AfterScore int
+	Limit      int
+}
+
+// ListedPostings is one page of every company's listed postings, and how
+// many are listed with no query.
+type ListedPostings struct {
+	Page         posting.SearchPage
+	WithoutQuery int
+}
+
+// ListedPostings returns one page of every company's open postings their
+// filters let through, leaving out archived ones, and counts them all
+// without the query in the same transaction, so a sync can't make the two
+// disagree.
+func (service *PostingService) ListedPostings(ctx context.Context, page PostingsPage) (*ListedPostings, error) {
+	open := posting.ListingOpen
+	var listed *ListedPostings
+	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
+		found, err := service.postingSearcher.Search(ctx, tx, posting.Search{
+			ListingStatus: &open,
+			Query:         page.Query,
+			Order:         page.Order,
+			AfterID:       page.AfterID,
+			AfterScore:    page.AfterScore,
+			Limit:         page.Limit,
+		})
+		if err != nil {
+			return err
+		}
+		listed = &ListedPostings{Page: *found, WithoutQuery: found.Total}
+		if page.Query == "" {
+			return nil
+		}
+		all, err := service.postingSearcher.Search(ctx, tx, posting.Search{ListingStatus: &open, Limit: 1})
+		if err != nil {
+			return err
+		}
+		listed.WithoutQuery = all.Total
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return listed, nil
+}
