@@ -132,30 +132,18 @@ func (m *allPostingsModel) loadAt(size int) tea.Cmd {
 	s, src, start := m.postings, m.src(), m.starts[len(m.starts)-1]
 	read := message.PostingSearch{Query: m.query, Order: m.order, AfterID: start.id, AfterScore: start.score, Limit: size}
 	return func() tea.Msg {
-		ctx := context.Background()
-		fail := func(err error) tea.Msg {
-			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
-		}
-		open := posting.ListingOpen
-		page, err := s.Search(ctx, posting.Search{
-			ListingStatus: &open,
-			Order:         searchOrders[read.Order],
-			AfterID:       read.AfterID,
-			AfterScore:    read.AfterScore,
-			Query:         read.Query,
-			Limit:         read.Limit,
+		listed, err := s.ListedPostings(context.Background(), service.PostingsPage{
+			Query:      read.Query,
+			Order:      searchOrders[read.Order],
+			AfterID:    read.AfterID,
+			AfterScore: read.AfterScore,
+			Limit:      read.Limit,
 		})
 		if err != nil {
-			return fail(err)
+			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
 		}
-		read.HasMore, read.Total, read.WithoutQuery = page.HasMore, page.Total, page.Total
-		if read.Query != "" {
-			all, err := s.Search(ctx, posting.Search{ListingStatus: &open, Limit: 1})
-			if err != nil {
-				return fail(err)
-			}
-			read.WithoutQuery = all.Total
-		}
+		page := listed.Page
+		read.HasMore, read.Total, read.WithoutQuery = page.HasMore, page.Total, listed.WithoutQuery
 		read.Listings = make([]message.Listing, len(page.Listings))
 		for i, l := range page.Listings {
 			read.Listings[i] = listingSnapshot(l)
