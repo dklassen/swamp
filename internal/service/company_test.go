@@ -13,6 +13,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
+	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
@@ -364,7 +365,7 @@ func TestCompanyService_ListedPostings_ListsWhatTheCompanysListShows(t *testing.
 			ingest(globex.ID, "job-3", "Engineering")
 			tt.change(t, s, acme.ID, other)
 
-			got, err := s.Companies.ListedPostings(ctx, acme.ID, service.PostingListPage{IncludeArchived: tt.includeArchived, Limit: 10})
+			got, err := s.Companies.ListedPostings(ctx, acme.ID, service.PostingListPage{IncludeArchived: tt.includeArchived, Order: posting.OrderIDDesc, Limit: 10})
 			if err != nil {
 				t.Fatalf("ListedPostings: %v", err)
 			}
@@ -394,7 +395,7 @@ func TestCompanyService_ListedPostings_MoreThanAPage_SaysHowManyInAll(t *testing
 		ids = append(ids, testutil.MustIngestPostingFor(t, s, acme.ID, sourceID, "Engineer").ID)
 	}
 
-	got, err := s.Companies.ListedPostings(ctx, acme.ID, service.PostingListPage{Limit: 2})
+	got, err := s.Companies.ListedPostings(ctx, acme.ID, service.PostingListPage{Order: posting.OrderIDDesc, Limit: 2})
 	if err != nil {
 		t.Fatalf("ListedPostings: %v", err)
 	}
@@ -407,6 +408,61 @@ func TestCompanyService_ListedPostings_MoreThanAPage_SaysHowManyInAll(t *testing
 	}
 	if !got.Page.HasMore || got.Page.Total != len(ids) {
 		t.Errorf("HasMore, Total = %v, %d; want true, %d", got.Page.HasMore, got.Page.Total, len(ids))
+	}
+}
+
+// Paging by the last row's ID and score, the pages of a company's list
+// together hold each of its postings once, in the order asked for.
+func TestCompanyService_ListedPostings_PagesInOrder(t *testing.T) {
+	t.Parallel()
+	for _, tt := range []struct {
+		order posting.Order
+		// listed is the order the postings are listed in, by their index.
+		listed []int
+	}{
+		{posting.OrderIDDesc, []int{4, 3, 2, 1, 0}},
+		{posting.OrderScoreDesc, []int{1, 3, 0, 4, 2}},
+	} {
+		t.Run(tt.order.String(), func(t *testing.T) {
+			t.Parallel()
+			ctx := context.Background()
+			s := testutil.NewTestApp(t)
+			acme := testutil.MustAddCompany(t, s, "Acme")
+			var postings []posting.Posting
+			for _, sourceID := range []string{"job-0", "job-1", "job-2", "job-3", "job-4"} {
+				postings = append(postings, testutil.MustIngestPostingFor(t, s, acme.ID, sourceID, "Engineer"))
+			}
+			scored := func(i, value int) score.Entry {
+				return score.Entry{PostingID: postings[i].ID, Score: value, Reason: "fit", ContentSHA256: postings[i].ContentSHA256}
+			}
+			if _, err := s.Scores.Record(ctx, score.Provenance{Model: "m", ProfileSHA256: "p"}, []score.Entry{scored(0, 3), scored(1, 5), scored(3, 3)}); err != nil {
+				t.Fatalf("Record: %v", err)
+			}
+
+			var got []int64
+			page := service.PostingListPage{Order: tt.order, Limit: 2}
+			for range postings {
+				listed, err := s.Companies.ListedPostings(ctx, acme.ID, page)
+				if err != nil {
+					t.Fatalf("ListedPostings: %v", err)
+				}
+				for _, l := range listed.Page.Listings {
+					got = append(got, l.ID)
+				}
+				if !listed.Page.HasMore {
+					break
+				}
+				last := listed.Page.Listings[len(listed.Page.Listings)-1]
+				page.AfterID, page.AfterScore = last.ID, last.Score
+			}
+			var want []int64
+			for _, i := range tt.listed {
+				want = append(want, postings[i].ID)
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("listed postings (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

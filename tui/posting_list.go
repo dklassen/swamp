@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/internal/domain/filter"
+	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
@@ -151,7 +152,7 @@ func (m *postingListModel) reload() tea.Cmd { return m.reading.start(m.load) }
 // many as fit.
 func (m *postingListModel) load() tea.Cmd {
 	companies, companyID := m.companyService, m.company.ID
-	page := service.PostingListPage{IncludeArchived: !m.hideArchived, Limit: m.pageSize()}
+	page := service.PostingListPage{IncludeArchived: !m.hideArchived, Order: posting.OrderIDDesc, Limit: m.pageSize()}
 	src := message.Source{Instance: m.instance}
 	subject := message.Subject{Type: message.TypeCompany, ID: companyID}
 	return func() tea.Msg {
