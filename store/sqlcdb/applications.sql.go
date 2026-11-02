@@ -115,7 +115,6 @@ JOIN postings ON postings.id = applications.posting_id
 JOIN companies ON companies.id = postings.company_id
 WHERE applications.deleted_at IS NULL
   AND applications.status NOT IN (/*SLICE:terminal_statuses*/?)
-ORDER BY applications.updated_at DESC
 `
 
 type ListActiveApplicationsRow struct {
@@ -127,9 +126,8 @@ type ListActiveApplicationsRow struct {
 // Applications not at a terminal dead-end status, joined with their
 // posting and company name -- feeds the active-applications TUI screen
 // (#43). Unlike ListInterestedPostings this is an inner join on
-// applications (an application always exists for every row here),
-// ordered most-recently-changed first so whatever moved last surfaces
-// at the top.
+// applications (an application always exists for every row here), in
+// no order.
 //
 // sqlc.embed(applications)/sqlc.embed(postings) generate nested
 // Application/Posting fields on the row directly from the schema, rather

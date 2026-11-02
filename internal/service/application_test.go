@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"slices"
+	"strconv"
 	"testing"
 	"time"
 
@@ -147,6 +148,87 @@ func TestApplicationService_Active_IncludesTheLatestReviewPerDocument(t *testing
 	want := map[document.Type]document.Review{document.CoverLetter: *second}
 	if diff := cmp.Diff(want, got[0].LatestReviews); diff != "" {
 		t.Errorf("LatestReviews (-want +got):\n%s", diff)
+	}
+}
+
+type companyStatus struct {
+	Company string
+	Status  application.Status
+}
+
+func companyStatuses(apps []posting.ActiveApplication) []companyStatus {
+	got := make([]companyStatus, len(apps))
+	for i, app := range apps {
+		got[i] = companyStatus{app.CompanyName, app.Status}
+	}
+	return got
+}
+
+func TestApplicationService_Active_OrdersByCompanyIgnoringCaseThenWorkflowStatus(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	apply := func(companyName string, statuses ...application.Status) {
+		t.Helper()
+		c := testutil.MustAddCompany(t, s, companyName)
+		for i, status := range statuses {
+			p := testutil.MustIngestPostingFor(t, s, c.ID, companyName+"-"+strconv.Itoa(i), status.String())
+			app := testutil.MustApplyTo(t, s, p.ID)
+			if _, err := s.Applications.SetStatus(ctx, app.ID, status); err != nil {
+				t.Fatalf("SetStatus(%s): %v", status, err)
+			}
+		}
+	}
+	apply("Zeta Corp", application.Submitted, application.Started)
+	apply("acme labs", application.OfferReceived, application.Interviewing, application.Started, application.Submitted)
+	apply("Beta", application.Interviewing)
+
+	got, err := s.Applications.Active(ctx)
+	if err != nil {
+		t.Fatalf("Active: %v", err)
+	}
+	want := []companyStatus{
+		{"acme labs", application.Started},
+		{"acme labs", application.Submitted},
+		{"acme labs", application.Interviewing},
+		{"acme labs", application.OfferReceived},
+		{"Beta", application.Interviewing},
+		{"Zeta Corp", application.Started},
+		{"Zeta Corp", application.Submitted},
+	}
+	if diff := cmp.Diff(want, companyStatuses(got)); diff != "" {
+		t.Errorf("Active order (-want +got):\n%s", diff)
+	}
+}
+
+// The wait is because status times have one-second resolution.
+func TestApplicationService_Active_SameCompanyAndStatus_OldestAtStatusFirstThenByID(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	c := testutil.MustAddCompany(t, s, "Acme")
+	apply := func(title string) application.Application {
+		t.Helper()
+		return testutil.MustApplyTo(t, s, testutil.MustIngestPostingFor(t, s, c.ID, title, title).ID)
+	}
+	moved, first, second := apply("moved"), apply("first"), apply("second")
+	time.Sleep(1100 * time.Millisecond)
+	for _, status := range []application.Status{application.Submitted, application.Started} {
+		if _, err := s.Applications.SetStatus(ctx, moved.ID, status); err != nil {
+			t.Fatalf("SetStatus(%s): %v", status, err)
+		}
+	}
+
+	got, err := s.Applications.Active(ctx)
+	if err != nil {
+		t.Fatalf("Active: %v", err)
+	}
+	var ids []int64
+	for _, app := range got {
+		ids = append(ids, app.ID)
+	}
+	if diff := cmp.Diff([]int64{first.ID, second.ID, moved.ID}, ids); diff != "" {
+		t.Errorf("Active IDs (-want +got):\n%s", diff)
 	}
 }
 

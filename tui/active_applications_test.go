@@ -334,34 +334,6 @@ func TestActiveApplicationListModel_View_ShowsAgeAndNextStep(t *testing.T) {
 	}
 }
 
-// Started applications come first, longest at their status first, so the
-// stalest work is at the top; the rest keep the store's order
-// (most-recently-changed first) below them.
-func TestOrderForHome(t *testing.T) {
-	t.Parallel()
-
-	app := func(id int64, status application.Status, since time.Time) posting.ActiveApplication {
-		return posting.ActiveApplication{Application: application.Application{ID: id, Status: status}, StatusSince: since}
-	}
-	day := func(d int) time.Time { return time.Date(2026, 9, d, 0, 0, 0, 0, time.UTC) }
-	apps := []posting.ActiveApplication{
-		app(1, application.Interviewing, day(28)),
-		app(2, application.Started, day(20)),
-		app(3, application.Submitted, day(25)),
-		app(4, application.Started, day(1)),
-	}
-
-	orderForHome(apps)
-
-	var got []int64
-	for _, a := range apps {
-		got = append(got, a.ID)
-	}
-	if diff := cmp.Diff([]int64{4, 2, 1, 3}, got); diff != "" {
-		t.Errorf("order mismatch (-want +got):\n%s", diff)
-	}
-}
-
 // The home screen's read works out each started application's next step
 // from what's on disk and in the store: drafts, current reviews and
 // current exports.
