@@ -101,8 +101,8 @@ func (repository *ApplicationRepository) GetManyIncludingDeleted(ctx context.Con
 }
 
 // ListActive returns the applications not at one of excluding, each with
-// its posting and company name, most-recently-changed first. StatusSince
-// and LatestReviews are left for the caller to fill.
+// its posting and company name, in no order. StatusSince and
+// LatestReviews are left for the caller to fill.
 func (repository *ApplicationRepository) ListActive(ctx context.Context, r store.Runner, excluding []domain.Status) ([]posting.ActiveApplication, error) {
 	rows, err := store.Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.ListActiveApplicationsRow, error) {
 		return q.ListActiveApplications(ctx, statusParams(excluding))

@@ -130,7 +130,6 @@ func (m *activeApplicationListModel) load() tea.Cmd {
 		if err != nil {
 			return fail(err)
 		}
-		orderForHome(apps)
 		var read message.ActiveApplications
 		for _, app := range apps {
 			app.LatestReviews, err = documents.Current(docs.Status(app.ID), app.LatestReviews, document.Review.IsCurrent)
@@ -551,25 +550,6 @@ func statusAge(since, now time.Time) string {
 		return ""
 	}
 	return strconv.Itoa(int(now.Sub(since).Hours()/24)) + "d"
-}
-
-// orderForHome sorts apps in place for the home screen (#164): started
-// applications first, longest at their status first, then everything
-// else in the order it came in (the store's most-recently-changed
-// first).
-func orderForHome(apps []posting.ActiveApplication) {
-	slices.SortStableFunc(apps, func(a, b posting.ActiveApplication) int {
-		aStarted, bStarted := a.Status == application.Started, b.Status == application.Started
-		switch {
-		case aStarted && bStarted:
-			return a.StatusSince.Compare(b.StatusSince)
-		case aStarted:
-			return -1
-		case bStarted:
-			return 1
-		}
-		return 0
-	})
 }
 
 // documentProgressOf is, for nextStep, whether each of applicationID's

@@ -1,9 +1,12 @@
 package service
 
 import (
+	"cmp"
 	"context"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/dklassen/swamp/internal/domain/application"
@@ -63,7 +66,8 @@ func NewApplicationService(db store.Store) *ApplicationService {
 }
 
 // Active returns the applications not at a terminal status (see
-// application.Terminal), most-recently-changed first, each with its
+// application.Terminal), by company name ignoring case, then status in
+// workflow order, then longest at its status, then ID, each with its
 // posting, when it entered its status and its latest review per document
 // type.
 //
@@ -92,6 +96,14 @@ func (service *ApplicationService) Active(ctx context.Context) ([]posting.Active
 		}
 		app.LatestReviews = reviews
 	}
+	slices.SortFunc(apps, func(a, b posting.ActiveApplication) int {
+		return cmp.Or(
+			strings.Compare(strings.ToLower(a.CompanyName), strings.ToLower(b.CompanyName)),
+			cmp.Compare(a.Status, b.Status),
+			a.StatusSince.Compare(b.StatusSince),
+			cmp.Compare(a.ID, b.ID),
+		)
+	})
 	return apps, nil
 }
 
