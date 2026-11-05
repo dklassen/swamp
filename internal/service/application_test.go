@@ -220,6 +220,39 @@ func TestApplicationService_Active_OrdersByCompanyIgnoringCaseAndWorkflowStatus(
 	}
 }
 
+// The waits are because status times have one-second resolution.
+func TestApplicationService_Active_LongestAtStatusFirst(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	apply := func(companyName string, status application.Status) {
+		t.Helper()
+		c := testutil.MustAddCompany(t, s, companyName)
+		app := testutil.MustApplyTo(t, s, testutil.MustIngestPostingFor(t, s, c.ID, companyName, companyName).ID)
+		if _, err := s.Applications.SetStatus(ctx, app.ID, status); err != nil {
+			t.Fatalf("SetStatus(%s): %v", status, err)
+		}
+	}
+	apply("Zeta Corp", application.Interviewing)
+	time.Sleep(1100 * time.Millisecond)
+	apply("acme labs", application.Started)
+	time.Sleep(1100 * time.Millisecond)
+	apply("Beta", application.Submitted)
+
+	got, err := s.Applications.Active(ctx, application.OrderLongestAtStatus)
+	if err != nil {
+		t.Fatalf("Active: %v", err)
+	}
+	want := []companyStatus{
+		{"Zeta Corp", application.Interviewing},
+		{"acme labs", application.Started},
+		{"Beta", application.Submitted},
+	}
+	if diff := cmp.Diff(want, companyStatuses(got)); diff != "" {
+		t.Errorf("Active order (-want +got):\n%s", diff)
+	}
+}
+
 // The wait is because status times have one-second resolution.
 func TestApplicationService_Active_SameCompanyAndStatus_OldestAtStatusFirstThenByID(t *testing.T) {
 	t.Parallel()

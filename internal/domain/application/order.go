@@ -13,12 +13,16 @@ const (
 	// OrderStatus: by status in workflow order, then company name
 	// ignoring case, then longest at its status.
 	OrderStatus
+	// OrderLongestAtStatus: longest at its status first, then company
+	// name ignoring case, then status in workflow order.
+	OrderLongestAtStatus
 )
 
 // orderNames is the single name table for Order, indexed by its value.
 var orderNames = [...]string{
-	OrderCompany: "company",
-	OrderStatus:  "status",
+	OrderCompany:         "company",
+	OrderStatus:          "status",
+	OrderLongestAtStatus: "longest_at_status",
 }
 
 func (o Order) String() string {

@@ -106,6 +106,9 @@ var activeOrders = map[application.Order]func(a, b posting.ActiveApplication) in
 	application.OrderStatus: func(a, b posting.ActiveApplication) int {
 		return cmp.Or(cmp.Compare(a.Status, b.Status), compareCompany(a, b), a.StatusSince.Compare(b.StatusSince), cmp.Compare(a.ID, b.ID))
 	},
+	application.OrderLongestAtStatus: func(a, b posting.ActiveApplication) int {
+		return cmp.Or(a.StatusSince.Compare(b.StatusSince), compareCompany(a, b), cmp.Compare(a.Status, b.Status), cmp.Compare(a.ID, b.ID))
+	},
 }
 
 func compareCompany(a, b posting.ActiveApplication) int {
