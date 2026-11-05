@@ -38,7 +38,7 @@ func testActiveApplications() []posting.ActiveApplication {
 
 // applicationsReadOf is m's own read of apps, with nothing drafted.
 func applicationsReadOf(m *activeApplicationListModel, apps []posting.ActiveApplication) message.Event[message.Read[message.ActiveApplications]] {
-	var read message.ActiveApplications
+	read := message.ActiveApplications{Order: m.order}
 	for _, a := range apps {
 		read.Rows = append(read.Rows, applicationRow(a, nil))
 	}
@@ -922,6 +922,59 @@ func TestActiveApplicationListModel_Read_ShowsOnlyItsOwn(t *testing.T) {
 				t.Errorf("shows %d applications, want %d", got, want)
 			}
 		})
+	}
+}
+
+// readHome runs cmd and dispatches what it sends back to m through r, as
+// the program would.
+func readHome(t *testing.T, r *model.MsgRouter, cmd tea.Cmd) {
+	t.Helper()
+	for _, msg := range runCmd(t, cmd) {
+		runCmd(t, r.Dispatch(msg))
+	}
+}
+
+func homeIDs(m *activeApplicationListModel) []int64 {
+	ids := make([]int64, len(m.apps))
+	for i, a := range m.apps {
+		ids[i] = a.ID
+	}
+	return ids
+}
+
+func TestActiveApplicationListModel_O_CyclesTheOrderKeepingTheCursor(t *testing.T) {
+	t.Parallel()
+
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	apply := func(companyName string, status application.Status) int64 {
+		t.Helper()
+		c := mustCreateCompany(t, s, companyName, jobboard.Ashby, companyName)
+		app := mustCreateApplication(t, s, mustUpsertPosting(t, s, c.ID, companyName, "Engineer").ID)
+		if _, err := s.Applications.SetStatus(ctx, app.ID, status); err != nil {
+			t.Fatalf("SetStatus(%s): %v", status, err)
+		}
+		return app.ID
+	}
+	acme := apply("Acme", application.Interviewing)
+	beta := apply("Beta", application.Started)
+	m := newActiveApplicationListModel(s.Applications, s.Documents, documents.NewStore(t.TempDir()))
+	r := model.NewMsgRouter()
+	if err := r.Register(m); err != nil {
+		t.Fatalf("Register: %v", err)
+	}
+	readHome(t, r, m.Init())
+	if diff := cmp.Diff([]int64{acme, beta}, homeIDs(m)); diff != "" {
+		t.Fatalf("first read (-want +got):\n%s", diff)
+	}
+
+	readHome(t, r, m.keyPressed(runeKey('o')))
+
+	if diff := cmp.Diff([]int64{beta, acme}, homeIDs(m)); diff != "" {
+		t.Errorf("after o (-want +got):\n%s", diff)
+	}
+	if got := m.selected(); got != acme {
+		t.Errorf("cursor on %d after o, want %d (where it was)", got, acme)
 	}
 }
 

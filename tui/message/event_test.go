@@ -273,6 +273,7 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "search debounce signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.SearchDebounce]{Value: message.SearchDebounce{Query: "plat"}}))},
 		{name: "open browser ran", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpNone, at, message.Ran[message.OpenBrowser]{Value: message.OpenBrowser{URL: "https://example.com/5"}}))},
 		{name: "active applications read", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Read[message.ActiveApplications]{Value: message.ActiveApplications{
+			Order: message.ApplicationsByStatus,
 			Rows: []message.ApplicationRow{{
 				Application: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted, CreatedAt: at, UpdatedAt: at},
 				Posting:     message.Posting{ID: 5, CompanyID: 3, Title: "Engineer", ListingStatus: message.ListingClosed},

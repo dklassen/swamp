@@ -59,6 +59,7 @@ type activeApplicationListModel struct {
 	// from which, with its LatestReviews, each row's next step is derived.
 	apps     []posting.ActiveApplication
 	progress map[int64]map[document.Type]documentProgress
+	order    message.ApplicationOrder
 	reading  reading
 	cursor   int
 	// searching is whether the '/' prompt is open and taking keys; query
@@ -79,8 +80,23 @@ func newActiveApplicationListModel(applications *service.ApplicationService, doc
 		applications:    applications,
 		documentService: documentService,
 		documents:       docs,
+		order:           message.ApplicationsByCompany,
 		instance:        message.NewScreenInstance(),
 	}
+}
+
+// homeOrders is the order each ApplicationOrder reads in.
+var homeOrders = map[message.ApplicationOrder]application.Order{
+	message.ApplicationsByCompany:       application.OrderCompany,
+	message.ApplicationsByStatus:        application.OrderStatus,
+	message.ApplicationsLongestAtStatus: application.OrderLongestAtStatus,
+}
+
+// nextHomeOrder is the order o switches to from each.
+var nextHomeOrder = map[message.ApplicationOrder]message.ApplicationOrder{
+	message.ApplicationsByCompany:       message.ApplicationsByStatus,
+	message.ApplicationsByStatus:        message.ApplicationsLongestAtStatus,
+	message.ApplicationsLongestAtStatus: message.ApplicationsByCompany,
 }
 
 func (m *activeApplicationListModel) Instance() message.ScreenInstance { return m.instance }
@@ -121,16 +137,16 @@ func (m *activeApplicationListModel) reload() tea.Cmd { return m.reading.start(m
 // still describe each document as it is on disk, which the services
 // can't see.
 func (m *activeApplicationListModel) load() tea.Cmd {
-	applications, documentService, docs, src := m.applications, m.documentService, m.documents, m.src()
+	applications, documentService, docs, src, order := m.applications, m.documentService, m.documents, m.src(), m.order
 	return func() tea.Msg {
 		fail := func(err error) tea.Msg {
 			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
 		}
-		apps, err := applications.Active(context.Background(), application.OrderCompany)
+		apps, err := applications.Active(context.Background(), homeOrders[order])
 		if err != nil {
 			return fail(err)
 		}
-		var read message.ActiveApplications
+		read := message.ActiveApplications{Order: order}
 		for _, app := range apps {
 			app.LatestReviews, err = documents.Current(docs.Status(app.ID), app.LatestReviews, document.Review.IsCurrent)
 			if err != nil {
@@ -146,9 +162,13 @@ func (m *activeApplicationListModel) load() tea.Cmd {
 	}
 }
 
-// applicationsRead shows what was read, keeping the cursor on the
-// application it was on.
+// applicationsRead shows what was read, if it's in the order on screen,
+// keeping the cursor on the application it was on.
 func (m *activeApplicationListModel) applicationsRead(e message.Event[message.Read[message.ActiveApplications]]) tea.Cmd {
+	cmd := m.reading.done(m.load)
+	if e.Payload.Value.Order != m.order {
+		return cmd
+	}
 	previous := m.selected()
 	rows := e.Payload.Value.Rows
 	m.apps = make([]posting.ActiveApplication, len(rows))
@@ -157,7 +177,7 @@ func (m *activeApplicationListModel) applicationsRead(e message.Event[message.Re
 		m.apps[i], m.progress[row.Application.ID] = activeApplicationOf(row)
 	}
 	m.keepCursorOn(previous)
-	return m.reading.done(m.load)
+	return cmd
 }
 
 func (m *activeApplicationListModel) readFailed(message.Event[message.Error]) tea.Cmd {
@@ -258,6 +278,9 @@ func (m *activeApplicationListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 		}
 	case "q":
 		return tea.Quit
+	case "o":
+		m.order = nextHomeOrder[m.order]
+		return m.reload()
 	case "s":
 		if onRow {
 			a := visible[m.cursor].Application

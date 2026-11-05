@@ -376,6 +376,30 @@ func (o *PostingOrder) UnmarshalText(b []byte) error {
 	return unmarshalName(o, b, postingOrderNames[:])
 }
 
+// ApplicationOrder is the order the active applications list in.
+type ApplicationOrder int
+
+const (
+	_ ApplicationOrder = iota
+	ApplicationsByCompany
+	ApplicationsByStatus
+	ApplicationsLongestAtStatus
+)
+
+var applicationOrderNames = [...]string{
+	ApplicationsByCompany:       "company",
+	ApplicationsByStatus:        "status",
+	ApplicationsLongestAtStatus: "longest_at_status",
+}
+
+func (o ApplicationOrder) String() string { return nameOf(o, applicationOrderNames[:]) }
+func (o ApplicationOrder) MarshalText() ([]byte, error) {
+	return marshalName(o, applicationOrderNames[:])
+}
+func (o *ApplicationOrder) UnmarshalText(b []byte) error {
+	return unmarshalName(o, b, applicationOrderNames[:])
+}
+
 // An empty entry is a value with no name, such as the zero Kind.
 func nameOf[E ~int](e E, names []string) string {
 	if e < 0 || int(e) >= len(names) || names[e] == "" {
