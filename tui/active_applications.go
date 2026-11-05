@@ -85,18 +85,16 @@ func newActiveApplicationListModel(applications *service.ApplicationService, doc
 	}
 }
 
-// homeOrders is the order each ApplicationOrder reads in.
-var homeOrders = map[message.ApplicationOrder]application.Order{
-	message.ApplicationsByCompany:       application.OrderCompany,
-	message.ApplicationsByStatus:        application.OrderStatus,
-	message.ApplicationsLongestAtStatus: application.OrderLongestAtStatus,
-}
-
-// nextHomeOrder is the order o switches to from each.
-var nextHomeOrder = map[message.ApplicationOrder]message.ApplicationOrder{
-	message.ApplicationsByCompany:       message.ApplicationsByStatus,
-	message.ApplicationsByStatus:        message.ApplicationsLongestAtStatus,
-	message.ApplicationsLongestAtStatus: message.ApplicationsByCompany,
+// homeOrders is, for each ApplicationOrder, the order it reads in, the
+// order o switches to from it, and what the screen calls it.
+var homeOrders = map[message.ApplicationOrder]struct {
+	read  application.Order
+	next  message.ApplicationOrder
+	label string
+}{
+	message.ApplicationsByCompany:       {application.OrderCompany, message.ApplicationsByStatus, "by company"},
+	message.ApplicationsByStatus:        {application.OrderStatus, message.ApplicationsLongestAtStatus, "by status"},
+	message.ApplicationsLongestAtStatus: {application.OrderLongestAtStatus, message.ApplicationsByCompany, "longest at status first"},
 }
 
 func (m *activeApplicationListModel) Instance() message.ScreenInstance { return m.instance }
@@ -142,7 +140,7 @@ func (m *activeApplicationListModel) load() tea.Cmd {
 		fail := func(err error) tea.Msg {
 			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
 		}
-		apps, err := applications.Active(context.Background(), homeOrders[order])
+		apps, err := applications.Active(context.Background(), homeOrders[order].read)
 		if err != nil {
 			return fail(err)
 		}
@@ -279,7 +277,7 @@ func (m *activeApplicationListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	case "q":
 		return tea.Quit
 	case "o":
-		m.order = nextHomeOrder[m.order]
+		m.order = homeOrders[m.order].next
 		return m.reload()
 	case "s":
 		if onRow {
@@ -388,12 +386,12 @@ func (m *activeApplicationListModel) View() tea.View {
 // render draws the list, each row's Age counting up to now.
 func (m *activeApplicationListModel) render(now time.Time) string {
 	var b strings.Builder
-	help := model.HelpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: search  s: status  e: export PDFs  d: delete  tab: companies  q: quit")
+	help := model.HelpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: search  o: order  s: status  e: export PDFs  d: delete  tab: companies  q: quit")
 	switch {
 	case m.searching:
 		help = model.HelpStyle.Render("type to filter  ↑/↓ (ctrl+n/p): select  enter: keep results  esc: clear")
 	case m.query != "":
-		help = model.HelpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: edit search  esc: clear search  s: status  e: export PDFs  d: delete  q: quit")
+		help = model.HelpStyle.Render("↑/↓ (j/k): select  enter: application detail  /: edit search  esc: clear search  o: order  s: status  e: export PDFs  d: delete  q: quit")
 	}
 	visible := m.visible()
 	// A reload landing while the prompt is open can shrink visible under
@@ -401,7 +399,7 @@ func (m *activeApplicationListModel) render(now time.Time) string {
 	cursor := min(m.cursor, max(len(visible)-1, 0))
 	var prompt string
 	if len(m.apps) > 0 {
-		prompt = searchLine(m.searching, m.query, len(visible), len(m.apps))
+		prompt = searchLine(m.searching, m.query, len(visible), len(m.apps)) + model.DimStyle.Render("  · "+homeOrders[m.order].label)
 		b.WriteString(prompt + "\n")
 	}
 	switch {

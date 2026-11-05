@@ -978,6 +978,34 @@ func TestActiveApplicationListModel_O_CyclesTheOrderKeepingTheCursor(t *testing.
 	}
 }
 
+// A read already on its way when o is pressed is in the order the screen
+// has left, so it isn't shown.
+func TestActiveApplicationListModel_ReadInAnotherOrder_IsDropped(t *testing.T) {
+	t.Parallel()
+
+	m := homeWith(t, testActiveApplications())
+	stale := applicationsReadOf(m, testActiveApplications()[:1])
+	m.keyPressed(runeKey('o'))
+
+	m.applicationsRead(stale)
+
+	if got, want := len(m.apps), len(testActiveApplications()); got != want {
+		t.Errorf("shows %d applications, want %d (the read in the old order dropped)", got, want)
+	}
+}
+
+func TestActiveApplicationListModel_View_NamesTheOrderOCyclesThrough(t *testing.T) {
+	t.Parallel()
+
+	m := homeWith(t, testActiveApplications())
+	for _, want := range []string{"by company", "by status", "longest at status first", "by company"} {
+		if got := ansi.Strip(m.render(time.Time{})); !strings.Contains(got, want) {
+			t.Fatalf("view doesn't name the order %q:\n%s", want, got)
+		}
+		m.keyPressed(runeKey('o'))
+	}
+}
+
 // storedHome is a home screen over a store with one application,
 // registered with a router, in focus or not.
 func storedHome(t *testing.T, focused bool) (*activeApplicationListModel, *model.MsgRouter) {
