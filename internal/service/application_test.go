@@ -114,7 +114,7 @@ func TestApplicationService_Active_IncludesThePostingAndCompany(t *testing.T) {
 	p := testutil.MustIngestPosting(t, s, "job-1", "Software Engineer")
 	app := testutil.MustApplyTo(t, s, p.ID)
 
-	got, err := s.Applications.Active(context.Background())
+	got, err := s.Applications.Active(context.Background(), application.OrderCompany)
 	if err != nil {
 		t.Fatalf("Active: %v", err)
 	}
@@ -138,7 +138,7 @@ func TestApplicationService_Active_IncludesTheLatestReviewPerDocument(t *testing
 		t.Fatalf("Review (second): %v", err)
 	}
 
-	got, err := s.Applications.Active(ctx)
+	got, err := s.Applications.Active(ctx, application.OrderCompany)
 	if err != nil {
 		t.Fatalf("Active: %v", err)
 	}
@@ -164,37 +164,89 @@ func companyStatuses(apps []posting.ActiveApplication) []companyStatus {
 	return got
 }
 
-func TestApplicationService_Active_OrdersByCompanyIgnoringCaseThenWorkflowStatus(t *testing.T) {
+func TestApplicationService_Active_OrdersByCompanyIgnoringCaseAndWorkflowStatus(t *testing.T) {
+	t.Parallel()
+	tests := []struct {
+		order application.Order
+		want  []companyStatus
+	}{
+		{application.OrderCompany, []companyStatus{
+			{"acme labs", application.Started},
+			{"acme labs", application.Submitted},
+			{"acme labs", application.Interviewing},
+			{"acme labs", application.OfferReceived},
+			{"Beta", application.Interviewing},
+			{"Zeta Corp", application.Started},
+			{"Zeta Corp", application.Submitted},
+		}},
+		{application.OrderStatus, []companyStatus{
+			{"acme labs", application.Started},
+			{"Zeta Corp", application.Started},
+			{"acme labs", application.Submitted},
+			{"Zeta Corp", application.Submitted},
+			{"acme labs", application.Interviewing},
+			{"Beta", application.Interviewing},
+			{"acme labs", application.OfferReceived},
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.order.String(), func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			ctx := context.Background()
+			apply := func(companyName string, statuses ...application.Status) {
+				t.Helper()
+				c := testutil.MustAddCompany(t, s, companyName)
+				for i, status := range statuses {
+					p := testutil.MustIngestPostingFor(t, s, c.ID, companyName+"-"+strconv.Itoa(i), status.String())
+					app := testutil.MustApplyTo(t, s, p.ID)
+					if _, err := s.Applications.SetStatus(ctx, app.ID, status); err != nil {
+						t.Fatalf("SetStatus(%s): %v", status, err)
+					}
+				}
+			}
+			apply("Zeta Corp", application.Submitted, application.Started)
+			apply("acme labs", application.OfferReceived, application.Interviewing, application.Started, application.Submitted)
+			apply("Beta", application.Interviewing)
+
+			got, err := s.Applications.Active(ctx, tt.order)
+			if err != nil {
+				t.Fatalf("Active: %v", err)
+			}
+			if diff := cmp.Diff(tt.want, companyStatuses(got)); diff != "" {
+				t.Errorf("Active order (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+// The waits are because status times have one-second resolution.
+func TestApplicationService_Active_LongestAtStatusFirst(t *testing.T) {
 	t.Parallel()
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
-	apply := func(companyName string, statuses ...application.Status) {
+	apply := func(companyName string, status application.Status) {
 		t.Helper()
 		c := testutil.MustAddCompany(t, s, companyName)
-		for i, status := range statuses {
-			p := testutil.MustIngestPostingFor(t, s, c.ID, companyName+"-"+strconv.Itoa(i), status.String())
-			app := testutil.MustApplyTo(t, s, p.ID)
-			if _, err := s.Applications.SetStatus(ctx, app.ID, status); err != nil {
-				t.Fatalf("SetStatus(%s): %v", status, err)
-			}
+		app := testutil.MustApplyTo(t, s, testutil.MustIngestPostingFor(t, s, c.ID, companyName, companyName).ID)
+		if _, err := s.Applications.SetStatus(ctx, app.ID, status); err != nil {
+			t.Fatalf("SetStatus(%s): %v", status, err)
 		}
 	}
-	apply("Zeta Corp", application.Submitted, application.Started)
-	apply("acme labs", application.OfferReceived, application.Interviewing, application.Started, application.Submitted)
-	apply("Beta", application.Interviewing)
+	apply("Zeta Corp", application.Interviewing)
+	time.Sleep(1100 * time.Millisecond)
+	apply("acme labs", application.Started)
+	time.Sleep(1100 * time.Millisecond)
+	apply("Beta", application.Submitted)
 
-	got, err := s.Applications.Active(ctx)
+	got, err := s.Applications.Active(ctx, application.OrderLongestAtStatus)
 	if err != nil {
 		t.Fatalf("Active: %v", err)
 	}
 	want := []companyStatus{
+		{"Zeta Corp", application.Interviewing},
 		{"acme labs", application.Started},
-		{"acme labs", application.Submitted},
-		{"acme labs", application.Interviewing},
-		{"acme labs", application.OfferReceived},
-		{"Beta", application.Interviewing},
-		{"Zeta Corp", application.Started},
-		{"Zeta Corp", application.Submitted},
+		{"Beta", application.Submitted},
 	}
 	if diff := cmp.Diff(want, companyStatuses(got)); diff != "" {
 		t.Errorf("Active order (-want +got):\n%s", diff)
@@ -219,7 +271,7 @@ func TestApplicationService_Active_SameCompanyAndStatus_OldestAtStatusFirstThenB
 		}
 	}
 
-	got, err := s.Applications.Active(ctx)
+	got, err := s.Applications.Active(ctx, application.OrderCompany)
 	if err != nil {
 		t.Fatalf("Active: %v", err)
 	}
@@ -266,7 +318,7 @@ func TestApplicationService_Active_LeavesOutTerminalStatusesAndPostingsWithoutAn
 	}
 	ingest("no application")
 
-	got, err := applications.Active(ctx)
+	got, err := applications.Active(ctx, application.OrderCompany)
 	if err != nil {
 		t.Fatalf("Active: %v", err)
 	}

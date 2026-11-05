@@ -347,10 +347,10 @@ type ApplicationRow struct {
 	Documents   []DocumentProgress `json:"documents"`
 }
 
-// ActiveApplications is every application not at a dead end, in the order
-// the home screen lists them.
+// ActiveApplications is every application not at a dead end, in Order.
 type ActiveApplications struct {
-	Rows []ApplicationRow `json:"rows"`
+	Order ApplicationOrder `json:"order"`
+	Rows  []ApplicationRow `json:"rows"`
 }
 
 func (ActiveApplications) Type() Type { return TypeActiveApplications }
