@@ -212,7 +212,7 @@ type postingService interface {
 
 type applicationService interface {
 	GetIncludingDeleted(ctx context.Context, applicationID int64) (*application.Application, error)
-	Active(ctx context.Context) ([]posting.ActiveApplication, error)
+	Active(ctx context.Context, order application.Order) ([]posting.ActiveApplication, error)
 }
 
 type documentService interface {
@@ -303,7 +303,7 @@ func (st *Stage) startedNotInterested(ctx context.Context, interested []posting.
 	for _, p := range interested {
 		seen[p.Posting.ID] = true
 	}
-	applications, err := st.applications.Active(ctx)
+	applications, err := st.applications.Active(ctx, application.OrderCompany)
 	if err != nil {
 		return nil, fmt.Errorf("stage: list active applications: %w", err)
 	}

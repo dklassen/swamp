@@ -126,7 +126,7 @@ func (m *activeApplicationListModel) load() tea.Cmd {
 		fail := func(err error) tea.Msg {
 			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
 		}
-		apps, err := applications.Active(context.Background())
+		apps, err := applications.Active(context.Background(), application.OrderCompany)
 		if err != nil {
 			return fail(err)
 		}

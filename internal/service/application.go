@@ -66,15 +66,13 @@ func NewApplicationService(db store.Store) *ApplicationService {
 }
 
 // Active returns the applications not at a terminal status (see
-// application.Terminal), by company name ignoring case, then status in
-// workflow order, then longest at its status, then ID, each with its
-// posting, when it entered its status and its latest review per document
-// type.
+// application.Terminal), in order, each with its posting, when it entered
+// its status and its latest review per document type.
 //
 // Status-since and reviews take a few more reads per application rather
 // than a windowed join: active applications are a personal-scale list (a
 // handful to a few dozen), so the extra local round trips are negligible.
-func (service *ApplicationService) Active(ctx context.Context) ([]posting.ActiveApplication, error) {
+func (service *ApplicationService) Active(ctx context.Context, order application.Order) ([]posting.ActiveApplication, error) {
 	apps, err := service.applicationViewer.ListActive(ctx, service.db, application.Terminal())
 	if err != nil {
 		return nil, fmt.Errorf("pursuit: list: %w", err)
@@ -96,15 +94,22 @@ func (service *ApplicationService) Active(ctx context.Context) ([]posting.Active
 		}
 		app.LatestReviews = reviews
 	}
-	slices.SortFunc(apps, func(a, b posting.ActiveApplication) int {
-		return cmp.Or(
-			strings.Compare(strings.ToLower(a.CompanyName), strings.ToLower(b.CompanyName)),
-			cmp.Compare(a.Status, b.Status),
-			a.StatusSince.Compare(b.StatusSince),
-			cmp.Compare(a.ID, b.ID),
-		)
-	})
+	slices.SortFunc(apps, activeOrders[order])
 	return apps, nil
+}
+
+// activeOrders is how Active compares two applications in each order.
+var activeOrders = map[application.Order]func(a, b posting.ActiveApplication) int{
+	application.OrderCompany: func(a, b posting.ActiveApplication) int {
+		return cmp.Or(compareCompany(a, b), cmp.Compare(a.Status, b.Status), a.StatusSince.Compare(b.StatusSince), cmp.Compare(a.ID, b.ID))
+	},
+	application.OrderStatus: func(a, b posting.ActiveApplication) int {
+		return cmp.Or(cmp.Compare(a.Status, b.Status), compareCompany(a, b), a.StatusSince.Compare(b.StatusSince), cmp.Compare(a.ID, b.ID))
+	},
+}
+
+func compareCompany(a, b posting.ActiveApplication) int {
+	return strings.Compare(strings.ToLower(a.CompanyName), strings.ToLower(b.CompanyName))
 }
 
 // Get returns a live application by ID, or store.ErrNotFound.
