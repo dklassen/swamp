@@ -219,8 +219,10 @@ func TestApplicationDetailModel_EveryDocumentType(t *testing.T) {
 			t.Fatalf("%q sent %#v, want one Nav to the review form", unicode.ToUpper(key), got)
 		}
 		nav, ok := got[0].(message.Event[message.Nav[message.DocumentReview]])
-		want := message.Nav[message.DocumentReview]{Op: message.NavPush, Screen: message.ScreenDocumentReviewForm,
-			Value: message.DocumentReview{ApplicationID: 1, DocumentType: documentTypeSnapshots[documentType], Content: "# " + documentType.String()}}
+		want := message.Nav[message.DocumentReview]{
+			Op: message.NavPush, Screen: message.ScreenDocumentReviewForm,
+			Value: message.DocumentReview{ApplicationID: 1, DocumentType: documentTypeSnapshots[documentType], Content: "# " + documentType.String()},
+		}
 		if !ok || nav.Payload != want {
 			t.Errorf("%q: sent %+v, want a push of the review form on the %s with its content", unicode.ToUpper(key), got[0], documentType.Label())
 		}

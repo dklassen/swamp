@@ -28,7 +28,7 @@ import (
 // exec.Command(...).Start() for a detached GUI process.
 func editorCommand(editorEnv, path string) (string, []string, error) {
 	if editorEnv == "" {
-		return "", nil, fmt.Errorf("tui: $EDITOR is not set")
+		return "", nil, errors.New("tui: $EDITOR is not set")
 	}
 	return editorEnv, []string{path}, nil
 }

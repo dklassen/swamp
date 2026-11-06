@@ -118,8 +118,10 @@ func TestDocumentReviewSelectModel_Enter_OnExistingDocument_ReplacesItselfWithTh
 	if want := (message.Subject{Type: message.TypeApplication, ID: testReviewApplication.ID}); nav.Meta.Subject != want {
 		t.Errorf("Subject = %+v, want %+v", nav.Meta.Subject, want)
 	}
-	wantNav := message.Nav[message.DocumentReview]{Op: message.NavReplace, Screen: message.ScreenDocumentReviewForm,
-		Value: message.DocumentReview{ApplicationID: testReviewApplication.ID, DocumentType: message.DocumentCoverLetter, Content: want}}
+	wantNav := message.Nav[message.DocumentReview]{
+		Op: message.NavReplace, Screen: message.ScreenDocumentReviewForm,
+		Value: message.DocumentReview{ApplicationID: testReviewApplication.ID, DocumentType: message.DocumentCoverLetter, Content: want},
+	}
 	if diff := cmp.Diff(wantNav, nav.Payload); diff != "" {
 		t.Errorf("Nav mismatch (-want +got):\n%s", diff)
 	}

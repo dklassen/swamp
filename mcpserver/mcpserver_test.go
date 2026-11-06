@@ -831,7 +831,7 @@ func TestSearchPostings_FindsADraftedApplicationByCompany(t *testing.T) {
 }
 
 // TestSearchPostings_InterestedShortlist: postings marked interested that
-// have no application yet -- "what have I shortlisted but not started?"
+// have no application yet, the ones shortlisted but not started.
 func TestSearchPostings_InterestedShortlist(t *testing.T) {
 	t.Parallel()
 

@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -88,8 +89,10 @@ func TestPostingListModel_Enter_PushesDetailSteppingThroughTheList(t *testing.T)
 	if want := (message.Subject{Type: message.TypePosting, ID: designer.ID}); nav.Meta.Subject != want {
 		t.Errorf("Subject = %+v, want %+v", nav.Meta.Subject, want)
 	}
-	want := message.Nav[message.PostingDetail]{Op: message.NavPush, Screen: message.ScreenPostingDetail,
-		Value: message.PostingDetail{Posting: listingPosting(designer), Siblings: []int64{1, 2}}}
+	want := message.Nav[message.PostingDetail]{
+		Op: message.NavPush, Screen: message.ScreenPostingDetail,
+		Value: message.PostingDetail{Posting: listingPosting(designer), Siblings: []int64{1, 2}},
+	}
 	if diff := cmp.Diff(want, nav.Payload); diff != "" {
 		t.Errorf("Nav (-want +got):\n%s", diff)
 	}
@@ -639,7 +642,7 @@ func listOfRoles(t *testing.T, n, height int) *App {
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	var board []jobboard.Posting
 	for i := 1; i <= n; i++ {
-		board = append(board, jobboard.Posting{SourceID: fmt.Sprint(i), Title: fmt.Sprintf("Role %d", i)})
+		board = append(board, jobboard.Posting{SourceID: strconv.Itoa(i), Title: fmt.Sprintf("Role %d", i)})
 	}
 	app := newTestApp(t, s, newTestSyncer(s, map[string][]jobboard.Posting{"acme": board}))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: height})
@@ -713,7 +716,7 @@ func TestPostingList_SSortsByFitAndBack(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	var board []jobboard.Posting
 	for i := 1; i <= 6; i++ {
-		board = append(board, jobboard.Posting{SourceID: fmt.Sprint(i), Title: fmt.Sprintf("Role %d", i)})
+		board = append(board, jobboard.Posting{SourceID: strconv.Itoa(i), Title: fmt.Sprintf("Role %d", i)})
 	}
 	app := newTestApp(t, s, newTestSyncer(s, map[string][]jobboard.Posting{"acme": board}))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 16})

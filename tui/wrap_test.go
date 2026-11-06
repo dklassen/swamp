@@ -11,7 +11,7 @@ func TestWrapToWidth_LongLine_NoLineExceedsWidth(t *testing.T) {
 	long := strings.Repeat("word ", 40) // much wider than 20 cols
 	wrapped := wrapToWidth(long, 20)
 
-	for _, line := range strings.Split(wrapped, "\n") {
+	for line := range strings.SplitSeq(wrapped, "\n") {
 		if w := lipgloss.Width(line); w > 20 {
 			t.Fatalf("line %q has width %d, want <= 20", line, w)
 		}

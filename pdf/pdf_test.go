@@ -617,13 +617,13 @@ func TestRender_ThematicBreakIsNeverTheLastMarkOnAPage(t *testing.T) {
 	// than paragraphs alone -- fine enough to land inside the few
 	// millimetres of a heading's space-above.
 	for filler := 1; filler <= 45; filler++ {
-		for items := 0; items <= 4; items++ {
+		for items := range 5 {
 			var b strings.Builder
 			b.WriteString("# Title\n\n")
-			for i := 0; i < filler; i++ {
+			for i := range filler {
 				fmt.Fprintf(&b, "Filler paragraph number %d.\n\n", i)
 			}
-			for i := 0; i < items; i++ {
+			for i := range items {
 				fmt.Fprintf(&b, "- Filler item %d\n", i)
 			}
 			b.WriteString("\n---\n\n## Education\n\nBody under heading.\n")

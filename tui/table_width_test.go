@@ -10,7 +10,7 @@ import (
 // tableWidthOf is how wide the table in view is, from its top border.
 func tableWidthOf(t *testing.T, view string) int {
 	t.Helper()
-	for _, line := range strings.Split(view, "\n") {
+	for line := range strings.SplitSeq(view, "\n") {
 		if strings.Contains(line, "╭") {
 			return lipgloss.Width(line)
 		}

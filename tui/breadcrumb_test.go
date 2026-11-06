@@ -9,7 +9,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 
 	"github.com/dklassen/swamp/documents"
-	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/testutil"
@@ -23,7 +22,7 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 
 	p := message.Posting{ID: 5, Title: "Staff Engineer"}
 	view := posting.ActiveApplication{
-		Application: application.Application{ID: 1},
+		ID:          1,
 		Posting:     posting.Posting{ID: 9, IngestedFields: posting.IngestedFields{Title: "Engineering Manager"}},
 		CompanyName: "Initech",
 	}
@@ -213,7 +212,7 @@ func TestApp_Header_LongBreadcrumbLosesItsMiddleFirst(t *testing.T) {
 			d := newPostingDetailModel(nil, nil, nil, nil, message.PostingDetail{Posting: message.Posting{ID: 9}}, message.ContentSize{})
 			app.stack.Push(message.ScreenPostingDetail, d)
 
-			line := strings.Split(ansi.Strip(app.header()), "\n")[0]
+			line, _, _ := strings.Cut(ansi.Strip(app.header()), "\n")
 			if got := strings.TrimSpace(line); got != tt.want {
 				t.Errorf("breadcrumb = %q, want %q", got, tt.want)
 			}

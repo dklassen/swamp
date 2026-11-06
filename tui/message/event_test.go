@@ -213,8 +213,10 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 			Companies: 3, Failed: []string{"Globex"}, Skipped: []string{"Initech"},
 		}}))},
 		{name: "error", check: roundTrip(message.New(src, subject, message.OpUpdated, at, message.Error{Code: message.ErrSyncInProgress, Text: "a sync is already running"}))},
-		{name: "nav", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Nav[message.Company]{Op: message.NavReplace, Screen: message.ScreenCompanyEdit,
-			Value: message.Company{ID: 3, Name: "Acme", CreatedAt: at, UpdatedAt: at}}))},
+		{name: "nav", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Nav[message.Company]{
+			Op: message.NavReplace, Screen: message.ScreenCompanyEdit,
+			Value: message.Company{ID: 3, Name: "Acme", CreatedAt: at, UpdatedAt: at},
+		}))},
 		{name: "pop", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Nav[message.None]{Op: message.NavPop}))},
 		{name: "notify", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Notify{Status: "saved"}))},
 		{name: "signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.ContentSize]{Value: r}))},
@@ -239,18 +241,26 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		}))},
 		{name: "posting closed error", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpCreated, at, message.Error{Code: message.ErrPostingClosed, Text: "posting is closed"}))},
 		{name: "hide archived signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.HideArchived]{Value: message.HideArchived{Hidden: true}}))},
-		{name: "filter selection nav", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Nav[message.FilterSelection]{Op: message.NavPush, Screen: message.ScreenFilterSelect,
-			Value: message.FilterSelection{Company: message.Company{ID: 3, Name: "Acme", CreatedAt: at, UpdatedAt: at}, Departments: []string{"Platform"}, Locations: []string{"Remote"}}}))},
-		{name: "posting detail nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpNone, at, message.Nav[message.PostingDetail]{Op: message.NavReplace, Screen: message.ScreenPostingDetail,
+		{name: "filter selection nav", check: roundTrip(message.New(src, subject, message.OpNone, at, message.Nav[message.FilterSelection]{
+			Op: message.NavPush, Screen: message.ScreenFilterSelect,
+			Value: message.FilterSelection{Company: message.Company{ID: 3, Name: "Acme", CreatedAt: at, UpdatedAt: at}, Departments: []string{"Platform"}, Locations: []string{"Remote"}},
+		}))},
+		{name: "posting detail nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpNone, at, message.Nav[message.PostingDetail]{
+			Op: message.NavReplace, Screen: message.ScreenPostingDetail,
 			Value: message.PostingDetail{
 				Posting:     message.Posting{ID: 5, CompanyID: 3, Title: "Engineer", ContentSHA256: "abc", ListingStatus: message.ListingOpen},
 				Application: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted, CreatedAt: at, UpdatedAt: at},
 				Siblings:    []int64{6, 5, 7},
-			}}))},
-		{name: "application status nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.Application]{Op: message.NavPush, Screen: message.ScreenApplicationStatus,
-			Value: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationInterviewing, CreatedAt: at, UpdatedAt: at}}))},
-		{name: "application notes nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.Application]{Op: message.NavPush, Screen: message.ScreenApplicationNotes,
-			Value: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted, Notes: "recruiter call Tuesday", CreatedAt: at, UpdatedAt: at}}))},
+			},
+		}))},
+		{name: "application status nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.Application]{
+			Op: message.NavPush, Screen: message.ScreenApplicationStatus,
+			Value: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationInterviewing, CreatedAt: at, UpdatedAt: at},
+		}))},
+		{name: "application notes nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.Application]{
+			Op: message.NavPush, Screen: message.ScreenApplicationNotes,
+			Value: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted, Notes: "recruiter call Tuesday", CreatedAt: at, UpdatedAt: at},
+		}))},
 		{name: "posting application read", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpNone, at, message.Read[message.PostingApplication]{Value: message.PostingApplication{
 			Posting: message.Posting{ID: 5, CompanyID: 3, Title: "Engineer", ListingStatus: message.ListingClosed},
 		}}))},
@@ -265,9 +275,11 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		}}))},
 		{name: "posting search read", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Read[message.PostingSearch]{Value: message.PostingSearch{
 			Query: "platform", Order: message.OrderBestFit, AfterID: 9, AfterScore: 4, Limit: 20,
-			Listings: []message.Listing{{ID: 5, CompanyName: "Acme", Title: "Engineer", Department: "Platform", Location: "Remote", WorkplaceType: "Remote",
+			Listings: []message.Listing{{
+				ID: 5, CompanyName: "Acme", Title: "Engineer", Department: "Platform", Location: "Remote", WorkplaceType: "Remote",
 				JobURL: "https://example.com/5", ApplicationURL: "https://example.com/5/apply", ListingStatus: message.ListingOpen, FirstSeenAt: at,
-				Interested: true, Score: 4, ScoreStale: true}},
+				Interested: true, Score: 4, ScoreStale: true,
+			}},
 			HasMore: true, Total: 21, WithoutQuery: 40,
 		}}))},
 		{name: "search debounce signal", check: roundTrip(message.New(src, message.Subject{}, message.OpNone, at, message.Signal[message.SearchDebounce]{Value: message.SearchDebounce{Query: "plat"}}))},
@@ -304,10 +316,14 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 			After: message.Review{ID: 8, ApplicationID: 4, DocumentType: message.DocumentCoverLetter, Outcome: message.ReviewFlagged, Notes: "too long", CreatedAt: at},
 		}))},
 		{name: "document changed error", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpCreated, at, message.Error{Code: message.ErrDocumentChanged, Text: "the document changed"}))},
-		{name: "review select nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.Application]{Op: message.NavPush, Screen: message.ScreenDocumentReviewSelect,
-			Value: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted}}))},
-		{name: "review form nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.DocumentReview]{Op: message.NavReplace, Screen: message.ScreenDocumentReviewForm,
-			Value: message.DocumentReview{ApplicationID: 4, DocumentType: message.DocumentResume, Content: "# Resume\n"}}))},
+		{name: "review select nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.Application]{
+			Op: message.NavPush, Screen: message.ScreenDocumentReviewSelect,
+			Value: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted},
+		}))},
+		{name: "review form nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.DocumentReview]{
+			Op: message.NavReplace, Screen: message.ScreenDocumentReviewForm,
+			Value: message.DocumentReview{ApplicationID: 4, DocumentType: message.DocumentResume, Content: "# Resume\n"},
+		}))},
 		{name: "export nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.ApplicationDetail]{
 			Op: message.NavPush, Screen: message.ScreenApplicationExport, Value: message.ApplicationDetail{Application: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted}, Posting: message.Posting{ID: 5, Title: "Engineer", ListingStatus: message.ListingOpen}, CompanyName: "Acme"},
 		}))},
@@ -317,8 +333,10 @@ func TestEvent_EachPrimitiveRoundTripsThroughJSON(t *testing.T) {
 		{name: "export ran", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Ran[message.ExportReport]{Value: message.ExportReport{
 			Dir: "/home/me/Desktop", Paths: []string{"/home/me/Desktop/acme-engineer-resume.pdf"}, Skipped: []message.DocumentType{message.DocumentCoverLetter},
 		}}))},
-		{name: "application form nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.Application]{Op: message.NavPush, Screen: message.ScreenApplicationForm,
-			Value: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted}}))},
+		{name: "application form nav", check: roundTrip(message.New(src, message.Subject{Type: message.TypeApplication, ID: 4}, message.OpNone, at, message.Nav[message.Application]{
+			Op: message.NavPush, Screen: message.ScreenApplicationForm,
+			Value: message.Application{ID: 4, PostingID: 5, Status: message.ApplicationStarted},
+		}))},
 		{name: "application form read", check: roundTrip(message.New(src, message.Subject{Type: message.TypePosting, ID: 5}, message.OpNone, at, message.Read[message.ApplicationForm]{Value: message.ApplicationForm{
 			Documents: map[message.DocumentType]message.FormRequirement{message.DocumentResume: message.FormRequired, message.DocumentCoverLetter: message.FormOptional},
 			Questions: []message.FormQuestion{{Label: "Why us?", Required: true, Type: "single_select", Options: []string{"Yes", "No"}}},

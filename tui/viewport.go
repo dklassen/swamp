@@ -10,10 +10,7 @@ func visibleWindow(cursor, n, rows int) (start, end int) {
 	if rows <= 0 || n <= rows {
 		return 0, n
 	}
-	start = cursor - rows/2
-	if start < 0 {
-		start = 0
-	}
+	start = max(cursor-rows/2, 0)
 	maxStart := n - rows
 	if start > maxStart {
 		start = maxStart

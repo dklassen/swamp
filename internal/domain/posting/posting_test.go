@@ -26,7 +26,7 @@ func TestPosting_MarshalJSON_RealPublishedAtIsPreserved(t *testing.T) {
 	t.Parallel()
 
 	published := time.Date(2026, 8, 24, 13, 15, 0, 0, time.UTC)
-	encoded, err := json.Marshal(posting.Posting{ID: 1, IngestedFields: posting.IngestedFields{PublishedAt: posting.OptionalTime{Time: published}}})
+	encoded, err := json.Marshal(posting.Posting{ID: 1, PublishedAt: posting.OptionalTime{Time: published}})
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}
@@ -40,7 +40,7 @@ func TestPosting_MarshalJSON_RealPublishedAtIsPreserved(t *testing.T) {
 func TestPosting_MarshalJSON_KeepsEveryField(t *testing.T) {
 	t.Parallel()
 
-	encoded, err := json.Marshal(posting.Posting{ID: 7, IngestedFields: posting.IngestedFields{Title: "Engineer"}})
+	encoded, err := json.Marshal(posting.Posting{ID: 7, Title: "Engineer"})
 	if err != nil {
 		t.Fatalf("Marshal: %v", err)
 	}

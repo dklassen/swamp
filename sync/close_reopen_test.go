@@ -56,15 +56,15 @@ func TestClosePosting(t *testing.T) {
 	}{
 		{name: "open, no application", wantHistory: 1},
 		{
-			name: "open, application at a status it ends", application: ptr(application.Started),
+			name: "open, application at a status it ends", application: new(application.Started),
 			wantApp: application.PostingClosed, wantHistory: 1,
 		},
 		{
-			name: "open, application at a status it leaves alone", application: ptr(application.Interviewing),
+			name: "open, application at a status it leaves alone", application: new(application.Interviewing),
 			wantApp: application.Interviewing, wantHistory: 1,
 		},
 		{
-			name: "already closed: changes nothing", alreadyClosed: true, application: ptr(application.Started),
+			name: "already closed: changes nothing", alreadyClosed: true, application: new(application.Started),
 			wantApp: application.Started, wantHistory: 0,
 		},
 	}
@@ -227,5 +227,3 @@ func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 		})
 	}
 }
-
-func ptr[T any](v T) *T { return &v }

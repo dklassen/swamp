@@ -828,7 +828,7 @@ func TestCompanyListModel_View_InfoBoxIsAsWideAsTheTable(t *testing.T) {
 		m := companyListOf(t, companies, nil, width, 40)
 		typeKeys(t, m, "i")
 		var tops []int
-		for _, line := range strings.Split(companyListView(m), "\n") {
+		for line := range strings.SplitSeq(companyListView(m), "\n") {
 			if strings.Contains(line, "╭") {
 				tops = append(tops, lipgloss.Width(line))
 			}

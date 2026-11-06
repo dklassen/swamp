@@ -161,8 +161,7 @@ func TestReleaseTerminalOnPanic_ToolPanicCrashesAfterReleasing(t *testing.T) {
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) {
+	if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 		t.Fatalf("the process survived a tool panic (err %v), want a crash; stderr:\n%s", err, stderr.String())
 	}
 	out := stderr.String()
@@ -227,8 +226,7 @@ func TestStartMCP_ServePanicCrashesAfterReleasing(t *testing.T) {
 	cmd.Stderr = &stderr
 	err := cmd.Run()
 
-	var exitErr *exec.ExitError
-	if !errors.As(err, &exitErr) {
+	if _, ok := errors.AsType[*exec.ExitError](err); !ok {
 		t.Fatalf("the process survived a panic in Serve (err %v), want a crash; stderr:\n%s", err, stderr.String())
 	}
 	out := stderr.String()

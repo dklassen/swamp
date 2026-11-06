@@ -49,9 +49,9 @@ func TestScoreSnapshot_KeepsWhatTheFitSectionShows(t *testing.T) {
 
 	at := time.Date(2026, 10, 29, 9, 0, 0, 0, time.UTC)
 	s := score.Score{
-		ID:            3,
-		PostingID:     5,
-		Provenance:    score.Provenance{Model: "claude", ClientName: "cli", ClientVersion: "1.0", ProfileSHA256: "def"},
+		ID:        3,
+		PostingID: 5,
+		Model:     "claude", ClientName: "cli", ClientVersion: "1.0", ProfileSHA256: "def",
 		Score:         4,
 		Reason:        "fits",
 		ContentSHA256: "abc",

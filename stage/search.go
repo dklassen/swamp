@@ -163,7 +163,7 @@ func (st *Stage) Search(ctx context.Context, opts SearchOptions) (*SearchResult,
 		ListingStatus:   listingStatus,
 		IncludeArchived: opts.IncludeArchived,
 	}
-	for _, term := range strings.Fields(opts.Query) {
+	for term := range strings.FieldsSeq(opts.Query) {
 		filters.Terms = append(filters.Terms, strings.ToLower(term))
 	}
 	for _, status := range opts.ApplicationStatuses {

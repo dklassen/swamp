@@ -254,6 +254,7 @@ var listingStatusNames = [...]string{
 
 func (s ListingStatus) String() string               { return nameOf(s, listingStatusNames[:]) }
 func (s ListingStatus) MarshalText() ([]byte, error) { return marshalName(s, listingStatusNames[:]) }
+
 func (s *ListingStatus) UnmarshalText(b []byte) error {
 	return unmarshalName(s, b, listingStatusNames[:])
 }
@@ -290,6 +291,7 @@ func (s ApplicationStatus) String() string { return nameOf(s, applicationStatusN
 func (s ApplicationStatus) MarshalText() ([]byte, error) {
 	return marshalName(s, applicationStatusNames[:])
 }
+
 func (s *ApplicationStatus) UnmarshalText(b []byte) error {
 	return unmarshalName(s, b, applicationStatusNames[:])
 }
@@ -332,6 +334,7 @@ func (r FormRequirement) String() string { return nameOf(r, formRequirementNames
 func (r FormRequirement) MarshalText() ([]byte, error) {
 	return marshalName(r, formRequirementNames[:])
 }
+
 func (r *FormRequirement) UnmarshalText(b []byte) error {
 	return unmarshalName(r, b, formRequirementNames[:])
 }
@@ -352,6 +355,7 @@ var reviewOutcomeNames = [...]string{
 
 func (o ReviewOutcome) String() string               { return nameOf(o, reviewOutcomeNames[:]) }
 func (o ReviewOutcome) MarshalText() ([]byte, error) { return marshalName(o, reviewOutcomeNames[:]) }
+
 func (o *ReviewOutcome) UnmarshalText(b []byte) error {
 	return unmarshalName(o, b, reviewOutcomeNames[:])
 }
@@ -396,6 +400,7 @@ func (o ApplicationOrder) String() string { return nameOf(o, applicationOrderNam
 func (o ApplicationOrder) MarshalText() ([]byte, error) {
 	return marshalName(o, applicationOrderNames[:])
 }
+
 func (o *ApplicationOrder) UnmarshalText(b []byte) error {
 	return unmarshalName(o, b, applicationOrderNames[:])
 }

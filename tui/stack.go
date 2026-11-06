@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"errors"
 	"fmt"
 	"slices"
 
@@ -41,7 +42,7 @@ func (st *Stack) Push(kind message.Screen, s stackScreen) {
 func (st *Stack) Pop() (stackScreen, error) {
 	n := len(st.entries)
 	if n == 0 {
-		return nil, fmt.Errorf("tui: no screen is pushed to pop")
+		return nil, errors.New("tui: no screen is pushed to pop")
 	}
 	top := st.entries[n-1].screen
 	st.entries = st.entries[:n-1]

@@ -203,26 +203,11 @@ func saveFilters(companies *service.CompanyService, src message.Source, sel mess
 func filterWindow(cursor, deptCount, locCount, rows int) (deptStart, deptEnd, locStart, locEnd int) {
 	start, end := visibleWindow(cursor, deptCount+locCount, rows)
 
-	deptStart = start
-	if deptStart > deptCount {
-		deptStart = deptCount
-	}
-	deptEnd = end
-	if deptEnd > deptCount {
-		deptEnd = deptCount
-	}
+	deptStart = min(start, deptCount)
+	deptEnd = min(end, deptCount)
 
-	locStart = start - deptCount
-	if locStart < 0 {
-		locStart = 0
-	}
-	locEnd = end - deptCount
-	if locEnd < 0 {
-		locEnd = 0
-	}
-	if locEnd > locCount {
-		locEnd = locCount
-	}
+	locStart = max(start-deptCount, 0)
+	locEnd = min(max(end-deptCount, 0), locCount)
 	return deptStart, deptEnd, locStart, locEnd
 }
 

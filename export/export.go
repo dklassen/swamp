@@ -11,7 +11,6 @@ package export
 import (
 	"fmt"
 	"os"
-
 	"strings"
 
 	"github.com/dklassen/swamp/internal/domain/document"

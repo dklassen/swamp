@@ -2961,7 +2961,7 @@ func TestApp_PostingDetail_LongLine_WrapsToViewportWidth(t *testing.T) {
 	app = openPostingList(t, app)
 	app = openPostingDetail(t, app)
 
-	for _, line := range strings.Split(openDetail(t, app).viewport.View(), "\n") {
+	for line := range strings.SplitSeq(openDetail(t, app).viewport.View(), "\n") {
 		if w := lipgloss.Width(line); w > 20 {
 			t.Fatalf("rendered line %q has width %d, want <= 20", line, w)
 		}
@@ -2990,7 +2990,7 @@ func TestApp_WindowResize_OnPostingDetail_ReWraps(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 15, Height: 200})
 
 	view := openDetail(t, app).viewport.View()
-	for _, line := range strings.Split(view, "\n") {
+	for line := range strings.SplitSeq(view, "\n") {
 		if w := lipgloss.Width(line); w > 15 {
 			t.Fatalf("rendered line %q has width %d, want <= 15 after resize", line, w)
 		}
@@ -4130,7 +4130,7 @@ func TestApp_ApplicationFormEscWithEdits_DrawsDiscardBox(t *testing.T) {
 
 	view := viewText(app)
 	box := ansi.Strip(applicationForm(t, app).discardBox(app.width))
-	for _, line := range strings.Split(box, "\n") {
+	for line := range strings.SplitSeq(box, "\n") {
 		if !strings.Contains(view, line) {
 			t.Fatalf("view doesn't draw the discard box line %q:\n%s", line, view)
 		}
@@ -4160,7 +4160,7 @@ func TestApp_NotesEscWithEdits_DrawsDiscardBox(t *testing.T) {
 
 	view := viewText(app)
 	box := ansi.Strip(notesEditor(t, app).discardBox(app.width))
-	for _, line := range strings.Split(box, "\n") {
+	for line := range strings.SplitSeq(box, "\n") {
 		if !strings.Contains(view, line) {
 			t.Fatalf("view doesn't draw the discard box line %q:\n%s", line, view)
 		}

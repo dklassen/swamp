@@ -57,7 +57,7 @@ func stripHTML(s string) string {
 	}
 
 	var lines []string
-	for _, line := range strings.Split(b.String(), "\n") {
+	for line := range strings.SplitSeq(b.String(), "\n") {
 		if trimmed := strings.TrimSpace(line); trimmed != "" {
 			lines = append(lines, trimmed)
 		}

@@ -57,7 +57,8 @@ func applyURL(p message.Posting) string {
 }
 
 func newApplicationSubmitModel(applications *service.ApplicationService, documentService *service.DocumentService, docs *documents.Store,
-	openURL func(message.Source, message.Subject, string) tea.Cmd, d message.ApplicationDetail, dir string) *applicationSubmitModel {
+	openURL func(message.Source, message.Subject, string) tea.Cmd, d message.ApplicationDetail, dir string,
+) *applicationSubmitModel {
 	return &applicationSubmitModel{
 		applications: applications, documentService: documentService, documents: docs, openURL: openURL,
 		detail: d, dir: dir, url: applyURL(d.Posting), instance: message.NewScreenInstance(),

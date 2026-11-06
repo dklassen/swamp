@@ -60,13 +60,13 @@ func TestOverlay_StylesDontBleed(t *testing.T) {
 	if got := ansi.Strip(row); got != "abc####hij" {
 		t.Fatalf("row = %q, want %q", got, "abc####hij")
 	}
-	at := strings.Index(row, "####")
+	before0, after0, _ := strings.Cut(row, "####")
 	sgr := regexp.MustCompile(`\x1b\[[0-9;]*m`)
-	before := sgr.FindAllString(row[:at], -1)
+	before := sgr.FindAllString(before0, -1)
 	if len(before) == 0 || (before[len(before)-1] != "\x1b[m" && before[len(before)-1] != "\x1b[0m") {
 		t.Errorf("the box's text follows styles %q, want a reset last: the row's red bleeds into it\nrow %q", before, row)
 	}
-	after := row[at+len("####"):]
+	after := after0
 	if i := strings.Index(after, red); i == -1 || i > strings.Index(after, "hij") {
 		t.Errorf("the row after the box is %q, want it red again before hij", after)
 	}

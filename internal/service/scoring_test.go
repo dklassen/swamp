@@ -3,6 +3,7 @@ package service_test
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
@@ -237,7 +238,7 @@ func TestScoringService_Pending_Pages(t *testing.T) {
 	acme := testutil.MustAddCompany(t, s, "Acme")
 	var ids []int64
 	for i := 1; i <= 5; i++ {
-		ids = append(ids, testutil.MustIngestPostingFor(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i)).ID)
+		ids = append(ids, testutil.MustIngestPostingFor(t, s, acme.ID, strconv.Itoa(i), fmt.Sprintf("Role %d", i)).ID)
 	}
 
 	var got [][]int64

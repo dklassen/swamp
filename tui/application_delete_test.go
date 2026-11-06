@@ -298,18 +298,22 @@ var deleteOwners = []struct {
 		m, r := storedHome(t, true)
 		settle(t, r, runCmd(t, m.Init()))
 		runCmd(t, r.Dispatch(runeKey('d')))
-		return confirmingOwner{r: r, confirm: func() *applicationDeleteModel { return m.confirm },
+		return confirmingOwner{
+			r: r, confirm: func() *applicationDeleteModel { return m.confirm },
 			view: func() string { return m.View().Content },
-			next: runeKey('/'), took: func([]tea.Msg) bool { return m.searching }}
+			next: runeKey('/'), took: func([]tea.Msg) bool { return m.searching },
+		}
 	}},
 	{name: "application detail", open: func(t *testing.T) confirmingOwner {
 		m, r, _ := applicationDetailWith(t)
 		settle(t, r, runCmd(t, m.Init()))
 		r.Dispatch(focusOn(m.Instance()))
 		runCmd(t, r.Dispatch(runeKey('D')))
-		return confirmingOwner{r: r, confirm: func() *applicationDeleteModel { return m.confirm },
+		return confirmingOwner{
+			r: r, confirm: func() *applicationDeleteModel { return m.confirm },
 			view: func() string { return m.View().Content },
-			next: runeKey('b'), took: func(sent []tea.Msg) bool { return popsIn(sent, m.Instance()) }}
+			next: runeKey('b'), took: func(sent []tea.Msg) bool { return popsIn(sent, m.Instance()) },
+		}
 	}},
 }
 

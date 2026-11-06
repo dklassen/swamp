@@ -76,11 +76,9 @@ func syncOverlapping(t *testing.T, s testutil.TestApp, companyID int64, runs int
 	errs := make([]error, runs)
 	var done gosync.WaitGroup
 	for i := range runs {
-		done.Add(1)
-		go func() {
-			defer done.Done()
+		done.Go(func() {
 			results[i], errs[i] = syncer.syncHeld(context.Background(), *company, fetcher, Result{CompanyID: companyID})
-		}()
+		})
 	}
 	done.Wait()
 	for _, err := range errs {

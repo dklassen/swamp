@@ -38,7 +38,7 @@ func TestApplicationStatusModel_CursorMovement_ClampsToStatusCount(t *testing.T)
 	t.Parallel()
 
 	m := statusPickerOn(nil, application.Started)
-	for i := 0; i < len(applicationStatuses)+5; i++ {
+	for range len(applicationStatuses) + 5 {
 		m.keyPressed(tea.KeyPressMsg{Code: tea.KeyDown})
 	}
 	if m.cursor != len(applicationStatuses)-1 {
