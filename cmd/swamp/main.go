@@ -46,44 +46,61 @@ import (
 )
 
 func main() {
-	rf, err := parseArgs(os.Args[1:])
+	os.Exit(run(os.Args[1:]))
+}
+
+// errFailuresReported: the command has already said what failed, so it
+// only sets the exit status.
+var errFailuresReported = errors.New("failures reported")
+
+// run returns the exit status rather than exiting, so every deferred close
+// runs first.
+func run(args []string) int {
+	rf, err := parseArgs(args)
 	if errors.Is(err, flag.ErrHelp) {
 		fmt.Println(usage)
-		return
+		return 0
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "swamp: %v\n%s\n", err, usage)
-		os.Exit(2)
+		return 2
 	}
+	if err := runCommand(rf); err != nil {
+		if !errors.Is(err, errFailuresReported) {
+			log.Print(err)
+		}
+		return 1
+	}
+	return 0
+}
 
+func runCommand(rf runFlags) error {
 	dbPath := os.Getenv("SWAMP_DB_PATH")
 	if dbPath == "" {
 		dbPath = "swamp.db"
 	}
 
-	// Default base directory is "assets", not "documents" -- naming the
-	// storage path is the only thing this convention was renamed for
-	//; the package/env var identifiers stay as
-	// "documents".
+	// Only the directory was renamed; the package and env var stay "documents".
 	documentsPath := os.Getenv("SWAMP_DOCUMENTS_PATH")
 	if documentsPath == "" {
 		documentsPath = "assets"
 	}
 
 	if rf.command == cmdMigrate {
-		runMigrate(dbPath, rf.migrate)
-		return
+		return runMigrate(dbPath, rf.migrate)
 	}
 	// On a plain handle: with an origin, an out-of-date database would fail
 	// in the connection hook instead, with a less useful error.
-	checkSchema(dbPath)
+	if err := checkSchema(dbPath); err != nil {
+		return err
+	}
 
 	// Other processes read the origin to tell who made a change.
 	cfg := store.DefaultConfig()
 	cfg.Origin = fmt.Sprintf("%s:%d", rf.kind(), os.Getpid())
 	sqlDB, err := store.Open(dbPath, cfg)
 	if err != nil {
-		log.Fatalf("open db: %v", err)
+		return fmt.Errorf("open db: %w", err)
 	}
 	defer func() {
 		if err := sqlDB.Close(); err != nil {
@@ -96,27 +113,15 @@ func main() {
 
 	switch rf.command {
 	case cmdFetch:
-		if runFetch(db) > 0 {
-			// os.Exit skips the deferred Close, so close first to
-			// leave the database checkpointed.
-			if err := sqlDB.Close(); err != nil {
-				log.Printf("close db: %v", err)
-			}
-			os.Exit(1)
-		}
-		return
+		return runFetch(db)
 	case cmdStage:
-		runStage(db, documentsStore, rf.stage, rf.postingID)
-		return
+		return runStage(db, documentsStore, rf.stage, rf.postingID)
 	case cmdExport:
-		runExport(db, documentsStore, rf.applicationID)
-		return
+		return runExport(db, documentsStore, rf.applicationID)
 	case cmdImport:
-		runImport(db, rf.seedFile)
-		return
+		return runImport(db, rf.seedFile)
 	case cmdMCPServe:
-		runMCPServe(db, documentsStore)
-		return
+		return runMCPServe(db, documentsStore)
 	case cmdTUI, cmdMigrate:
 		// Migrate returned before the database opened; the TUI runs below.
 	}
@@ -127,7 +132,7 @@ func main() {
 	}
 	logger, closeLog, err := openLog(logPath)
 	if err != nil {
-		log.Fatalf("open log: %v", err)
+		return fmt.Errorf("open log: %w", err)
 	}
 	defer func() { _ = closeLog() }()
 
@@ -136,7 +141,7 @@ func main() {
 	changes := service.NewChangeLog(db)
 	since, err := changes.Latest(context.Background())
 	if err != nil {
-		log.Fatalf("read the change log: %v", err)
+		return fmt.Errorf("read the change log: %w", err)
 	}
 	companies := service.NewCompanyService(db)
 	postings := service.NewPostingService(db)
@@ -146,7 +151,7 @@ func main() {
 	router := model.NewMsgRouter()
 	screens := tui.NewScreens(companies, postings, applications, documentService, scores, syncer, documentsStore)
 	if err := router.Register(screens); err != nil {
-		log.Fatalf("register the screens: %v", err)
+		return fmt.Errorf("register the screens: %w", err)
 	}
 	reader := tui.NewChangeReader(companies, postings, applications, documentService, scores, changes, cfg.Origin, since, tui.ChangePollInterval)
 	app := tui.New(
@@ -165,7 +170,7 @@ func main() {
 		addr := mcpAddr()
 		stopMCP, err = mcpForTUI(addr, dbPath, documentsStore, logger.With("component", "mcp"), release)
 		if err != nil {
-			log.Fatalf("swamp --mcp: %v", err)
+			return fmt.Errorf("swamp --mcp: %w", err)
 		}
 		app.WithStatus("MCP server on " + addr)
 	}
@@ -191,8 +196,9 @@ func main() {
 		log.Printf("release sync leases: %v", err)
 	}
 	if runErr != nil {
-		log.Fatalf("run tui: %v", runErr)
+		return fmt.Errorf("run tui: %w", runErr)
 	}
+	return nil
 }
 
 // newSyncer builds a Syncer configured with every supported job board
@@ -222,10 +228,10 @@ func newStage(db store.Store, d *documents.Store) *stage.Stage {
 // real API before being saved, so a bad row is reported and skipped
 // rather than silently creating a dead company; re-running the same file
 // is always safe (CompanyService.Add is idempotent on source+source_ref).
-func runImport(db store.Store, seedFile string) {
+func runImport(db store.Store, seedFile string) error {
 	f, err := os.Open(seedFile)
 	if err != nil {
-		log.Fatalf("open seed file: %v", err)
+		return fmt.Errorf("open seed file: %w", err)
 	}
 	defer func() {
 		if err := f.Close(); err != nil {
@@ -235,7 +241,7 @@ func runImport(db store.Store, seedFile string) {
 
 	entries, err := seed.Parse(f)
 	if err != nil {
-		log.Fatalf("parse seed file: %v", err)
+		return fmt.Errorf("parse seed file: %w", err)
 	}
 
 	syncer := newSyncer(db)
@@ -248,19 +254,22 @@ func runImport(db store.Store, seedFile string) {
 		}
 		fmt.Printf("%s (%s/%s): imported\n", r.Name, r.Source, r.SourceRef)
 	}
+	return nil
 }
 
-// runFetch syncs every active company and reports how many failed, so main
-// can exit non-zero when something scheduled it and nobody is watching
-// (issue #145).
-func runFetch(db store.Store) int {
+// runFetch syncs every active company and fails if any did, so swamp exits
+// non-zero when something scheduled it and nobody is watching (issue #145).
+func runFetch(db store.Store) error {
 	syncer := newSyncer(db)
 	results, err := syncer.SyncAll(context.Background())
 	if err != nil {
-		log.Fatalf("sync: %v", err)
+		return fmt.Errorf("sync: %w", err)
 	}
 
-	return reportFetch(os.Stdout, os.Stderr, results)
+	if reportFetch(os.Stdout, os.Stderr, results) > 0 {
+		return errFailuresReported
+	}
+	return nil
 }
 
 // reportFetch prints one line per company -- successes to stdout, errors
@@ -291,7 +300,7 @@ func reportFetch(stdout, stderr io.Writer, results []sync.Result) int {
 // eligible postings as a JSON array, `stage prepare <posting-id>` commits
 // to one and prints the result as a JSON object. See the stage package
 // for what each does.
-func runStage(db store.Store, d *documents.Store, action stageAction, postingID int64) {
+func runStage(db store.Store, d *documents.Store, action stageAction, postingID int64) error {
 	st := newStage(db, d)
 	ctx := context.Background()
 
@@ -299,17 +308,17 @@ func runStage(db store.Store, d *documents.Store, action stageAction, postingID 
 	case stageList:
 		candidates, err := st.List(ctx)
 		if err != nil {
-			log.Fatalf("stage list: %v", err)
+			return fmt.Errorf("stage list: %w", err)
 		}
-		printJSON(candidates)
+		return printJSON(candidates)
 	case stagePrepare:
 		prepared, err := st.Prepare(ctx, postingID)
 		if err != nil {
-			log.Fatalf("stage prepare: %v", err)
+			return fmt.Errorf("stage prepare: %w", err)
 		}
-		printJSON(prepared)
+		return printJSON(prepared)
 	default:
-		log.Fatalf("stage: unknown action %q", action)
+		return fmt.Errorf("stage: unknown action %q", action)
 	}
 }
 
@@ -343,14 +352,15 @@ func runStage(db store.Store, d *documents.Store, action stageAction, postingID 
 // same reason auth is skipped: single-user local dev machine, deliberately
 // reached by a known local container over a known DNS name, not the
 // untrusted-browser threat this protection exists for.
-func runMCPServe(db store.Store, d *documents.Store) {
+func runMCPServe(db store.Store, d *documents.Store) error {
 	addr := mcpAddr()
 	handler := mcpHandler(db, d, newSyncer(db))
 
 	log.Printf("swamp mcp-serve: listening on %s", addr)
 	if err := http.ListenAndServe(addr, handler); err != nil {
-		log.Fatalf("mcp-serve: %v", err)
+		return fmt.Errorf("mcp-serve: %w", err)
 	}
+	return nil
 }
 
 // runExport converts an application's existing cover_letter.md/resume.md
@@ -364,7 +374,7 @@ func runMCPServe(db store.Store, d *documents.Store) {
 // useful to preview as a PDF -- but each line reports the latest review
 // outcome so the caller can tell a ready-to-submit document from one that
 // still needs work.
-func runExport(db store.Store, d *documents.Store, applicationID int64) {
+func runExport(db store.Store, d *documents.Store, applicationID int64) error {
 	ctx := context.Background()
 	// Validate the ID against a real row before anything else. Without
 	// this, a typo'd or stale ID walks the same path as a real
@@ -374,21 +384,21 @@ func runExport(db store.Store, d *documents.Store, applicationID int64) {
 	// issue #102).
 	if _, err := service.NewApplicationService(db).Get(ctx, applicationID); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
-			log.Fatalf("export: no application with id %d", applicationID)
+			return fmt.Errorf("export: no application with id %d", applicationID)
 		}
-		log.Fatalf("export: look up application %d: %v", applicationID, err)
+		return fmt.Errorf("export: look up application %d: %w", applicationID, err)
 	}
 
 	documentService := service.NewDocumentService(db)
 	reviews, err := documentService.LatestReviews(ctx, applicationID)
 	if err != nil {
-		log.Fatalf("export: latest document reviews: %v", err)
+		return fmt.Errorf("export: latest document reviews: %w", err)
 	}
 
 	status := d.Status(applicationID)
 	reviews, err = documents.Current(status, reviews, document.Review.IsCurrent)
 	if err != nil {
-		log.Fatalf("export: current document reviews: %v", err)
+		return fmt.Errorf("export: current document reviews: %w", err)
 	}
 
 	for _, documentType := range document.Types() {
@@ -410,6 +420,7 @@ func runExport(db store.Store, d *documents.Store, applicationID int64) {
 		review, hasReview := reviews[documentType]
 		fmt.Printf("%s: exported to %s (%s)\n", documentType, outPath, reviewSummary(review, hasReview))
 	}
+	return nil
 }
 
 // exportDocumentPDF renders mdPath's markdown content to a sibling .pdf
@@ -445,38 +456,43 @@ func reviewSummary(review document.Review, hasReview bool) string {
 	return "passed"
 }
 
-func printJSON(v any) {
+func printJSON(v any) error {
 	enc := json.NewEncoder(os.Stdout)
 	enc.SetIndent("", "  ")
 	if err := enc.Encode(v); err != nil {
-		log.Fatalf("encode json: %v", err)
+		return fmt.Errorf("encode json: %w", err)
 	}
+	return nil
 }
 
-func openPlain(dbPath string) *sql.DB {
+func openPlain(dbPath string) (*sql.DB, error) {
 	sqlDB, err := store.Open(dbPath, store.DefaultConfig())
 	if err != nil {
-		log.Fatalf("open db: %v", err)
+		return nil, fmt.Errorf("open db: %w", err)
 	}
-	return sqlDB
+	return sqlDB, nil
 }
 
-func checkSchema(dbPath string) {
-	sqlDB := openPlain(dbPath)
-	err := migrations.Check(context.Background(), sqlDB)
+func checkSchema(dbPath string) error {
+	sqlDB, err := openPlain(dbPath)
+	if err != nil {
+		return err
+	}
+	err = migrations.Check(context.Background(), sqlDB)
 	if closeErr := sqlDB.Close(); closeErr != nil {
 		log.Printf("close db: %v", closeErr)
 	}
-	if err != nil {
-		log.Fatal(err)
-	}
+	return err
 }
 
 // runMigrate applies the database migrations this binary has and the
 // database doesn't (up), or rolls back the newest one (down), and says
 // what it did.
-func runMigrate(dbPath string, direction migrateDirection) {
-	sqlDB := openPlain(dbPath)
+func runMigrate(dbPath string, direction migrateDirection) error {
+	sqlDB, err := openPlain(dbPath)
+	if err != nil {
+		return err
+	}
 	defer func() {
 		if err := sqlDB.Close(); err != nil {
 			log.Printf("close db: %v", err)
@@ -487,19 +503,20 @@ func runMigrate(dbPath string, direction migrateDirection) {
 	if direction == migrateDown {
 		version, err := migrations.Down(ctx, sqlDB)
 		if err != nil {
-			log.Fatalf("migrate down: %v", err)
+			return fmt.Errorf("migrate down: %w", err)
 		}
 		fmt.Printf("Rolled back migration %d. Until `swamp migrate up`, the other commands refuse this database.\n", version)
-		return
+		return nil
 	}
 
 	applied, err := migrations.Up(ctx, sqlDB)
 	if err != nil {
-		log.Fatalf("migrate up: %v", err)
+		return fmt.Errorf("migrate up: %w", err)
 	}
 	if len(applied) == 0 {
 		fmt.Printf("The database is already at version %d.\n", migrations.Latest())
-		return
+		return nil
 	}
 	fmt.Printf("Applied %d migration(s), %d to %d. The database is now at version %d.\n", len(applied), applied[0], applied[len(applied)-1], migrations.Latest())
+	return nil
 }
