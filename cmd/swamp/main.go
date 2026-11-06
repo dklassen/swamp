@@ -45,33 +45,43 @@ import (
 	"github.com/dklassen/swamp/tui/model"
 )
 
+// main alone picks the exit status, after run's deferred closes have run.
 func main() {
-	os.Exit(run(os.Args[1:]))
+	err := run(os.Args[1:])
+	var usageErr usageError
+	switch {
+	case err == nil:
+	case errors.As(err, &usageErr):
+		fmt.Fprintf(os.Stderr, "swamp: %v\n%s\n", usageErr.err, usage)
+		os.Exit(2)
+	case errors.Is(err, errFailuresReported):
+		os.Exit(1)
+	default:
+		log.Print(err)
+		os.Exit(1)
+	}
 }
 
 // errFailuresReported: the command has already said what failed, so it
 // only sets the exit status.
 var errFailuresReported = errors.New("failures reported")
 
-// run returns the exit status rather than exiting, so every deferred close
-// runs first.
-func run(args []string) int {
+// usageError is arguments swamp can't run, which the usage text explains.
+type usageError struct{ err error }
+
+func (e usageError) Error() string { return e.err.Error() }
+func (e usageError) Unwrap() error { return e.err }
+
+func run(args []string) error {
 	rf, err := parseArgs(args)
 	if errors.Is(err, flag.ErrHelp) {
 		fmt.Println(usage)
-		return 0
+		return nil
 	}
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "swamp: %v\n%s\n", err, usage)
-		return 2
+		return usageError{err}
 	}
-	if err := runCommand(rf); err != nil {
-		if !errors.Is(err, errFailuresReported) {
-			log.Print(err)
-		}
-		return 1
-	}
-	return 0
+	return runCommand(rf)
 }
 
 func runCommand(rf runFlags) error {
