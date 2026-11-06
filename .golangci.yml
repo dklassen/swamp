@@ -18,6 +18,7 @@ linters:
     - durationcheck
     - exhaustive
     - gocheckcompilerdirectives
+    - gocritic
     - godot
     - intrange
     - makezero
