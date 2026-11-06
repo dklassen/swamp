@@ -2,3 +2,41 @@ version: "2"
 
 linters:
   default: standard
+  enable:
+    # complexity
+    - maintidx
+    # errors
+    - errchkjson
+    - errname
+    - errorlint
+    - nilerr
+    - nilnil
+    # bugs and idioms
+    - bodyclose
+    - copyloopvar
+    - durationcheck
+    - gocheckcompilerdirectives
+    - makezero
+    - misspell
+    - nakedret
+    - nolintlint
+    - predeclared
+    - reassign
+    - rowserrcheck
+    - unconvert
+    - usestdlibvars
+    - usetesting
+    - whitespace
+  settings:
+    nolintlint:
+      require-explanation: true
+      require-specific: true
+  exclusions:
+    rules:
+      # Table-driven tests are long by design.
+      - path: _test\.go
+        linters: [maintidx]
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0
