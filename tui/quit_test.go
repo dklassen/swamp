@@ -17,20 +17,24 @@ func TestApp_CtrlC_QuitsFromAnyScreen(t *testing.T) {
 		name string
 		open func(t *testing.T, app *App) *App
 	}{
-		{"applications", func(t *testing.T, app *App) *App { return app }},
+		{"applications", func(_ *testing.T, app *App) *App { return app }},
 		{"companies, searching", func(t *testing.T, app *App) *App {
+			t.Helper()
 			app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 			return sendKeyAndApply(t, app, runeKey('/'))
 		}},
 		{"all postings, searching", func(t *testing.T, app *App) *App {
+			t.Helper()
 			app = openAllPostings(t, app)
 			return sendKeyAndApply(t, app, runeKey('/'))
 		}},
 		{"posting detail", func(t *testing.T, app *App) *App {
+			t.Helper()
 			app = openAllPostings(t, app)
 			return sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 		}},
 		{"add company form", func(t *testing.T, app *App) *App {
+			t.Helper()
 			app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 			return sendKeyAndApply(t, app, runeKey('a'))
 		}},

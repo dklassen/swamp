@@ -323,26 +323,31 @@ func TestCompanyService_ListedPostings_ListsWhatTheCompanysListShows(t *testing.
 			func(kept, other int64) []int64 { return []int64{other, kept} }, nil,
 		},
 		{"closed", false, func(t *testing.T, s testutil.TestApp, _, other int64) {
+			t.Helper()
 			if err := s.Postings.Close(context.Background(), other, nil); err != nil {
 				t.Fatalf("Close: %v", err)
 			}
 		}, func(kept, _ int64) []int64 { return []int64{kept} }, nil},
 		{"filtered out", false, func(t *testing.T, s testutil.TestApp, companyID, _ int64) {
+			t.Helper()
 			if err := s.Companies.SetFilters(context.Background(), companyID, engineering); err != nil {
 				t.Fatalf("SetFilters: %v", err)
 			}
 		}, func(kept, _ int64) []int64 { return []int64{kept} }, engineering},
 		{"archived, hidden", false, func(t *testing.T, s testutil.TestApp, _, other int64) {
+			t.Helper()
 			if _, err := s.Postings.SetArchived(context.Background(), other); err != nil {
 				t.Fatalf("SetArchived: %v", err)
 			}
 		}, func(kept, _ int64) []int64 { return []int64{kept} }, nil},
 		{"archived, included", true, func(t *testing.T, s testutil.TestApp, _, other int64) {
+			t.Helper()
 			if _, err := s.Postings.SetArchived(context.Background(), other); err != nil {
 				t.Fatalf("SetArchived: %v", err)
 			}
 		}, func(kept, other int64) []int64 { return []int64{other, kept} }, nil},
 		{"company deleted", false, func(t *testing.T, s testutil.TestApp, companyID, _ int64) {
+			t.Helper()
 			if _, err := s.Companies.Delete(context.Background(), companyID); err != nil {
 				t.Fatalf("Delete: %v", err)
 			}

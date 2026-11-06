@@ -435,22 +435,28 @@ func TestApp_AnotherProcessesWrite_ShowsOnTheScreenThatShowsIt(t *testing.T) {
 		want  string
 	}{
 		{name: "a company renamed, on the company list", open: func(t *testing.T, app *App) *App {
+			t.Helper()
 			app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 			return app
 		}, write: func(t *testing.T, s testutil.TestApp, acme company.Company) {
+			t.Helper()
 			if _, err := s.Companies.SetName(context.Background(), acme.ID, "Acme Corp"); err != nil {
 				t.Fatalf("SetName: %v", err)
 			}
 		}, want: "Acme Corp"},
-		{name: "an application started, on the home list", open: func(t *testing.T, app *App) *App { return app }, write: func(t *testing.T, s testutil.TestApp, acme company.Company) {
+		{name: "an application started, on the home list", open: func(_ *testing.T, app *App) *App { return app }, write: func(t *testing.T, s testutil.TestApp, acme company.Company) {
+			t.Helper()
 			mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-2", "Staff Engineer").ID)
 		}, want: "Staff Engineer"},
 		{name: "a posting synced, on its company's posting list", open: openPostingList, write: func(t *testing.T, s testutil.TestApp, acme company.Company) {
+			t.Helper()
 			mustUpsertPosting(t, s, acme.ID, "job-1", "Principal Engineer")
 		}, want: "Principal Engineer"},
 		{name: "a posting synced, on its detail", open: func(t *testing.T, app *App) *App {
+			t.Helper()
 			return openPostingDetail(t, openPostingList(t, app))
 		}, write: func(t *testing.T, s testutil.TestApp, acme company.Company) {
+			t.Helper()
 			mustUpsertPosting(t, s, acme.ID, "job-1", "Principal Engineer")
 		}, want: "Principal Engineer"},
 	}

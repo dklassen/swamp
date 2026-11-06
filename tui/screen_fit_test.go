@@ -86,9 +86,11 @@ type sizedScreen struct {
 func sizedScreens() []sizedScreen {
 	return []sizedScreen{
 		{name: "active applications", screen: message.ScreenActiveApplications, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			return app
 		}},
 		{name: "active applications searching", screen: message.ScreenActiveApplications, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			// "eng" matches all 40 applications, enough to fill the table
 			// under the prompt line.
 			for _, r := range "/eng" {
@@ -97,13 +99,16 @@ func sizedScreens() []sizedScreen {
 			return app
 		}},
 		{name: "all postings", screen: message.ScreenAllPostings, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			return openAllPostings(t, app)
 		}},
 		{name: "company list", screen: message.ScreenCompanyList, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 			return app
 		}},
 		{name: "company list searching, with info box", screen: message.ScreenCompanyList, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			// "co" still matches 39 of the 40 companies, enough to fill
 			// the table under the prompt line.
 			app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
@@ -113,9 +118,11 @@ func sizedScreens() []sizedScreen {
 			return app
 		}},
 		{name: "posting list", screen: message.ScreenCompanyPostings, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			return openPostingList(t, app)
 		}},
 		{name: "posting list with description and filters", screen: message.ScreenCompanyPostings, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			// Every line the posting list can draw above its table: the
 			// company description, the filter summary and the archived
 			// notice (on by default). Filtering on every department
@@ -140,13 +147,16 @@ func sizedScreens() []sizedScreen {
 			return app
 		}},
 		{name: "posting detail", screen: message.ScreenPostingDetail, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			return openPostingDetail(t, openPostingList(t, app))
 		}},
 		{name: "filter select", screen: message.ScreenFilterSelect, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			app, cmd := sendKey(openPostingList(t, app), runeKey('f'))
 			return applyCmd(t, app, cmd)
 		}},
 		{name: "filter select across both sections", screen: message.ScreenFilterSelect, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			// With the cursor on the first location, the window spans the
 			// end of the departments and the start of the locations, so
 			// both section labels take a row.
@@ -162,6 +172,7 @@ func sizedScreens() []sizedScreen {
 			return app
 		}},
 		{name: "application notes", screen: message.ScreenApplicationNotes, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			// The editors keep their size from when they're opened, so
 			// open them with no banner up: one that appears afterwards
 			// has to be fitted by App's refit, not by luck.
@@ -170,24 +181,28 @@ func sizedScreens() []sizedScreen {
 			return app
 		}},
 		{name: "review form from application detail", screen: message.ScreenDocumentReviewForm, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 			app = applyCmd(t, app, cmd)
 			app, cmd = sendKey(app, runeKey('R'))
 			return applyCmd(t, app, cmd)
 		}},
 		{name: "application submit", screen: message.ScreenApplicationSubmit, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 			app = applyCmd(t, app, cmd)
 			app, cmd = sendKey(app, runeKey('S'))
 			return applyCmd(t, app, cmd)
 		}},
 		{name: "application delete", screen: message.ScreenApplicationDetail, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 			app = applyCmd(t, app, cmd)
 			app, cmd = sendKey(app, runeKey('D'))
 			return applyCmd(t, app, cmd)
 		}},
 		{name: "review form from review select", screen: message.ScreenDocumentReviewForm, open: func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			app = clearBanner(openPostingDetail(t, openPostingList(t, app)))
 			app, cmd := sendKey(app, runeKey('r'))
 			app = applyCmd(t, app, cmd)

@@ -157,11 +157,13 @@ func TestApp_Screens_BreadcrumbReplacesTheTitle(t *testing.T) {
 // out, opened the same way.
 func unsizedScreens() []sizedScreen {
 	openApplication := func(t *testing.T, app *App, _ testutil.TestApp) *App {
+		t.Helper()
 		app, cmd := sendKey(app, tea.KeyPressMsg{Code: tea.KeyEnter})
 		return applyCmd(t, app, cmd)
 	}
 	keys := func(open func(*testing.T, *App, testutil.TestApp) *App, keys ...tea.KeyPressMsg) func(*testing.T, *App, testutil.TestApp) *App {
 		return func(t *testing.T, app *App, s testutil.TestApp) *App {
+			t.Helper()
 			app = open(t, app, s)
 			for _, key := range keys {
 				app = sendKeyAndApply(t, app, key)
@@ -175,6 +177,7 @@ func unsizedScreens() []sizedScreen {
 		{name: "export", screen: message.ScreenApplicationExport, open: keys(home, runeKey('e'))},
 		{name: "status", screen: message.ScreenApplicationStatus, open: keys(home, runeKey('s'))},
 		{name: "review select", screen: message.ScreenDocumentReviewSelect, open: keys(func(t *testing.T, app *App, _ testutil.TestApp) *App {
+			t.Helper()
 			return clearBanner(openPostingDetail(t, openPostingList(t, app)))
 		}, runeKey('r'))},
 		{name: "add company", screen: message.ScreenCompanyForm, open: keys(home, tea.KeyPressMsg{Code: tea.KeyTab}, runeKey('a'))},

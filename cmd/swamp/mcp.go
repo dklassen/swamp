@@ -97,7 +97,8 @@ func startMCP(dbPath string, d *documents.Store, ln net.Listener, logger *slog.L
 // with --mcp asked for, a TUI without the server would leave the agent's
 // tools failing unnoticed.
 func mcpForTUI(addr, dbPath string, d *documents.Store, logger *slog.Logger, release func()) (stop func(context.Context) error, err error) {
-	ln, err := net.Listen("tcp", addr)
+	var lc net.ListenConfig
+	ln, err := lc.Listen(context.Background(), "tcp", addr)
 	if err != nil {
 		return nil, fmt.Errorf("MCP server not started on %s: %w", addr, err)
 	}

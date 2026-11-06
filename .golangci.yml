@@ -13,6 +13,7 @@ linters:
     - nilnil
     # bugs and idioms
     - bodyclose
+    - contextcheck
     - copyloopvar
     - durationcheck
     - gocheckcompilerdirectives
@@ -22,11 +23,14 @@ linters:
     - misspell
     - modernize
     - nakedret
+    - noctx
     - nolintlint
     - perfsprint
     - predeclared
     - reassign
     - rowserrcheck
+    - thelper
+    - tparallel
     - unconvert
     - usestdlibvars
     - usetesting
@@ -44,6 +48,9 @@ linters:
       # Table-driven tests are long by design.
       - path: _test\.go
         linters: [maintidx]
+      # A test is cancelled only as it ends, so its context buys nothing.
+      - path: _test\.go
+        linters: [noctx]
 
 formatters:
   enable:

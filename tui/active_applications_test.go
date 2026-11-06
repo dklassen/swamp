@@ -958,8 +958,8 @@ func TestActiveApplicationListModel_O_CyclesTheOrderKeepingTheCursor(t *testing.
 	ctx := context.Background()
 	apply := func(companyName string, status application.Status) int64 {
 		t.Helper()
-		c := mustCreateCompany(t, s, companyName, jobboard.Ashby, companyName)
-		app := mustCreateApplication(t, s, mustUpsertPosting(t, s, c.ID, companyName, "Engineer").ID)
+		c := testutil.MustAddCompany(t, s, companyName)
+		app := testutil.MustApplyTo(t, s, testutil.MustIngestPostingFor(t, s, c.ID, companyName, "Engineer").ID)
 		if _, err := s.Applications.SetStatus(ctx, app.ID, status); err != nil {
 			t.Fatalf("SetStatus(%s): %v", status, err)
 		}

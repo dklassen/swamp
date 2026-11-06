@@ -295,6 +295,7 @@ var deleteOwners = []struct {
 	open func(t *testing.T) confirmingOwner
 }{
 	{name: "home list", open: func(t *testing.T) confirmingOwner {
+		t.Helper()
 		m, r := storedHome(t, true)
 		settle(t, r, runCmd(t, m.Init()))
 		runCmd(t, r.Dispatch(runeKey('d')))
@@ -305,6 +306,7 @@ var deleteOwners = []struct {
 		}
 	}},
 	{name: "application detail", open: func(t *testing.T) confirmingOwner {
+		t.Helper()
 		m, r, _ := applicationDetailWith(t)
 		settle(t, r, runCmd(t, m.Init()))
 		r.Dispatch(focusOn(m.Instance()))

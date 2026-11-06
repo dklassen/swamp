@@ -1016,11 +1016,13 @@ func TestList_ExcludesInterestedPostingTheCompanyListHides(t *testing.T) {
 		hide func(t *testing.T, s testutil.TestApp, companyID, postingID int64)
 	}{
 		{"closed", func(t *testing.T, s testutil.TestApp, _, postingID int64) {
+			t.Helper()
 			if err := s.Postings.Close(context.Background(), postingID, nil); err != nil {
 				t.Fatalf("Close: %v", err)
 			}
 		}},
 		{"filtered out", func(t *testing.T, s testutil.TestApp, companyID, _ int64) {
+			t.Helper()
 			ctx := context.Background()
 			if err := s.Companies.SetFilters(ctx, companyID, []filter.Filter{{Field: filter.FieldLocation, Value: "Nowhere"}}); err != nil {
 				t.Fatalf("SetFilters: %v", err)

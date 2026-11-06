@@ -32,6 +32,7 @@ func TestApplicationWrites_SendTheChangeFromTheAsker(t *testing.T) {
 			},
 			op: message.OpCreated,
 			check: func(t *testing.T, _ message.Application, c message.Changed[message.Application]) {
+				t.Helper()
 				if c.Before != (message.Application{}) || c.After.Status != message.ApplicationStarted {
 					t.Errorf("Before, After.Status = %+v, %v, want zero, %v", c.Before, c.After.Status, message.ApplicationStarted)
 				}
@@ -44,6 +45,7 @@ func TestApplicationWrites_SendTheChangeFromTheAsker(t *testing.T) {
 			},
 			op: message.OpUpdated,
 			check: func(t *testing.T, started message.Application, c message.Changed[message.Application]) {
+				t.Helper()
 				if c.Before != started || c.After.Status != message.ApplicationInterviewing {
 					t.Errorf("Before, After.Status = %+v, %v, want %+v, %v", c.Before, c.After.Status, started, message.ApplicationInterviewing)
 				}
@@ -56,6 +58,7 @@ func TestApplicationWrites_SendTheChangeFromTheAsker(t *testing.T) {
 			},
 			op: message.OpUpdated,
 			check: func(t *testing.T, started message.Application, c message.Changed[message.Application]) {
+				t.Helper()
 				if c.Before != started || c.After.Notes != "call Tuesday" {
 					t.Errorf("Before, After.Notes = %+v, %q, want %+v, %q", c.Before, c.After.Notes, started, "call Tuesday")
 				}
@@ -68,6 +71,7 @@ func TestApplicationWrites_SendTheChangeFromTheAsker(t *testing.T) {
 			},
 			op: message.OpDeleted,
 			check: func(t *testing.T, started message.Application, c message.Changed[message.Application]) {
+				t.Helper()
 				if c.Before != started || c.After != (message.Application{}) {
 					t.Errorf("Before, After = %+v, %+v, want %+v, zero", c.Before, c.After, started)
 				}

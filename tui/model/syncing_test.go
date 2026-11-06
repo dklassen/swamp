@@ -271,6 +271,7 @@ func TestSyncing_Handlers_FailOnTheWrongMessage(t *testing.T) {
 	t.Parallel()
 	for id, route := range routesOf(t, model.NewSyncing(nil)) {
 		t.Run(id.String(), func(t *testing.T) {
+			t.Parallel()
 			cmd := route.Handle(wrongMsg{})
 			if cmd == nil {
 				t.Fatal("handler given wrongMsg returned no command, want one sending a fault")

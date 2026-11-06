@@ -218,6 +218,7 @@ func TestWriteDocument_WritesContentToTheResolvedPath(t *testing.T) {
 		{"resume", prepared.Documents[document.Resume].Path},
 	} {
 		t.Run(tc.documentType, func(t *testing.T) {
+			t.Parallel()
 			content := "content for " + tc.documentType
 
 			got := callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
@@ -466,6 +467,7 @@ func TestReadDocument_ReturnsWrittenContent(t *testing.T) {
 		{"resume", prepared.Documents[document.Resume].Path},
 	} {
 		t.Run(tc.documentType, func(t *testing.T) {
+			t.Parallel()
 			content := "draft of " + tc.documentType
 			callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
 				"ApplicationID": prepared.ApplicationID,
@@ -613,6 +615,7 @@ func TestDocumentTools_AdvertiseDocumentTypeAsStringEnum(t *testing.T) {
 	}
 	for _, name := range []string{"write_document", "read_document"} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			raw, err := json.Marshal(schemas[name])
 			if err != nil {
 				t.Fatalf("marshal %s input schema: %v", name, err)
