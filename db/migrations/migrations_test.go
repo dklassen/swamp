@@ -1339,6 +1339,9 @@ func TestChangeEvents_ApplicationTriggersLogOldAndNew(t *testing.T) {
 		}
 		got = append(got, e)
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("query change_events: %v", err)
+	}
 	want := []event{
 		{Table: "applications", RowID: 1, Op: "insert", New: `{"status":"application_started","notes":"","deleted_at":null}`},
 		{Table: "applications", RowID: 1, Op: "update", Old: `{"status":"application_started","notes":"","deleted_at":null}`, New: `{"status":"interviewing","notes":"","deleted_at":null}`},
