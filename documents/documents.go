@@ -74,7 +74,7 @@ func NewStore(base string) *Store {
 // once for the same applicationID -- MkdirAll is a no-op when the
 // directory is already there.
 func (s *Store) EnsureDir(applicationID int64) (Status, error) {
-	if err := os.MkdirAll(applicationDir(s.base, applicationID), 0o755); err != nil {
+	if err := os.MkdirAll(applicationDir(s.base, applicationID), 0o750); err != nil {
 		return Status{}, err
 	}
 	return s.Status(applicationID), nil
@@ -131,7 +131,7 @@ func (s *Store) write(applicationID int64, documentType document.Type, content s
 		return "", err
 	}
 	dir := filepath.Dir(p)
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return "", err
 	}
 	tmp, err := os.CreateTemp(dir, "."+filepath.Base(p)+".tmp-*")
