@@ -8,6 +8,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
@@ -16,6 +17,9 @@ import (
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 )
+
+// A client that never finishes its headers would otherwise hold its connection open forever.
+const readHeaderTimeout = 10 * time.Second
 
 // mcpHandler serves Swamp's MCP tools over Streamable HTTP. See runMCPServe
 // for why localhost protection is off.
@@ -67,9 +71,10 @@ func startMCP(dbPath string, d *documents.Store, ln net.Listener, logger *slog.L
 	server := mcpserver.New(newStage(db, d), d, syncer)
 	server.AddReceivingMiddleware(releaseTerminalOnPanic(release))
 	srv := &http.Server{
-		Handler:     streamableHandler(server),
-		ErrorLog:    slog.NewLogLogger(logger.Handler(), slog.LevelError),
-		BaseContext: func(net.Listener) context.Context { return base },
+		Handler:           streamableHandler(server),
+		ReadHeaderTimeout: readHeaderTimeout,
+		ErrorLog:          slog.NewLogLogger(logger.Handler(), slog.LevelError),
+		BaseContext:       func(net.Listener) context.Context { return base },
 	}
 	go func() {
 		defer func() {

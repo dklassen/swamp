@@ -367,7 +367,8 @@ func runMCPServe(db store.Store, d *documents.Store) error {
 	handler := mcpHandler(db, d, newSyncer(db))
 
 	log.Printf("swamp mcp-serve: listening on %s", addr)
-	if err := http.ListenAndServe(addr, handler); err != nil {
+	srv := &http.Server{Addr: addr, Handler: handler, ReadHeaderTimeout: readHeaderTimeout}
+	if err := srv.ListenAndServe(); err != nil {
 		return fmt.Errorf("mcp-serve: %w", err)
 	}
 	return nil

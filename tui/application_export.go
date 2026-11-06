@@ -152,7 +152,7 @@ func exportDocuments(documentService *service.DocumentService, docs *documents.S
 	if err != nil {
 		return nil, err
 	}
-	if err := os.MkdirAll(dir, 0o755); err != nil {
+	if err := os.MkdirAll(dir, 0o750); err != nil {
 		return nil, fmt.Errorf("create %s: %w", dir, err)
 	}
 	report := message.ExportReport{Dir: dir}

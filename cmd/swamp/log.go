@@ -10,7 +10,7 @@ import (
 // callers add a component (logger.With("component", "mcp")) so lines from
 // different goroutines stay identifiable.
 func openLog(path string) (*slog.Logger, func() error, error) {
-	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o644)
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 	if err != nil {
 		return nil, nil, err
 	}

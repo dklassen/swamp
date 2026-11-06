@@ -35,7 +35,7 @@ func Document(mdPath, outPath string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("render pdf: %w", err)
 	}
-	if err := os.WriteFile(outPath, rendered, 0o644); err != nil {
+	if err := os.WriteFile(outPath, rendered, 0o600); err != nil {
 		return "", fmt.Errorf("write %s: %w", outPath, err)
 	}
 	return string(content), nil

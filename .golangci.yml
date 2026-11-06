@@ -19,6 +19,7 @@ linters:
     - exhaustive
     - gocheckcompilerdirectives
     - gocritic
+    - gosec
     - godot
     - intrange
     - makezero
@@ -56,6 +57,15 @@ linters:
       # A test is cancelled only as it ends, so its context buys nothing.
       - path: _test\.go
         linters: [noctx]
+      # Tests write throwaway files under t.TempDir and build no command or path from input.
+      - path: _test\.go
+        linters: [gosec]
+      # Launching the user's own editor and browser is the point.
+      - linters: [gosec]
+        text: "G204|G702"
+      # Paths come from swamp's config or documents.Path, which builds them from typed IDs.
+      - linters: [gosec]
+        text: "G304|G703"
 
 formatters:
   enable:
