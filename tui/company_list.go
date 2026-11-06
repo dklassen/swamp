@@ -171,6 +171,8 @@ func (m *companyListModel) companyChanged(e message.Event[message.Changed[messag
 		}
 		m.clampCursor(len(m.companies))
 		return cmd
+	case message.OpNone:
+		// A change always names what it wrote.
 	}
 	// The order ListActiveCompanies' ORDER BY name returns: Go's < matches
 	// SQLite's default byte-wise collation.

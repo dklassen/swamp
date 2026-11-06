@@ -117,6 +117,8 @@ func main() {
 	case cmdMCPServe:
 		runMCPServe(db, documentsStore)
 		return
+	case cmdTUI, cmdMigrate:
+		// Migrate returned before the database opened; the TUI runs below.
 	}
 
 	logPath := os.Getenv("SWAMP_LOG_PATH")

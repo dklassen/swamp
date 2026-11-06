@@ -122,6 +122,8 @@ func (m *applicationDetailModel) applicationChanged(e message.Event[message.Chan
 		if m.focused {
 			return m.goneElsewhere()
 		}
+	case message.OpNone, message.OpCreated:
+		// A create the log replays is the application it already shows.
 	}
 	return nil
 }

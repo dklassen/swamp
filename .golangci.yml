@@ -16,6 +16,7 @@ linters:
     - contextcheck
     - copyloopvar
     - durationcheck
+    - exhaustive
     - gocheckcompilerdirectives
     - godot
     - intrange
@@ -36,6 +37,9 @@ linters:
     - usetesting
     - whitespace
   settings:
+    exhaustive:
+      # A default case states that every other value is handled the same way.
+      default-signifies-exhaustive: true
     modernize:
       disable:
         # An embedded struct's literal shows which fields form that unit.
