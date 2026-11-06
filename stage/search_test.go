@@ -88,19 +88,34 @@ func TestSearch_FiltersAndDefaults(t *testing.T) {
 		opts SearchOptions
 		want []int64
 	}{
-		{"defaults: open, not archived, ID order", SearchOptions{},
-			postingIDs(f.shortlist, f.started, f.submitted, f.betaPosting)},
+		{
+			"defaults: open, not archived, ID order",
+			SearchOptions{},
+			postingIDs(f.shortlist, f.started, f.submitted, f.betaPosting),
+		},
 		{"company", SearchOptions{CompanyID: f.beta.ID}, postingIDs(f.betaPosting)},
 		{"with an application", SearchOptions{HasApplication: &yes}, postingIDs(f.started, f.submitted)},
-		{"application statuses", SearchOptions{ApplicationStatuses: []application.Status{application.Submitted}},
-			postingIDs(f.submitted)},
-		{"interested shortlist: interested, no application", SearchOptions{Interested: &yes, HasApplication: &no},
-			postingIDs(f.shortlist)},
+		{
+			"application statuses",
+			SearchOptions{ApplicationStatuses: []application.Status{application.Submitted}},
+			postingIDs(f.submitted),
+		},
+		{
+			"interested shortlist: interested, no application",
+			SearchOptions{Interested: &yes, HasApplication: &no},
+			postingIDs(f.shortlist),
+		},
 		{"closed", SearchOptions{ListingStatus: posting.ListingClosed.String()}, postingIDs(f.closed)},
-		{"any listing status", SearchOptions{ListingStatus: AnyListingStatus},
-			postingIDs(f.shortlist, f.started, f.submitted, f.closed, f.betaPosting)},
-		{"archived included", SearchOptions{IncludeArchived: true},
-			postingIDs(f.shortlist, f.started, f.submitted, f.archived, f.betaPosting)},
+		{
+			"any listing status",
+			SearchOptions{ListingStatus: AnyListingStatus},
+			postingIDs(f.shortlist, f.started, f.submitted, f.closed, f.betaPosting),
+		},
+		{
+			"archived included",
+			SearchOptions{IncludeArchived: true},
+			postingIDs(f.shortlist, f.started, f.submitted, f.archived, f.betaPosting),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -402,7 +417,7 @@ func TestSearch_ScoreDescPagesBestFitFirst(t *testing.T) {
 	var got []int64
 	var scores []int
 	opts := SearchOptions{Sort: "score_desc", Limit: 1}
-	for pages := 0; pages < 5; pages++ {
+	for range 5 {
 		page, err := st.Search(ctx, opts)
 		if err != nil {
 			t.Fatalf("Search: %v", err)

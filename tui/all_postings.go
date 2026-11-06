@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -294,7 +295,7 @@ func fitCell(l message.Listing) string {
 	if l.Score == 0 {
 		return padCol("", fitColWidth)
 	}
-	cell := padCol(fmt.Sprint(l.Score), fitColWidth)
+	cell := padCol(strconv.Itoa(l.Score), fitColWidth)
 	if l.ScoreStale {
 		return model.DimStyle.Render(cell)
 	}

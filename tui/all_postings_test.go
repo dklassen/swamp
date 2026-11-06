@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -111,7 +112,7 @@ func TestAllPostings_PagesForwardAndBack(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i <= 7; i++ {
-		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+		mustUpsertPosting(t, s, acme.ID, strconv.Itoa(i), fmt.Sprintf("Role %d", i))
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
@@ -168,7 +169,7 @@ func TestAllPostings_ResizingReadsThePageAtTheNewSize(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i <= 30; i++ {
-		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+		mustUpsertPosting(t, s, acme.ID, strconv.Itoa(i), fmt.Sprintf("Role %d", i))
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
@@ -188,7 +189,7 @@ func TestAllPostings_EnterOpensTheDetailAndEscComesBack(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i <= 7; i++ {
-		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+		mustUpsertPosting(t, s, acme.ID, strconv.Itoa(i), fmt.Sprintf("Role %d", i))
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
@@ -217,7 +218,7 @@ func TestAllPostings_DetailDoesNotStepThroughACompanyListBrowsedEarlier(t *testi
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i <= 3; i++ {
-		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+		mustUpsertPosting(t, s, acme.ID, strconv.Itoa(i), fmt.Sprintf("Role %d", i))
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
@@ -274,7 +275,7 @@ func TestAllPostings_XArchivesAndThePostingLeavesThePage(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i <= 3; i++ {
-		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+		mustUpsertPosting(t, s, acme.ID, strconv.Itoa(i), fmt.Sprintf("Role %d", i))
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
@@ -309,7 +310,7 @@ func TestAllPostings_ArchivingTheLastPagesOnlyPostingStepsBack(t *testing.T) {
 	size := allPostingsTabOf(app).pageSize(app.screenRows())
 	// One more than a page: the second page has one posting.
 	for i := 1; i <= size+1; i++ {
-		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+		mustUpsertPosting(t, s, acme.ID, strconv.Itoa(i), fmt.Sprintf("Role %d", i))
 	}
 	app = openAllPostings(t, app)
 	app = sendKeyAndApply(t, app, runeKey('l'))
@@ -356,7 +357,7 @@ func TestAllPostings_ANewPostingElsewhere_KeepsThePageAndCountsIt(t *testing.T) 
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i <= 7; i++ {
-		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+		mustUpsertPosting(t, s, acme.ID, strconv.Itoa(i), fmt.Sprintf("Role %d", i))
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil), WithChangeReader(newTestChangeReader(s)))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 13})
@@ -738,7 +739,7 @@ func TestAllPostings_SSortsByFitAndBack(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	var postings []posting.Posting
 	for i := 1; i <= 6; i++ {
-		postings = append(postings, mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i)))
+		postings = append(postings, mustUpsertPosting(t, s, acme.ID, strconv.Itoa(i), fmt.Sprintf("Role %d", i)))
 	}
 	// Scores by first seen: 1:3, 2:5, 3:none, 4:1, 5:5, 6:none.
 	for i, score := range map[int]int{0: 3, 1: 5, 3: 1, 4: 5} {
@@ -843,7 +844,7 @@ func TestAllPostings_ArchivedWhileDetailIsUp_LeavesThePageUnderIt(t *testing.T) 
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for i := 1; i <= 3; i++ {
-		mustUpsertPosting(t, s, acme.ID, fmt.Sprint(i), fmt.Sprintf("Role %d", i))
+		mustUpsertPosting(t, s, acme.ID, strconv.Itoa(i), fmt.Sprintf("Role %d", i))
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
@@ -864,8 +865,10 @@ func TestAllPostings_ArchivedWhileDetailIsUp_LeavesThePageUnderIt(t *testing.T) 
 func testListings() []message.Listing {
 	return []message.Listing{
 		{ID: 2, CompanyName: "Globex", Title: "Designer", ListingStatus: message.ListingOpen},
-		{ID: 1, CompanyName: "Acme", Title: "Engineer", Department: "Platform", Location: "Berlin", WorkplaceType: "Hybrid",
-			JobURL: "https://jobs.example.com/acme/1", ApplicationURL: "https://jobs.example.com/acme/1/apply", ListingStatus: message.ListingOpen, Interested: true},
+		{
+			ID: 1, CompanyName: "Acme", Title: "Engineer", Department: "Platform", Location: "Berlin", WorkplaceType: "Hybrid",
+			JobURL: "https://jobs.example.com/acme/1", ApplicationURL: "https://jobs.example.com/acme/1/apply", ListingStatus: message.ListingOpen, Interested: true,
+		},
 	}
 }
 

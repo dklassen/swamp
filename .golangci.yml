@@ -16,10 +16,14 @@ linters:
     - copyloopvar
     - durationcheck
     - gocheckcompilerdirectives
+    - godot
+    - intrange
     - makezero
     - misspell
+    - modernize
     - nakedret
     - nolintlint
+    - perfsprint
     - predeclared
     - reassign
     - rowserrcheck
@@ -28,6 +32,10 @@ linters:
     - usetesting
     - whitespace
   settings:
+    modernize:
+      disable:
+        # An embedded struct's literal shows which fields form that unit.
+        - embedlit
     nolintlint:
       require-explanation: true
       require-specific: true
@@ -36,6 +44,10 @@ linters:
       # Table-driven tests are long by design.
       - path: _test\.go
         linters: [maintidx]
+
+formatters:
+  enable:
+    - gofumpt
 
 issues:
   max-issues-per-linter: 0

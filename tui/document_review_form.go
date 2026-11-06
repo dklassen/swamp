@@ -218,8 +218,10 @@ func createDocumentReview(documentService *service.DocumentService, docs *docume
 			return fail(fmt.Errorf("check the document before saving the review: %w", err))
 		}
 		if string(current) != d.Content {
-			return reviewRefused(src, d.ApplicationID, message.Error{Code: message.ErrDocumentChanged,
-				Text: documentChangedText(whoWrote(documentService, d.ApplicationID, documentType, string(current)))})
+			return reviewRefused(src, d.ApplicationID, message.Error{
+				Code: message.ErrDocumentChanged,
+				Text: documentChangedText(whoWrote(documentService, d.ApplicationID, documentType, string(current))),
+			})
 		}
 		review, err := documentService.Review(context.Background(), d.ApplicationID, documentType, d.Content, outcome, notes)
 		if err != nil {

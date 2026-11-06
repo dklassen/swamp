@@ -28,7 +28,7 @@ func fieldNames(t reflect.Type) []string {
 // the posting rather than being ingested content, and lives directly on
 // CreatePostingParams instead of IngestedFields.
 func TestIngestedFields_CoversEveryPostingField(t *testing.T) {
-	want := fieldNames(reflect.TypeOf(jobboard.Posting{}))
+	want := fieldNames(reflect.TypeFor[jobboard.Posting]())
 	for i, name := range want {
 		if name == "SourceID" {
 			want = append(want[:i], want[i+1:]...)
@@ -36,7 +36,7 @@ func TestIngestedFields_CoversEveryPostingField(t *testing.T) {
 		}
 	}
 
-	got := fieldNames(reflect.TypeOf(posting.IngestedFields{}))
+	got := fieldNames(reflect.TypeFor[posting.IngestedFields]())
 
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("posting.IngestedFields fields != jobboard.Posting fields (-want +got):\n%s", diff)

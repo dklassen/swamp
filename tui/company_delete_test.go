@@ -2,10 +2,9 @@ package tui
 
 import (
 	"errors"
-	"time"
-
 	"strings"
 	"testing"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/ansi"

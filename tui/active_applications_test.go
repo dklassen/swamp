@@ -24,12 +24,12 @@ import (
 func testActiveApplications() []posting.ActiveApplication {
 	return []posting.ActiveApplication{
 		{
-			Application: application.Application{ID: 10, Status: application.Started},
+			ID: 10, Status: application.Started,
 			Posting:     posting.Posting{ID: 1, IngestedFields: posting.IngestedFields{Title: "Engineer"}},
 			CompanyName: "Acme",
 		},
 		{
-			Application: application.Application{ID: 20, Status: application.Interviewing},
+			ID: 20, Status: application.Interviewing,
 			Posting:     posting.Posting{ID: 2, IngestedFields: posting.IngestedFields{Title: "Designer"}},
 			CompanyName: "Globex",
 		},
@@ -293,20 +293,28 @@ func TestNextStep(t *testing.T) {
 		{name: "nothing drafted", status: application.Started, docs: both(documentProgress{}, documentProgress{}), want: "draft"},
 		{name: "one document missing", status: application.Started, docs: both(drafted, documentProgress{}), want: "draft"},
 		{name: "drafted, not reviewed", status: application.Started, docs: both(drafted, drafted), want: "review"},
-		{name: "one passed, one not reviewed", status: application.Started,
-			reviews: map[document.Type]document.Review{document.CoverLetter: passed}, docs: both(drafted, drafted), want: "review"},
-		{name: "flagged beats unreviewed", status: application.Started,
-			reviews: map[document.Type]document.Review{document.Resume: flagged}, docs: both(drafted, drafted), want: "revise"},
-		{name: "passed, not exported", status: application.Started,
-			reviews: map[document.Type]document.Review{document.CoverLetter: passed, document.Resume: passed}, docs: both(exported, drafted), want: "export"},
-		{name: "passed and exported", status: application.Started,
-			reviews: map[document.Type]document.Review{document.CoverLetter: passed, document.Resume: passed}, docs: both(exported, exported), want: "submit"},
+		{
+			name: "one passed, one not reviewed", status: application.Started,
+			reviews: map[document.Type]document.Review{document.CoverLetter: passed}, docs: both(drafted, drafted), want: "review",
+		},
+		{
+			name: "flagged beats unreviewed", status: application.Started,
+			reviews: map[document.Type]document.Review{document.Resume: flagged}, docs: both(drafted, drafted), want: "revise",
+		},
+		{
+			name: "passed, not exported", status: application.Started,
+			reviews: map[document.Type]document.Review{document.CoverLetter: passed, document.Resume: passed}, docs: both(exported, drafted), want: "export",
+		},
+		{
+			name: "passed and exported", status: application.Started,
+			reviews: map[document.Type]document.Review{document.CoverLetter: passed, document.Resume: passed}, docs: both(exported, exported), want: "submit",
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			a := posting.ActiveApplication{
-				Application:   application.Application{Status: tt.status},
+				Status:        tt.status,
 				Posting:       posting.Posting{ListingStatus: tt.listing},
 				LatestReviews: tt.reviews,
 			}
@@ -380,7 +388,7 @@ func TestActiveApplicationListModel_Init_ReadsEachNextStep(t *testing.T) {
 	}
 
 	want := map[string]string{"Engineer": "draft", "Designer": "submit", "Manager": "export"}
-	for _, line := range strings.Split(ansi.Strip(m.render(time.Time{})), "\n") {
+	for line := range strings.SplitSeq(ansi.Strip(m.render(time.Time{})), "\n") {
 		for title, step := range want {
 			if strings.Contains(line, title) {
 				if !strings.Contains(line, step) {
@@ -405,9 +413,10 @@ func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 
 	now := time.Date(2026, 10, 1, 9, 0, 0, 0, time.UTC)
 	widest := posting.ActiveApplication{
-		Application: application.Application{ID: 1, Status: application.OfferReceived},
+		ID: 1, Status: application.OfferReceived,
 		Posting: posting.Posting{ListingStatus: posting.ListingClosed, IngestedFields: posting.IngestedFields{
-			Title: strings.Repeat("Principal Engineer ", 5)}},
+			Title: strings.Repeat("Principal Engineer ", 5),
+		}},
 		CompanyName: strings.Repeat("Longcompanyname ", 3),
 		StatusSince: now.Add(-400 * 24 * time.Hour),
 		LatestReviews: map[document.Type]document.Review{
@@ -440,7 +449,7 @@ func TestActiveApplicationListModel_View_TableSpansTerminalWidth(t *testing.T) {
 			if !strings.Contains(view, "withdraw?") || !strings.Contains(view, "Offer received") {
 				t.Fatalf("View() = %q, want the widest next step and status in it", view)
 			}
-			for _, line := range strings.Split(view, "\n") {
+			for line := range strings.SplitSeq(view, "\n") {
 				if strings.ContainsAny(line, "│╭╰├") {
 					if got := ansi.StringWidth(line); got != tt.want {
 						t.Errorf("table line is %d columns wide, want %d: %q", got, tt.want, line)
@@ -558,7 +567,7 @@ func openHomeHighlighted(t *testing.T, m *activeApplicationListModel) tea.Msg {
 func testSearchApplications() []posting.ActiveApplication {
 	apps := testActiveApplications()
 	return append(apps, posting.ActiveApplication{
-		Application: application.Application{ID: 30, Status: application.Submitted},
+		ID: 30, Status: application.Submitted,
 		Posting:     posting.Posting{ID: 3, IngestedFields: posting.IngestedFields{Title: "Staff Analyst"}},
 		CompanyName: "Initech",
 	})
@@ -857,7 +866,7 @@ func TestActiveApplicationListModel_Search_ReloadKeepsTheHighlightedMatch(t *tes
 	// so its place in the full list moves and its place among the matches
 	// doesn't.
 	reloaded := append([]posting.ActiveApplication{{
-		Application: application.Application{ID: 40},
+		ID:          40,
 		Posting:     posting.Posting{ID: 4, IngestedFields: posting.IngestedFields{Title: "Engineer II"}},
 		CompanyName: "Hooli",
 	}}, apps...)

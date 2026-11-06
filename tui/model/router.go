@@ -5,6 +5,7 @@
 package model
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"slices"
@@ -49,7 +50,7 @@ func NewMsgRouter() *MsgRouter {
 // instance is 0 or one Register has seen before.
 func (mr *MsgRouter) Register(owner Routable) error {
 	if owner == nil {
-		return fmt.Errorf("router: cannot register a nil owner")
+		return errors.New("router: cannot register a nil owner")
 	}
 	instance := owner.Instance()
 	if instance == 0 {
@@ -87,7 +88,7 @@ func (mr *MsgRouter) Register(owner Routable) error {
 // Deregister removes every route owner registered.
 func (mr *MsgRouter) Deregister(owner Routable) error {
 	if owner == nil {
-		return fmt.Errorf("router: cannot deregister a nil owner")
+		return errors.New("router: cannot deregister a nil owner")
 	}
 
 	// A new map and slices, never edited in place: a Dispatch already

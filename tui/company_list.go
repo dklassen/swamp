@@ -452,7 +452,7 @@ func companyInfoBox(c message.Company, width int) string {
 	var lines []string
 	if d := strings.Join(strings.Fields(c.Description), " "); d != "" {
 		wrapped := lipgloss.NewStyle().Width(textWidth).Render(d)
-		for _, line := range strings.Split(wrapped, "\n") {
+		for line := range strings.SplitSeq(wrapped, "\n") {
 			lines = append(lines, strings.TrimRight(line, " "))
 		}
 	} else {

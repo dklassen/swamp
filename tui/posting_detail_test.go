@@ -147,8 +147,10 @@ func TestPostingDetailModel_PrevNext_ReplaceItWithTheSibling(t *testing.T) {
 			if want := (message.Subject{Type: message.TypePosting, ID: tt.want}); nav.Meta.Subject != want {
 				t.Errorf("Subject = %+v, want %+v", nav.Meta.Subject, want)
 			}
-			want := message.Nav[message.PostingDetail]{Op: message.NavReplace, Screen: message.ScreenPostingDetail,
-				Value: message.PostingDetail{Posting: message.Posting{ID: tt.want}, Siblings: tt.siblings}}
+			want := message.Nav[message.PostingDetail]{
+				Op: message.NavReplace, Screen: message.ScreenPostingDetail,
+				Value: message.PostingDetail{Posting: message.Posting{ID: tt.want}, Siblings: tt.siblings},
+			}
 			if diff := cmp.Diff(want, nav.Payload); diff != "" {
 				t.Errorf("Nav (-want +got):\n%s", diff)
 			}
@@ -490,7 +492,7 @@ func TestPostingDetailModel_View_PadsTitleAndBody(t *testing.T) {
 	app := message.Application{ID: 9, PostingID: 5}
 	m := detailOf(documents.NewStore(t.TempDir()), p, app, nil, width, 60)
 
-	title := strings.Split(ansi.Strip(detailView(m)), "\n")[0]
+	title, _, _ := strings.Cut(ansi.Strip(detailView(m)), "\n")
 	body := strings.Split(ansi.Strip(m.viewport.View()), "\n")
 	for i, line := range append([]string{title}, body...) {
 		text := strings.TrimRight(line, " ")
@@ -532,11 +534,11 @@ func TestPostingDetailModel_View_AlignsFieldValues(t *testing.T) {
 	column := func(text string, continuation bool) int {
 		t.Helper()
 		for _, line := range lines {
-			if i := strings.Index(line, text); i >= 0 {
+			if before, _, ok := strings.Cut(line, text); ok {
 				if continuation {
 					return len(line) - len(strings.TrimLeft(line, " "))
 				}
-				return ansi.StringWidth(line[:i])
+				return ansi.StringWidth(before)
 			}
 		}
 		t.Fatalf("%q not found in view:\n%s", text, strings.Join(lines, "\n"))

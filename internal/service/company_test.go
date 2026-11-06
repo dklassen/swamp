@@ -318,8 +318,10 @@ func TestCompanyService_ListedPostings_ListsWhatTheCompanysListShows(t *testing.
 		listed      func(kept, other int64) []int64
 		wantFilters []filter.Filter
 	}{
-		{"nothing hidden", false, func(*testing.T, testutil.TestApp, int64, int64) {},
-			func(kept, other int64) []int64 { return []int64{other, kept} }, nil},
+		{
+			"nothing hidden", false, func(*testing.T, testutil.TestApp, int64, int64) {},
+			func(kept, other int64) []int64 { return []int64{other, kept} }, nil,
+		},
 		{"closed", false, func(t *testing.T, s testutil.TestApp, _, other int64) {
 			if err := s.Postings.Close(context.Background(), other, nil); err != nil {
 				t.Fatalf("Close: %v", err)

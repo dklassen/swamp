@@ -47,7 +47,7 @@ func reviewGlyphSummary(reviews map[document.Type]document.Review) string {
 	entries := make([]string, 0, len(document.Types()))
 	for _, documentType := range document.Types() {
 		var initials []rune
-		for _, word := range strings.Fields(documentType.Label()) {
+		for word := range strings.FieldsSeq(documentType.Label()) {
 			initials = append(initials, unicode.ToUpper([]rune(word)[0]))
 		}
 		glyph := model.DimStyle.Render("-")

@@ -13,8 +13,10 @@ import (
 )
 
 // pinged and ponged are two message types, for routes to tell apart.
-type pinged struct{ n int }
-type ponged struct{ n int }
+type (
+	pinged struct{ n int }
+	ponged struct{ n int }
+)
 
 func TestRouteID_String_IsTheMessagesTypeName(t *testing.T) {
 	t.Parallel()
@@ -155,7 +157,7 @@ func TestMsgRouter_Dispatch_DeliversByScope(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			owner := &focusable{component: component{name: "owner"}, focused: tt.focused}
+			owner := &focusable{name: "owner", focused: tt.focused}
 			r := model.NewMsgRouter()
 			got := 0
 			owner.routes = []*model.Route{tt.route(owner, func(pinged) tea.Cmd { got++; return nil })}
