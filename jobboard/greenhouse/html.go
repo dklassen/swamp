@@ -53,6 +53,8 @@ func stripHTML(s string) string {
 			if skipDepth == 0 {
 				b.Write(z.Text())
 			}
+		case xhtml.ErrorToken, xhtml.CommentToken, xhtml.DoctypeToken:
+			// None carries page text, and an error has already ended the loop.
 		}
 	}
 

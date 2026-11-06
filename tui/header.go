@@ -138,6 +138,8 @@ func (a *App) crumbs(path []message.Screen) []string {
 			crumbs = append(crumbs, "Submit")
 		case message.ScreenApplicationForm:
 			crumbs = append(crumbs, "Application form")
+		case message.ScreenNone:
+			// A pop opens no screen, so none is on the path.
 		}
 	}
 	return crumbs
