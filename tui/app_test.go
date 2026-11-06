@@ -3842,8 +3842,7 @@ func TestApp_TheCompanyListReloadsItselfAfterASync(t *testing.T) {
 
 			var sources []message.Source
 			for _, msg := range runCmd(t, cmd) {
-				switch msg := msg.(type) {
-				case message.Event[message.Read[message.CompanyList]]:
+				if msg, ok := msg.(message.Event[message.Read[message.CompanyList]]); ok {
 					sources = append(sources, msg.Meta.Source)
 				}
 			}
