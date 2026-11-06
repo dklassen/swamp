@@ -50,11 +50,11 @@ func tableRows(height int, around ...string) int {
 	return max(rows, 0)
 }
 
-// truncateCol shortens s to at most max columns wide, replacing the tail
+// truncateCol shortens s to at most width columns wide, replacing the tail
 // with an ellipsis when it doesn't fit. Width-aware (not byte-aware) so
 // multi-byte runes truncate correctly.
-func truncateCol(s string, max int) string {
-	return ansi.TruncateWc(s, max, "…")
+func truncateCol(s string, width int) string {
+	return ansi.TruncateWc(s, width, "…")
 }
 
 // postingMarker renders a posting's markup state as a single-character

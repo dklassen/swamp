@@ -34,6 +34,9 @@ func TestChangeLog_EveryTableIsClassified(t *testing.T) {
 			t.Errorf("%s isn't in Logged or NotLogged (changelog.go): decide whether its changes go in the change log", name)
 		}
 	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("list tables: %v", err)
+	}
 }
 
 // TestChangeLog_EveryListedTableExists: a renamed or dropped table would
@@ -83,6 +86,9 @@ func TestChangeLog_EveryColumnOfALoggedTableIsClassified(t *testing.T) {
 				t.Fatalf("scan: %v", err)
 			}
 			actual[c] = true
+		}
+		if err := rows.Err(); err != nil {
+			t.Fatalf("columns of %s: %v", table, err)
 		}
 		_ = rows.Close()
 
