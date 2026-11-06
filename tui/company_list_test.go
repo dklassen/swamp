@@ -292,6 +292,7 @@ func assertHandlersFailOnWrongMessage(t *testing.T, c model.Routable) {
 	}
 	for _, route := range c.Routes() {
 		t.Run(route.ID().String(), func(t *testing.T) {
+			t.Parallel()
 			cmd := route.Handle(probeMsg{})
 			if cmd == nil {
 				t.Fatal("handler given probeMsg returned no command, want one sending a fault")

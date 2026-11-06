@@ -43,6 +43,7 @@ func openInEditor(path string, closed func(error) tea.Msg) tea.Cmd {
 	if err != nil {
 		return func() tea.Msg { return closed(err) }
 	}
+	//nolint:noctx // The editor runs until the user closes it; nothing should cancel it.
 	return tea.ExecProcess(exec.Command(cmdName, args...), closed)
 }
 

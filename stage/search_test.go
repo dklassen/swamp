@@ -170,6 +170,7 @@ func TestSearch_PagesWithOpaqueCursors(t *testing.T) {
 	f := newSearchStage(t)
 	for _, order := range SortOrders() {
 		t.Run(order.Name(), func(t *testing.T) {
+			t.Parallel()
 			testSearchPaging(t, f, order.Name())
 		})
 	}

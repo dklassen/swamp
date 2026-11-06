@@ -1,7 +1,6 @@
 package testutil
 
 import (
-	"context"
 	"path/filepath"
 	"testing"
 
@@ -23,7 +22,7 @@ func MigratedDBPath(t *testing.T) string {
 	if err != nil {
 		t.Fatalf("open db: %v", err)
 	}
-	if _, err := migrations.Up(context.Background(), sqlDB); err != nil {
+	if _, err := migrations.Up(t.Context(), sqlDB); err != nil {
 		t.Fatalf("apply migrations: %v", err)
 	}
 	if err := sqlDB.Close(); err != nil {
@@ -86,7 +85,7 @@ func NewTestApp(t *testing.T) TestApp {
 
 func MustAddCompany(t *testing.T, s TestApp, name string) company.Company {
 	t.Helper()
-	c, err := s.Companies.Add(context.Background(), name, jobboard.Ashby, name)
+	c, err := s.Companies.Add(t.Context(), name, jobboard.Ashby, name)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -96,7 +95,7 @@ func MustAddCompany(t *testing.T, s TestApp, name string) company.Company {
 // MustIngestPosting adds a company and one posting for it.
 func MustIngestPosting(t *testing.T, s TestApp, sourceID, title string) posting.Posting {
 	t.Helper()
-	acme, err := s.Companies.Add(context.Background(), "Acme", jobboard.Ashby, "acme")
+	acme, err := s.Companies.Add(t.Context(), "Acme", jobboard.Ashby, "acme")
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
@@ -106,7 +105,7 @@ func MustIngestPosting(t *testing.T, s TestApp, sourceID, title string) posting.
 // MustIngestPostingFor adds a posting to an existing company.
 func MustIngestPostingFor(t *testing.T, s TestApp, companyID int64, sourceID, title string) posting.Posting {
 	t.Helper()
-	ingested, err := s.Postings.Ingest(context.Background(), companyID, jobboard.Ashby, sourceID, posting.IngestedFields{Title: title, RawPayload: "{}"})
+	ingested, err := s.Postings.Ingest(t.Context(), companyID, jobboard.Ashby, sourceID, posting.IngestedFields{Title: title, RawPayload: "{}"})
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -115,7 +114,7 @@ func MustIngestPostingFor(t *testing.T, s TestApp, companyID int64, sourceID, ti
 
 func MustApplyTo(t *testing.T, s TestApp, postingID int64) application.Application {
 	t.Helper()
-	app, err := s.Postings.ApplyTo(context.Background(), postingID)
+	app, err := s.Postings.ApplyTo(t.Context(), postingID)
 	if err != nil {
 		t.Fatalf("ApplyTo: %v", err)
 	}

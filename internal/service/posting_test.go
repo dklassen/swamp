@@ -449,16 +449,19 @@ func TestPostingService_Interested_ExcludesClosedDeletedAndFilteredOut(t *testin
 		hide func(t *testing.T, s testutil.TestApp, companyID, postingID int64)
 	}{
 		{"closed posting", func(t *testing.T, s testutil.TestApp, _, postingID int64) {
+			t.Helper()
 			if err := s.Postings.Close(context.Background(), postingID, nil); err != nil {
 				t.Fatalf("Close: %v", err)
 			}
 		}},
 		{"deleted company", func(t *testing.T, s testutil.TestApp, companyID, _ int64) {
+			t.Helper()
 			if _, err := s.Companies.Delete(context.Background(), companyID); err != nil {
 				t.Fatalf("delete company: %v", err)
 			}
 		}},
 		{"filtered out", func(t *testing.T, s testutil.TestApp, companyID, _ int64) {
+			t.Helper()
 			if err := s.Companies.SetFilters(context.Background(), companyID, []filter.Filter{{Field: filter.FieldDepartment, Value: "Sales"}}); err != nil {
 				t.Fatalf("SetFilters: %v", err)
 			}
@@ -775,21 +778,25 @@ func TestPostingService_AllPostings_ListsWhatTheAllPostingsTabShows(t *testing.T
 			func(kept, other, globex int64) []int64 { return []int64{globex, other, kept} },
 		},
 		{"closed", func(t *testing.T, s testutil.TestApp, _, other int64) {
+			t.Helper()
 			if err := s.Postings.Close(context.Background(), other, nil); err != nil {
 				t.Fatalf("Close: %v", err)
 			}
 		}, func(kept, _, globex int64) []int64 { return []int64{globex, kept} }},
 		{"archived", func(t *testing.T, s testutil.TestApp, _, other int64) {
+			t.Helper()
 			if _, err := s.Postings.SetArchived(context.Background(), other); err != nil {
 				t.Fatalf("SetArchived: %v", err)
 			}
 		}, func(kept, _, globex int64) []int64 { return []int64{globex, kept} }},
 		{"filtered out", func(t *testing.T, s testutil.TestApp, companyID, _ int64) {
+			t.Helper()
 			if err := s.Companies.SetFilters(context.Background(), companyID, []filter.Filter{{Field: filter.FieldDepartment, Value: "Engineering"}}); err != nil {
 				t.Fatalf("SetFilters: %v", err)
 			}
 		}, func(kept, _, globex int64) []int64 { return []int64{globex, kept} }},
 		{"company deleted", func(t *testing.T, s testutil.TestApp, companyID, _ int64) {
+			t.Helper()
 			if _, err := s.Companies.Delete(context.Background(), companyID); err != nil {
 				t.Fatalf("Delete: %v", err)
 			}

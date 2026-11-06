@@ -218,6 +218,7 @@ func TestFilterSelectModel_Handlers_FailOnTheWrongMessage(t *testing.T) {
 }
 
 func TestFilterWindow(t *testing.T) {
+	t.Parallel()
 	tests := []struct {
 		name                                                 string
 		cursor, numDepts, numLocs, rows                      int

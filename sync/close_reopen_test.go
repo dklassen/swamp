@@ -152,6 +152,7 @@ func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 		{
 			name: "sync closed it: back to started",
 			setup: func(t *testing.T, s testutil.TestApp, postingID int64) {
+				t.Helper()
 				mustCreateApplication(t, s, postingID)
 				mustClosePosting(t, s, postingID, closeFrom)
 			},
@@ -160,6 +161,7 @@ func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 		{
 			name: "sync closed it from submitted: back to submitted",
 			setup: func(t *testing.T, s testutil.TestApp, postingID int64) {
+				t.Helper()
 				mustCreateApplication(t, s, postingID)
 				mustUpdateApplicationStatus(t, s, postingID, application.Submitted)
 				mustClosePosting(t, s, postingID, closeFrom)
@@ -169,6 +171,7 @@ func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 		{
 			name: "user set posting_closed: left alone",
 			setup: func(t *testing.T, s testutil.TestApp, postingID int64) {
+				t.Helper()
 				mustCreateApplication(t, s, postingID)
 				mustClosePosting(t, s, postingID, nil)
 				mustUpdateApplicationStatus(t, s, postingID, application.PostingClosed)
@@ -178,6 +181,7 @@ func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 		{
 			name: "user changed it after sync closed it: left alone",
 			setup: func(t *testing.T, s testutil.TestApp, postingID int64) {
+				t.Helper()
 				mustCreateApplication(t, s, postingID)
 				mustClosePosting(t, s, postingID, closeFrom)
 				mustUpdateApplicationStatus(t, s, postingID, application.Withdrawn)
@@ -188,6 +192,7 @@ func TestReopenPosting_RestoresApplicationSyncClosed(t *testing.T) {
 		{
 			name: "no application",
 			setup: func(t *testing.T, s testutil.TestApp, postingID int64) {
+				t.Helper()
 				mustClosePosting(t, s, postingID, closeFrom)
 			},
 			noApplication: true,
