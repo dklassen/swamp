@@ -6,6 +6,7 @@ import (
 	"time"
 	"unicode"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/documents"
@@ -192,6 +193,18 @@ func (m *applicationDetailModel) focusChanged(e message.Event[message.Signal[mes
 	return nil
 }
 
+// applicationDetailKeys stay clear of the document types' keys, which
+// edit and review each document.
+var applicationDetailKeys = struct {
+	Posting, Reload, Submit, Form, Delete key.Binding
+}{
+	Posting: key.NewBinding(key.WithKeys("p")),
+	Reload:  key.NewBinding(key.WithKeys("u")),
+	Submit:  key.NewBinding(key.WithKeys("S")),
+	Form:    key.NewBinding(key.WithKeys("f")),
+	Delete:  key.NewBinding(key.WithKeys("D")),
+}
+
 func (m *applicationDetailModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	if m.confirm != nil {
 		cmd, closed := m.confirm.keyPressed(msg)
@@ -200,19 +213,19 @@ func (m *applicationDetailModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 		}
 		return cmd
 	}
-	switch msg.String() {
-	case "esc", "b":
+	switch {
+	case key.Matches(msg, keys.Back):
 		return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), ""))
-	case "p":
+	case key.Matches(msg, applicationDetailKeys.Posting):
 		return message.Push(m.src(), message.ScreenPostingDetail, message.Subject{Type: message.TypePosting, ID: m.detail.Posting.ID},
 			message.PostingDetail{Posting: m.detail.Posting, Application: m.detail.Application})
-	case "u":
+	case key.Matches(msg, applicationDetailKeys.Reload):
 		return m.load()
-	case "S":
+	case key.Matches(msg, applicationDetailKeys.Submit):
 		return message.Push(m.src(), message.ScreenApplicationSubmit, message.Subject{Type: message.TypeApplication, ID: m.detail.Application.ID}, m.detail)
-	case "f":
+	case key.Matches(msg, applicationDetailKeys.Form):
 		return message.Push(m.src(), message.ScreenApplicationForm, message.Subject{Type: message.TypeApplication, ID: m.detail.Application.ID}, m.detail.Application)
-	case "D":
+	case key.Matches(msg, applicationDetailKeys.Delete):
 		m.confirm = newApplicationDeleteModel(m.applications, m.detail)
 		return nil
 	}

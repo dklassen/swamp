@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
@@ -201,16 +202,27 @@ func (m *companyListModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil 
 
 // keyPressed handles a key. Each command carries a copy of what it needs,
 // since it runs off the event loop.
-func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
+var companyListKeys = struct {
+	Delete, Sync, SyncAll, Info, Add, Edit key.Binding
+}{
+	Delete:  key.NewBinding(key.WithKeys("d")),
+	Sync:    key.NewBinding(key.WithKeys("r")),
+	SyncAll: key.NewBinding(key.WithKeys("R")),
+	Info:    key.NewBinding(key.WithKeys("i")),
+	Add:     key.NewBinding(key.WithKeys("a")),
+	Edit:    key.NewBinding(key.WithKeys("e")),
+}
+
+func (m *companyListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	if m.confirm != nil {
-		cmd, closed := m.confirm.keyPressed(key)
+		cmd, closed := m.confirm.keyPressed(msg)
 		if closed {
 			m.confirm = nil
 		}
 		return cmd
 	}
 	if m.searching {
-		m.updateSearch(key)
+		m.updateSearch(msg)
 		return nil
 	}
 
@@ -222,44 +234,44 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 		current = visible[m.cursor]
 	}
 	src, about := message.Source{Instance: m.instance}, message.Subject{Type: message.TypeCompany, ID: current.ID}
-	switch key.String() {
-	case "down", "j":
+	switch {
+	case key.Matches(msg, keys.Down):
 		if m.cursor < len(visible)-1 {
 			m.cursor++
 		}
-	case "up", "k":
+	case key.Matches(msg, keys.Up):
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "q":
+	case key.Matches(msg, keys.Quit):
 		return tea.Quit
-	case "d":
+	case key.Matches(msg, companyListKeys.Delete):
 		if onCompany {
 			m.confirm = newCompanyDeleteModel(m.companyService, current, m.openPostings[current.ID])
 		}
-	case "r":
+	case key.Matches(msg, companyListKeys.Sync):
 		if onCompany {
 			return syncCompany(src, current)
 		}
-	case "R":
+	case key.Matches(msg, companyListKeys.SyncAll):
 		companies := append([]message.Company(nil), m.companies...)
 		return func() tea.Msg {
 			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(),
 				message.Run[message.SyncAll]{Value: message.SyncAll{Companies: companies}})
 		}
-	case "i":
+	case key.Matches(msg, companyListKeys.Info):
 		m.showInfo = !m.showInfo
-	case "a":
+	case key.Matches(msg, companyListKeys.Add):
 		return message.Push(src, message.ScreenCompanyForm, message.Subject{}, message.None{})
-	case "/":
+	case key.Matches(msg, keys.Search):
 		m.searching = true
-	case "esc":
+	case key.Matches(msg, keys.Esc):
 		m.clearSearch()
-	case "e":
+	case key.Matches(msg, companyListKeys.Edit):
 		if onCompany {
 			return message.Push(src, message.ScreenCompanyEdit, about, current)
 		}
-	case "enter":
+	case key.Matches(msg, keys.Enter):
 		if onCompany {
 			return message.Push(src, message.ScreenCompanyPostings, about, current)
 		}
@@ -271,31 +283,31 @@ func (m *companyListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 // to the query re-filters straight away and puts the cursor back on the
 // first match.
 func (m *companyListModel) updateSearch(msg tea.KeyPressMsg) {
-	switch msg.String() {
+	switch {
 	default:
 		if msg.Text != "" {
 			m.query += msg.Text
 			m.cursor = 0
 		}
-	case "backspace":
+	case key.Matches(msg, keys.Backspace):
 		if r := []rune(m.query); len(r) > 0 {
 			m.query = string(r[:len(r)-1])
 			m.cursor = 0
 		} else {
 			m.searching = false
 		}
-	case "esc":
+	case key.Matches(msg, keys.Esc):
 		m.searching = false
 		m.clearSearch()
-	case "down", "ctrl+n":
+	case key.Matches(msg, keys.SearchDown):
 		if m.cursor < len(m.visible())-1 {
 			m.cursor++
 		}
-	case "up", "ctrl+p":
+	case key.Matches(msg, keys.SearchUp):
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "enter":
+	case key.Matches(msg, keys.Enter):
 		// Keeps the matches, so letters act on them instead of being typed.
 		m.searching = false
 	}

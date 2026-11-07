@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
@@ -122,20 +123,20 @@ func (m *companyFormModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 		return nil
 	}
 	switch {
-	case msg.String() == "esc":
+	case key.Matches(msg, keys.Esc):
 		return m.close()
-	case msg.String() == "tab":
+	case key.Matches(msg, keys.Tab):
 		m.blurFocused()
 		m.focus = (m.focus + 1) % formFieldCount
 		m.focusFocused()
 		return nil
-	case m.focus == formFieldSource && msg.String() == "right":
+	case m.focus == formFieldSource && key.Matches(msg, keys.Right):
 		m.cycleSource(1)
 		return nil
-	case m.focus == formFieldSource && msg.String() == "left":
+	case m.focus == formFieldSource && key.Matches(msg, keys.Left):
 		m.cycleSource(-1)
 		return nil
-	case msg.String() == "enter":
+	case key.Matches(msg, keys.Enter):
 		name := strings.TrimSpace(m.inputs[formFieldName].Value())
 		sourceRef := m.inputs[formFieldSourceRef].Value()
 		if name == "" || sourceRef == "" {

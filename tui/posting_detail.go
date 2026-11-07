@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/viewport"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -195,39 +196,50 @@ func (m *postingDetailModel) focusChanged(e message.Event[message.Signal[message
 	return nil
 }
 
-func (m *postingDetailModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
-	switch key.String() {
-	case "right", "l":
+var postingDetailKeys = struct {
+	Open, Apply, Status, Notes, Review, Reload key.Binding
+}{
+	Open:   key.NewBinding(key.WithKeys("o")),
+	Apply:  key.NewBinding(key.WithKeys("a")),
+	Status: key.NewBinding(key.WithKeys("s")),
+	Notes:  key.NewBinding(key.WithKeys("n")),
+	Review: key.NewBinding(key.WithKeys("r")),
+	Reload: key.NewBinding(key.WithKeys("u")),
+}
+
+func (m *postingDetailModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
+	switch {
+	case key.Matches(msg, keys.Next):
 		return m.step(1)
-	case "left", "h":
+	case key.Matches(msg, keys.Previous):
 		return m.step(-1)
-	case "esc", "b":
+	case key.Matches(msg, keys.Back):
 		return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), ""))
-	case "o":
+	case key.Matches(msg, postingDetailKeys.Open):
 		if m.posting.JobURL != "" {
 			return openInBrowser(m.src(), message.Subject{Type: message.TypePosting, ID: m.posting.ID}, m.posting.JobURL)
 		}
-	case "a":
+	case key.Matches(msg, postingDetailKeys.Apply):
 		if !m.hasApplication() {
 			return createApplication(m.postingService, m.src(), m.posting.ID)
 		}
-	case "s":
+	case key.Matches(msg, postingDetailKeys.Status):
 		if m.hasApplication() {
 			return m.openApplication(message.ScreenApplicationStatus)
 		}
-	case "n":
+	case key.Matches(msg, postingDetailKeys.Notes):
 		if m.hasApplication() {
 			return m.openApplication(message.ScreenApplicationNotes)
 		}
-	case "r":
+	case key.Matches(msg, postingDetailKeys.Review):
 		if m.hasApplication() {
 			return m.openApplication(message.ScreenDocumentReviewSelect)
 		}
-	case "u":
+	case key.Matches(msg, postingDetailKeys.Reload):
 		return tea.Batch(m.loadPosting(), m.loadScores())
 	default:
 		var cmd tea.Cmd
-		m.viewport, cmd = m.viewport.Update(key)
+		m.viewport, cmd = m.viewport.Update(msg)
 		return cmd
 	}
 	return nil

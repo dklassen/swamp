@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/documents"
@@ -132,9 +133,9 @@ func (m *applicationSubmitModel) submitted(message.Event[message.Changed[message
 
 func (m *applicationSubmitModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	switch {
-	case msg.String() == "esc", msg.String() == "n":
+	case key.Matches(msg, keys.No):
 		return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), ""))
-	case msg.String() == "y" && !m.confirmed:
+	case key.Matches(msg, keys.Yes) && !m.confirmed:
 		m.confirmed = true
 		return updateApplicationStatus(m.applications, m.src(), m.detail.Application.ID, application.Submitted)
 	}

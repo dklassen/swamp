@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
@@ -247,6 +248,15 @@ func (m *activeApplicationListModel) focusChanged(e message.Event[message.Signal
 	return nil
 }
 
+var activeApplicationKeys = struct {
+	Order, Status, Export, Delete key.Binding
+}{
+	Order:  key.NewBinding(key.WithKeys("o")),
+	Status: key.NewBinding(key.WithKeys("s")),
+	Export: key.NewBinding(key.WithKeys("e")),
+	Delete: key.NewBinding(key.WithKeys("d")),
+}
+
 func (m *activeApplicationListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	if m.confirm != nil {
 		cmd, closed := m.confirm.keyPressed(msg)
@@ -261,39 +271,39 @@ func (m *activeApplicationListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	// Commands act on the matches a kept search shows, not the whole list.
 	visible := m.visible()
 	onRow := m.cursor < len(visible)
-	switch msg.String() {
-	case "/":
+	switch {
+	case key.Matches(msg, keys.Search):
 		m.searching = true
-	case "esc":
+	case key.Matches(msg, keys.Esc):
 		m.clearSearch()
-	case "down", "j":
+	case key.Matches(msg, keys.Down):
 		if m.cursor < len(visible)-1 {
 			m.cursor++
 		}
-	case "up", "k":
+	case key.Matches(msg, keys.Up):
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "q":
+	case key.Matches(msg, keys.Quit):
 		return tea.Quit
-	case "o":
+	case key.Matches(msg, activeApplicationKeys.Order):
 		m.order = homeOrders[m.order].next
 		return m.reload()
-	case "s":
+	case key.Matches(msg, activeApplicationKeys.Status):
 		if onRow {
 			a := visible[m.cursor].Application
 			return message.Push(m.src(), message.ScreenApplicationStatus, message.Subject{Type: message.TypeApplication, ID: a.ID}, applicationSnapshot(a))
 		}
-	case "e":
+	case key.Matches(msg, activeApplicationKeys.Export):
 		if onRow {
 			a := visible[m.cursor]
 			return message.Push(m.src(), message.ScreenApplicationExport, message.Subject{Type: message.TypeApplication, ID: a.ID}, applicationDetailOf(a))
 		}
-	case "d":
+	case key.Matches(msg, activeApplicationKeys.Delete):
 		if onRow {
 			m.confirm = newApplicationDeleteModel(m.applications, applicationDetailOf(visible[m.cursor]))
 		}
-	case "enter":
+	case key.Matches(msg, keys.Enter):
 		if onRow {
 			a := visible[m.cursor]
 			return message.Push(m.src(), message.ScreenApplicationDetail, message.Subject{Type: message.TypeApplication, ID: a.ID}, applicationDetailOf(a))
@@ -306,31 +316,31 @@ func (m *activeApplicationListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 // to the query re-filters straight away and puts the cursor back on the
 // first match.
 func (m *activeApplicationListModel) updateSearch(msg tea.KeyPressMsg) tea.Cmd {
-	switch msg.String() {
+	switch {
 	default:
 		if msg.Text != "" {
 			m.query += msg.Text
 			m.cursor = 0
 		}
-	case "backspace":
+	case key.Matches(msg, keys.Backspace):
 		if r := []rune(m.query); len(r) > 0 {
 			m.query = string(r[:len(r)-1])
 			m.cursor = 0
 		} else {
 			m.searching = false
 		}
-	case "esc":
+	case key.Matches(msg, keys.Esc):
 		m.searching = false
 		m.clearSearch()
-	case "down", "ctrl+n":
+	case key.Matches(msg, keys.SearchDown):
 		if m.cursor < len(m.visible())-1 {
 			m.cursor++
 		}
-	case "up", "ctrl+p":
+	case key.Matches(msg, keys.SearchUp):
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "enter":
+	case key.Matches(msg, keys.Enter):
 		// Keeps the matches, so letters act on them instead of being typed.
 		m.searching = false
 	}

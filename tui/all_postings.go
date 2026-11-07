@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
@@ -379,43 +380,43 @@ func (m *allPostingsModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 		current = m.page.Listings[m.cursor]
 	}
 	about := message.Subject{Type: message.TypePosting, ID: current.ID}
-	switch msg.String() {
-	case "down", "j":
+	switch {
+	case key.Matches(msg, keys.Down):
 		if m.cursor < len(m.page.Listings)-1 {
 			m.cursor++
 		}
-	case "up", "k":
+	case key.Matches(msg, keys.Up):
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "right", "l":
+	case key.Matches(msg, keys.Next):
 		return m.nextPage()
-	case "left", "h":
+	case key.Matches(msg, keys.Previous):
 		return m.previousPage()
-	case "enter":
+	case key.Matches(msg, keys.Enter):
 		if onPosting {
 			return message.Push(m.src(), message.ScreenPostingDetail, about, message.PostingDetail{Posting: listingPosting(current)})
 		}
-	case "s":
+	case key.Matches(msg, listingKeys.Sort):
 		if m.order == message.OrderBestFit {
 			m.order = message.OrderNewest
 		} else {
 			m.order = message.OrderBestFit
 		}
 		return m.firstPage()
-	case "/":
+	case key.Matches(msg, keys.Search):
 		m.searching = true
-	case "esc":
+	case key.Matches(msg, keys.Esc):
 		return m.clearSearch()
-	case "i":
+	case key.Matches(msg, listingKeys.Interested):
 		if onPosting {
 			return toggleInterested(m.postings, m.src(), current.ID, current.Interested)
 		}
-	case "x":
+	case key.Matches(msg, listingKeys.Archive):
 		if onPosting {
 			return toggleArchived(m.postings, m.src(), current.ID, current.Archived)
 		}
-	case "o":
+	case key.Matches(msg, listingKeys.Open):
 		if onPosting && current.JobURL != "" {
 			return m.openURL(m.src(), about, current.JobURL)
 		}
@@ -426,32 +427,32 @@ func (m *allPostingsModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 // updateSearch handles a key while the search line is open: letters go
 // into the query, so only keys that aren't text move or page.
 func (m *allPostingsModel) updateSearch(msg tea.KeyPressMsg) tea.Cmd {
-	switch msg.String() {
+	switch {
 	default:
 		if msg.Text != "" {
 			return m.typedKey(m.query + msg.Text)
 		}
-	case "backspace":
+	case key.Matches(msg, keys.Backspace):
 		if r := []rune(m.query); len(r) > 0 {
 			return m.typedKey(string(r[:len(r)-1]))
 		}
 		m.searching = false
-	case "esc":
+	case key.Matches(msg, keys.Esc):
 		m.searching = false
 		return m.clearSearch()
-	case "down", "ctrl+n":
+	case key.Matches(msg, keys.SearchDown):
 		if m.cursor < len(m.page.Listings)-1 {
 			m.cursor++
 		}
-	case "up", "ctrl+p":
+	case key.Matches(msg, keys.SearchUp):
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "right":
+	case key.Matches(msg, keys.Right):
 		return m.nextPage()
-	case "left":
+	case key.Matches(msg, keys.Left):
 		return m.previousPage()
-	case "enter":
+	case key.Matches(msg, keys.Enter):
 		// Keeps the results, so letters act on them instead of being typed.
 		m.searching = false
 	}
