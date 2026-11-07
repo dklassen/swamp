@@ -3,8 +3,11 @@ version: "2"
 linters:
   default: standard
   enable:
-    # complexity
+    # complexity; not cyclop, which counts each case of a key switch as a branch
+    - funlen
+    - gocognit
     - maintidx
+    - nestif
     # errors
     - errchkjson
     - errname
@@ -39,6 +42,9 @@ linters:
     - usetesting
     - whitespace
   settings:
+    funlen:
+      lines: 80
+      statements: 50
     exhaustive:
       # A default case states that every other value is handled the same way.
       default-signifies-exhaustive: true
@@ -53,7 +59,7 @@ linters:
     rules:
       # Table-driven tests are long by design.
       - path: _test\.go
-        linters: [maintidx]
+        linters: [funlen, gocognit, maintidx]
       # A test is cancelled only as it ends, so its context buys nothing.
       - path: _test\.go
         linters: [noctx]
