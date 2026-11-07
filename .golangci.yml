@@ -21,6 +21,7 @@ linters:
     - durationcheck
     - exhaustive
     - gocheckcompilerdirectives
+    - goconst
     - gocritic
     - gosec
     - godot
@@ -60,6 +61,15 @@ linters:
       # Table-driven tests are long by design.
       - path: _test\.go
         linters: [funlen, gocognit, maintidx]
+      # A test's literals are fixtures that read best where they're used.
+      - path: _test\.go
+        linters: [goconst]
+      # The change log lists the schema's own names, checked against it by its tests.
+      - path: db/migrations/changelog\.go
+        linters: [goconst]
+      # Each enum has its own name table; a shared name doesn't tie them together.
+      - path: tui/message/names\.go
+        linters: [goconst]
       # A test is cancelled only as it ends, so its context buys nothing.
       - path: _test\.go
         linters: [noctx]

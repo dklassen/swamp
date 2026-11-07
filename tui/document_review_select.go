@@ -111,11 +111,7 @@ func openDocumentReview(src message.Source, nav func(message.Source, message.Scr
 func (m *documentReviewSelectModel) View() tea.View {
 	var b strings.Builder
 	for i, opt := range m.options {
-		status := "not found"
-		if opt.exists {
-			status = "found"
-		}
-		line := opt.label + " (" + status + ")"
+		line := opt.label + " (" + documentPresence(opt.exists) + ")"
 		if i == m.cursor {
 			b.WriteString(model.CursorStyle.Render("> "+line) + "\n")
 		} else {

@@ -493,13 +493,17 @@ func postingDetailContent(p posting.Posting, application application.Application
 	return b.String()
 }
 
+func documentPresence(exists bool) string {
+	if exists {
+		return "found"
+	}
+	return "not found"
+}
+
 // documentRow renders a document's presence and path with its review badge,
 // then the review's notes if it has any.
 func documentRow(documentType document.Type, doc documents.Doc, review document.Review, hasReview bool, width int) string {
-	presence := "not found"
-	if doc.Exists {
-		presence = "found"
-	}
+	presence := documentPresence(doc.Exists)
 	label := documentTitle(documentType)
 	// The badge is placed after wrapping rather than wrapped with the path:
 	// "[not reviewed]" contains a space, and word wrapping could split it.
