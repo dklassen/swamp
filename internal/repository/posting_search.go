@@ -79,42 +79,51 @@ func (repository *PostingSearchRepository) Search(ctx context.Context, r store.R
 	page.Listings = make([]domain.Listing, len(rows))
 	for i, row := range rows {
 		page.Total = int(row.Total)
-		listingStatus, err := domain.ParseListingStatus(row.ListingStatus)
+		listing, err := listingOf(row)
 		if err != nil {
-			return nil, fmt.Errorf("posting: search: posting %d: %w", row.ID, err)
+			return nil, err
 		}
-		listing := domain.Listing{
-			ID:             row.ID,
-			Title:          row.Title,
-			Department:     row.Department,
-			Location:       row.Location,
-			WorkplaceType:  row.WorkplaceType,
-			JobURL:         row.JobUrl,
-			ApplicationURL: row.ApplicationUrl,
-			PublishedAt:    row.PublishedAt.Time,
-			FirstSeenAt:    row.FirstSeenAt,
-			ListingStatus:  listingStatus,
-			CompanyName:    row.CompanyName,
-			Interested:     row.InterestedAt.Valid,
-			Archived:       row.ArchivedAt.Valid,
-		}
-		if row.CurrentScore.Valid {
-			listing.Score = int(row.CurrentScore.Int64)
-			listing.ScoreReason = row.CurrentScoreReason.String
-			listing.ScoreStale = row.CurrentScoreContentSha256.String != row.ContentSha256
-		}
-		if row.ApplicationID.Valid {
-			status, err := application.ParseStatus(row.ApplicationStatus.String)
-			if err != nil {
-				return nil, err
-			}
-			listing.ApplicationID = row.ApplicationID.Int64
-			listing.ApplicationStatus = status
-			listing.ApplicationNotes = row.ApplicationNotes.String
-		}
-		page.Listings[i] = listing
+		page.Listings[i] = *listing
 	}
 	return &page, nil
+}
+
+// listingOf is a search row's Listing.
+func listingOf(row sqlcdb.SearchPostingsByIDRow) (*domain.Listing, error) {
+	listingStatus, err := domain.ParseListingStatus(row.ListingStatus)
+	if err != nil {
+		return nil, fmt.Errorf("posting: search: posting %d: %w", row.ID, err)
+	}
+	listing := domain.Listing{
+		ID:             row.ID,
+		Title:          row.Title,
+		Department:     row.Department,
+		Location:       row.Location,
+		WorkplaceType:  row.WorkplaceType,
+		JobURL:         row.JobUrl,
+		ApplicationURL: row.ApplicationUrl,
+		PublishedAt:    row.PublishedAt.Time,
+		FirstSeenAt:    row.FirstSeenAt,
+		ListingStatus:  listingStatus,
+		CompanyName:    row.CompanyName,
+		Interested:     row.InterestedAt.Valid,
+		Archived:       row.ArchivedAt.Valid,
+	}
+	if row.CurrentScore.Valid {
+		listing.Score = int(row.CurrentScore.Int64)
+		listing.ScoreReason = row.CurrentScoreReason.String
+		listing.ScoreStale = row.CurrentScoreContentSha256.String != row.ContentSha256
+	}
+	if row.ApplicationID.Valid {
+		status, err := application.ParseStatus(row.ApplicationStatus.String)
+		if err != nil {
+			return nil, err
+		}
+		listing.ApplicationID = row.ApplicationID.Int64
+		listing.ApplicationStatus = status
+		listing.ApplicationNotes = row.ApplicationNotes.String
+	}
+	return &listing, nil
 }
 
 // searchInOrder runs order's query. Every order's query takes the same

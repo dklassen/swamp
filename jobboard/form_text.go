@@ -36,19 +36,17 @@ func ParseFormText(text string, previous *ApplicationForm) (ApplicationForm, err
 		if line == "" || strings.HasPrefix(line, "#") {
 			continue
 		}
-		if name, value, ok := strings.Cut(line, ":"); ok {
-			if documentType, err := document.ParseType(strings.TrimSpace(name)); err == nil {
-				requirement, err := parseRequirement(strings.TrimSpace(value))
-				if err != nil {
-					return ApplicationForm{}, fmt.Errorf("jobboard: line %d: %w", n+1, err)
-				}
-				if requirement == Absent {
-					delete(form.Documents, documentType)
-				} else {
-					form.Documents[documentType] = requirement
-				}
-				continue
+		if documentType, value, ok := documentLine(line); ok {
+			requirement, err := parseRequirement(value)
+			if err != nil {
+				return ApplicationForm{}, fmt.Errorf("jobboard: line %d: %w", n+1, err)
 			}
+			if requirement == Absent {
+				delete(form.Documents, documentType)
+			} else {
+				form.Documents[documentType] = requirement
+			}
+			continue
 		}
 
 		label, required := strings.CutSuffix(line, "*")
@@ -64,6 +62,20 @@ func ParseFormText(text string, previous *ApplicationForm) (ApplicationForm, err
 		form.Questions = append(form.Questions, question)
 	}
 	return form, nil
+}
+
+// documentLine is the document type a "<type name>: <value>" line names,
+// and its value, or false if the line names none.
+func documentLine(line string) (document.Type, string, bool) {
+	name, value, ok := strings.Cut(line, ":")
+	if !ok {
+		return 0, "", false
+	}
+	documentType, err := document.ParseType(strings.TrimSpace(name))
+	if err != nil {
+		return 0, "", false
+	}
+	return documentType, strings.TrimSpace(value), true
 }
 
 var errEmptyQuestion = errors.New("a question needs a label")

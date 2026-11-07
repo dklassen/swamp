@@ -469,33 +469,8 @@ func postingDetailContent(p posting.Posting, application application.Application
 			if err != nil {
 				continue
 			}
-			presence := "not found"
-			if doc.Exists {
-				presence = "found"
-			}
-			label := documentTitle(documentType)
-			// The badge is placed after wrapping rather than wrapped with the path:
-			// "[not reviewed]" contains a space, and word wrapping could split it.
-			lines := wrapDetailValue(presence+" ("+doc.Path+")", width)
 			review, hasReview := latestReviews[documentType]
-			badge := reviewBadge(review, hasReview)
-			last := len(lines) - 1
-			switch valueWidth := detailValueWidth(width); {
-			case width > 0 && valueWidth < lipgloss.Width(badge):
-				// The value column is narrower than the badge (or there's no room
-				// for one at all), so indenting the badge to it would overrun the
-				// width and get it wrapped anyway. Give it a line of its own from
-				// the left edge instead: out of alignment, but in one piece.
-				b.WriteString(detailRow(label, lines) + badge + "\n")
-			case valueWidth > 0 && lipgloss.Width(lines[last])+1+lipgloss.Width(badge) > valueWidth:
-				b.WriteString(detailRow(label, append(lines, badge)))
-			default:
-				lines[last] += " " + badge
-				b.WriteString(detailRow(label, lines))
-			}
-			if hasReview && review.Notes != "" {
-				b.WriteString(detailField("", model.DimStyle.Render("Notes: "+review.Notes), width))
-			}
+			b.WriteString(documentRow(documentType, doc, review, hasReview, width))
 		}
 	} else {
 		b.WriteString(model.HelpStyle.Render("No application started -- press 'a' to start one.") + "\n")
@@ -504,6 +479,39 @@ func postingDetailContent(p posting.Posting, application application.Application
 		b.WriteString("\n" + sectionHeading("Description", width) + "\n" + desc + "\n")
 	}
 	return b.String()
+}
+
+// documentRow renders a document's presence and path with its review badge,
+// then the review's notes if it has any.
+func documentRow(documentType document.Type, doc documents.Doc, review document.Review, hasReview bool, width int) string {
+	presence := "not found"
+	if doc.Exists {
+		presence = "found"
+	}
+	label := documentTitle(documentType)
+	// The badge is placed after wrapping rather than wrapped with the path:
+	// "[not reviewed]" contains a space, and word wrapping could split it.
+	lines := wrapDetailValue(presence+" ("+doc.Path+")", width)
+	badge := reviewBadge(review, hasReview)
+	last := len(lines) - 1
+	var row string
+	switch valueWidth := detailValueWidth(width); {
+	case width > 0 && valueWidth < lipgloss.Width(badge):
+		// The value column is narrower than the badge (or there's no room
+		// for one at all), so indenting the badge to it would overrun the
+		// width and get it wrapped anyway. Give it a line of its own from
+		// the left edge instead: out of alignment, but in one piece.
+		row = detailRow(label, lines) + badge + "\n"
+	case valueWidth > 0 && lipgloss.Width(lines[last])+1+lipgloss.Width(badge) > valueWidth:
+		row = detailRow(label, append(lines, badge))
+	default:
+		lines[last] += " " + badge
+		row = detailRow(label, lines)
+	}
+	if hasReview && review.Notes != "" {
+		row += detailField("", model.DimStyle.Render("Notes: "+review.Notes), width)
+	}
+	return row
 }
 
 // sectionHeading renders a posting-detail section heading: name, then a

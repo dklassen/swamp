@@ -193,31 +193,32 @@ func logged[D any, S message.Snapshot](read func(context.Context, []int64) ([]D,
 		}
 		return func(row change.Event, op message.Op) (tea.Msg, error) {
 			src := message.Source{Process: row.Origin}
-			var after S
-			if op != message.OpDeleted {
-				d, ok := found[row.RowID]
-				if !ok {
+			var gone S
+			if op == message.OpDeleted {
+				return message.Logged(row.ID, src, subject(row, gone), op, row.At, gone), nil
+			}
+			d, ok := found[row.RowID]
+			if !ok {
+				return nil, nil
+			}
+			if deleted != nil && deleted(d) {
+				if op == message.OpCreated {
 					return nil, nil
 				}
-				if deleted != nil && deleted(d) {
-					if op == message.OpCreated {
-						return nil, nil
-					}
-					e := message.Logged(row.ID, src, subject(row, snapshot(d)), message.OpDeleted, row.At, after)
-					e.Payload.Before = snapshot(d)
-					return e, nil
-				}
-				if deleted != nil && op == message.OpUpdated {
-					restored, err := wasDeleted(row)
-					if err != nil {
-						return nil, err
-					}
-					if restored {
-						op = message.OpCreated
-					}
-				}
-				after = snapshot(d)
+				e := message.Logged(row.ID, src, subject(row, snapshot(d)), message.OpDeleted, row.At, gone)
+				e.Payload.Before = snapshot(d)
+				return e, nil
 			}
+			if deleted != nil && op == message.OpUpdated {
+				restored, err := wasDeleted(row)
+				if err != nil {
+					return nil, err
+				}
+				if restored {
+					op = message.OpCreated
+				}
+			}
+			after := snapshot(d)
 			return message.Logged(row.ID, src, subject(row, after), op, row.At, after), nil
 		}, nil
 	}
