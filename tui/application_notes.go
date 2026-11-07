@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -114,24 +115,24 @@ func (m *applicationNotesModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	if m.confirmingDiscard {
 		switch {
-		case msg.String() == "y":
+		case key.Matches(msg, keys.Yes):
 			return m.close()
-		case msg.String() == "esc", msg.String() == "n":
+		case key.Matches(msg, keys.No):
 			m.confirmingDiscard = false
 			return nil
-		case msg.String() != "ctrl+s":
+		case !key.Matches(msg, keys.Save):
 			return nil
 		}
 		m.confirmingDiscard = false
 	}
-	switch msg.String() {
-	case "esc":
+	switch {
+	case key.Matches(msg, keys.Esc):
 		if m.textarea.Value() != m.seed {
 			m.confirmingDiscard = true
 			return nil
 		}
 		return m.close()
-	case "ctrl+s":
+	case key.Matches(msg, keys.Save):
 		m.saving = true
 		applications, src, id, notes := m.applications, m.src(), m.application.ID, m.textarea.Value()
 		return func() tea.Msg {

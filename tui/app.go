@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/sync"
@@ -152,9 +153,9 @@ func (a *App) handle(msg tea.Msg) (tea.Cmd, bool) {
 	switch msg := msg.(type) {
 	case tea.KeyPressMsg:
 		switch {
-		case msg.String() == "ctrl+c":
+		case key.Matches(msg, keys.ForceQuit):
 			return tea.Quit, true
-		case msg.String() == "tab" && a.stack.Top() == nil:
+		case key.Matches(msg, keys.Tab) && a.stack.Top() == nil:
 			a.nav.NextTab()
 			// A stale error from the tab just left shouldn't show on the next.
 			a.err = nil

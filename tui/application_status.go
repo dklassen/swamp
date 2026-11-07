@@ -3,6 +3,7 @@ package tui
 import (
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/application"
@@ -83,18 +84,18 @@ func (m *applicationStatusModel) focusChanged(e message.Event[message.Signal[mes
 }
 
 func (m *applicationStatusModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
-	switch msg.String() {
-	case "down", "j":
+	switch {
+	case key.Matches(msg, keys.Down):
 		if m.cursor < len(applicationStatuses)-1 {
 			m.cursor++
 		}
-	case "up", "k":
+	case key.Matches(msg, keys.Up):
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "esc", "b":
+	case key.Matches(msg, keys.Back):
 		return m.close()
-	case "enter":
+	case key.Matches(msg, keys.Enter):
 		return updateApplicationStatus(m.applications, m.src(), m.application.ID, applicationStatuses[m.cursor])
 	}
 	return nil

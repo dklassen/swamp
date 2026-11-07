@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/service"
@@ -57,11 +58,11 @@ func (m *applicationDeleteModel) goneElsewhere() tea.Cmd {
 }
 
 // keyPressed handles a key, and says whether the confirmation closes.
-func (m *applicationDeleteModel) keyPressed(key tea.KeyPressMsg) (tea.Cmd, bool) {
-	switch key.String() {
-	case "esc", "enter", "n":
+func (m *applicationDeleteModel) keyPressed(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	switch {
+	case key.Matches(msg, keys.No, keys.Enter):
 		return nil, true
-	case "y":
+	case key.Matches(msg, keys.Yes):
 		if !m.confirmed {
 			m.confirmed = true
 			return deleteApplication(m.applications, m.src(), m.detail.Application.ID), false

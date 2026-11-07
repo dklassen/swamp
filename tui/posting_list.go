@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 	"charm.land/lipgloss/v2/table"
@@ -303,7 +304,17 @@ func (m *postingListModel) focusChanged(e message.Event[message.Signal[message.F
 	return nil
 }
 
-func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
+type postingListKeyMap struct {
+	Refresh, Filters, HideArchived key.Binding
+}
+
+var postingListKeys = postingListKeyMap{
+	Refresh:      key.NewBinding(key.WithKeys("r")),
+	Filters:      key.NewBinding(key.WithKeys("f")),
+	HideArchived: key.NewBinding(key.WithKeys("A")),
+}
+
+func (m *postingListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	src := message.Source{Instance: m.instance}
 	listings := m.list.Listings
 	onPosting := m.cursor < len(listings)
@@ -311,29 +322,29 @@ func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 	if onPosting {
 		current = listings[m.cursor]
 	}
-	switch key.String() {
-	case "down", "j":
+	switch {
+	case key.Matches(msg, keys.Down):
 		if m.cursor < len(listings)-1 {
 			m.cursor++
 		}
-	case "up", "k":
+	case key.Matches(msg, keys.Up):
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "right", "l":
+	case key.Matches(msg, keys.Next):
 		return m.nextPage()
-	case "left", "h":
+	case key.Matches(msg, keys.Previous):
 		return m.previousPage()
-	case "s":
+	case key.Matches(msg, listingKeys.Sort):
 		if m.order == message.OrderBestFit {
 			m.order = message.OrderNewest
 		} else {
 			m.order = message.OrderBestFit
 		}
 		return m.firstPage()
-	case "esc", "b":
+	case key.Matches(msg, keys.Back):
 		return tea.Batch(message.Pop(src), message.ReportStatus(src, ""))
-	case "enter":
+	case key.Matches(msg, keys.Enter):
 		if onPosting {
 			siblings := make([]int64, len(listings))
 			for i, l := range listings {
@@ -342,24 +353,24 @@ func (m *postingListModel) keyPressed(key tea.KeyPressMsg) tea.Cmd {
 			return message.Push(src, message.ScreenPostingDetail, message.Subject{Type: message.TypePosting, ID: current.ID},
 				message.PostingDetail{Posting: listingPosting(current), Siblings: siblings})
 		}
-	case "o":
+	case key.Matches(msg, listingKeys.Open):
 		if onPosting && current.JobURL != "" {
 			return openInBrowser(src, message.Subject{Type: message.TypePosting, ID: current.ID}, current.JobURL)
 		}
-	case "r":
+	case key.Matches(msg, postingListKeys.Refresh):
 		return syncCompany(src, m.company)
-	case "f":
+	case key.Matches(msg, postingListKeys.Filters):
 		return message.Push(src, message.ScreenFilterSelect, message.Subject{Type: message.TypeCompany, ID: m.company.ID},
 			message.FilterSelection{Company: m.company, Departments: m.list.Departments, Locations: m.list.Locations})
-	case "i":
+	case key.Matches(msg, listingKeys.Interested):
 		if onPosting {
 			return toggleInterested(m.postingService, src, current.ID, current.Interested)
 		}
-	case "x":
+	case key.Matches(msg, listingKeys.Archive):
 		if onPosting {
 			return toggleArchived(m.postingService, src, current.ID, current.Archived)
 		}
-	case "A":
+	case key.Matches(msg, postingListKeys.HideArchived):
 		m.hideArchived = !m.hideArchived
 		hidden := message.HideArchived{Hidden: m.hideArchived}
 		return tea.Batch(m.firstPage(), func() tea.Msg {

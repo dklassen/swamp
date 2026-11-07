@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
@@ -70,13 +71,13 @@ func (m *companyEditModel) Init() tea.Cmd { return nil }
 func (m *companyEditModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil }
 
 func (m *companyEditModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc":
+	switch {
+	case key.Matches(msg, keys.Esc):
 		if m.saving {
 			return nil
 		}
 		return m.close()
-	case "enter":
+	case key.Matches(msg, keys.Enter):
 		name := strings.TrimSpace(m.nameInput.Value())
 		if name == "" {
 			return nil

@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/documents"
@@ -72,18 +73,18 @@ func (m *documentReviewSelectModel) focusChanged(e message.Event[message.Signal[
 }
 
 func (m *documentReviewSelectModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
-	switch msg.String() {
-	case "down", "j":
+	switch {
+	case key.Matches(msg, keys.Down):
 		if m.cursor < len(m.options)-1 {
 			m.cursor++
 		}
-	case "up", "k":
+	case key.Matches(msg, keys.Up):
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "esc", "b":
+	case key.Matches(msg, keys.Back):
 		return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), ""))
-	case "enter":
+	case key.Matches(msg, keys.Enter):
 		opt := m.options[m.cursor]
 		if !opt.exists {
 			return nil
@@ -110,11 +111,7 @@ func openDocumentReview(src message.Source, nav func(message.Source, message.Scr
 func (m *documentReviewSelectModel) View() tea.View {
 	var b strings.Builder
 	for i, opt := range m.options {
-		status := "not found"
-		if opt.exists {
-			status = "found"
-		}
-		line := opt.label + " (" + status + ")"
+		line := opt.label + " (" + documentPresence(opt.exists) + ")"
 		if i == m.cursor {
 			b.WriteString(model.CursorStyle.Render("> "+line) + "\n")
 		} else {
