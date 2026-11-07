@@ -196,9 +196,11 @@ func (m *postingDetailModel) focusChanged(e message.Event[message.Signal[message
 	return nil
 }
 
-var postingDetailKeys = struct {
+type postingDetailKeyMap struct {
 	Open, Apply, Status, Notes, Review, Reload key.Binding
-}{
+}
+
+var postingDetailKeys = postingDetailKeyMap{
 	Open:   key.NewBinding(key.WithKeys("o")),
 	Apply:  key.NewBinding(key.WithKeys("a")),
 	Status: key.NewBinding(key.WithKeys("s")),

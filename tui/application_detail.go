@@ -193,11 +193,13 @@ func (m *applicationDetailModel) focusChanged(e message.Event[message.Signal[mes
 	return nil
 }
 
-// applicationDetailKeys stay clear of the document types' keys, which
+// applicationDetailKeyMap stays clear of the document types' keys, which
 // edit and review each document.
-var applicationDetailKeys = struct {
+type applicationDetailKeyMap struct {
 	Posting, Reload, Submit, Form, Delete key.Binding
-}{
+}
+
+var applicationDetailKeys = applicationDetailKeyMap{
 	Posting: key.NewBinding(key.WithKeys("p")),
 	Reload:  key.NewBinding(key.WithKeys("u")),
 	Submit:  key.NewBinding(key.WithKeys("S")),

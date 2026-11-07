@@ -202,9 +202,11 @@ func (m *companyListModel) Update(tea.Msg) (tea.Model, tea.Cmd) { return m, nil 
 
 // keyPressed handles a key. Each command carries a copy of what it needs,
 // since it runs off the event loop.
-var companyListKeys = struct {
+type companyListKeyMap struct {
 	Delete, Sync, SyncAll, Info, Add, Edit key.Binding
-}{
+}
+
+var companyListKeys = companyListKeyMap{
 	Delete:  key.NewBinding(key.WithKeys("d")),
 	Sync:    key.NewBinding(key.WithKeys("r")),
 	SyncAll: key.NewBinding(key.WithKeys("R")),

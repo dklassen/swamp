@@ -158,9 +158,11 @@ func documentReviewFormHelp() string {
 // binds to "previous line" and "character forward" respectively; using
 // them here would silently submit the review whenever the user tries to
 // move the cursor while editing multi-line notes.
-var documentReviewFormKeys = struct {
+type documentReviewFormKeyMap struct {
 	Pass, Flag key.Binding
-}{
+}
+
+var documentReviewFormKeys = documentReviewFormKeyMap{
 	Pass: key.NewBinding(key.WithKeys("ctrl+s")),
 	Flag: key.NewBinding(key.WithKeys("ctrl+g")),
 }

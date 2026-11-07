@@ -304,9 +304,11 @@ func (m *postingListModel) focusChanged(e message.Event[message.Signal[message.F
 	return nil
 }
 
-var postingListKeys = struct {
+type postingListKeyMap struct {
 	Refresh, Filters, HideArchived key.Binding
-}{
+}
+
+var postingListKeys = postingListKeyMap{
 	Refresh:      key.NewBinding(key.WithKeys("r")),
 	Filters:      key.NewBinding(key.WithKeys("f")),
 	HideArchived: key.NewBinding(key.WithKeys("A")),

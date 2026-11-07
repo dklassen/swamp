@@ -128,9 +128,11 @@ func (m *filterSelectModel) selection() message.FilterSelection {
 	return sel
 }
 
-var filterSelectKeys = struct {
+type filterSelectKeyMap struct {
 	Toggle key.Binding
-}{
+}
+
+var filterSelectKeys = filterSelectKeyMap{
 	Toggle: key.NewBinding(key.WithKeys("space")),
 }
 

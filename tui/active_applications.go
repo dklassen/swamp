@@ -248,9 +248,11 @@ func (m *activeApplicationListModel) focusChanged(e message.Event[message.Signal
 	return nil
 }
 
-var activeApplicationKeys = struct {
+type activeApplicationKeyMap struct {
 	Order, Status, Export, Delete key.Binding
-}{
+}
+
+var activeApplicationKeys = activeApplicationKeyMap{
 	Order:  key.NewBinding(key.WithKeys("o")),
 	Status: key.NewBinding(key.WithKeys("s")),
 	Export: key.NewBinding(key.WithKeys("e")),
