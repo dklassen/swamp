@@ -135,7 +135,12 @@ func runCommand(rf runFlags) error {
 	case cmdTUI, cmdMigrate:
 		// Migrate returned before the database opened; the TUI runs below.
 	}
+	return runTUI(db, documentsStore, dbPath, cfg.Origin, rf.mcp)
+}
 
+// runTUI runs the TUI on db as origin, and with withMCP the MCP server
+// alongside it, until the user quits.
+func runTUI(db store.Store, documentsStore *documents.Store, dbPath, origin string, withMCP bool) error {
 	logPath := os.Getenv("SWAMP_LOG_PATH")
 	if logPath == "" {
 		logPath = filepath.Join(filepath.Dir(dbPath), "swamp.log")
@@ -163,7 +168,7 @@ func runCommand(rf runFlags) error {
 	if err := router.Register(screens); err != nil {
 		return fmt.Errorf("register the screens: %w", err)
 	}
-	reader := tui.NewChangeReader(companies, postings, applications, documentService, scores, changes, cfg.Origin, since, tui.ChangePollInterval)
+	reader := tui.NewChangeReader(companies, postings, applications, documentService, scores, changes, origin, since, tui.ChangePollInterval)
 	app := tui.New(
 		router,
 		tui.NewNavigation(screens.Tabs()),
@@ -174,7 +179,7 @@ func runCommand(rf runFlags) error {
 	)
 	program := tea.NewProgram(app)
 	stopMCP := func(context.Context) error { return nil }
-	if rf.mcp {
+	if withMCP {
 		// About to crash anyway: a failed release has nowhere better to go.
 		release := func() { _ = program.ReleaseTerminal() }
 		addr := mcpAddr()
