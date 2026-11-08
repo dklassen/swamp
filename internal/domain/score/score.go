@@ -201,9 +201,10 @@ type RecordResult struct {
 
 // Score is one score a posting was given, and what produced it.
 type Score struct {
-	ID        int64
-	PostingID int64
 	Provenance
+
+	ID            int64
+	PostingID     int64
 	Score         int
 	Reason        string
 	ContentSHA256 string

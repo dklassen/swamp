@@ -45,11 +45,12 @@ type IngestedFields struct {
 // under an "IngestedFields" key and silently break that contract (see
 // #59).
 type Posting struct {
+	IngestedFields
+
 	ID        int64  `json:"ID"`
 	CompanyID int64  `json:"CompanyID"`
 	Source    string `json:"Source"`
 	SourceID  string `json:"SourceID"`
-	IngestedFields
 	// ContentSHA256 is ContentSHA256 of the content: the version a fit
 	// score is tied to.
 	ContentSHA256 string        `json:"ContentSHA256"`

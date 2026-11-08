@@ -133,6 +133,7 @@ func TestMsgRouter_Register_RefusesAnInterfaceMessageType(t *testing.T) {
 // focusable is a component whose focus the test sets.
 type focusable struct {
 	component
+
 	focused bool
 }
 
