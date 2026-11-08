@@ -342,7 +342,7 @@ func TestApp_EnteringApplicationDetail_ShowsAChangeMadeBeforeIt(t *testing.T) {
 	t.Parallel()
 
 	app, s, target := deleteTestApp(t, withTestChangeReader)
-	if err := updateApplicationStatusIn(context.Background(), s, target.PostingID, application.Interviewing); err != nil {
+	if err := setInterviewingIn(context.Background(), s, target.PostingID); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 
@@ -380,7 +380,7 @@ func TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere(t *testing.T) {
 	if shownDetail(app).Application.ID == first.ID {
 		other = second
 	}
-	if err := updateApplicationStatusIn(ctx, s, other.PostingID, application.Interviewing); err != nil {
+	if err := setInterviewingIn(ctx, s, other.PostingID); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 	app = readChangeLog(t, app)
@@ -406,7 +406,7 @@ func TestApp_TabBackToTheHomeList_ShowsAChangeClearedOnTheCompanyList(t *testing
 	if app.onScreen() != message.ScreenCompanyList {
 		t.Fatalf("screen = %v, want the company list", app.onScreen())
 	}
-	if err := updateApplicationStatusIn(context.Background(), s, target.PostingID, application.Interviewing); err != nil {
+	if err := setInterviewingIn(context.Background(), s, target.PostingID); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
 	}
 	app = readChangeLog(t, app)

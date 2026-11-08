@@ -7,7 +7,6 @@ import (
 	"io/fs"
 	"os"
 
-	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/store"
 )
@@ -40,22 +39,22 @@ func (e *ApplicationDeletedError) Error() string {
 	return fmt.Sprintf("stage: application %d (posting %d) was deleted", e.ApplicationID, e.PostingID)
 }
 
-// application returns applicationID's application, or an error saying why
-// its documents can't be touched. Documents folders are keyed by ID alone,
+// application returns an error saying why applicationID's documents
+// can't be touched, or nil. Documents folders are keyed by ID alone,
 // so writing for an ID with no application would leave a draft for
 // whichever application gets that ID next.
-func (st *Stage) application(ctx context.Context, applicationID int64) (application.Application, error) {
+func (st *Stage) application(ctx context.Context, applicationID int64) error {
 	app, err := st.applications.GetIncludingDeleted(ctx, applicationID)
 	if errors.Is(err, store.ErrNotFound) {
-		return application.Application{}, fmt.Errorf("%w: %d", ErrApplicationNotFound, applicationID)
+		return fmt.Errorf("%w: %d", ErrApplicationNotFound, applicationID)
 	}
 	if err != nil {
-		return application.Application{}, fmt.Errorf("stage: get application %d: %w", applicationID, err)
+		return fmt.Errorf("stage: get application %d: %w", applicationID, err)
 	}
 	if !app.DeletedAt.IsZero() {
-		return application.Application{}, &ApplicationDeletedError{ApplicationID: applicationID, PostingID: app.PostingID}
+		return &ApplicationDeletedError{ApplicationID: applicationID, PostingID: app.PostingID}
 	}
-	return *app, nil
+	return nil
 }
 
 // WriteDocument replaces applicationID's documentType document with
@@ -68,7 +67,7 @@ func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documen
 	if replacesVersion != nil && *replacesVersion == "" {
 		return "", ErrEmptyReplacesVersion
 	}
-	if _, err := st.application(ctx, applicationID); err != nil {
+	if err := st.application(ctx, applicationID); err != nil {
 		return "", err
 	}
 	var path string
@@ -96,7 +95,7 @@ func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documen
 // path, with the same application check as WriteDocument. Unlike a write
 // it never creates the application's folder.
 func (st *Stage) ReadDocument(ctx context.Context, applicationID int64, documentType document.Type) (path, content string, err error) {
-	if _, err := st.application(ctx, applicationID); err != nil {
+	if err := st.application(ctx, applicationID); err != nil {
 		return "", "", err
 	}
 	path, err = st.documents.Path(applicationID, documentType)

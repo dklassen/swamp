@@ -176,13 +176,13 @@ func createApplicationIn(ctx context.Context, s testutil.TestApp, postingID int6
 	return s.Postings.ApplyTo(ctx, postingID)
 }
 
-// updateApplicationStatusIn sets the status of postingID's application.
-func updateApplicationStatusIn(ctx context.Context, s testutil.TestApp, postingID int64, status application.Status) error {
+// setInterviewingIn moves postingID's application to Interviewing.
+func setInterviewingIn(ctx context.Context, s testutil.TestApp, postingID int64) error {
 	app, err := s.Postings.Application(ctx, postingID)
 	if err != nil {
 		return err
 	}
-	_, err = s.Applications.SetStatus(ctx, app.ID, status)
+	_, err = s.Applications.SetStatus(ctx, app.ID, application.Interviewing)
 	return err
 }
 

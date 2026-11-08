@@ -20,17 +20,17 @@ import (
 
 // deleteListOf is a company list of Acme, with three open postings, and
 // Globex, with the cursor on Acme.
-func deleteListOf(t *testing.T) (*companyListModel, company.Company) {
+func deleteListOf(t *testing.T) *companyListModel {
 	t.Helper()
 	acme := company.Company{ID: 1, Name: "Acme", Source: "ashby"}
 	globex := company.Company{ID: 2, Name: "Globex", Source: "lever"}
-	return companyListOf(t, []company.Company{acme, globex}, map[int64]int{acme.ID: 3}, 100, 30), acme
+	return companyListOf(t, []company.Company{acme, globex}, map[int64]int{acme.ID: 3}, 100, 30)
 }
 
 // d opens the confirmation over the list, which stays in view behind it.
 func TestCompanyListModel_D_OpensTheDeleteConfirmation(t *testing.T) {
 	t.Parallel()
-	m, _ := deleteListOf(t)
+	m := deleteListOf(t)
 
 	if got := press(t, m, runeKey('d')); got != nil {
 		t.Errorf("d sent %#v, want nothing: the list opens the confirmation itself", got)
@@ -53,7 +53,7 @@ func TestCompanyListModel_DeleteConfirmation_KeepKeysCloseIt(t *testing.T) {
 	for _, key := range []tea.KeyPressMsg{runeKey('n'), {Code: tea.KeyEsc}, {Code: tea.KeyEnter}} {
 		t.Run(key.String(), func(t *testing.T) {
 			t.Parallel()
-			m, _ := deleteListOf(t)
+			m := deleteListOf(t)
 			press(t, m, runeKey('d'))
 
 			if got := press(t, m, key); got != nil {
@@ -71,7 +71,7 @@ func TestCompanyListModel_DeleteConfirmation_KeepKeysCloseIt(t *testing.T) {
 // it closes is the list's.
 func TestCompanyListModel_DeleteConfirmation_HoldsTheListsKeysUntilItCloses(t *testing.T) {
 	t.Parallel()
-	m, _ := deleteListOf(t)
+	m := deleteListOf(t)
 	press(t, m, runeKey('d'))
 
 	press(t, m, runeKey('j'))
@@ -126,7 +126,7 @@ func TestCompanyListModel_DeleteConfirmation_ClosesWhenItsCompanyIsDeletedOrItsD
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, _ := deleteListOf(t)
+			m := deleteListOf(t)
 			r := model.NewMsgRouter()
 			if err := r.Register(m); err != nil {
 				t.Fatalf("Register: %v", err)
@@ -176,7 +176,7 @@ func TestCompanyListModel_DeleteConfirmation_Y_DeletesOnce(t *testing.T) {
 // Nothing under the box takes a paste.
 func TestCompanyListModel_DeleteConfirmation_PasteChangesNothing(t *testing.T) {
 	t.Parallel()
-	m, _ := deleteListOf(t)
+	m := deleteListOf(t)
 	press(t, m, runeKey('d'))
 	before := companyListView(m)
 

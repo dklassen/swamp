@@ -954,13 +954,17 @@ func TestSearchPostings_AdvertisesEnums(t *testing.T) {
 	var schema struct {
 		Properties struct {
 			ApplicationStatuses struct {
-				Items struct{ Enum []string } `json:"items"`
-			}
-			ListingStatus struct{ Enum []string }
-			Sort          struct {
-				Enum        []string
-				Description string `json:"description"`
-			}
+				Items struct {
+					Enum []string `json:"enum"`
+				} `json:"items"`
+			} `json:"ApplicationStatuses"`
+			ListingStatus struct {
+				Enum []string `json:"enum"`
+			} `json:"ListingStatus"`
+			Sort struct {
+				Enum        []string `json:"enum"`
+				Description string   `json:"description"`
+			} `json:"Sort"`
 		} `json:"properties"`
 	}
 	if err := json.Unmarshal(raw, &schema); err != nil {
@@ -1434,13 +1438,13 @@ func TestRecordScores_AdvertisesTheRefusalNames(t *testing.T) {
 				Items struct {
 					Properties struct {
 						Why struct {
-							Type string
-							Enum []string
-						}
-					}
-				}
-			}
-		}
+							Type string   `json:"type"`
+							Enum []string `json:"enum"`
+						} `json:"Why"`
+					} `json:"properties"`
+				} `json:"items"`
+			} `json:"Refused"`
+		} `json:"properties"`
 	}
 	if err := json.Unmarshal(raw, &schema); err != nil {
 		t.Fatalf("unmarshal schema %s: %v", raw, err)

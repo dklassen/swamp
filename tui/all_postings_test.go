@@ -688,10 +688,13 @@ func TestAllPostings_NoMatches_SaysWhatWasSearched(t *testing.T) {
 	}
 }
 
-// mustScore records fit for p against a fixed profile.
-func mustScore(t *testing.T, s testutil.TestApp, p posting.Posting, fit int, profile string) {
+// testProfile is the profile every score in these tests is against.
+const testProfile = "p"
+
+// mustScore records fit for p against testProfile.
+func mustScore(t *testing.T, s testutil.TestApp, p posting.Posting, fit int) {
 	t.Helper()
-	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-opus-5-5", ProfileSHA256: profile}, []score.Entry{
+	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-opus-5-5", ProfileSHA256: testProfile}, []score.Entry{
 		{PostingID: p.ID, Score: fit, Reason: "reason", ContentSHA256: p.ContentSHA256},
 	}); err != nil {
 		t.Fatalf("recordScores: %v", err)
@@ -706,8 +709,8 @@ func TestAllPostings_ShowsEachPostingsFit(t *testing.T) {
 	scored := mustUpsertPosting(t, s, acme.ID, "1", "Scored")
 	stale := mustUpsertPosting(t, s, acme.ID, "2", "Rewritten since")
 	mustUpsertPosting(t, s, acme.ID, "3", "Unscored")
-	mustScore(t, s, scored, 4, "p")
-	mustScore(t, s, stale, 2, "p")
+	mustScore(t, s, scored, 4)
+	mustScore(t, s, stale, 2)
 	if _, err := s.Postings.Ingest(context.Background(), acme.ID, jobboard.Ashby, "2", posting.IngestedFields{Title: "Rewritten since", DescriptionText: "New text."}); err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
@@ -743,7 +746,7 @@ func TestAllPostings_SSortsByFitAndBack(t *testing.T) {
 	}
 	// Scores by first seen: 1:3, 2:5, 3:none, 4:1, 5:5, 6:none.
 	for i, score := range map[int]int{0: 3, 1: 5, 3: 1, 4: 5} {
-		mustScore(t, s, postings[i], score, "p")
+		mustScore(t, s, postings[i], score)
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 140, Height: 13})
@@ -785,7 +788,7 @@ func TestAllPostings_AScoreRecordedElsewhere_Shows(t *testing.T) {
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 140, Height: 30})
 	app = openAllPostings(t, app)
 
-	mustScore(t, s, p, 4, "p")
+	mustScore(t, s, p, 4)
 	app = readChangeLog(t, app)
 
 	if got := allPostingsTabOf(app).page.Listings[0].Score; got != 4 {
@@ -799,7 +802,7 @@ func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	p := mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
-	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: "p"}, []score.Entry{
+	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: testProfile}, []score.Entry{
 		{PostingID: p.ID, Score: 2, Reason: "first look", ContentSHA256: p.ContentSHA256},
 	}); err != nil {
 		t.Fatalf("recordScores: %v", err)

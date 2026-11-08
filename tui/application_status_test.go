@@ -9,7 +9,6 @@ import (
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/domain/application"
-	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/tui/message"
@@ -19,16 +18,16 @@ import (
 var testStatusApplication = message.Application{ID: 7, PostingID: 5, Status: message.ApplicationStarted}
 
 // statusPickerOn is a picker opened on testStatusApplication at status.
-func statusPickerOn(applications *service.ApplicationService, status application.Status) *applicationStatusModel {
+func statusPickerOn(status application.Status) *applicationStatusModel {
 	app := testStatusApplication
 	app.Status = statusSnapshots[status]
-	return newApplicationStatusModel(applications, app)
+	return newApplicationStatusModel(nil, app)
 }
 
 func TestApplicationStatusModel_OpensWithTheCursorOnTheNavsStatus(t *testing.T) {
 	t.Parallel()
 
-	m := statusPickerOn(nil, application.Submitted)
+	m := statusPickerOn(application.Submitted)
 	if want := applicationStatusIndex(application.Submitted); m.cursor != want {
 		t.Fatalf("cursor = %d, want %d (index of %s)", m.cursor, want, application.Submitted)
 	}
@@ -37,7 +36,7 @@ func TestApplicationStatusModel_OpensWithTheCursorOnTheNavsStatus(t *testing.T) 
 func TestApplicationStatusModel_CursorMovement_ClampsToStatusCount(t *testing.T) {
 	t.Parallel()
 
-	m := statusPickerOn(nil, application.Started)
+	m := statusPickerOn(application.Started)
 	for range len(applicationStatuses) + 5 {
 		m.keyPressed(tea.KeyPressMsg{Code: tea.KeyDown})
 	}
@@ -57,7 +56,7 @@ func TestApplicationStatusModel_EscOrB_PopsAndClearsTheBanner(t *testing.T) {
 	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEsc}, runeKey('b')} {
 		t.Run(key.String(), func(t *testing.T) {
 			t.Parallel()
-			m := statusPickerOn(nil, application.Started)
+			m := statusPickerOn(application.Started)
 
 			got := runCmd(t, m.keyPressed(key))
 			if !popsIn(got, m.Instance()) {
@@ -125,13 +124,13 @@ func TestApplicationStatusModel_ClosesOnItsOwnSaveOnly(t *testing.T) {
 				message.OpUpdated, time.Now().UTC(), model.ErrorOf(errors.New("disk full")))
 		}},
 		{name: "another screen's", result: func(*applicationStatusModel) tea.Msg {
-			return saved(statusPickerOn(nil, application.Started).Instance())
+			return saved(statusPickerOn(application.Started).Instance())
 		}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := statusPickerOn(nil, application.Started)
+			m := statusPickerOn(application.Started)
 			r := model.NewMsgRouter()
 			if err := r.Register(m); err != nil {
 				t.Fatalf("Register: %v", err)
@@ -155,7 +154,7 @@ func TestStatusPicker_OpensOnAStatusChangedElsewhere(t *testing.T) {
 	t.Parallel()
 
 	app, s, target := deleteTestApp(t, withTestChangeReader)
-	if err := updateApplicationStatusIn(t.Context(), s, target.PostingID, application.Interviewing); err != nil {
+	if err := setInterviewingIn(t.Context(), s, target.PostingID); err != nil {
 		t.Fatalf("UpdateStatus: %v", err)
 	}
 	app = readChangeLog(t, app)
@@ -190,7 +189,7 @@ func TestStatusPicker_SaveFails_ShowsWhyAndStaysOpen(t *testing.T) {
 
 func TestApplicationStatusModel_Handlers_FailOnTheWrongMessage(t *testing.T) {
 	t.Parallel()
-	assertHandlersFailOnWrongMessage(t, statusPickerOn(nil, application.Started))
+	assertHandlersFailOnWrongMessage(t, statusPickerOn(application.Started))
 }
 
 // TestApplicationStatusLabel pins the display text for every status in
@@ -242,7 +241,7 @@ func TestApplicationStatusLabel_CoversEveryStatus(t *testing.T) {
 func TestApplicationStatusModel_View_ShowsLabelsNotEnumValues(t *testing.T) {
 	t.Parallel()
 
-	m := statusPickerOn(nil, application.Started)
+	m := statusPickerOn(application.Started)
 	got := m.View().Content
 
 	if !strings.Contains(got, "Offer received") {
@@ -261,7 +260,7 @@ func TestApplicationStatusModel_View_ShowsLabelsNotEnumValues(t *testing.T) {
 func TestApplicationStatusModel_View_OffersWithdrawn(t *testing.T) {
 	t.Parallel()
 
-	m := statusPickerOn(nil, application.Started)
+	m := statusPickerOn(application.Started)
 
 	if got := m.View().Content; !strings.Contains(got, "Withdrawn") {
 		t.Errorf("View() = %q, want Withdrawn offered -- it's the only way to close an application by hand without claiming a rejection that never happened", got)
