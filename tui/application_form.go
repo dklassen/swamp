@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -148,7 +149,7 @@ func (m *applicationFormModel) discardBox(width int) string {
 
 func (m *applicationFormModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	if !m.loaded {
-		if msg.String() == "esc" {
+		if key.Matches(msg, keys.Esc) {
 			return m.close("")
 		}
 		return nil
@@ -158,24 +159,24 @@ func (m *applicationFormModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	}
 	if m.confirmingDiscard {
 		switch {
-		case msg.String() == "y":
+		case key.Matches(msg, keys.Yes):
 			return m.close("")
-		case msg.String() == "esc", msg.String() == "n":
+		case key.Matches(msg, keys.No):
 			m.confirmingDiscard = false
 			return nil
-		case msg.String() != "ctrl+s":
+		case !key.Matches(msg, keys.Save):
 			return nil
 		}
 		m.confirmingDiscard = false
 	}
-	switch msg.String() {
-	case "esc":
+	switch {
+	case key.Matches(msg, keys.Esc):
 		if m.textarea.Value() != m.seed {
 			m.confirmingDiscard = true
 			return nil
 		}
 		return m.close("")
-	case "ctrl+s":
+	case key.Matches(msg, keys.Save):
 		form, err := jobboard.ParseFormText(m.textarea.Value(), &m.previous)
 		m.parseErr = err
 		if err != nil {

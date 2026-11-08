@@ -5,6 +5,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
 
@@ -127,18 +128,26 @@ func (m *filterSelectModel) selection() message.FilterSelection {
 	return sel
 }
 
+type filterSelectKeyMap struct {
+	Toggle key.Binding
+}
+
+var filterSelectKeys = filterSelectKeyMap{
+	Toggle: key.NewBinding(key.WithKeys("space")),
+}
+
 func (m *filterSelectModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	total := len(m.departmentOptions) + len(m.locationOptions)
-	switch msg.String() {
-	case "down", "j":
+	switch {
+	case key.Matches(msg, keys.Down):
 		if m.cursor < total-1 {
 			m.cursor++
 		}
-	case "up", "k":
+	case key.Matches(msg, keys.Up):
 		if m.cursor > 0 {
 			m.cursor--
 		}
-	case "space":
+	case key.Matches(msg, filterSelectKeys.Toggle):
 		field, value, ok := m.itemAtCursor()
 		if ok {
 			switch field {
@@ -148,9 +157,9 @@ func (m *filterSelectModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 				m.selectedLocations[value] = !m.selectedLocations[value]
 			}
 		}
-	case "esc", "b":
+	case key.Matches(msg, keys.Back):
 		return m.close("")
-	case "enter":
+	case key.Matches(msg, keys.Enter):
 		return saveFilters(m.companies, m.source(), m.selection())
 	}
 	return nil

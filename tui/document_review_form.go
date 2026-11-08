@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textarea"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
@@ -157,13 +158,22 @@ func documentReviewFormHelp() string {
 // binds to "previous line" and "character forward" respectively; using
 // them here would silently submit the review whenever the user tries to
 // move the cursor while editing multi-line notes.
+type documentReviewFormKeyMap struct {
+	Pass, Flag key.Binding
+}
+
+var documentReviewFormKeys = documentReviewFormKeyMap{
+	Pass: key.NewBinding(key.WithKeys("ctrl+s")),
+	Flag: key.NewBinding(key.WithKeys("ctrl+g")),
+}
+
 func (m *documentReviewFormModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc":
+	switch {
+	case key.Matches(msg, keys.Esc):
 		return m.close()
-	case "ctrl+s":
+	case key.Matches(msg, documentReviewFormKeys.Pass):
 		return createDocumentReview(m.documentService, m.documents, m.src(), m.review, document.Passed, m.textarea.Value())
-	case "ctrl+g":
+	case key.Matches(msg, documentReviewFormKeys.Flag):
 		return createDocumentReview(m.documentService, m.documents, m.src(), m.review, document.Flagged, m.textarea.Value())
 	}
 	var cmd tea.Cmd

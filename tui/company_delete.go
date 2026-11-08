@@ -6,6 +6,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/internal/service"
@@ -35,11 +36,11 @@ func newCompanyDeleteModel(companies *service.CompanyService, company message.Co
 }
 
 // keyPressed handles a key, and says whether the confirmation closes.
-func (m *companyDeleteModel) keyPressed(key tea.KeyPressMsg) (tea.Cmd, bool) {
-	switch key.String() {
-	case "esc", "enter", "n":
+func (m *companyDeleteModel) keyPressed(msg tea.KeyPressMsg) (tea.Cmd, bool) {
+	switch {
+	case key.Matches(msg, keys.No, keys.Enter):
 		return nil, true
-	case "y":
+	case key.Matches(msg, keys.Yes):
 		if !m.confirmed {
 			m.confirmed = true
 			companies, src, id := m.companyService, message.Source{Instance: m.instance}, m.company.ID

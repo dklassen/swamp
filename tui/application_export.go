@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"charm.land/bubbles/v2/key"
 	"charm.land/bubbles/v2/textinput"
 	tea "charm.land/bubbletea/v2"
 
@@ -90,10 +91,10 @@ func (m *applicationExportModel) exported(e message.Event[message.Ran[message.Ex
 }
 
 func (m *applicationExportModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
-	switch msg.String() {
-	case "esc":
+	switch {
+	case key.Matches(msg, keys.Esc):
 		return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), ""))
-	case "enter":
+	case key.Matches(msg, keys.Enter):
 		return exportApplicationDocuments(m.documentService, m.documents, m.src(), m.detail, m.textinput.Value())
 	}
 	var cmd tea.Cmd
