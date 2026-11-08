@@ -26,8 +26,9 @@ func createCompany(ctx context.Context, r store.Runner, name string) error {
 	})
 }
 
-func companyNames(t *testing.T, ctx context.Context, r store.Runner) []string {
+func companyNames(t *testing.T, r store.Runner) []string {
 	t.Helper()
+	ctx := t.Context()
 	companies, err := store.Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.Company, error) {
 		return q.ListActiveCompanies(ctx)
 	})
@@ -55,7 +56,7 @@ func TestInTx_FnFails_RollsBackItsWrites(t *testing.T) {
 	if !errors.Is(err, errFail) {
 		t.Fatalf("InTx: err = %v, want errFail", err)
 	}
-	if got := companyNames(t, ctx, s); len(got) != 0 {
+	if got := companyNames(t, s); len(got) != 0 {
 		t.Errorf("companies after a failed InTx = %q, want none", got)
 	}
 }
@@ -85,7 +86,7 @@ func TestInTx_OnTx_FailingFnUndoesOnlyItsOwnWrites(t *testing.T) {
 	if err != nil {
 		t.Fatalf("outer InTx: %v", err)
 	}
-	if got := companyNames(t, ctx, s); len(got) != 1 || got[0] != "outer" {
+	if got := companyNames(t, s); len(got) != 1 || got[0] != "outer" {
 		t.Errorf("companies = %q, want [outer]", got)
 	}
 }
@@ -120,7 +121,7 @@ func TestInTx_TwoLevelsDeep_FailingInnermostUndoesOnlyItsOwnWrites(t *testing.T)
 	if err != nil {
 		t.Fatalf("outer InTx: %v", err)
 	}
-	got := companyNames(t, ctx, s)
+	got := companyNames(t, s)
 	if diff := cmp.Diff([]string{"middle", "outer"}, got); diff != "" {
 		t.Errorf("companies (-want +got):\n%s", diff)
 	}
