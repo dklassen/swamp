@@ -397,7 +397,7 @@ type readCanonicalOutput struct {
 // A missing file is an expected state (the user hasn't set one up), so it's
 // Exists: false rather than a tool error; the skill decides what to do.
 func readCanonicalHandler(tool, path string) mcp.ToolHandlerFor[readCanonicalInput, readCanonicalOutput] {
-	return func(ctx context.Context, _ *mcp.CallToolRequest, _ readCanonicalInput) (*mcp.CallToolResult, readCanonicalOutput, error) {
+	return func(_ context.Context, _ *mcp.CallToolRequest, _ readCanonicalInput) (*mcp.CallToolResult, readCanonicalOutput, error) {
 		content, err := os.ReadFile(path)
 		if errors.Is(err, fs.ErrNotExist) {
 			return nil, readCanonicalOutput{Path: path}, nil

@@ -20,7 +20,7 @@ type countingFetcher struct {
 	postings []jobboard.Posting
 }
 
-func (f *countingFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error) {
+func (f *countingFetcher) FetchPostings(_ context.Context, _ string) ([]jobboard.Posting, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.calls++
@@ -66,7 +66,7 @@ type gatedFetcher struct {
 	postings []jobboard.Posting
 }
 
-func (f *gatedFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error) {
+func (f *gatedFetcher) FetchPostings(_ context.Context, _ string) ([]jobboard.Posting, error) {
 	f.started <- struct{}{}
 	<-f.release
 	return f.postings, nil
@@ -138,7 +138,7 @@ type staleFirstFetcher struct {
 	current []jobboard.Posting
 }
 
-func (f *staleFirstFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error) {
+func (f *staleFirstFetcher) FetchPostings(_ context.Context, _ string) ([]jobboard.Posting, error) {
 	f.mu.Lock()
 	f.calls++
 	first := f.calls == 1

@@ -102,7 +102,7 @@ func (m *applicationFormModel) saved(message.Event[message.Ran[message.Applicati
 // failed lets editing go on after a failed save; the banner shows why. A
 // form that couldn't be read leaves the error on the banner, since
 // there's nothing to edit.
-func (m *applicationFormModel) failed(e message.Event[message.Error]) tea.Cmd {
+func (m *applicationFormModel) failed(message.Event[message.Error]) tea.Cmd {
 	if !m.loaded {
 		return message.Pop(m.src())
 	}

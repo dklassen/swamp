@@ -108,7 +108,7 @@ func beginTx(ctx context.Context, s Store, fn func(Tx) error) error {
 }
 
 // Read runs fn on r and maps sql.ErrNoRows to ErrNotFound.
-func Read[T any](ctx context.Context, r Runner, fn func(*sqlcdb.Queries) (T, error)) (T, error) {
+func Read[T any](_ context.Context, r Runner, fn func(*sqlcdb.Queries) (T, error)) (T, error) {
 	var zero T
 	q, err := r.queries()
 	if err != nil {
