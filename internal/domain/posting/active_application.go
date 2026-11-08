@@ -11,6 +11,7 @@ import (
 // company name and latest document review per document type.
 type ActiveApplication struct {
 	application.Application
+
 	Posting       Posting
 	CompanyName   string
 	LatestReviews map[document.Type]document.Review

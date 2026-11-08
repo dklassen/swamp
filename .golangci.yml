@@ -18,7 +18,10 @@ linters:
     - bodyclose
     - contextcheck
     - copyloopvar
+    - dogsled
+    - dupword
     - durationcheck
+    - embeddedstructfieldcheck
     - exhaustive
     - forcetypeassert
     - gocheckcompilerdirectives
@@ -35,6 +38,7 @@ linters:
     - noctx
     - nolintlint
     - perfsprint
+    - prealloc
     - predeclared
     - reassign
     - rowserrcheck
@@ -84,6 +88,12 @@ linters:
       # Tests write throwaway files under t.TempDir and build no command or path from input.
       - path: _test\.go
         linters: [gosec]
+      # A test's allocations aren't its point, and sizing a slice up front turns a nil want into [] for cmp.Diff.
+      - path: _test\.go
+        linters: [prealloc]
+      # fpdf reads margins only as all four at once.
+      - linters: [dogsled]
+        source: 'GetMargins\(\)'
       # Launching the user's own editor and browser is the point.
       - linters: [gosec]
         text: "G204|G702"

@@ -169,18 +169,21 @@ func searchPostingsInputSchema() *jsonschema.Schema {
 	if err != nil {
 		panic(fmt.Sprintf("mcpserver: infer search_postings input schema: %v", err))
 	}
-	var statuses []any
-	for _, status := range application.All() {
-		statuses = append(statuses, status.String())
+	all := application.All()
+	statuses := make([]any, len(all))
+	for i, status := range all {
+		statuses[i] = status.String()
 	}
 	schema.Properties["ApplicationStatuses"].Items.Enum = statuses
 	schema.Properties["ListingStatus"].Enum = []any{posting.ListingOpen.String(), posting.ListingClosed.String(), stage.AnyListingStatus}
 	sort := schema.Properties["Sort"]
-	sort.Enum = nil
-	description := []string{"the order to page in, one of:"}
-	for _, order := range stage.SortOrders() {
-		sort.Enum = append(sort.Enum, order.Name())
-		description = append(description, order.Name()+": "+order.Description)
+	orders := stage.SortOrders()
+	sort.Enum = make([]any, len(orders))
+	description := make([]string, len(orders)+1)
+	description[0] = "the order to page in, one of:"
+	for i, order := range orders {
+		sort.Enum[i] = order.Name()
+		description[i+1] = order.Name() + ": " + order.Description
 	}
 	sort.Description = strings.Join(description, "\n")
 	return schema
@@ -284,9 +287,10 @@ func recordScoresOutputSchema() *jsonschema.Schema {
 	if err != nil {
 		panic(fmt.Sprintf("mcpserver: infer record_scores output schema: %v", err))
 	}
-	var names []any
-	for _, refusal := range score.Refusals() {
-		names = append(names, refusal.String())
+	refusals := score.Refusals()
+	names := make([]any, len(refusals))
+	for i, refusal := range refusals {
+		names[i] = refusal.String()
 	}
 	schema.Properties["Refused"].Items.Properties["Why"] = &jsonschema.Schema{Type: "string", Enum: names}
 	return schema
@@ -414,9 +418,10 @@ func readCanonicalHandler(tool, path string) mcp.ToolHandlerFor[readCanonicalInp
 // UnmarshalText. Panics like mcp.AddTool does on an uninferrable schema,
 // since that's a programming error caught at startup.
 func documentInputSchema[In any]() *jsonschema.Schema {
-	var names []any
-	for _, documentType := range document.Types() {
-		names = append(names, documentType.String())
+	types := document.Types()
+	names := make([]any, len(types))
+	for i, documentType := range types {
+		names[i] = documentType.String()
 	}
 	schema, err := jsonschema.For[In](&jsonschema.ForOptions{
 		TypeSchemas: map[reflect.Type]*jsonschema.Schema{
