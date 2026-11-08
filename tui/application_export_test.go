@@ -48,7 +48,7 @@ func writeApplicationDocuments(t *testing.T, present ...document.Type) *document
 
 func exportScreenOn(t *testing.T, docs *documents.Store, dir string) *applicationExportModel {
 	t.Helper()
-	return newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, testExportApplication, dir, message.ContentSize{Width: 80})
+	return newApplicationExportModel(testutil.NewTestApp(t).Documents, docs, os.UserHomeDir, testExportApplication, dir, message.ContentSize{Width: 80})
 }
 
 // exportedIn is the export report among msgs.
@@ -143,11 +143,11 @@ func TestApplicationExportModel_SkipsUndraftedDocumentsWithoutFailing(t *testing
 }
 
 func TestApplicationExportModel_ExpandsTildeInDestination(t *testing.T) {
-	// Not parallel: t.Setenv can't be used with t.Parallel.
-	home := t.TempDir()
-	t.Setenv("HOME", home)
+	t.Parallel()
 
-	m := exportScreenOn(t, writeApplicationDocuments(t, document.Resume), "~/Desktop")
+	home := t.TempDir()
+	m := newApplicationExportModel(testutil.NewTestApp(t).Documents, writeApplicationDocuments(t, document.Resume),
+		func() (string, error) { return home, nil }, testExportApplication, "~/Desktop", message.ContentSize{Width: 80})
 
 	got := exportedIn(t, runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})))
 
@@ -168,7 +168,7 @@ func TestApplicationExportModel_RecordsEachExport(t *testing.T) {
 
 	s := testutil.NewTestApp(t)
 	dest := t.TempDir()
-	m := newApplicationExportModel(s.Documents, writeApplicationDocuments(t, document.CoverLetter), testExportApplication, dest, message.ContentSize{Width: 80})
+	m := newApplicationExportModel(s.Documents, writeApplicationDocuments(t, document.CoverLetter), os.UserHomeDir, testExportApplication, dest, message.ContentSize{Width: 80})
 
 	exportedIn(t, runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})))
 

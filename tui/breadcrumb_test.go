@@ -51,10 +51,10 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 			return newFilterSelectModel(nil, message.FilterSelection{}, message.ContentSize{})
 		},
 		message.ScreenApplicationExport: func() StackScreen {
-			return newApplicationExportModel(nil, nil, applicationDetailOf(view), "", message.ContentSize{})
+			return newApplicationExportModel(nil, nil, nil, applicationDetailOf(view), "", message.ContentSize{})
 		},
 		message.ScreenApplicationSubmit: func() StackScreen {
-			return newApplicationSubmitModel(nil, nil, nil, nil, applicationDetailOf(view), "")
+			return newApplicationSubmitModel(nil, nil, nil, nil, nil, applicationDetailOf(view), "")
 		},
 	}
 	tests := []struct {
