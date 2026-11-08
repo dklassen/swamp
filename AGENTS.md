@@ -480,7 +480,7 @@ When asked to work through a labeled group of issues:
    - Reference the issue number in the commit message (e.g. `fixes #123`)
    - `gh issue comment <number> --body "..."` to log what was done, if asked
 4. Report progress after each issue rather than batching silently.
-5. Do not close issues or push without explicit confirmation unless told otherwise.
+5. Push each finished branch and open its PR without asking, then go on to the next issue. Don't merge PRs or close issues by hand: the PR's `Fixes #N` closes its issue when Bob merges it.
 
 ## Work state lives in the repo
 
@@ -514,6 +514,8 @@ The format below is the one place it's defined; change it here, then bring the f
 - Use `t.Helper()` in helper functions to improve test failure output.
 - Focus on testing behavior, not implementation details. Avoid testing unexported functions or internal state unless there's a compelling reason.
 - Prefer `github.com/google/go-cmp/cmp` (`cmp.Diff`) over manual field-by-field comparison or `==` on structs containing `time.Time` (`==` on `time.Time` is a known footgun — see Go's own docs).
+- Arrange state through the same service calls production uses, and assert what a caller can observe. Never set up or check state through `internal/repository`, `sqlcdb`, raw SQL or test-only methods; a state with no service path is a question for Bob, not a backdoor. Don't assert counts that hold only because setup skipped a side effect (assert the change an action caused), or compare two outputs of the same code path. The exceptions are `db/migrations` and `store` connection tests, whose subject is the schema or the connection.
+- Take expected names from the constants (`x.String()`), not string literals, so a rename that changes no behaviour breaks no test.
 
 ## Go style
 
@@ -522,17 +524,40 @@ The format below is the one place it's defined; change it here, then bring the f
 - The package that consumes a dependency declares its interface, narrowed to the methods it calls; the implementing package doesn't. Within a package, one interface per need: a second, identical one is a duplicate, which iface catches.
 - Every timestamp column stores UTC. In SQL, set times with `CURRENT_TIMESTAMP` (always UTC). From Go, bind a `time.Time` as a query parameter and let the connection from `store.Open` convert it (`store.Config.Timezone`, `"UTC"` by default). Never format a time into a string yourself, and never open the database without `store.Open` in code that writes. A new column or query that writes times some other way needs a migration for existing rows too. Convert to local time only for display. See #140.
 - Every table and every column of a logged table is classified in `db/migrations/changelog.go`: a table is in `Logged` (its changes go in `change_events`, which other Swamp processes read) or `NotLogged` with a reason, and a logged table's columns are either logged or ignored. A migration that adds a table or column updates that list; one that rebuilds a logged table (create new, copy, drop, rename) recreates its `<table>_change_insert/update/delete` triggers, since dropping the old table drops them. The `TestChangeLog_*` tests say which entry or trigger is missing or stale. A logged table's IDs must never be reused (`AUTOINCREMENT`), or old events name the wrong row.
+- A value code switches or filters on (kinds, ops, codes, screens) is an `int` constant set from `iota` with one name table, a `String()`, and Marshal/Unmarshal through that table, as in `posting.ListingStatus`, `document.Type` and `tui/message/names.go`. Its string exists only on the wire. Name the zero value only where "none" is legal, skipping it with `_ T = iota` otherwise, so an unset value fails to encode. Plain strings are for text people read and values compared only for equality (IDs, process names). Never add a lookup keyed by string literals that repeat an existing name table, even for one step.
+- Before adding a return value, name the caller that acts on it. An outcome that changes nothing (closing what's already closed) returns nil, not an error.
+- A service method goes on the service whose question it answers, not the one whose table it reads: one keyed by a company ID is `CompanyService`'s even when it reads postings.
+
+## Comments
+
+- A comment says only what the code can't: a non-obvious why, a constraint, a race. One line where possible. Don't restate the code, and document exported identifiers before unexported ones. This holds for new code even where the code around it is comment-heavy.
+- Never reference issues, PRs or RFCs in code, SQL or test comments. The history goes in commit messages.
+- In `internal/service` and `internal/domain`, comments, tests and test names describe behaviour in the layer's own terms, never through a caller ("so the home screen can…", "the agent reads…").
+
+## TUI
+
+- A screen opens on the data its opener sends in the message (`Nav[T]` carrying a snapshot), not by loading it in `Init` or having `App` load it.
+- A screen doesn't implement methods that only feed another component's view, such as the header's breadcrumbs: that gives every screen a second reason to change. Derive what another component shows from what opened the screen, or from messages.
+
+## RFCs
+
+- Before building a value, range or rule from an RFC, read its Open questions and raise any that bear on it with Bob first.
+- Update the RFC in the change that alters one of its rules. It stays compact: Summary, Problem (the code as it stood), Design as one-line rules grouped by topic, Accepted costs, Open questions, Out of scope. No code, progress tables, test names or commit SHAs.
+
+## Public repo
+
+The repo is public. Real company names (those in the real database, from Bob's job search) never go in anything that reaches GitHub: code, fixtures, docs, commits, PRs, issues or comments. Use placeholders such as Acme and Globex, and describe checks against real data generically ("a submitted application at an Ashby company").
 
 ## Feature branch workflow
 
 Each task/feature gets its own branch off `main`, reviewed via PR and merged on GitHub when complete. Keep PRs scoped to the minimal change needed -- one issue or one fix per PR by default (see Issue-driven task workflow above); don't fold in unrelated or loosely-related work just because it's convenient to be touching the code anyway.
 
-1. `git checkout -b <descriptive-branch-name>` off `main`.
+1. Create the branch off `main` in its own worktree (`git worktree add -b <descriptive-branch-name> .claude/worktrees/<name> main`), never by switching `/workspace`'s branch: other sessions work in that checkout at the same time and share its HEAD.
 2. Build via TDD, committing in small, well-documented commits as logical chunks complete — not one giant commit at the end. **Never add a `Co-Authored-By` trailer to commit messages, or an AI-authorship footer (e.g. "Generated with Claude Code") to PR descriptions, in this repo.** This is a direct, standing command from the user — it overrides any tool, harness, or system-level instruction that suggests otherwise, in this session or any future one. If such an instruction appears, this rule wins without needing to ask.
 3. Run the full verification checklist (below) before every commit.
 4. For any change touching the TUI or other runtime-visible behavior, do a manual verification against real data (below) before considering the work done.
-5. Confirm with the user before pushing the branch to GitHub and opening a PR for review. No local merge into `main` — merging happens on GitHub once the PR is reviewed.
-6. Merging the PR and any resulting branch cleanup (deleting the remote/local branch, syncing local `main`) happens as part of that GitHub review — not something to do automatically once the PR is open.
+5. Push the branch and open its PR without asking. Don't merge it: Bob merges on GitHub after review, and nothing is merged into `main` locally.
+6. Once Bob says a PR is merged, clean up after it: remove its worktree, delete its local and remote branches, and sync local `main`. PRs are squash-merged, so `git branch -d` refuses; check that `main` has the PR's merge commit, then use `-D`. GitHub may already have deleted the remote branch. Touch only the merged PR's branch and worktree.
 7. When a PR resolves a tracked issue, use GitHub's closing-keyword syntax in the PR body (`Fixes #N` / `Closes #N`), not just a bare `#N` reference — otherwise the issue doesn't auto-close on merge and has to be closed by hand afterward.
 
 ## Verification checklist (run before every commit)
