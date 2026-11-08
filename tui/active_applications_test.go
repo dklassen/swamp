@@ -705,7 +705,7 @@ func TestActiveApplicationListModel_Search_ArrowsMoveThroughMatches(t *testing.T
 			pressHome(t, m, tt.down) // past the last match: stays on it
 			got := openHomeHighlighted(t, m)
 			if id, ok := openedDetail(got); !ok || id != 20 {
-				t.Fatalf("down, down, enter sent %#v, want the Globex application (20)", got)
+				t.Fatalf("down twice, then enter sent %#v, want the Globex application (20)", got)
 			}
 
 			pressHome(t, m, runeKey('/'))

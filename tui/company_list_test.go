@@ -577,7 +577,7 @@ func TestCompanyListModel_Search_ArrowsMoveThroughMatches(t *testing.T) {
 			press(t, m, tt.down) // past the last match: stays on it
 			intent := openHighlighted(t, m)
 			if got := opened(intent, message.ScreenCompanyPostings); got != 2 {
-				t.Fatalf("intent after down, down, enter = %#v, want a push of the posting list for Acme Robotics (ID 2)", intent)
+				t.Fatalf("intent after down twice, then enter = %#v, want a push of the posting list for Acme Robotics (ID 2)", intent)
 			}
 
 			press(t, m, runeKey('/'))
