@@ -24,6 +24,7 @@ linters:
     - durationcheck
     - embeddedstructfieldcheck
     - exhaustive
+    - forbidigo
     - forcetypeassert
     - gocheckcompilerdirectives
     - goconst
@@ -104,6 +105,9 @@ linters:
       # fpdf reads margins only as all four at once.
       - linters: [dogsled]
         source: 'GetMargins\(\)'
+      # The CLI's output is its job; anywhere else a print garbles the TUI's screen.
+      - path: cmd/swamp/
+        linters: [forbidigo]
       # Launching the user's own editor and browser is the point.
       - linters: [gosec]
         text: "G204|G702"
