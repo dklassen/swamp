@@ -53,16 +53,8 @@ type companyPostingViewer interface {
 	Locations(ctx context.Context, r store.Runner, companyID int64) ([]string, error)
 }
 
-type companyPostingSearcher interface {
-	Search(ctx context.Context, r store.Runner, search posting.Search) (*posting.SearchPage, error)
-}
-
 type companyPostingStatusWriter interface {
 	Close(ctx context.Context, r store.Runner, id int64) (bool, error)
-}
-
-type companyPostingHistoryWriter interface {
-	Insert(ctx context.Context, r store.Runner, p posting.Posting, changeType string) (*posting.History, error)
 }
 
 type CompanyService struct {
@@ -73,9 +65,9 @@ type CompanyService struct {
 	filterViewer         filterViewer
 	filterWriter         filterWriter
 	postingViewer        companyPostingViewer
-	postingSearcher      companyPostingSearcher
+	postingSearcher      postingSearcher
 	postingStatusWriter  companyPostingStatusWriter
-	postingHistoryWriter companyPostingHistoryWriter
+	postingHistoryWriter postingHistoryWriter
 }
 
 func NewCompanyService(db store.Store) *CompanyService {

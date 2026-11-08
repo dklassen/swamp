@@ -328,87 +328,58 @@ func TestList_IncludesLatestDocumentReviews(t *testing.T) {
 	}
 }
 
-// TestList_KeepsPostingWithBothDocumentsWhenLatestReviewIsFlagged is the
-// key behavior change this feature exists for: previously, List treated
-// "both files exist on disk" as "done" regardless of review outcome, so
-// a flagged document silently dropped out of the agent's queue with no
-// way to know it needed another pass. Now a flagged
-// latest review keeps the posting in the list even though both files
-// are present.
-func TestList_KeepsPostingWithBothDocumentsWhenLatestReviewIsFlagged(t *testing.T) {
+// With both documents drafted, the latest review decides: a flagged one
+// keeps the posting in the agent's queue for another pass, and a passed
+// one means it's done.
+func TestList_BothDocumentsDrafted_LatestReviewDecides(t *testing.T) {
 	t.Parallel()
+	tests := []struct {
+		name    string
+		outcome document.Outcome
+		notes   string
+		want    int
+	}{
+		{name: "flagged keeps it", outcome: document.Flagged, notes: "needs work", want: 1},
+		{name: "passed excludes it", outcome: document.Passed, want: 0},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			st, s, d := newTestStage(t)
+			company := mustCreateCompany(t, s, "Acme")
+			posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+			mustMarkInterested(t, s, posting.ID)
+			app, err := createApplication(context.Background(), s, posting.ID)
+			if err != nil {
+				t.Fatalf("application.Create: %v", err)
+			}
+			paths, err := d.EnsureDir(app.ID)
+			if err != nil {
+				t.Fatalf("EnsureDir: %v", err)
+			}
+			if err := os.WriteFile(mustDoc(t, paths, document.CoverLetter).Path, []byte("letter"), 0o644); err != nil {
+				t.Fatalf("write cover letter: %v", err)
+			}
+			if err := os.WriteFile(mustDoc(t, paths, document.Resume).Path, []byte("resume"), 0o644); err != nil {
+				t.Fatalf("write resume: %v", err)
+			}
+			if _, err := createReview(context.Background(), s, app.ID, document.CoverLetter, "letter", tt.outcome, tt.notes); err != nil {
+				t.Fatalf("CreateReview: %v", err)
+			}
 
-	st, s, d := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-	app, err := createApplication(context.Background(), s, posting.ID)
-	if err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-	paths, err := d.EnsureDir(app.ID)
-	if err != nil {
-		t.Fatalf("EnsureDir: %v", err)
-	}
-	if err := os.WriteFile(mustDoc(t, paths, document.CoverLetter).Path, []byte("letter"), 0o644); err != nil {
-		t.Fatalf("write cover letter: %v", err)
-	}
-	if err := os.WriteFile(mustDoc(t, paths, document.Resume).Path, []byte("resume"), 0o644); err != nil {
-		t.Fatalf("write resume: %v", err)
-	}
-	if _, err := createReview(context.Background(), s, app.ID, document.CoverLetter, "letter", document.Flagged, "needs work"); err != nil {
-		t.Fatalf("CreateReview: %v", err)
-	}
-
-	got, err := st.List(context.Background())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("got %d candidates, want 1 (flagged cover letter should keep this in the queue)", len(got))
-	}
-}
-
-// TestList_ExcludesPostingWithBothDocumentsWhenLatestReviewsAllPass is
-// the complement of the above: once every reviewed document's latest
-// outcome is passed (not flagged), "both files exist" goes back to
-// meaning "done" -- List excludes it same as before this feature.
-func TestList_ExcludesPostingWithBothDocumentsWhenLatestReviewsAllPass(t *testing.T) {
-	t.Parallel()
-
-	st, s, d := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-	app, err := createApplication(context.Background(), s, posting.ID)
-	if err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-	paths, err := d.EnsureDir(app.ID)
-	if err != nil {
-		t.Fatalf("EnsureDir: %v", err)
-	}
-	if err := os.WriteFile(mustDoc(t, paths, document.CoverLetter).Path, []byte("letter"), 0o644); err != nil {
-		t.Fatalf("write cover letter: %v", err)
-	}
-	if err := os.WriteFile(mustDoc(t, paths, document.Resume).Path, []byte("resume"), 0o644); err != nil {
-		t.Fatalf("write resume: %v", err)
-	}
-	if _, err := createReview(context.Background(), s, app.ID, document.CoverLetter, "letter", document.Passed, ""); err != nil {
-		t.Fatalf("CreateReview: %v", err)
-	}
-
-	got, err := st.List(context.Background())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 0 {
-		t.Fatalf("got %d candidates, want 0 (both documents exist and the only review passed)", len(got))
+			got, err := st.List(context.Background())
+			if err != nil {
+				t.Fatalf("List: %v", err)
+			}
+			if len(got) != tt.want {
+				t.Errorf("got %d candidates after a %s cover letter review, want %d", len(got), tt.outcome, tt.want)
+			}
+		})
 	}
 }
 
 // TestList_ExcludesPostingWhenFlaggedReviewIsStaleAfterRevision verifies
-// the companion behavior to the "keeps flagged" test above: once a
+// the companion to TestList_BothDocumentsDrafted_LatestReviewDecides: once a
 // flagged document has actually been revised (its content on disk no
 // longer matches what was reviewed), that review is stale and no longer
 // keeps the posting in the queue -- a revised-but-not-yet-re-reviewed

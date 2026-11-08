@@ -19,6 +19,7 @@ linters:
     - contextcheck
     - copyloopvar
     - dogsled
+    - dupl
     - dupword
     - durationcheck
     - embeddedstructfieldcheck
@@ -29,6 +30,7 @@ linters:
     - gocritic
     - gosec
     - godot
+    - iface
     - intrange
     - makezero
     - misspell
