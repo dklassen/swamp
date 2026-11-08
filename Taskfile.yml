@@ -28,6 +28,11 @@ tasks:
     cmds:
       - go tool golangci-lint run ./...
 
+  vuln:
+    desc: Report known vulnerabilities in code swamp calls
+    cmds:
+      - go tool govulncheck ./...
+
   hooks:install:
     desc: Point git at the repo's version-controlled hooks (run once per clone)
     cmds:
