@@ -12,7 +12,7 @@ Enabling golangci-lint linters one themed group per PR, titled `[Lint N] <theme>
 | 6 | Bound MCP header reads, keep files private: gosec | - | #466 | merged | 1 |
 | 7 | Bound function length and nesting: funlen, gocognit, nestif | - | #467 | merged | 1 |
 | 8 | Repeated strings: goconst, keys as `key.Binding` | - | #468 | merged | 1 |
-| 9 | Unused and unchecked code: unparam, forcetypeassert, sqlclosecheck, musttag, sloglint | - | #470 | in review | 1 |
+| 9 | Unused and unchecked code: unparam, forcetypeassert, sqlclosecheck, musttag, sloglint | - | #470 | merged | 1 |
 
 ## Next
 
