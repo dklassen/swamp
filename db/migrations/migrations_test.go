@@ -8,8 +8,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dklassen/swamp/store"
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/dklassen/swamp/store"
 )
 
 func migrateTo(t *testing.T, version int64) *sql.DB {

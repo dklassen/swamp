@@ -11,9 +11,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/modelcontextprotocol/go-sdk/mcp"
-
 	"github.com/google/go-cmp/cmp"
+	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"

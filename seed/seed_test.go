@@ -5,8 +5,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/dklassen/swamp/jobboard"
 	"github.com/google/go-cmp/cmp"
+
+	"github.com/dklassen/swamp/jobboard"
 )
 
 func TestParse_ValidFile(t *testing.T) {
