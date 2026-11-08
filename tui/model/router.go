@@ -209,9 +209,12 @@ func newRoute[T tea.Msg](accepts func() bool, handle func(T) tea.Cmd, filters []
 			if !accepts() {
 				return nil
 			}
-			for _, f := range filters {
-				if !f(any(m).(event).Metadata()) {
-					return nil
+			// Only an event can have filters; newRoute refuses them otherwise.
+			if e, ok := any(m).(event); ok {
+				for _, f := range filters {
+					if !f(e.Metadata()) {
+						return nil
+					}
 				}
 			}
 			return handle(m)

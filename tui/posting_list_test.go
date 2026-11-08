@@ -30,9 +30,9 @@ func testPostings() []message.Listing {
 
 // postingListOf is c's posting list, drawn in width by 40 rows, once it has
 // read postings.
-func postingListOf(t *testing.T, c message.Company, postings []message.Listing, hideArchived bool, width int) *postingListModel {
+func postingListOf(t *testing.T, c message.Company, postings []message.Listing, width int) *postingListModel {
 	t.Helper()
-	m := newPostingListModel(nil, nil, c, hideArchived, message.ContentSize{Width: width, Rows: 40})
+	m := newPostingListModel(nil, nil, c, false, message.ContentSize{Width: width, Rows: 40})
 	m.postingsRead(postingsReadOf(m, postings))
 	return m
 }
@@ -55,7 +55,7 @@ func postingListView(m *postingListModel) string {
 func TestPostingListModel_CursorMovement_ClampsToPostings(t *testing.T) {
 	t.Parallel()
 
-	m := postingListOf(t, testListCompany, testPostings(), false, 0)
+	m := postingListOf(t, testListCompany, testPostings(), 0)
 
 	pressOn(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 	pressOn(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
@@ -73,7 +73,7 @@ func TestPostingListModel_CursorMovement_ClampsToPostings(t *testing.T) {
 func TestPostingListModel_Enter_PushesDetailSteppingThroughTheList(t *testing.T) {
 	t.Parallel()
 
-	m := postingListOf(t, testListCompany, testPostings(), false, 0)
+	m := postingListOf(t, testListCompany, testPostings(), 0)
 	pressOn(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 
 	got := pressOn(t, m, tea.KeyPressMsg{Code: tea.KeyEnter})
@@ -114,7 +114,7 @@ func TestPostingListModel_DetailOpened_MovesTheCursorToItsPosting(t *testing.T) 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := postingListOf(t, testListCompany, testPostings(), false, 0)
+			m := postingListOf(t, testListCompany, testPostings(), 0)
 
 			m.detailOpened(message.New(message.Source{Instance: 9}, message.Subject{Type: message.TypePosting, ID: tt.postingID}, message.OpNone, time.Now().UTC(),
 				message.Nav[message.PostingDetail]{Op: message.NavReplace, Screen: message.ScreenPostingDetail, Value: message.PostingDetail{Posting: message.Posting{ID: tt.postingID}}}))
@@ -159,7 +159,7 @@ func TestPostingListModel_EscOrB_Pops(t *testing.T) {
 	for _, key := range []tea.KeyPressMsg{{Code: tea.KeyEsc}, runeKey('b')} {
 		t.Run(key.String(), func(t *testing.T) {
 			t.Parallel()
-			m := postingListOf(t, testListCompany, testPostings(), false, 0)
+			m := postingListOf(t, testListCompany, testPostings(), 0)
 
 			if got := pressOn(t, m, key); !popsIn(got, m.Instance()) {
 				t.Errorf("%s sent %#v, want a pop of the list", key, got)
@@ -171,7 +171,7 @@ func TestPostingListModel_EscOrB_Pops(t *testing.T) {
 func TestPostingListModel_R_AsksToSyncItsCompany(t *testing.T) {
 	t.Parallel()
 
-	m := postingListOf(t, testListCompany, testPostings(), false, 0)
+	m := postingListOf(t, testListCompany, testPostings(), 0)
 
 	got := pressOn(t, m, runeKey('r'))
 	if len(got) != 1 {
@@ -333,7 +333,7 @@ func TestPostingListModel_A_FlipsHideArchivedAndTellsApp(t *testing.T) {
 func TestPostingListModel_Read_KeepsTheCursorOnItsPosting(t *testing.T) {
 	t.Parallel()
 
-	m := postingListOf(t, testListCompany, testPostings(), false, 0)
+	m := postingListOf(t, testListCompany, testPostings(), 0)
 	pressOn(t, m, tea.KeyPressMsg{Code: tea.KeyDown})
 
 	m.postingsRead(postingsReadOf(m, append([]message.Listing{{ID: 3, Title: "Analyst"}}, testPostings()...)))
@@ -504,7 +504,7 @@ func TestPostingListModel_View_ShowsCompanyDescription(t *testing.T) {
 	t.Parallel()
 
 	description := "Acme builds rockets for roadrunner enthusiasts."
-	m := postingListOf(t, describedCompany(description), testPostings(), false, 0)
+	m := postingListOf(t, describedCompany(description), testPostings(), 0)
 
 	if got := postingListView(m); !strings.Contains(got, description) {
 		t.Errorf("View missing company description %q:\n%s", description, got)
@@ -516,8 +516,8 @@ func TestPostingListModel_View_ShowsCompanyDescription(t *testing.T) {
 func TestPostingListModel_View_DescriptionAddsExactlyOneLine(t *testing.T) {
 	t.Parallel()
 
-	without := strings.Count(postingListView(postingListOf(t, testListCompany, testPostings(), false, 0)), "\n")
-	with := strings.Count(postingListView(postingListOf(t, describedCompany("Acme builds rockets for roadrunner enthusiasts."), testPostings(), false, 0)), "\n")
+	without := strings.Count(postingListView(postingListOf(t, testListCompany, testPostings(), 0)), "\n")
+	with := strings.Count(postingListView(postingListOf(t, describedCompany("Acme builds rockets for roadrunner enthusiasts."), testPostings(), 0)), "\n")
 
 	if with != without+1 {
 		t.Errorf("View with description = %d lines, want %d (one more than without)", with, without+1)
@@ -542,7 +542,7 @@ func TestPostingListModel_View_TableSpansTerminalWidth(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			m := postingListOf(t, testListCompany, testPostings(), false, tt.width)
+			m := postingListOf(t, testListCompany, testPostings(), tt.width)
 			if got := tableWidthOf(t, postingListView(m)); got != tt.want {
 				t.Errorf("table width = %d, want %d", got, tt.want)
 			}
@@ -568,7 +568,7 @@ func TestPostingListModel_View_LongTitleFitsWhenThereIsRoom(t *testing.T) {
 
 			postings := testPostings()
 			postings[0].Title = title
-			view := postingListView(postingListOf(t, testListCompany, postings, false, tt.width))
+			view := postingListView(postingListOf(t, testListCompany, postings, tt.width))
 			if got := strings.Contains(view, title); got != tt.wantFull {
 				t.Errorf("full title in view = %v, want %v:\n%s", got, tt.wantFull, view)
 			}
@@ -584,7 +584,7 @@ func TestPostingListModel_View_DescriptionUsesTableWidth(t *testing.T) {
 	t.Parallel()
 
 	description := strings.TrimSpace(strings.Repeat("Acme builds rockets. ", 7))
-	view := postingListView(postingListOf(t, describedCompany(description), testPostings(), false, 160))
+	view := postingListView(postingListOf(t, describedCompany(description), testPostings(), 160))
 	if !strings.Contains(view, description) {
 		t.Errorf("View at width 160 missing the %d-column description in full:\n%s", len(description), view)
 	}
@@ -593,10 +593,10 @@ func TestPostingListModel_View_DescriptionUsesTableWidth(t *testing.T) {
 func TestPostingListModel_View_AdvertisesRefresh(t *testing.T) {
 	t.Parallel()
 
-	if got := postingListView(postingListOf(t, testListCompany, testPostings(), false, 100)); !strings.Contains(got, "r: refresh") {
+	if got := postingListView(postingListOf(t, testListCompany, testPostings(), 100)); !strings.Contains(got, "r: refresh") {
 		t.Errorf("View() doesn't advertise r: refresh:\n%s", got)
 	}
-	if got := postingListView(postingListOf(t, testListCompany, nil, false, 100)); !strings.Contains(got, "No postings yet. Press 'r' to refresh.") {
+	if got := postingListView(postingListOf(t, testListCompany, nil, 100)); !strings.Contains(got, "No postings yet. Press 'r' to refresh.") {
 		t.Errorf("empty View() = %q, want it to point at r on this screen", got)
 	}
 }
@@ -729,7 +729,7 @@ func TestPostingList_SSortsByFitAndBack(t *testing.T) {
 	scores := map[string]int{"Role 1": 3, "Role 2": 5, "Role 4": 1, "Role 5": 5}
 	for _, p := range listed {
 		if fit, ok := scores[p.Title]; ok {
-			mustScore(t, s, p, fit, "p")
+			mustScore(t, s, p, fit)
 		}
 	}
 	app = sendKeyAndApply(t, app, runeKey('l')) // leave page 1, which s returns to
@@ -831,7 +831,7 @@ func TestPostingListModel_Read_ShowsOnlyThePageOnScreen(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m := postingListOf(t, testListCompany, testPostings(), false, 0)
+			m := postingListOf(t, testListCompany, testPostings(), 0)
 			e := postingsReadOf(m, late)
 			tt.edit(&e.Payload.Value)
 

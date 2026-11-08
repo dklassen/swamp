@@ -20,6 +20,7 @@ linters:
     - copyloopvar
     - durationcheck
     - exhaustive
+    - forcetypeassert
     - gocheckcompilerdirectives
     - goconst
     - gocritic
@@ -29,6 +30,7 @@ linters:
     - makezero
     - misspell
     - modernize
+    - musttag
     - nakedret
     - noctx
     - nolintlint
@@ -36,9 +38,12 @@ linters:
     - predeclared
     - reassign
     - rowserrcheck
+    - sloglint
+    - sqlclosecheck
     - thelper
     - tparallel
     - unconvert
+    - unparam
     - usestdlibvars
     - usetesting
     - whitespace
@@ -61,6 +66,9 @@ linters:
       # Table-driven tests are long by design.
       - path: _test\.go
         linters: [funlen, gocognit, maintidx]
+      # A failed assertion in a test already fails it, naming both types.
+      - path: _test\.go
+        linters: [forcetypeassert]
       # A test's literals are fixtures that read best where they're used.
       - path: _test\.go
         linters: [goconst]

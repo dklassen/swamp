@@ -28,12 +28,12 @@ var testExportApplication = message.ApplicationDetail{
 }
 
 // writeApplicationDocuments creates a documents base dir containing the
-// named markdown documents for applicationID, and returns a Store over
-// it. Document types not named are left absent on disk.
-func writeApplicationDocuments(t *testing.T, applicationID int64, present ...document.Type) *documents.Store {
+// named markdown documents for testExportApplication, and returns a Store
+// over it. Document types not named are left absent on disk.
+func writeApplicationDocuments(t *testing.T, present ...document.Type) *documents.Store {
 	t.Helper()
 	base := t.TempDir()
-	dir := filepath.Join(base, strconv.FormatInt(applicationID, 10))
+	dir := filepath.Join(base, strconv.FormatInt(testExportApplication.Application.ID, 10))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		t.Fatalf("mkdir documents dir: %v", err)
 	}
@@ -66,7 +66,7 @@ func exportedIn(t *testing.T, msgs []tea.Msg) message.Event[message.Ran[message.
 func TestApplicationExportModel_PrefillsTheDestination(t *testing.T) {
 	t.Parallel()
 
-	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.CoverLetter), "/home/dana/Desktop")
+	m := exportScreenOn(t, writeApplicationDocuments(t, document.CoverLetter), "/home/dana/Desktop")
 
 	if got := m.textinput.Value(); got != "/home/dana/Desktop" {
 		t.Errorf("destination prefill = %q, want %q", got, "/home/dana/Desktop")
@@ -79,7 +79,7 @@ func TestApplicationExportModel_PrefillsTheDestination(t *testing.T) {
 func TestApplicationExportModel_EscPopsAndClearsTheBanner(t *testing.T) {
 	t.Parallel()
 
-	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.CoverLetter), "/tmp")
+	m := exportScreenOn(t, writeApplicationDocuments(t, document.CoverLetter), "/tmp")
 
 	got := runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEsc}))
 
@@ -95,14 +95,14 @@ func TestApplicationExportModel_EnterExportsBothDocumentsWithDescriptiveNames(t 
 	t.Parallel()
 
 	dest := t.TempDir()
-	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.CoverLetter, document.Resume), dest)
+	m := exportScreenOn(t, writeApplicationDocuments(t, document.CoverLetter, document.Resume), dest)
 
 	got := exportedIn(t, runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})))
 
 	if got.Meta.Source.Instance != m.Instance() {
 		t.Errorf("report from %v, want the screen %v", got.Meta.Source.Instance, m.Instance())
 	}
-	if want := (message.Subject{Type: message.TypeApplication, ID: 42}); got.Meta.Subject != want {
+	if want := (message.Subject{Type: message.TypeApplication, ID: testExportApplication.Application.ID}); got.Meta.Subject != want {
 		t.Errorf("report about %+v, want %+v", got.Meta.Subject, want)
 	}
 	want := message.ExportReport{Dir: dest, Paths: []string{
@@ -128,7 +128,7 @@ func TestApplicationExportModel_SkipsUndraftedDocumentsWithoutFailing(t *testing
 
 	// Resume drafted, cover letter never written.
 	dest := t.TempDir()
-	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.Resume), dest)
+	m := exportScreenOn(t, writeApplicationDocuments(t, document.Resume), dest)
 
 	got := exportedIn(t, runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})))
 
@@ -147,7 +147,7 @@ func TestApplicationExportModel_ExpandsTildeInDestination(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 
-	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.Resume), "~/Desktop")
+	m := exportScreenOn(t, writeApplicationDocuments(t, document.Resume), "~/Desktop")
 
 	got := exportedIn(t, runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})))
 
@@ -168,11 +168,11 @@ func TestApplicationExportModel_RecordsEachExport(t *testing.T) {
 
 	s := testutil.NewTestApp(t)
 	dest := t.TempDir()
-	m := newApplicationExportModel(s.Documents, writeApplicationDocuments(t, 42, document.CoverLetter), testExportApplication, dest, message.ContentSize{Width: 80})
+	m := newApplicationExportModel(s.Documents, writeApplicationDocuments(t, document.CoverLetter), testExportApplication, dest, message.ContentSize{Width: 80})
 
 	exportedIn(t, runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter})))
 
-	exports, err := s.Documents.LatestExports(context.Background(), 42)
+	exports, err := s.Documents.LatestExports(context.Background(), testExportApplication.Application.ID)
 	if err != nil {
 		t.Fatalf("LatestExports: %v", err)
 	}
@@ -199,7 +199,7 @@ func TestApplicationExportModel_AFailedExportIsAnError(t *testing.T) {
 	if err := os.WriteFile(blocker, []byte("x"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
-	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.Resume), filepath.Join(blocker, "sub"))
+	m := exportScreenOn(t, writeApplicationDocuments(t, document.Resume), filepath.Join(blocker, "sub"))
 
 	got := runCmd(t, m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEnter}))
 
@@ -210,7 +210,7 @@ func TestApplicationExportModel_AFailedExportIsAnError(t *testing.T) {
 	if !ok {
 		t.Fatalf("enter sent %T, want an error", got[0])
 	}
-	if e.Meta.Source.Instance != m.Instance() || e.Meta.Subject != (message.Subject{Type: message.TypeApplication, ID: 42}) {
+	if e.Meta.Source.Instance != m.Instance() || e.Meta.Subject != (message.Subject{Type: message.TypeApplication, ID: testExportApplication.Application.ID}) {
 		t.Errorf("error meta = %+v, want from the screen, about its application", e.Meta)
 	}
 }
@@ -220,10 +220,10 @@ func TestApplicationExportModel_AFailedExportIsAnError(t *testing.T) {
 func TestApplicationExportModel_ItsExportPopsWithWhereTheFilesWent(t *testing.T) {
 	t.Parallel()
 
-	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.Resume), "/tmp")
+	m := exportScreenOn(t, writeApplicationDocuments(t, document.Resume), "/tmp")
 	report := message.ExportReport{Dir: "/out", Paths: []string{"/out/northwind-delivery-platform-resume.pdf"}}
 
-	got := runCmd(t, m.exported(message.New(m.src(), message.Subject{Type: message.TypeApplication, ID: 42}, message.OpNone, time.Now().UTC(), message.Ran[message.ExportReport]{Value: report})))
+	got := runCmd(t, m.exported(message.New(m.src(), message.Subject{Type: message.TypeApplication, ID: testExportApplication.Application.ID}, message.OpNone, time.Now().UTC(), message.Ran[message.ExportReport]{Value: report})))
 
 	if !popsIn(got, m.Instance()) {
 		t.Errorf("its export sent %+v, want a pop", got)
@@ -238,13 +238,13 @@ func TestApplicationExportModel_ItsExportPopsWithWhereTheFilesWent(t *testing.T)
 func TestApplicationExportModel_StaysOnAFailedExport(t *testing.T) {
 	t.Parallel()
 
-	m := exportScreenOn(t, writeApplicationDocuments(t, 42, document.Resume), "/tmp")
+	m := exportScreenOn(t, writeApplicationDocuments(t, document.Resume), "/tmp")
 	r := model.NewMsgRouter()
 	if err := r.Register(m); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
 
-	cmd := r.Dispatch(message.New(m.src(), message.Subject{Type: message.TypeApplication, ID: 42}, message.OpNone, time.Now().UTC(), message.Error{Code: message.ErrOther, Text: "create /x: not a directory"}))
+	cmd := r.Dispatch(message.New(m.src(), message.Subject{Type: message.TypeApplication, ID: testExportApplication.Application.ID}, message.OpNone, time.Now().UTC(), message.Error{Code: message.ErrOther, Text: "create /x: not a directory"}))
 
 	if got := runCmd(t, cmd); popsIn(got, m.Instance()) {
 		t.Errorf("a failed export sent %+v, want the screen kept", got)

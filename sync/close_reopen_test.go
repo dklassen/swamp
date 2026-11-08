@@ -20,13 +20,11 @@ func mustUpsertPosting(t *testing.T, s testutil.TestApp, companyID int64, source
 	return ingested.Posting
 }
 
-func mustCreateApplication(t *testing.T, s testutil.TestApp, postingID int64) application.Application {
+func mustCreateApplication(t *testing.T, s testutil.TestApp, postingID int64) {
 	t.Helper()
-	a, err := createApplication(context.Background(), s, postingID)
-	if err != nil {
+	if _, err := createApplication(context.Background(), s, postingID); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	return *a
 }
 
 func mustClosePosting(t *testing.T, s testutil.TestApp, postingID int64, from []application.Status) {
