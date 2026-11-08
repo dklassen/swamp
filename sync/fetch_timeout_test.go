@@ -18,7 +18,7 @@ type hangingFetcher struct{}
 
 var errNeverCancelled = errors.New("fetch was never cancelled")
 
-func (hangingFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error) {
+func (hangingFetcher) FetchPostings(ctx context.Context, _ string) ([]jobboard.Posting, error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -116,7 +116,7 @@ type cancelAfterFetchFetcher struct {
 	postings []jobboard.Posting
 }
 
-func (f cancelAfterFetchFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error) {
+func (f cancelAfterFetchFetcher) FetchPostings(_ context.Context, _ string) ([]jobboard.Posting, error) {
 	f.cancel()
 	return f.postings, nil
 }

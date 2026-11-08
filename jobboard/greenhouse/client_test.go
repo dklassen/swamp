@@ -111,7 +111,7 @@ func TestFetchPostings_RawPayloadMatchesOriginalJSON(t *testing.T) {
 }
 
 func TestFetchPostings_NonOKStatus_ReturnsError(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	t.Cleanup(server.Close)

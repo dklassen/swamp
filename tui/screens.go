@@ -98,56 +98,56 @@ func (s *Screens) Tabs() []Tab {
 // Tables are what each Nav payload opens.
 func (s *Screens) Tables() []Table {
 	return []Table{
-		Opens(map[message.Screen]func(message.None) stackScreen{
-			message.ScreenCompanyForm: func(message.None) stackScreen {
+		Opens(map[message.Screen]func(message.None) StackScreen{
+			message.ScreenCompanyForm: func(message.None) StackScreen {
 				return newCompanyFormModel(s.syncer)
 			},
 		}),
-		Opens(map[message.Screen]func(message.Company) stackScreen{
-			message.ScreenCompanyEdit: func(c message.Company) stackScreen {
+		Opens(map[message.Screen]func(message.Company) StackScreen{
+			message.ScreenCompanyEdit: func(c message.Company) StackScreen {
 				return newCompanyEditModel(s.companies, c.ID, c.Name)
 			},
-			message.ScreenCompanyPostings: func(c message.Company) stackScreen {
+			message.ScreenCompanyPostings: func(c message.Company) StackScreen {
 				return newPostingListModel(s.companies, s.postings, c, s.hideArchived, s.sized)
 			},
 		}),
-		Opens(map[message.Screen]func(message.FilterSelection) stackScreen{
-			message.ScreenFilterSelect: func(f message.FilterSelection) stackScreen {
+		Opens(map[message.Screen]func(message.FilterSelection) StackScreen{
+			message.ScreenFilterSelect: func(f message.FilterSelection) StackScreen {
 				return newFilterSelectModel(s.companies, f, s.sized)
 			},
 		}),
-		Opens(map[message.Screen]func(message.PostingDetail) stackScreen{
-			message.ScreenPostingDetail: func(p message.PostingDetail) stackScreen {
+		Opens(map[message.Screen]func(message.PostingDetail) StackScreen{
+			message.ScreenPostingDetail: func(p message.PostingDetail) StackScreen {
 				return newPostingDetailModel(s.postings, s.documentSvc, s.scores, s.documents, p, s.sized)
 			},
 		}),
-		Opens(map[message.Screen]func(message.Application) stackScreen{
-			message.ScreenApplicationStatus: func(a message.Application) stackScreen {
+		Opens(map[message.Screen]func(message.Application) StackScreen{
+			message.ScreenApplicationStatus: func(a message.Application) StackScreen {
 				return newApplicationStatusModel(s.applications, a)
 			},
-			message.ScreenApplicationNotes: func(a message.Application) stackScreen {
+			message.ScreenApplicationNotes: func(a message.Application) StackScreen {
 				return newApplicationNotesModel(s.applications, a, s.sized)
 			},
-			message.ScreenDocumentReviewSelect: func(a message.Application) stackScreen {
+			message.ScreenDocumentReviewSelect: func(a message.Application) StackScreen {
 				return newDocumentReviewSelectModel(s.documents, a)
 			},
-			message.ScreenApplicationForm: func(a message.Application) stackScreen {
+			message.ScreenApplicationForm: func(a message.Application) StackScreen {
 				return newApplicationFormModel(s.postings, a, s.sized)
 			},
 		}),
-		Opens(map[message.Screen]func(message.DocumentReview) stackScreen{
-			message.ScreenDocumentReviewForm: func(r message.DocumentReview) stackScreen {
+		Opens(map[message.Screen]func(message.DocumentReview) StackScreen{
+			message.ScreenDocumentReviewForm: func(r message.DocumentReview) StackScreen {
 				return newDocumentReviewFormModel(s.documentSvc, s.documents, r, s.sized)
 			},
 		}),
-		Opens(map[message.Screen]func(message.ApplicationDetail) stackScreen{
-			message.ScreenApplicationDetail: func(a message.ApplicationDetail) stackScreen {
+		Opens(map[message.Screen]func(message.ApplicationDetail) StackScreen{
+			message.ScreenApplicationDetail: func(a message.ApplicationDetail) StackScreen {
 				return newApplicationDetailModel(s.applications, s.postings, s.companies, s.documentSvc, s.documents, a, s.sized.Width)
 			},
-			message.ScreenApplicationExport: func(a message.ApplicationDetail) stackScreen {
+			message.ScreenApplicationExport: func(a message.ApplicationDetail) StackScreen {
 				return newApplicationExportModel(s.documentSvc, s.documents, a, s.exportDir, s.sized)
 			},
-			message.ScreenApplicationSubmit: func(a message.ApplicationDetail) stackScreen {
+			message.ScreenApplicationSubmit: func(a message.ApplicationDetail) StackScreen {
 				return newApplicationSubmitModel(s.applications, s.documentSvc, s.documents, s.openURL, a, s.exportDir)
 			},
 		}),

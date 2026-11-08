@@ -12,7 +12,7 @@ import (
 // Tab is a screen that's always open, one of those tab goes through.
 type Tab struct {
 	Kind   message.Screen
-	Screen stackScreen
+	Screen StackScreen
 }
 
 // Navigation is the tabs, one of them up. Each keeps its instance, and
@@ -80,7 +80,7 @@ func (n *Navigation) NextTab() {
 func (n *Navigation) Tab() message.Screen { return n.tab }
 
 // Screen is the tab of kind, or nil if none is.
-func (n *Navigation) Screen(kind message.Screen) stackScreen {
+func (n *Navigation) Screen(kind message.Screen) StackScreen {
 	for _, tab := range n.tabs {
 		if tab.Kind == kind {
 			return tab.Screen

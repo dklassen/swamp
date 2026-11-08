@@ -52,7 +52,7 @@ func newTestAppWithScreens(t *testing.T, s testutil.TestApp, syncer *sync.Syncer
 }
 
 // pushed is the screen on top of app's stack, as a T.
-func pushed[T stackScreen](t *testing.T, app *App) T {
+func pushed[T StackScreen](t *testing.T, app *App) T {
 	t.Helper()
 	if app.stack.Top() == nil {
 		t.Fatalf("no screen is pushed; %v is up", app.onScreen())

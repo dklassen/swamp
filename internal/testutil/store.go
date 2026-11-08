@@ -1,3 +1,5 @@
+// Package testutil sets up migrated databases, services and fixtures for
+// tests.
 package testutil
 
 import (

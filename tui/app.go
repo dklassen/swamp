@@ -101,7 +101,7 @@ func (a *App) focusSignal() tea.Msg {
 
 // top is the screen on top: the stack's, or the tab up when nothing is
 // pushed.
-func (a *App) top() stackScreen {
+func (a *App) top() StackScreen {
 	if s := a.stack.Top(); s != nil {
 		return s
 	}
@@ -123,7 +123,7 @@ func (a *App) onScreen() message.Screen {
 }
 
 // screen is the open screen of kind, or nil if none is.
-func (a *App) screen(kind message.Screen) stackScreen {
+func (a *App) screen(kind message.Screen) StackScreen {
 	if s := a.nav.Screen(kind); s != nil {
 		return s
 	}
@@ -189,7 +189,7 @@ type Table func(*App) *model.Route
 
 // Opens is the Table for Nav[T]: each kind in table opens the screen its
 // function builds from the Nav's value.
-func Opens[T message.Body](table map[message.Screen]func(T) stackScreen) Table {
+func Opens[T message.Body](table map[message.Screen]func(T) StackScreen) Table {
 	return func(a *App) *model.Route {
 		return model.Always(navTo(a, table))
 	}
@@ -199,13 +199,13 @@ func Opens[T message.Body](table map[message.Screen]func(T) stackScreen) Table {
 // closes the top on a pop or a replace. Any kind in table opens on a push
 // or a replace. A Nav from any other screen, such as a second esc typed
 // before the first one's close arrived, is dropped.
-func navTo[T message.Body](a *App, table map[message.Screen]func(T) stackScreen) func(message.Event[message.Nav[T]]) tea.Cmd {
+func navTo[T message.Body](a *App, table map[message.Screen]func(T) StackScreen) func(message.Event[message.Nav[T]]) tea.Cmd {
 	return func(e message.Event[message.Nav[T]]) tea.Cmd {
 		if e.Meta.Source.Instance == 0 || e.Meta.Source.Instance != a.focused() {
 			return nil
 		}
 		nav := e.Payload
-		var opened stackScreen
+		var opened StackScreen
 		if nav.Op != message.NavPop {
 			open, ok := table[nav.Screen]
 			if !ok || (nav.Op != message.NavPush && nav.Op != message.NavReplace) {

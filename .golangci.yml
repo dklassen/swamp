@@ -43,6 +43,7 @@ linters:
     - prealloc
     - predeclared
     - reassign
+    - revive
     - rowserrcheck
     - sloglint
     - sqlclosecheck
@@ -67,6 +68,12 @@ linters:
     nolintlint:
       require-explanation: true
       require-specific: true
+    revive:
+      enable-default-rules: true
+      rules:
+        # A doc comment on every exported name is its own step, not yet agreed.
+        - name: exported
+          disabled: true
   exclusions:
     rules:
       # Table-driven tests are long by design.

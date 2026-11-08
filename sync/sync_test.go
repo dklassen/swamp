@@ -29,7 +29,7 @@ type fakeFetcher struct {
 	err      error
 }
 
-func (f *fakeFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error) {
+func (f *fakeFetcher) FetchPostings(_ context.Context, boardSlug string) ([]jobboard.Posting, error) {
 	if f.err != nil {
 		return nil, f.err
 	}
@@ -50,7 +50,7 @@ func newBarrierFetcher(callers int, postings []jobboard.Posting) *barrierFetcher
 	return &barrierFetcher{postings: postings, arrived: arrived}
 }
 
-func (f *barrierFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error) {
+func (f *barrierFetcher) FetchPostings(_ context.Context, _ string) ([]jobboard.Posting, error) {
 	f.arrived.Done()
 	f.arrived.Wait()
 	return f.postings, nil
@@ -97,7 +97,7 @@ type perBoardFetcher struct {
 	errBoards map[string]error
 }
 
-func (f *perBoardFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error) {
+func (f *perBoardFetcher) FetchPostings(_ context.Context, boardSlug string) ([]jobboard.Posting, error) {
 	if err, ok := f.errBoards[boardSlug]; ok {
 		return nil, err
 	}

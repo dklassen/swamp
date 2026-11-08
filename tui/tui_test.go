@@ -91,7 +91,7 @@ type fakeFetcher struct {
 	errBoards map[string]error // boardSlug -> error FetchPostings returns for it
 }
 
-func (f *fakeFetcher) FetchPostings(ctx context.Context, boardSlug string) ([]jobboard.Posting, error) {
+func (f *fakeFetcher) FetchPostings(_ context.Context, boardSlug string) ([]jobboard.Posting, error) {
 	if err, ok := f.errBoards[boardSlug]; ok {
 		return nil, err
 	}

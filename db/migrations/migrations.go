@@ -1,3 +1,5 @@
+// Package migrations is Swamp's schema: the goose migrations built into
+// the binary, and which tables' changes go in the change log.
 package migrations
 
 import (

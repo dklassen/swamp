@@ -14,15 +14,16 @@ Enabling golangci-lint linters one themed group per PR, titled `[Lint N] <theme>
 | 8 | Repeated strings: goconst, keys as `key.Binding` | - | #468 | merged | 1 |
 | 9 | Unused and unchecked code: unparam, forcetypeassert, sqlclosecheck, musttag, sloglint | - | #470 | merged | 1 |
 | 10 | Small fixes: dupword, embeddedstructfieldcheck, dogsled, prealloc | - | #474 | merged | 1 |
-| 11 | Shared shapes: iface, dupl | - | #475 | in review | 1 |
+| 11 | Shared shapes: iface, dupl | - | #475 | merged | 1 |
+| 12 | Unused parameters, package comments: revive without `exported` | - | #477 | in review | 1 |
 
 ## Next
 
-Findings on `main` after step 10, from `go tool golangci-lint run --enable-only <linters> ./...`. Each needs its scope agreed with Bob before starting.
+Findings on `main` after step 11, from `go tool golangci-lint run --enable-only <linters> ./...`. Each needs its scope agreed with Bob before starting.
 
 | Linter | Findings | Needed to start |
 | --- | --- | --- |
-| revive | 253 | Which rules. |
+| revive `exported` | 211 | Whether every exported name gets a doc comment; 100 are in `tui/message`. |
 | paralleltest | 222 | Mostly tests without `t.Parallel()`; whether any must stay serial. |
 | wrapcheck | 201 | Which packages' errors get wrapped. |
 | err113 | 123 | Which dynamic `errors.New` become sentinels. |
@@ -37,6 +38,8 @@ Findings on `main` after step 10, from `go tool golangci-lint run --enable-only 
 - Tests are excluded from prealloc too (from step 10): a test's allocations aren't its point, and sizing a `want` up front turns an empty case's `nil` into `[]`, which `cmp.Diff` reports.
 - Identical interfaces in one package are merged, not excluded (from step 11): the consuming package declares an interface, one per need. The rule is in AGENTS.md, under Go style.
 - Each linter's fixes are one commit, and enabling them is the last, so every commit passes the checklist. The PR body has Production, Tests, Config and Verified sections; Verified says what wasn't run against real data.
+- revive runs its default rules except `exported` (from step 12), which waits on its own step. It reports one unused parameter per function, so fixing one can surface the next.
+- An exported method returning an unexported type exports the type when the package's exported API already takes it (`StackScreen`, from step 12).
 - `go tool task fmt:check` prints its script, which ends in `exit 1`; go by its exit code.
 
 ## Open

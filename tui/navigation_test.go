@@ -22,9 +22,9 @@ func newFakesApp(t *testing.T, form, edit *stackedFake) *App {
 	t.Helper()
 	router := model.NewMsgRouter()
 	screens := NewScreens(nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
-	fakes := Opens(map[message.Screen]func(message.None) stackScreen{
-		message.ScreenCompanyForm: func(message.None) stackScreen { return form },
-		message.ScreenCompanyEdit: func(message.None) stackScreen { return edit },
+	fakes := Opens(map[message.Screen]func(message.None) StackScreen{
+		message.ScreenCompanyForm: func(message.None) StackScreen { return form },
+		message.ScreenCompanyEdit: func(message.None) StackScreen { return edit },
 	})
 	return New(router, NewNavigation(screens.Tabs()), NewStack(), []Table{fakes})
 }
@@ -109,7 +109,7 @@ func TestApp_Nav_ToAScreenMissingFromTheTables_IsReported(t *testing.T) {
 	t.Parallel()
 	router := model.NewMsgRouter()
 	screens := NewScreens(nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
-	noForm := Opens(map[message.Screen]func(message.None) stackScreen{})
+	noForm := Opens(map[message.Screen]func(message.None) StackScreen{})
 	app := New(router, NewNavigation(screens.Tabs()), NewStack(), []Table{noForm})
 	home := app.onScreen()
 	from := message.Source{Instance: app.focused()}

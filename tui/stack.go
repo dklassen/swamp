@@ -9,9 +9,9 @@ import (
 	"github.com/dklassen/swamp/tui/model"
 )
 
-// stackScreen is a screen a Nav opens: routed while it's open, drawn while
+// StackScreen is a screen a Nav opens: routed while it's open, drawn while
 // it's on top, and closed by a pop.
-type stackScreen interface {
+type StackScreen interface {
 	model.SubComponent
 	model.Routable
 }
@@ -19,7 +19,7 @@ type stackScreen interface {
 // stacked is a screen pushed over the one before it, or over the tab.
 type stacked struct {
 	kind   message.Screen
-	screen stackScreen
+	screen StackScreen
 }
 
 // Stack is the screens pushed over the tab, top last.
@@ -31,7 +31,7 @@ func NewStack() *Stack { return &Stack{} }
 
 // Push puts s on top. A kind is open at most once, so pushing one that's
 // open is a bug in the caller.
-func (st *Stack) Push(kind message.Screen, s stackScreen) {
+func (st *Stack) Push(kind message.Screen, s StackScreen) {
 	if slices.ContainsFunc(st.entries, func(e stacked) bool { return e.kind == kind }) {
 		panic(fmt.Sprintf("tui: %v is already open", kind))
 	}
@@ -39,7 +39,7 @@ func (st *Stack) Push(kind message.Screen, s stackScreen) {
 }
 
 // Pop takes the screen on top off, and is it.
-func (st *Stack) Pop() (stackScreen, error) {
+func (st *Stack) Pop() (StackScreen, error) {
 	n := len(st.entries)
 	if n == 0 {
 		return nil, errors.New("tui: no screen is pushed to pop")
@@ -50,7 +50,7 @@ func (st *Stack) Pop() (stackScreen, error) {
 }
 
 // Top is the screen on top, or nil if none is pushed.
-func (st *Stack) Top() stackScreen {
+func (st *Stack) Top() StackScreen {
 	if len(st.entries) == 0 {
 		return nil
 	}
@@ -58,7 +58,7 @@ func (st *Stack) Top() stackScreen {
 }
 
 // Screen is the screen of kind on the stack, or nil if none is.
-func (st *Stack) Screen(kind message.Screen) stackScreen {
+func (st *Stack) Screen(kind message.Screen) StackScreen {
 	for _, e := range st.entries {
 		if e.kind == kind {
 			return e.screen

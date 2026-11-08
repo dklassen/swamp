@@ -1,3 +1,5 @@
+// Package message is the TUI's messages: each an Event, a Meta that routing
+// reads and a payload that is a snapshot this package owns.
 package message
 
 import (
