@@ -39,11 +39,11 @@ func (e *ApplicationDeletedError) Error() string {
 	return fmt.Sprintf("stage: application %d (posting %d) was deleted", e.ApplicationID, e.PostingID)
 }
 
-// checkApplication says why applicationID's documents can't be touched,
-// or returns nil if they can. Documents folders are keyed by ID alone,
+// application returns an error saying why applicationID's documents
+// can't be touched, or nil. Documents folders are keyed by ID alone,
 // so writing for an ID with no application would leave a draft for
 // whichever application gets that ID next.
-func (st *Stage) checkApplication(ctx context.Context, applicationID int64) error {
+func (st *Stage) application(ctx context.Context, applicationID int64) error {
 	app, err := st.applications.GetIncludingDeleted(ctx, applicationID)
 	if errors.Is(err, store.ErrNotFound) {
 		return fmt.Errorf("%w: %d", ErrApplicationNotFound, applicationID)
@@ -67,7 +67,7 @@ func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documen
 	if replacesVersion != nil && *replacesVersion == "" {
 		return "", ErrEmptyReplacesVersion
 	}
-	if err := st.checkApplication(ctx, applicationID); err != nil {
+	if err := st.application(ctx, applicationID); err != nil {
 		return "", err
 	}
 	var path string
@@ -95,7 +95,7 @@ func (st *Stage) WriteDocument(ctx context.Context, applicationID int64, documen
 // path, with the same application check as WriteDocument. Unlike a write
 // it never creates the application's folder.
 func (st *Stage) ReadDocument(ctx context.Context, applicationID int64, documentType document.Type) (path, content string, err error) {
-	if err := st.checkApplication(ctx, applicationID); err != nil {
+	if err := st.application(ctx, applicationID); err != nil {
 		return "", "", err
 	}
 	path, err = st.documents.Path(applicationID, documentType)
