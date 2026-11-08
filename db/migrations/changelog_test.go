@@ -1,6 +1,7 @@
 package migrations
 
 import (
+	"database/sql"
 	"maps"
 	"regexp"
 	"slices"
@@ -75,23 +76,7 @@ func TestChangeLog_EveryColumnOfALoggedTableIsClassified(t *testing.T) {
 		for _, c := range append(append([]string{}, logged.Columns...), logged.Ignored...) {
 			listed[c]++
 		}
-		rows, err := sqlDB.Query(`SELECT name FROM pragma_table_info(?)`, table)
-		if err != nil {
-			t.Fatalf("columns of %s: %v", table, err)
-		}
-		actual := map[string]bool{}
-		for rows.Next() {
-			var c string
-			if err := rows.Scan(&c); err != nil {
-				t.Fatalf("scan: %v", err)
-			}
-			actual[c] = true
-		}
-		if err := rows.Err(); err != nil {
-			t.Fatalf("columns of %s: %v", table, err)
-		}
-		_ = rows.Close()
-
+		actual := tableColumns(t, sqlDB, table)
 		for c := range actual {
 			switch listed[c] {
 			case 0:
@@ -153,4 +138,25 @@ func TestChangeLog_TriggersMatchTheList(t *testing.T) {
 			}
 		}
 	}
+}
+
+func tableColumns(t *testing.T, sqlDB *sql.DB, table string) map[string]bool {
+	t.Helper()
+	rows, err := sqlDB.Query(`SELECT name FROM pragma_table_info(?)`, table)
+	if err != nil {
+		t.Fatalf("columns of %s: %v", table, err)
+	}
+	defer func() { _ = rows.Close() }()
+	columns := map[string]bool{}
+	for rows.Next() {
+		var c string
+		if err := rows.Scan(&c); err != nil {
+			t.Fatalf("scan: %v", err)
+		}
+		columns[c] = true
+	}
+	if err := rows.Err(); err != nil {
+		t.Fatalf("columns of %s: %v", table, err)
+	}
+	return columns
 }

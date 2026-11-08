@@ -15,25 +15,9 @@ func init() {
 }
 
 func upPostingContentSHA256(ctx context.Context, tx *sql.Tx) error {
-	rows, err := tx.QueryContext(ctx, `SELECT id, title, department, location, workplace_type, description_text FROM postings`)
+	hashes, err := postingHashes(ctx, tx)
 	if err != nil {
-		return fmt.Errorf("read postings: %w", err)
-	}
-	hashes := map[int64]string{}
-	for rows.Next() {
-		var id int64
-		var p contenthash.Posting
-		if err := rows.Scan(&id, &p.Title, &p.Department, &p.Location, &p.WorkplaceType, &p.DescriptionText); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("read posting: %w", err)
-		}
-		hashes[id] = contenthash.Of(p)
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("read postings: %w", err)
-	}
-	if err := rows.Err(); err != nil {
-		return fmt.Errorf("read postings: %w", err)
+		return err
 	}
 	for id, hash := range hashes {
 		if _, err := tx.ExecContext(ctx, `UPDATE postings SET content_sha256 = ? WHERE id = ?`, hash, id); err != nil {
@@ -41,6 +25,29 @@ func upPostingContentSHA256(ctx context.Context, tx *sql.Tx) error {
 		}
 	}
 	return nil
+}
+
+// postingHashes reads every posting's hash, closing the read before the
+// updates go through the same transaction.
+func postingHashes(ctx context.Context, tx *sql.Tx) (map[int64]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT id, title, department, location, workplace_type, description_text FROM postings`)
+	if err != nil {
+		return nil, fmt.Errorf("read postings: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+	hashes := map[int64]string{}
+	for rows.Next() {
+		var id int64
+		var p contenthash.Posting
+		if err := rows.Scan(&id, &p.Title, &p.Department, &p.Location, &p.WorkplaceType, &p.DescriptionText); err != nil {
+			return nil, fmt.Errorf("read posting: %w", err)
+		}
+		hashes[id] = contenthash.Of(p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("read postings: %w", err)
+	}
+	return hashes, nil
 }
 
 func downPostingContentSHA256(ctx context.Context, tx *sql.Tx) error {
