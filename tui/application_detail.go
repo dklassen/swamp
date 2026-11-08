@@ -2,6 +2,7 @@ package tui
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 	"unicode"
@@ -282,14 +283,14 @@ func (m *applicationDetailModel) View() tea.View {
 		}
 	}
 
-	help := []string{"p: view posting"}
-	for _, documentType := range document.Types() {
-		help = append(help, string(documentType.Key())+": edit "+documentType.Label())
+	types := document.Types()
+	edit := make([]string, len(types))
+	review := make([]string, len(types))
+	for i, documentType := range types {
+		edit[i] = string(documentType.Key()) + ": edit " + documentType.Label()
+		review[i] = string(unicode.ToUpper(documentType.Key())) + ": review " + documentType.Label()
 	}
-	for _, documentType := range document.Types() {
-		help = append(help, string(unicode.ToUpper(documentType.Key()))+": review "+documentType.Label())
-	}
-	help = append(help, "f: application form", "S: submit", "D: delete", "u: refresh", "esc/b: back")
+	help := slices.Concat([]string{"p: view posting"}, edit, review, []string{"f: application form", "S: submit", "D: delete", "u: refresh", "esc/b: back"})
 	b.WriteString(model.HelpStyle.Render(strings.Join(help, "  ")))
 	if m.confirm != nil {
 		return tea.NewView(overlay(b.String(), m.confirm.View(m.width), m.width))
