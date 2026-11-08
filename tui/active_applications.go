@@ -52,6 +52,8 @@ func longestStatusLabel() int {
 // live one level down, on application detail; this screen keeps status
 // as a shortcut for triage across many applications.
 type activeApplicationListModel struct {
+	listSearch
+
 	applications    *service.ApplicationService
 	documentService *service.DocumentService
 	documents       *documents.Store
@@ -62,11 +64,6 @@ type activeApplicationListModel struct {
 	progress map[int64]map[document.Type]documentProgress
 	order    message.ApplicationOrder
 	reading  reading
-	cursor   int
-	// searching is whether the '/' prompt is open and taking keys; query
-	// is what's been typed into it.
-	searching bool
-	query     string
 	// confirm is the delete being confirmed, or nil.
 	confirm *applicationDeleteModel
 
@@ -268,7 +265,10 @@ func (m *activeApplicationListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 		return cmd
 	}
 	if m.searching {
-		return m.updateSearch(msg)
+		if m.searchKey(msg, len(m.visible())) {
+			m.clearSearch()
+		}
+		return nil
 	}
 	// Commands act on the matches a kept search shows, not the whole list.
 	visible := m.visible()
@@ -314,46 +314,8 @@ func (m *activeApplicationListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-// updateSearch handles a key while the '/' prompt is open. Every edit
-// to the query re-filters straight away and puts the cursor back on the
-// first match.
-func (m *activeApplicationListModel) updateSearch(msg tea.KeyPressMsg) tea.Cmd {
-	switch {
-	default:
-		if msg.Text != "" {
-			m.query += msg.Text
-			m.cursor = 0
-		}
-	case key.Matches(msg, keys.Backspace):
-		if r := []rune(m.query); len(r) > 0 {
-			m.query = string(r[:len(r)-1])
-			m.cursor = 0
-		} else {
-			m.searching = false
-		}
-	case key.Matches(msg, keys.Esc):
-		m.searching = false
-		m.clearSearch()
-	case key.Matches(msg, keys.SearchDown):
-		if m.cursor < len(m.visible())-1 {
-			m.cursor++
-		}
-	case key.Matches(msg, keys.SearchUp):
-		if m.cursor > 0 {
-			m.cursor--
-		}
-	case key.Matches(msg, keys.Enter):
-		// Keeps the matches, so letters act on them instead of being typed.
-		m.searching = false
-	}
-	return nil
-}
-
 func (m *activeApplicationListModel) paste(msg tea.PasteMsg) tea.Cmd {
-	if m.searching {
-		m.query += msg.Content
-		m.cursor = 0
-	}
+	m.searchPaste(msg.Content)
 	return nil
 }
 
