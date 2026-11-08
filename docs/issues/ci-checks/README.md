@@ -6,7 +6,7 @@ The gaps a review of the linters left after the lint series (`docs/issues/lint/`
 | --- | --- | --- | --- | --- | --- |
 | 1 | Import groups: gci | - | #480 | in review | none |
 | 2 | No prints outside the CLI: forbidigo | - | #481 | in review | none |
-| 3 | Known vulnerabilities: govulncheck in CI | - | - | planned | none |
+| 3 | Known vulnerabilities: govulncheck in CI | - | - | in progress | none |
 
 ## Decided
 
@@ -19,6 +19,8 @@ The gaps a review of the linters left after the lint series (`docs/issues/lint/`
 ## Open
 
 - Whether `task fmt` and the pre-commit hook move from gofmt to `golangci-lint fmt`, so they fix gci and gofumpt too. Slower per commit; blocks nothing.
+- Whether to bump `golang.org/x/net` from v0.61.0 to v0.62.0, which fixes GO-2026-6866 and GO-2026-6860 in `html`. govulncheck finds no call to them (greenhouse uses only `html.NewTokenizer`), but `html` parses job boards' HTML. Blocks nothing.
+- `main` isn't `go mod tidy`: tidy drops `canonicalheader`, `go-difflib` and 177 `go.sum` lines. Left out of step 3 as unrelated; whether to tidy, and check it in CI, blocks nothing.
 
 ## Follow-ups
 
