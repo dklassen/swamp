@@ -6,12 +6,16 @@ import (
 )
 
 func TestStatus_String_ReturnsDBValue(t *testing.T) {
+	t.Parallel()
+
 	if got := Started.String(); got != "application_started" {
 		t.Fatalf("Started.String() = %q, want %q", got, "application_started")
 	}
 }
 
 func TestAll_EachRoundTripsThroughStringAndParse(t *testing.T) {
+	t.Parallel()
+
 	for _, status := range All() {
 		parsed, err := ParseStatus(status.String())
 		if err != nil {
@@ -24,6 +28,8 @@ func TestAll_EachRoundTripsThroughStringAndParse(t *testing.T) {
 }
 
 func TestStatus_MarshalJSON_UsesDBStringNotIntValue(t *testing.T) {
+	t.Parallel()
+
 	got, err := json.Marshal(Interviewing)
 	if err != nil {
 		t.Fatalf("json.Marshal: %v", err)
@@ -35,6 +41,8 @@ func TestStatus_MarshalJSON_UsesDBStringNotIntValue(t *testing.T) {
 }
 
 func TestParseStatus_UnknownValue_ReturnsError(t *testing.T) {
+	t.Parallel()
+
 	// "applied" was removed from the valid set by the 00002 migration
 	// (see db/migrations/00002_split_application_from_posting.sql) --
 	// still a good example of a value that must not parse.
@@ -49,6 +57,8 @@ func TestParseStatus_UnknownValue_ReturnsError(t *testing.T) {
 // be rewritten every time, which obscures that the test itself never
 // changed.
 func TestTerminal_AreTheDeadEndStatuses(t *testing.T) {
+	t.Parallel()
+
 	got := Terminal()
 	want := []Status{
 		Rejected,
@@ -67,6 +77,8 @@ func TestTerminal_AreTheDeadEndStatuses(t *testing.T) {
 }
 
 func TestTerminal_EveryValueIsAKnownStatus(t *testing.T) {
+	t.Parallel()
+
 	known := map[Status]bool{}
 	for _, s := range All() {
 		known[s] = true
@@ -83,6 +95,8 @@ func TestTerminal_EveryValueIsAKnownStatus(t *testing.T) {
 // an offer. Being terminal is what drops it out of
 // pursuit.List.
 func TestPostingClosed_IsTerminal(t *testing.T) {
+	t.Parallel()
+
 	if got := PostingClosed.String(); got != "posting_closed" {
 		t.Errorf("PostingClosed.String() = %q, want %q", got, "posting_closed")
 	}
@@ -104,6 +118,8 @@ func TestPostingClosed_IsTerminal(t *testing.T) {
 // from offer_declined (there was no offer), both of which would put a
 // false fact in a record the user reads back later.
 func TestWithdrawn_IsTerminal(t *testing.T) {
+	t.Parallel()
+
 	if got := Withdrawn.String(); got != "withdrawn" {
 		t.Errorf("Withdrawn.String() = %q, want %q", got, "withdrawn")
 	}

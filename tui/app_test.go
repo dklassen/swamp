@@ -186,6 +186,8 @@ func openPostingDetail(t *testing.T, app *App) *App {
 }
 
 func TestApp_Init_LoadsCompanies(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 
@@ -200,6 +202,8 @@ func TestApp_Init_LoadsCompanies(t *testing.T) {
 }
 
 func TestApp_CursorDown_MovesSelectionWithinBounds(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustCreateCompany(t, s, "Globex", jobboard.Ashby, "globex")
@@ -228,6 +232,8 @@ func TestApp_CursorDown_MovesSelectionWithinBounds(t *testing.T) {
 }
 
 func TestApp_PressA_EntersCompanyForm(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
@@ -248,6 +254,8 @@ func TestApp_PressA_EntersCompanyForm(t *testing.T) {
 }
 
 func TestApp_SubmitForm_BoardRejectsSourceRef_StaysOnFormToRetry(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	syncer := sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{
 		jobboard.Ashby: &fakeFetcher{errBoards: map[string]error{"acmee": errors.New("404 not found")}},
@@ -278,6 +286,8 @@ func TestApp_SubmitForm_BoardRejectsSourceRef_StaysOnFormToRetry(t *testing.T) {
 }
 
 func TestApp_TypingInForm_UpdatesFocusedField(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
@@ -292,6 +302,8 @@ func TestApp_TypingInForm_UpdatesFocusedField(t *testing.T) {
 }
 
 func TestApp_Tab_MovesFocusToNextField(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
@@ -321,6 +333,8 @@ func TestApp_Tab_MovesFocusToNextField(t *testing.T) {
 }
 
 func TestApp_SubmitForm_CreatesCompanyAndReturnsToList(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
@@ -544,6 +558,8 @@ func TestApp_CompanyRenameFails_ShowsTheErrorAndKeepsTheEditOpen(t *testing.T) {
 }
 
 func TestApp_PressDThenY_DeletesSelectedCompany(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -566,6 +582,8 @@ func TestApp_PressDThenY_DeletesSelectedCompany(t *testing.T) {
 }
 
 func TestApp_PressE_EditsCompanyName(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -606,6 +624,8 @@ func TestApp_PressE_EditsCompanyName(t *testing.T) {
 }
 
 func TestApp_EscWhileCompanyNameSavePending_DoesNotRaceTheSave(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -646,6 +666,8 @@ func TestApp_EscWhileCompanyNameSavePending_DoesNotRaceTheSave(t *testing.T) {
 }
 
 func TestApp_SubmitForm_KeepsCompanyListSorted(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Globex", jobboard.Ashby, "globex")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -676,6 +698,8 @@ func TestApp_SubmitForm_KeepsCompanyListSorted(t *testing.T) {
 }
 
 func TestApp_PressE_RenameKeepsCompanyListSorted(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustCreateCompany(t, s, "Globex", jobboard.Ashby, "globex")
@@ -708,6 +732,8 @@ func TestApp_PressE_RenameKeepsCompanyListSorted(t *testing.T) {
 }
 
 func TestApp_PressI_OnPostingList_TogglesInterestedOnSelectedPosting(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -750,6 +776,8 @@ func TestApp_PressI_OnPostingList_TogglesInterestedOnSelectedPosting(t *testing.
 }
 
 func TestApp_PressX_OnPostingList_TogglesArchivedOnSelectedPosting(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -797,6 +825,8 @@ func TestApp_PressX_OnPostingList_TogglesArchivedOnSelectedPosting(t *testing.T)
 }
 
 func TestApp_PressI_WhileArchived_SwitchesToInterestedAndClearsArchived(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -839,6 +869,8 @@ func TestApp_PressI_WhileArchived_SwitchesToInterestedAndClearsArchived(t *testi
 }
 
 func TestApp_PressX_WhileInterested_SwitchesToArchivedAndClearsInterested(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -876,6 +908,8 @@ func TestApp_PressX_WhileInterested_SwitchesToArchivedAndClearsInterested(t *tes
 }
 
 func TestApp_OpenPostingList_HidesArchivedPostingsByDefault(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -925,6 +959,8 @@ func TestApp_OpenPostingList_HidesArchivedPostingsByDefault(t *testing.T) {
 }
 
 func TestApp_PressA_OnPostingList_TogglesArchivedPostingsBackIntoView(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -989,6 +1025,8 @@ func TestApp_PressA_LastsAcrossOpenings(t *testing.T) {
 // company's posting list. Applications on closed postings stay reachable
 // from the active-applications screen.
 func TestApp_PostingList_NeverShowsClosedPostings(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1025,6 +1063,8 @@ func TestApp_PostingList_NeverShowsClosedPostings(t *testing.T) {
 }
 
 func TestApp_PressX_WhileHidingArchived_RemovesPostingFromViewAndClampsCursor(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1055,6 +1095,8 @@ func TestApp_PressX_WhileHidingArchived_RemovesPostingFromViewAndClampsCursor(t 
 }
 
 func TestApp_PressA_OnPostingDetail_WithNoApplication_CreatesApplication(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1085,6 +1127,8 @@ func TestApp_PressA_OnPostingDetail_WithNoApplication_CreatesApplication(t *test
 // applications list without needing a restart -- the create's change
 // reloads it, the same way a status change already does.
 func TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1116,6 +1160,8 @@ func TestApp_PressA_OnPostingDetail_NewApplication_AppearsInActiveApplications(t
 // an application on a closed posting is refused. That's an
 // expected outcome, not a failure, so it reads as status, not an error.
 func TestApp_PressA_OnPostingDetail_ClosedPosting_ExplainsInStatus(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1147,6 +1193,8 @@ func TestApp_PressA_OnPostingDetail_ClosedPosting_ExplainsInStatus(t *testing.T)
 }
 
 func TestApp_PressA_OnPostingDetail_WhenApplicationAlreadyExists_DoesNotDuplicate(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1178,6 +1226,8 @@ func TestApp_PressA_OnPostingDetail_WhenApplicationAlreadyExists_DoesNotDuplicat
 }
 
 func TestApp_OpenPostingDetail_WithExistingApplication_LoadsAndDisplaysStatus(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1199,6 +1249,8 @@ func TestApp_OpenPostingDetail_WithExistingApplication_LoadsAndDisplaysStatus(t 
 }
 
 func TestApp_OpenPostingDetail_WithNoApplication_ShowsNoApplicationMessage(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1214,6 +1266,8 @@ func TestApp_OpenPostingDetail_WithNoApplication_ShowsNoApplicationMessage(t *te
 }
 
 func TestApp_PressS_OnPostingDetail_WithApplication_OpensStatusSelect(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1236,6 +1290,8 @@ func TestApp_PressS_OnPostingDetail_WithApplication_OpensStatusSelect(t *testing
 }
 
 func TestApp_PressS_OnPostingDetail_WithNoApplication_NoOp(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1254,6 +1310,8 @@ func TestApp_PressS_OnPostingDetail_WithNoApplication_NoOp(t *testing.T) {
 }
 
 func TestApp_StatusSelect_Enter_UpdatesStatusAndReturnsToDetail(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1296,6 +1354,8 @@ func TestApp_StatusSelect_Enter_UpdatesStatusAndReturnsToDetail(t *testing.T) {
 }
 
 func TestApp_StatusSelect_Esc_CancelsWithoutSaving(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1327,6 +1387,8 @@ func TestApp_StatusSelect_Esc_CancelsWithoutSaving(t *testing.T) {
 }
 
 func TestApp_StartsOnActiveApplicationsScreen(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -1349,6 +1411,8 @@ func TestApp_StartsOnActiveApplicationsScreen(t *testing.T) {
 // a save goes back to whichever it was opened from, showing the new
 // status.
 func TestApp_ActiveApplications_StatusChange_ReturnsToActiveApplications(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -1379,6 +1443,8 @@ func TestApp_ActiveApplications_StatusChange_ReturnsToActiveApplications(t *test
 // Submitting moves an application below the started ones; the cursor
 // moves with it.
 func TestApp_ActiveApplications_StatusChange_KeepsTheCursorOnItsRow(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	for _, title := range []string{"Engineer", "Designer", "Analyst"} {
@@ -1469,6 +1535,8 @@ func TestApp_ApplicationDetail_RequestAfterLeaving_StaysWhereTheUserWent(t *test
 // (rejected/offer_declined) should drop the application from view
 // immediately rather than on the next full reload.
 func TestApp_ActiveApplications_StatusChangeToRejected_RemovesFromList(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -1493,6 +1561,8 @@ func TestApp_ActiveApplications_StatusChangeToRejected_RemovesFromList(t *testin
 }
 
 func TestApp_PressN_OnPostingDetail_WithApplication_OpensNotesEditorPrepopulated(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1522,6 +1592,8 @@ func TestApp_PressN_OnPostingDetail_WithApplication_OpensNotesEditorPrepopulated
 }
 
 func TestApp_NotesEdit_CtrlS_SavesNotesAndReturnsToDetail(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1561,6 +1633,8 @@ func TestApp_NotesEdit_CtrlS_SavesNotesAndReturnsToDetail(t *testing.T) {
 }
 
 func TestApp_NotesEdit_Esc_CancelsWithoutSaving(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1593,6 +1667,8 @@ func TestApp_NotesEdit_Esc_CancelsWithoutSaving(t *testing.T) {
 }
 
 func TestApp_PressN_OnPostingDetail_WithNoApplication_NoOp(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1611,6 +1687,8 @@ func TestApp_PressN_OnPostingDetail_WithNoApplication_NoOp(t *testing.T) {
 }
 
 func TestApp_PressA_OnPostingDetail_CreatedApplication_ReflectedInDetailView(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1636,6 +1714,8 @@ func TestApp_PressA_OnPostingDetail_CreatedApplication_ReflectedInDetailView(t *
 }
 
 func TestApp_PostingDetail_NavigatingBetweenPostings_LoadsEachPostingsOwnApplication(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1675,6 +1755,8 @@ func TestApp_PostingDetail_NavigatingBetweenPostings_LoadsEachPostingsOwnApplica
 }
 
 func TestApp_PressQ_ReturnsQuitCmd(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
@@ -1690,6 +1772,8 @@ func TestApp_PressQ_ReturnsQuitCmd(t *testing.T) {
 }
 
 func TestApp_PressEsc_CancelsFormBackToList(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
@@ -1707,6 +1791,8 @@ func TestApp_PressEsc_CancelsFormBackToList(t *testing.T) {
 }
 
 func TestApp_CancellingAScreen_ClearsStaleError(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
@@ -1729,6 +1815,8 @@ func TestApp_CancellingAScreen_ClearsStaleError(t *testing.T) {
 }
 
 func TestApp_PressR_RefreshesSelectedCompanyAndShowsStatus(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1764,6 +1852,8 @@ func TestApp_PressR_RefreshesSelectedCompanyAndShowsStatus(t *testing.T) {
 // sync lease, 'r' says so plainly instead of showing a generic error
 // .
 func TestApp_PressR_WhileCompanySyncsElsewhere_ShowsStatusNotError(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	if taken, err := s.Companies.AcquireSyncLease(context.Background(), acme.ID, "swamp-fetch", time.Minute); err != nil || !taken {
@@ -1785,6 +1875,8 @@ func TestApp_PressR_WhileCompanySyncsElsewhere_ShowsStatusNotError(t *testing.T)
 }
 
 func TestApp_PressEnter_OpensPostingListForSelectedCompany(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1809,6 +1901,8 @@ func TestApp_PressEnter_OpensPostingListForSelectedCompany(t *testing.T) {
 }
 
 func TestApp_PressEsc_OnPostingList_ReturnsToCompanyList(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1848,6 +1942,8 @@ func TestApp_PostingDetail_KeysDontReachTheListUnderIt(t *testing.T) {
 }
 
 func TestApp_PostingListCursor_MovesWithinBounds(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1877,6 +1973,8 @@ func TestApp_PostingListCursor_MovesWithinBounds(t *testing.T) {
 }
 
 func TestApp_PressEnter_OnPostingList_OpensDetailForSelectedPosting(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1893,6 +1991,8 @@ func TestApp_PressEnter_OnPostingList_OpensDetailForSelectedPosting(t *testing.T
 }
 
 func TestApp_PressEsc_OnPostingDetail_ReturnsToPostingList(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1910,6 +2010,8 @@ func TestApp_PressEsc_OnPostingDetail_ReturnsToPostingList(t *testing.T) {
 }
 
 func TestApp_PostingDetail_RightMovesToNextPostingStayingInDetail(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -1960,6 +2062,8 @@ func TestApp_PostingDetail_RightMovesToNextPostingStayingInDetail(t *testing.T) 
 }
 
 func TestApp_PostingDetail_DownScrollsLongDescription(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	longDescription := strings.Repeat("line\n", 100)
@@ -1992,6 +2096,8 @@ func TestApp_PostingDetail_DownScrollsLongDescription(t *testing.T) {
 // leaves a status line up; a failed browser open replaces it with an
 // error, after posting detail is already on screen.
 func TestApp_PostingDetail_FitsTheTerminalUnderTheBanner(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 80, 24
 	tests := []struct {
 		name string
@@ -2002,6 +2108,8 @@ func TestApp_PostingDetail_FitsTheTerminalUnderTheBanner(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			s := testutil.NewTestApp(t)
 			mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 			syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -2026,6 +2134,8 @@ func TestApp_PostingDetail_FitsTheTerminalUnderTheBanner(t *testing.T) {
 }
 
 func TestApp_PostingDetail_VimJ_ScrollsLikeDown(t *testing.T) {
+	t.Parallel()
+
 	// bubbles/viewport's DefaultKeyMap already binds j/k/h/l alongside the
 	// arrow keys, so this should work with no changes on our side --
 	// verifying that rather than assuming it.
@@ -2048,6 +2158,8 @@ func TestApp_PostingDetail_VimJ_ScrollsLikeDown(t *testing.T) {
 }
 
 func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -2088,6 +2200,8 @@ func TestApp_PostingDetail_ApplicationExistsWithFiles_ShowsFoundStatus(t *testin
 }
 
 func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -2146,6 +2260,8 @@ func TestApp_PostingDetail_DocumentHasReview_ShowsOutcomeAndNotesInline(t *testi
 // [not reviewed] with no indication anything went wrong. A read failure
 // must now set app.err instead.
 func TestApp_LoadActiveApplications_DocumentReadFails_SetsErr(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -2224,6 +2340,8 @@ func TestApp_ApplicationDetailReadSucceedsAfterAnotherLoadFails_KeepsTheError(t 
 }
 
 func TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -2284,6 +2402,8 @@ func TestApp_PostingDetail_StaleReview_ShowsNotReviewedNotOldFlag(t *testing.T) 
 // picks up the change by leaving and re-entering, this exercises the
 // manual refresh key ('u') that reloads in place.
 func TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -2336,6 +2456,8 @@ func TestApp_PostingDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T) {
 }
 
 func TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -2383,6 +2505,8 @@ func TestApp_SubmitDocumentReview_ShowsImmediatelyOnPostingDetail(t *testing.T) 
 }
 
 func TestApp_ActiveApplications_Enter_EntersApplicationDetail(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -2402,6 +2526,8 @@ func TestApp_ActiveApplications_Enter_EntersApplicationDetail(t *testing.T) {
 }
 
 func TestApp_ApplicationDetail_P_EntersPostingDetail(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -2425,6 +2551,8 @@ func TestApp_ApplicationDetail_P_EntersPostingDetail(t *testing.T) {
 // esc from posting detail opened by application detail once landed on an
 // empty posting list that was never browsed (#86 follow-up, #89).
 func TestApp_PostingDetailFromApplicationDetail_Esc_ReturnsToApplicationDetail(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -2446,6 +2574,8 @@ func TestApp_PostingDetailFromApplicationDetail_Esc_ReturnsToApplicationDetail(t
 // a status change on posting detail opened by application detail, with no
 // posting list open, once blanked the posting shown (#87 follow-up).
 func TestApp_StatusChangeFromApplicationDetailFastPath_PreservesPostingFields(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -2501,6 +2631,8 @@ func TestApp_StatusChangeFromPostingDetail_ShowsOnApplicationDetail(t *testing.T
 }
 
 func TestApp_ApplicationDetail_ShiftR_EntersReviewFormDirectly(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -2523,6 +2655,8 @@ func TestApp_ApplicationDetail_ShiftR_EntersReviewFormDirectly(t *testing.T) {
 }
 
 func TestApp_ApplicationDetail_CancelDocumentReview_ReturnsToApplicationDetail(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -2551,6 +2685,8 @@ func TestApp_ApplicationDetail_CancelDocumentReview_ReturnsToApplicationDetail(t
 // active-applications "application view" -- #83 and
 // its #86 follow-up reorganizing this workflow).
 func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -2594,6 +2730,8 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesBadgeImmediately(t
 // message.ScreenActiveApplications afterward shows the compact glyph column
 // (reviewGlyphSummary, e.g. "R:✓") reflecting the same change.
 func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplicationsGlyph(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -2638,6 +2776,8 @@ func TestApp_SubmitDocumentReviewFromApplicationDetail_UpdatesActiveApplications
 // the glyph: with the cover letter already passed, passing the resume
 // turns "review" into "export".
 func TestApp_SubmitDocumentReviewFromApplicationDetail_MovesTheHomeRowsNextStepOn(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -2717,6 +2857,8 @@ func runCmd(t *testing.T, cmd tea.Cmd) []tea.Msg {
 // a review submitted from posting detail opened by application detail's
 // 'p' once wrongly showed "No application started" on the way back.
 func TestApp_SubmitDocumentReviewFromPostingDetailViaApplicationDetailFastPath_KeepsApplication(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -2770,6 +2912,8 @@ func TestApp_SubmitDocumentReviewFromPostingDetailViaApplicationDetailFastPath_K
 // while the user is looking at this screen should be picked up by
 // pressing 'u', without having to back out and re-enter.
 func TestApp_ApplicationDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -2823,6 +2967,8 @@ func TestApp_ApplicationDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T
 }
 
 func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -2853,6 +2999,8 @@ func TestApp_PostingDetail_ApplicationExistsNoFiles_ShowsNotFoundStatus(t *testi
 }
 
 func TestApp_PostingDetail_NoApplication_ShowsNoDocumentsSection(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -2877,6 +3025,8 @@ func TestApp_PostingDetail_NoApplication_ShowsNoDocumentsSection(t *testing.T) {
 }
 
 func TestApp_CompanyList_VimJK_MoveCursorLikeArrows(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustCreateCompany(t, s, "Globex", jobboard.Ashby, "globex")
@@ -2894,6 +3044,8 @@ func TestApp_CompanyList_VimJK_MoveCursorLikeArrows(t *testing.T) {
 }
 
 func TestApp_PostingList_VimJK_MoveCursorLikeArrows(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -2916,6 +3068,8 @@ func TestApp_PostingList_VimJK_MoveCursorLikeArrows(t *testing.T) {
 }
 
 func TestApp_PostingDetail_VimHL_MovesBetweenPostingsLikeArrows(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -2950,6 +3104,8 @@ func TestApp_PostingDetail_VimHL_MovesBetweenPostingsLikeArrows(t *testing.T) {
 }
 
 func TestApp_PostingDetail_LongLine_WrapsToViewportWidth(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	longLine := strings.Repeat("word ", 40)
@@ -2969,6 +3125,8 @@ func TestApp_PostingDetail_LongLine_WrapsToViewportWidth(t *testing.T) {
 }
 
 func TestApp_WindowResize_OnPostingDetail_ReWraps(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	// A distinctive marker at the end: if resize truncates instead of
@@ -3001,6 +3159,8 @@ func TestApp_WindowResize_OnPostingDetail_ReWraps(t *testing.T) {
 }
 
 func TestApp_WindowSizeMsg_UpdatesDimensions(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 
@@ -3012,6 +3172,8 @@ func TestApp_WindowSizeMsg_UpdatesDimensions(t *testing.T) {
 }
 
 func TestApp_PressO_OnPostingDetail_OpensJobURLInBrowser(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3028,6 +3190,8 @@ func TestApp_PressO_OnPostingDetail_OpensJobURLInBrowser(t *testing.T) {
 }
 
 func TestApp_PressO_OnPostingList_OpensSelectedPostingJobURLInBrowser(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3051,6 +3215,8 @@ func openFilters(t *testing.T, app *App) (*App, *filterSelectModel) {
 }
 
 func TestApp_PressF_OnPostingList_OpensThePickerOnTheCompanysOptions(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3073,6 +3239,8 @@ func TestApp_PressF_OnPostingList_OpensThePickerOnTheCompanysOptions(t *testing.
 }
 
 func TestApp_FilterSelect_Enter_ClosesThePickerOnTheFilteredPostings(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3112,6 +3280,8 @@ func TestApp_FilterSelect_Enter_ClosesThePickerOnTheFilteredPostings(t *testing.
 }
 
 func TestApp_FilterSelect_SaveFails_ShowsTheErrorWithThePickerOpen(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3137,6 +3307,8 @@ func TestApp_FilterSelect_SaveFails_ShowsTheErrorWithThePickerOpen(t *testing.T)
 }
 
 func TestApp_FilterSelect_Esc_ClosesWithoutSaving(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3164,6 +3336,8 @@ func TestApp_FilterSelect_Esc_ClosesWithoutSaving(t *testing.T) {
 // Saving filters doesn't sync, so another sync holding the company's lease
 // changes nothing about it.
 func TestApp_FilterSelect_Enter_WhileCompanySyncsElsewhere_Saves(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3228,6 +3402,8 @@ func TestApp_CompanySynced_ForCurrentlyViewedCompany_ReloadsPostings(t *testing.
 }
 
 func TestApp_CompanyRefreshed_ForDifferentCompany_DoesNotReloadPostings(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3265,6 +3441,8 @@ func TestApp_CompanyRefreshed_ForDifferentCompany_DoesNotReloadPostings(t *testi
 // A refresh refused because another process is syncing the company has no
 // result, so the status names the company the refresh was started for.
 func TestApp_CompanyRefreshed_SyncInProgress_SaysWhichCompany(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	app := newTestApp(t, s, newTestSyncer(s, nil))
@@ -3282,6 +3460,8 @@ func TestApp_CompanyRefreshed_SyncInProgress_SaysWhichCompany(t *testing.T) {
 }
 
 func TestApp_OpenPostingList_WithPreExistingSavedFilters_NarrowsOnFirstLoad(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	addCompanyFilter(t, s, acme.ID, filter.FieldDepartment, "Engineering")
@@ -3303,6 +3483,8 @@ func TestApp_OpenPostingList_WithPreExistingSavedFilters_NarrowsOnFirstLoad(t *t
 }
 
 func TestApp_OpenPostingList_TracksActiveFiltersFromExisting(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	addCompanyFilter(t, s, acme.ID, filter.FieldDepartment, "Engineering")
@@ -3322,12 +3504,16 @@ func TestApp_OpenPostingList_TracksActiveFiltersFromExisting(t *testing.T) {
 }
 
 func TestFilterSummaryLine_NoFilters_ReturnsEmpty(t *testing.T) {
+	t.Parallel()
+
 	if got := filterSummaryLine(nil, nil); got != "" {
 		t.Fatalf("filterSummaryLine(nil, nil) = %q, want empty", got)
 	}
 }
 
 func TestFilterSummaryLine_DepartmentsOnly(t *testing.T) {
+	t.Parallel()
+
 	got := filterSummaryLine([]string{"Engineering", "Sales"}, nil)
 	want := "Filtering: Department: Engineering, Sales"
 	if got != want {
@@ -3336,6 +3522,8 @@ func TestFilterSummaryLine_DepartmentsOnly(t *testing.T) {
 }
 
 func TestFilterSummaryLine_DepartmentsAndLocations(t *testing.T) {
+	t.Parallel()
+
 	got := filterSummaryLine([]string{"Engineering"}, []string{"Remote"})
 	want := "Filtering: Department: Engineering | Location: Remote"
 	if got != want {
@@ -3394,6 +3582,8 @@ func exportTestApp(t *testing.T) (*App, *Screens) {
 }
 
 func TestApp_ActiveApplications_E_EntersExportScreenPrefilledWithDefaultDir(t *testing.T) {
+	t.Parallel()
+
 	app, screens := exportTestApp(t)
 
 	app = sendKeyAndApply(t, app, runeKey('e'))
@@ -3407,6 +3597,8 @@ func TestApp_ActiveApplications_E_EntersExportScreenPrefilledWithDefaultDir(t *t
 }
 
 func TestApp_ExportScreen_Esc_ReturnsToActiveApplications(t *testing.T) {
+	t.Parallel()
+
 	app, _ := exportTestApp(t)
 
 	app = sendKeyAndApply(t, app, runeKey('e'))
@@ -3418,6 +3610,8 @@ func TestApp_ExportScreen_Esc_ReturnsToActiveApplications(t *testing.T) {
 }
 
 func TestApp_Export_ReportsWhereFilesWentAndRemembersTheDirectory(t *testing.T) {
+	t.Parallel()
+
 	app, screens := exportTestApp(t)
 	dest := t.TempDir()
 
@@ -3445,6 +3639,8 @@ func TestApp_Export_ReportsWhereFilesWentAndRemembersTheDirectory(t *testing.T) 
 }
 
 func TestApp_Export_Failure_SurfacesErrorAndKeepsRememberedDir(t *testing.T) {
+	t.Parallel()
+
 	app, screens := exportTestApp(t)
 	before := screens.exportDir
 
@@ -3473,6 +3669,8 @@ func TestApp_Export_Failure_SurfacesErrorAndKeepsRememberedDir(t *testing.T) {
 // list is open on that path, so pressing it did nothing with no
 // indication why.
 func TestApp_PostingDetailViaApplicationDetail_HelpOmitsPostingNavigation(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -3495,6 +3693,8 @@ func TestApp_PostingDetailViaApplicationDetail_HelpOmitsPostingNavigation(t *tes
 // other half: browsing a company's postings does open a posting list, so
 // the hint must still be there.
 func TestApp_PostingDetailViaPostingList_HelpKeepsPostingNavigation(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -3520,6 +3720,8 @@ func TestApp_PostingDetailViaPostingList_HelpKeepsPostingNavigation(t *testing.T
 // flight, so the result can land anywhere -- it must not force the screen
 // back to wherever the status select was entered from.
 func TestApp_StatusSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -3550,6 +3752,8 @@ func TestApp_StatusSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 // #115: a save from a status select the user closed and reopened must not
 // close the reopened one.
 func TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -3585,6 +3789,8 @@ func TestApp_StatusSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.
 // TestApp_StatusSaveResolvingAfterUserLeft_DoesNotYankScreenBack's
 // counterpart for the document review form.
 func TestApp_ReviewSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -3624,6 +3830,8 @@ func TestApp_ReviewSaveResolvingAfterUserLeft_DoesNotYankScreenBack(t *testing.T
 }
 
 func TestApp_ReviewSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -3711,6 +3919,8 @@ func TestApp_NestedBackOut_RetracesPath(t *testing.T) {
 // popped its returnStack entry would leave the next esc with nowhere
 // correct to go.
 func TestApp_NotesEsc_WhileSaving_WaitsForTheSave(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3742,6 +3952,8 @@ func TestApp_NotesEsc_WhileSaving_WaitsForTheSave(t *testing.T) {
 }
 
 func TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3774,6 +3986,8 @@ func TestApp_NotesSaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing.T
 }
 
 func TestApp_PostingList_ShowsSelectedCompanysDescription(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	const description = "Acme builds rockets for roadrunner enthusiasts."
@@ -3792,6 +4006,8 @@ func TestApp_PostingList_ShowsSelectedCompanysDescription(t *testing.T) {
 }
 
 func TestApp_PressR_UpdatesCompanyListOpenCountAndLastFetched(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3862,6 +4078,8 @@ func isCompaniesRead(msg tea.Msg) bool {
 // Archiving changes a company's open count, so the company list reloads
 // when you return to it rather than showing a stale number.
 func TestApp_BackToCompanyList_AfterArchiving_ShowsUpdatedOpenCount(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -3896,6 +4114,8 @@ func TestApp_BackToCompanyList_AfterArchiving_ShowsUpdatedOpenCount(t *testing.T
 // same way a fetched Greenhouse form is stored and returns to detail, and
 // 'f' again opens on what was saved.
 func TestApp_ApplicationDetail_EnterApplicationFormByHand(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -4033,6 +4253,8 @@ func TestApp_WithStatus_ShowsOnTheStatusLineAtStart(t *testing.T) {
 }
 
 func TestApp_NotesSaveFails_UnblocksEditing(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -4061,6 +4283,8 @@ func TestApp_NotesSaveFails_UnblocksEditing(t *testing.T) {
 }
 
 func TestApp_NotesSaveSucceedsAfterFailing_ClearsTheError(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -4090,6 +4314,8 @@ func TestApp_NotesSaveSucceedsAfterFailing_ClearsTheError(t *testing.T) {
 }
 
 func TestApp_ApplicationFormSaveFails_UnblocksEditing(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -4115,6 +4341,8 @@ func TestApp_ApplicationFormSaveFails_UnblocksEditing(t *testing.T) {
 // TestApp_ApplicationFormEscWithEdits_DrawsDiscardBox: the discard prompt
 // is the same box over the screen as the delete confirmations.
 func TestApp_ApplicationFormEscWithEdits_DrawsDiscardBox(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
@@ -4140,6 +4368,8 @@ func TestApp_ApplicationFormEscWithEdits_DrawsDiscardBox(t *testing.T) {
 }
 
 func TestApp_NotesEscWithEdits_DrawsDiscardBox(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{

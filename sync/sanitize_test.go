@@ -8,6 +8,8 @@ import (
 )
 
 func TestSanitizePosting_TrimsWhitespaceOnStringFields(t *testing.T) {
+	t.Parallel()
+
 	published := time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)
 	raw := []byte(`{"id":" job-1 "}`)
 
@@ -65,6 +67,8 @@ func TestSanitizePosting_TrimsWhitespaceOnStringFields(t *testing.T) {
 }
 
 func TestSanitizePosting_LeavesRawPayloadUntouched(t *testing.T) {
+	t.Parallel()
+
 	p := jobboard.Posting{RawPayload: []byte(` {"padded": true} `)}
 
 	got := sanitizePosting(p)

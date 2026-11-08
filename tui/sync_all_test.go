@@ -72,6 +72,8 @@ func bannerLine(app *App) string {
 // starts syncing every company in the background, and the status names
 // the one being fetched (#153).
 func TestApp_SyncAll_R_StartsWithFirstCompany(t *testing.T) {
+	t.Parallel()
+
 	app, _ := newSyncAllTestApp(t)
 
 	app, cmd := sendIntentKey(t, app, runeKey('R'))
@@ -87,6 +89,8 @@ func TestApp_SyncAll_R_StartsWithFirstCompany(t *testing.T) {
 // result advances the status to the next, the last one ends with the same
 // summary `swamp fetch` prints, and everything was synced.
 func TestApp_SyncAll_StepsThroughEveryCompanyThenSummarizes(t *testing.T) {
+	t.Parallel()
+
 	app, s := newSyncAllTestApp(t)
 
 	app, cmd := sendIntentKey(t, app, runeKey('R'))
@@ -119,6 +123,8 @@ func TestApp_SyncAll_StepsThroughEveryCompanyThenSummarizes(t *testing.T) {
 
 // TestApp_SyncAll_FailingCompany_RunContinuesAndSummaryNamesIt.
 func TestApp_SyncAll_FailingCompany_RunContinuesAndSummaryNamesIt(t *testing.T) {
+	t.Parallel()
+
 	app, _ := newSyncAllTestApp(t, "globex")
 
 	app, cmd := sendIntentKey(t, app, runeKey('R'))
@@ -136,6 +142,8 @@ func TestApp_SyncAll_FailingCompany_RunContinuesAndSummaryNamesIt(t *testing.T) 
 
 // TestApp_SyncAll_NoCompanies_FinishesImmediately.
 func TestApp_SyncAll_NoCompanies_FinishesImmediately(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	app := newTestApp(t, s, newTestSyncer(s, nil))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
@@ -151,6 +159,8 @@ func TestApp_SyncAll_NoCompanies_FinishesImmediately(t *testing.T) {
 // a run stops it -- the company in flight finishes, no further one starts
 // -- and the status says how far it got. Esc keeps meaning "back".
 func TestApp_SyncAll_RAgainDuringRun_StopsAfterInFlightCompany(t *testing.T) {
+	t.Parallel()
+
 	app, _ := newSyncAllTestApp(t)
 
 	app, cmd := sendIntentKey(t, app, runeKey('R'))
@@ -180,6 +190,8 @@ func TestApp_SyncAll_RAgainDuringRun_StopsAfterInFlightCompany(t *testing.T) {
 // stop, 'R' is ignored until the in-flight company has reported back, so
 // two runs can never overlap.
 func TestApp_SyncAll_StopThenRBeforeInFlightReports_NoSecondRun(t *testing.T) {
+	t.Parallel()
+
 	app, _ := newSyncAllTestApp(t)
 
 	app, cmd := sendIntentKey(t, app, runeKey('R'))
@@ -200,6 +212,8 @@ func TestApp_SyncAll_StopThenRBeforeInFlightReports_NoSecondRun(t *testing.T) {
 // TestApp_SyncAll_MessageFromEarlierRun_Ignored: a result arriving late
 // from a previous run must not count towards, or advance, the current one.
 func TestApp_SyncAll_MessageFromEarlierRun_Ignored(t *testing.T) {
+	t.Parallel()
+
 	app, _ := newSyncAllTestApp(t)
 
 	app, cmd := sendIntentKey(t, app, runeKey('R'))
@@ -223,6 +237,8 @@ func TestApp_SyncAll_MessageFromEarlierRun_Ignored(t *testing.T) {
 // refused with a status message rather than starting a second sync of a
 // company the run may be syncing -- the in-process half of #150.
 func TestApp_SyncAll_RDuringRun_Refused(t *testing.T) {
+	t.Parallel()
+
 	app, _ := newSyncAllTestApp(t)
 
 	app, _ = sendIntentKey(t, app, runeKey('R'))
@@ -238,6 +254,8 @@ func TestApp_SyncAll_RDuringRun_Refused(t *testing.T) {
 // TestApp_SyncAll_FilterSaveDuringRun_Saves: saving filters doesn't sync,
 // so a run in progress is no reason to refuse it.
 func TestApp_SyncAll_FilterSaveDuringRun_Saves(t *testing.T) {
+	t.Parallel()
+
 	app, s := newSyncAllTestApp(t)
 	if _, err := s.Postings.Ingest(t.Context(), companiesTabOf(app).companies[0].ID, jobboard.Ashby, "acme-eng", posting.IngestedFields{Title: "Engineer", Department: "Engineering"}); err != nil {
 		t.Fatalf("Ingest: %v", err)
@@ -265,6 +283,8 @@ func TestApp_SyncAll_FilterSaveDuringRun_Saves(t *testing.T) {
 // to the company list screen, so it carries on and still reports its
 // summary after the user moves elsewhere.
 func TestApp_SyncAll_LeavingCompanyList_RunContinues(t *testing.T) {
+	t.Parallel()
+
 	app, _ := newSyncAllTestApp(t)
 
 	app, cmd := sendIntentKey(t, app, runeKey('R'))
@@ -285,6 +305,8 @@ func TestApp_SyncAll_LeavingCompanyList_RunContinues(t *testing.T) {
 // another process is syncing (its lease is held, #150) is skipped by the
 // run and reported as skipped, not failed.
 func TestApp_SyncAll_CompanySyncingElsewhere_SummarizedAsSkipped(t *testing.T) {
+	t.Parallel()
+
 	app, s := newSyncAllTestApp(t)
 	globex := companiesTabOf(app).companies[1]
 	if taken, err := s.Companies.AcquireSyncLease(t.Context(), globex.ID, "swamp-fetch", time.Minute); err != nil || !taken {
@@ -304,6 +326,8 @@ func TestApp_SyncAll_CompanySyncingElsewhere_SummarizedAsSkipped(t *testing.T) {
 // Refreshing a company's postings waits for a sync-all run, which may be
 // syncing that company, as refreshing it from the company list does.
 func TestApp_SyncAll_PostingListRefreshUnavailable(t *testing.T) {
+	t.Parallel()
+
 	app, _ := newSyncAllTestApp(t)
 
 	app, _ = sendIntentKey(t, app, runeKey('R')) // the run's first step isn't run
@@ -340,6 +364,8 @@ func syncBarShowing(app *App) bool {
 // TestApp_SyncAll_ProgressBarFillsAsCompaniesFinish: the bar shows the share
 // of companies already synced, beside the company in flight.
 func TestApp_SyncAll_ProgressBarFillsAsCompaniesFinish(t *testing.T) {
+	t.Parallel()
+
 	app, _ := newSyncAllTestApp(t)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 
@@ -362,6 +388,8 @@ func TestApp_SyncAll_ProgressBarFillsAsCompaniesFinish(t *testing.T) {
 // TestApp_Refresh_ShowsASpinnerUntilTheCompanyReports: one company's
 // fetch takes as long as its board does, with nothing to measure a bar by.
 func TestApp_Refresh_ShowsASpinnerUntilTheCompanyReports(t *testing.T) {
+	t.Parallel()
+
 	app, _ := newSyncAllTestApp(t)
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 

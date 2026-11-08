@@ -17,6 +17,8 @@ import (
 )
 
 func TestEditorCommand_EditorSet_ReturnsEditorAndPath(t *testing.T) {
+	t.Parallel()
+
 	cmd, args, err := editorCommand("vim", "/tmp/cover_letter.md")
 	if err != nil {
 		t.Fatalf("editorCommand: %v", err)
@@ -30,6 +32,8 @@ func TestEditorCommand_EditorSet_ReturnsEditorAndPath(t *testing.T) {
 }
 
 func TestEditorCommand_EditorUnset_ReturnsError(t *testing.T) {
+	t.Parallel()
+
 	_, _, err := editorCommand("", "/tmp/cover_letter.md")
 	if err == nil {
 		t.Fatal("editorCommand: expected error when $EDITOR is unset, got nil")

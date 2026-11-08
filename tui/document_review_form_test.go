@@ -268,6 +268,8 @@ func TestDocumentReviewFormModel_Handlers_FailOnTheWrongMessage(t *testing.T) {
 }
 
 func TestApp_ReviewSavedOfAnUnchangedDocument_DoesNotWarn(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -301,6 +303,8 @@ func TestApp_ReviewSavedOfAnUnchangedDocument_DoesNotWarn(t *testing.T) {
 // save it: it keeps your notes, switches to the current content and shows
 // what changed, and the next save reviews what's on disk.
 func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -360,6 +364,8 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 }
 
 func TestApp_ReviewOfADocumentDeletedMeanwhile_SavesNothingAndSaysSo(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	syncer := newTestSyncer(s, map[string][]jobboard.Posting{
@@ -401,6 +407,8 @@ func TestApp_ReviewOfADocumentDeletedMeanwhile_SavesNothingAndSaysSo(t *testing.
 // recorded the write that produced the current version, the
 // notice names who made it and when, in local time.
 func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
@@ -446,6 +454,8 @@ func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
 // Swamp changed it. The latest recorded write isn't of the current
 // version, so the notice mustn't credit the agent with the change.
 func TestApp_ReviewOfADocumentChangedOutsideSwamp_DoesNotNameTheLastWriter(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")

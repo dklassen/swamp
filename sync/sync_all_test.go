@@ -12,6 +12,8 @@ import (
 )
 
 func TestSyncAll_OneCompanyFailsFetch_OthersStillProcessed(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 

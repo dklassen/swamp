@@ -220,6 +220,8 @@ func sizedScreens() []sizedScreen {
 // the banner itself -- and a sync's result or a failure never showed
 // .
 func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
+	t.Parallel()
+
 	const width, height = 100, 24
 
 	banners := []struct {
@@ -234,6 +236,8 @@ func TestApp_Screens_FitTheTerminalUnderTheBanner(t *testing.T) {
 	for _, sc := range sizedScreens() {
 		for _, bn := range banners {
 			t.Run(sc.name+"/"+bn.name, func(t *testing.T) {
+				t.Parallel()
+
 				app, s := newFullTestApp(t)
 				app, _ = sendKey(app, tea.WindowSizeMsg{Width: width, Height: height})
 				app = sc.open(t, app, s)
