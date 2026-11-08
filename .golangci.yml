@@ -72,7 +72,7 @@ linters:
     revive:
       enable-default-rules: true
       rules:
-        # A doc comment on every exported name is its own step, not yet agreed.
+        # Names are exported for swamp's own packages, not a public API; see docs/issues/lint.
         - name: exported
           disabled: true
   exclusions:
