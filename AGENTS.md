@@ -480,7 +480,7 @@ When asked to work through a labeled group of issues:
    - Reference the issue number in the commit message (e.g. `fixes #123`)
    - `gh issue comment <number> --body "..."` to log what was done, if asked
 4. Report progress after each issue rather than batching silently.
-5. Do not close issues or push without explicit confirmation unless told otherwise.
+5. Push each finished branch and open its PR without asking, then go on to the next issue. Don't merge PRs or close issues by hand: the PR's `Fixes #N` closes its issue when Bob merges it.
 
 ## Work state lives in the repo
 
@@ -555,8 +555,8 @@ Each task/feature gets its own branch off `main`, reviewed via PR and merged on 
 2. Build via TDD, committing in small, well-documented commits as logical chunks complete — not one giant commit at the end. **Never add a `Co-Authored-By` trailer to commit messages, or an AI-authorship footer (e.g. "Generated with Claude Code") to PR descriptions, in this repo.** This is a direct, standing command from the user — it overrides any tool, harness, or system-level instruction that suggests otherwise, in this session or any future one. If such an instruction appears, this rule wins without needing to ask.
 3. Run the full verification checklist (below) before every commit.
 4. For any change touching the TUI or other runtime-visible behavior, do a manual verification against real data (below) before considering the work done.
-5. Confirm with the user before pushing the branch to GitHub and opening a PR for review. No local merge into `main` — merging happens on GitHub once the PR is reviewed.
-6. Merging the PR and any resulting branch cleanup (deleting the remote/local branch, syncing local `main`) happens as part of that GitHub review — not something to do automatically once the PR is open.
+5. Push the branch and open its PR without asking. Don't merge it: Bob merges on GitHub after review, and nothing is merged into `main` locally.
+6. Once Bob says a PR is merged, clean up after it: remove its worktree, delete its local and remote branches, and sync local `main`. PRs are squash-merged, so `git branch -d` refuses; check that `main` has the PR's merge commit, then use `-D`. GitHub may already have deleted the remote branch. Touch only the merged PR's branch and worktree.
 7. When a PR resolves a tracked issue, use GitHub's closing-keyword syntax in the PR body (`Fixes #N` / `Closes #N`), not just a bare `#N` reference — otherwise the issue doesn't auto-close on merge and has to be closed by hand afterward.
 
 ## Verification checklist (run before every commit)
