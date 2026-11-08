@@ -13,7 +13,7 @@ Enabling golangci-lint linters one themed group per PR, titled `[Lint N] <theme>
 | 7 | Bound function length and nesting: funlen, gocognit, nestif | - | #467 | merged | 1 |
 | 8 | Repeated strings: goconst, keys as `key.Binding` | - | #468 | merged | 1 |
 | 9 | Unused and unchecked code: unparam, forcetypeassert, sqlclosecheck, musttag, sloglint | - | #470 | merged | 1 |
-| 10 | Small fixes: dupword, embeddedstructfieldcheck, dogsled, prealloc | - | - | in review | 1 |
+| 10 | Small fixes: dupword, embeddedstructfieldcheck, dogsled, prealloc | - | #474 | in review | 1 |
 
 ## Next
 
