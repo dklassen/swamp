@@ -27,33 +27,33 @@ func TestApp_Header_BreadcrumbIsThePathBack(t *testing.T) {
 		CompanyName: "Initech",
 	}
 	// screens builds each kind a case pushes, showing p, view or Globex.
-	screens := map[message.Screen]func() stackScreen{
-		message.ScreenCompanyPostings: func() stackScreen {
+	screens := map[message.Screen]func() StackScreen{
+		message.ScreenCompanyPostings: func() StackScreen {
 			return newPostingListModel(nil, nil, message.Company{ID: 1, Name: "Globex"}, false, message.ContentSize{})
 		},
-		message.ScreenPostingDetail: func() stackScreen {
+		message.ScreenPostingDetail: func() StackScreen {
 			return newPostingDetailModel(nil, nil, nil, nil, message.PostingDetail{Posting: p}, message.ContentSize{})
 		},
-		message.ScreenApplicationDetail: func() stackScreen {
+		message.ScreenApplicationDetail: func() StackScreen {
 			return newApplicationDetailModel(nil, nil, nil, nil, nil, applicationDetailOf(view), 0)
 		},
-		message.ScreenApplicationNotes: func() stackScreen {
+		message.ScreenApplicationNotes: func() StackScreen {
 			return newApplicationNotesModel(nil, message.Application{ID: 1}, message.ContentSize{})
 		},
-		message.ScreenApplicationStatus: func() stackScreen {
+		message.ScreenApplicationStatus: func() StackScreen {
 			return newApplicationStatusModel(nil, message.Application{ID: 1})
 		},
-		message.ScreenDocumentReviewForm: func() stackScreen {
+		message.ScreenDocumentReviewForm: func() StackScreen {
 			return newDocumentReviewFormModel(nil, nil, message.DocumentReview{ApplicationID: 1, DocumentType: documentTypeSnapshots[document.CoverLetter]}, message.ContentSize{})
 		},
-		message.ScreenCompanyForm: func() stackScreen { return newCompanyFormModel(nil) },
-		message.ScreenFilterSelect: func() stackScreen {
+		message.ScreenCompanyForm: func() StackScreen { return newCompanyFormModel(nil) },
+		message.ScreenFilterSelect: func() StackScreen {
 			return newFilterSelectModel(nil, message.FilterSelection{}, message.ContentSize{})
 		},
-		message.ScreenApplicationExport: func() stackScreen {
+		message.ScreenApplicationExport: func() StackScreen {
 			return newApplicationExportModel(nil, nil, applicationDetailOf(view), "", message.ContentSize{})
 		},
-		message.ScreenApplicationSubmit: func() stackScreen {
+		message.ScreenApplicationSubmit: func() StackScreen {
 			return newApplicationSubmitModel(nil, nil, nil, nil, applicationDetailOf(view), "")
 		},
 	}
