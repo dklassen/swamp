@@ -113,7 +113,12 @@ linters:
 
 formatters:
   enable:
+    - gci
     - gofumpt
+  settings:
+    gci:
+      # Standard library, then other modules, then swamp's own packages.
+      sections: [standard, default, localmodule]
 
 issues:
   max-issues-per-linter: 0
