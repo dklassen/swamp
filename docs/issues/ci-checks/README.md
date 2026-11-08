@@ -6,7 +6,7 @@ The gaps a review of the linters left after the lint series (`docs/issues/lint/`
 | --- | --- | --- | --- | --- | --- |
 | 1 | Import groups: gci | - | #480 | in review | none |
 | 2 | No prints outside the CLI: forbidigo | - | #481 | in review | none |
-| 3 | Known vulnerabilities: govulncheck in CI | - | - | in progress | none |
+| 3 | Known vulnerabilities: govulncheck in CI | - | #482 | in review | none |
 
 ## Decided
 
