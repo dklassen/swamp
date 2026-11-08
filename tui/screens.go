@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"os"
+
 	tea "charm.land/bubbletea/v2"
 
 	"github.com/dklassen/swamp/documents"
@@ -36,6 +38,10 @@ type Screens struct {
 	// openURL opens a URL in the browser: openInBrowser, swapped for a fake
 	// in tests so they don't launch one.
 	openURL func(src message.Source, about message.Subject, url string) tea.Cmd
+	// homeDir is what a leading "~" in an export destination expands to:
+	// os.UserHomeDir. The export screens take it so their tests needn't
+	// set $HOME.
+	homeDir func() (string, error)
 
 	// sized is the last size sent to the screens.
 	sized message.ContentSize
@@ -81,6 +87,7 @@ func NewScreens(
 		syncer:                syncer,
 		documents:             docs,
 		openURL:               openInBrowser,
+		homeDir:               os.UserHomeDir,
 		exportDir:             defaultExportDir,
 		hideArchived:          true,
 	}
@@ -145,10 +152,10 @@ func (s *Screens) Tables() []Table {
 				return newApplicationDetailModel(s.applications, s.postings, s.companies, s.documentSvc, s.documents, a, s.sized.Width)
 			},
 			message.ScreenApplicationExport: func(a message.ApplicationDetail) StackScreen {
-				return newApplicationExportModel(s.documentSvc, s.documents, a, s.exportDir, s.sized)
+				return newApplicationExportModel(s.documentSvc, s.documents, s.homeDir, a, s.exportDir, s.sized)
 			},
 			message.ScreenApplicationSubmit: func(a message.ApplicationDetail) StackScreen {
-				return newApplicationSubmitModel(s.applications, s.documentSvc, s.documents, s.openURL, a, s.exportDir)
+				return newApplicationSubmitModel(s.applications, s.documentSvc, s.documents, s.openURL, s.homeDir, a, s.exportDir)
 			},
 		}),
 	}

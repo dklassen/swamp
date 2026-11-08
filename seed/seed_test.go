@@ -10,6 +10,8 @@ import (
 )
 
 func TestParse_ValidFile(t *testing.T) {
+	t.Parallel()
+
 	input := `
 companies:
   - name: Initech
@@ -77,6 +79,8 @@ companies:
 }
 
 func TestParse_MalformedYAML(t *testing.T) {
+	t.Parallel()
+
 	input := `companies: [this is not a valid company list`
 
 	_, err := Parse(strings.NewReader(input))
@@ -88,6 +92,8 @@ func TestParse_MalformedYAML(t *testing.T) {
 // description is optional: entries with one carry it through, entries
 // without one are still valid.
 func TestParse_OptionalDescription(t *testing.T) {
+	t.Parallel()
+
 	input := `
 companies:
   - name: Initech
@@ -115,6 +121,8 @@ companies:
 // TestParse_ExampleFile: the committed example, which shows the format
 // without real company names, stays a file `swamp import` accepts.
 func TestParse_ExampleFile(t *testing.T) {
+	t.Parallel()
+
 	f, err := os.Open("data/companies.example.yaml")
 	if err != nil {
 		t.Fatalf("open example: %v", err)

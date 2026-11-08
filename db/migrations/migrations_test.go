@@ -66,6 +66,8 @@ func dbVersion(db *sql.DB) (int64, error) {
 // down to 'interested' rather than being left pointing at a value the
 // new, tighter CHECK constraint no longer allows.
 func TestSplitApplicationFromPosting_MigratesAppliedMarkupIntoApplication(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 1)
 
 	if _, err := sqlDB.Exec(
@@ -110,6 +112,8 @@ func TestSplitApplicationFromPosting_MigratesAppliedMarkupIntoApplication(t *tes
 // verifies interview_stages rows survive the migration re-pointed at the
 // backfilled application rather than being dropped.
 func TestSplitApplicationFromPosting_RepointsInterviewStagesToApplication(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 1)
 
 	if _, err := sqlDB.Exec(
@@ -157,6 +161,8 @@ func TestSplitApplicationFromPosting_RepointsInterviewStagesToApplication(t *tes
 // posting_markup row must produce a non-null interested_at (and null
 // archived_at), not be silently dropped when user_status disappears.
 func TestPostingMarkupInterestedArchivedFlags_MigratesInterestedStatusToTimestamp(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 2)
 
 	if _, err := sqlDB.Exec(
@@ -201,6 +207,8 @@ func TestPostingMarkupInterestedArchivedFlags_MigratesInterestedStatusToTimestam
 // applicationstatus.Parse) doesn't lose or alter
 // data already in the table.
 func TestDropApplicationStatusCheckConstraint_PreservesExistingApplicationRow(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 3)
 
 	if _, err := sqlDB.Exec(
@@ -246,6 +254,8 @@ func TestDropApplicationStatusCheckConstraint_PreservesExistingApplicationRow(t 
 // after 00004: a value outside the old fixed set, which would have failed
 // under 00002's CHECK, must now insert cleanly.
 func TestDropApplicationStatusCheckConstraint_ArbitraryStatusValueAccepted(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 4)
 
 	if _, err := sqlDB.Exec(
@@ -272,6 +282,8 @@ func TestDropApplicationStatusCheckConstraint_ArbitraryStatusValueAccepted(t *te
 // DB no longer decides the initial value, the application does (see PR
 // #17 review).
 func TestApplicationStatusHasNoDBDefault(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 4)
 
 	if _, err := sqlDB.Exec(
@@ -306,6 +318,8 @@ func TestApplicationStatusHasNoDBDefault(t *testing.T) {
 // stored; raw_payload is deliberately left untouched (raw source JSON,
 // kept verbatim for audit).
 func TestTrimExistingPostingWhitespace_TrimsPaddedFields(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 4)
 
 	if _, err := sqlDB.Exec(
@@ -380,6 +394,8 @@ func TestTrimExistingPostingWhitespace_TrimsPaddedFields(t *testing.T) {
 // omitted column) must come out as ” after migrating, not be dropped or
 // left NULL.
 func TestPostingsOptionalFieldsNotNull_BackfillsExistingNullsToEmptyString(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 5)
 
 	if _, err := sqlDB.Exec(
@@ -427,6 +443,8 @@ func TestPostingsOptionalFieldsNotNull_BackfillsExistingNullsToEmptyString(t *te
 // NULL constraint is actually enforced after 00006, not just that existing
 // NULLs got backfilled once.
 func TestPostingsOptionalFieldsNotNull_RejectsExplicitNull(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 6)
 
 	if _, err := sqlDB.Exec(
@@ -447,6 +465,8 @@ func TestPostingsOptionalFieldsNotNull_RejectsExplicitNull(t *testing.T) {
 // column entirely (as every real ingestion call site that doesn't have a
 // value for it does) must populate ” via the column default, not fail.
 func TestPostingsOptionalFieldsNotNull_OmittedColumnDefaultsToEmptyString(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 6)
 
 	if _, err := sqlDB.Exec(
@@ -476,6 +496,8 @@ func TestPostingsOptionalFieldsNotNull_OmittedColumnDefaultsToEmptyString(t *tes
 // documents.Type/docrecord.Outcome constants, so Go-level tests never
 // exercise the rejection path; this pins it directly against the schema.
 func TestDocumentReviewsCheckConstraints_RejectInvalidValues(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 7)
 
 	if _, err := sqlDB.Exec(
@@ -514,6 +536,8 @@ func TestDocumentReviewsCheckConstraints_RejectInvalidValues(t *testing.T) {
 // net behind docrecord.CreateReview's own cycle computation, in case
 // a future caller ever bypasses it.
 func TestDocumentReviewsUniqueConstraint_RejectsDuplicateCycle(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 7)
 
 	if _, err := sqlDB.Exec(
@@ -552,6 +576,8 @@ func TestDocumentReviewsUniqueConstraint_RejectsDuplicateCycle(t *testing.T) {
 // TestDropApplicationStatusCheckConstraint_PreservesExistingApplicationRow
 // above, for the analogous document_reviews rebuild.
 func TestDropDocumentReviewsCheckConstraints_PreservesExistingRow(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 7)
 
 	if _, err := sqlDB.Exec(
@@ -603,6 +629,8 @@ func TestDropDocumentReviewsCheckConstraints_PreservesExistingRow(t *testing.T) 
 // insert cleanly -- same shape as
 // TestDropApplicationStatusCheckConstraint_ArbitraryStatusValueAccepted.
 func TestDropDocumentReviewsCheckConstraints_ArbitraryValuesAccepted(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 8)
 
 	if _, err := sqlDB.Exec(
@@ -637,6 +665,8 @@ func TestDropDocumentReviewsCheckConstraints_ArbitraryValuesAccepted(t *testing.
 // TestDocumentReviewsUniqueConstraint_RejectsDuplicateCycle for the same
 // check pinned to the pre-rebuild version.
 func TestDropDocumentReviewsCheckConstraints_UniqueConstraintStillEnforced(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 8)
 
 	if _, err := sqlDB.Exec(
@@ -677,6 +707,8 @@ func TestDropDocumentReviewsCheckConstraints_UniqueConstraintStillEnforced(t *te
 // catches them once, under exactly the same early-status rule the syncer
 // applies from then on.
 func TestCloseApplicationsForClosedPostings_BacksFillsEarlyStagesOnly(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 8)
 
 	if _, err := sqlDB.Exec(
@@ -739,6 +771,8 @@ func TestCloseApplicationsForClosedPostings_BacksFillsEarlyStagesOnly(t *testing
 // rows, which read back as an empty string rather than NULL (see #74 for
 // why optional TEXT columns are NOT NULL with an empty default).
 func TestCompanyDescription_ExistingCompaniesGetEmptyDescription(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 9)
 
 	if _, err := sqlDB.Exec(
@@ -773,6 +807,8 @@ func TestCompanyDescription_ExistingCompaniesGetEmptyDescription(t *testing.T) {
 // nothing recorded when they were last fetched, so they read as never
 // fetched until their next sync.
 func TestCompanyLastFetchedAt_ExistingCompaniesStartNeverFetched(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 10)
 
 	if _, err := sqlDB.Exec(
@@ -808,6 +844,8 @@ func TestCompanyLastFetchedAt_ExistingCompaniesStartNeverFetched(t *testing.T) {
 // positive, non-hour offset. NULL and values already in the new format
 // are left alone (see issue #140).
 func TestPublishedAtUTC_ConvertsStoredTimesToUTC(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 11)
 
 	if _, err := sqlDB.Exec(
@@ -851,6 +889,8 @@ func TestPublishedAtUTC_ConvertsStoredTimesToUTC(t *testing.T) {
 
 	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			var got sql.NullString
 			if err := sqlDB.QueryRow(`SELECT CAST(published_at AS TEXT) FROM postings WHERE id = ?`, i+1).Scan(&got); err != nil {
 				t.Fatalf("query posting: %v", err)
@@ -868,6 +908,8 @@ func TestPublishedAtUTC_ConvertsStoredTimesToUTC(t *testing.T) {
 // status at its updated_at when that isn't application_started. What
 // happened in between was never recorded and can't be recovered.
 func TestApplicationStatusHistory_BackfillsExistingApplications(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 13)
 
 	if _, err := sqlDB.Exec(
@@ -947,6 +989,8 @@ func TestApplicationStatusHistory_BackfillsExistingApplications(t *testing.T) {
 // the schema as 00013 had it: the history table is gone and the
 // applications it recorded are untouched.
 func TestApplicationStatusHistory_DownDropsTable(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 14)
 
 	if _, err := sqlDB.Exec(
@@ -994,6 +1038,8 @@ func TestApplicationStatusHistory_DownDropsTable(t *testing.T) {
 // row snapshotting it as it was, the same as store.SoftDeleteCompany now
 // does. Everything else is left alone.
 func TestCloseDeletedCompaniesPostings_ClosesOnlyDeletedCompaniesOpenPostings(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 14)
 
 	if _, err := sqlDB.Exec(
@@ -1046,6 +1092,8 @@ func TestCloseDeletedCompaniesPostings_ClosesOnlyDeletedCompaniesOpenPostings(t 
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			var status string
 			if err := sqlDB.QueryRow(`SELECT listing_status FROM postings WHERE id = ?`, tt.postingID).Scan(&status); err != nil {
 				t.Fatalf("query posting: %v", err)
@@ -1093,6 +1141,8 @@ func validString(s string) sql.NullString {
 // undoes a posting_closed it's known to have made, so an unknown row is
 // never restored.
 func TestApplicationStatusChangedBy_ExistingRowsUnknown(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 17)
 
 	for _, stmt := range []string{
@@ -1137,6 +1187,8 @@ func TestApplicationStatusChangedBy_ExistingRowsUnknown(t *testing.T) {
 }
 
 func TestApplicationsAutoincrement_KeepsRowsAndContinuesFromMaxID(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 18)
 
 	for _, stmt := range []string{
@@ -1208,6 +1260,8 @@ func TestApplicationsAutoincrement_KeepsRowsAndContinuesFromMaxID(t *testing.T) 
 // The pre-00019 schema allows one application per posting, so rolling
 // back keeps the live ones and drops the soft-deleted ones with their rows.
 func TestApplicationsAutoincrement_DownKeepsLiveRowsAndDropsDeleted(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 19)
 
 	for _, stmt := range []string{
@@ -1246,6 +1300,8 @@ func TestApplicationsAutoincrement_DownKeepsLiveRowsAndDropsDeleted(t *testing.T
 }
 
 func TestApplicationsSoftDelete_OneLiveApplicationPerPosting(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 19)
 
 	for _, stmt := range []string{
@@ -1267,6 +1323,8 @@ func TestApplicationsSoftDelete_OneLiveApplicationPerPosting(t *testing.T) {
 
 // TestDocumentWrites_NeverReusesAnIDAndDownDropsTheTable verifies 00020.
 func TestDocumentWrites_NeverReusesAnIDAndDownDropsTheTable(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 20)
 
 	for _, stmt := range []string{
@@ -1306,6 +1364,8 @@ func TestDocumentWrites_NeverReusesAnIDAndDownDropsTheTable(t *testing.T) {
 // TestChangeEvents_ApplicationTriggersLogOldAndNew: origin stays NULL here;
 // only a Swamp connection stamps it (store.Open).
 func TestChangeEvents_ApplicationTriggersLogOldAndNew(t *testing.T) {
+	t.Parallel()
+
 	sqlDB := migrateTo(t, 21)
 
 	for _, stmt := range []string{

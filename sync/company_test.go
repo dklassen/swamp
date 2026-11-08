@@ -13,6 +13,8 @@ import (
 )
 
 func TestSyncCompany_NewPostingNoFilters_Created(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -46,6 +48,8 @@ func TestSyncCompany_NewPostingNoFilters_Created(t *testing.T) {
 // Filters only decide what's shown: a posting they leave out is still
 // stored, so a stale filter can hide it but never lose it.
 func TestSyncCompany_PostingDoesNotMatchFilters_Created(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -77,6 +81,8 @@ func TestSyncCompany_PostingDoesNotMatchFilters_Created(t *testing.T) {
 // A company renaming a department mustn't freeze its stored postings at
 // their old content just because the filter names the old value.
 func TestSyncCompany_DepartmentRenamedPastFilter_ContentUpdated(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -116,6 +122,8 @@ func TestSyncCompany_DepartmentRenamedPastFilter_ContentUpdated(t *testing.T) {
 }
 
 func TestSyncCompany_ExistingPostingContentChanged_UpdatedWithHistory(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -168,6 +176,8 @@ func TestSyncCompany_ExistingPostingContentChanged_UpdatedWithHistory(t *testing
 }
 
 func TestSyncCompany_ExistingPostingUnchanged_NoUpdateNoHistory(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -206,6 +216,8 @@ func TestSyncCompany_ExistingPostingUnchanged_NoUpdateNoHistory(t *testing.T) {
 }
 
 func TestSyncCompany_PostingDisappearsFromFetch_ClosedWithHistory(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -250,6 +262,8 @@ func TestSyncCompany_PostingDisappearsFromFetch_ClosedWithHistory(t *testing.T) 
 }
 
 func TestSyncCompany_ClosedPostingReappears_ReopenedWithHistory(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -293,6 +307,8 @@ func TestSyncCompany_ClosedPostingReappears_ReopenedWithHistory(t *testing.T) {
 }
 
 func TestSyncCompany_UnsupportedSource_ReturnsError(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -307,6 +323,8 @@ func TestSyncCompany_UnsupportedSource_ReturnsError(t *testing.T) {
 }
 
 func TestSyncCompany_FetchedPostingHasWhitespace_SavedTrimmed(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -341,6 +359,8 @@ func TestSyncCompany_FetchedPostingHasWhitespace_SavedTrimmed(t *testing.T) {
 // briefly drops a listing no longer ends its started application for good
 // . The sync that reopens the posting puts the application back.
 func TestSyncCompany_PostingReappears_ApplicationRestored(t *testing.T) {
+	t.Parallel()
+
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
 	company := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
@@ -386,6 +406,8 @@ func TestSyncCompany_PostingReappears_ApplicationRestored(t *testing.T) {
 // the database yet. Only the run that actually creates it may count it
 // ; the other finds it already there, unchanged.
 func TestSyncCompany_OverlappingSyncsCreatePosting_CountedOnce(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	company := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 

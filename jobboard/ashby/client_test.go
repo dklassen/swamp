@@ -32,6 +32,8 @@ func newTestServer(t *testing.T, fixturePath string) *httptest.Server {
 }
 
 func TestFetchPostings_ReturnsPostingsFromFixture(t *testing.T) {
+	t.Parallel()
+
 	server := newTestServer(t, "testdata/job_board.json")
 	client := NewClient(WithBaseURL(server.URL))
 
@@ -65,6 +67,8 @@ func TestFetchPostings_ReturnsPostingsFromFixture(t *testing.T) {
 }
 
 func TestFetchPostings_RawPayloadMatchesOriginalJSON(t *testing.T) {
+	t.Parallel()
+
 	server := newTestServer(t, "testdata/job_board.json")
 	client := NewClient(WithBaseURL(server.URL))
 
@@ -95,6 +99,8 @@ func TestFetchPostings_RawPayloadMatchesOriginalJSON(t *testing.T) {
 }
 
 func TestFetchPostings_NonOKStatus_ReturnsError(t *testing.T) {
+	t.Parallel()
+
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNotFound)
 	}))

@@ -26,6 +26,7 @@ type applicationSubmitModel struct {
 	documentService *service.DocumentService
 	documents       *documents.Store
 	openURL         func(src message.Source, about message.Subject, url string) tea.Cmd
+	homeDir         func() (string, error)
 
 	detail message.ApplicationDetail
 	// dir is where the documents are exported to.
@@ -58,10 +59,10 @@ func applyURL(p message.Posting) string {
 }
 
 func newApplicationSubmitModel(applications *service.ApplicationService, documentService *service.DocumentService, docs *documents.Store,
-	openURL func(message.Source, message.Subject, string) tea.Cmd, d message.ApplicationDetail, dir string,
+	openURL func(message.Source, message.Subject, string) tea.Cmd, homeDir func() (string, error), d message.ApplicationDetail, dir string,
 ) *applicationSubmitModel {
 	return &applicationSubmitModel{
-		applications: applications, documentService: documentService, documents: docs, openURL: openURL,
+		applications: applications, documentService: documentService, documents: docs, openURL: openURL, homeDir: homeDir,
 		detail: d, dir: dir, url: applyURL(d.Posting), instance: message.NewScreenInstance(),
 	}
 }
@@ -86,7 +87,7 @@ func (m *applicationSubmitModel) Routes() []*model.Route {
 // Init starts the first two steps together: opening the apply link and
 // exporting the documents, recorded like any other export (#188).
 func (m *applicationSubmitModel) Init() tea.Cmd {
-	export := exportApplicationDocuments(m.documentService, m.documents, m.src(), m.detail, m.dir)
+	export := exportApplicationDocuments(m.documentService, m.documents, m.homeDir, m.src(), m.detail, m.dir)
 	if m.url == "" {
 		return export
 	}

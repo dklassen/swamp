@@ -31,16 +31,18 @@ import (
 type applicationExportModel struct {
 	documentService *service.DocumentService
 	documents       *documents.Store
-	detail          message.ApplicationDetail
-	textinput       textinput.Model
-	focused         bool
-	instance        message.ScreenInstance
+	// homeDir resolves a leading "~" in the destination (see expandPath).
+	homeDir   func() (string, error)
+	detail    message.ApplicationDetail
+	textinput textinput.Model
+	focused   bool
+	instance  message.ScreenInstance
 }
 
 // newApplicationExportModel returns an export screen for d, with the
 // destination prefilled to dir (see App.exportDir) so the common case is
 // enter with no typing at all.
-func newApplicationExportModel(documentService *service.DocumentService, docs *documents.Store, d message.ApplicationDetail, dir string, size message.ContentSize) *applicationExportModel {
+func newApplicationExportModel(documentService *service.DocumentService, docs *documents.Store, homeDir func() (string, error), d message.ApplicationDetail, dir string, size message.ContentSize) *applicationExportModel {
 	ti := textinput.New()
 	ti.SetValue(dir)
 	ti.SetWidth(size.Width)
@@ -48,7 +50,7 @@ func newApplicationExportModel(documentService *service.DocumentService, docs *d
 	// subdirectory extends it instead of landing in front of it.
 	ti.CursorEnd()
 	ti.Focus()
-	return &applicationExportModel{documentService: documentService, documents: docs, detail: d, textinput: ti, instance: message.NewScreenInstance()}
+	return &applicationExportModel{documentService: documentService, documents: docs, homeDir: homeDir, detail: d, textinput: ti, instance: message.NewScreenInstance()}
 }
 
 func (m *applicationExportModel) src() message.Source { return message.Source{Instance: m.instance} }
@@ -95,7 +97,7 @@ func (m *applicationExportModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	case key.Matches(msg, keys.Esc):
 		return tea.Batch(message.Pop(m.src()), message.ReportStatus(m.src(), ""))
 	case key.Matches(msg, keys.Enter):
-		return exportApplicationDocuments(m.documentService, m.documents, m.src(), m.detail, m.textinput.Value())
+		return exportApplicationDocuments(m.documentService, m.documents, m.homeDir, m.src(), m.detail, m.textinput.Value())
 	}
 	var cmd tea.Cmd
 	m.textinput, cmd = m.textinput.Update(msg)
@@ -137,10 +139,10 @@ func (m *applicationExportModel) View() tea.View {
 // Each PDF written is recorded (DocumentService.RecordExport) with
 // the markdown it was rendered from, so the home screen can tell an
 // exported draft from one still waiting to be exported.
-func exportApplicationDocuments(documentService *service.DocumentService, docs *documents.Store, src message.Source, d message.ApplicationDetail, dir string) tea.Cmd {
+func exportApplicationDocuments(documentService *service.DocumentService, docs *documents.Store, homeDir func() (string, error), src message.Source, d message.ApplicationDetail, dir string) tea.Cmd {
 	subject := message.Subject{Type: message.TypeApplication, ID: d.Application.ID}
 	return func() tea.Msg {
-		report, err := exportDocuments(documentService, docs, d, dir)
+		report, err := exportDocuments(documentService, docs, homeDir, d, dir)
 		if err != nil {
 			return message.New(src, subject, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
 		}
@@ -148,8 +150,8 @@ func exportApplicationDocuments(documentService *service.DocumentService, docs *
 	}
 }
 
-func exportDocuments(documentService *service.DocumentService, docs *documents.Store, d message.ApplicationDetail, dir string) (*message.ExportReport, error) {
-	dir, err := expandPath(dir)
+func exportDocuments(documentService *service.DocumentService, docs *documents.Store, homeDir func() (string, error), d message.ApplicationDetail, dir string) (*message.ExportReport, error) {
+	dir, err := expandPath(dir, homeDir)
 	if err != nil {
 		return nil, err
 	}
@@ -181,15 +183,15 @@ func exportDocuments(documentService *service.DocumentService, docs *documents.S
 }
 
 // expandPath resolves a leading "~" in a user-typed destination to the
-// home directory. The text input takes a raw string, and "~/Desktop" is
-// exactly what a user types there -- without this it would create a
-// literal "~" directory under the working directory instead.
-func expandPath(path string) (string, error) {
+// home directory homeDir returns. The text input takes a raw string, and
+// "~/Desktop" is exactly what a user types there -- without this it would
+// create a literal "~" directory under the working directory instead.
+func expandPath(path string, homeDir func() (string, error)) (string, error) {
 	path = strings.TrimSpace(path)
 	if path != "~" && !strings.HasPrefix(path, "~/") {
 		return path, nil
 	}
-	home, err := os.UserHomeDir()
+	home, err := homeDir()
 	if err != nil {
 		return "", fmt.Errorf("resolve home directory for %q: %w", path, err)
 	}

@@ -8,6 +8,8 @@ import (
 )
 
 func TestWrapToWidth_LongLine_NoLineExceedsWidth(t *testing.T) {
+	t.Parallel()
+
 	long := strings.Repeat("word ", 40) // much wider than 20 cols
 	wrapped := wrapToWidth(long, 20)
 
@@ -19,6 +21,8 @@ func TestWrapToWidth_LongLine_NoLineExceedsWidth(t *testing.T) {
 }
 
 func TestWrapToWidth_ZeroWidth_ReturnsContentUnchanged(t *testing.T) {
+	t.Parallel()
+
 	content := "some content that would normally wrap"
 	if got := wrapToWidth(content, 0); got != content {
 		t.Fatalf("wrapToWidth(_, 0) = %q, want unchanged %q", got, content)
@@ -26,6 +30,8 @@ func TestWrapToWidth_ZeroWidth_ReturnsContentUnchanged(t *testing.T) {
 }
 
 func TestWrapToWidth_ShortLine_Unchanged(t *testing.T) {
+	t.Parallel()
+
 	content := "short"
 	if got := wrapToWidth(content, 80); got != content {
 		t.Fatalf("wrapToWidth(%q, 80) = %q, want unchanged", content, got)

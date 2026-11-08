@@ -39,6 +39,7 @@ linters:
     - nakedret
     - noctx
     - nolintlint
+    - paralleltest
     - perfsprint
     - prealloc
     - predeclared

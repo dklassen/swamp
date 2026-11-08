@@ -11,6 +11,8 @@ import (
 )
 
 func TestAddCompany_NewValidBoard_CreatesCompanyWithDescription(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -57,6 +59,8 @@ func TestAddCompany_NewValidBoard_CreatesCompanyWithDescription(t *testing.T) {
 }
 
 func TestAddCompany_BoardRejectsSlug_ReturnsErrorAndCreatesNothing(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -79,6 +83,8 @@ func TestAddCompany_BoardRejectsSlug_ReturnsErrorAndCreatesNothing(t *testing.T)
 // Deleting a company is the user's decision; an agent re-discovering it
 // mustn't quietly bring it back (unlike CreateCompany, which restores).
 func TestAddCompany_PreviouslyDeletedCompany_SkippedAndStaysDeleted(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 

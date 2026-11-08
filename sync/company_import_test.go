@@ -11,6 +11,8 @@ import (
 )
 
 func TestImportCompanies_ValidEntry_CreatesCompany(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -46,6 +48,8 @@ func TestImportCompanies_ValidEntry_CreatesCompany(t *testing.T) {
 }
 
 func TestImportCompanies_UnsupportedSource_NoCompanyCreated(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -73,6 +77,8 @@ func TestImportCompanies_UnsupportedSource_NoCompanyCreated(t *testing.T) {
 }
 
 func TestImportCompanies_InvalidSourceRef_NoCompanyCreated(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -105,6 +111,8 @@ func TestImportCompanies_InvalidSourceRef_NoCompanyCreated(t *testing.T) {
 }
 
 func TestImportCompanies_MixedBatch_GoodEntryStillImportedAfterBadOne(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 
@@ -144,6 +152,8 @@ func TestImportCompanies_MixedBatch_GoodEntryStillImportedAfterBadOne(t *testing
 }
 
 func TestImportCompanies_ReimportExistingCompany_DoesNotDuplicate(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	ctx := context.Background()
 

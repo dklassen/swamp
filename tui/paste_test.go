@@ -13,6 +13,8 @@ import (
 )
 
 func TestApp_PasteIntoApplicationForm_AddsTheText(t *testing.T) {
+	t.Parallel()
+
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")

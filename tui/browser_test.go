@@ -37,6 +37,8 @@ func TestBrowserOpened_ReportsTheOpenOrWhyItFailed(t *testing.T) {
 }
 
 func TestBrowserCommand(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name    string
 		goos    string
@@ -70,6 +72,8 @@ func TestBrowserCommand(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			cmd, args, err := browserCommand(tt.goos, "https://example.com")
 			if tt.wantErr {
 				if err == nil {

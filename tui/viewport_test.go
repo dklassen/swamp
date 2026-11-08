@@ -3,6 +3,8 @@ package tui
 import "testing"
 
 func TestVisibleWindow(t *testing.T) {
+	t.Parallel()
+
 	tests := []struct {
 		name      string
 		cursor    int
@@ -57,6 +59,8 @@ func TestVisibleWindow(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+
 			start, end := visibleWindow(tt.cursor, tt.total, tt.rows)
 			if start != tt.wantStart || end != tt.wantEnd {
 				t.Fatalf("visibleWindow(%d, %d, %d) = (%d, %d), want (%d, %d)", tt.cursor, tt.total, tt.rows, start, end, tt.wantStart, tt.wantEnd)
