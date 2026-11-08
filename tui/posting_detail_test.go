@@ -236,7 +236,7 @@ func TestPostingDetailModel_A_WithAnApplication_DoesNothing(t *testing.T) {
 // detailWith is posting detail registered on a router, for a posting in
 // the store with an application whose cover letter was reviewed, and a
 // score.
-func detailWith(t *testing.T) (*postingDetailModel, *model.MsgRouter, testutil.TestApp) {
+func detailWith(t *testing.T) (*postingDetailModel, *model.MsgRouter) {
 	t.Helper()
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
@@ -261,7 +261,7 @@ func detailWith(t *testing.T) (*postingDetailModel, *model.MsgRouter, testutil.T
 	if err := r.Register(m); err != nil {
 		t.Fatalf("Register: %v", err)
 	}
-	return m, r, s
+	return m, r
 }
 
 // settle dispatches msgs through r, and what their handlers send, until
@@ -280,7 +280,7 @@ func settle(t *testing.T, r *model.MsgRouter, msgs []tea.Msg) {
 func TestPostingDetailModel_Init_ReadsThePostingItsApplicationReviewsAndScores(t *testing.T) {
 	t.Parallel()
 
-	m, r, _ := detailWith(t)
+	m, r := detailWith(t)
 	settle(t, r, runCmd(t, m.Init()))
 
 	if m.posting.Title != "Engineer" {
@@ -638,7 +638,7 @@ func TestPostingDetailModel_ReadsAgainForItsPostingWrittenElsewhere(t *testing.T
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, r, _ := detailWith(t)
+			m, r := detailWith(t)
 			settle(t, r, runCmd(t, m.Init()))
 
 			got := runCmd(t, r.Dispatch(tt.changed(m.posting.ID)))
@@ -667,7 +667,7 @@ func TestPostingDetailModel_ChangesElsewhere_ReadOnceAtATime(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			m, r, _ := detailWith(t)
+			m, r := detailWith(t)
 			settle(t, r, runCmd(t, m.Init()))
 			tt.assert(t, r, tt.of(m.posting.ID))
 		})
