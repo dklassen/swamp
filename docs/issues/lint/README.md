@@ -13,11 +13,12 @@ Enabling golangci-lint linters one themed group per PR, titled `[Lint N] <theme>
 | 7 | Bound function length and nesting: funlen, gocognit, nestif | - | #467 | merged | 1 |
 | 8 | Repeated strings: goconst, keys as `key.Binding` | - | #468 | merged | 1 |
 | 9 | Unused and unchecked code: unparam, forcetypeassert, sqlclosecheck, musttag, sloglint | - | #470 | merged | 1 |
-| 10 | Small fixes: dupword, embeddedstructfieldcheck, dogsled, prealloc | - | #474 | in review | 1 |
+| 10 | Small fixes: dupword, embeddedstructfieldcheck, dogsled, prealloc | - | #474 | merged | 1 |
+| 11 | Shared shapes: iface, dupl | - | - | in review | 1 |
 
 ## Next
 
-Findings on `main` after step 9, from `go tool golangci-lint run --enable-only <linters> ./...`. The four largest need their scope agreed with Bob before starting.
+Findings on `main` after step 10, from `go tool golangci-lint run --enable-only <linters> ./...`. Each needs its scope agreed with Bob before starting.
 
 | Linter | Findings | Needed to start |
 | --- | --- | --- |
@@ -25,8 +26,6 @@ Findings on `main` after step 9, from `go tool golangci-lint run --enable-only <
 | paralleltest | 222 | Mostly tests without `t.Parallel()`; whether any must stay serial. |
 | wrapcheck | 201 | Which packages' errors get wrapped. |
 | err113 | 123 | Which dynamic `errors.New` become sentinels. |
-| iface | 6 | How to merge the identical interfaces in `internal/service`. |
-| dupl | 4 | Where the search-mode key handler shared by `tui/active_applications.go` and `tui/company_list.go` goes. |
 
 ## Decided
 
@@ -36,6 +35,7 @@ Findings on `main` after step 9, from `go tool golangci-lint run --enable-only <
 - Before changing what a finding flags, find out why it's written that way. Migration 00027 closed its rows by hand so the read ended before its updates in the same transaction.
 - A fix that grows past the linter (hundreds of call sites, a rename, a design change) is raised with Bob before it's made, and may become its own issue (#469, #471).
 - Tests are excluded from prealloc too (from step 10): a test's allocations aren't its point, and sizing a `want` up front turns an empty case's `nil` into `[]`, which `cmp.Diff` reports.
+- Identical interfaces in one package are merged, not excluded (from step 11): the consuming package declares an interface, one per need. The rule is in AGENTS.md, under Go style.
 - Each linter's fixes are one commit, and enabling them is the last, so every commit passes the checklist. The PR body has Production, Tests, Config and Verified sections; Verified says what wasn't run against real data.
 - `go tool task fmt:check` prints its script, which ends in `exit 1`; go by its exit code.
 
