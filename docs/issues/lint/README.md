@@ -14,7 +14,7 @@ Enabling golangci-lint linters one themed group per PR, titled `[Lint N] <theme>
 | 8 | Repeated strings: goconst, keys as `key.Binding` | - | #468 | merged | 1 |
 | 9 | Unused and unchecked code: unparam, forcetypeassert, sqlclosecheck, musttag, sloglint | - | #470 | merged | 1 |
 | 10 | Small fixes: dupword, embeddedstructfieldcheck, dogsled, prealloc | - | #474 | merged | 1 |
-| 11 | Shared shapes: iface, dupl | - | - | in review | 1 |
+| 11 | Shared shapes: iface, dupl | - | #475 | in review | 1 |
 
 ## Next
 
