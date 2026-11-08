@@ -20,17 +20,13 @@ import (
 // companyListModel drives the company-list screen, and owns the companies
 // it shows.
 type companyListModel struct {
-	cursor int
+	listSearch
 
 	focused bool
 
 	// showInfo is whether the info box (i) is open. Ephemeral, like cursor:
 	// closed each time the app starts.
 	showInfo bool
-	// searching is whether the '/' prompt is open and taking keys; query
-	// is what's been typed into it. Ephemeral, like cursor.
-	searching bool
-	query     string
 
 	companyService *service.CompanyService
 	postingService *service.PostingService
@@ -224,7 +220,9 @@ func (m *companyListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 		return cmd
 	}
 	if m.searching {
-		m.updateSearch(msg)
+		if m.searchKey(msg, len(m.visible())) {
+			m.clearSearch()
+		}
 		return nil
 	}
 
@@ -281,45 +279,8 @@ func (m *companyListModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 	return nil
 }
 
-// updateSearch handles a key while the '/' prompt is open. Every edit
-// to the query re-filters straight away and puts the cursor back on the
-// first match.
-func (m *companyListModel) updateSearch(msg tea.KeyPressMsg) {
-	switch {
-	default:
-		if msg.Text != "" {
-			m.query += msg.Text
-			m.cursor = 0
-		}
-	case key.Matches(msg, keys.Backspace):
-		if r := []rune(m.query); len(r) > 0 {
-			m.query = string(r[:len(r)-1])
-			m.cursor = 0
-		} else {
-			m.searching = false
-		}
-	case key.Matches(msg, keys.Esc):
-		m.searching = false
-		m.clearSearch()
-	case key.Matches(msg, keys.SearchDown):
-		if m.cursor < len(m.visible())-1 {
-			m.cursor++
-		}
-	case key.Matches(msg, keys.SearchUp):
-		if m.cursor > 0 {
-			m.cursor--
-		}
-	case key.Matches(msg, keys.Enter):
-		// Keeps the matches, so letters act on them instead of being typed.
-		m.searching = false
-	}
-}
-
 func (m *companyListModel) paste(msg tea.PasteMsg) tea.Cmd {
-	if m.searching {
-		m.query += msg.Content
-		m.cursor = 0
-	}
+	m.searchPaste(msg.Content)
 	return nil
 }
 
