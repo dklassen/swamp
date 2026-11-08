@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/http"
@@ -51,7 +50,7 @@ func TestStartMCP_TheAgentsWritesReachTheTUIAsAnotherProcesses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	stop, err := startMCP(path, documents.NewStore(t.TempDir()), ln, slog.New(slog.NewTextHandler(io.Discard, nil)), func() {})
+	stop, err := startMCP(path, documents.NewStore(t.TempDir()), ln, slog.New(slog.DiscardHandler), func() {})
 	if err != nil {
 		t.Fatalf("startMCP: %v", err)
 	}
@@ -100,7 +99,7 @@ func TestMCPForTUI_PortInUse_Fails(t *testing.T) {
 	t.Cleanup(func() { _ = taken.Close() })
 	addr := taken.Addr().String()
 
-	_, err = mcpForTUI(addr, testutil.MigratedDBPath(t), documents.NewStore(t.TempDir()), slog.New(slog.NewTextHandler(io.Discard, nil)), func() {})
+	_, err = mcpForTUI(addr, testutil.MigratedDBPath(t), documents.NewStore(t.TempDir()), slog.New(slog.DiscardHandler), func() {})
 
 	if err == nil || !strings.Contains(err.Error(), addr) {
 		t.Errorf("mcpForTUI on a taken address = %v, want an error naming %s", err, addr)
@@ -118,7 +117,7 @@ func TestStartMCP_StopWithAnAgentConnected(t *testing.T) {
 	if err != nil {
 		t.Fatalf("listen: %v", err)
 	}
-	stop, err := startMCP(testutil.MigratedDBPath(t), documents.NewStore(t.TempDir()), ln, slog.New(slog.NewTextHandler(io.Discard, nil)), func() {})
+	stop, err := startMCP(testutil.MigratedDBPath(t), documents.NewStore(t.TempDir()), ln, slog.New(slog.DiscardHandler), func() {})
 	if err != nil {
 		t.Fatalf("startMCP: %v", err)
 	}
@@ -214,7 +213,7 @@ func TestStartMCP_ServePanicCrashesAfterReleasing(t *testing.T) {
 			t.Fatalf("listen: %v", err)
 		}
 		release := func() { fmt.Fprintln(os.Stderr, "terminal released") }
-		if _, err := startMCP(testutil.MigratedDBPath(t), documents.NewStore(t.TempDir()), panickingListener{ln}, slog.New(slog.NewTextHandler(io.Discard, nil)), release); err != nil {
+		if _, err := startMCP(testutil.MigratedDBPath(t), documents.NewStore(t.TempDir()), panickingListener{ln}, slog.New(slog.DiscardHandler), release); err != nil {
 			t.Fatalf("startMCP: %v", err)
 		}
 		time.Sleep(5 * time.Second)
