@@ -88,10 +88,6 @@ type postingApplicationHistoryViewer interface {
 	List(ctx context.Context, r store.Runner, applicationID int64) ([]application.StatusChange, error)
 }
 
-type postingApplicationHistoryWriter interface {
-	Insert(ctx context.Context, r store.Runner, applicationID int64, status application.Status, changedBy application.ChangedBy) error
-}
-
 type PostingService struct {
 	db                       store.Store
 	postingViewer            postingViewer
@@ -107,7 +103,7 @@ type PostingService struct {
 	applicationViewer        postingApplicationViewer
 	applicationWriter        postingApplicationWriter
 	applicationHistoryViewer postingApplicationHistoryViewer
-	applicationHistoryWriter postingApplicationHistoryWriter
+	applicationHistoryWriter applicationHistoryWriter
 }
 
 func NewPostingService(db store.Store) *PostingService {
