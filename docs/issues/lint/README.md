@@ -16,7 +16,7 @@ Enabling golangci-lint linters one themed group per PR, titled `[Lint N] <theme>
 | 10 | Small fixes: dupword, embeddedstructfieldcheck, dogsled, prealloc | - | #474 | merged | 1 |
 | 11 | Shared shapes: iface, dupl | - | #475 | merged | 1 |
 | 12 | Unused parameters, package comments: revive without `exported` | - | #477 | merged | 1 |
-| 13 | Every test in parallel: paralleltest | - | - | in progress | 1 |
+| 13 | Every test in parallel: paralleltest | - | #478 | in review | 1 |
 
 ## Next
 
