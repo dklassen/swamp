@@ -1,3 +1,5 @@
+// Package document is an application's documents: their types, reviews,
+// exports and writes.
 package document
 
 import (
