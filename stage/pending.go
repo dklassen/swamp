@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/dklassen/swamp/cursor"
-	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
 )
@@ -124,7 +124,7 @@ func (st *Stage) checkProfile(sha256 string) error {
 	if err != nil {
 		return fmt.Errorf("stage: read profile: %w", err)
 	}
-	if documents.ContentSHA256(string(content)) != sha256 {
+	if document.ContentSHA256(string(content)) != sha256 {
 		return errors.New("stage: the profile isn't the version you gave (it changed, or wasn't read): call read_profile and pass its Version")
 	}
 	return nil

@@ -90,7 +90,7 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	if _, err := docs.Write(target.ID, document.Resume, "# Edited in $EDITOR\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
-	app = applyCmd(t, app, editorClosed(t, app, s, screens, target.ID, document.Resume, documents.ContentSHA256("# Draft\n")))
+	app = applyCmd(t, app, editorClosed(t, app, s, screens, target.ID, document.Resume, document.ContentSHA256("# Draft\n")))
 
 	if view := viewText(app); strings.Contains(view, "[PASSED]") {
 		t.Errorf("application detail still shows the review of the old version as [PASSED]:\n%s", view)
@@ -133,13 +133,13 @@ func TestApp_EditorClosedAfterAChange_RecordsTheWrite(t *testing.T) {
 		t.Fatalf("Write: %v", err)
 	}
 
-	applyCmd(t, app, editorClosed(t, app, s, screens, target.ID, document.Resume, documents.ContentSHA256("# Draft\n")))
+	applyCmd(t, app, editorClosed(t, app, s, screens, target.ID, document.Resume, document.ContentSHA256("# Draft\n")))
 
 	write, err := s.Documents.LatestWrite(ctx, target.ID, document.Resume)
 	if err != nil {
 		t.Fatalf("LatestWrite: %v; want the edit recorded", err)
 	}
-	if write.Source != document.SourceEditor || write.ContentSHA256 != documents.ContentSHA256("# Edited\n") {
+	if write.Source != document.SourceEditor || write.ContentSHA256 != document.ContentSHA256("# Edited\n") {
 		t.Errorf("recorded write = source %v, hash %q; want editor and the edited content's hash", write.Source, write.ContentSHA256)
 	}
 }
@@ -150,7 +150,7 @@ func TestApp_EditorClosedWithoutAChange_RecordsNothing(t *testing.T) {
 	app, s, screens, target := deleteTestAppWithScreens(t) // resume drafted as "# Draft\n"
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	applyCmd(t, app, editorClosed(t, app, s, screens, target.ID, document.Resume, documents.ContentSHA256("# Draft\n")))
+	applyCmd(t, app, editorClosed(t, app, s, screens, target.ID, document.Resume, document.ContentSHA256("# Draft\n")))
 
 	if _, err := s.Documents.LatestWrite(context.Background(), target.ID, document.Resume); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("LatestWrite: err = %v, want store.ErrNotFound: nothing recorded for an unchanged document", err)

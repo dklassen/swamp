@@ -378,7 +378,7 @@ func readDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[readDocumentInput, 
 		if err != nil {
 			return nil, readDocumentOutput{}, documentToolError("read_document", in.ApplicationID, in.DocumentType, "", err)
 		}
-		return nil, readDocumentOutput{Path: path, Content: content, Version: documents.ContentSHA256(content)}, nil
+		return nil, readDocumentOutput{Path: path, Content: content, Version: document.ContentSHA256(content)}, nil
 	}
 }
 
@@ -388,7 +388,7 @@ type readCanonicalOutput struct {
 	Path    string `json:"Path"`
 	Exists  bool   `json:"Exists"`
 	Content string `json:"Content"`
-	// Version is Content's documents.ContentSHA256, which the scoring tools
+	// Version is Content's document.ContentSHA256, which the scoring tools
 	// take back as ProfileVersion.
 	Version string `json:"Version"`
 }
@@ -405,7 +405,7 @@ func readCanonicalHandler(tool, path string) mcp.ToolHandlerFor[readCanonicalInp
 		if err != nil {
 			return nil, readCanonicalOutput{}, fmt.Errorf("%s: read %s: %w", tool, path, err)
 		}
-		return nil, readCanonicalOutput{Path: path, Exists: true, Content: string(content), Version: documents.ContentSHA256(string(content))}, nil
+		return nil, readCanonicalOutput{Path: path, Exists: true, Content: string(content), Version: document.ContentSHA256(string(content))}, nil
 	}
 }
 
