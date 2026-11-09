@@ -8,20 +8,14 @@ vars:
 
 tasks:
   fmt:
-    desc: Format all Go source files
+    desc: Format all Go source files with the formatters in .golangci.yml
     cmds:
-      - gofmt -l -w .
+      - go tool golangci-lint fmt ./...
 
   fmt:check:
-    desc: Fail if any Go source file is not gofmt-formatted
+    desc: Fail, showing the diff, if any Go source file is not formatted
     cmds:
-      - |
-        unformatted=$(gofmt -l .)
-        if [ -n "$unformatted" ]; then
-          echo "Not gofmt-formatted:"
-          echo "$unformatted"
-          exit 1
-        fi
+      - go tool golangci-lint fmt --diff ./...
 
   lint:
     desc: Run golangci-lint
