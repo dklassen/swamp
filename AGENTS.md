@@ -569,7 +569,7 @@ go tool golangci-lint run ./...
 go tool task fmt:check
 ```
 
-If `fmt:check` fails, run `gofmt -w <files>`. The pre-commit hook auto-formats staged files too, but running it explicitly before committing avoids surprises. All four must be clean before a commit is considered done. None of these need `direnv exec .` -- `go tool` resolves dev tools from `go.mod`, not `PATH`/`GOBIN`.
+If `fmt:check` fails, run `gofmt -w <files>`. The pre-commit hook auto-formats staged files too, but running it explicitly before committing avoids surprises. If lint reports `gci` (import groups) or `gofumpt`, which gofmt and the hook don't fix, run `go tool golangci-lint fmt <files>`. All four must be clean before a commit is considered done. None of these need `direnv exec .` -- `go tool` resolves dev tools from `go.mod`, not `PATH`/`GOBIN`.
 
 ## Tooling
 
