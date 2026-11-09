@@ -4,8 +4,8 @@ The gaps a review of the linters left after the lint series (`docs/issues/lint/`
 
 | Step | Title | Issue | PR | State | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| 1 | Import groups: gci | - | #480 | in review | none |
-| 2 | No prints outside the CLI: forbidigo | - | #481 | in review | none |
+| 1 | Import groups: gci | - | #480 | merged | none |
+| 2 | No prints outside the CLI: forbidigo | - | #481 | merged | none |
 | 3 | Known vulnerabilities: govulncheck in CI | - | #482 | in review | none |
 
 ## Decided
