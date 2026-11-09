@@ -540,7 +540,7 @@ func TestApp_ItsOwnWrite_IsAppliedOnce(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
-	tui := servicesAs(t, s.Path, "tui:1")
+	tui := servicesAs(t, s, "tui:1")
 	app := newTestApp(t, tui, newTestSyncer(tui, nil), WithChangeReader(newTestChangeReader(tui)))
 	app = readChangeLog(t, app)
 
@@ -561,18 +561,19 @@ func TestApp_ItsOwnWrite_IsAppliedOnce(t *testing.T) {
 	}
 }
 
-// servicesAs is every service on the database at path, as a process
-// whose writes are stamped with origin.
-func servicesAs(t *testing.T, path, origin string) testutil.TestApp {
+// servicesAs is every service on s's database and documents, as a
+// process whose writes are stamped with origin.
+func servicesAs(t *testing.T, s testutil.TestApp, origin string) testutil.TestApp {
 	t.Helper()
-	db := testutil.OpenStore(t, path, origin)
+	db := testutil.OpenStore(t, s.Path, origin)
 	return testutil.TestApp{
-		Path:         path,
+		Path:         s.Path,
 		Store:        db,
+		Docs:         s.Docs,
 		Companies:    service.NewCompanyService(db),
 		Postings:     service.NewPostingService(db),
-		Applications: service.NewApplicationService(db),
-		Documents:    service.NewDocumentService(db),
+		Applications: service.NewApplicationService(db, s.Docs),
+		Documents:    service.NewDocumentService(db, s.Docs),
 		Scores:       service.NewScoringService(db),
 		Changes:      service.NewChangeLog(db),
 	}

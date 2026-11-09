@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/domain/document"
@@ -45,6 +46,7 @@ type applicationReviewViewer interface {
 
 type ApplicationService struct {
 	db                       store.Store
+	documents                *documents.Store
 	applicationViewer        applicationViewer
 	applicationWriter        applicationWriter
 	applicationHistoryViewer applicationHistoryViewer
@@ -52,11 +54,12 @@ type ApplicationService struct {
 	reviewViewer             applicationReviewViewer
 }
 
-func NewApplicationService(db store.Store) *ApplicationService {
+func NewApplicationService(db store.Store, docs *documents.Store) *ApplicationService {
 	applications := &repository.ApplicationRepository{}
 	history := &repository.ApplicationHistoryRepository{}
 	return &ApplicationService{
 		db:                       db,
+		documents:                docs,
 		applicationViewer:        applications,
 		applicationWriter:        applications,
 		applicationHistoryViewer: history,
@@ -67,7 +70,8 @@ func NewApplicationService(db store.Store) *ApplicationService {
 
 // Active returns the applications not at a terminal status (see
 // application.Terminal), in order, each with its posting, when it entered
-// its status and its latest review per document type.
+// its status and its latest review per document type that still describes
+// the document on disk.
 //
 // Status-since and reviews take a few more reads per application rather
 // than a windowed join: active applications are a personal-scale list (a
@@ -92,7 +96,9 @@ func (service *ApplicationService) Active(ctx context.Context, order application
 				reviews[documentType] = list[0]
 			}
 		}
-		app.LatestReviews = reviews
+		if app.LatestReviews, err = documents.Current(service.documents.Status(app.ID), reviews, document.Review.IsCurrent); err != nil {
+			return nil, fmt.Errorf("pursuit: reviews of application %d: %w", app.ID, err)
+		}
 	}
 	slices.SortFunc(apps, activeOrders[order])
 	return apps, nil

@@ -337,16 +337,12 @@ func (st *Stage) candidate(ctx context.Context, p posting.Interested) (Candidate
 	var notes string
 	var reviews map[document.Type]document.Review
 	if p.ApplicationID != nil {
-		latest, err := st.docs.LatestReviews(ctx, *p.ApplicationID)
+		var err error
+		reviews, err = st.docs.LatestReviews(ctx, *p.ApplicationID)
 		if err != nil {
 			return Candidate{}, false, fmt.Errorf("stage: latest document reviews: %w", err)
 		}
-		status := st.documents.Status(*p.ApplicationID)
-		reviews, err = documents.Current(status, latest, document.Review.IsCurrent)
-		if err != nil {
-			return Candidate{}, false, fmt.Errorf("stage: check review currency: %w", err)
-		}
-		if allDrafted(status) && !needsRework(reviews) {
+		if allDrafted(st.documents.Status(*p.ApplicationID)) && !needsRework(reviews) {
 			return Candidate{}, false, nil
 		}
 		app, err := st.postings.Application(ctx, p.Posting.ID)
@@ -403,10 +399,6 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 	reviews, err := st.docs.LatestReviews(ctx, app.ID)
 	if err != nil {
 		return nil, fmt.Errorf("stage: latest document reviews: %w", err)
-	}
-	reviews, err = documents.Current(status, reviews, document.Review.IsCurrent)
-	if err != nil {
-		return nil, fmt.Errorf("stage: check review currency: %w", err)
 	}
 
 	preparedDocuments := make(map[document.Type]Document, len(document.Types()))

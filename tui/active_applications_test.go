@@ -11,7 +11,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
@@ -349,7 +348,7 @@ func TestActiveApplicationListModel_Init_ReadsEachNextStep(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
 	s := testutil.NewTestApp(t)
-	docs := documents.NewStore(t.TempDir())
+	docs := s.Docs
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 
 	mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
@@ -967,7 +966,7 @@ func TestActiveApplicationListModel_O_CyclesTheOrderKeepingTheCursor(t *testing.
 	}
 	acme := apply("Acme", application.Interviewing)
 	beta := apply("Beta", application.Started)
-	m := newActiveApplicationListModel(s.Applications, s.Documents, documents.NewStore(t.TempDir()))
+	m := newActiveApplicationListModel(s.Applications, s.Documents, s.Docs)
 	r := model.NewMsgRouter()
 	if err := r.Register(m); err != nil {
 		t.Fatalf("Register: %v", err)
@@ -1022,7 +1021,7 @@ func storedHome(t *testing.T, focused bool) (*activeApplicationListModel, *model
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
-	m := newActiveApplicationListModel(s.Applications, s.Documents, documents.NewStore(t.TempDir()))
+	m := newActiveApplicationListModel(s.Applications, s.Documents, s.Docs)
 	r := model.NewMsgRouter()
 	if err := r.Register(m); err != nil {
 		t.Fatalf("Register: %v", err)

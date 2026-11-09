@@ -53,7 +53,7 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 			return message.Logged(row.ID, mcp, message.Subject{Type: message.TypeCompany, ID: c.ID}, message.OpUpdated, row.At, companySnapshot(*c)), nil
 		}},
 		{"application deleted", "applications", func(ctx context.Context, f fixture) error {
-			_, err := service.NewApplicationService(f.writer).Delete(ctx, f.applicationID)
+			_, err := service.NewApplicationService(f.writer, f.s.Docs).Delete(ctx, f.applicationID)
 			return err
 		}, func(ctx context.Context, f fixture, row change.Event) (tea.Msg, error) {
 			a, err := f.s.Applications.GetIncludingDeleted(ctx, f.applicationID)
@@ -102,7 +102,7 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 			}), nil
 		}},
 		{"document reviewed", "document_reviews", func(ctx context.Context, f fixture) error {
-			_, err := service.NewDocumentService(f.writer).Review(ctx, f.applicationID, document.CoverLetter, "draft", document.Flagged, "too long")
+			_, err := service.NewDocumentService(f.writer, f.s.Docs).Review(ctx, f.applicationID, document.CoverLetter, "draft", document.Flagged, "too long")
 			return err
 		}, func(ctx context.Context, f fixture, row change.Event) (tea.Msg, error) {
 			r, err := f.s.Documents.LatestReview(ctx, f.applicationID, document.CoverLetter)
@@ -112,7 +112,7 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 			return message.Logged(row.ID, mcp, message.Subject{Type: message.TypeApplication, ID: f.applicationID}, message.OpCreated, row.At, reviewSnapshot(*r)), nil
 		}},
 		{"document written", "document_writes", func(ctx context.Context, f fixture) error {
-			return service.NewDocumentService(f.writer).RecordWrite(ctx, f.applicationID, document.Resume, "draft", document.SourceWriteDocument)
+			return service.NewDocumentService(f.writer, f.s.Docs).RecordWrite(ctx, f.applicationID, document.Resume, "draft", document.SourceWriteDocument)
 		}, func(ctx context.Context, f fixture, row change.Event) (tea.Msg, error) {
 			w, err := f.s.Documents.LatestWrite(ctx, f.applicationID, document.Resume)
 			if err != nil {
@@ -123,7 +123,7 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 			}), nil
 		}},
 		{"document exported", "document_exports", func(ctx context.Context, f fixture) error {
-			return service.NewDocumentService(f.writer).RecordExport(ctx, f.applicationID, document.CoverLetter, "draft", "/out/cover_letter.pdf")
+			return service.NewDocumentService(f.writer, f.s.Docs).RecordExport(ctx, f.applicationID, document.CoverLetter, "draft", "/out/cover_letter.pdf")
 		}, func(ctx context.Context, f fixture, row change.Event) (tea.Msg, error) {
 			exports, err := f.s.Documents.LatestExports(ctx, f.applicationID)
 			if err != nil {

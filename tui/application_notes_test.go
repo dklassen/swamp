@@ -91,7 +91,7 @@ func TestApplicationNotesModel_DiscardPrompt(t *testing.T) {
 			t.Parallel()
 
 			// A service on no database fails every write.
-			m := notesEditorOn(service.NewApplicationService(store.Store{}), "notes")
+			m := notesEditorOn(service.NewApplicationService(store.Store{}, nil), "notes")
 			m.textarea.InsertString(" and more")
 			typed := m.textarea.Value()
 			m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEsc})

@@ -243,7 +243,7 @@ func detailWith(t *testing.T) (*postingDetailModel, *model.MsgRouter) {
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	p := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	app := mustCreateApplication(t, s, p.ID)
-	docs := documents.NewStore(t.TempDir())
+	docs := s.Docs
 	if _, err := docs.EnsureDir(app.ID); err != nil {
 		t.Fatalf("EnsureDir: %v", err)
 	}

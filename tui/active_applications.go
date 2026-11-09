@@ -129,9 +129,7 @@ func (m *activeApplicationListModel) src() message.Source {
 // reload reads again for a write, once at a time for a run of them.
 func (m *activeApplicationListModel) reload() tea.Cmd { return m.reading.start(m.load) }
 
-// load reads every active application, keeping only the reviews that
-// still describe each document as it is on disk, which the services
-// can't see.
+// load reads every active application and its documents' progress.
 func (m *activeApplicationListModel) load() tea.Cmd {
 	applications, documentService, docs, src, order := m.applications, m.documentService, m.documents, m.src(), m.order
 	return func() tea.Msg {
@@ -144,10 +142,6 @@ func (m *activeApplicationListModel) load() tea.Cmd {
 		}
 		read := message.ActiveApplications{Order: order}
 		for _, app := range apps {
-			app.LatestReviews, err = documents.Current(docs.Status(app.ID), app.LatestReviews, document.Review.IsCurrent)
-			if err != nil {
-				return fail(err)
-			}
 			progress, err := documentProgressOf(documentService, docs, app.ID)
 			if err != nil {
 				return fail(err)

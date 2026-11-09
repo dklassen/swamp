@@ -145,6 +145,52 @@ func TestDocumentService_LatestReview_ReturnsTheMostRecentCycle(t *testing.T) {
 	}
 }
 
+// A review counts only while it describes the document on disk: one of
+// an earlier draft, or of a document that isn't there, is no review.
+func TestDocumentService_LatestReviews_OnlyOfTheDocumentOnDisk(t *testing.T) {
+	t.Parallel()
+	const reviewed = "Dear hiring manager..."
+	tests := []struct {
+		name string
+		// onDisk is the cover letter written after the review; "" writes none.
+		onDisk     string
+		wantReview bool
+	}{
+		{name: "document unchanged", onDisk: reviewed, wantReview: true},
+		{name: "document rewritten", onDisk: "Dear hiring manager, revised...", wantReview: false},
+		{name: "no document", onDisk: "", wantReview: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			ctx := context.Background()
+			app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+			review, err := s.Documents.Review(ctx, app.ID, document.CoverLetter, reviewed, document.Flagged, "too generic")
+			if err != nil {
+				t.Fatalf("Review: %v", err)
+			}
+			if tt.onDisk != "" {
+				if _, err := s.Docs.Write(app.ID, document.CoverLetter, tt.onDisk); err != nil {
+					t.Fatalf("Write: %v", err)
+				}
+			}
+
+			got, err := s.Documents.LatestReviews(ctx, app.ID)
+			if err != nil {
+				t.Fatalf("LatestReviews: %v", err)
+			}
+			want := map[document.Type]document.Review{}
+			if tt.wantReview {
+				want[document.CoverLetter] = *review
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("LatestReviews (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
 func TestDocumentService_LatestExports_NewestPerTypeIsCurrentUntilTheContentChanges(t *testing.T) {
 	t.Parallel()
 	s := testutil.NewTestApp(t)

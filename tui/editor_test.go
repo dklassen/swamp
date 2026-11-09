@@ -8,7 +8,6 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
@@ -73,7 +72,7 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	target := mustCreateApplication(t, s, posting.ID)
-	docs := documents.NewStore(t.TempDir())
+	docs := s.Docs
 	if _, err := docs.Write(target.ID, document.Resume, "# Draft\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
