@@ -566,10 +566,9 @@ Each task/feature gets its own branch off `main`, reviewed via PR and merged on 
 go build ./...
 go test ./...
 go tool golangci-lint run ./...
-go tool task fmt:check
 ```
 
-If `fmt:check` fails, run `go tool task fmt`. It, `fmt:check`, the pre-commit hook and lint all use the formatters in `.golangci.yml` (gofumpt, gci), so they agree. The hook auto-formats staged files too, but running it explicitly before committing avoids surprises. All four must be clean before a commit is considered done. None of these need `direnv exec .` -- `go tool` resolves dev tools from `go.mod`, not `PATH`/`GOBIN`.
+Lint checks formatting too, with the formatters in `.golangci.yml` (gofumpt, gci); `task fmt`, `task fmt:check` and the pre-commit hook use the same ones. If lint reports a file as not properly formatted, run `go tool task fmt` (`go tool task fmt:check` shows the diff). The hook auto-formats staged files too, but running it explicitly before committing avoids surprises. All three must be clean before a commit is considered done. None of these need `direnv exec .` -- `go tool` resolves dev tools from `go.mod`, not `PATH`/`GOBIN`.
 
 ## Tooling
 

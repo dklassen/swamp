@@ -14,7 +14,7 @@ The gaps a review of the linters left after the lint series (`docs/issues/lint/`
 - govulncheck runs as a `go.mod` tool in its own CI job. Today it finds nothing swamp calls, and 2 vulnerabilities in imported packages it doesn't.
 - Imports are grouped standard library, other modules, then swamp's own packages: what all but 6 files already did.
 - `-race` stays out of CI: Bob runs it on the host.
-- Formatting has one source, the formatters in `.golangci.yml`: `task fmt`, `task fmt:check` (and so CI) and the pre-commit hook run `golangci-lint fmt`, as lint does, instead of gofmt, which fixed neither gci nor gofumpt. `fmt:check` goes by `--diff`'s exit code.
+- Formatting has one source, the formatters in `.golangci.yml`: `task fmt`, `task fmt:check` and the pre-commit hook run `golangci-lint fmt` instead of gofmt, which fixed neither gci nor gofumpt. Lint checks the same formatters, so CI has no separate fmt job and the checklist no `fmt:check`; that task stays for its diff.
 - `go.mod` is tidy (Bob, with this change). Nothing checks it stays tidy; not asked for.
 - Left off after the review, each catching nothing worth its findings: govet `shadow` (100, all `if err := ...` handled on the next line), gocritic's performance checks (`hugeParam`, `rangeValCopy`), golines (165 files rewritten), gochecknoinits (2 `init`s that register). staticcheck with every check already passes. The linters with no findings that would only guard against future bugs (nilnesserr, wastedassign, recvcheck and others) weren't taken up.
 
