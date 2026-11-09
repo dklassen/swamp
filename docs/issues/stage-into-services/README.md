@@ -4,7 +4,7 @@
 
 | Step | Title | Issue | PR | State | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [A document's hash has one home](01-one-content-hash.md) | - | - | planned | none |
+| 1 | [A document's hash has one home](01-one-content-hash.md) | - | #486 | in review | none |
 | 2 | [DocumentService owns documents; reviews come back current](02-services-own-documents.md) | - | - | planned | none |
 | 3 | [Document reads and writes go through DocumentService](03-document-read-write.md) | - | - | planned | 2 |
 | 4 | [Application forms are PostingService's](04-application-forms.md) | - | - | planned | none |
