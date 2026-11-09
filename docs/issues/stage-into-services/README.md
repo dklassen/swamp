@@ -4,8 +4,8 @@
 
 | Step | Title | Issue | PR | State | Depends on |
 | --- | --- | --- | --- | --- | --- |
-| 1 | [A document's hash has one home](01-one-content-hash.md) | - | #486 | in review | none |
-| 2 | [DocumentService owns documents; reviews come back current](02-services-own-documents.md) | - | - | planned | none |
+| 1 | [A document's hash has one home](01-one-content-hash.md) | - | #486 | merged | none |
+| 2 | [DocumentService owns documents; reviews come back current](02-services-own-documents.md) | - | #487 | in review | none |
 | 3 | [Document reads and writes go through DocumentService](03-document-read-write.md) | - | - | planned | 2 |
 | 4 | [Application forms are PostingService's](04-application-forms.md) | - | - | planned | none |
 | 5 | [A posting at a deleted company is refused in one place](05-posting-at-live-company.md) | - | - | planned | none |
@@ -29,6 +29,8 @@
 - Cursors, page-size defaults and the sort-order registry are endpoint logic, so they stay with the endpoints. `Search` and `PendingPostings` share the limit and cursor code; that's two copies, so it isn't abstracted.
 - Tests move with the logic. A moved behaviour's tests are rewritten as service tests, arranged and checked through service calls (AGENTS.md, Testing), not carried over through `stage`.
 - `Prepare` on a posting at a deleted company is refused with the same error as `ReadPosting`, not today's bare "get company: not found" (step 5).
+- `DocumentService.LatestReviews` and `ApplicationService.Active` return only current reviews rather than a `CurrentReviews` beside them (Bob, 2026-11-09, step 2): no caller wanted the unfiltered map. `LatestReview` and `Reviews` stay history.
+- A service takes the stores it needs as plain constructor parameters, as it takes `db` (Bob, 2026-11-09, step 2), since none works without them.
 
 ## Open
 

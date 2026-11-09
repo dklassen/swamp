@@ -22,15 +22,10 @@ A review counts only while it matches the file on disk. Since the services can't
 - `ApplicationService.Active` returns current reviews the same way, and the TUI drops its filter.
 - `internal/service/doc.go` says the services own the documents on disk as well as their transactions.
 
-## Decide before starting
-
-- **Name.** Change what `LatestReviews` means (every caller wants the current ones) or add `CurrentReviews` beside it. `LatestReview` (singular) and `Reviews` keep returning history, which the review list shows whatever is on disk.
-- **Constructor shape.** A plain second parameter, as `db` is, or an option. Recommended: a parameter, since no service works without it.
-
 ## Acceptance criteria
 
-- [ ] `documents.Current(…, document.Review.IsCurrent)` appears only inside `internal/service`.
-- [ ] A service test: a review of a document rewritten afterwards isn't returned; one of the document as it is, is.
-- [ ] The same, through `ApplicationService.Active`.
-- [ ] Existing stage, TUI and export tests pass unchanged.
-- [ ] Verification checklist clean.
+- [x] `documents.Current(…, document.Review.IsCurrent)` appears only inside `internal/service`.
+- [x] A service test: a review of a document rewritten afterwards isn't returned; one of the document as it is, is.
+- [x] The same, through `ApplicationService.Active`.
+- [x] Existing stage, TUI and export tests pass, changed only to share the test app's documents store, to write the file a review is of, and to tighten one assertion that the new rule made vacuous.
+- [x] Verification checklist clean.
