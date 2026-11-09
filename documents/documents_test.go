@@ -269,8 +269,8 @@ func TestStore_WriteIfUnchanged(t *testing.T) {
 		expected string
 		wantErr  bool
 	}{
-		{name: "expected matches", onDisk: existing, expected: ContentSHA256(existing)},
-		{name: "document changed", onDisk: existing, expected: ContentSHA256("# What the agent read\n"), wantErr: true},
+		{name: "expected matches", onDisk: existing, expected: document.ContentSHA256(existing)},
+		{name: "document changed", onDisk: existing, expected: document.ContentSHA256("# What the agent read\n"), wantErr: true},
 		{name: "expected absent, still absent", expected: ""},
 		{name: "expected absent, one appeared", onDisk: existing, expected: "", wantErr: true},
 	}

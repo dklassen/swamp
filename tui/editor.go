@@ -89,7 +89,7 @@ func recordEditorWrite(documentService *service.DocumentService, src message.Sou
 			// Closed without saving a new document: nothing was written.
 		case err != nil:
 			return editFailed(src, applicationID, fmt.Errorf("read %s after editing: %w", path, err))
-		case documents.ContentSHA256(string(content)) != before:
+		case document.ContentSHA256(string(content)) != before:
 			if err := documentService.RecordWrite(context.Background(), applicationID, documentType, string(content), document.SourceEditor); err != nil {
 				return editFailed(src, applicationID, err)
 			}

@@ -267,7 +267,7 @@ func whoWrote(documentService *service.DocumentService, applicationID int64, doc
 	if err != nil {
 		return fmt.Sprintf("rewritten (couldn't tell by whom: %v)", err)
 	}
-	if write.ContentSHA256 != documents.ContentSHA256(current) {
+	if write.ContentSHA256 != document.ContentSHA256(current) {
 		return ""
 	}
 	return "rewritten by " + documentWriterLabel(write.Source) + " at " + localClock(write.WrittenAt)

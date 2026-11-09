@@ -479,7 +479,7 @@ func TestReadDocument_ReturnsWrittenContent(t *testing.T) {
 				"DocumentType":  tc.documentType,
 			})
 
-			want := readDocumentOutput{Path: tc.wantPath, Content: content, Version: documents.ContentSHA256(content)}
+			want := readDocumentOutput{Path: tc.wantPath, Content: content, Version: document.ContentSHA256(content)}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("read_document result mismatch (-want +got):\n%s", diff)
 			}
@@ -661,7 +661,7 @@ func TestReadCanonical_ReturnsContentWhenPresent(t *testing.T) {
 			cs := connectClient(t, srv)
 			got := callTool[readCanonicalOutput](t, cs, tc.tool, map[string]any{})
 
-			want := readCanonicalOutput{Path: path, Exists: true, Content: "# " + tc.tool, Version: documents.ContentSHA256("# " + tc.tool)}
+			want := readCanonicalOutput{Path: path, Exists: true, Content: "# " + tc.tool, Version: document.ContentSHA256("# " + tc.tool)}
 			if diff := cmp.Diff(want, got); diff != "" {
 				t.Errorf("%s result mismatch (-want +got):\n%s", tc.tool, diff)
 			}
@@ -1003,8 +1003,8 @@ func TestWriteDocument_ReplacesVersion(t *testing.T) {
 		wantError string // empty: the write succeeds
 	}{
 		{name: "omitted", onDisk: edited, expected: nil},
-		{name: "matches", onDisk: edited, expected: documents.ContentSHA256(edited)},
-		{name: "changed since read", onDisk: edited, expected: documents.ContentSHA256("what the agent read"), wantError: "changed since you read it"},
+		{name: "matches", onDisk: edited, expected: document.ContentSHA256(edited)},
+		{name: "changed since read", onDisk: edited, expected: document.ContentSHA256("what the agent read"), wantError: "changed since you read it"},
 		{name: "no document yet, still absent", expected: "no_document_yet"},
 		{name: "no document yet, one appeared", onDisk: edited, expected: "no_document_yet", wantError: "already has a cover_letter"},
 	}
@@ -1107,7 +1107,7 @@ func TestStagePrepare_DocumentsCarryVersion(t *testing.T) {
 
 	got := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 
-	if want := documents.ContentSHA256("a draft"); got.Documents[document.CoverLetter].Version != want {
+	if want := document.ContentSHA256("a draft"); got.Documents[document.CoverLetter].Version != want {
 		t.Errorf("cover letter Version = %q, want %q", got.Documents[document.CoverLetter].Version, want)
 	}
 	if got := got.Documents[document.Resume].Version; got != stage.NoDocumentYet {
@@ -1142,7 +1142,7 @@ func TestWriteDocument_IsRecordedAndReachesTheChangeLog(t *testing.T) {
 	if err != nil {
 		t.Fatalf("LatestWrite: %v", err)
 	}
-	if write.Source != document.SourceWriteDocument || write.ContentSHA256 != documents.ContentSHA256("a draft") {
+	if write.Source != document.SourceWriteDocument || write.ContentSHA256 != document.ContentSHA256("a draft") {
 		t.Errorf("recorded write = source %v, hash %q; want write_document and the draft's hash", write.Source, write.ContentSHA256)
 	}
 
@@ -1244,7 +1244,7 @@ func mustWriteProfile(t *testing.T, d *documents.Store, content string) string {
 	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
 		t.Fatalf("write profile: %v", err)
 	}
-	return documents.ContentSHA256(content)
+	return document.ContentSHA256(content)
 }
 
 func pendingIDs(r stage.PendingResult) []int64 {
@@ -1292,7 +1292,7 @@ func TestListPendingPostings_SaysWhyEachIsPending(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme")
 	fresh := mustUpsertPosting(t, s, acme.ID, "job-1", "Fresh")
 	scored := mustUpsertPosting(t, s, acme.ID, "job-2", "Scored before the profile changed")
-	oldProfile := documents.ContentSHA256("# Me")
+	oldProfile := document.ContentSHA256("# Me")
 	if _, err := recordScores(ctx, s, score.Provenance{Model: "claude-opus-5-5", ProfileSHA256: oldProfile}, []score.Entry{
 		{PostingID: scored.ID, Score: 3, Reason: "ok", ContentSHA256: scored.ContentSHA256},
 	}); err != nil {
@@ -1323,7 +1323,7 @@ func TestListPendingPostings_RefusesAProfileItDidntRead(t *testing.T) {
 	mustWriteProfile(t, d, "# Me, edited since")
 	cs := connectClient(t, srv)
 
-	text := callToolError(t, cs, "list_pending_postings", map[string]any{"ProfileVersion": documents.ContentSHA256("# Me")})
+	text := callToolError(t, cs, "list_pending_postings", map[string]any{"ProfileVersion": document.ContentSHA256("# Me")})
 
 	if !strings.Contains(text, "read_profile") {
 		t.Errorf("tool error %q, want it to say to call read_profile again", text)
@@ -1400,7 +1400,7 @@ func TestRecordScores_RefusesAProfileItDidntReadAndRecordsNothing(t *testing.T) 
 
 	text := callToolError(t, cs, "record_scores", map[string]any{
 		"Model":          "claude-opus-5-5",
-		"ProfileVersion": documents.ContentSHA256("# Me"),
+		"ProfileVersion": document.ContentSHA256("# Me"),
 		"Scores":         []map[string]any{{"PostingID": p.ID, "Score": 4, "Reason": "ok", "PostingVersion": p.ContentSHA256}},
 	})
 

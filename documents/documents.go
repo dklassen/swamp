@@ -9,8 +9,6 @@
 package documents
 
 import (
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -106,7 +104,7 @@ func (s *Store) Write(applicationID int64, documentType document.Type, content s
 var ErrChanged = errors.New("documents: document changed since it was read")
 
 // WriteIfUnchanged is Write, refused with ErrChanged unless the document
-// on disk still has expectedSHA256 (see ContentSHA256). An empty
+// on disk still has expectedSHA256 (see document.ContentSHA256). An empty
 // expectedSHA256 expects no document, so a fresh draft can't replace one
 // that appeared in the meantime. The check runs just before
 // the rename; a write landing between the two still wins.
@@ -173,14 +171,7 @@ func writeAndClose(f *os.File, content string) error {
 	return err
 }
 
-// ContentSHA256 is the hex SHA-256 of a document's content: the version
-// an agent read, which write_document can require to be unchanged.
-func ContentSHA256(content string) string {
-	sum := sha256.Sum256([]byte(content))
-	return hex.EncodeToString(sum[:])
-}
-
-// SHA256 is the ContentSHA256 of applicationID's documentType document
+// SHA256 is the document.ContentSHA256 of applicationID's documentType document
 // as it is on disk now, or empty when it doesn't exist.
 func (s *Store) SHA256(applicationID int64, documentType document.Type) (string, error) {
 	p, err := s.Path(applicationID, documentType)
@@ -194,7 +185,7 @@ func (s *Store) SHA256(applicationID int64, documentType document.Type) (string,
 	if err != nil {
 		return "", err
 	}
-	return ContentSHA256(string(content)), nil
+	return document.ContentSHA256(string(content)), nil
 }
 
 // canonicalDir holds the user-maintained files every application draws
