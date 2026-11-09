@@ -160,8 +160,8 @@ func runTUI(db store.Store, documentsStore *documents.Store, dbPath, origin stri
 	}
 	companies := service.NewCompanyService(db)
 	postings := service.NewPostingService(db)
-	applications := service.NewApplicationService(db)
-	documentService := service.NewDocumentService(db)
+	applications := service.NewApplicationService(db, documentsStore)
+	documentService := service.NewDocumentService(db, documentsStore)
 	scores := service.NewScoringService(db)
 	router := model.NewMsgRouter()
 	screens := tui.NewScreens(companies, postings, applications, documentService, scores, syncer, documentsStore)
@@ -233,7 +233,7 @@ func newSyncer(db store.Store) *sync.Syncer {
 // forms from every board that supports it (Greenhouse; see #167 for Ashby
 // and Lever) under the same fetch timeout as a sync.
 func newStage(db store.Store, d *documents.Store) *stage.Stage {
-	return stage.New(service.NewCompanyService(db), service.NewPostingService(db), service.NewApplicationService(db), service.NewDocumentService(db), service.NewScoringService(db), d, stage.WithFormFetchers(map[string]stage.FormFetcher{
+	return stage.New(service.NewCompanyService(db), service.NewPostingService(db), service.NewApplicationService(db, d), service.NewDocumentService(db, d), service.NewScoringService(db), d, stage.WithFormFetchers(map[string]stage.FormFetcher{
 		jobboard.Greenhouse: greenhouse.NewClient(),
 	}, sync.DefaultConfig().FetchTimeout))
 }
@@ -398,14 +398,14 @@ func runExport(db store.Store, d *documents.Store, applicationID int64) error {
 	// with Exists false for both documents -- and prints the identical
 	// "no document on disk, skipped" lines while exiting 0 (see
 	// issue #102).
-	if _, err := service.NewApplicationService(db).Get(ctx, applicationID); err != nil {
+	if _, err := service.NewApplicationService(db, d).Get(ctx, applicationID); err != nil {
 		if errors.Is(err, store.ErrNotFound) {
 			return fmt.Errorf("export: no application with id %d", applicationID)
 		}
 		return fmt.Errorf("export: look up application %d: %w", applicationID, err)
 	}
 
-	documentService := service.NewDocumentService(db)
+	documentService := service.NewDocumentService(db, d)
 	reviews, err := documentService.LatestReviews(ctx, applicationID)
 	if err != nil {
 		return fmt.Errorf("export: latest document reviews: %w", err)

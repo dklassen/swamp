@@ -43,7 +43,7 @@ func (f fakeFetcher) FetchPostings(_ context.Context, slug string) ([]jobboard.P
 func newTestServer(t *testing.T) (*mcp.Server, testutil.TestApp, *documents.Store) {
 	t.Helper()
 	s := testutil.NewTestApp(t)
-	d := documents.NewStore(t.TempDir())
+	d := s.Docs
 	fetcher := fakeFetcher{boards: map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}, {SourceID: "job-2", Title: "Designer"}},
 	}}

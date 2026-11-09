@@ -8,6 +8,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/domain/document"
@@ -43,7 +44,7 @@ func TestChangeLog_After_ReturnsAnotherProcessesChangeSinceLatest(t *testing.T) 
 		t.Fatalf("Latest: %v", err)
 	}
 
-	if _, err := service.NewApplicationService(other).SetStatus(ctx, app.ID, application.Interviewing); err != nil {
+	if _, err := service.NewApplicationService(other, s.Docs).SetStatus(ctx, app.ID, application.Interviewing); err != nil {
 		t.Fatalf("SetStatus: %v", err)
 	}
 
@@ -110,6 +111,7 @@ func TestChangeLog_EachLoggedTable(t *testing.T) {
 
 	type fixture struct {
 		db                                  store.Store
+		docs                                *documents.Store
 		companyID, postingID, applicationID int64
 	}
 	tests := []struct {
@@ -139,14 +141,14 @@ func TestChangeLog_EachLoggedTable(t *testing.T) {
 			return err
 		}, "postings", "update"},
 		{"document written", func(ctx context.Context, f fixture) error {
-			return service.NewDocumentService(f.db).RecordWrite(ctx, f.applicationID, document.CoverLetter, "draft", document.SourceEditor)
+			return service.NewDocumentService(f.db, f.docs).RecordWrite(ctx, f.applicationID, document.CoverLetter, "draft", document.SourceEditor)
 		}, "document_writes", "insert"},
 		{"document reviewed", func(ctx context.Context, f fixture) error {
-			_, err := service.NewDocumentService(f.db).Review(ctx, f.applicationID, document.CoverLetter, "draft", document.Passed, "")
+			_, err := service.NewDocumentService(f.db, f.docs).Review(ctx, f.applicationID, document.CoverLetter, "draft", document.Passed, "")
 			return err
 		}, "document_reviews", "insert"},
 		{"document exported", func(ctx context.Context, f fixture) error {
-			return service.NewDocumentService(f.db).RecordExport(ctx, f.applicationID, document.CoverLetter, "draft", "/out/cover_letter.pdf")
+			return service.NewDocumentService(f.db, f.docs).RecordExport(ctx, f.applicationID, document.CoverLetter, "draft", "/out/cover_letter.pdf")
 		}, "document_exports", "insert"},
 	}
 	for _, tt := range tests {
@@ -163,7 +165,7 @@ func TestChangeLog_EachLoggedTable(t *testing.T) {
 				t.Fatalf("Latest: %v", err)
 			}
 
-			if err := tt.change(ctx, fixture{db: writer, companyID: p.CompanyID, postingID: p.ID, applicationID: app.ID}); err != nil {
+			if err := tt.change(ctx, fixture{db: writer, docs: s.Docs, companyID: p.CompanyID, postingID: p.ID, applicationID: app.ID}); err != nil {
 				t.Fatalf("change: %v", err)
 			}
 

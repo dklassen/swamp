@@ -26,7 +26,7 @@ import (
 func newTestStage(t *testing.T) (*Stage, testutil.TestApp, *documents.Store) {
 	t.Helper()
 	s := testutil.NewTestApp(t)
-	d := documents.NewStore(t.TempDir())
+	d := s.Docs
 	return stageOn(s, d), s, d
 }
 

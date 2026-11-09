@@ -7,6 +7,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
@@ -15,7 +16,7 @@ import (
 func TestExportDocumentPDF_RecordsTheExport(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	documentService := service.NewDocumentService(testutil.NewTestStore(t))
+	documentService := service.NewDocumentService(testutil.NewTestStore(t), documents.NewStore(t.TempDir()))
 
 	const content = "# Resume\n\nExperience.\n"
 	mdPath := filepath.Join(t.TempDir(), "resume.md")
@@ -44,7 +45,7 @@ func TestExportDocumentPDF_RecordsTheExport(t *testing.T) {
 func TestExportDocumentPDF_FailedExportRecordsNothing(t *testing.T) {
 	t.Parallel()
 	ctx := context.Background()
-	documentService := service.NewDocumentService(testutil.NewTestStore(t))
+	documentService := service.NewDocumentService(testutil.NewTestStore(t), documents.NewStore(t.TempDir()))
 
 	if _, err := exportDocumentPDF(ctx, documentService, 7, document.Resume, filepath.Join(t.TempDir(), "missing.md")); err == nil {
 		t.Fatal("exportDocumentPDF succeeded for a missing document, want an error")

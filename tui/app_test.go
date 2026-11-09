@@ -18,7 +18,6 @@ import (
 	"github.com/charmbracelet/x/ansi"
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/filter"
@@ -45,7 +44,7 @@ func newTestApp(t *testing.T, s testutil.TestApp, syncer *sync.Syncer, opts ...O
 // newTestAppWithScreens is newTestApp, with the Screens it opens.
 func newTestAppWithScreens(t *testing.T, s testutil.TestApp, syncer *sync.Syncer, opts ...Option) (*App, *Screens) {
 	t.Helper()
-	app, screens := newAppWithScreensOn(s, syncer, documents.NewStore(t.TempDir()), opts...)
+	app, screens := newAppWithScreensOn(s, syncer, s.Docs, opts...)
 	app = applyCmd(t, app, app.Init())
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
 	return app, screens
@@ -2269,7 +2268,7 @@ func TestApp_LoadActiveApplications_DocumentReadFails_SetsErr(t *testing.T) {
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	app, screens := newAppWithScreensOn(s, newTestSyncer(s, nil), documents.NewStore(t.TempDir()))
+	app, screens := newAppWithScreensOn(s, newTestSyncer(s, nil), s.Docs)
 	if _, err := createReview(context.Background(), s, application.ID, document.CoverLetter, "letter", document.Flagged, "needs work"); err != nil {
 		t.Fatalf("CreateReview: %v", err)
 	}
@@ -2918,7 +2917,7 @@ func TestApp_ApplicationDetail_PressU_RefreshesWithoutLeavingScreen(t *testing.T
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	application := mustCreateApplication(t, s, posting.ID)
-	docs := documents.NewStore(t.TempDir())
+	docs := s.Docs
 	status := docs.Status(application.ID)
 	if err := os.MkdirAll(filepath.Dir(mustDoc(t, status, document.CoverLetter).Path), 0o755); err != nil {
 		t.Fatalf("MkdirAll: %v", err)

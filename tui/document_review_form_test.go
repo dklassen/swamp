@@ -14,6 +14,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
+	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
@@ -81,7 +82,7 @@ func TestDocumentReviewFormModel_SaveKeys_SaveTheReview(t *testing.T) {
 			s := testutil.NewTestApp(t)
 			acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 			stored := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
-			docs := documents.NewStore(t.TempDir())
+			docs := s.Docs
 			if _, err := docs.Write(stored.ID, document.CoverLetter, "a draft"); err != nil {
 				t.Fatalf("Write: %v", err)
 			}
@@ -334,12 +335,8 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 	if app.onScreen() != message.ScreenDocumentReviewForm {
 		t.Fatalf("screen after saving a changed document = %v, want still the review form", app.onScreen())
 	}
-	reviews, err := s.Documents.LatestReviews(context.Background(), application.ID)
-	if err != nil {
-		t.Fatalf("LatestReviews: %v", err)
-	}
-	if _, ok := reviews[document.CoverLetter]; ok {
-		t.Fatal("a review of the old version was saved, want none")
+	if _, err := s.Documents.LatestReview(context.Background(), application.ID, document.CoverLetter); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("LatestReview = %v, want store.ErrNotFound: no review of the old version saved", err)
 	}
 	view := viewText(app)
 	for _, want := range []string{"changed while you were reviewing", "-What you reviewed", "+Rewritten meanwhile", "tighten the intro"} {
@@ -353,7 +350,7 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 	if app.onScreen() == message.ScreenDocumentReviewForm {
 		t.Fatal("second save left the form open, want the review saved")
 	}
-	reviews, err = s.Documents.LatestReviews(context.Background(), application.ID)
+	reviews, err := s.Documents.LatestReviews(context.Background(), application.ID)
 	if err != nil {
 		t.Fatalf("LatestReviews: %v", err)
 	}

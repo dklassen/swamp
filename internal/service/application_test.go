@@ -137,6 +137,9 @@ func TestApplicationService_Active_IncludesTheLatestReviewPerDocument(t *testing
 	if err != nil {
 		t.Fatalf("Review (second): %v", err)
 	}
+	if _, err := s.Docs.Write(app.ID, document.CoverLetter, "draft two"); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
 
 	got, err := s.Applications.Active(ctx, application.OrderCompany)
 	if err != nil {
@@ -148,6 +151,55 @@ func TestApplicationService_Active_IncludesTheLatestReviewPerDocument(t *testing
 	want := map[document.Type]document.Review{document.CoverLetter: *second}
 	if diff := cmp.Diff(want, got[0].LatestReviews); diff != "" {
 		t.Errorf("LatestReviews (-want +got):\n%s", diff)
+	}
+}
+
+// An application's reviews are only those still describing its documents
+// on disk, as DocumentService.LatestReviews returns them.
+func TestApplicationService_Active_ReviewsOnlyOfTheDocumentOnDisk(t *testing.T) {
+	t.Parallel()
+	const reviewed = "Dear hiring manager..."
+	tests := []struct {
+		name string
+		// onDisk is the cover letter written after the review; "" writes none.
+		onDisk     string
+		wantReview bool
+	}{
+		{name: "document unchanged", onDisk: reviewed, wantReview: true},
+		{name: "document rewritten", onDisk: "Dear hiring manager, revised...", wantReview: false},
+		{name: "no document", onDisk: "", wantReview: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			ctx := context.Background()
+			app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+			review, err := s.Documents.Review(ctx, app.ID, document.CoverLetter, reviewed, document.Flagged, "too generic")
+			if err != nil {
+				t.Fatalf("Review: %v", err)
+			}
+			if tt.onDisk != "" {
+				if _, err := s.Docs.Write(app.ID, document.CoverLetter, tt.onDisk); err != nil {
+					t.Fatalf("Write: %v", err)
+				}
+			}
+
+			got, err := s.Applications.Active(ctx, application.OrderCompany)
+			if err != nil {
+				t.Fatalf("Active: %v", err)
+			}
+			if len(got) != 1 {
+				t.Fatalf("Active = %d applications, want 1", len(got))
+			}
+			want := map[document.Type]document.Review{}
+			if tt.wantReview {
+				want[document.CoverLetter] = *review
+			}
+			if diff := cmp.Diff(want, got[0].LatestReviews); diff != "" {
+				t.Errorf("LatestReviews (-want +got):\n%s", diff)
+			}
+		})
 	}
 }
 

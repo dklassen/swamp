@@ -243,7 +243,7 @@ func applicationDetailWith(t *testing.T) (*applicationDetailModel, *model.MsgRou
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	p := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	app := mustCreateApplication(t, s, p.ID)
-	docs := documents.NewStore(t.TempDir())
+	docs := s.Docs
 	if _, err := docs.Write(app.ID, document.Resume, "# Draft\n"); err != nil {
 		t.Fatalf("Write: %v", err)
 	}

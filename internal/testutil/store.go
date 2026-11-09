@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/dklassen/swamp/db/migrations"
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/posting"
@@ -65,6 +66,7 @@ type TestApp struct {
 	Postings     *service.PostingService
 	Applications *service.ApplicationService
 	Documents    *service.DocumentService
+	Docs         *documents.Store
 	Scores       *service.ScoringService
 	Changes      *service.ChangeLog
 }
@@ -73,13 +75,15 @@ func NewTestApp(t *testing.T) TestApp {
 	t.Helper()
 	path := MigratedDBPath(t)
 	db := OpenStore(t, path, "")
+	docs := documents.NewStore(t.TempDir())
 	return TestApp{
 		Path:         path,
 		Store:        db,
+		Docs:         docs,
 		Companies:    service.NewCompanyService(db),
 		Postings:     service.NewPostingService(db),
-		Applications: service.NewApplicationService(db),
-		Documents:    service.NewDocumentService(db),
+		Applications: service.NewApplicationService(db, docs),
+		Documents:    service.NewDocumentService(db, docs),
 		Scores:       service.NewScoringService(db),
 		Changes:      service.NewChangeLog(db),
 	}

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/repository"
 	"github.com/dklassen/swamp/store"
@@ -40,6 +41,7 @@ type writeRecorder interface {
 
 type DocumentService struct {
 	db             store.Store
+	documents      *documents.Store
 	reviewViewer   reviewViewer
 	reviewRecorder reviewRecorder
 	exportViewer   exportViewer
@@ -48,12 +50,13 @@ type DocumentService struct {
 	writeRecorder  writeRecorder
 }
 
-func NewDocumentService(db store.Store) *DocumentService {
+func NewDocumentService(db store.Store, docs *documents.Store) *DocumentService {
 	reviews := &repository.DocumentReviewRepository{}
 	exports := &repository.DocumentExportRepository{}
 	writes := &repository.DocumentWriteRepository{}
 	return &DocumentService{
 		db:             db,
+		documents:      docs,
 		reviewViewer:   reviews,
 		reviewRecorder: reviews,
 		exportViewer:   exports,
@@ -109,9 +112,10 @@ func (service *DocumentService) LatestReview(ctx context.Context, applicationID 
 	return &reviews[0], nil
 }
 
-// LatestReviews resolves applicationID's latest review of each document
-// type into a map, omitting any document type with no review yet. A
-// missing entry is the only "no review" signal; see document.Review.
+// LatestReviews returns applicationID's latest review of each document
+// type that still describes the document on disk. A type with no review,
+// a review of an earlier draft, or no document is left out: a missing
+// entry is the only "no review" signal; see document.Review.
 func (service *DocumentService) LatestReviews(ctx context.Context, applicationID int64) (map[document.Type]document.Review, error) {
 	reviews := make(map[document.Type]document.Review)
 	for _, documentType := range document.Types() {
@@ -124,7 +128,7 @@ func (service *DocumentService) LatestReviews(ctx context.Context, applicationID
 		}
 		reviews[documentType] = *review
 	}
-	return reviews, nil
+	return documents.Current(service.documents.Status(applicationID), reviews, document.Review.IsCurrent)
 }
 
 // RecordExport records that content, applicationID's documentType, was
