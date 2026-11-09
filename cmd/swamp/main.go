@@ -412,11 +412,6 @@ func runExport(db store.Store, d *documents.Store, applicationID int64) error {
 	}
 
 	status := d.Status(applicationID)
-	reviews, err = documents.Current(status, reviews, document.Review.IsCurrent)
-	if err != nil {
-		return fmt.Errorf("export: current document reviews: %w", err)
-	}
-
 	for _, documentType := range document.Types() {
 		doc, err := status.Doc(documentType)
 		if err != nil {

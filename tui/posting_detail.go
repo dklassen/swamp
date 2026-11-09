@@ -108,7 +108,7 @@ func (m *postingDetailModel) loadReviews() tea.Cmd {
 	if !m.hasApplication() {
 		return nil
 	}
-	return loadReviewList(m.documentService, m.documents, m.src(), m.application.ID)
+	return loadReviewList(m.documentService, m.src(), m.application.ID)
 }
 
 func (m *postingDetailModel) loadScores() tea.Cmd {
@@ -401,10 +401,10 @@ func loadPostingApplication(postings *service.PostingService, src message.Source
 
 // loadReviewList reads the latest review of each of an application's
 // documents that still describes it.
-func loadReviewList(documentService *service.DocumentService, docs *documents.Store, src message.Source, applicationID int64) tea.Cmd {
+func loadReviewList(documentService *service.DocumentService, src message.Source, applicationID int64) tea.Cmd {
 	subject := message.Subject{Type: message.TypeApplication, ID: applicationID}
 	return func() tea.Msg {
-		reviews, err := currentReviews(documentService, docs, applicationID)
+		reviews, err := documentService.LatestReviews(context.Background(), applicationID)
 		if err != nil {
 			return message.New(src, subject, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
 		}

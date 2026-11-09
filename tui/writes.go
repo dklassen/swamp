@@ -6,10 +6,8 @@ import (
 
 	tea "charm.land/bubbletea/v2"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/change"
-	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/tui/message"
@@ -77,16 +75,6 @@ func applicationWritten(src message.Source, applicationID int64, op message.Op, 
 		return message.Deleted(src, applicationID, a.At, applicationSnapshot(a.Before))
 	}
 	return message.Updated(src, applicationID, a.At, applicationSnapshot(a.Before), applicationSnapshot(a.After))
-}
-
-// currentReviews is the latest review of each of an application's
-// documents, leaving out one whose document has changed since.
-func currentReviews(documentService *service.DocumentService, docs *documents.Store, applicationID int64) (map[document.Type]document.Review, error) {
-	reviews, err := documentService.LatestReviews(context.Background(), applicationID)
-	if err != nil {
-		return nil, err
-	}
-	return documents.Current(docs.Status(applicationID), reviews, document.Review.IsCurrent)
 }
 
 func updateApplicationStatus(applications *service.ApplicationService, src message.Source, applicationID int64, status application.Status) tea.Cmd {

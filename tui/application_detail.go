@@ -86,7 +86,7 @@ func (m *applicationDetailModel) load() tea.Cmd {
 	if m.deleted {
 		return nil
 	}
-	return loadApplicationDetail(m.applications, m.postings, m.companies, m.documentService, m.documents, m.src(), m.detail.Application.ID)
+	return loadApplicationDetail(m.applications, m.postings, m.companies, m.documentService, m.src(), m.detail.Application.ID)
 }
 
 func (m *applicationDetailModel) detailRead(e message.Event[message.Read[message.ApplicationDetail]]) tea.Cmd {
@@ -316,7 +316,7 @@ func applicationDetailOf(a posting.ActiveApplication) message.ApplicationDetail 
 
 // loadApplicationDetail reads an application with its posting, its
 // company's name, and the reviews that still describe its documents.
-func loadApplicationDetail(applications *service.ApplicationService, postings *service.PostingService, companies *service.CompanyService, documentService *service.DocumentService, docs *documents.Store, src message.Source, applicationID int64) tea.Cmd {
+func loadApplicationDetail(applications *service.ApplicationService, postings *service.PostingService, companies *service.CompanyService, documentService *service.DocumentService, src message.Source, applicationID int64) tea.Cmd {
 	subject := message.Subject{Type: message.TypeApplication, ID: applicationID}
 	return func() tea.Msg {
 		ctx := context.Background()
@@ -336,7 +336,7 @@ func loadApplicationDetail(applications *service.ApplicationService, postings *s
 		if err != nil {
 			return fail(err)
 		}
-		reviews, err := currentReviews(documentService, docs, applicationID)
+		reviews, err := documentService.LatestReviews(ctx, applicationID)
 		if err != nil {
 			return fail(err)
 		}
