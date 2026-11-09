@@ -1,6 +1,7 @@
 #!/bin/sh
-# Auto-formats staged Go files with gofmt before each commit, then
-# re-stages the formatted result so the commit includes clean code.
+# Auto-formats staged Go files with the formatters in .golangci.yml
+# (the same as `task fmt`) before each commit, then re-stages the
+# formatted result so the commit includes clean code.
 # Installed via `task hooks:install` (sets core.hooksPath to .githooks).
 
 set -e
@@ -11,5 +12,5 @@ if [ -z "$files" ]; then
     exit 0
 fi
 
-echo "$files" | xargs gofmt -w
+echo "$files" | xargs go tool golangci-lint fmt
 echo "$files" | xargs git add

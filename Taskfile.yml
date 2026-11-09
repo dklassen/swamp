@@ -3,25 +3,17 @@ version: "3"
 vars:
   MIGRATIONS_DIR: db/migrations
   DB_PATH: "${SWAMP_DB_PATH:-./swamp.db}"
-  CONTAINER_HOST_NAME: host.container.internal
-  CONTAINER_HOST_IP: 203.0.113.113
 
 tasks:
   fmt:
-    desc: Format all Go source files
+    desc: Format all Go source files with the formatters in .golangci.yml
     cmds:
-      - gofmt -l -w .
+      - go tool golangci-lint fmt ./...
 
   fmt:check:
-    desc: Fail if any Go source file is not gofmt-formatted
+    desc: Fail, showing the diff, if any Go source file is not formatted
     cmds:
-      - |
-        unformatted=$(gofmt -l .)
-        if [ -n "$unformatted" ]; then
-          echo "Not gofmt-formatted:"
-          echo "$unformatted"
-          exit 1
-        fi
+      - go tool golangci-lint fmt --diff ./...
 
   lint:
     desc: Run golangci-lint
@@ -133,15 +125,3 @@ tasks:
     desc: "Run swamp as an MCP server over Streamable HTTP (SWAMP_MCP_ADDR, default 127.0.0.1:8787)"
     cmds:
       - ./bin/swamp mcp-serve
-
-  container:dns:
-    desc: "Recreate the host.container.internal DNS entry"
-    preconditions:
-      - sh: command -v container
-        msg: "container CLI not found; run this on the Mac host, not in the container"
-    cmds:
-      - |
-        if container system dns ls | grep -qw "{{.CONTAINER_HOST_NAME}}"; then
-          sudo container system dns delete "{{.CONTAINER_HOST_NAME}}"
-        fi
-      - sudo container system dns create --localhost "{{.CONTAINER_HOST_IP}}" "{{.CONTAINER_HOST_NAME}}"

@@ -18,9 +18,7 @@ Don't read or write the sqlite db directly.
 The server has to be running on the host before the session starts
 (`task mcp-serve`). If the `swamp` tools aren't available or calls fail to
 connect, stop and tell the user to start it rather than falling back to
-anything else. If the server answers on the host but is unreachable from
-inside a container, have the user run `task container:dns` on the host:
-it recreates the `host.container.internal` DNS entry.
+anything else.
 
 ## 1. Read the profile
 
