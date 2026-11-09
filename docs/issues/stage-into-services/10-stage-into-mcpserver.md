@@ -14,19 +14,19 @@ RFC 0011 section 3 still calls `stage` a use-case package that "composes what th
 
 - `stage`'s remaining types and functions move into `mcpserver` (or a package under it), unexported where nothing outside reads them. `mcpserver.New` takes the services instead of `*stage.Stage`.
 - `stage` is deleted, its tests either already moved (steps 2-9) or rewritten as `mcpserver` tests of the JSON.
-- `swamp stage list|prepare`: removed or rewritten, as Open decides.
+- `swamp stage list|prepare` go: `runStage`, `newStage`, the `stage` flag parsing in `cmd/swamp`, and their lines in `README.md`.
 - RFC 0011 section 3 says use cases that span areas are service methods, and `stage` no longer exists.
 - The `any` output type on `list_postings`, `stage_prepare` and `read_posting`: their comments say it's because the output embeds `posting.Posting`, which it no longer does. Check whether schema inference now works and, if so, type them. If not, fix the comment to say why.
 
 ## Decide before starting
 
-- **Open in the work order**: keep or drop the `stage` CLI subcommands.
 - **One package or a subpackage**: `mcpserver` alone is about 470 lines; with `stage`'s mapping it's about 1,100. A subpackage only for the JSON shapes is an option, not a requirement.
 
 ## Acceptance criteria
 
 - [ ] No `stage` package, no import of it.
 - [ ] Every tool's JSON in `mcpserver_test.go` unchanged.
-- [ ] RFC 0011 updated; README updated if the CLI changes.
+- [ ] No `stage` subcommand: `swamp stage` is an unknown command.
+- [ ] RFC 0011 and README updated.
 - [ ] Manual check: the apply-to-posting and score-postings skills' tools answer against real data through the MCP server.
 - [ ] Verification checklist clean.

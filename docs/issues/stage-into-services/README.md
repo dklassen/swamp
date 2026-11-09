@@ -22,7 +22,9 @@
 ## Decided
 
 - Services own every store their behaviour needs, the filesystem (`documents.Store`) and board clients (form fetchers) included, not only the database (Bob, 2026-11-09). This holds beyond the series, so it's in AGENTS.md's Go style.
-- Once its business and domain logic is in `internal`, what's left of `stage` is endpoint logic and moves under `mcpserver` (Bob, 2026-11-09), if `mcpserver` is its only caller. See Open.
+- Once its business and domain logic is in `internal`, what's left of `stage` is endpoint logic and moves under `mcpserver` (Bob, 2026-11-09).
+- `swamp stage list` and `swamp stage prepare` are dropped (Bob, 2026-11-09), leaving `mcpserver` `stage`'s only caller. They were its only other one, and both skills use MCP.
+- The steps aren't filed as GitHub issues (Bob, 2026-11-09): the issue files here are their record, so a step's PR references its file, not `Fixes #N`, and the Issue column stays `-`.
 - The agent's JSON stays byte-for-byte the same through every step: the skills in `.agents/skills/` depend on its field names (the `json` tags on `Candidate` and the rest). Moving a type moves its tags with it.
 - Cursors, page-size defaults and the sort-order registry are endpoint logic, so they stay with the endpoints. `Search` and `PendingPostings` share the limit and cursor code; that's two copies, so it isn't abstracted.
 - Tests move with the logic. A moved behaviour's tests are rewritten as service tests, arranged and checked through service calls (AGENTS.md, Testing), not carried over through `stage`.
@@ -30,7 +32,7 @@
 
 ## Open
 
-- **`swamp stage list` and `swamp stage prepare`** (`cmd/swamp/main.go:318`, `README.md:119`) are `stage`'s only caller besides `mcpserver`. Neither skill uses them; both go through MCP. Should they go, leaving `mcpserver` the only caller, or stay, printing the same JSON? Blocks step 10.
+None.
 
 ## Follow-ups
 
