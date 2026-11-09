@@ -5,8 +5,8 @@ The gaps a review of the linters left after the lint series (`docs/issues/lint/`
 | Step | Title | Issue | PR | State | Depends on |
 | --- | --- | --- | --- | --- | --- |
 | 1 | Import groups: gci | - | #480 | merged | none |
-| 2 | No prints outside the CLI: forbidigo | - | #481 | in review | none |
-| 3 | Known vulnerabilities: govulncheck in CI | - | - | planned | none |
+| 2 | No prints outside the CLI: forbidigo | - | #481 | merged | none |
+| 3 | Known vulnerabilities: govulncheck in CI | - | #482 | in review | none |
 
 ## Decided
 
@@ -19,7 +19,8 @@ The gaps a review of the linters left after the lint series (`docs/issues/lint/`
 ## Open
 
 - Whether `task fmt` and the pre-commit hook move from gofmt to `golangci-lint fmt`, so they fix gci and gofumpt too. Slower per commit; blocks nothing.
+- `main` isn't `go mod tidy`: tidy drops `canonicalheader`, `go-difflib` and 177 `go.sum` lines. Left out of step 3 as unrelated; whether to tidy, and check it in CI, blocks nothing.
 
 ## Follow-ups
 
-None.
+- #483: bump `golang.org/x/net` to v0.62.0, fixing GO-2026-6866 and GO-2026-6860 in `html` (found by step 3; swamp calls neither).
