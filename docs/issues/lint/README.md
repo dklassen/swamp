@@ -35,7 +35,6 @@ Enabling golangci-lint linters one themed group per PR, titled `[Lint N] <theme>
   - err113 (123 findings) is for libraries whose callers tell errors apart with `errors.Is`. Swamp's errors end in a banner, CLI output or an MCP reply, and where a caller does branch on one there's already a sentinel or type (`store.ErrNotFound`, `*BehindError`).
   - wrapcheck (201) mostly flags errors crossing swamp's own packages, where wrapping at every layer only stutters (`service: repository: store: ...`). The dozen stdlib errors it finds returned bare are too few to carry a linter.
   - revive `exported` (211) asks for a doc comment on every exported name, but names here are exported for the app's other packages, not a public API, and 100 are `tui/message` types a comment would only restate.
-- `go tool task fmt:check` prints its script, which ends in `exit 1`; go by its exit code.
 
 ## Open
 
