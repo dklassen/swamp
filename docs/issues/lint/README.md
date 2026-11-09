@@ -1,6 +1,6 @@
 # Lint work order
 
-Enabling golangci-lint linters one themed group per PR, titled `[Lint N] <theme>: <linters>`. Each PR fixes what its linters find and enables them in `.golangci.yml`. There's no RFC; steps are picked one at a time from Next.
+Enabling golangci-lint linters one themed group per PR, titled `[Lint N] <theme>: <linters>`. Each PR fixes what its linters find and enables them in `.golangci.yml`. There's no RFC. The series is closed after step 13: the linters left off, and why, are under Decided.
 
 | Step | Title | Issue | PR | State | Depends on |
 | --- | --- | --- | --- | --- | --- |
@@ -16,17 +16,7 @@ Enabling golangci-lint linters one themed group per PR, titled `[Lint N] <theme>
 | 10 | Small fixes: dupword, embeddedstructfieldcheck, dogsled, prealloc | - | #474 | merged | 1 |
 | 11 | Shared shapes: iface, dupl | - | #475 | merged | 1 |
 | 12 | Unused parameters, package comments: revive without `exported` | - | #477 | merged | 1 |
-| 13 | Every test in parallel: paralleltest | - | #478 | in review | 1 |
-
-## Next
-
-Findings on `main` after step 12, from `go tool golangci-lint run --enable-only <linters> ./...`. Each needs its scope agreed with Bob before starting.
-
-| Linter | Findings | Needed to start |
-| --- | --- | --- |
-| revive `exported` | 211 | Whether every exported name gets a doc comment; 100 are in `tui/message`. |
-| wrapcheck | 201 | Which packages' errors get wrapped. |
-| err113 | 123 | Which dynamic `errors.New` become sentinels. |
+| 13 | Every test in parallel: paralleltest | - | #478 | merged | 1 |
 
 ## Decided
 
@@ -38,9 +28,13 @@ Findings on `main` after step 12, from `go tool golangci-lint run --enable-only 
 - Tests are excluded from prealloc too (from step 10): a test's allocations aren't its point, and sizing a `want` up front turns an empty case's `nil` into `[]`, which `cmp.Diff` reports.
 - Identical interfaces in one package are merged, not excluded (from step 11): the consuming package declares an interface, one per need. The rule is in AGENTS.md, under Go style.
 - Each linter's fixes are one commit, and enabling them is the last, so every commit passes the checklist. The PR body has Production, Tests, Config and Verified sections; Verified says what wasn't run against real data.
-- revive runs its default rules except `exported` (from step 12), which waits on its own step. It reports one unused parameter per function, so fixing one can surface the next.
+- revive runs its default rules except `exported` (from step 12), which stays off (below). It reports one unused parameter per function, so fixing one can surface the next.
 - An exported method returning an unexported type exports the type when the package's exported API already takes it (`StackScreen`, from step 12).
 - A test that needs process-wide state (`t.Setenv`, which panics beside `t.Parallel`) gets it passed in instead, so it runs in parallel too (from step 13): the export screens take their home directory lookup.
+- The series closes after step 13 with err113, wrapcheck and revive `exported` off: each would add code that catches no bug this app has.
+  - err113 (123 findings) is for libraries whose callers tell errors apart with `errors.Is`. Swamp's errors end in a banner, CLI output or an MCP reply, and where a caller does branch on one there's already a sentinel or type (`store.ErrNotFound`, `*BehindError`).
+  - wrapcheck (201) mostly flags errors crossing swamp's own packages, where wrapping at every layer only stutters (`service: repository: store: ...`). The dozen stdlib errors it finds returned bare are too few to carry a linter.
+  - revive `exported` (211) asks for a doc comment on every exported name, but names here are exported for the app's other packages, not a public API, and 100 are `tui/message` types a comment would only restate.
 - `go tool task fmt:check` prints its script, which ends in `exit 1`; go by its exit code.
 
 ## Open
