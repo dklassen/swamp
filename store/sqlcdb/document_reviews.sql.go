@@ -162,3 +162,46 @@ func (q *Queries) ListDocumentReviewsByID(ctx context.Context, ids []int64) ([]D
 	}
 	return items, nil
 }
+
+const listLatestDocumentReviews = `-- name: ListLatestDocumentReviews :many
+SELECT id, application_id, document_type, cycle, content_snapshot, content_sha256, outcome, notes, created_at FROM document_reviews
+WHERE document_reviews.application_id = ?
+  AND cycle = (
+    SELECT MAX(latest.cycle) FROM document_reviews AS latest
+    WHERE latest.application_id = document_reviews.application_id
+      AND latest.document_type = document_reviews.document_type
+  )
+`
+
+func (q *Queries) ListLatestDocumentReviews(ctx context.Context, applicationID int64) ([]DocumentReview, error) {
+	rows, err := q.db.QueryContext(ctx, listLatestDocumentReviews, applicationID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DocumentReview
+	for rows.Next() {
+		var i DocumentReview
+		if err := rows.Scan(
+			&i.ID,
+			&i.ApplicationID,
+			&i.DocumentType,
+			&i.Cycle,
+			&i.ContentSnapshot,
+			&i.ContentSha256,
+			&i.Outcome,
+			&i.Notes,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

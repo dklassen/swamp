@@ -1,7 +1,7 @@
 ---
-title: "[Stage into services 7] The drafting queue is one service query"
+title: "[Stage into services 7] The drafting queue is one DraftingService query"
 labels: [stage-into-services]
-depends_on: [2]
+depends_on: [2, 12]
 ---
 
 ## Problem
@@ -21,13 +21,12 @@ That's business logic spread over three services, and it costs queries:
 
 ## Change
 
-- One service query returns the queue in `List`'s order (interested first, then started-not-interested), each entry with its posting, company name, application (if any) with notes, and current reviews.
+- `DraftingService.Queue`, over repositories only, returns the queue in `List`'s order (interested first, then started-not-interested), each entry with its posting, company name, application (if any) with notes, and current reviews.
 - "Every document drafted and none flagged" is decided in the service; `needsRework` becomes a domain function on the review map (`internal/domain/document`).
 - `stage.List` becomes a mapping to `Candidate`. `startedNotInterested`, `candidate`, `allDrafted` and `needsRework` leave `stage`.
 
 ## Decide before starting
 
-- **Which service and name.** The entries are postings, keyed by posting, so `PostingService`. Name, e.g. `DraftingQueue`.
 - **Whether the archived and started filtering moves into SQL.** It can be one query (SQL may cross tables, RFC 0011), or the service can merge two queries in Go without the per-row lookups. Recommended: start in Go and remove the per-row calls; a single query is a later change if it's ever slow.
 
 ## Acceptance criteria
