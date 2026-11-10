@@ -1,6 +1,6 @@
 # Stage into services work order
 
-`stage` holds business logic that belongs in `internal/service`: the drafting queue, get-or-create of an application, the application form's fetch policy, document reads and writes, the deleted-company rule, the profile check. Several pieces are repeated in `tui` and `cmd/swamp` (reviews still current on disk: five copies; the form's JSON: two). This series moves that logic into the services, which now own `documents.Store` and the form fetchers. Then it moves what's left of `stage` (the agent's JSON shapes, the sort registry, cursors) under `mcpserver`. One PR per step. There's no RFC; RFC 0011's section 3 is updated in step 10. Step 11 came out of step 4: once `PostingService` owns the form fetchers, sync fetches a posting's form when the posting lands.
+`stage` holds business logic that belongs in `internal/service`: the drafting queue, get-or-create of an application, the application form's fetch policy, document reads and writes, the deleted-company rule, the profile check. Several pieces are repeated in `tui` and `cmd/swamp` (reviews still current on disk: five copies; the form's JSON: two). This series moves that logic into the services, which now own `documents.Store` and the form fetchers. Then it moves what's left of `stage` (the agent's JSON shapes, the sort registry, cursors) under `mcpserver`. One PR per step. There's no RFC; RFC 0011's section 3 is updated in step 10. Steps 11, 13 and 14 came out of step 4: application forms get their own `FormService`, which sync uses to fetch the forms its company's open postings lack, and drafting only reads them.
 
 | Step | Title | Issue | PR | State | Depends on |
 | --- | --- | --- | --- | --- | --- |
@@ -13,9 +13,11 @@
 | 7 | [The drafting queue is one DraftingService query](07-drafting-queue.md) | - | #496 | merged | 2, 12 |
 | 8 | [Companies with their open counts are CompanyService's](08-companies-with-open-counts.md) | - | #493 | merged | none |
 | 9 | [Scoring checks the profile; canonical files come from DocumentService](09-profile-and-canonical-files.md) | - | #497 | merged | 2 |
-| 10 | [What's left of stage moves under mcpserver](10-stage-into-mcpserver.md) | - | #498 | in review | 1-9 |
-| 11 | [A posting's application form is fetched when the posting lands](11-forms-with-postings.md) | - | - | planned | 4, 6 |
+| 10 | [What's left of stage moves under mcpserver](10-stage-into-mcpserver.md) | - | #498 | merged | 1-9 |
+| 11 | [Application forms have their own FormService](11-form-service.md) | - | - | planned | 6 |
 | 12 | [The latest review of each document type is a repository read](12-latest-reviews.md) | - | #492 | merged | none |
+| 13 | [Syncing a company fetches the forms its open postings lack](13-form-job.md) | - | - | planned | 11 |
+| 14 | [Starting to draft reads the stored form](14-drafting-reads-forms.md) | - | - | planned | 13 |
 
 ## Next
 
@@ -43,7 +45,7 @@
 - Step 5's method returns the posting with its `*company.Company` (Bob, 2026-11-10): `PostingService.GetWithCompany`, refusing a deleted company with `CompanyDeletedError` after one query joining the posting to its company (Bob, 2026-11-10: the work that removes complexity is done now, not deferred), typed like `ApplicationDeletedError` so `mcpserver` can match it and the message keeps naming the company. `Prepare` moves onto it in step 6, as its issue file says.
 - Drafting is a process, so it gets its own service, `DraftingService` (Bob, 2026-11-10): the queue (step 7) and starting or resuming a posting (step 6) read postings, companies, applications, reviews, forms and files, and own none of them. Steps 6 and 7 go there rather than on `PostingService`. Reading, writing and reviewing documents stay `DocumentService`'s, since the TUI does them outside drafting.
 - A service calls repositories and its non-database stores, never another service (Bob, 2026-11-10): a repository holds the primitives for the data it represents, and a service is a process over them. So `DraftingService` writes its own get-or-create of an application instead of calling `ApplyTo`, and a primitive that services rebuild by hand moves into its repository (step 12). Not in AGENTS.md yet, by Bob's say-so.
-- `CurrentForm` and the form fetchers move from `PostingService` to `DraftingService` in step 6 (Bob, 2026-11-10), replacing step 4's placement: starting to draft is its only caller. Step 11 assumed `PostingService` holds the fetchers, so it's revisited after step 6.
+- `CurrentForm` and the form fetchers move from `PostingService` to `DraftingService` in step 6 (Bob, 2026-11-10), replacing step 4's placement: starting to draft is its only caller. Steps 11, 13 and 14 replace this placement in turn.
 - Names: `DraftingService.Prepare` (step 6), matching `stage_prepare` and `Prepared`, and `DraftingService.Queue` (step 7). Step 12's `Latest` is one SQL query, not the per-type loop moved into the repository (Bob, 2026-11-10).
 - Step 8 moves the TUI's company list onto the new `CompanyService` query in the same PR, since it makes the same two reads (Bob, 2026-11-10).
 - Step 7 merges the queue in Go rather than one SQL query, with the reviews of every application in one batch query (Bob, 2026-11-10): the interested and started halves follow different rules, so one query would be a UNION repeating the company-list filters. Started applications not marked interested are ordered by company name, then application ID, dropping the status-since tie-break, which cost a history read per application. `PostingService.Interested` went with it, having no other caller.
@@ -51,10 +53,14 @@
 - Step 9: `ScoringService.Pending` takes the profile hash on every call plus a `rescore` flag, replacing the empty rescore hash that meant none, since it now checks the profile either way. The flag picks which postings are listed against one profile, not a second intent.
 - Step 10: `stage`'s leftovers go into `mcpserver` itself, not a subpackage for the JSON shapes (Bob, 2026-11-10): the step removes a layer, and a subpackage would put one back. Each `stage` method folds into its tool handler, so the option types between them go, and the shapes are unexported.
 - Step 10: five tools still return `any`. Schema inference panics on `posting.OptionalTime`, which embeds `time.Time`, whose schema is a string where an embedded struct's must be an object; and enums that marshal as names would be advertised as integers. Typing them needs schema overrides for those types, as `documentInputSchema` does for `document.Type`: not in this step.
+- Application forms are their own concern, not drafting's (Bob, 2026-11-10): one job downloads postings, one downloads and stores the forms a board has, and a form can be made by hand and linked to a posting. So they get a `FormService` holding storing, reading and fetching (step 11 starts it), and drafting only reads the stored form (step 14).
+- Sync fetches forms, not drafting (Bob, 2026-11-10, step 13): each company sync, once its postings are written, fetches the form of each open posting that has none. That one rule covers new postings, retries a failed fetch on the next sync, and backfills postings stored before step 13 in a one-off burst.
+- Form fetches run after the lease is released, up to 4 at a time (Bob, 2026-11-10, step 13): the largest Greenhouse company has hundreds of open postings, each form its own request under a 30-second timeout, which can't fit in the 5-minute lease. Two syncs of a company may then fetch the same form; the job's write stores only where none exists, so the cost is a wasted request, not a lost form.
+- A stored form isn't refetched when sync reports its posting updated (Bob, 2026-11-10), keeping step 4's rule and a form saved by hand.
 
 ## Open
 
-- Step 11 needs host-side counts of open Greenhouse postings, in total and at the largest company, to decide where its form fetches run.
+None.
 
 ## Follow-ups
 
