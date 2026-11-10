@@ -16,11 +16,22 @@ import (
 
 type draftingPostingViewer interface {
 	GetWithCompany(ctx context.Context, r store.Runner, id int64) (*posting.Posting, *company.Company, error)
+	ListInterested(ctx context.Context, r store.Runner, excluding []application.Status) ([]posting.Interested, error)
+}
+
+type draftingReviewViewer interface {
+	Latest(ctx context.Context, r store.Runner, applicationID int64) (map[document.Type]document.Review, error)
+	LatestMany(ctx context.Context, r store.Runner, applicationIDs []int64) (map[int64]map[document.Type]document.Review, error)
+}
+
+type draftingMarkupViewer interface {
+	GetMany(ctx context.Context, r store.Runner, postingIDs []int64) ([]posting.Markup, error)
 }
 
 type draftingApplicationStore interface {
 	GetByPostingID(ctx context.Context, r store.Runner, postingID int64) (*application.Application, error)
 	Insert(ctx context.Context, r store.Runner, postingID int64, status application.Status) (*application.Application, error)
+	ListActive(ctx context.Context, r store.Runner, excluding []application.Status) ([]posting.ActiveApplication, error)
 }
 
 // DraftingService is the process of drafting a posting's documents: what
@@ -31,7 +42,8 @@ type DraftingService struct {
 	postingViewer            draftingPostingViewer
 	applications             draftingApplicationStore
 	applicationHistoryWriter applicationHistoryWriter
-	reviewViewer             latestReviewViewer
+	reviewViewer             draftingReviewViewer
+	markupViewer             draftingMarkupViewer
 	formViewer               formViewer
 	formWriter               formWriter
 	formFetchers             map[string]FormFetcher
@@ -49,6 +61,7 @@ func NewDraftingService(db store.Store, docs *documents.Store, formFetchers map[
 		applications:             &repository.ApplicationRepository{},
 		applicationHistoryWriter: &repository.ApplicationHistoryRepository{},
 		reviewViewer:             &repository.DocumentReviewRepository{},
+		markupViewer:             &repository.PostingMarkupRepository{},
 		formViewer:               forms,
 		formWriter:               forms,
 		formFetchers:             formFetchers,

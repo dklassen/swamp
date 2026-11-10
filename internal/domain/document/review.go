@@ -96,3 +96,13 @@ type Review struct {
 func (r Review) IsCurrent(content string) bool {
 	return ContentSHA256(content) == r.ContentSHA256
 }
+
+// NeedsRework reports whether any of reviews flagged its document.
+func NeedsRework(reviews map[Type]Review) bool {
+	for _, r := range reviews {
+		if r.Outcome == Flagged {
+			return true
+		}
+	}
+	return false
+}

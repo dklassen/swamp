@@ -132,8 +132,7 @@ type Querier interface {
 	// company's posting list shows (open, company not deleted, let through by
 	// its filters, matched as the SearchPostings queries match them), joined with
 	// their company name and -- if one has been started -- their
-	// application's id and status. Feeds the stage package's discovery of
-	// work for the external-agent hand-off mechanism (see stage.List).
+	// application's id and status. Feeds DraftingService.Queue.
 	//
 	// sqlc.embed(postings) for the always-present side (postings is inner-
 	// joined via posting_markup, never nullable here) -- same reasoning as
@@ -153,6 +152,7 @@ type Querier interface {
 	// postings with no application yet, which the LEFT JOIN yields as NULLs.
 	ListInterestedPostings(ctx context.Context, terminalStatuses []sql.NullString) ([]ListInterestedPostingsRow, error)
 	ListLatestDocumentReviews(ctx context.Context, applicationID int64) ([]DocumentReview, error)
+	ListLatestDocumentReviewsForApplications(ctx context.Context, applicationIds []int64) ([]DocumentReview, error)
 	// What store.SoftDeleteCompany closes: a deleted company is never synced
 	// again, so nothing else would ever close these (#178).
 	ListOpenPostingIDsByCompany(ctx context.Context, companyID int64) ([]int64, error)

@@ -27,3 +27,12 @@ WHERE document_reviews.application_id = ?
     WHERE latest.application_id = document_reviews.application_id
       AND latest.document_type = document_reviews.document_type
   );
+
+-- name: ListLatestDocumentReviewsForApplications :many
+SELECT * FROM document_reviews
+WHERE document_reviews.application_id IN (sqlc.slice('application_ids'))
+  AND cycle = (
+    SELECT MAX(latest.cycle) FROM document_reviews AS latest
+    WHERE latest.application_id = document_reviews.application_id
+      AND latest.document_type = document_reviews.document_type
+  );
