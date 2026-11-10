@@ -35,7 +35,7 @@ var testForm = jobboard.ApplicationForm{
 func formTestStage(t *testing.T, fetcher *fakeFormFetcher) (*Stage, posting.Posting) {
 	t.Helper()
 	_, s, d := newTestStage(t)
-	postings := service.NewPostingService(s.Store, map[string]service.FormFetcher{jobboard.Greenhouse: fetcher}, service.FormConfig{FetchTimeout: time.Second, Now: time.Now})
+	postings := service.NewPostingService(s.Store, map[string]service.FormFetcher{jobboard.Greenhouse: fetcher}, service.FormConfig{FetchTimeout: time.Second})
 	st := New(s.Companies, postings, s.Applications, s.Documents, s.Scores, d)
 	company, err := s.Companies.Add(context.Background(), "Acme", jobboard.Greenhouse, "acme")
 	if err != nil {

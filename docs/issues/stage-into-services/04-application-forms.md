@@ -21,6 +21,7 @@ The policy for when a form is reused or fetched is in `stage.applicationForm` (`
 
 - `Form` and `SaveForm` take and return `jobboard.ApplicationForm`. The TUI's and stage's encode/decode go.
 - The fresh-or-fetch policy becomes a `PostingService` method. `FormFetcher`, the fetchers, the timeout and the clock move to the service, which declares the interface (AGENTS.md: the consumer declares it). `cmd/swamp` hands them to `NewPostingService` and not to `stage.New`.
+- A stored form is never fetched again (Bob, 2026-11-10): the weekly refetch rested on no evidence that forms change apart from their postings. With no staleness there's no clock, and a failed fetch never has a stale form to fall back on.
 
 ## Decide before starting
 
@@ -30,7 +31,7 @@ The policy for when a form is reused or fetched is in `stage.applicationForm` (`
 ## Acceptance criteria
 
 - [x] No `json.Marshal`/`Unmarshal` of an `ApplicationForm` outside `internal`.
-- [x] Service tests for each branch of the policy: no fetcher, fresh stored form, stale form refetched and stored, fetch failure with and without a stored form. Moved from `stage/form_test.go`, run one at a time.
+- [x] Service tests for each branch of the policy: a stored form is read without a fetch (with and without a fetcher), no stored form is fetched and stored, a fetch failure reads no form, no fetcher and nothing stored reads no form. Moved from `stage/form_test.go`, run one at a time.
 - [x] `stage/form.go` is gone or calls through.
 - [ ] Manual check: the TUI's application form screen loads and saves a form against real data.
 - [x] Verification checklist clean.

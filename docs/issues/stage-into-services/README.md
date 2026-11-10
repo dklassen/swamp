@@ -19,6 +19,7 @@
 
 - **The TUI's own `documents.Store` use.** Screens still read `docs.Status`, `docs.Path` and `docs.SHA256` directly (`application_detail.go`, `posting_detail.go`, `document_review_select.go`, `document_review_form.go`, `editor.go`, `application_export.go`), and `documents.Current` for exports (`active_applications.go`). So does `cmd/swamp`'s `runExport`. Under "services own documents" these move behind `DocumentService` too, removing `*documents.Store` from `tui`. Needed to start: steps 2 and 3, whose methods most of it reuses. It's outside `stage`, so it's a series of its own or more steps here, Bob's call.
 - **`DocumentService.Write`'s signature.** Its `source` is always `document.SourceWriteDocument`; the version is spelled `NoDocumentYet` in the service and `""` in `documents.Store`; and `applicationID, documentType` go together through nearly every document method. Options: drop `source`, a typed `document.Version`, a `document.Key{ApplicationID, Type}`. Bob put it off until this series is done (2026-11-10).
+- **Refetching application forms.** A stored form is never fetched again (step 4). Revisit if a form is seen to change while its posting doesn't: then check whether Greenhouse's job `updated_at` moves with form edits, and refetch on that rather than on age. Needed to start: that evidence.
 
 ## Decided
 
@@ -36,7 +37,8 @@
 - The document errors and `NoDocumentYet` live in `internal/service`, beside the methods that return them (step 3): `mcpserver` is above it and can match them there.
 - Functions are named for intent, not the conditions they run under (Bob, 2026-11-10, step 3): `WriteIfUnchanged` folded into `Write`, and the application check is `requireApplication`. The rule is in AGENTS.md's Go style.
 - Step 4 returns a failed form fetch in a result struct with the form and a fetch error message, not as an `error`, since drafting goes ahead without the form; the fetchers reach `NewPostingService` as a map by source, as `sync`'s do (Bob, 2026-11-10).
-- Step 4: `NewPostingService` takes the fetchers and a `FormConfig` holding the fetch timeout and the clock (`Now`), mirroring `sync.New`; callers that never fetch pass `nil` and `FormConfig{}`. `PostingService.CurrentForm` takes the posting and company values `Prepare` already has, leaving how the company is looked up to step 5 (Bob, 2026-11-10).
+- Step 4: `NewPostingService` takes the fetchers and a `FormConfig` holding the fetch timeout, mirroring `sync.New`; callers that never fetch pass `nil` and `FormConfig{}`. `PostingService.CurrentForm` takes the posting and company values `Prepare` already has, leaving how the company is looked up to step 5 (Bob, 2026-11-10).
+- A stored application form is never fetched again (Bob, 2026-11-10, step 4). The weekly refetch carried over from stage assumed forms change apart from their postings, with nothing to show they do; that's also why it doesn't refetch when the posting's `updated_at` moves, which may not even reflect form edits.
 - Step 5's method returns the posting with its `*company.Company` (Bob, 2026-11-10).
 - Step 8 moves the TUI's company list onto the new `CompanyService` query in the same PR, since it makes the same two reads (Bob, 2026-11-10).
 

@@ -235,7 +235,7 @@ func newSyncer(db store.Store) *sync.Syncer {
 func newStage(db store.Store, d *documents.Store) *stage.Stage {
 	postings := service.NewPostingService(db, map[string]service.FormFetcher{
 		jobboard.Greenhouse: greenhouse.NewClient(),
-	}, service.FormConfig{FetchTimeout: sync.DefaultConfig().FetchTimeout, Now: time.Now})
+	}, service.FormConfig{FetchTimeout: sync.DefaultConfig().FetchTimeout})
 	return stage.New(service.NewCompanyService(db), postings, service.NewApplicationService(db, d), service.NewDocumentService(db, d), service.NewScoringService(db), d)
 }
 

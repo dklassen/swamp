@@ -39,21 +39,16 @@ var fetchedForm = jobboard.ApplicationForm{
 	Questions: []jobboard.Question{{Label: "LinkedIn Profile", Required: true, Type: "text"}},
 }
 
-// formFixture is a PostingService with fetcher registered for Greenhouse,
-// whose clock the test moves with now.
+// formFixture is a PostingService with fetcher registered for Greenhouse.
 type formFixture struct {
 	app      testutil.TestApp
 	postings *service.PostingService
-	now      time.Time
 }
 
 func newFormFixture(t *testing.T, fetcher *fakeFormFetcher) *formFixture {
 	t.Helper()
-	f := &formFixture{app: testutil.NewTestApp(t), now: time.Now()}
-	f.postings = service.NewPostingService(f.app.Store, map[string]service.FormFetcher{jobboard.Greenhouse: fetcher}, service.FormConfig{
-		FetchTimeout: time.Second,
-		Now:          func() time.Time { return f.now },
-	})
+	f := &formFixture{app: testutil.NewTestApp(t)}
+	f.postings = service.NewPostingService(f.app.Store, map[string]service.FormFetcher{jobboard.Greenhouse: fetcher}, service.FormConfig{FetchTimeout: time.Second})
 	return f
 }
 
@@ -92,53 +87,32 @@ func TestPostingService_CurrentForm_NoStoredForm_FetchesAndStoresIt(t *testing.T
 	}
 }
 
-func TestPostingService_CurrentForm_FreshStoredForm_IsReused(t *testing.T) {
+// Forms aren't known to change apart from their postings, so a stored
+// form is never fetched again.
+func TestPostingService_CurrentForm_StoredForm_IsNeverFetchedAgain(t *testing.T) {
 	t.Parallel()
-	fetcher := &fakeFormFetcher{form: fetchedForm}
-	f := newFormFixture(t, fetcher)
-	p, c := f.posting(t, jobboard.Greenhouse)
-	if _, err := f.postings.CurrentForm(t.Context(), p, c); err != nil {
-		t.Fatalf("CurrentForm: %v", err)
-	}
-	f.now = f.now.Add(6 * 24 * time.Hour)
+	stored := jobboard.ApplicationForm{Questions: []jobboard.Question{{Label: "Why us?", Required: true}}}
+	for _, source := range []string{jobboard.Greenhouse, jobboard.Ashby} {
+		t.Run(source, func(t *testing.T) {
+			t.Parallel()
+			fetcher := &fakeFormFetcher{form: fetchedForm}
+			f := newFormFixture(t, fetcher)
+			p, c := f.posting(t, source)
+			if err := f.app.Postings.SaveForm(t.Context(), p.ID, stored); err != nil {
+				t.Fatalf("SaveForm: %v", err)
+			}
 
-	got, err := f.postings.CurrentForm(t.Context(), p, c)
-	if err != nil {
-		t.Fatalf("CurrentForm: %v", err)
-	}
-	if diff := cmp.Diff(&service.FormRead{Form: &fetchedForm}, got); diff != "" {
-		t.Errorf("CurrentForm (-want +got):\n%s", diff)
-	}
-	if fetcher.calls != 1 {
-		t.Errorf("fetches = %d, want 1: the second read reuses the stored form", fetcher.calls)
-	}
-}
-
-func TestPostingService_CurrentForm_StaleStoredForm_IsFetchedAndStoredAgain(t *testing.T) {
-	t.Parallel()
-	fetcher := &fakeFormFetcher{form: fetchedForm}
-	f := newFormFixture(t, fetcher)
-	p, c := f.posting(t, jobboard.Greenhouse)
-	if _, err := f.postings.CurrentForm(t.Context(), p, c); err != nil {
-		t.Fatalf("CurrentForm: %v", err)
-	}
-	f.now = f.now.Add(8 * 24 * time.Hour)
-	changed := jobboard.ApplicationForm{Questions: []jobboard.Question{{Label: "Why us?", Required: true, Type: "long_text"}}}
-	fetcher.form = changed
-
-	got, err := f.postings.CurrentForm(t.Context(), p, c)
-	if err != nil {
-		t.Fatalf("CurrentForm: %v", err)
-	}
-	if diff := cmp.Diff(&service.FormRead{Form: &changed}, got); diff != "" {
-		t.Errorf("CurrentForm (-want +got):\n%s", diff)
-	}
-	stored, err := f.app.Postings.Form(t.Context(), p.ID)
-	if err != nil {
-		t.Fatalf("Form: %v", err)
-	}
-	if diff := cmp.Diff(&changed, stored); diff != "" {
-		t.Errorf("stored form (-want +got):\n%s", diff)
+			got, err := f.postings.CurrentForm(t.Context(), p, c)
+			if err != nil {
+				t.Fatalf("CurrentForm: %v", err)
+			}
+			if diff := cmp.Diff(&service.FormRead{Form: &stored}, got); diff != "" {
+				t.Errorf("CurrentForm (-want +got):\n%s", diff)
+			}
+			if fetcher.calls != 0 {
+				t.Errorf("fetches = %d, want 0", fetcher.calls)
+			}
+		})
 	}
 }
 
@@ -157,62 +131,20 @@ func TestPostingService_CurrentForm_FetchFails_ReadsWithoutAForm(t *testing.T) {
 	}
 }
 
-func TestPostingService_CurrentForm_FetchFails_ReadsTheStaleStoredForm(t *testing.T) {
+func TestPostingService_CurrentForm_SourceWithoutAFetcher_NothingStored_ReadsNoForm(t *testing.T) {
 	t.Parallel()
 	fetcher := &fakeFormFetcher{form: fetchedForm}
 	f := newFormFixture(t, fetcher)
-	p, c := f.posting(t, jobboard.Greenhouse)
-	if _, err := f.postings.CurrentForm(t.Context(), p, c); err != nil {
-		t.Fatalf("CurrentForm: %v", err)
-	}
-	f.now = f.now.Add(8 * 24 * time.Hour)
-	fetcher.err = errors.New("board unavailable")
+	p, c := f.posting(t, jobboard.Ashby)
 
 	got, err := f.postings.CurrentForm(t.Context(), p, c)
 	if err != nil {
 		t.Fatalf("CurrentForm: %v", err)
 	}
-	if diff := cmp.Diff(&service.FormRead{Form: &fetchedForm, FetchError: "board unavailable"}, got); diff != "" {
+	if diff := cmp.Diff(&service.FormRead{}, got); diff != "" {
 		t.Errorf("CurrentForm (-want +got):\n%s", diff)
 	}
-}
-
-// A source with no fetcher only has forms entered by hand, which nothing
-// can refresh, so they're read however old.
-func TestPostingService_CurrentForm_SourceWithoutAFetcher(t *testing.T) {
-	t.Parallel()
-	entered := jobboard.ApplicationForm{Questions: []jobboard.Question{{Label: "Why us?", Required: true}}}
-	tests := []struct {
-		name    string
-		entered *jobboard.ApplicationForm
-		want    *service.FormRead
-	}{
-		{name: "nothing entered: no form", want: &service.FormRead{}},
-		{name: "entered a year ago: that form", entered: &entered, want: &service.FormRead{Form: &entered}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			fetcher := &fakeFormFetcher{form: fetchedForm}
-			f := newFormFixture(t, fetcher)
-			p, c := f.posting(t, jobboard.Ashby)
-			if tt.entered != nil {
-				if err := f.app.Postings.SaveForm(t.Context(), p.ID, *tt.entered); err != nil {
-					t.Fatalf("SaveForm: %v", err)
-				}
-			}
-			f.now = f.now.Add(365 * 24 * time.Hour)
-
-			got, err := f.postings.CurrentForm(t.Context(), p, c)
-			if err != nil {
-				t.Fatalf("CurrentForm: %v", err)
-			}
-			if diff := cmp.Diff(tt.want, got); diff != "" {
-				t.Errorf("CurrentForm (-want +got):\n%s", diff)
-			}
-			if fetcher.calls != 0 {
-				t.Errorf("fetches = %d, want 0", fetcher.calls)
-			}
-		})
+	if fetcher.calls != 0 {
+		t.Errorf("fetches = %d, want 0", fetcher.calls)
 	}
 }
