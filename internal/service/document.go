@@ -16,7 +16,6 @@ import (
 
 type reviewViewer interface {
 	Count(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type) (int64, error)
-	List(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type) ([]document.Review, error)
 	Latest(ctx context.Context, r store.Runner, applicationID int64) (map[document.Type]document.Review, error)
 	GetMany(ctx context.Context, r store.Runner, ids []int64) ([]document.Review, error)
 }
@@ -97,29 +96,10 @@ func (service *DocumentService) Review(ctx context.Context, applicationID int64,
 	return review, nil
 }
 
-// Reviews returns applicationID's reviews of documentType, most recent
-// cycle first.
-func (service *DocumentService) Reviews(ctx context.Context, applicationID int64, documentType document.Type) ([]document.Review, error) {
-	return service.reviewViewer.List(ctx, service.db, applicationID, documentType)
-}
-
 // GetManyReviews returns the reviews with the given ids, in no order. An
 // id with no review is left out.
 func (service *DocumentService) GetManyReviews(ctx context.Context, ids []int64) ([]document.Review, error) {
 	return service.reviewViewer.GetMany(ctx, service.db, ids)
-}
-
-// LatestReview returns applicationID's most recent review of
-// documentType, or store.ErrNotFound when none has been recorded yet.
-func (service *DocumentService) LatestReview(ctx context.Context, applicationID int64, documentType document.Type) (*document.Review, error) {
-	reviews, err := service.reviewViewer.List(ctx, service.db, applicationID, documentType)
-	if err != nil {
-		return nil, err
-	}
-	if len(reviews) == 0 {
-		return nil, store.ErrNotFound
-	}
-	return &reviews[0], nil
 }
 
 // LatestReviews returns applicationID's latest review of each document

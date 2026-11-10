@@ -73,80 +73,16 @@ func TestDocumentService_Review_IsCurrentUntilTheContentChanges(t *testing.T) {
 	documents := s.Documents
 	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
 	content := "Dear hiring manager..."
-	if _, err := documents.Review(ctx, app.ID, document.CoverLetter, content, document.Flagged, "too generic"); err != nil {
+	review, err := documents.Review(ctx, app.ID, document.CoverLetter, content, document.Flagged, "too generic")
+	if err != nil {
 		t.Fatalf("Review: %v", err)
 	}
 
-	review, err := documents.LatestReview(ctx, app.ID, document.CoverLetter)
-	if err != nil {
-		t.Fatalf("LatestReview: %v", err)
-	}
 	if !review.IsCurrent(content) {
 		t.Error("IsCurrent(the reviewed content) = false, want true")
 	}
 	if review.IsCurrent("Dear hiring manager, revised with specifics...") {
 		t.Error("IsCurrent(revised content) = true, want false: the review describes a version no longer on disk")
-	}
-}
-
-func TestDocumentService_Reviews_MostRecentCycleFirst(t *testing.T) {
-	t.Parallel()
-	s := testutil.NewTestApp(t)
-	ctx := context.Background()
-	documents := s.Documents
-	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
-	first, err := documents.Review(ctx, app.ID, document.CoverLetter, "draft one", document.Flagged, "")
-	if err != nil {
-		t.Fatalf("Review (first): %v", err)
-	}
-	second, err := documents.Review(ctx, app.ID, document.CoverLetter, "draft two", document.Passed, "")
-	if err != nil {
-		t.Fatalf("Review (second): %v", err)
-	}
-
-	got, err := documents.Reviews(ctx, app.ID, document.CoverLetter)
-	if err != nil {
-		t.Fatalf("Reviews: %v", err)
-	}
-	if diff := cmp.Diff([]document.Review{*second, *first}, got); diff != "" {
-		t.Errorf("Reviews (-want +got):\n%s", diff)
-	}
-}
-
-func TestDocumentService_LatestReview_NoReviews_ReturnsErrNotFound(t *testing.T) {
-	t.Parallel()
-	s := testutil.NewTestApp(t)
-	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
-
-	got, err := s.Documents.LatestReview(context.Background(), app.ID, document.CoverLetter)
-	if !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("LatestReview with no reviews: err = %v, want store.ErrNotFound", err)
-	}
-	if got != nil {
-		t.Errorf("LatestReview with no reviews = %+v, want nil", got)
-	}
-}
-
-func TestDocumentService_LatestReview_ReturnsTheMostRecentCycle(t *testing.T) {
-	t.Parallel()
-	s := testutil.NewTestApp(t)
-	ctx := context.Background()
-	documents := s.Documents
-	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
-	if _, err := documents.Review(ctx, app.ID, document.CoverLetter, "draft one", document.Flagged, "too generic"); err != nil {
-		t.Fatalf("Review (first): %v", err)
-	}
-	second, err := documents.Review(ctx, app.ID, document.CoverLetter, "draft two", document.Passed, "")
-	if err != nil {
-		t.Fatalf("Review (second): %v", err)
-	}
-
-	got, err := documents.LatestReview(ctx, app.ID, document.CoverLetter)
-	if err != nil {
-		t.Fatalf("LatestReview: %v", err)
-	}
-	if diff := cmp.Diff(second, got); diff != "" {
-		t.Errorf("LatestReview (-want +got):\n%s", diff)
 	}
 }
 

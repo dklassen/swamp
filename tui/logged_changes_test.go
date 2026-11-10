@@ -105,11 +105,11 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 			_, err := service.NewDocumentService(f.writer, f.s.Docs).Review(ctx, f.applicationID, document.CoverLetter, "draft", document.Flagged, "too long")
 			return err
 		}, func(ctx context.Context, f fixture, row change.Event) (tea.Msg, error) {
-			r, err := f.s.Documents.LatestReview(ctx, f.applicationID, document.CoverLetter)
+			r, err := f.s.Documents.GetManyReviews(ctx, []int64{row.RowID})
 			if err != nil {
 				return nil, err
 			}
-			return message.Logged(row.ID, mcp, message.Subject{Type: message.TypeApplication, ID: f.applicationID}, message.OpCreated, row.At, reviewSnapshot(*r)), nil
+			return message.Logged(row.ID, mcp, message.Subject{Type: message.TypeApplication, ID: f.applicationID}, message.OpCreated, row.At, reviewSnapshot(r[0])), nil
 		}},
 		{"document written", "document_writes", func(ctx context.Context, f fixture) error {
 			return service.NewDocumentService(f.writer, f.s.Docs).RecordWrite(ctx, f.applicationID, document.Resume, "draft", document.SourceWriteDocument)

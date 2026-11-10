@@ -14,7 +14,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/tui/message"
 	"github.com/dklassen/swamp/tui/model"
 )
@@ -330,13 +329,23 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 	if err := os.WriteFile(path, []byte("Dear team,\nRewritten meanwhile\n"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
 	}
+	since, err := s.Changes.Latest(context.Background())
+	if err != nil {
+		t.Fatalf("Latest: %v", err)
+	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
 	if app.onScreen() != message.ScreenDocumentReviewForm {
 		t.Fatalf("screen after saving a changed document = %v, want still the review form", app.onScreen())
 	}
-	if _, err := s.Documents.LatestReview(context.Background(), application.ID, document.CoverLetter); !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("LatestReview = %v, want store.ErrNotFound: no review of the old version saved", err)
+	changes, err := s.Changes.After(context.Background(), since)
+	if err != nil {
+		t.Fatalf("After: %v", err)
+	}
+	for _, c := range changes {
+		if c.Table == "document_reviews" {
+			t.Fatalf("saving logged a document_reviews change, want no review of the old version saved: %+v", c)
+		}
 	}
 	view := viewText(app)
 	for _, want := range []string{"changed while you were reviewing", "-What you reviewed", "+Rewritten meanwhile", "tighten the intro"} {
