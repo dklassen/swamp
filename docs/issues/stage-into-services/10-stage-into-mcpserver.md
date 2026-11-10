@@ -24,9 +24,9 @@ RFC 0011 section 3 still calls `stage` a use-case package that "composes what th
 
 ## Acceptance criteria
 
-- [ ] No `stage` package, no import of it.
-- [ ] Every tool's JSON in `mcpserver_test.go` unchanged.
-- [ ] No `stage` subcommand: `swamp stage` is an unknown command.
-- [ ] RFC 0011 and README updated.
+- [x] No `stage` package, no import of it.
+- [x] Every tool's JSON in `mcpserver_test.go` unchanged.
+- [x] No `stage` subcommand: `swamp stage` is an unknown command.
+- [x] RFC 0011 and README updated.
 - [ ] Manual check: the apply-to-posting and score-postings skills' tools answer against real data through the MCP server.
-- [ ] Verification checklist clean.
+- [x] Verification checklist clean.
