@@ -152,6 +152,7 @@ type Querier interface {
 	// sqlite; this query has none. The applications.id IS NULL branch keeps
 	// postings with no application yet, which the LEFT JOIN yields as NULLs.
 	ListInterestedPostings(ctx context.Context, terminalStatuses []sql.NullString) ([]ListInterestedPostingsRow, error)
+	ListLatestDocumentReviews(ctx context.Context, applicationID int64) ([]DocumentReview, error)
 	// What store.SoftDeleteCompany closes: a deleted company is never synced
 	// again, so nothing else would ever close these (#178).
 	ListOpenPostingIDsByCompany(ctx context.Context, companyID int64) ([]int64, error)

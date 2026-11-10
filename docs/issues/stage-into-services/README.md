@@ -14,7 +14,8 @@
 | 8 | [Companies with their open counts are CompanyService's](08-companies-with-open-counts.md) | - | #493 | in review | none |
 | 9 | [Scoring checks the profile; canonical files come from DocumentService](09-profile-and-canonical-files.md) | - | - | planned | 2 |
 | 10 | [What's left of stage moves under mcpserver](10-stage-into-mcpserver.md) | - | - | planned | 1-9 |
-| 11 | [A posting's application form is fetched when the posting lands](11-forms-with-postings.md) | - | - | planned | 4 |
+| 11 | [A posting's application form is fetched when the posting lands](11-forms-with-postings.md) | - | - | planned | 4, 6 |
+| 12 | [The latest review of each document type is a repository read](12-latest-reviews.md) | - | #492 | in review | none |
 
 ## Next
 
@@ -40,6 +41,10 @@
 - Step 4: `NewPostingService` takes the fetchers and a `FormConfig` holding the fetch timeout, mirroring `sync.New`; callers that never fetch pass `nil` and `FormConfig{}`. `PostingService.CurrentForm` takes the posting and company values `Prepare` already has, leaving how the company is looked up to step 5 (Bob, 2026-11-10).
 - A stored application form is never fetched again (Bob, 2026-11-10, step 4). The weekly refetch carried over from stage assumed forms change apart from their postings, with nothing to show they do; that's also why it doesn't refetch when the posting's `updated_at` moves, which may not even reflect form edits. Step 11 fetches the form when the posting lands instead (Bob, 2026-11-10), which also keeps a form saved by hand from blocking the board's.
 - Step 5's method returns the posting with its `*company.Company` (Bob, 2026-11-10): `PostingService.GetWithCompany`, refusing a deleted company with `CompanyDeletedError` after one query joining the posting to its company (Bob, 2026-11-10: the work that removes complexity is done now, not deferred), typed like `ApplicationDeletedError` so `mcpserver` can match it and the message keeps naming the company. `Prepare` moves onto it in step 6, as its issue file says.
+- Drafting is a process, so it gets its own service, `DraftingService` (Bob, 2026-11-10): the queue (step 7) and starting or resuming a posting (step 6) read postings, companies, applications, reviews, forms and files, and own none of them. Steps 6 and 7 go there rather than on `PostingService`. Reading, writing and reviewing documents stay `DocumentService`'s, since the TUI does them outside drafting.
+- A service calls repositories and its non-database stores, never another service (Bob, 2026-11-10): a repository holds the primitives for the data it represents, and a service is a process over them. So `DraftingService` writes its own get-or-create of an application instead of calling `ApplyTo`, and a primitive that services rebuild by hand moves into its repository (step 12). Not in AGENTS.md yet, by Bob's say-so.
+- `CurrentForm` and the form fetchers move from `PostingService` to `DraftingService` in step 6 (Bob, 2026-11-10), replacing step 4's placement: starting to draft is its only caller. Step 11 assumed `PostingService` holds the fetchers, so it's revisited after step 6.
+- Names: `DraftingService.Prepare` (step 6), matching `stage_prepare` and `Prepared`, and `DraftingService.Queue` (step 7). Step 12's `Latest` is one SQL query, not the per-type loop moved into the repository (Bob, 2026-11-10).
 - Step 8 moves the TUI's company list onto the new `CompanyService` query in the same PR, since it makes the same two reads (Bob, 2026-11-10).
 
 ## Open

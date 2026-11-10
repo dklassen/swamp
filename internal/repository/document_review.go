@@ -95,6 +95,26 @@ func (repository *DocumentReviewRepository) List(ctx context.Context, r store.Ru
 	return reviews, nil
 }
 
+// Latest returns applicationID's most recent review of each document type
+// that has one.
+func (repository *DocumentReviewRepository) Latest(ctx context.Context, r store.Runner, applicationID int64) (map[domain.Type]domain.Review, error) {
+	rows, err := store.Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.DocumentReview, error) {
+		return q.ListLatestDocumentReviews(ctx, applicationID)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("document: latest reviews: %w", err)
+	}
+	reviews := make(map[domain.Type]domain.Review, len(rows))
+	for _, row := range rows {
+		review, err := FromDocumentReviewRow(row)
+		if err != nil {
+			return nil, err
+		}
+		reviews[review.DocumentType] = review
+	}
+	return reviews, nil
+}
+
 // GetMany returns the reviews with the given ids that exist, in no order.
 func (repository *DocumentReviewRepository) GetMany(ctx context.Context, r store.Runner, ids []int64) ([]domain.Review, error) {
 	rows, err := store.Read(ctx, r, func(q *sqlcdb.Queries) ([]sqlcdb.DocumentReview, error) {

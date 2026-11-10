@@ -272,6 +272,16 @@ You have a drive to build frameworks. It's usually premature. Concrete first.
 
 ---
 
+## Do the Work That Reduces Complexity
+
+_The shortcut is a loan._
+
+Doing the work to reduce complexity is the right thing, now. Doing the worse thing to avoid the work only increases needless complexity later.
+
+When it isn't clear which change Bob means by the less complex one, ask before building it.
+
+---
+
 ## Error Messages (Including Yours)
 
 _Say what to do about it._
@@ -484,7 +494,7 @@ When asked to work through a labeled group of issues:
 
 ## Work state lives in the repo
 
-Notes that let work resume in a fresh session (what's done, what's next, what was decided and why) go in the repo, never in an agent's own memory or notes outside it, where Bob and other agents can't see or review them.
+Notes that let work resume in a fresh session (what's done, what's next, what was decided and why) go in the repo, never in an agent's own memory or notes outside it, where Bob and other agents can't see or review them. So do principles and working rules: they go in this file, which wins over an agent's memory where the two differ.
 
 - Work spanning several PRs or issues: a folder `docs/issues/<series>/` holding a work order, `README.md`, and an issue file per step that needs one written up.
 - A design spanning several issues: an RFC in `docs/rfcs/`, with its work order in `docs/issues/<series>/`.
