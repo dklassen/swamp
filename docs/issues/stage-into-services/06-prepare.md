@@ -26,8 +26,8 @@ depends_on: [2, 3, 4, 5, 12]
 
 ## Acceptance criteria
 
-- [ ] Service tests, one at a time: a first call creates the application and folder, a second reuses both, a closed posting is refused with `ErrPostingClosed`, a deleted company's posting is refused with `CompanyDeletedError`, versions name `NoDocumentYet` for a missing document and the hash for a present one, a review of an earlier draft isn't returned.
-- [ ] A test that a posting whose application already exists returns it, not an error.
-- [ ] `CurrentForm`'s tests move to `DraftingService` unchanged in what they check.
-- [ ] `stage_prepare`'s JSON in `mcpserver_test.go` unchanged.
-- [ ] Verification checklist clean.
+- [x] Service tests, one at a time: a first call creates the application and folder, a second reuses both, a closed posting is refused with `ErrPostingClosed`, a deleted company's posting is refused with `CompanyDeletedError`, versions name `NoDocumentYet` for a missing document and the hash for a present one, a review of an earlier draft isn't returned.
+- [x] A test that a posting whose application already exists returns it, not an error.
+- [x] `CurrentForm`'s tests move to `DraftingService` unchanged in what they check.
+- [x] `stage_prepare`'s JSON in `mcpserver_test.go` unchanged.
+- [x] Verification checklist clean.
