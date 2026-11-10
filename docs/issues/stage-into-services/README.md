@@ -6,7 +6,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | [A document's hash has one home](01-one-content-hash.md) | - | #486 | merged | none |
 | 2 | [DocumentService owns documents; reviews come back current](02-services-own-documents.md) | - | #487 | merged | none |
-| 3 | [Document reads and writes go through DocumentService](03-document-read-write.md) | - | - | planned | 2 |
+| 3 | [Document reads and writes go through DocumentService](03-document-read-write.md) | - | #488 | in review | 2 |
 | 4 | [Application forms are PostingService's](04-application-forms.md) | - | - | planned | none |
 | 5 | [A posting at a deleted company is refused in one place](05-posting-at-live-company.md) | - | - | planned | none |
 | 6 | [Preparing a posting is one service call](06-prepare.md) | - | - | planned | 2, 3, 4, 5 |
