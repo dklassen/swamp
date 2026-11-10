@@ -21,7 +21,7 @@ import (
 func newTestStage(t *testing.T) (*Stage, testutil.TestApp) {
 	t.Helper()
 	s := testutil.NewTestApp(t)
-	return New(s.Companies, s.Postings, s.Documents, s.Scores, s.Drafting, s.Docs), s
+	return New(s.Companies, s.Postings, s.Documents, s.Scores, s.Drafting), s
 }
 
 func mustCreateCompany(t *testing.T, s testutil.TestApp, name string) company.Company {
@@ -207,7 +207,7 @@ func TestPrepare_MapsWhatDraftingPrepared(t *testing.T) {
 				},
 				Form: tt.form,
 			}
-			st := New(nil, nil, nil, nil, fakeDrafting{prepared: prepared}, nil)
+			st := New(nil, nil, nil, nil, fakeDrafting{prepared: prepared})
 
 			got, err := st.Prepare(t.Context(), 7)
 			if err != nil {
@@ -250,7 +250,7 @@ func TestList_MapsTheDraftingQueue(t *testing.T) {
 			},
 		},
 	}
-	st := New(nil, nil, nil, nil, fakeDrafting{queue: queue}, nil)
+	st := New(nil, nil, nil, nil, fakeDrafting{queue: queue})
 
 	got, err := st.List(t.Context())
 	if err != nil {

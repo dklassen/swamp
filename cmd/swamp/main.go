@@ -236,7 +236,7 @@ func newStage(db store.Store, d *documents.Store) *stage.Stage {
 	drafting := service.NewDraftingService(db, d, map[string]service.FormFetcher{
 		jobboard.Greenhouse: greenhouse.NewClient(),
 	}, service.FormConfig{FetchTimeout: sync.DefaultConfig().FetchTimeout})
-	return stage.New(service.NewCompanyService(db), service.NewPostingService(db), service.NewDocumentService(db, d), service.NewScoringService(db, d), drafting, d)
+	return stage.New(service.NewCompanyService(db), service.NewPostingService(db), service.NewDocumentService(db, d), service.NewScoringService(db, d), drafting)
 }
 
 // runImport bulk-creates companies from a YAML seed file (see the seed

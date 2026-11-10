@@ -119,14 +119,11 @@ func TestScoringService_Record_RefusesACallWithNoModelOrProfile(t *testing.T) {
 	}
 }
 
-// pendingReasons is every pending posting, by ID, with why.
-func pendingReasons(t *testing.T, s testutil.TestApp, rescoreProfile string) (map[int64]score.PendingReason, int) {
+// pendingReasons is every posting pending against profile, written as the
+// profile now, by ID, with why.
+func pendingReasons(t *testing.T, s testutil.TestApp, profile string, rescore bool) (map[int64]score.PendingReason, int) {
 	t.Helper()
-	var rescoreProfileSHA256 string
-	if rescoreProfile != "" {
-		rescoreProfileSHA256 = document.ContentSHA256(rescoreProfile)
-	}
-	page, err := s.Scores.Pending(context.Background(), rescoreProfileSHA256, 0, 100)
+	page, err := s.Scores.Pending(context.Background(), testutil.MustWriteProfile(t, s, profile), rescore, 0, 100)
 	if err != nil {
 		t.Fatalf("Pending: %v", err)
 	}
@@ -201,16 +198,17 @@ func TestScoringService_Pending(t *testing.T) {
 	ingestIn(acme.ID, "2", "Changed", "Rewritten")
 
 	tests := []struct {
-		name           string
-		rescoreProfile string
-		want           map[int64]score.PendingReason
+		name    string
+		profile string
+		rescore bool
+		want    map[int64]score.PendingReason
 	}{
-		{"default: no score on the current content", "", map[int64]score.PendingReason{fresh.ID: score.PendingNew, changed.ID: score.PendingChanged, shown.ID: score.PendingNew}},
-		{"rescore against a new profile", "new profile", map[int64]score.PendingReason{fresh.ID: score.PendingNew, changed.ID: score.PendingChanged, current.ID: score.PendingRescore, shown.ID: score.PendingNew}},
-		{"rescore against the profile already used", "old profile", map[int64]score.PendingReason{fresh.ID: score.PendingNew, changed.ID: score.PendingChanged, shown.ID: score.PendingNew}},
+		{"default: no score on the current content", "old profile", false, map[int64]score.PendingReason{fresh.ID: score.PendingNew, changed.ID: score.PendingChanged, shown.ID: score.PendingNew}},
+		{"rescore against a new profile", "new profile", true, map[int64]score.PendingReason{fresh.ID: score.PendingNew, changed.ID: score.PendingChanged, current.ID: score.PendingRescore, shown.ID: score.PendingNew}},
+		{"rescore against the profile already used", "old profile", true, map[int64]score.PendingReason{fresh.ID: score.PendingNew, changed.ID: score.PendingChanged, shown.ID: score.PendingNew}},
 	}
 	for _, tt := range tests {
-		got, total := pendingReasons(t, s, tt.rescoreProfile)
+		got, total := pendingReasons(t, s, tt.profile, tt.rescore)
 		if diff := cmp.Diff(tt.want, got); diff != "" {
 			t.Errorf("%s: pending postings and why (-want +got):\n%s", tt.name, diff)
 		}
@@ -233,7 +231,7 @@ func TestScoringService_Pending_ARescoreResumes(t *testing.T) {
 
 	mustRecordScore(t, s, done, "new profile")
 
-	got, _ := pendingReasons(t, s, "new profile")
+	got, _ := pendingReasons(t, s, "new profile", true)
 	if diff := cmp.Diff(map[int64]score.PendingReason{left.ID: score.PendingRescore}, got); diff != "" {
 		t.Errorf("rescore pending (-want +got):\n%s", diff)
 	}
@@ -252,9 +250,10 @@ func TestScoringService_Pending_Pages(t *testing.T) {
 
 	var got [][]int64
 	var hasMore []bool
+	profile := testutil.MustWriteProfile(t, s, "# Me")
 	var before int64
 	for range 3 {
-		page, err := scoring.Pending(ctx, "", before, 2)
+		page, err := scoring.Pending(ctx, profile, false, before, 2)
 		if err != nil {
 			t.Fatalf("Pending: %v", err)
 		}
@@ -384,5 +383,27 @@ func TestScoringService_Record_RefusesAProfileThatIsntTheCurrentOne(t *testing.T
 	}
 	if len(scores) != 0 {
 		t.Errorf("stored %+v, want no scores", scores)
+	}
+}
+
+// Postings are listed for scoring against the profile as it is now.
+func TestScoringService_Pending_RefusesAProfileThatIsntTheCurrentOne(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	testutil.MustIngestPosting(t, s, "1", "Role")
+	profile := document.ContentSHA256("# Me")
+
+	for _, rescore := range []bool{false, true} {
+		var missing *service.NoProfileError
+		if _, err := s.Scores.Pending(ctx, profile, rescore, 0, 100); !errors.As(err, &missing) || missing.Path != s.Docs.ProfilePath() {
+			t.Errorf("rescore %t, no profile: err %v, want a NoProfileError naming %s", rescore, err, s.Docs.ProfilePath())
+		}
+	}
+	testutil.MustWriteProfile(t, s, "# Me, edited since")
+	for _, rescore := range []bool{false, true} {
+		if _, err := s.Scores.Pending(ctx, profile, rescore, 0, 100); !errors.Is(err, service.ErrProfileChanged) {
+			t.Errorf("rescore %t, stale profile: err %v, want ErrProfileChanged", rescore, err)
+		}
 	}
 }

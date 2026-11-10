@@ -47,10 +47,18 @@ func NewScoringService(db store.Store, docs *documents.Store) *ScoringService {
 	}
 }
 
-// Pending returns one page of the postings with no score on their current
-// content, newest first, before beforeID (0 for the first page). For a
-// rescore, rescoreProfileSHA256 names the profile; "" is no rescore.
-func (service *ScoringService) Pending(ctx context.Context, rescoreProfileSHA256 string, beforeID int64, limit int) (*score.PendingPostingsPage, error) {
+// Pending returns one page of the postings to score against the profile
+// with profileSHA256, which must be the profile now, newest first, before
+// beforeID (0 for the first page): those with no score on their current
+// content, or for a rescore, none against this profile.
+func (service *ScoringService) Pending(ctx context.Context, profileSHA256 string, rescore bool, beforeID int64, limit int) (*score.PendingPostingsPage, error) {
+	if err := service.requireProfile(profileSHA256); err != nil {
+		return nil, err
+	}
+	var rescoreProfileSHA256 string
+	if rescore {
+		rescoreProfileSHA256 = profileSHA256
+	}
 	return service.scoreViewer.Pending(ctx, service.db, rescoreProfileSHA256, beforeID, limit)
 }
 
