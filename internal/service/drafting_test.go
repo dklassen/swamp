@@ -98,3 +98,96 @@ func TestDraftingService_Prepare_PostingAtADeletedCompany_IsRefused(t *testing.T
 		t.Errorf("CompanyDeletedError = %+v, want %+v", *deleted, want)
 	}
 }
+
+func TestDraftingService_Prepare_DocumentsAreVersionedByWhatsOnDisk(t *testing.T) {
+	t.Parallel()
+	const resume = "# Resume"
+	s := testutil.NewTestApp(t)
+	p := testutil.MustIngestPosting(t, s, "job-1", "Engineer")
+	first, err := s.Drafting.Prepare(t.Context(), p.ID)
+	if err != nil {
+		t.Fatalf("Prepare (first): %v", err)
+	}
+	if _, err := s.Documents.Write(t.Context(), first.Application.ID, document.Resume, resume, service.NoDocumentYet, document.SourceWriteDocument); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	got, err := s.Drafting.Prepare(t.Context(), p.ID)
+	if err != nil {
+		t.Fatalf("Prepare (second): %v", err)
+	}
+	want := map[document.Type]service.DraftDocument{
+		document.CoverLetter: {Path: first.Documents[document.CoverLetter].Path, Exists: false, Version: service.NoDocumentYet},
+		document.Resume:      {Path: first.Documents[document.Resume].Path, Exists: true, Version: document.ContentSHA256(resume)},
+	}
+	if diff := cmp.Diff(want, got.Documents); diff != "" {
+		t.Errorf("Documents (-want +got):\n%s", diff)
+	}
+}
+
+// A review counts only while it describes the document on disk.
+func TestDraftingService_Prepare_ReviewsOnlyOfTheDocumentOnDisk(t *testing.T) {
+	t.Parallel()
+	const reviewed = "Dear hiring manager..."
+	tests := []struct {
+		name string
+		// rewrite is the cover letter written after the review; "" writes none.
+		rewrite    string
+		wantReview bool
+	}{
+		{name: "document unchanged", rewrite: "", wantReview: true},
+		{name: "document rewritten", rewrite: "Dear hiring manager, revised...", wantReview: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			ctx := t.Context()
+			s := testutil.NewTestApp(t)
+			p := testutil.MustIngestPosting(t, s, "job-1", "Engineer")
+			first, err := s.Drafting.Prepare(ctx, p.ID)
+			if err != nil {
+				t.Fatalf("Prepare (first): %v", err)
+			}
+			appID := first.Application.ID
+			if _, err := s.Documents.Write(ctx, appID, document.CoverLetter, reviewed, service.NoDocumentYet, document.SourceWriteDocument); err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			review, err := s.Documents.Review(ctx, appID, document.CoverLetter, reviewed, document.Flagged, "too generic")
+			if err != nil {
+				t.Fatalf("Review: %v", err)
+			}
+			if tt.rewrite != "" {
+				if _, err := s.Documents.Write(ctx, appID, document.CoverLetter, tt.rewrite, document.ContentSHA256(reviewed), document.SourceWriteDocument); err != nil {
+					t.Fatalf("Write (rewrite): %v", err)
+				}
+			}
+
+			got, err := s.Drafting.Prepare(ctx, p.ID)
+			if err != nil {
+				t.Fatalf("Prepare (second): %v", err)
+			}
+			want := map[document.Type]document.Review{}
+			if tt.wantReview {
+				want[document.CoverLetter] = *review
+			}
+			if diff := cmp.Diff(want, got.LatestReviews); diff != "" {
+				t.Errorf("LatestReviews (-want +got):\n%s", diff)
+			}
+		})
+	}
+}
+
+func TestDraftingService_Prepare_ApplicationStartedElsewhere_IsReturned(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	p := testutil.MustIngestPosting(t, s, "job-1", "Engineer")
+	started := testutil.MustApplyTo(t, s, p.ID)
+
+	got, err := s.Drafting.Prepare(t.Context(), p.ID)
+	if err != nil {
+		t.Fatalf("Prepare: %v", err)
+	}
+	if diff := cmp.Diff(started, got.Application); diff != "" {
+		t.Errorf("Application (-started +got):\n%s", diff)
+	}
+}

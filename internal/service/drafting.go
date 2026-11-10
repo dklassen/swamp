@@ -31,6 +31,7 @@ type DraftingService struct {
 	postingViewer            draftingPostingViewer
 	applications             draftingApplicationStore
 	applicationHistoryWriter applicationHistoryWriter
+	reviewViewer             latestReviewViewer
 }
 
 func NewDraftingService(db store.Store, docs *documents.Store) *DraftingService {
@@ -40,6 +41,7 @@ func NewDraftingService(db store.Store, docs *documents.Store) *DraftingService 
 		postingViewer:            &repository.PostingRepository{},
 		applications:             &repository.ApplicationRepository{},
 		applicationHistoryWriter: &repository.ApplicationHistoryRepository{},
+		reviewViewer:             &repository.DocumentReviewRepository{},
 	}
 }
 
@@ -58,6 +60,9 @@ type Prepared struct {
 	Company     company.Company
 	Application application.Application
 	Documents   map[document.Type]DraftDocument
+	// LatestReviews holds each type's latest review while it describes
+	// the document on disk.
+	LatestReviews map[document.Type]document.Review
 }
 
 // Prepare starts drafting a posting, or resumes it: it returns the
@@ -103,7 +108,28 @@ func (service *DraftingService) Prepare(ctx context.Context, postingID int64) (*
 		if err != nil {
 			return nil, fmt.Errorf("drafting: %w", err)
 		}
-		prepared.Documents[documentType] = DraftDocument{Path: doc.Path, Exists: doc.Exists}
+		sha, err := service.documents.SHA256(prepared.Application.ID, documentType)
+		if err != nil {
+			return nil, fmt.Errorf("drafting: hash %s: %w", documentType, err)
+		}
+		draft := DraftDocument{Path: doc.Path, Exists: sha != "", Version: sha}
+		if !draft.Exists {
+			draft.Version = NoDocumentYet
+		}
+		prepared.Documents[documentType] = draft
+	}
+
+	reviews, err := service.reviewViewer.Latest(ctx, service.db, prepared.Application.ID)
+	if err != nil {
+		return nil, fmt.Errorf("drafting: latest reviews: %w", err)
+	}
+	prepared.LatestReviews = make(map[document.Type]document.Review, len(reviews))
+	for documentType, review := range reviews {
+		// Matched against the version just read, so the review and the
+		// version returned describe the same content.
+		if draft := prepared.Documents[documentType]; draft.Exists && review.ContentSHA256 == draft.Version {
+			prepared.LatestReviews[documentType] = review
+		}
 	}
 	return &prepared, nil
 }
