@@ -79,19 +79,19 @@ func NewApplicationService(db store.Store, docs *documents.Store) *ApplicationSe
 func (service *ApplicationService) Active(ctx context.Context, order application.Order) ([]posting.ActiveApplication, error) {
 	apps, err := service.applicationViewer.ListActive(ctx, service.db, application.Terminal())
 	if err != nil {
-		return nil, fmt.Errorf("pursuit: list: %w", err)
+		return nil, fmt.Errorf("application: list active: %w", err)
 	}
 	for i := range apps {
 		app := &apps[i]
 		if app.StatusSince, err = service.StatusSince(ctx, app.Application); err != nil {
-			return nil, fmt.Errorf("pursuit: %w", err)
+			return nil, fmt.Errorf("application: status since of %d: %w", app.ID, err)
 		}
 		reviews, err := service.reviewViewer.Latest(ctx, service.db, app.ID)
 		if err != nil {
-			return nil, fmt.Errorf("pursuit: reviews of application %d: %w", app.ID, err)
+			return nil, fmt.Errorf("application: latest reviews of %d: %w", app.ID, err)
 		}
 		if app.LatestReviews, err = documents.Current(service.documents.Status(app.ID), reviews, document.Review.IsCurrent); err != nil {
-			return nil, fmt.Errorf("pursuit: reviews of application %d: %w", app.ID, err)
+			return nil, fmt.Errorf("application: current reviews of %d: %w", app.ID, err)
 		}
 	}
 	slices.SortFunc(apps, activeOrders[order])
