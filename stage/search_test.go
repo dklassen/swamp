@@ -30,7 +30,7 @@ type searchStage struct {
 
 func newSearchStage(t *testing.T) searchStage {
 	t.Helper()
-	st, s, _ := newTestStage(t)
+	st, s := newTestStage(t)
 	ctx := context.Background()
 	f := searchStage{st: st, acme: mustCreateCompany(t, s, "Acme"), beta: mustCreateCompany(t, s, "Beta")}
 	f.shortlist = mustUpsertPosting(t, s, f.acme.ID, "1", "Platform Engineer")
@@ -261,7 +261,7 @@ func TestSearch_InvalidOptions(t *testing.T) {
 // TestSearch_LimitDefaultsAndCap: no Limit is 50; more than 100 is 100.
 func TestSearch_LimitDefaultsAndCap(t *testing.T) {
 	t.Parallel()
-	st, s, _ := newTestStage(t)
+	st, s := newTestStage(t)
 	acme := mustCreateCompany(t, s, "Acme")
 	for i := range 120 {
 		mustUpsertPosting(t, s, acme.ID, string(rune('a'+i/26))+string(rune('a'+i%26)), "Engineer")
@@ -326,7 +326,7 @@ func TestSearch_IDDescIsNewestToSwampFirst(t *testing.T) {
 // its publish date.
 func TestSearch_PublishedDescPagesNewestOnTheBoardFirst(t *testing.T) {
 	t.Parallel()
-	st, s, _ := newTestStage(t)
+	st, s := newTestStage(t)
 	ctx := context.Background()
 	acme := mustCreateCompany(t, s, "Acme")
 	posting := func(sourceID string, published time.Time) posting.Posting {
@@ -402,7 +402,7 @@ func TestSearch_CursorIsBoundToTheQuery(t *testing.T) {
 
 func TestSearch_ScoreDescPagesBestFitFirst(t *testing.T) {
 	t.Parallel()
-	st, s, _ := newTestStage(t)
+	st, s := newTestStage(t)
 	ctx := context.Background()
 	acme := mustCreateCompany(t, s, "Acme")
 	low := mustUpsertPosting(t, s, acme.ID, "1", "Low")

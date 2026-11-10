@@ -3,34 +3,25 @@ package stage
 import (
 	"context"
 	"encoding/json"
-	"os"
 	"sort"
 	"testing"
 	"time"
 
 	"github.com/google/go-cmp/cmp"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/document"
-	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 )
 
-func newTestStage(t *testing.T) (*Stage, testutil.TestApp, *documents.Store) {
+func newTestStage(t *testing.T) (*Stage, testutil.TestApp) {
 	t.Helper()
 	s := testutil.NewTestApp(t)
-	d := s.Docs
-	return stageOn(s, d), s, d
-}
-
-// stageOn is a Stage on s's services and d.
-func stageOn(s testutil.TestApp, d *documents.Store) *Stage {
-	return New(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Drafting, d)
+	return New(s.Companies, s.Postings, s.Documents, s.Scores, s.Drafting, s.Docs), s
 }
 
 func mustCreateCompany(t *testing.T, s testutil.TestApp, name string) company.Company {
@@ -58,454 +49,6 @@ func mustMarkInterested(t *testing.T, s testutil.TestApp, postingID int64) {
 	t.Helper()
 	if _, err := s.Postings.SetInterested(context.Background(), postingID); err != nil {
 		t.Fatalf("postingmarkup.SetInterested: %v", err)
-	}
-}
-
-func TestList_ExcludesPostingNotMarkedInterested(t *testing.T) {
-	t.Parallel()
-
-	st, s, _ := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-
-	got, err := st.List(context.Background())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 0 {
-		t.Fatalf("got %d candidates, want 0 (posting was never marked interested)", len(got))
-	}
-}
-
-func TestList_ExcludesArchivedPostingEvenIfOnceInterested(t *testing.T) {
-	t.Parallel()
-
-	st, s, _ := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-	if _, err := s.Postings.SetArchived(context.Background(), posting.ID); err != nil {
-		t.Fatalf("postingmarkup.SetArchived: %v", err)
-	}
-
-	got, err := st.List(context.Background())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 0 {
-		t.Fatalf("got %d candidates, want 0 (posting is archived)", len(got))
-	}
-}
-
-func TestList_IncludesInterestedPostingWithNoApplication(t *testing.T) {
-	t.Parallel()
-
-	st, s, _ := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-
-	got, err := st.List(context.Background())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("got %d candidates, want 1", len(got))
-	}
-	c := got[0]
-	if c.Posting.ID != posting.ID {
-		t.Errorf("Posting.ID = %d, want %d", c.Posting.ID, posting.ID)
-	}
-	if c.CompanyName != "Acme" {
-		t.Errorf("CompanyName = %q, want %q", c.CompanyName, "Acme")
-	}
-	if c.ApplicationID != nil {
-		t.Errorf("ApplicationID = %v, want nil (no application started)", c.ApplicationID)
-	}
-}
-
-func TestList_IncludesInterestedPostingWithApplicationButNoDocuments(t *testing.T) {
-	t.Parallel()
-
-	st, s, _ := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-	app, err := createApplication(context.Background(), s, posting.ID)
-	if err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-
-	got, err := st.List(context.Background())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("got %d candidates, want 1", len(got))
-	}
-	if got[0].ApplicationID == nil || *got[0].ApplicationID != app.ID {
-		t.Errorf("ApplicationID = %v, want %d", got[0].ApplicationID, app.ID)
-	}
-}
-
-// A posting whose application has hit a dead end (rejected, closed,
-// withdrawn...) isn't work to draft, even though its documents are still
-// missing -- see #121.
-func TestList_ExcludesApplicationsInTerminalStatus(t *testing.T) {
-	t.Parallel()
-
-	for _, tc := range []struct {
-		status application.Status
-		want   bool
-	}{
-		{application.Started, true},
-		{application.Submitted, true},
-		{application.Interviewing, true},
-		{application.Rejected, false},
-		{application.OfferReceived, true},
-		{application.OfferAccepted, true},
-		{application.OfferDeclined, false},
-		{application.PostingClosed, false},
-		{application.Withdrawn, false},
-	} {
-		t.Run(tc.status.String(), func(t *testing.T) {
-			t.Parallel()
-
-			st, s, _ := newTestStage(t)
-			company := mustCreateCompany(t, s, "Acme")
-			posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-			mustMarkInterested(t, s, posting.ID)
-			if _, err := createApplication(context.Background(), s, posting.ID); err != nil {
-				t.Fatalf("application.Create: %v", err)
-			}
-			if err := updateApplicationStatus(context.Background(), s, posting.ID, tc.status); err != nil {
-				t.Fatalf("application.UpdateStatus: %v", err)
-			}
-
-			got, err := st.List(context.Background())
-			if err != nil {
-				t.Fatalf("List: %v", err)
-			}
-			if listed := len(got) == 1; listed != tc.want {
-				t.Errorf("listed = %v, want %v (%d candidates)", listed, tc.want, len(got))
-			}
-		})
-	}
-}
-
-func TestList_ExcludesPostingWithBothDocumentsAlreadyGenerated(t *testing.T) {
-	t.Parallel()
-
-	st, s, d := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-	app, err := createApplication(context.Background(), s, posting.ID)
-	if err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-	paths, err := d.EnsureDir(app.ID)
-	if err != nil {
-		t.Fatalf("EnsureDir: %v", err)
-	}
-	if err := os.WriteFile(mustDoc(t, paths, document.CoverLetter).Path, []byte("letter"), 0o644); err != nil {
-		t.Fatalf("write cover letter: %v", err)
-	}
-	if err := os.WriteFile(mustDoc(t, paths, document.Resume).Path, []byte("resume"), 0o644); err != nil {
-		t.Fatalf("write resume: %v", err)
-	}
-
-	got, err := st.List(context.Background())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 0 {
-		t.Fatalf("got %d candidates, want 0 (both documents already exist)", len(got))
-	}
-}
-
-func TestList_IncludesPostingWithOnlyOneDocumentGenerated(t *testing.T) {
-	t.Parallel()
-
-	st, s, d := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-	app, err := createApplication(context.Background(), s, posting.ID)
-	if err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-	paths, err := d.EnsureDir(app.ID)
-	if err != nil {
-		t.Fatalf("EnsureDir: %v", err)
-	}
-	if err := os.WriteFile(mustDoc(t, paths, document.CoverLetter).Path, []byte("letter"), 0o644); err != nil {
-		t.Fatalf("write cover letter: %v", err)
-	}
-
-	got, err := st.List(context.Background())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("got %d candidates, want 1 (resume is still missing)", len(got))
-	}
-}
-
-func TestList_IncludesApplicationNotes(t *testing.T) {
-	t.Parallel()
-
-	st, s, _ := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-	app, err := createApplication(context.Background(), s, posting.ID)
-	if err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-	if _, err := s.Applications.SetNotes(context.Background(), app.ID, "recruiter reached out directly"); err != nil {
-		t.Fatalf("application.UpdateNotes: %v", err)
-	}
-
-	got, err := st.List(context.Background())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("got %d candidates, want 1", len(got))
-	}
-	if got[0].ApplicationNotes != "recruiter reached out directly" {
-		t.Errorf("ApplicationNotes = %q, want %q", got[0].ApplicationNotes, "recruiter reached out directly")
-	}
-}
-
-func TestList_IncludesLatestDocumentReviews(t *testing.T) {
-	t.Parallel()
-
-	st, s, d := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-	app, err := createApplication(context.Background(), s, posting.ID)
-	if err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-	paths, err := d.EnsureDir(app.ID)
-	if err != nil {
-		t.Fatalf("EnsureDir: %v", err)
-	}
-	// The review's content must match what's on disk, or the new
-	// staleness check treats it as not describing
-	// the current document and omits it from LatestReviews.
-	if err := os.WriteFile(mustDoc(t, paths, document.CoverLetter).Path, []byte("draft"), 0o644); err != nil {
-		t.Fatalf("write cover letter: %v", err)
-	}
-	if _, err := createReview(context.Background(), s, app.ID, document.CoverLetter, "draft", document.Flagged, "too generic, mention Go specifically"); err != nil {
-		t.Fatalf("CreateReview: %v", err)
-	}
-
-	got, err := st.List(context.Background())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("got %d candidates, want 1", len(got))
-	}
-	review, ok := got[0].LatestReviews[document.CoverLetter]
-	if !ok {
-		t.Fatalf("LatestReviews[cover letter] missing, want the flagged review present")
-	}
-	if review.Outcome != document.Flagged {
-		t.Errorf("Outcome = %v, want %v", review.Outcome, document.Flagged)
-	}
-	if review.Notes != "too generic, mention Go specifically" {
-		t.Errorf("Notes = %q, want %q", review.Notes, "too generic, mention Go specifically")
-	}
-	if _, ok := got[0].LatestReviews[document.Resume]; ok {
-		t.Errorf("LatestReviews[resume] present, want absent (no resume review recorded)")
-	}
-}
-
-// With both documents drafted, the latest review decides: a flagged one
-// keeps the posting in the agent's queue for another pass, and a passed
-// one means it's done.
-func TestList_BothDocumentsDrafted_LatestReviewDecides(t *testing.T) {
-	t.Parallel()
-	tests := []struct {
-		name    string
-		outcome document.Outcome
-		notes   string
-		want    int
-	}{
-		{name: "flagged keeps it", outcome: document.Flagged, notes: "needs work", want: 1},
-		{name: "passed excludes it", outcome: document.Passed, want: 0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			st, s, d := newTestStage(t)
-			company := mustCreateCompany(t, s, "Acme")
-			posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-			mustMarkInterested(t, s, posting.ID)
-			app, err := createApplication(context.Background(), s, posting.ID)
-			if err != nil {
-				t.Fatalf("application.Create: %v", err)
-			}
-			paths, err := d.EnsureDir(app.ID)
-			if err != nil {
-				t.Fatalf("EnsureDir: %v", err)
-			}
-			if err := os.WriteFile(mustDoc(t, paths, document.CoverLetter).Path, []byte("letter"), 0o644); err != nil {
-				t.Fatalf("write cover letter: %v", err)
-			}
-			if err := os.WriteFile(mustDoc(t, paths, document.Resume).Path, []byte("resume"), 0o644); err != nil {
-				t.Fatalf("write resume: %v", err)
-			}
-			if _, err := createReview(context.Background(), s, app.ID, document.CoverLetter, "letter", tt.outcome, tt.notes); err != nil {
-				t.Fatalf("CreateReview: %v", err)
-			}
-
-			got, err := st.List(context.Background())
-			if err != nil {
-				t.Fatalf("List: %v", err)
-			}
-			if len(got) != tt.want {
-				t.Errorf("got %d candidates after a %s cover letter review, want %d", len(got), tt.outcome, tt.want)
-			}
-		})
-	}
-}
-
-// TestList_ExcludesPostingWhenFlaggedReviewIsStaleAfterRevision verifies
-// the companion to TestList_BothDocumentsDrafted_LatestReviewDecides: once a
-// flagged document has actually been revised (its content on disk no
-// longer matches what was reviewed), that review is stale and no longer
-// keeps the posting in the queue -- a revised-but-not-yet-re-reviewed
-// document goes back to being treated as "done" (both files exist, no
-// active flag), the same as if it had never been reviewed. Prevents a
-// stale review from either being surfaced as if it still described the
-// current draft, or from permanently pinning a posting in the queue
-// after the feedback has already been addressed.
-// TestList_ReturnsErrorWhenDocumentReadFails is a regression test caught
-// in code review: the current-reviews check (now documents.Current) used to swallow an os.ReadFile error
-// and silently treat the document as "not reviewed" -- indistinguishable
-// from a genuinely stale review, and capable of dropping a real,
-// unaddressed flag from the queue with no indication anything went
-// wrong. A read failure must now fail List() loudly instead.
-func TestList_ReturnsErrorWhenDocumentReadFails(t *testing.T) {
-	t.Parallel()
-
-	st, s, d := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-	app, err := createApplication(context.Background(), s, posting.ID)
-	if err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-	paths, err := d.EnsureDir(app.ID)
-	if err != nil {
-		t.Fatalf("EnsureDir: %v", err)
-	}
-	if _, err := createReview(context.Background(), s, app.ID, document.CoverLetter, "letter", document.Flagged, "needs work"); err != nil {
-		t.Fatalf("CreateReview: %v", err)
-	}
-	// A directory at the cover letter's path: os.Stat succeeds (so
-	// Status reports Exists=true, same as a real file) but os.ReadFile
-	// fails with "is a directory" -- simulates a genuine read failure
-	// portably, without relying on permission bits (which a test
-	// running as root would ignore).
-	if err := os.Mkdir(mustDoc(t, paths, document.CoverLetter).Path, 0o755); err != nil {
-		t.Fatalf("Mkdir: %v", err)
-	}
-
-	if _, err := st.List(context.Background()); err == nil {
-		t.Fatal("List() error = nil, want an error -- a document read failure must not be silently treated as \"not reviewed\"")
-	}
-}
-
-func TestList_ExcludesPostingWhenFlaggedReviewIsStaleAfterRevision(t *testing.T) {
-	t.Parallel()
-
-	st, s, d := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-	app, err := createApplication(context.Background(), s, posting.ID)
-	if err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-	paths, err := d.EnsureDir(app.ID)
-	if err != nil {
-		t.Fatalf("EnsureDir: %v", err)
-	}
-	if err := os.WriteFile(mustDoc(t, paths, document.CoverLetter).Path, []byte("original letter"), 0o644); err != nil {
-		t.Fatalf("write cover letter: %v", err)
-	}
-	if err := os.WriteFile(mustDoc(t, paths, document.Resume).Path, []byte("resume"), 0o644); err != nil {
-		t.Fatalf("write resume: %v", err)
-	}
-	if _, err := createReview(context.Background(), s, app.ID, document.CoverLetter, "original letter", document.Flagged, "needs work"); err != nil {
-		t.Fatalf("CreateReview: %v", err)
-	}
-	// The document gets revised in response to the flag -- content no
-	// longer matches what was reviewed, and no new review has been
-	// recorded yet.
-	if err := os.WriteFile(mustDoc(t, paths, document.CoverLetter).Path, []byte("revised letter addressing the feedback"), 0o644); err != nil {
-		t.Fatalf("rewrite cover letter: %v", err)
-	}
-
-	got, err := st.List(context.Background())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 0 {
-		t.Fatalf("got %d candidates, want 0 (the flagged review is stale -- content has already been revised)", len(got))
-	}
-}
-
-// TestList_LatestReviewsOmitsStaleReview verifies a stale review isn't
-// surfaced in LatestReviews at all, even for a posting that's still in
-// the queue for an unrelated reason (here, the missing resume) -- an
-// agent reading LatestReviews should never see feedback describing a
-// draft that's already been superseded.
-func TestList_LatestReviewsOmitsStaleReview(t *testing.T) {
-	t.Parallel()
-
-	st, s, d := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-	app, err := createApplication(context.Background(), s, posting.ID)
-	if err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-	paths, err := d.EnsureDir(app.ID)
-	if err != nil {
-		t.Fatalf("EnsureDir: %v", err)
-	}
-	if err := os.WriteFile(mustDoc(t, paths, document.CoverLetter).Path, []byte("original letter"), 0o644); err != nil {
-		t.Fatalf("write cover letter: %v", err)
-	}
-	// Resume deliberately not written -- keeps this candidate in the
-	// queue regardless of the cover letter's review state, isolating
-	// what's under test (LatestReviews' content).
-	if _, err := createReview(context.Background(), s, app.ID, document.CoverLetter, "original letter", document.Flagged, "needs work"); err != nil {
-		t.Fatalf("CreateReview: %v", err)
-	}
-	if err := os.WriteFile(mustDoc(t, paths, document.CoverLetter).Path, []byte("revised letter"), 0o644); err != nil {
-		t.Fatalf("rewrite cover letter: %v", err)
-	}
-
-	got, err := st.List(context.Background())
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	if len(got) != 1 {
-		t.Fatalf("got %d candidates, want 1 (resume still missing)", len(got))
-	}
-	if _, ok := got[0].LatestReviews[document.CoverLetter]; ok {
-		t.Errorf("LatestReviews[cover letter] present, want absent -- the recorded review is stale (content has been revised since)")
 	}
 }
 
@@ -541,7 +84,7 @@ func jsonKeys(t *testing.T, v any) []string {
 func TestCandidate_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 	t.Parallel()
 
-	st, s, _ := newTestStage(t)
+	st, s := newTestStage(t)
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
@@ -575,7 +118,7 @@ func TestCandidate_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 func TestPrepared_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 	t.Parallel()
 
-	st, s, _ := newTestStage(t)
+	st, s := newTestStage(t)
 	company := mustCreateCompany(t, s, "Acme")
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 	mustMarkInterested(t, s, posting.ID)
@@ -622,146 +165,15 @@ func TestPrepared_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 	}
 }
 
-// A posting the user started an application for without marking it
-// interested (e.g. from the TUI's posting detail) is still drafting work,
-// so it's listed when its application is started and needs a draft or a
-// revision. Archived postings and later-stage applications stay
-// out.
-func TestList_IncludesStartedApplicationsNotMarkedInterested(t *testing.T) {
-	t.Parallel()
-	ctx := context.Background()
-
-	st, s, docs := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	write := func(applicationID int64) {
-		t.Helper()
-		paths, err := docs.EnsureDir(applicationID)
-		if err != nil {
-			t.Fatalf("EnsureDir: %v", err)
-		}
-		for _, path := range []string{mustDoc(t, paths, document.CoverLetter).Path, mustDoc(t, paths, document.Resume).Path} {
-			if err := os.WriteFile(path, []byte("# Draft"), 0o644); err != nil {
-				t.Fatalf("WriteFile: %v", err)
-			}
-		}
-	}
-
-	undrafted := mustUpsertPosting(t, s, company.ID, "job-1", "Undrafted")
-	if _, err := createApplication(ctx, s, undrafted.ID); err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-
-	flagged := mustUpsertPosting(t, s, company.ID, "job-2", "Flagged")
-	flaggedApp, err := createApplication(ctx, s, flagged.ID)
-	if err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-	write(flaggedApp.ID)
-	if _, err := createReview(ctx, s, flaggedApp.ID, document.Resume, "# Draft", document.Flagged, "too long"); err != nil {
-		t.Fatalf("CreateReview: %v", err)
-	}
-
-	drafted := mustUpsertPosting(t, s, company.ID, "job-3", "Drafted")
-	draftedApp, err := createApplication(ctx, s, drafted.ID)
-	if err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-	write(draftedApp.ID)
-
-	archived := mustUpsertPosting(t, s, company.ID, "job-4", "Archived")
-	if _, err := createApplication(ctx, s, archived.ID); err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-	if _, err := s.Postings.SetArchived(ctx, archived.ID); err != nil {
-		t.Fatalf("postingmarkup.SetArchived: %v", err)
-	}
-
-	submitted := mustUpsertPosting(t, s, company.ID, "job-5", "Submitted")
-	if _, err := createApplication(ctx, s, submitted.ID); err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-	if err := updateApplicationStatus(ctx, s, submitted.ID, application.Submitted); err != nil {
-		t.Fatalf("application.UpdateStatus: %v", err)
-	}
-
-	interested := mustUpsertPosting(t, s, company.ID, "job-6", "Interested and started")
-	mustMarkInterested(t, s, interested.ID)
-	if _, err := createApplication(ctx, s, interested.ID); err != nil {
-		t.Fatalf("application.Create: %v", err)
-	}
-
-	got, err := st.List(ctx)
-	if err != nil {
-		t.Fatalf("List: %v", err)
-	}
-	var titles []string
-	for _, c := range got {
-		titles = append(titles, c.Posting.Title)
-	}
-	sort.Strings(titles)
-	want := []string{"Flagged", "Interested and started", "Undrafted"}
-	if diff := cmp.Diff(want, titles); diff != "" {
-		t.Errorf("listed postings mismatch (-want +got):\n%s", diff)
-	}
+// fakeDrafting queues queue and prepares every posting as prepared.
+type fakeDrafting struct {
+	queue    []service.QueuedPosting
+	prepared *service.Prepared
 }
 
-// mustDoc is status.Doc(documentType), failing the test on an error.
-func mustDoc(t *testing.T, status documents.Status, documentType document.Type) documents.Doc {
-	t.Helper()
-	doc, err := status.Doc(documentType)
-	if err != nil {
-		t.Fatalf("Doc(%s): %v", documentType, err)
-	}
-	return doc
+func (f fakeDrafting) Queue(context.Context) ([]service.QueuedPosting, error) {
+	return f.queue, nil
 }
-
-func createReview(ctx context.Context, s testutil.TestApp, applicationID int64, documentType document.Type, content string, outcome document.Outcome, notes string) (*document.Review, error) {
-	return s.Documents.Review(ctx, applicationID, documentType, content, outcome, notes)
-}
-
-// Filters are the authority on what the agent reads: an interested posting
-// the company's list hides isn't offered.
-func TestList_ExcludesInterestedPostingTheCompanyListHides(t *testing.T) {
-	t.Parallel()
-	for _, tt := range []struct {
-		name string
-		hide func(t *testing.T, s testutil.TestApp, companyID, postingID int64)
-	}{
-		{"closed", func(t *testing.T, s testutil.TestApp, _, postingID int64) {
-			t.Helper()
-			if err := s.Postings.Close(context.Background(), postingID, nil); err != nil {
-				t.Fatalf("Close: %v", err)
-			}
-		}},
-		{"filtered out", func(t *testing.T, s testutil.TestApp, companyID, _ int64) {
-			t.Helper()
-			ctx := context.Background()
-			if err := s.Companies.SetFilters(ctx, companyID, []filter.Filter{{Field: filter.FieldLocation, Value: "Nowhere"}}); err != nil {
-				t.Fatalf("SetFilters: %v", err)
-			}
-		}},
-	} {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			st, s, _ := newTestStage(t)
-			company := mustCreateCompany(t, s, "Acme")
-			posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-			mustMarkInterested(t, s, posting.ID)
-			tt.hide(t, s, company.ID, posting.ID)
-
-			got, err := st.List(context.Background())
-			if err != nil {
-				t.Fatalf("List: %v", err)
-			}
-			if len(got) != 0 {
-				t.Fatalf("got %d candidates, want 0: the company's list hides the posting", len(got))
-			}
-		})
-	}
-}
-
-// fakeDrafting prepares every posting as prepared.
-type fakeDrafting struct{ prepared *service.Prepared }
 
 func (f fakeDrafting) Prepare(context.Context, int64) (*service.Prepared, error) {
 	return f.prepared, nil
@@ -795,7 +207,7 @@ func TestPrepare_MapsWhatDraftingPrepared(t *testing.T) {
 				},
 				Form: tt.form,
 			}
-			st := New(nil, nil, nil, nil, nil, fakeDrafting{prepared}, nil)
+			st := New(nil, nil, nil, nil, fakeDrafting{prepared: prepared}, nil)
 
 			got, err := st.Prepare(t.Context(), 7)
 			if err != nil {
@@ -818,5 +230,51 @@ func TestPrepare_MapsWhatDraftingPrepared(t *testing.T) {
 				t.Errorf("Prepare (-want +got):\n%s", diff)
 			}
 		})
+	}
+}
+
+func TestList_MapsTheDraftingQueue(t *testing.T) {
+	t.Parallel()
+	reviewedAt := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
+	firstSeen := time.Date(2026, 11, 1, 9, 0, 0, 0, time.UTC)
+	interested := posting.Posting{ID: 7, CompanyID: 3, IngestedFields: posting.IngestedFields{Title: "Engineer", Location: "Remote", DescriptionText: "Build things"}, FirstSeenAt: firstSeen}
+	started := posting.Posting{ID: 8, CompanyID: 4, IngestedFields: posting.IngestedFields{Title: "Designer"}, FirstSeenAt: firstSeen}
+	queue := []service.QueuedPosting{
+		{Posting: interested, CompanyName: "Acme"},
+		{
+			Posting:     started,
+			CompanyName: "Globex",
+			Application: &application.Application{ID: 11, PostingID: 8, Status: application.Started, Notes: "referred by a friend"},
+			LatestReviews: map[document.Type]document.Review{
+				document.Resume: {ID: 5, ApplicationID: 11, DocumentType: document.Resume, Cycle: 2, Outcome: document.Flagged, Notes: "too long", CreatedAt: reviewedAt},
+			},
+		},
+	}
+	st := New(nil, nil, nil, nil, fakeDrafting{queue: queue}, nil)
+
+	got, err := st.List(t.Context())
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	applicationID, status := int64(11), application.Started
+	want := []Candidate{
+		{
+			Posting:       PostingSummary{ID: 7, Title: "Engineer", Location: "Remote", FirstSeenAt: firstSeen},
+			CompanyName:   "Acme",
+			LatestReviews: map[document.Type]LatestReview{},
+		},
+		{
+			Posting:           PostingSummary{ID: 8, Title: "Designer", FirstSeenAt: firstSeen},
+			CompanyName:       "Globex",
+			ApplicationID:     &applicationID,
+			ApplicationStatus: &status,
+			ApplicationNotes:  "referred by a friend",
+			LatestReviews: map[document.Type]LatestReview{
+				document.Resume: {Outcome: document.Flagged, Notes: "too long", Cycle: 2, CreatedAt: reviewedAt},
+			},
+		},
+	}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("List (-want +got):\n%s", diff)
 	}
 }

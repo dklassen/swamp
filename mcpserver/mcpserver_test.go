@@ -49,7 +49,7 @@ func newTestServer(t *testing.T) (*mcp.Server, testutil.TestApp, *documents.Stor
 		"acme": {{SourceID: "job-1", Title: "Engineer"}, {SourceID: "job-2", Title: "Designer"}},
 	}}
 	syncer := swampsync.New(s.Companies, s.Postings, map[string]swampsync.PostingFetcher{jobboard.Ashby: fetcher}, swampsync.DefaultConfig())
-	return New(stage.New(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Drafting, d), d, syncer), s, d
+	return New(stage.New(s.Companies, s.Postings, s.Documents, s.Scores, s.Drafting, d), d, syncer), s, d
 }
 
 // connectClient wires an in-process MCP client to srv over an in-memory

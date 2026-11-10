@@ -156,19 +156,6 @@ func latestReviewsForJSON(reviews map[document.Type]document.Review) map[documen
 	return out
 }
 
-// needsRework reports whether any of reviews' latest outcomes is
-// document.Flagged -- a flagged document needs another drafting
-// pass even once its file exists on disk, so List keeps surfacing it
-// rather than treating "both files exist" as "done".
-func needsRework(reviews map[document.Type]document.Review) bool {
-	for _, r := range reviews {
-		if r.Outcome == document.Flagged {
-			return true
-		}
-	}
-	return false
-}
-
 // Prepared is everything an external agent needs to draft and write one
 // posting's documents, once Prepare has committed to it. Documents has
 // one entry per document type, keyed by its name ("cover_letter",
@@ -198,22 +185,15 @@ type companyService interface {
 type postingService interface {
 	GetWithCompany(ctx context.Context, postingID int64) (*posting.Posting, *company.Company, error)
 	Search(ctx context.Context, search posting.Search) (*posting.SearchPage, error)
-	Interested(ctx context.Context) ([]posting.Interested, error)
-	Markup(ctx context.Context, postingID int64) (*posting.Markup, error)
-	Application(ctx context.Context, postingID int64) (*application.Application, error)
-}
-
-type applicationService interface {
-	Active(ctx context.Context, order application.Order) ([]posting.ActiveApplication, error)
 }
 
 type documentService interface {
-	LatestReviews(ctx context.Context, applicationID int64) (map[document.Type]document.Review, error)
 	Write(ctx context.Context, applicationID int64, documentType document.Type, content, version string, source document.Source) (string, error)
 	Read(ctx context.Context, applicationID int64, documentType document.Type) (path, content string, err error)
 }
 
 type draftingService interface {
+	Queue(ctx context.Context) ([]service.QueuedPosting, error)
 	Prepare(ctx context.Context, postingID int64) (*service.Prepared, error)
 }
 
@@ -226,124 +206,48 @@ type scoringService interface {
 // mirroring how sync.Syncer composes ashby and store: List and Prepare
 // are its whole exported API.
 type Stage struct {
-	companies    companyService
-	postings     postingService
-	applications applicationService
-	docs         documentService
-	scores       scoringService
-	drafting     draftingService
-	documents    *documents.Store
+	companies companyService
+	postings  postingService
+	docs      documentService
+	scores    scoringService
+	drafting  draftingService
+	documents *documents.Store
 }
 
-func New(companies companyService, postings postingService, applications applicationService, docs documentService, scores scoringService, drafting draftingService, d *documents.Store) *Stage {
+func New(companies companyService, postings postingService, docs documentService, scores scoringService, drafting draftingService, d *documents.Store) *Stage {
 	return &Stage{
-		companies:    companies,
-		postings:     postings,
-		applications: applications,
-		docs:         docs,
-		scores:       scores,
-		drafting:     drafting,
-		documents:    d,
+		companies: companies,
+		postings:  postings,
+		docs:      docs,
+		scores:    scores,
+		drafting:  drafting,
+		documents: d,
 	}
 }
 
-// List returns the postings an agent can draft for: interested,
-// non-archived postings, plus postings with a started application that
-// were never marked interested (#165) -- an application started from the
-// TUI's posting detail, say. Either way a posting is skipped once both
-// documents are on disk and no current review is flagged, or when its
-// application is at a terminal status (rejected, withdrawn, posting
-// closed...). Started applications that aren't interested come after the
-// interested postings. Read-only: it never creates an application or
-// touches the filesystem, so it's safe to call as often as needed to
-// check on outstanding work.
+// List returns the postings an agent can draft for, as
+// DraftingService.Queue orders them. Read-only: it never creates an
+// application or touches the filesystem, so it's safe to call as often as
+// needed to check on outstanding work.
 func (st *Stage) List(ctx context.Context) ([]Candidate, error) {
-	postings, err := st.postings.Interested(ctx)
+	queue, err := st.drafting.Queue(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("stage: list interested postings: %w", err)
+		return nil, fmt.Errorf("stage: %w", err)
 	}
-	started, err := st.startedNotInterested(ctx, postings)
-	if err != nil {
-		return nil, err
-	}
-
-	candidates := make([]Candidate, 0, len(postings)+len(started))
-	for _, p := range append(postings, started...) {
-		c, ok, err := st.candidate(ctx, p)
-		if err != nil {
-			return nil, err
+	candidates := make([]Candidate, len(queue))
+	for i, q := range queue {
+		candidates[i] = Candidate{
+			Posting:       postingSummary(q.Posting),
+			CompanyName:   q.CompanyName,
+			LatestReviews: latestReviewsForJSON(q.LatestReviews),
 		}
-		if ok {
-			candidates = append(candidates, c)
+		if q.Application != nil {
+			id, status := q.Application.ID, q.Application.Status
+			candidates[i].ApplicationID, candidates[i].ApplicationStatus = &id, &status
+			candidates[i].ApplicationNotes = q.Application.Notes
 		}
 	}
 	return candidates, nil
-}
-
-// startedNotInterested returns the postings with a started application
-// that aren't among interested (so weren't marked interested) and aren't
-// archived, in the shape ListInterestedPostings returns.
-func (st *Stage) startedNotInterested(ctx context.Context, interested []posting.Interested) ([]posting.Interested, error) {
-	seen := make(map[int64]bool, len(interested))
-	for _, p := range interested {
-		seen[p.Posting.ID] = true
-	}
-	applications, err := st.applications.Active(ctx, application.OrderCompany)
-	if err != nil {
-		return nil, fmt.Errorf("stage: list active applications: %w", err)
-	}
-	var started []posting.Interested
-	for _, a := range applications {
-		if a.Status != application.Started || seen[a.Posting.ID] {
-			continue
-		}
-		markup, err := st.postings.Markup(ctx, a.Posting.ID)
-		if err != nil {
-			return nil, fmt.Errorf("stage: get posting markup: %w", err)
-		}
-		if markup.ArchivedAt != nil {
-			continue
-		}
-		id, status := a.ID, a.Status
-		started = append(started, posting.Interested{
-			Posting:           a.Posting,
-			CompanyName:       a.CompanyName,
-			ApplicationID:     &id,
-			ApplicationStatus: &status,
-		})
-	}
-	return started, nil
-}
-
-// candidate builds p's Candidate, or reports false when there's nothing
-// left to draft: both documents are on disk and no current review is
-// flagged.
-func (st *Stage) candidate(ctx context.Context, p posting.Interested) (Candidate, bool, error) {
-	var notes string
-	var reviews map[document.Type]document.Review
-	if p.ApplicationID != nil {
-		var err error
-		reviews, err = st.docs.LatestReviews(ctx, *p.ApplicationID)
-		if err != nil {
-			return Candidate{}, false, fmt.Errorf("stage: latest document reviews: %w", err)
-		}
-		if allDrafted(st.documents.Status(*p.ApplicationID)) && !needsRework(reviews) {
-			return Candidate{}, false, nil
-		}
-		app, err := st.postings.Application(ctx, p.Posting.ID)
-		if err != nil {
-			return Candidate{}, false, fmt.Errorf("stage: get application: %w", err)
-		}
-		notes = app.Notes
-	}
-	return Candidate{
-		Posting:           postingSummary(p.Posting),
-		CompanyName:       p.CompanyName,
-		ApplicationID:     p.ApplicationID,
-		ApplicationStatus: p.ApplicationStatus,
-		ApplicationNotes:  notes,
-		LatestReviews:     latestReviewsForJSON(reviews),
-	}, true, nil
 }
 
 // Prepare commits to drafting postingID's application: creates its
@@ -371,18 +275,4 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 		ApplicationForm:      prepared.Form.Form,
 		ApplicationFormError: prepared.Form.FetchError,
 	}, nil
-}
-
-// allDrafted reports whether every document type in documents' list
-// exists for the application. Until RFC 0002 phase 2 records which
-// documents a posting's form asks for (#168, #169), every type is
-// required (RFC 0004, decided 2026-10-01).
-func allDrafted(status documents.Status) bool {
-	for _, documentType := range document.Types() {
-		doc, err := status.Doc(documentType)
-		if err != nil || !doc.Exists {
-			return false
-		}
-	}
-	return true
 }
