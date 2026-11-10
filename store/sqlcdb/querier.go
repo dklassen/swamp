@@ -76,6 +76,8 @@ type Querier interface {
 	// Whether the posting already has a score that a new one would only repeat:
 	// on the same content, against the same profile, from the same model.
 	HasRepeatScore(ctx context.Context, arg HasRepeatScoreParams) (bool, error)
+	// Leaves a stored form in place.
+	InsertPostingApplicationForm(ctx context.Context, arg InsertPostingApplicationFormParams) error
 	// When the application entered its current status: every status write
 	// records a row (#162), so the newest is the current status's.
 	LatestApplicationStatusChange(ctx context.Context, applicationID int64) (ApplicationStatusHistory, error)

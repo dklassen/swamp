@@ -3,7 +3,9 @@ package service
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"sync"
 	"time"
 
 	"github.com/dklassen/swamp/internal/domain/company"
@@ -29,6 +31,7 @@ type formViewer interface {
 
 type formWriter interface {
 	Save(ctx context.Context, r store.Runner, postingID int64, formJSON string) error
+	Insert(ctx context.Context, r store.Runner, postingID int64, formJSON string) error
 }
 
 type missingFormLister interface {
@@ -76,21 +79,58 @@ func (service *FormService) FetchMissing(ctx context.Context, c company.Company)
 	if err != nil {
 		return nil, err
 	}
-	var fetch FormFetch
+	var (
+		mu    sync.Mutex
+		fetch FormFetch
+		errs  []error
+		wg    sync.WaitGroup
+	)
+	slots := make(chan struct{}, formFetchesAtOnce)
 	for _, p := range missing {
-		fetchCtx, cancel := context.WithTimeout(ctx, service.formConfig.FetchTimeout)
-		form, err := fetcher.FetchApplicationForm(fetchCtx, c.SourceRef, p.SourceID)
-		cancel()
-		if err != nil {
-			fetch.Failed++
-			continue
-		}
-		if err := service.Save(ctx, p.ID, form); err != nil {
-			return nil, err
-		}
-		fetch.Fetched++
+		slots <- struct{}{}
+		wg.Go(func() {
+			defer func() { <-slots }()
+			form, fetchErr := service.fetchForm(ctx, fetcher, c.SourceRef, p.SourceID)
+			var storeErr error
+			if fetchErr == nil {
+				storeErr = service.insert(ctx, p.ID, form)
+			}
+			mu.Lock()
+			defer mu.Unlock()
+			switch {
+			case fetchErr != nil:
+				fetch.Failed++
+			case storeErr != nil:
+				errs = append(errs, storeErr)
+			default:
+				fetch.Fetched++
+			}
+		})
+	}
+	wg.Wait()
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
 	}
 	return &fetch, nil
+}
+
+// formFetchesAtOnce bounds FetchMissing's requests to one board.
+const formFetchesAtOnce = 4
+
+func (service *FormService) fetchForm(ctx context.Context, fetcher FormFetcher, boardToken, jobID string) (jobboard.ApplicationForm, error) {
+	ctx, cancel := context.WithTimeout(ctx, service.formConfig.FetchTimeout)
+	defer cancel()
+	return fetcher.FetchApplicationForm(ctx, boardToken, jobID)
+}
+
+// insert stores form unless the posting already has one, so a form saved
+// by hand during the fetch stays.
+func (service *FormService) insert(ctx context.Context, postingID int64, form jobboard.ApplicationForm) error {
+	encoded, err := json.Marshal(form)
+	if err != nil {
+		return fmt.Errorf("encode application form: %w", err)
+	}
+	return service.formWriter.Insert(ctx, service.db, postingID, string(encoded))
 }
 
 // Save stores form as the posting's application form, replacing any

@@ -18,16 +18,20 @@ import (
 )
 
 // boardForms is a board's forms by job ID, recording each fetch as
-// "board/job".
+// "board/job". during, if set, runs inside each fetch.
 type boardForms struct {
 	mu      sync.Mutex
 	forms   map[string]jobboard.ApplicationForm
 	fetched []string
+	during  func()
 }
 
 func (b *boardForms) FetchApplicationForm(_ context.Context, boardToken, jobID string) (jobboard.ApplicationForm, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
+	if b.during != nil {
+		b.during()
+	}
 	b.fetched = append(b.fetched, boardToken+"/"+jobID)
 	form, ok := b.forms[jobID]
 	if !ok {
@@ -146,6 +150,73 @@ func TestFormService_FetchMissing_SourceWithoutAFetcher_MakesNoRequest(t *testin
 	}
 	if _, err := forms.Get(t.Context(), p.ID); !errors.Is(err, store.ErrNotFound) {
 		t.Errorf("Get: err = %v, want store.ErrNotFound", err)
+	}
+}
+
+// slowBoard holds each fetch long enough for every fetch allowed to start
+// to be in flight together, recording the most it saw.
+type slowBoard struct {
+	mu       sync.Mutex
+	inFlight int
+	most     int
+}
+
+func (b *slowBoard) FetchApplicationForm(context.Context, string, string) (jobboard.ApplicationForm, error) {
+	b.mu.Lock()
+	b.inFlight++
+	b.most = max(b.most, b.inFlight)
+	b.mu.Unlock()
+	time.Sleep(50 * time.Millisecond)
+	b.mu.Lock()
+	b.inFlight--
+	b.mu.Unlock()
+	return fetchedForm, nil
+}
+
+func TestFormService_FetchMissing_FetchesFourAtATime(t *testing.T) {
+	t.Parallel()
+	app := testutil.NewTestApp(t)
+	board := &slowBoard{}
+	forms := service.NewFormService(app.Store, map[string]service.FormFetcher{jobboard.Ashby: board}, service.FormConfig{FetchTimeout: time.Second})
+	acme := testutil.MustAddCompany(t, app, "acme")
+	for _, id := range []string{"job-1", "job-2", "job-3", "job-4", "job-5", "job-6", "job-7", "job-8"} {
+		testutil.MustIngestPostingFor(t, app, acme.ID, id, "Engineer")
+	}
+
+	got, err := forms.FetchMissing(t.Context(), acme)
+	if err != nil {
+		t.Fatalf("FetchMissing: %v", err)
+	}
+	if diff := cmp.Diff(&service.FormFetch{Fetched: 8}, got); diff != "" {
+		t.Errorf("FetchMissing (-want +got):\n%s", diff)
+	}
+	if board.most != 4 {
+		t.Errorf("at most %d fetches at once, want 4", board.most)
+	}
+}
+
+func TestFormService_FetchMissing_KeepsAFormSavedDuringTheFetch(t *testing.T) {
+	t.Parallel()
+	byHand := jobboard.ApplicationForm{Questions: []jobboard.Question{{Label: "Portfolio", Type: "text"}}}
+	board := &boardForms{forms: map[string]jobboard.ApplicationForm{"job-1": fetchedForm}}
+	app, forms := newFormJob(t, board)
+	acme := testutil.MustAddCompany(t, app, "acme")
+	p := testutil.MustIngestPostingFor(t, app, acme.ID, "job-1", "Engineer")
+	board.during = func() {
+		if err := forms.Save(t.Context(), p.ID, byHand); err != nil {
+			t.Errorf("Save: %v", err)
+		}
+	}
+
+	if _, err := forms.FetchMissing(t.Context(), acme); err != nil {
+		t.Fatalf("FetchMissing: %v", err)
+	}
+	stored, err := forms.Get(t.Context(), p.ID)
+	if err != nil {
+		t.Fatalf("Get: %v", err)
+	}
+	if diff := cmp.Diff(&byHand, stored); diff != "" {
+		t.Errorf("stored form (-want +got):\n%s", diff)
 	}
 }
 

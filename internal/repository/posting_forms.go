@@ -25,6 +25,17 @@ func (PostingForms) Save(ctx context.Context, r store.Runner, postingID int64, f
 	return nil
 }
 
+// Insert stores postingID's application form unless it already has one.
+func (PostingForms) Insert(ctx context.Context, r store.Runner, postingID int64, formJSON string) error {
+	err := store.Write(ctx, r, func(q *sqlcdb.Queries) error {
+		return q.InsertPostingApplicationForm(ctx, sqlcdb.InsertPostingApplicationFormParams{PostingID: postingID, Form: formJSON})
+	})
+	if err != nil {
+		return fmt.Errorf("application: insert form: %w", err)
+	}
+	return nil
+}
+
 // Get returns postingID's stored application form, or store.ErrNotFound
 // when it was never fetched.
 func (PostingForms) Get(ctx context.Context, r store.Runner, postingID int64) (*domain.Form, error) {

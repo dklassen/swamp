@@ -21,6 +21,23 @@ func (q *Queries) GetPostingApplicationForm(ctx context.Context, postingID int64
 	return i, err
 }
 
+const insertPostingApplicationForm = `-- name: InsertPostingApplicationForm :exec
+INSERT INTO posting_application_forms (posting_id, form)
+VALUES (?, ?)
+ON CONFLICT (posting_id) DO NOTHING
+`
+
+type InsertPostingApplicationFormParams struct {
+	PostingID int64  `json:"posting_id"`
+	Form      string `json:"form"`
+}
+
+// Leaves a stored form in place.
+func (q *Queries) InsertPostingApplicationForm(ctx context.Context, arg InsertPostingApplicationFormParams) error {
+	_, err := q.db.ExecContext(ctx, insertPostingApplicationForm, arg.PostingID, arg.Form)
+	return err
+}
+
 const listOpenPostingsWithoutForm = `-- name: ListOpenPostingsWithoutForm :many
 SELECT id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at, content_sha256 FROM postings
 WHERE company_id = ? AND listing_status = 'open'
