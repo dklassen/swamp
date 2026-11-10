@@ -1,8 +1,7 @@
 // Command swamp is the entrypoint: it launches the TUI by default, applies
 // or rolls back database migrations with `migrate up` and `migrate down`
 // (and only then), runs a
-// one-off refresh with the `fetch` subcommand, drives the agent hand-off
-// mechanism with the `stage` subcommand, converts an application's
+// one-off refresh with the `fetch` subcommand, converts an application's
 // drafted documents to PDF with the `export` subcommand, or bulk-creates
 // companies from a YAML seed file with the `import` subcommand. Mostly not
 // unit tested per this project's testing decisions -- verified manually.
@@ -37,7 +36,6 @@ import (
 	"github.com/dklassen/swamp/jobboard/greenhouse"
 	"github.com/dklassen/swamp/jobboard/lever"
 	"github.com/dklassen/swamp/seed"
-	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui"
@@ -224,16 +222,6 @@ func newSyncer(db store.Store) *sync.Syncer {
 		jobboard.Greenhouse: greenhouse.NewClient(),
 		jobboard.Lever:      lever.NewClient(),
 	}, sync.DefaultConfig())
-}
-
-// newStage builds the agent hand-off Stage, able to read application
-// forms from every board that supports it (Greenhouse; see #167 for Ashby
-// and Lever) under the same fetch timeout as a sync.
-func newStage(db store.Store, d *documents.Store) *stage.Stage {
-	drafting := service.NewDraftingService(db, d, map[string]service.FormFetcher{
-		jobboard.Greenhouse: greenhouse.NewClient(),
-	}, service.FormConfig{FetchTimeout: sync.DefaultConfig().FetchTimeout})
-	return stage.New(service.NewCompanyService(db), service.NewPostingService(db), service.NewDocumentService(db, d), service.NewScoringService(db, d), drafting)
 }
 
 // runImport bulk-creates companies from a YAML seed file (see the seed

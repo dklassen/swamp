@@ -101,7 +101,7 @@ func (t Type) MarshalJSON() ([]byte, error) {
 
 // MarshalText implements encoding.TextMarshaler, which encoding/json uses
 // for map keys (MarshalJSON isn't consulted there): without it a
-// map[Type]X, like stage's LatestReviews, would serialize keys as "0",
+// map[Type]X, like stage_prepare's LatestReviews, would serialize keys as "0",
 // "1".
 func (t Type) MarshalText() ([]byte, error) {
 	return []byte(t.String()), nil

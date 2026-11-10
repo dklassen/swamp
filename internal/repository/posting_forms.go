@@ -13,7 +13,7 @@ import (
 type PostingForms struct{}
 
 // Save stores what postingID's application form asks for, as JSON
-// (stage marshals jobboard.ApplicationForm), replacing any earlier fetch
+// (a marshalled jobboard.ApplicationForm), replacing any earlier fetch
 // and stamping it fetched now.
 func (PostingForms) Save(ctx context.Context, r store.Runner, postingID int64, formJSON string) error {
 	err := store.Write(ctx, r, func(q *sqlcdb.Queries) error {
