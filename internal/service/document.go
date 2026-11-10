@@ -17,6 +17,7 @@ import (
 type reviewViewer interface {
 	Count(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type) (int64, error)
 	List(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type) ([]document.Review, error)
+	Latest(ctx context.Context, r store.Runner, applicationID int64) (map[document.Type]document.Review, error)
 	GetMany(ctx context.Context, r store.Runner, ids []int64) ([]document.Review, error)
 }
 
@@ -126,16 +127,9 @@ func (service *DocumentService) LatestReview(ctx context.Context, applicationID 
 // a review of an earlier draft, or no document is left out: a missing
 // entry is the only "no review" signal; see document.Review.
 func (service *DocumentService) LatestReviews(ctx context.Context, applicationID int64) (map[document.Type]document.Review, error) {
-	reviews := make(map[document.Type]document.Review)
-	for _, documentType := range document.Types() {
-		review, err := service.LatestReview(ctx, applicationID, documentType)
-		if errors.Is(err, store.ErrNotFound) {
-			continue
-		}
-		if err != nil {
-			return nil, err
-		}
-		reviews[documentType] = *review
+	reviews, err := service.reviewViewer.Latest(ctx, service.db, applicationID)
+	if err != nil {
+		return nil, err
 	}
 	return documents.Current(service.documents.Status(applicationID), reviews, document.Review.IsCurrent)
 }
