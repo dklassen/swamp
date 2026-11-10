@@ -2,9 +2,7 @@ package tui
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
-	"fmt"
 	"strings"
 	"time"
 
@@ -233,11 +231,7 @@ func loadApplicationForm(postings *service.PostingService, src message.Source, p
 		if err != nil {
 			return fail(err)
 		}
-		var form jobboard.ApplicationForm
-		if err := json.Unmarshal([]byte(stored.JSON), &form); err != nil {
-			return fail(fmt.Errorf("tui: decode stored application form: %w", err))
-		}
-		return read(form)
+		return read(*stored)
 	}
 }
 
@@ -250,11 +244,7 @@ func saveApplicationForm(postings *service.PostingService, src message.Source, p
 		fail := func(err error) tea.Msg {
 			return message.New(src, subject, message.OpUpdated, time.Now().UTC(), model.ErrorOf(err))
 		}
-		encoded, err := json.Marshal(form)
-		if err != nil {
-			return fail(fmt.Errorf("tui: encode application form: %w", err))
-		}
-		if err := postings.SaveForm(context.Background(), postingID, string(encoded)); err != nil {
+		if err := postings.SaveForm(context.Background(), postingID, form); err != nil {
 			return fail(err)
 		}
 		return message.New(src, subject, message.OpNone, time.Now().UTC(), message.Ran[message.ApplicationForm]{Value: applicationFormSnapshot(form)})

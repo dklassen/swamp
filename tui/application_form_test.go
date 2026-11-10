@@ -144,7 +144,7 @@ func TestApplicationFormModel_DiscardPrompt(t *testing.T) {
 			t.Parallel()
 
 			// A service on no database fails every write.
-			m := formOn(service.NewPostingService(store.Store{}), message.ApplicationForm{})
+			m := formOn(service.NewPostingService(store.Store{}, nil, service.FormConfig{}), message.ApplicationForm{})
 			m.textarea.InsertString("Why us? *\n")
 			typed := m.textarea.Value()
 			m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEsc})

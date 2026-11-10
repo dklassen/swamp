@@ -1,19 +1,20 @@
 # Stage into services work order
 
-`stage` holds business logic that belongs in `internal/service`: the drafting queue, get-or-create of an application, the application form's fetch policy, document reads and writes, the deleted-company rule, the profile check. Several pieces are repeated in `tui` and `cmd/swamp` (reviews still current on disk: five copies; the form's JSON: two). This series moves that logic into the services, which now own `documents.Store` and the form fetchers. Then it moves what's left of `stage` (the agent's JSON shapes, the sort registry, cursors) under `mcpserver`. One PR per step. There's no RFC; RFC 0011's section 3 is updated in step 10.
+`stage` holds business logic that belongs in `internal/service`: the drafting queue, get-or-create of an application, the application form's fetch policy, document reads and writes, the deleted-company rule, the profile check. Several pieces are repeated in `tui` and `cmd/swamp` (reviews still current on disk: five copies; the form's JSON: two). This series moves that logic into the services, which now own `documents.Store` and the form fetchers. Then it moves what's left of `stage` (the agent's JSON shapes, the sort registry, cursors) under `mcpserver`. One PR per step. There's no RFC; RFC 0011's section 3 is updated in step 10. Step 11 came out of step 4: once `PostingService` owns the form fetchers, sync fetches a posting's form when the posting lands.
 
 | Step | Title | Issue | PR | State | Depends on |
 | --- | --- | --- | --- | --- | --- |
 | 1 | [A document's hash has one home](01-one-content-hash.md) | - | #486 | merged | none |
 | 2 | [DocumentService owns documents; reviews come back current](02-services-own-documents.md) | - | #487 | merged | none |
-| 3 | [Document reads and writes go through DocumentService](03-document-read-write.md) | - | #488 | in review | 2 |
-| 4 | [Application forms are PostingService's](04-application-forms.md) | - | - | planned | none |
+| 3 | [Document reads and writes go through DocumentService](03-document-read-write.md) | - | #488 | merged | 2 |
+| 4 | [Application forms are PostingService's](04-application-forms.md) | - | #489 | in review | none |
 | 5 | [A posting at a deleted company is refused in one place](05-posting-at-live-company.md) | - | - | planned | none |
 | 6 | [Preparing a posting is one service call](06-prepare.md) | - | - | planned | 2, 3, 4, 5 |
 | 7 | [The drafting queue is one service query](07-drafting-queue.md) | - | - | planned | 2 |
 | 8 | [Companies with their open counts are CompanyService's](08-companies-with-open-counts.md) | - | - | planned | none |
 | 9 | [Scoring checks the profile; canonical files come from DocumentService](09-profile-and-canonical-files.md) | - | - | planned | 2 |
 | 10 | [What's left of stage moves under mcpserver](10-stage-into-mcpserver.md) | - | - | planned | 1-9 |
+| 11 | [A posting's application form is fetched when the posting lands](11-forms-with-postings.md) | - | - | planned | 4 |
 
 ## Next
 
@@ -36,12 +37,14 @@
 - The document errors and `NoDocumentYet` live in `internal/service`, beside the methods that return them (step 3): `mcpserver` is above it and can match them there.
 - Functions are named for intent, not the conditions they run under (Bob, 2026-11-10, step 3): `WriteIfUnchanged` folded into `Write`, and the application check is `requireApplication`. The rule is in AGENTS.md's Go style.
 - Step 4 returns a failed form fetch in a result struct with the form and a fetch error message, not as an `error`, since drafting goes ahead without the form; the fetchers reach `NewPostingService` as a map by source, as `sync`'s do (Bob, 2026-11-10).
+- Step 4: `NewPostingService` takes the fetchers and a `FormConfig` holding the fetch timeout, mirroring `sync.New`; callers that never fetch pass `nil` and `FormConfig{}`. `PostingService.CurrentForm` takes the posting and company values `Prepare` already has, leaving how the company is looked up to step 5 (Bob, 2026-11-10).
+- A stored application form is never fetched again (Bob, 2026-11-10, step 4). The weekly refetch carried over from stage assumed forms change apart from their postings, with nothing to show they do; that's also why it doesn't refetch when the posting's `updated_at` moves, which may not even reflect form edits. Step 11 fetches the form when the posting lands instead (Bob, 2026-11-10), which also keeps a form saved by hand from blocking the board's.
 - Step 5's method returns the posting with its `*company.Company` (Bob, 2026-11-10).
 - Step 8 moves the TUI's company list onto the new `CompanyService` query in the same PR, since it makes the same two reads (Bob, 2026-11-10).
 
 ## Open
 
-None.
+- Step 11 needs host-side counts of open Greenhouse postings, in total and at the largest company, to decide where its form fetches run.
 
 ## Follow-ups
 

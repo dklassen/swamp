@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -12,6 +13,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/change"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/repository"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -104,9 +106,13 @@ type PostingService struct {
 	applicationWriter        postingApplicationWriter
 	applicationHistoryViewer postingApplicationHistoryViewer
 	applicationHistoryWriter applicationHistoryWriter
+	formFetchers             map[string]FormFetcher
+	formConfig               FormConfig
 }
 
-func NewPostingService(db store.Store) *PostingService {
+// NewPostingService reads application forms with formFetchers, keyed by
+// company source; a source without one only has forms saved by hand.
+func NewPostingService(db store.Store, formFetchers map[string]FormFetcher, formConfig FormConfig) *PostingService {
 	postings := &repository.PostingRepository{}
 	postingHistory := &repository.PostingHistoryRepository{}
 	markup := &repository.PostingMarkupRepository{}
@@ -129,6 +135,8 @@ func NewPostingService(db store.Store) *PostingService {
 		applicationWriter:        applications,
 		applicationHistoryViewer: applicationHistory,
 		applicationHistoryWriter: applicationHistory,
+		formFetchers:             formFetchers,
+		formConfig:               formConfig,
 	}
 }
 
@@ -316,16 +324,32 @@ func (service *PostingService) writeMarkup(ctx context.Context, postingID int64,
 	return written, nil
 }
 
-// SaveForm stores what the posting's application form asks for, as JSON,
+// SaveForm stores what the posting's application form asks for,
 // replacing any earlier fetch.
-func (service *PostingService) SaveForm(ctx context.Context, postingID int64, formJSON string) error {
-	return service.formWriter.Save(ctx, service.db, postingID, formJSON)
+func (service *PostingService) SaveForm(ctx context.Context, postingID int64, form jobboard.ApplicationForm) error {
+	encoded, err := json.Marshal(form)
+	if err != nil {
+		return fmt.Errorf("encode application form: %w", err)
+	}
+	return service.formWriter.Save(ctx, service.db, postingID, string(encoded))
 }
 
 // Form returns the posting's stored application form, or
 // store.ErrNotFound when it was never fetched.
-func (service *PostingService) Form(ctx context.Context, postingID int64) (*posting.Form, error) {
-	return service.formViewer.Get(ctx, service.db, postingID)
+func (service *PostingService) Form(ctx context.Context, postingID int64) (*jobboard.ApplicationForm, error) {
+	stored, err := service.formViewer.Get(ctx, service.db, postingID)
+	if err != nil {
+		return nil, err
+	}
+	return decodeForm(stored)
+}
+
+func decodeForm(stored *posting.Form) (*jobboard.ApplicationForm, error) {
+	var form jobboard.ApplicationForm
+	if err := json.Unmarshal([]byte(stored.JSON), &form); err != nil {
+		return nil, fmt.Errorf("decode stored application form: %w", err)
+	}
+	return &form, nil
 }
 
 // ApplyTo starts an application for a posting and records its

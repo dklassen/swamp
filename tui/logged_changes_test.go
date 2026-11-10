@@ -67,7 +67,7 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 			return e, nil
 		}},
 		{"posting closed", "postings", func(ctx context.Context, f fixture) error {
-			return service.NewPostingService(f.writer).Close(ctx, f.postingID, nil)
+			return service.NewPostingService(f.writer, nil, service.FormConfig{}).Close(ctx, f.postingID, nil)
 		}, func(ctx context.Context, f fixture, row change.Event) (tea.Msg, error) {
 			p, err := f.s.Postings.Get(ctx, f.postingID)
 			if err != nil {
@@ -76,7 +76,7 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 			return message.Logged(row.ID, mcp, message.Subject{Type: message.TypePosting, ID: p.ID}, message.OpUpdated, row.At, postingSnapshot(*p)), nil
 		}},
 		{"posting marked interested", "posting_markup", func(ctx context.Context, f fixture) error {
-			_, err := service.NewPostingService(f.writer).SetInterested(ctx, f.postingID)
+			_, err := service.NewPostingService(f.writer, nil, service.FormConfig{}).SetInterested(ctx, f.postingID)
 			return err
 		}, func(ctx context.Context, f fixture, row change.Event) (tea.Msg, error) {
 			m, err := f.s.Postings.Markup(ctx, f.postingID)

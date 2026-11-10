@@ -2,7 +2,6 @@ package tui
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"os"
 	"path/filepath"
@@ -4146,19 +4145,15 @@ func TestApp_ApplicationDetail_EnterApplicationFormByHand(t *testing.T) {
 	if app.status != "Application form saved" {
 		t.Errorf("status after saving = %q, want %q", app.status, "Application form saved")
 	}
-	stored, err := s.Postings.Form(context.Background(), posting.ID)
+	got, err := s.Postings.Form(context.Background(), posting.ID)
 	if err != nil {
 		t.Fatalf("Form: %v", err)
-	}
-	var got jobboard.ApplicationForm
-	if err := json.Unmarshal([]byte(stored.JSON), &got); err != nil {
-		t.Fatalf("decode stored form: %v", err)
 	}
 	want := jobboard.ApplicationForm{
 		Documents: map[document.Type]jobboard.Requirement{},
 		Questions: []jobboard.Question{{Label: "Why us?", Required: true}},
 	}
-	if diff := cmp.Diff(want, got); diff != "" {
+	if diff := cmp.Diff(&want, got); diff != "" {
 		t.Errorf("stored form mismatch (-want +got):\n%s", diff)
 	}
 
