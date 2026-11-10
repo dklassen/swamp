@@ -240,8 +240,8 @@ func (service *CompanyService) ListActive(ctx context.Context) ([]company.Compan
 // ListActiveWithOpenPostings returns the companies ListActive does, each
 // with its open count. Both reads share a transaction so a sync can't land
 // between them and leave a count out of step with the list.
-func (service *CompanyService) ListActiveWithOpenPostings(ctx context.Context) ([]company.CompanyStats, error) {
-	var listed []company.CompanyStats
+func (service *CompanyService) ListActiveWithOpenPostings(ctx context.Context) ([]company.Stats, error) {
+	var listed []company.Stats
 	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
 		companies, err := service.companyViewer.ListActive(ctx, tx)
 		if err != nil {
@@ -251,9 +251,9 @@ func (service *CompanyService) ListActiveWithOpenPostings(ctx context.Context) (
 		if err != nil {
 			return fmt.Errorf("company: count open postings: %w", err)
 		}
-		listed = make([]company.CompanyStats, len(companies))
+		listed = make([]company.Stats, len(companies))
 		for i, c := range companies {
-			listed[i] = company.CompanyStats{Company: c, OpenPostings: open[c.ID]}
+			listed[i] = company.Stats{Company: c, OpenPostings: open[c.ID]}
 		}
 		return nil
 	})
