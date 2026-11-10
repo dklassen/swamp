@@ -21,6 +21,6 @@ Each loads every review of every type to keep one per type.
 
 ## Acceptance criteria
 
-- [ ] The existing `LatestReviews` and `Active` service tests pass unchanged; a new behaviour gets a service test first.
-- [ ] No service loops over `document.Types()` to find latest reviews.
-- [ ] Verification checklist clean.
+- [x] The existing `LatestReviews` and `Active` service tests pass unchanged; a new behaviour gets a service test first.
+- [x] No service loops over `document.Types()` to find latest reviews.
+- [x] Verification checklist clean.

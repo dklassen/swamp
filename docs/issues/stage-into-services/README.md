@@ -15,7 +15,7 @@
 | 9 | [Scoring checks the profile; canonical files come from DocumentService](09-profile-and-canonical-files.md) | - | - | planned | 2 |
 | 10 | [What's left of stage moves under mcpserver](10-stage-into-mcpserver.md) | - | - | planned | 1-9 |
 | 11 | [A posting's application form is fetched when the posting lands](11-forms-with-postings.md) | - | - | planned | 4, 6 |
-| 12 | [The latest review of each document type is a repository read](12-latest-reviews.md) | - | - | in progress | none |
+| 12 | [The latest review of each document type is a repository read](12-latest-reviews.md) | - | #492 | in review | none |
 
 ## Next
 
