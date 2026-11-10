@@ -35,6 +35,14 @@ RETURNING *;
 SELECT * FROM postings
 WHERE id = ?;
 
+-- name: GetPostingWithCompany :one
+-- The company is read whether or not it was deleted, so the caller can
+-- name it when refusing.
+SELECT sqlc.embed(postings), sqlc.embed(companies)
+FROM postings
+JOIN companies ON companies.id = postings.company_id
+WHERE postings.id = ?;
+
 -- name: ListPostingsByID :many
 SELECT * FROM postings
 WHERE id IN (sqlc.slice('ids'));

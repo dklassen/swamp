@@ -11,6 +11,7 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/change"
+	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/repository"
 	"github.com/dklassen/swamp/jobboard"
@@ -25,6 +26,7 @@ var ErrPostingClosed = errors.New("application: posting is closed")
 
 type postingViewer interface {
 	Get(ctx context.Context, r store.Runner, id int64) (*posting.Posting, error)
+	GetWithCompany(ctx context.Context, r store.Runner, id int64) (*posting.Posting, *company.Company, error)
 	GetMany(ctx context.Context, r store.Runner, ids []int64) ([]posting.Posting, error)
 	GetBySource(ctx context.Context, r store.Runner, source, sourceID string) (*posting.Posting, error)
 	ListInterested(ctx context.Context, r store.Runner, excluding []application.Status) ([]posting.Interested, error)
@@ -206,6 +208,31 @@ func (service *PostingService) Search(ctx context.Context, search posting.Search
 // Get returns a posting by ID, or store.ErrNotFound.
 func (service *PostingService) Get(ctx context.Context, postingID int64) (*posting.Posting, error) {
 	return service.postingViewer.Get(ctx, service.db, postingID)
+}
+
+// CompanyDeletedError is GetWithCompany's error for a posting at a company
+// the user deleted.
+type CompanyDeletedError struct {
+	PostingID   int64
+	CompanyName string
+}
+
+func (e *CompanyDeletedError) Error() string {
+	return fmt.Sprintf("posting %d is at %s, which was deleted", e.PostingID, e.CompanyName)
+}
+
+// GetWithCompany returns the posting and its company. A posting at a
+// deleted company is refused with CompanyDeletedError, as search leaves it
+// out.
+func (service *PostingService) GetWithCompany(ctx context.Context, postingID int64) (*posting.Posting, *company.Company, error) {
+	p, c, err := service.postingViewer.GetWithCompany(ctx, service.db, postingID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if c.DeletedAt != nil {
+		return nil, nil, &CompanyDeletedError{PostingID: p.ID, CompanyName: c.Name}
+	}
+	return p, c, nil
 }
 
 // GetMany returns the postings with the given ids, in no order. An id

@@ -26,6 +26,6 @@ Three callers read a posting and then its company, each its own way:
 
 ## Acceptance criteria
 
-- [ ] A service test: a posting at a deleted company is refused with the new error; one at a live company comes back with its company.
-- [ ] `read_posting`'s message is unchanged.
-- [ ] Verification checklist clean.
+- [x] A service test: a posting at a deleted company is refused with the new error; one at a live company comes back with its company.
+- [x] `read_posting`'s message is unchanged.
+- [x] Verification checklist clean.
