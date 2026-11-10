@@ -2,7 +2,6 @@ package service
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"slices"
@@ -14,7 +13,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/repository"
-	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -69,14 +67,6 @@ type markupWriter interface {
 	SetNotes(ctx context.Context, r store.Runner, postingID int64, notes string) (*posting.Markup, error)
 }
 
-type formViewer interface {
-	Get(ctx context.Context, r store.Runner, postingID int64) (*posting.Form, error)
-}
-
-type formWriter interface {
-	Save(ctx context.Context, r store.Runner, postingID int64, formJSON string) error
-}
-
 type postingApplicationViewer interface {
 	GetByPostingID(ctx context.Context, r store.Runner, postingID int64) (*application.Application, error)
 }
@@ -100,8 +90,6 @@ type PostingService struct {
 	postingHistoryViewer     postingHistoryViewer
 	markupViewer             markupViewer
 	markupWriter             markupWriter
-	formViewer               formViewer
-	formWriter               formWriter
 	applicationViewer        postingApplicationViewer
 	applicationWriter        postingApplicationWriter
 	applicationHistoryViewer postingApplicationHistoryViewer
@@ -112,7 +100,6 @@ func NewPostingService(db store.Store) *PostingService {
 	postings := &repository.PostingRepository{}
 	postingHistory := &repository.PostingHistoryRepository{}
 	markup := &repository.PostingMarkupRepository{}
-	forms := &repository.PostingForms{}
 	applications := &repository.ApplicationRepository{}
 	applicationHistory := &repository.ApplicationHistoryRepository{}
 	return &PostingService{
@@ -125,8 +112,6 @@ func NewPostingService(db store.Store) *PostingService {
 		postingHistoryViewer:     postingHistory,
 		markupViewer:             markup,
 		markupWriter:             markup,
-		formViewer:               forms,
-		formWriter:               forms,
 		applicationViewer:        applications,
 		applicationWriter:        applications,
 		applicationHistoryViewer: applicationHistory,
@@ -328,34 +313,6 @@ func (service *PostingService) writeMarkup(ctx context.Context, postingID int64,
 		return nil, err
 	}
 	return written, nil
-}
-
-// SaveForm stores what the posting's application form asks for,
-// replacing any earlier fetch.
-func (service *PostingService) SaveForm(ctx context.Context, postingID int64, form jobboard.ApplicationForm) error {
-	encoded, err := json.Marshal(form)
-	if err != nil {
-		return fmt.Errorf("encode application form: %w", err)
-	}
-	return service.formWriter.Save(ctx, service.db, postingID, string(encoded))
-}
-
-// Form returns the posting's stored application form, or
-// store.ErrNotFound when it was never fetched.
-func (service *PostingService) Form(ctx context.Context, postingID int64) (*jobboard.ApplicationForm, error) {
-	stored, err := service.formViewer.Get(ctx, service.db, postingID)
-	if err != nil {
-		return nil, err
-	}
-	return decodeForm(stored)
-}
-
-func decodeForm(stored *posting.Form) (*jobboard.ApplicationForm, error) {
-	var form jobboard.ApplicationForm
-	if err := json.Unmarshal([]byte(stored.JSON), &form); err != nil {
-		return nil, fmt.Errorf("decode stored application form: %w", err)
-	}
-	return &form, nil
 }
 
 // ApplyTo starts an application for a posting and records its

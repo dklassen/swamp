@@ -155,11 +155,12 @@ func runTUI(db store.Store, documentsStore *documents.Store, dbPath, origin stri
 	}
 	companies := service.NewCompanyService(db)
 	postings := service.NewPostingService(db)
+	forms := service.NewFormService(db)
 	applications := service.NewApplicationService(db, documentsStore)
 	documentService := service.NewDocumentService(db, documentsStore)
 	scores := service.NewScoringService(db, documentsStore)
 	router := model.NewMsgRouter()
-	screens := tui.NewScreens(companies, postings, applications, documentService, scores, syncer, documentsStore)
+	screens := tui.NewScreens(companies, postings, forms, applications, documentService, scores, syncer, documentsStore)
 	if err := router.Register(screens); err != nil {
 		return fmt.Errorf("register the screens: %w", err)
 	}

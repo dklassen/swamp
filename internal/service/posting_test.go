@@ -12,7 +12,6 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/change"
-	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
@@ -465,36 +464,6 @@ func TestPostingService_Application_AfterDeleteAndRestart_IsTheLiveOne(t *testin
 	}
 	if diff := cmp.Diff(deleted, after); diff != "" {
 		t.Errorf("the deleted application changed (-before +after):\n%s", diff)
-	}
-}
-
-func TestPostingService_Form(t *testing.T) {
-	t.Parallel()
-	s := testutil.NewTestApp(t)
-	ctx := context.Background()
-	p := testutil.MustIngestPosting(t, s, "job-1", "Software Engineer")
-
-	none, err := s.Postings.Form(ctx, p.ID)
-	if !errors.Is(err, store.ErrNotFound) {
-		t.Fatalf("Form before any save: err = %v, want store.ErrNotFound", err)
-	}
-	if none != nil {
-		t.Errorf("Form before any save = %+v, want nil", none)
-	}
-
-	want := jobboard.ApplicationForm{
-		Documents: map[document.Type]jobboard.Requirement{document.Resume: jobboard.Required},
-		Questions: []jobboard.Question{{Label: "Why us?", Required: true, Type: "long_text"}},
-	}
-	if err := s.Postings.SaveForm(ctx, p.ID, want); err != nil {
-		t.Fatalf("SaveForm: %v", err)
-	}
-	got, err := s.Postings.Form(ctx, p.ID)
-	if err != nil {
-		t.Fatalf("Form: %v", err)
-	}
-	if diff := cmp.Diff(&want, got); diff != "" {
-		t.Errorf("Form (-want +got):\n%s", diff)
 	}
 }
 
