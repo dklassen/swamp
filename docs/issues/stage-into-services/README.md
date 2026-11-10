@@ -12,7 +12,7 @@
 | 6 | [Starting to draft a posting is one DraftingService call](06-prepare.md) | - | #495 | merged | 2, 3, 4, 5, 12 |
 | 7 | [The drafting queue is one DraftingService query](07-drafting-queue.md) | - | #496 | merged | 2, 12 |
 | 8 | [Companies with their open counts are CompanyService's](08-companies-with-open-counts.md) | - | #493 | merged | none |
-| 9 | [Scoring checks the profile; canonical files come from DocumentService](09-profile-and-canonical-files.md) | - | TBD | in review | 2 |
+| 9 | [Scoring checks the profile; canonical files come from DocumentService](09-profile-and-canonical-files.md) | - | #497 | in review | 2 |
 | 10 | [What's left of stage moves under mcpserver](10-stage-into-mcpserver.md) | - | - | planned | 1-9 |
 | 11 | [A posting's application form is fetched when the posting lands](11-forms-with-postings.md) | - | - | planned | 4, 6 |
 | 12 | [The latest review of each document type is a repository read](12-latest-reviews.md) | - | #492 | merged | none |
