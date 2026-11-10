@@ -6,7 +6,7 @@
 | --- | --- | --- | --- | --- | --- |
 | 1 | [A document's hash has one home](01-one-content-hash.md) | - | #486 | merged | none |
 | 2 | [DocumentService owns documents; reviews come back current](02-services-own-documents.md) | - | #487 | merged | none |
-| 3 | [Document reads and writes go through DocumentService](03-document-read-write.md) | - | #488 | in review | 2 |
+| 3 | [Document reads and writes go through DocumentService](03-document-read-write.md) | - | #488 | merged | 2 |
 | 4 | [Application forms are PostingService's](04-application-forms.md) | - | - | planned | none |
 | 5 | [A posting at a deleted company is refused in one place](05-posting-at-live-company.md) | - | - | planned | none |
 | 6 | [Preparing a posting is one service call](06-prepare.md) | - | - | planned | 2, 3, 4, 5 |
@@ -36,6 +36,7 @@
 - The document errors and `NoDocumentYet` live in `internal/service`, beside the methods that return them (step 3): `mcpserver` is above it and can match them there.
 - Functions are named for intent, not the conditions they run under (Bob, 2026-11-10, step 3): `WriteIfUnchanged` folded into `Write`, and the application check is `requireApplication`. The rule is in AGENTS.md's Go style.
 - Step 4 returns a failed form fetch in a result struct with the form and a fetch error message, not as an `error`, since drafting goes ahead without the form; the fetchers reach `NewPostingService` as a map by source, as `sync`'s do (Bob, 2026-11-10).
+- Step 4: `NewPostingService` takes the fetchers and a `FormConfig` holding the fetch timeout and the clock (`Now`), mirroring `sync.New`; callers that never fetch pass `nil` and `FormConfig{}`. `PostingService.CurrentForm` takes the posting and company values `Prepare` already has, leaving how the company is looked up to step 5 (Bob, 2026-11-10).
 - Step 5's method returns the posting with its `*company.Company` (Bob, 2026-11-10).
 - Step 8 moves the TUI's company list onto the new `CompanyService` query in the same PR, since it makes the same two reads (Bob, 2026-11-10).
 

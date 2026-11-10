@@ -29,8 +29,8 @@ The policy for when a form is reused or fetched is in `stage.applicationForm` (`
 
 ## Acceptance criteria
 
-- [ ] No `json.Marshal`/`Unmarshal` of an `ApplicationForm` outside `internal`.
-- [ ] Service tests for each branch of the policy: no fetcher, fresh stored form, stale form refetched and stored, fetch failure with and without a stored form. Moved from `stage/form_test.go`, run one at a time.
-- [ ] `stage/form.go` is gone or calls through.
+- [x] No `json.Marshal`/`Unmarshal` of an `ApplicationForm` outside `internal`.
+- [x] Service tests for each branch of the policy: no fetcher, fresh stored form, stale form refetched and stored, fetch failure with and without a stored form. Moved from `stage/form_test.go`, run one at a time.
+- [x] `stage/form.go` is gone or calls through.
 - [ ] Manual check: the TUI's application form screen loads and saves a form against real data.
-- [ ] Verification checklist clean.
+- [x] Verification checklist clean.
