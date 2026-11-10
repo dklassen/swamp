@@ -10,9 +10,9 @@
 | 4 | [Application forms are PostingService's](04-application-forms.md) | - | #489 | merged | none |
 | 5 | [A posting at a deleted company is refused in one place](05-posting-at-live-company.md) | - | #490 | merged | none |
 | 6 | [Starting to draft a posting is one DraftingService call](06-prepare.md) | - | #495 | merged | 2, 3, 4, 5, 12 |
-| 7 | [The drafting queue is one DraftingService query](07-drafting-queue.md) | - | #496 | in review | 2, 12 |
+| 7 | [The drafting queue is one DraftingService query](07-drafting-queue.md) | - | #496 | merged | 2, 12 |
 | 8 | [Companies with their open counts are CompanyService's](08-companies-with-open-counts.md) | - | #493 | merged | none |
-| 9 | [Scoring checks the profile; canonical files come from DocumentService](09-profile-and-canonical-files.md) | - | - | planned | 2 |
+| 9 | [Scoring checks the profile; canonical files come from DocumentService](09-profile-and-canonical-files.md) | - | TBD | in review | 2 |
 | 10 | [What's left of stage moves under mcpserver](10-stage-into-mcpserver.md) | - | - | planned | 1-9 |
 | 11 | [A posting's application form is fetched when the posting lands](11-forms-with-postings.md) | - | - | planned | 4, 6 |
 | 12 | [The latest review of each document type is a repository read](12-latest-reviews.md) | - | #492 | merged | none |
@@ -47,6 +47,8 @@
 - Names: `DraftingService.Prepare` (step 6), matching `stage_prepare` and `Prepared`, and `DraftingService.Queue` (step 7). Step 12's `Latest` is one SQL query, not the per-type loop moved into the repository (Bob, 2026-11-10).
 - Step 8 moves the TUI's company list onto the new `CompanyService` query in the same PR, since it makes the same two reads (Bob, 2026-11-10).
 - Step 7 merges the queue in Go rather than one SQL query, with the reviews of every application in one batch query (Bob, 2026-11-10): the interested and started halves follow different rules, so one query would be a UNION repeating the company-list filters. Started applications not marked interested are ordered by company name, then application ID, dropping the status-since tie-break, which cost a history read per application. `PostingService.Interested` went with it, having no other caller.
+- Step 9: `documents.Store` reads the profile and canonical resume (`ReadProfile`, `ReadCanonicalResume`), and both `ScoringService` and `DocumentService` call it, since neither may call the other; `NewScoringService` takes the store as a plain parameter (Bob, 2026-11-10). `DocumentService.Profile` and `CanonicalResume` are two methods, not one over an `iota` kind, since nothing switches on which file it is. They return a `CanonicalFile` with `Exists`, not `store.ErrNotFound`: a missing file is a state the skill acts on, and the tool still names its path (Bob, 2026-11-10).
+- Step 9: `ScoringService.Pending` takes the profile hash on every call plus a `rescore` flag, replacing the empty rescore hash that meant none, since it now checks the profile either way. The flag picks which postings are listed against one profile, not a second intent.
 
 ## Open
 
