@@ -196,6 +196,61 @@ func TestDocumentService_LatestReviews_OnlyOfTheDocumentOnDisk(t *testing.T) {
 	}
 }
 
+func TestDocumentService_LatestReviews_TheLatestOfEachType(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+	if _, err := s.Documents.Review(ctx, app.ID, document.CoverLetter, "letter one", document.Flagged, "too generic"); err != nil {
+		t.Fatalf("Review (first letter): %v", err)
+	}
+	letter, err := s.Documents.Review(ctx, app.ID, document.CoverLetter, "letter two", document.Passed, "")
+	if err != nil {
+		t.Fatalf("Review (second letter): %v", err)
+	}
+	resume, err := s.Documents.Review(ctx, app.ID, document.Resume, "resume one", document.Flagged, "too long")
+	if err != nil {
+		t.Fatalf("Review (resume): %v", err)
+	}
+	for documentType, content := range map[document.Type]string{document.CoverLetter: "letter two", document.Resume: "resume one"} {
+		if _, err := s.Docs.Write(app.ID, documentType, content, ""); err != nil {
+			t.Fatalf("Write %s: %v", documentType, err)
+		}
+	}
+
+	got, err := s.Documents.LatestReviews(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("LatestReviews: %v", err)
+	}
+	want := map[document.Type]document.Review{document.CoverLetter: *letter, document.Resume: *resume}
+	if diff := cmp.Diff(want, got); diff != "" {
+		t.Errorf("LatestReviews (-want +got):\n%s", diff)
+	}
+}
+
+func TestDocumentService_LatestReviews_OnlyTheApplicationsOwn(t *testing.T) {
+	t.Parallel()
+	const letter = "Dear hiring manager..."
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+	other := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-2", "Platform Engineer").ID)
+	if _, err := s.Docs.Write(app.ID, document.CoverLetter, letter, ""); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if _, err := s.Documents.Review(ctx, other.ID, document.CoverLetter, letter, document.Passed, ""); err != nil {
+		t.Fatalf("Review: %v", err)
+	}
+
+	got, err := s.Documents.LatestReviews(ctx, app.ID)
+	if err != nil {
+		t.Fatalf("LatestReviews: %v", err)
+	}
+	if diff := cmp.Diff(map[document.Type]document.Review{}, got); diff != "" {
+		t.Errorf("LatestReviews (-want +got):\n%s", diff)
+	}
+}
+
 func TestDocumentService_LatestExports_NewestPerTypeIsCurrentUntilTheContentChanges(t *testing.T) {
 	t.Parallel()
 	s := testutil.NewTestApp(t)
