@@ -3,11 +3,10 @@ package stage
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"os"
-	"path/filepath"
 	"sort"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 
@@ -20,7 +19,6 @@ import (
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/store"
 )
 
 func newTestStage(t *testing.T) (*Stage, testutil.TestApp, *documents.Store) {
@@ -32,7 +30,7 @@ func newTestStage(t *testing.T) (*Stage, testutil.TestApp, *documents.Store) {
 
 // stageOn is a Stage on s's services and d.
 func stageOn(s testutil.TestApp, d *documents.Store) *Stage {
-	return New(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, d)
+	return New(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, s.Drafting, d)
 }
 
 func mustCreateCompany(t *testing.T, s testutil.TestApp, name string) company.Company {
@@ -426,30 +424,6 @@ func TestList_ReturnsErrorWhenDocumentReadFails(t *testing.T) {
 	}
 }
 
-func TestPrepare_ReturnsErrorWhenDocumentReadFails(t *testing.T) {
-	t.Parallel()
-
-	st, s, _ := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-
-	first, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("first Prepare: %v", err)
-	}
-	if _, err := createReview(context.Background(), s, first.ApplicationID, document.Resume, "draft", document.Flagged, "add metrics"); err != nil {
-		t.Fatalf("CreateReview: %v", err)
-	}
-	if err := os.Mkdir(first.Documents[document.Resume].Path, 0o755); err != nil {
-		t.Fatalf("Mkdir: %v", err)
-	}
-
-	if _, err := st.Prepare(context.Background(), posting.ID); err == nil {
-		t.Fatal("Prepare() error = nil, want an error -- a document read failure must not be silently treated as \"not reviewed\"")
-	}
-}
-
 func TestList_ExcludesPostingWhenFlaggedReviewIsStaleAfterRevision(t *testing.T) {
 	t.Parallel()
 
@@ -532,190 +506,6 @@ func TestList_LatestReviewsOmitsStaleReview(t *testing.T) {
 	}
 	if _, ok := got[0].LatestReviews[document.CoverLetter]; ok {
 		t.Errorf("LatestReviews[cover letter] present, want absent -- the recorded review is stale (content has been revised since)")
-	}
-}
-
-func TestPrepare_LatestReviewsOmitsStaleReview(t *testing.T) {
-	t.Parallel()
-
-	st, s, _ := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-
-	first, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("first Prepare: %v", err)
-	}
-	if err := os.WriteFile(first.Documents[document.Resume].Path, []byte("original resume"), 0o644); err != nil {
-		t.Fatalf("write resume: %v", err)
-	}
-	if _, err := createReview(context.Background(), s, first.ApplicationID, document.Resume, "original resume", document.Flagged, "add metrics"); err != nil {
-		t.Fatalf("CreateReview: %v", err)
-	}
-	if err := os.WriteFile(first.Documents[document.Resume].Path, []byte("revised resume with metrics"), 0o644); err != nil {
-		t.Fatalf("rewrite resume: %v", err)
-	}
-
-	got, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("second Prepare: %v", err)
-	}
-	if _, ok := got.LatestReviews[document.Resume]; ok {
-		t.Errorf("LatestReviews[resume] present, want absent -- the recorded review is stale (content has been revised since)")
-	}
-}
-
-func TestPrepare_IncludesApplicationNotesAndLatestReviews(t *testing.T) {
-	t.Parallel()
-
-	st, s, _ := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-
-	first, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("first Prepare: %v", err)
-	}
-	if _, err := s.Applications.SetNotes(context.Background(), first.ApplicationID, "referred by a friend"); err != nil {
-		t.Fatalf("application.UpdateNotes: %v", err)
-	}
-	// The review's content must match what's on disk, or the new
-	// staleness check treats it as not describing
-	// the current document and omits it from LatestReviews.
-	if err := os.WriteFile(first.Documents[document.Resume].Path, []byte("draft"), 0o644); err != nil {
-		t.Fatalf("write resume: %v", err)
-	}
-	if _, err := createReview(context.Background(), s, first.ApplicationID, document.Resume, "draft", document.Flagged, "add metrics"); err != nil {
-		t.Fatalf("CreateReview: %v", err)
-	}
-
-	got, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("second Prepare: %v", err)
-	}
-	if got.ApplicationNotes != "referred by a friend" {
-		t.Errorf("ApplicationNotes = %q, want %q", got.ApplicationNotes, "referred by a friend")
-	}
-	review, ok := got.LatestReviews[document.Resume]
-	if !ok {
-		t.Fatalf("LatestReviews[resume] missing, want the flagged review present")
-	}
-	if review.Outcome != document.Flagged || review.Notes != "add metrics" {
-		t.Errorf("LatestReviews[resume] = %+v, want Outcome=flagged Notes=%q", review, "add metrics")
-	}
-}
-
-func TestPrepare_CreatesApplicationWhenNoneExists(t *testing.T) {
-	t.Parallel()
-
-	st, s, _ := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-
-	prepared, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("Prepare: %v", err)
-	}
-	if prepared.ApplicationID == 0 {
-		t.Error("ApplicationID = 0, want a created application id")
-	}
-
-	app, err := s.Postings.Application(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("application.Get: %v", err)
-	}
-	if app.ID != prepared.ApplicationID {
-		t.Errorf("stored application id = %d, want %d", app.ID, prepared.ApplicationID)
-	}
-}
-
-func TestPrepare_IsIdempotentForExistingApplication(t *testing.T) {
-	t.Parallel()
-
-	st, s, _ := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-
-	first, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("first Prepare: %v", err)
-	}
-	second, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("second Prepare: %v", err)
-	}
-
-	if second.ApplicationID != first.ApplicationID {
-		t.Errorf("second.ApplicationID = %d, want %d (should reuse the same application)", second.ApplicationID, first.ApplicationID)
-	}
-}
-
-// After a delete, preparing the posting again starts a fresh application
-// with none of the deleted one's drafts.
-func TestPrepare_AfterDelete_StartsFreshApplicationWithoutOldDrafts(t *testing.T) {
-	t.Parallel()
-
-	st, s, docs := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-
-	first, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("first Prepare: %v", err)
-	}
-	draft := mustDoc(t, docs.Status(first.ApplicationID), document.CoverLetter)
-	if err := os.WriteFile(draft.Path, []byte("Dear Acme,\n"), 0o644); err != nil {
-		t.Fatalf("write draft: %v", err)
-	}
-	if _, err := s.Applications.Delete(context.Background(), first.ApplicationID); err != nil {
-		t.Fatalf("application.Delete: %v", err)
-	}
-
-	second, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("second Prepare: %v", err)
-	}
-
-	if second.ApplicationID == first.ApplicationID {
-		t.Errorf("second.ApplicationID = %d, want a fresh application", second.ApplicationID)
-	}
-	for documentType, doc := range second.Documents {
-		if doc.Exists {
-			t.Errorf("%s exists on the fresh application, want no drafts", documentType)
-		}
-	}
-}
-
-func TestPrepare_CreatesDocumentDirectory(t *testing.T) {
-	t.Parallel()
-
-	st, s, _ := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-
-	prepared, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("Prepare: %v", err)
-	}
-
-	info, err := os.Stat(filepath.Dir(prepared.Documents[document.CoverLetter].Path))
-	if err != nil {
-		t.Fatalf("Stat document dir: %v", err)
-	}
-	if !info.IsDir() {
-		t.Error("expected the document directory to exist")
-	}
-	if prepared.Documents[document.CoverLetter].Exists {
-		t.Error("CoverLetter.Exists = true, want false (nothing written yet)")
-	}
-	if prepared.Documents[document.Resume].Exists {
-		t.Error("Resume.Exists = true, want false (nothing written yet)")
 	}
 }
 
@@ -832,34 +622,6 @@ func TestPrepared_JSONShape_MatchesDocumentedAgentContract(t *testing.T) {
 	}
 }
 
-func TestPrepare_ReflectsDocumentsWrittenBetweenCalls(t *testing.T) {
-	t.Parallel()
-
-	st, s, _ := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	mustMarkInterested(t, s, posting.ID)
-
-	first, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("first Prepare: %v", err)
-	}
-	if err := os.WriteFile(first.Documents[document.CoverLetter].Path, []byte("letter"), 0o644); err != nil {
-		t.Fatalf("write cover letter: %v", err)
-	}
-
-	second, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("second Prepare: %v", err)
-	}
-	if !second.Documents[document.CoverLetter].Exists {
-		t.Error("CoverLetter.Exists = false, want true (written between calls)")
-	}
-	if second.Documents[document.Resume].Exists {
-		t.Error("Resume.Exists = true, want false (never written)")
-	}
-}
-
 // A posting the user started an application for without marking it
 // interested (e.g. from the TUI's posting detail) is still drafting work,
 // so it's listed when its application is started and needs a draft or a
@@ -953,27 +715,6 @@ func mustDoc(t *testing.T, status documents.Status, documentType document.Type) 
 	return doc
 }
 
-// TestPrepare_ClosedPostingWithoutApplication_Refused: committing to a
-// posting that's no longer listed is refused, before anything is
-// created, so the skill can tell the user why.
-func TestPrepare_ClosedPostingWithoutApplication_Refused(t *testing.T) {
-	t.Parallel()
-
-	st, s, _ := newTestStage(t)
-	company := mustCreateCompany(t, s, "Acme")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	if err := s.Postings.Close(context.Background(), posting.ID, nil); err != nil {
-		t.Fatalf("Close: %v", err)
-	}
-
-	if _, err := st.Prepare(context.Background(), posting.ID); !errors.Is(err, service.ErrPostingClosed) {
-		t.Fatalf("Prepare on a closed posting: err = %v, want ErrPostingClosed", err)
-	}
-	if _, err := s.Postings.Application(context.Background(), posting.ID); !errors.Is(err, store.ErrNotFound) {
-		t.Errorf("application.Get: err = %v, want ErrNotFound", err)
-	}
-}
-
 func createReview(ctx context.Context, s testutil.TestApp, applicationID int64, documentType document.Type, content string, outcome document.Outcome, notes string) (*document.Review, error) {
 	return s.Documents.Review(ctx, applicationID, documentType, content, outcome, notes)
 }
@@ -1014,6 +755,67 @@ func TestList_ExcludesInterestedPostingTheCompanyListHides(t *testing.T) {
 			}
 			if len(got) != 0 {
 				t.Fatalf("got %d candidates, want 0: the company's list hides the posting", len(got))
+			}
+		})
+	}
+}
+
+// fakeDrafting prepares every posting as prepared.
+type fakeDrafting struct{ prepared *service.Prepared }
+
+func (f fakeDrafting) Prepare(context.Context, int64) (*service.Prepared, error) {
+	return f.prepared, nil
+}
+
+func TestPrepare_MapsWhatDraftingPrepared(t *testing.T) {
+	t.Parallel()
+	reviewedAt := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name          string
+		form          service.FormRead
+		wantForm      *jobboard.ApplicationForm
+		wantFormError string
+	}{
+		{name: "form read", form: service.FormRead{Form: &testForm}, wantForm: &testForm},
+		{name: "fetch failed", form: service.FormRead{FetchError: "board unavailable"}, wantFormError: "board unavailable"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			prepared := &service.Prepared{
+				Posting:     posting.Posting{ID: 7, CompanyID: 3, Source: jobboard.Greenhouse, SourceID: "job-1", IngestedFields: posting.IngestedFields{Title: "Engineer", DescriptionText: "Build things"}},
+				Company:     company.Company{ID: 3, Name: "Acme"},
+				Application: application.Application{ID: 11, PostingID: 7, Status: application.Started, Notes: "referred by a friend"},
+				Documents: map[document.Type]service.DraftDocument{
+					document.CoverLetter: {Path: "/docs/11/cover_letter.md", Exists: true, Version: "abc"},
+					document.Resume:      {Path: "/docs/11/resume.md", Version: service.NoDocumentYet},
+				},
+				LatestReviews: map[document.Type]document.Review{
+					document.CoverLetter: {ID: 5, ApplicationID: 11, DocumentType: document.CoverLetter, Cycle: 2, ContentSHA256: "abc", Outcome: document.Flagged, Notes: "too generic", CreatedAt: reviewedAt},
+				},
+				Form: tt.form,
+			}
+			st := New(nil, nil, nil, nil, nil, fakeDrafting{prepared}, nil)
+
+			got, err := st.Prepare(t.Context(), 7)
+			if err != nil {
+				t.Fatalf("Prepare: %v", err)
+			}
+			want := &Prepared{
+				Posting:       PreparedPosting{ID: 7, CompanyID: 3, Source: jobboard.Greenhouse, SourceID: "job-1", Title: "Engineer", DescriptionText: "Build things"},
+				CompanyName:   "Acme",
+				ApplicationID: 11,
+				Documents: map[document.Type]Document{
+					document.CoverLetter: {Path: "/docs/11/cover_letter.md", Exists: true, Version: "abc"},
+					document.Resume:      {Path: "/docs/11/resume.md", Version: service.NoDocumentYet},
+				},
+				ApplicationNotes:     "referred by a friend",
+				LatestReviews:        map[document.Type]LatestReview{document.CoverLetter: {Outcome: document.Flagged, Notes: "too generic", Cycle: 2, CreatedAt: reviewedAt}},
+				ApplicationForm:      tt.wantForm,
+				ApplicationFormError: tt.wantFormError,
+			}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("Prepare (-want +got):\n%s", diff)
 			}
 		})
 	}

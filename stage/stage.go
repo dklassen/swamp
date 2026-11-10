@@ -8,7 +8,6 @@ package stage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
@@ -20,7 +19,6 @@ import (
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/store"
 )
 
 // Candidate is one posting ready for an external agent to work on: a
@@ -194,19 +192,15 @@ type Prepared struct {
 }
 
 type companyService interface {
-	Get(ctx context.Context, id int64) (*company.Company, error)
 	ListActiveWithOpenPostings(ctx context.Context) ([]company.Stats, error)
 }
 
 type postingService interface {
-	Get(ctx context.Context, postingID int64) (*posting.Posting, error)
 	GetWithCompany(ctx context.Context, postingID int64) (*posting.Posting, *company.Company, error)
 	Search(ctx context.Context, search posting.Search) (*posting.SearchPage, error)
 	Interested(ctx context.Context) ([]posting.Interested, error)
 	Markup(ctx context.Context, postingID int64) (*posting.Markup, error)
-	CurrentForm(ctx context.Context, p posting.Posting, c company.Company) (*service.FormRead, error)
 	Application(ctx context.Context, postingID int64) (*application.Application, error)
-	ApplyTo(ctx context.Context, postingID int64) (*application.Application, error)
 }
 
 type applicationService interface {
@@ -217,6 +211,10 @@ type documentService interface {
 	LatestReviews(ctx context.Context, applicationID int64) (map[document.Type]document.Review, error)
 	Write(ctx context.Context, applicationID int64, documentType document.Type, content, version string, source document.Source) (string, error)
 	Read(ctx context.Context, applicationID int64, documentType document.Type) (path, content string, err error)
+}
+
+type draftingService interface {
+	Prepare(ctx context.Context, postingID int64) (*service.Prepared, error)
 }
 
 type scoringService interface {
@@ -233,16 +231,18 @@ type Stage struct {
 	applications applicationService
 	docs         documentService
 	scores       scoringService
+	drafting     draftingService
 	documents    *documents.Store
 }
 
-func New(companies companyService, postings postingService, applications applicationService, docs documentService, scores scoringService, d *documents.Store) *Stage {
+func New(companies companyService, postings postingService, applications applicationService, docs documentService, scores scoringService, drafting draftingService, d *documents.Store) *Stage {
 	return &Stage{
 		companies:    companies,
 		postings:     postings,
 		applications: applications,
 		docs:         docs,
 		scores:       scores,
+		drafting:     drafting,
 		documents:    d,
 	}
 }
@@ -353,64 +353,23 @@ func (st *Stage) candidate(ctx context.Context, p posting.Interested) (Candidate
 // posting reuses the existing application and directory rather than
 // erroring or duplicating.
 func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error) {
-	posting, err := st.postings.Get(ctx, postingID)
+	prepared, err := st.drafting.Prepare(ctx, postingID)
 	if err != nil {
-		return nil, fmt.Errorf("stage: get posting: %w", err)
+		return nil, fmt.Errorf("stage: %w", err)
 	}
-
-	company, err := st.companies.Get(ctx, posting.CompanyID)
-	if err != nil {
-		return nil, fmt.Errorf("stage: get company: %w", err)
+	preparedDocuments := make(map[document.Type]Document, len(prepared.Documents))
+	for documentType, doc := range prepared.Documents {
+		preparedDocuments[documentType] = Document{Path: doc.Path, Exists: doc.Exists, Version: doc.Version}
 	}
-
-	app, err := st.postings.Application(ctx, postingID)
-	if errors.Is(err, store.ErrNotFound) {
-		app, err = st.postings.ApplyTo(ctx, postingID)
-	}
-	if err != nil {
-		return nil, fmt.Errorf("stage: get or create application: %w", err)
-	}
-
-	if _, err := st.documents.EnsureDir(app.ID); err != nil {
-		return nil, fmt.Errorf("stage: ensure document directory: %w", err)
-	}
-	status := st.documents.Status(app.ID)
-
-	form, err := st.postings.CurrentForm(ctx, *posting, *company)
-	if err != nil {
-		return nil, fmt.Errorf("stage: application form: %w", err)
-	}
-
-	reviews, err := st.docs.LatestReviews(ctx, app.ID)
-	if err != nil {
-		return nil, fmt.Errorf("stage: latest document reviews: %w", err)
-	}
-
-	preparedDocuments := make(map[document.Type]Document, len(document.Types()))
-	for _, documentType := range document.Types() {
-		doc, err := status.Doc(documentType)
-		if err != nil {
-			return nil, fmt.Errorf("stage: %w", err)
-		}
-		sha, err := st.documents.SHA256(app.ID, documentType)
-		if err != nil {
-			return nil, fmt.Errorf("stage: hash %s: %w", documentType, err)
-		}
-		if sha == "" {
-			sha = service.NoDocumentYet
-		}
-		preparedDocuments[documentType] = Document{Path: doc.Path, Exists: doc.Exists, Version: sha}
-	}
-
 	return &Prepared{
-		Posting:              preparedPosting(*posting),
-		CompanyName:          company.Name,
-		ApplicationID:        app.ID,
+		Posting:              preparedPosting(prepared.Posting),
+		CompanyName:          prepared.Company.Name,
+		ApplicationID:        prepared.Application.ID,
 		Documents:            preparedDocuments,
-		ApplicationNotes:     app.Notes,
-		LatestReviews:        latestReviewsForJSON(reviews),
-		ApplicationForm:      form.Form,
-		ApplicationFormError: form.FetchError,
+		ApplicationNotes:     prepared.Application.Notes,
+		LatestReviews:        latestReviewsForJSON(prepared.LatestReviews),
+		ApplicationForm:      prepared.Form.Form,
+		ApplicationFormError: prepared.Form.FetchError,
 	}, nil
 }
 

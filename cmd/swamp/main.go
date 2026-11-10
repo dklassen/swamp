@@ -159,7 +159,7 @@ func runTUI(db store.Store, documentsStore *documents.Store, dbPath, origin stri
 		return fmt.Errorf("read the change log: %w", err)
 	}
 	companies := service.NewCompanyService(db)
-	postings := service.NewPostingService(db, nil, service.FormConfig{})
+	postings := service.NewPostingService(db)
 	applications := service.NewApplicationService(db, documentsStore)
 	documentService := service.NewDocumentService(db, documentsStore)
 	scores := service.NewScoringService(db)
@@ -222,7 +222,7 @@ func runTUI(db store.Store, documentsStore *documents.Store, dbPath, origin stri
 // needed, since ashby, greenhouse, and lever all return jobboard.Posting
 // directly rather than a client-local type (#57).
 func newSyncer(db store.Store) *sync.Syncer {
-	return sync.New(service.NewCompanyService(db), service.NewPostingService(db, nil, service.FormConfig{}), map[string]sync.PostingFetcher{
+	return sync.New(service.NewCompanyService(db), service.NewPostingService(db), map[string]sync.PostingFetcher{
 		jobboard.Ashby:      ashby.NewClient(),
 		jobboard.Greenhouse: greenhouse.NewClient(),
 		jobboard.Lever:      lever.NewClient(),
@@ -233,10 +233,10 @@ func newSyncer(db store.Store) *sync.Syncer {
 // forms from every board that supports it (Greenhouse; see #167 for Ashby
 // and Lever) under the same fetch timeout as a sync.
 func newStage(db store.Store, d *documents.Store) *stage.Stage {
-	postings := service.NewPostingService(db, map[string]service.FormFetcher{
+	drafting := service.NewDraftingService(db, d, map[string]service.FormFetcher{
 		jobboard.Greenhouse: greenhouse.NewClient(),
 	}, service.FormConfig{FetchTimeout: sync.DefaultConfig().FetchTimeout})
-	return stage.New(service.NewCompanyService(db), postings, service.NewApplicationService(db, d), service.NewDocumentService(db, d), service.NewScoringService(db), d)
+	return stage.New(service.NewCompanyService(db), service.NewPostingService(db), service.NewApplicationService(db, d), service.NewDocumentService(db, d), service.NewScoringService(db), drafting, d)
 }
 
 // runImport bulk-creates companies from a YAML seed file (see the seed

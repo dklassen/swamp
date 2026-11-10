@@ -36,7 +36,7 @@ func TestStartMCP_TheAgentsWritesReachTheTUIAsAnotherProcesses(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	ingested, err := service.NewPostingService(tui, nil, service.FormConfig{}).Ingest(ctx, acme.ID, jobboard.Ashby, "job-1", posting.IngestedFields{Title: "Engineer", RawPayload: "{}"})
+	ingested, err := service.NewPostingService(tui).Ingest(ctx, acme.ID, jobboard.Ashby, "job-1", posting.IngestedFields{Title: "Engineer", RawPayload: "{}"})
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}

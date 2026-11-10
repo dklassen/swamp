@@ -30,11 +30,11 @@ func TestChangeLog_After_ReturnsAnotherProcessesChangeSinceLatest(t *testing.T) 
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	ingested, err := service.NewPostingService(other, nil, service.FormConfig{}).Ingest(ctx, acme.ID, jobboard.Ashby, "job-1", posting.IngestedFields{Title: "Engineer", RawPayload: "{}"})
+	ingested, err := service.NewPostingService(other).Ingest(ctx, acme.ID, jobboard.Ashby, "job-1", posting.IngestedFields{Title: "Engineer", RawPayload: "{}"})
 	if err != nil {
 		t.Fatalf("Ingest: %v", err)
 	}
-	app, err := service.NewPostingService(other, nil, service.FormConfig{}).ApplyTo(ctx, ingested.Posting.ID)
+	app, err := service.NewPostingService(other).ApplyTo(ctx, ingested.Posting.ID)
 	if err != nil {
 		t.Fatalf("ApplyTo: %v", err)
 	}
@@ -133,11 +133,11 @@ func TestChangeLog_EachLoggedTable(t *testing.T) {
 			return err
 		}, "companies", "update"},
 		{"posting found", func(ctx context.Context, f fixture) error {
-			_, err := service.NewPostingService(f.db, nil, service.FormConfig{}).Ingest(ctx, f.companyID, jobboard.Ashby, "job-2", posting.IngestedFields{Title: "Designer", RawPayload: "{}"})
+			_, err := service.NewPostingService(f.db).Ingest(ctx, f.companyID, jobboard.Ashby, "job-2", posting.IngestedFields{Title: "Designer", RawPayload: "{}"})
 			return err
 		}, "postings", "insert"},
 		{"posting closed", func(ctx context.Context, f fixture) error {
-			err := service.NewPostingService(f.db, nil, service.FormConfig{}).Close(ctx, f.postingID, nil)
+			err := service.NewPostingService(f.db).Close(ctx, f.postingID, nil)
 			return err
 		}, "postings", "update"},
 		{"document written", func(ctx context.Context, f fixture) error {

@@ -40,7 +40,7 @@ type applicationHistoryWriter interface {
 	Insert(ctx context.Context, r store.Runner, applicationID int64, status application.Status, changedBy application.ChangedBy) error
 }
 
-type applicationReviewViewer interface {
+type latestReviewViewer interface {
 	Latest(ctx context.Context, r store.Runner, applicationID int64) (map[document.Type]document.Review, error)
 }
 
@@ -51,7 +51,7 @@ type ApplicationService struct {
 	applicationWriter        applicationWriter
 	applicationHistoryViewer applicationHistoryViewer
 	applicationHistoryWriter applicationHistoryWriter
-	reviewViewer             applicationReviewViewer
+	reviewViewer             latestReviewViewer
 }
 
 func NewApplicationService(db store.Store, docs *documents.Store) *ApplicationService {
