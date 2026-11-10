@@ -29,7 +29,6 @@ type companyListModel struct {
 	showInfo bool
 
 	companyService *service.CompanyService
-	postingService *service.PostingService
 
 	companies []message.Company
 	// openPostings is each company's open, unarchived posting count.
@@ -43,10 +42,9 @@ type companyListModel struct {
 	instance message.ScreenInstance
 }
 
-func newCompanyListModel(companies *service.CompanyService, postings *service.PostingService) *companyListModel {
+func newCompanyListModel(companies *service.CompanyService) *companyListModel {
 	return &companyListModel{
 		companyService: companies,
-		postingService: postings,
 		instance:       message.NewScreenInstance(),
 	}
 }
@@ -105,20 +103,18 @@ func (m *companyListModel) reload() tea.Cmd { return m.reading.start(m.load) }
 // load reads the active companies along with each one's open posting count
 // for the Open column.
 func (m *companyListModel) load() tea.Cmd {
-	companies, postings, src := m.companyService, m.postingService, message.Source{Instance: m.instance}
+	companies, src := m.companyService, message.Source{Instance: m.instance}
 	return func() tea.Msg {
-		ctx := context.Background()
-		active, err := companies.ListActive(ctx)
+		active, err := companies.ListActiveWithOpenPostings(context.Background())
 		if err != nil {
 			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
 		}
-		openPostings, err := postings.CountOpenByCompany(ctx)
-		if err != nil {
-			return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
-		}
-		list := message.CompanyList{Companies: make([]message.Company, len(active)), OpenPostings: openPostings}
+		list := message.CompanyList{Companies: make([]message.Company, len(active)), OpenPostings: make(map[int64]int, len(active))}
 		for i, c := range active {
-			list.Companies[i] = companySnapshot(c)
+			list.Companies[i] = companySnapshot(c.Company)
+			if c.OpenPostings > 0 {
+				list.OpenPostings[c.ID] = c.OpenPostings
+			}
 		}
 		return message.New(src, message.Subject{}, message.OpNone, time.Now().UTC(), message.Read[message.CompanyList]{Value: list})
 	}

@@ -16,3 +16,11 @@ type Company struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
+
+// CompanyStats is a company with how many postings its list shows:
+// open, unarchived and let through by its filters.
+type CompanyStats struct {
+	Company
+
+	OpenPostings int
+}

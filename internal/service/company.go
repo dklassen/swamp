@@ -51,6 +51,7 @@ type companyPostingViewer interface {
 	ListOpenIDsByCompany(ctx context.Context, r store.Runner, companyID int64) ([]int64, error)
 	Departments(ctx context.Context, r store.Runner, companyID int64) ([]string, error)
 	Locations(ctx context.Context, r store.Runner, companyID int64) ([]string, error)
+	CountOpenByCompany(ctx context.Context, r store.Runner) (map[int64]int, error)
 }
 
 type companyPostingStatusWriter interface {
@@ -234,6 +235,32 @@ func (service *CompanyService) GetBySource(ctx context.Context, source, sourceRe
 
 func (service *CompanyService) ListActive(ctx context.Context) ([]company.Company, error) {
 	return service.companyViewer.ListActive(ctx, service.db)
+}
+
+// ListActiveWithOpenPostings returns the companies ListActive does, each
+// with its open count. Both reads share a transaction so a sync can't land
+// between them and leave a count out of step with the list.
+func (service *CompanyService) ListActiveWithOpenPostings(ctx context.Context) ([]company.CompanyStats, error) {
+	var listed []company.CompanyStats
+	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
+		companies, err := service.companyViewer.ListActive(ctx, tx)
+		if err != nil {
+			return fmt.Errorf("company: list active: %w", err)
+		}
+		open, err := service.postingViewer.CountOpenByCompany(ctx, tx)
+		if err != nil {
+			return fmt.Errorf("company: count open postings: %w", err)
+		}
+		listed = make([]company.CompanyStats, len(companies))
+		for i, c := range companies {
+			listed[i] = company.CompanyStats{Company: c, OpenPostings: open[c.ID]}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return listed, nil
 }
 
 // SetName renames an active company, or returns store.ErrNotFound.

@@ -962,13 +962,13 @@ func TestPostingService_AllPostings_WithoutQueryIsTheOpenCounts(t *testing.T) {
 	if err != nil {
 		t.Fatalf("AllPostings: %v", err)
 	}
-	counts, err := postings.CountOpenByCompany(ctx)
+	companies, err := s.Companies.ListActiveWithOpenPostings(ctx)
 	if err != nil {
-		t.Fatalf("CountOpenByCompany: %v", err)
+		t.Fatalf("ListActiveWithOpenPostings: %v", err)
 	}
 	var open int
-	for _, n := range counts {
-		open += n
+	for _, c := range companies {
+		open += c.OpenPostings
 	}
 	if got.WithoutQuery != open || open == 0 {
 		t.Errorf("WithoutQuery = %d, Open counts add up to %d; want them equal and not 0", got.WithoutQuery, open)

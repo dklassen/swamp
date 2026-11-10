@@ -316,7 +316,7 @@ func TestCompanyFormModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 		wantClose bool
 	}{
 		{name: "the form in focus", focused: func(m *companyFormModel) message.ScreenInstance { return m.Instance() }, wantClose: true},
-		{name: "another component in focus", focused: func(*companyFormModel) message.ScreenInstance { return newCompanyListModel(nil, nil).Instance() }, wantClose: false},
+		{name: "another component in focus", focused: func(*companyFormModel) message.ScreenInstance { return newCompanyListModel(nil).Instance() }, wantClose: false},
 		{name: "nothing in focus", focused: func(*companyFormModel) message.ScreenInstance { return 0 }, wantClose: false},
 	}
 	for _, tt := range tests {

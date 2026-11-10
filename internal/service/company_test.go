@@ -506,12 +506,66 @@ func TestCompanyService_ListedPostings_TotalIsTheOpenCount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("ListedPostings: %v", err)
 	}
-	counts, err := postings.CountOpenByCompany(ctx)
+	companies, err := s.Companies.ListActiveWithOpenPostings(ctx)
 	if err != nil {
-		t.Fatalf("CountOpenByCompany: %v", err)
+		t.Fatalf("ListActiveWithOpenPostings: %v", err)
 	}
-	if got.Page.Total != counts[acme.ID] || got.Page.Total == 0 {
-		t.Errorf("Total = %d, Open count = %d; want them equal and not 0", got.Page.Total, counts[acme.ID])
+	if len(companies) != 1 {
+		t.Fatalf("ListActiveWithOpenPostings = %d companies, want 1", len(companies))
+	}
+	if open := companies[0].OpenPostings; got.Page.Total != open || got.Page.Total == 0 {
+		t.Errorf("Total = %d, Open count = %d; want them equal and not 0", got.Page.Total, open)
+	}
+}
+
+// A company's open count is what its list shows: open, unarchived postings
+// its filters let through. A deleted company is left out.
+func TestCompanyService_ListActiveWithOpenPostings_CountsWhatEachListShows(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	postings := s.Postings
+	acme := testutil.MustAddCompany(t, s, "Acme")
+	globex := testutil.MustAddCompany(t, s, "Globex")
+	gone := testutil.MustAddCompany(t, s, "Initech")
+	ingest := func(companyID int64, sourceID, department string) int64 {
+		t.Helper()
+		ingested, err := postings.Ingest(ctx, companyID, jobboard.Ashby, sourceID, posting.IngestedFields{Title: "Engineer", Department: department, RawPayload: "{}"})
+		if err != nil {
+			t.Fatalf("Ingest: %v", err)
+		}
+		return ingested.Posting.ID
+	}
+	ingest(acme.ID, "job-1", "Engineering")
+	ingest(acme.ID, "job-2", "Sales")
+	if err := postings.Close(ctx, ingest(acme.ID, "job-3", "Engineering"), nil); err != nil {
+		t.Fatalf("Close: %v", err)
+	}
+	if _, err := postings.SetArchived(ctx, ingest(acme.ID, "job-4", "Engineering")); err != nil {
+		t.Fatalf("SetArchived: %v", err)
+	}
+	ingest(gone.ID, "job-5", "Engineering")
+	if err := s.Companies.SetFilters(ctx, acme.ID, []filter.Filter{{Field: filter.FieldDepartment, Value: "Engineering"}}); err != nil {
+		t.Fatalf("SetFilters: %v", err)
+	}
+	if _, err := s.Companies.Delete(ctx, gone.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	got, err := s.Companies.ListActiveWithOpenPostings(ctx)
+	if err != nil {
+		t.Fatalf("ListActiveWithOpenPostings: %v", err)
+	}
+	type counted struct {
+		ID   int64
+		Open int
+	}
+	gotCounts := make([]counted, len(got))
+	for i, c := range got {
+		gotCounts[i] = counted{c.ID, c.OpenPostings}
+	}
+	if diff := cmp.Diff([]counted{{acme.ID, 1}, {globex.ID, 0}}, gotCounts); diff != "" {
+		t.Errorf("companies and open counts (-want +got):\n%s", diff)
 	}
 }
 

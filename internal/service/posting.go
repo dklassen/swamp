@@ -31,7 +31,6 @@ type postingViewer interface {
 	GetBySource(ctx context.Context, r store.Runner, source, sourceID string) (*posting.Posting, error)
 	ListInterested(ctx context.Context, r store.Runner, excluding []application.Status) ([]posting.Interested, error)
 	ListByCompany(ctx context.Context, r store.Runner, companyID int64) ([]posting.Posting, error)
-	CountOpenByCompany(ctx context.Context, r store.Runner) (map[int64]int, error)
 }
 
 type postingSearcher interface {
@@ -257,13 +256,6 @@ func (service *PostingService) History(ctx context.Context, postingID int64) ([]
 // closed.
 func (service *PostingService) ListByCompany(ctx context.Context, companyID int64) ([]posting.Posting, error) {
 	return service.postingViewer.ListByCompany(ctx, service.db, companyID)
-}
-
-// CountOpenByCompany counts, per company, the postings its list shows by
-// default: open, unarchived and let through by its filters. A company with
-// none is missing from the map.
-func (service *PostingService) CountOpenByCompany(ctx context.Context) (map[int64]int, error) {
-	return service.postingViewer.CountOpenByCompany(ctx, service.db)
 }
 
 // MarkSeen records that a sync just saw these postings on their board. It
