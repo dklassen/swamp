@@ -48,7 +48,7 @@ func newTestServer(t *testing.T) (*mcp.Server, testutil.TestApp, *documents.Stor
 	fetcher := fakeFetcher{boards: map[string][]jobboard.Posting{
 		"acme": {{SourceID: "job-1", Title: "Engineer"}, {SourceID: "job-2", Title: "Designer"}},
 	}}
-	syncer := swampsync.New(s.Companies, s.Postings, map[string]swampsync.PostingFetcher{jobboard.Ashby: fetcher}, swampsync.DefaultConfig())
+	syncer := swampsync.New(s.Companies, s.Postings, s.Forms, map[string]swampsync.PostingFetcher{jobboard.Ashby: fetcher}, swampsync.DefaultConfig())
 	return New(s.Companies, s.Postings, s.Documents, s.Scores, s.Drafting, syncer), s, d
 }
 

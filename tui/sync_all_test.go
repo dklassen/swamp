@@ -34,7 +34,7 @@ func newSyncAllTestApp(t *testing.T, failing ...string) (*App, testutil.TestApp)
 	mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustCreateCompany(t, s, "Globex", jobboard.Ashby, "globex")
 	mustCreateCompany(t, s, "Initech", jobboard.Ashby, "initech")
-	syncer := sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{jobboard.Ashby: &fakeFetcher{postings: postings, errBoards: errBoards}}, sync.DefaultConfig())
+	syncer := sync.New(s.Companies, s.Postings, s.Forms, map[string]sync.PostingFetcher{jobboard.Ashby: &fakeFetcher{postings: postings, errBoards: errBoards}}, sync.DefaultConfig())
 	app := newTestApp(t, s, syncer)
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
 	return app, s

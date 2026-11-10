@@ -155,7 +155,7 @@ func runTUI(db store.Store, documentsStore *documents.Store, dbPath, origin stri
 	}
 	companies := service.NewCompanyService(db)
 	postings := service.NewPostingService(db)
-	forms := service.NewFormService(db, nil, service.FormConfig{})
+	forms := newFormService(db)
 	applications := service.NewApplicationService(db, documentsStore)
 	documentService := service.NewDocumentService(db, documentsStore)
 	scores := service.NewScoringService(db, documentsStore)
@@ -218,11 +218,19 @@ func runTUI(db store.Store, documentsStore *documents.Store, dbPath, origin stri
 // needed, since ashby, greenhouse, and lever all return jobboard.Posting
 // directly rather than a client-local type (#57).
 func newSyncer(db store.Store) *sync.Syncer {
-	return sync.New(service.NewCompanyService(db), service.NewPostingService(db), map[string]sync.PostingFetcher{
+	return sync.New(service.NewCompanyService(db), service.NewPostingService(db), newFormService(db), map[string]sync.PostingFetcher{
 		jobboard.Ashby:      ashby.NewClient(),
 		jobboard.Greenhouse: greenhouse.NewClient(),
 		jobboard.Lever:      lever.NewClient(),
 	}, sync.DefaultConfig())
+}
+
+// newFormService fetches application forms from every board that has
+// them (Greenhouse), under a sync's fetch timeout.
+func newFormService(db store.Store) *service.FormService {
+	return service.NewFormService(db, map[string]service.FormFetcher{
+		jobboard.Greenhouse: greenhouse.NewClient(),
+	}, service.FormConfig{FetchTimeout: sync.DefaultConfig().FetchTimeout})
 }
 
 // runImport bulk-creates companies from a YAML seed file (see the seed

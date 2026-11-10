@@ -33,7 +33,7 @@ func TestCreateCompany(t *testing.T) {
 			t.Parallel()
 			s := testutil.NewTestApp(t)
 			ctx := context.Background()
-			syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
+			syncer := New(s.Companies, s.Postings, s.Forms, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
 			company, err := syncer.CreateCompany(ctx, "Acme", tt.source, tt.sourceRef)
 			if (err != nil) != tt.wantErr {
