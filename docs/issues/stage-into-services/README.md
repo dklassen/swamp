@@ -8,7 +8,7 @@
 | 2 | [DocumentService owns documents; reviews come back current](02-services-own-documents.md) | - | #487 | merged | none |
 | 3 | [Document reads and writes go through DocumentService](03-document-read-write.md) | - | #488 | merged | 2 |
 | 4 | [Application forms are PostingService's](04-application-forms.md) | - | #489 | merged | none |
-| 5 | [A posting at a deleted company is refused in one place](05-posting-at-live-company.md) | - | - | planned | none |
+| 5 | [A posting at a deleted company is refused in one place](05-posting-at-live-company.md) | - | #490 | in review | none |
 | 6 | [Preparing a posting is one service call](06-prepare.md) | - | - | planned | 2, 3, 4, 5 |
 | 7 | [The drafting queue is one service query](07-drafting-queue.md) | - | - | planned | 2 |
 | 8 | [Companies with their open counts are CompanyService's](08-companies-with-open-counts.md) | - | - | planned | none |
