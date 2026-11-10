@@ -11,7 +11,7 @@
 | 5 | [A posting at a deleted company is refused in one place](05-posting-at-live-company.md) | - | #490 | in review | none |
 | 6 | [Preparing a posting is one service call](06-prepare.md) | - | - | planned | 2, 3, 4, 5 |
 | 7 | [The drafting queue is one service query](07-drafting-queue.md) | - | - | planned | 2 |
-| 8 | [Companies with their open counts are CompanyService's](08-companies-with-open-counts.md) | - | - | planned | none |
+| 8 | [Companies with their open counts are CompanyService's](08-companies-with-open-counts.md) | - | #493 | in review | none |
 | 9 | [Scoring checks the profile; canonical files come from DocumentService](09-profile-and-canonical-files.md) | - | - | planned | 2 |
 | 10 | [What's left of stage moves under mcpserver](10-stage-into-mcpserver.md) | - | - | planned | 1-9 |
 | 11 | [A posting's application form is fetched when the posting lands](11-forms-with-postings.md) | - | - | planned | 4 |

@@ -19,6 +19,6 @@ depends_on: []
 
 ## Acceptance criteria
 
-- [ ] A service test: a company's count is its open, unarchived, filter-passing postings, and a deleted company is left out.
-- [ ] `list_companies`' JSON unchanged.
-- [ ] Verification checklist clean.
+- [x] A service test: a company's count is its open, unarchived, filter-passing postings, and a deleted company is left out.
+- [x] `list_companies`' JSON unchanged.
+- [x] Verification checklist clean.
