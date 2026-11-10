@@ -32,9 +32,16 @@ type DraftingService struct {
 	applications             draftingApplicationStore
 	applicationHistoryWriter applicationHistoryWriter
 	reviewViewer             latestReviewViewer
+	formViewer               formViewer
+	formWriter               formWriter
+	formFetchers             map[string]FormFetcher
+	formConfig               FormConfig
 }
 
-func NewDraftingService(db store.Store, docs *documents.Store) *DraftingService {
+// NewDraftingService reads application forms with formFetchers, keyed by
+// source, each fetch bounded by formConfig.
+func NewDraftingService(db store.Store, docs *documents.Store, formFetchers map[string]FormFetcher, formConfig FormConfig) *DraftingService {
+	forms := &repository.PostingForms{}
 	return &DraftingService{
 		db:                       db,
 		documents:                docs,
@@ -42,6 +49,10 @@ func NewDraftingService(db store.Store, docs *documents.Store) *DraftingService 
 		applications:             &repository.ApplicationRepository{},
 		applicationHistoryWriter: &repository.ApplicationHistoryRepository{},
 		reviewViewer:             &repository.DocumentReviewRepository{},
+		formViewer:               forms,
+		formWriter:               forms,
+		formFetchers:             formFetchers,
+		formConfig:               formConfig,
 	}
 }
 
@@ -63,6 +74,7 @@ type Prepared struct {
 	// LatestReviews holds each type's latest review while it describes
 	// the document on disk.
 	LatestReviews map[document.Type]document.Review
+	Form          FormRead
 }
 
 // Prepare starts drafting a posting, or resumes it: it returns the
@@ -131,5 +143,12 @@ func (service *DraftingService) Prepare(ctx context.Context, postingID int64) (*
 			prepared.LatestReviews[documentType] = review
 		}
 	}
+
+	// Outside the transaction: a board fetch mustn't hold the write lock.
+	form, err := service.currentForm(ctx, prepared.Posting, prepared.Company)
+	if err != nil {
+		return nil, fmt.Errorf("drafting: application form: %w", err)
+	}
+	prepared.Form = *form
 	return &prepared, nil
 }

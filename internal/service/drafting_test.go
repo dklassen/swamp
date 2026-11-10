@@ -191,3 +191,54 @@ func TestDraftingService_Prepare_ApplicationStartedElsewhere_IsReturned(t *testi
 		t.Errorf("Application (-started +got):\n%s", diff)
 	}
 }
+
+// A deleted application is the user's to keep deleted: drafting the posting
+// again starts a fresh one, with none of the old drafts.
+func TestDraftingService_Prepare_AfterTheApplicationIsDeleted_StartsAFreshOne(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	s := testutil.NewTestApp(t)
+	p := testutil.MustIngestPosting(t, s, "job-1", "Engineer")
+	first, err := s.Drafting.Prepare(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("Prepare (first): %v", err)
+	}
+	if _, err := s.Documents.Write(ctx, first.Application.ID, document.CoverLetter, "Dear Acme,", service.NoDocumentYet, document.SourceWriteDocument); err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+	if _, err := s.Applications.Delete(ctx, first.Application.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	got, err := s.Drafting.Prepare(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("Prepare (second): %v", err)
+	}
+	if got.Application.ID == first.Application.ID {
+		t.Errorf("Application.ID = %d, want a fresh application", got.Application.ID)
+	}
+	for documentType, doc := range got.Documents {
+		if doc.Exists {
+			t.Errorf("%s exists on the fresh application, want no drafts", documentType)
+		}
+	}
+}
+
+// A document that can't be read is an error, not a document to draft from
+// scratch.
+func TestDraftingService_Prepare_UnreadableDocument_IsAnError(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	p := testutil.MustIngestPosting(t, s, "job-1", "Engineer")
+	first, err := s.Drafting.Prepare(t.Context(), p.ID)
+	if err != nil {
+		t.Fatalf("Prepare (first): %v", err)
+	}
+	if err := os.Mkdir(first.Documents[document.Resume].Path, 0o750); err != nil {
+		t.Fatalf("Mkdir: %v", err)
+	}
+
+	if got, err := s.Drafting.Prepare(t.Context(), p.ID); err == nil {
+		t.Fatalf("Prepare = %+v, want an error for a resume that can't be read", got)
+	}
+}

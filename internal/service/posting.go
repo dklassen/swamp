@@ -107,13 +107,9 @@ type PostingService struct {
 	applicationWriter        postingApplicationWriter
 	applicationHistoryViewer postingApplicationHistoryViewer
 	applicationHistoryWriter applicationHistoryWriter
-	formFetchers             map[string]FormFetcher
-	formConfig               FormConfig
 }
 
-// NewPostingService reads application forms with formFetchers, keyed by
-// company source; a source without one only has forms saved by hand.
-func NewPostingService(db store.Store, formFetchers map[string]FormFetcher, formConfig FormConfig) *PostingService {
+func NewPostingService(db store.Store) *PostingService {
 	postings := &repository.PostingRepository{}
 	postingHistory := &repository.PostingHistoryRepository{}
 	markup := &repository.PostingMarkupRepository{}
@@ -136,8 +132,6 @@ func NewPostingService(db store.Store, formFetchers map[string]FormFetcher, form
 		applicationWriter:        applications,
 		applicationHistoryViewer: applicationHistory,
 		applicationHistoryWriter: applicationHistory,
-		formFetchers:             formFetchers,
-		formConfig:               formConfig,
 	}
 }
 
