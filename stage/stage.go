@@ -195,7 +195,7 @@ type Prepared struct {
 
 type companyService interface {
 	Get(ctx context.Context, id int64) (*company.Company, error)
-	ListActiveWithOpenPostings(ctx context.Context) ([]company.CompanyStats, error)
+	ListActiveWithOpenPostings(ctx context.Context) ([]company.Stats, error)
 }
 
 type postingService interface {
