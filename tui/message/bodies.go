@@ -54,13 +54,17 @@ func (SyncAll) Type() Type { return TypeSyncAll }
 // synced; a run's step that didn't says why here rather than in an Error,
 // which would take over the banner mid-run.
 type SyncReport struct {
-	RunID    int       `json:"run_id,omitzero"`
-	Fetched  int       `json:"fetched"`
-	Created  int       `json:"created"`
-	Updated  int       `json:"updated"`
-	Closed   int       `json:"closed"`
-	Reopened int       `json:"reopened"`
-	Code     ErrorCode `json:"code,omitzero"`
+	RunID    int `json:"run_id,omitzero"`
+	Fetched  int `json:"fetched"`
+	Created  int `json:"created"`
+	Updated  int `json:"updated"`
+	Closed   int `json:"closed"`
+	Reopened int `json:"reopened"`
+	// FormsFetched and FormsFailed count the application forms fetched
+	// for open postings that had none.
+	FormsFetched int       `json:"forms_fetched"`
+	FormsFailed  int       `json:"forms_failed"`
+	Code         ErrorCode `json:"code,omitzero"`
 }
 
 func (SyncReport) Type() Type { return TypeSyncReport }

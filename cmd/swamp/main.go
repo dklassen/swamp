@@ -296,8 +296,8 @@ func reportFetch(stdout, stderr io.Writer, results []sync.Result) int {
 		case r.Err != nil:
 			_, _ = fmt.Fprintf(stderr, "%s: error: %v\n", r.Name, r.Err)
 		default:
-			_, _ = fmt.Fprintf(stdout, "%s: fetched=%d created=%d updated=%d closed=%d reopened=%d\n",
-				r.Name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened)
+			_, _ = fmt.Fprintf(stdout, "%s: fetched=%d created=%d updated=%d closed=%d reopened=%d forms=%d forms_failed=%d\n",
+				r.Name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened, r.FormsFetched, r.FormsFailed)
 		}
 	}
 

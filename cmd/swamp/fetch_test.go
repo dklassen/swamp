@@ -23,12 +23,12 @@ func TestReportFetch(t *testing.T) {
 		{
 			name: "all succeed",
 			results: []sync.Result{
-				{CompanyID: 1, Name: "Acme", Fetched: 3, Created: 1},
+				{CompanyID: 1, Name: "Acme", Fetched: 3, Created: 1, FormsFetched: 1, FormsFailed: 1},
 				{CompanyID: 2, Name: "Globex", Fetched: 2, Updated: 2},
 			},
 			wantFailed: 0,
-			wantStdout: "Acme: fetched=3 created=1 updated=0 closed=0 reopened=0\n" +
-				"Globex: fetched=2 created=0 updated=2 closed=0 reopened=0\n",
+			wantStdout: "Acme: fetched=3 created=1 updated=0 closed=0 reopened=0 forms=1 forms_failed=1\n" +
+				"Globex: fetched=2 created=0 updated=2 closed=0 reopened=0 forms=0 forms_failed=0\n",
 			wantStderr: "2 companies, 0 failed\n",
 		},
 		{
@@ -39,7 +39,7 @@ func TestReportFetch(t *testing.T) {
 				{CompanyID: 3, Name: "Initech", Err: errors.New("context deadline exceeded")},
 			},
 			wantFailed: 2,
-			wantStdout: "Acme: fetched=3 created=1 updated=0 closed=0 reopened=0\n",
+			wantStdout: "Acme: fetched=3 created=1 updated=0 closed=0 reopened=0 forms=0 forms_failed=0\n",
 			wantStderr: "Globex: error: status 404\n" +
 				"Initech: error: context deadline exceeded\n" +
 				"3 companies, 2 failed (Globex, Initech)\n",
@@ -54,7 +54,7 @@ func TestReportFetch(t *testing.T) {
 				{CompanyID: 3, Name: "Initech", Err: errors.New("status 404")},
 			},
 			wantFailed: 1,
-			wantStdout: "Acme: fetched=3 created=1 updated=0 closed=0 reopened=0\n",
+			wantStdout: "Acme: fetched=3 created=1 updated=0 closed=0 reopened=0 forms=0 forms_failed=0\n",
 			wantStderr: "Globex: skipped, another sync of it is in progress\n" +
 				"Initech: error: status 404\n" +
 				"3 companies, 1 failed (Initech), 1 skipped (Globex)\n",

@@ -131,7 +131,10 @@ func syncAllStep(syncer *sync.Syncer, src message.Source, runID int, company mes
 }
 
 func reportOf(runID int, r sync.Result) message.SyncReport {
-	return message.SyncReport{RunID: runID, Fetched: r.Fetched, Created: r.Created, Updated: r.Updated, Closed: r.Closed, Reopened: r.Reopened}
+	return message.SyncReport{
+		RunID: runID, Fetched: r.Fetched, Created: r.Created, Updated: r.Updated, Closed: r.Closed, Reopened: r.Reopened,
+		FormsFetched: r.FormsFetched, FormsFailed: r.FormsFailed,
+	}
 }
 
 // syncAllKey is 'R': it starts a run, or stops the one under way. A stop
@@ -271,8 +274,12 @@ func (m *Syncing) refreshSynced(e message.Event[message.Ran[message.SyncReport]]
 		return nil
 	}
 	r := e.Payload.Value
-	return message.ReportStatus(message.Source{Instance: m.instance}, fmt.Sprintf("%s: fetched %d, created %d, updated %d, closed %d, reopened %d",
-		name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened))
+	status := fmt.Sprintf("%s: fetched %d, created %d, updated %d, closed %d, reopened %d, forms %d",
+		name, r.Fetched, r.Created, r.Updated, r.Closed, r.Reopened, r.FormsFetched)
+	if r.FormsFailed > 0 {
+		status += fmt.Sprintf(" (%d failed)", r.FormsFailed)
+	}
+	return message.ReportStatus(message.Source{Instance: m.instance}, status)
 }
 
 // refreshFailed leaves a failure to the banner, which shows every Error,
