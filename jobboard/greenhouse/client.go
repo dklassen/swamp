@@ -13,7 +13,7 @@
 // simply left at their zero value -- see jobboard's doc comment), and
 // there's no plain-text description -- only HTML, stripped here on a
 // best-effort basis (see html.go) since DescriptionText is what an
-// external agent drafts a cover letter from (see the stage package).
+// external agent drafts a cover letter from (see mcpserver's stage_prepare).
 package greenhouse
 
 import (

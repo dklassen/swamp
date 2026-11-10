@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -14,7 +13,6 @@ const (
 	cmdTUI      command = "tui"
 	cmdMigrate  command = "migrate"
 	cmdFetch    command = "fetch"
-	cmdStage    command = "stage"
 	cmdExport   command = "export"
 	cmdImport   command = "import"
 	cmdMCPServe command = "mcp-serve"
@@ -27,19 +25,10 @@ const (
 	migrateDown migrateDirection = "down"
 )
 
-type stageAction string
-
-const (
-	stageList    stageAction = "list"
-	stagePrepare stageAction = "prepare"
-)
-
 const usage = `usage:
   swamp [--mcp]                  run the TUI, optionally with the MCP server in-process
   swamp migrate up|down          apply pending migrations, or roll back the newest
   swamp fetch                    sync every active company
-  swamp stage list               print postings eligible for hand-off
-  swamp stage prepare <posting-id>
   swamp export <application-id>  convert an application's documents to PDF
   swamp import <seed-file.yaml>  bulk-create companies
   swamp mcp-serve                run the MCP server alone`
@@ -50,8 +39,6 @@ type runFlags struct {
 	// mcp runs the MCP server inside the TUI process.
 	mcp           bool
 	migrate       migrateDirection
-	stage         stageAction
-	postingID     int64
 	applicationID int64
 	seedFile      string
 }
@@ -87,8 +74,6 @@ func parseArgs(args []string) (runFlags, error) {
 		if sub.NArg() != 1 || (f.migrate != migrateUp && f.migrate != migrateDown) {
 			err = fmt.Errorf("migrate: want up or down, got %q", sub.Args())
 		}
-	case cmdStage:
-		err = parseStage(sub, &f)
 	case cmdExport:
 		if err = wantArgs(sub, 1); err == nil {
 			f.applicationID, err = parseID("application", sub.Arg(0))
@@ -104,25 +89,6 @@ func parseArgs(args []string) (runFlags, error) {
 		return runFlags{}, err
 	}
 	return f, nil
-}
-
-func parseStage(sub *flag.FlagSet, f *runFlags) error {
-	if sub.NArg() == 0 {
-		return errors.New("stage: want list or prepare")
-	}
-	f.stage = stageAction(sub.Arg(0))
-	switch f.stage {
-	case stageList:
-		return wantArgs(sub, 1)
-	case stagePrepare:
-		if err := wantArgs(sub, 2); err != nil {
-			return err
-		}
-		var err error
-		f.postingID, err = parseID("posting", sub.Arg(1))
-		return err
-	}
-	return fmt.Errorf("stage: want list or prepare, got %q", sub.Arg(0))
 }
 
 // newFlagSet returns errors for the caller to print instead of printing

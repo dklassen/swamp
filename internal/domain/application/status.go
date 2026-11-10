@@ -52,7 +52,7 @@ func (s Status) String() string {
 
 // MarshalJSON encodes as the same DB string form String() returns (e.g.
 // "application_started"), not the underlying int -- callers outside this
-// package (e.g. the stage package's CLI JSON output) shouldn't need to
+// package (e.g. the MCP tools' JSON) shouldn't need to
 // know this enum's internal ordering to make sense of a status.
 func (s Status) MarshalJSON() ([]byte, error) {
 	return json.Marshal(s.String())

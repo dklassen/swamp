@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -23,7 +24,6 @@ import (
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/stage"
 	swampsync "github.com/dklassen/swamp/sync"
 )
 
@@ -49,7 +49,7 @@ func newTestServer(t *testing.T) (*mcp.Server, testutil.TestApp, *documents.Stor
 		"acme": {{SourceID: "job-1", Title: "Engineer"}, {SourceID: "job-2", Title: "Designer"}},
 	}}
 	syncer := swampsync.New(s.Companies, s.Postings, map[string]swampsync.PostingFetcher{jobboard.Ashby: fetcher}, swampsync.DefaultConfig())
-	return New(stage.New(s.Companies, s.Postings, s.Documents, s.Scores, s.Drafting), s.Documents, syncer), s, d
+	return New(s.Companies, s.Postings, s.Documents, s.Scores, s.Drafting, syncer), s, d
 }
 
 // connectClient wires an in-process MCP client to srv over an in-memory
@@ -175,7 +175,7 @@ func TestStagePrepare_CreatesApplicationAndReturnsDocumentPaths(t *testing.T) {
 
 	cs := connectClient(t, srv)
 
-	got := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	got := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 
 	if got.ApplicationID == 0 {
 		t.Fatal("ApplicationID = 0, want a created application id")
@@ -208,7 +208,7 @@ func TestWriteDocument_WritesContentToTheResolvedPath(t *testing.T) {
 	mustMarkInterested(t, s, posting.ID)
 
 	cs := connectClient(t, srv)
-	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	prepared := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 
 	for _, tc := range []struct {
 		documentType string
@@ -255,7 +255,7 @@ func TestWriteDocument_RejectsInvalidDocumentType(t *testing.T) {
 	mustMarkInterested(t, s, posting.ID)
 
 	cs := connectClient(t, srv)
-	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	prepared := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
 		Name: "write_document",
@@ -334,7 +334,7 @@ func TestWriteDocument_DeletedApplication_WritesNothing(t *testing.T) {
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
 	mustMarkInterested(t, s, posting.ID)
 	cs := connectClient(t, srv)
-	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	prepared := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 	if _, err := s.Applications.Delete(context.Background(), prepared.ApplicationID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
 	}
@@ -461,7 +461,7 @@ func TestReadDocument_ReturnsWrittenContent(t *testing.T) {
 	mustMarkInterested(t, s, posting.ID)
 
 	cs := connectClient(t, srv)
-	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	prepared := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 
 	for _, tc := range []struct {
 		documentType string
@@ -512,7 +512,7 @@ func TestReadDocument_ReturnsToolError(t *testing.T) {
 			mustMarkInterested(t, s, posting.ID)
 
 			cs := connectClient(t, srv)
-			prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+			prepared := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 
 			res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
 				Name: "read_document",
@@ -556,7 +556,7 @@ func TestReadDocument_DeletedApplication_SaysSo(t *testing.T) {
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
 	mustMarkInterested(t, s, posting.ID)
 	cs := connectClient(t, srv)
-	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	prepared := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 	callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
 		"ReplacesVersion": service.NoDocumentYet,
 		"ApplicationID":   prepared.ApplicationID,
@@ -586,7 +586,7 @@ func TestReadDocument_NotWrittenYet_SaysSo(t *testing.T) {
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
 	mustMarkInterested(t, s, posting.ID)
 	cs := connectClient(t, srv)
-	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	prepared := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 
 	got := callToolError(t, cs, "read_document", map[string]any{
 		"ApplicationID": prepared.ApplicationID,
@@ -777,10 +777,17 @@ func TestListCompanies_LiveCompaniesByNameWithOpenCounts(t *testing.T) {
 // strings for the enums.
 type searchPostingsResult struct {
 	Postings []struct {
-		Posting           struct{ ID int64 }
+		Posting struct {
+			ID          int64
+			Title       string
+			PublishedAt *time.Time
+			FirstSeenAt time.Time
+		}
 		CompanyName       string
+		ListingStatus     string
 		ApplicationID     *int64
 		ApplicationStatus *string
+		Score             int
 	}
 	NextCursor *string
 	Total      int
@@ -989,7 +996,7 @@ func TestSearchPostings_AdvertisesEnums(t *testing.T) {
 	if diff := cmp.Diff([]string{"id_asc", "id_desc", "published_desc", "score_desc"}, schema.Properties.Sort.Enum); diff != "" {
 		t.Errorf("Sort enum mismatch (-want +got):\n%s", diff)
 	}
-	for _, order := range stage.SortOrders() {
+	for _, order := range sortOrders {
 		if !strings.Contains(schema.Properties.Sort.Description, order.Name()+": "+order.Description) {
 			t.Errorf("Sort description doesn't explain %s:\n%s", order.Name(), schema.Properties.Sort.Description)
 		}
@@ -1023,7 +1030,7 @@ func TestWriteDocument_ReplacesVersion(t *testing.T) {
 			posting := mustUpsertPosting(t, s, company.ID, fmt.Sprintf("job-%d", i), "Senior Data Engineer")
 			mustMarkInterested(t, s, posting.ID)
 			cs := connectClient(t, srv)
-			prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+			prepared := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 			path := prepared.Documents[document.CoverLetter].Path
 			if tt.onDisk != "" {
 				if err := os.WriteFile(path, []byte(tt.onDisk), 0o644); err != nil {
@@ -1072,7 +1079,7 @@ func TestWriteDocument_OmittedReplacesVersion_IsRefused(t *testing.T) {
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
 	mustMarkInterested(t, s, posting.ID)
 	cs := connectClient(t, srv)
-	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	prepared := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 	path := prepared.Documents[document.CoverLetter].Path
 	if err := os.WriteFile(path, []byte("edited by the user"), 0o644); err != nil {
 		t.Fatalf("WriteFile: %v", err)
@@ -1106,7 +1113,7 @@ func TestWriteDocument_EmptyReplacesVersion_IsRefused(t *testing.T) {
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
 	mustMarkInterested(t, s, posting.ID)
 	cs := connectClient(t, srv)
-	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	prepared := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 
 	msg := callToolError(t, cs, "write_document", map[string]any{
 		"ApplicationID":   prepared.ApplicationID,
@@ -1136,7 +1143,7 @@ func TestStagePrepare_DocumentsCarryVersion(t *testing.T) {
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
 	mustMarkInterested(t, s, posting.ID)
 	cs := connectClient(t, srv)
-	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	prepared := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 	callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
 		"ReplacesVersion": service.NoDocumentYet,
 		"ApplicationID":   prepared.ApplicationID,
@@ -1144,7 +1151,7 @@ func TestStagePrepare_DocumentsCarryVersion(t *testing.T) {
 		"Content":         "a draft",
 	})
 
-	got := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	got := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 
 	if want := document.ContentSHA256("a draft"); got.Documents[document.CoverLetter].Version != want {
 		t.Errorf("cover letter Version = %q, want %q", got.Documents[document.CoverLetter].Version, want)
@@ -1166,7 +1173,7 @@ func TestWriteDocument_IsRecordedAndReachesTheChangeLog(t *testing.T) {
 	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
 	mustMarkInterested(t, s, posting.ID)
 	cs := connectClient(t, srv)
-	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	prepared := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 	since, err := s.Changes.Latest(ctx)
 	if err != nil {
 		t.Fatalf("Latest: %v", err)
@@ -1215,9 +1222,9 @@ func TestReadPosting_ReturnsThePostingInFull(t *testing.T) {
 	p := ingested.Posting
 	cs := connectClient(t, srv)
 
-	got := callTool[stage.FullPosting](t, cs, "read_posting", map[string]any{"PostingID": p.ID})
+	got := callTool[fullPosting](t, cs, "read_posting", map[string]any{"PostingID": p.ID})
 
-	want := stage.FullPosting{
+	want := fullPosting{
 		ID: p.ID, Title: "Platform Engineer", CompanyName: "Acme", CompanyDescription: "Builds rockets.",
 		Department: "Infra", Location: "Dublin", WorkplaceType: "Hybrid", ListingStatus: posting.ListingOpen,
 		DescriptionText: "Run the platform.", JobURL: "https://jobs.example.com/acme/1", ApplicationURL: "https://jobs.example.com/acme/1/apply",
@@ -1287,7 +1294,7 @@ func mustWriteProfile(t *testing.T, d *documents.Store, content string) string {
 	return document.ContentSHA256(content)
 }
 
-func pendingIDs(r stage.PendingResult) []int64 {
+func pendingIDs(r pendingResult) []int64 {
 	var ids []int64
 	for _, p := range r.Postings {
 		ids = append(ids, p.ID)
@@ -1307,11 +1314,11 @@ func TestListPendingPostings_PagesToTheLastPage(t *testing.T) {
 	profile := mustWriteProfile(t, d, "# Me")
 	cs := connectClient(t, srv)
 
-	first := callTool[stage.PendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileVersion": profile, "Limit": 2})
+	first := callTool[pendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileVersion": profile, "Limit": 2})
 	if first.NextCursor == nil || first.Total != 3 {
 		t.Fatalf("first page: NextCursor %v, Total %d; want a cursor and 3", first.NextCursor, first.Total)
 	}
-	second := callTool[stage.PendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileVersion": profile, "Limit": 2, "Cursor": *first.NextCursor})
+	second := callTool[pendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileVersion": profile, "Limit": 2, "Cursor": *first.NextCursor})
 
 	if diff := cmp.Diff([]int64{ids[2], ids[1], ids[0]}, append(pendingIDs(first), pendingIDs(second)...)); diff != "" {
 		t.Errorf("pending across both pages, newest first (-want +got):\n%s", diff)
@@ -1343,7 +1350,7 @@ func TestListPendingPostings_SaysWhyEachIsPending(t *testing.T) {
 
 	reasons := func(args map[string]any) map[int64]score.PendingReason {
 		got := map[int64]score.PendingReason{}
-		for _, p := range callTool[stage.PendingResult](t, cs, "list_pending_postings", args).Postings {
+		for _, p := range callTool[pendingResult](t, cs, "list_pending_postings", args).Postings {
 			got[p.ID] = p.Reason
 		}
 		return got
@@ -1380,7 +1387,7 @@ func TestListPendingPostings_RefusesACursorFromAnotherListing(t *testing.T) {
 	}
 	profile := mustWriteProfile(t, d, "# Me")
 	cs := connectClient(t, srv)
-	first := callTool[stage.PendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileVersion": profile, "Limit": 1})
+	first := callTool[pendingResult](t, cs, "list_pending_postings", map[string]any{"ProfileVersion": profile, "Limit": 1})
 	if first.NextCursor == nil {
 		t.Fatal("first page has no NextCursor")
 	}
@@ -1402,7 +1409,7 @@ func TestRecordScores_StoresValidEntriesAndReportsTheRest(t *testing.T) {
 	profile := mustWriteProfile(t, d, "# Me")
 	cs := connectClient(t, srv)
 
-	got := callTool[stage.RecordResult](t, cs, "record_scores", map[string]any{
+	got := callTool[recordResult](t, cs, "record_scores", map[string]any{
 		"Model":          "claude-opus-5-5",
 		"ProfileVersion": profile,
 		"Scores": []map[string]any{
@@ -1412,9 +1419,9 @@ func TestRecordScores_StoresValidEntriesAndReportsTheRest(t *testing.T) {
 		},
 	})
 
-	want := stage.RecordResult{
+	want := recordResult{
 		Recorded: []int64{good.ID},
-		Refused:  []stage.RefusedEntry{{PostingID: other.ID, Why: score.OutOfRange}, {PostingID: 999, Why: score.NoSuchPosting}},
+		Refused:  []refusedEntry{{PostingID: other.ID, Why: score.OutOfRange}, {PostingID: 999, Why: score.NoSuchPosting}},
 	}
 	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("record_scores (-want +got):\n%s", diff)
@@ -1514,7 +1521,7 @@ func TestOldVersionArgumentNames_AreRefused(t *testing.T) {
 	mustMarkInterested(t, s, posting.ID)
 	profile := mustWriteProfile(t, d, "# Me")
 	cs := connectClient(t, srv)
-	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	prepared := callTool[stagePrepareOutput](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 
 	calls := []struct {
 		tool string

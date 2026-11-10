@@ -1,8 +1,7 @@
 // Command swamp is the entrypoint: it launches the TUI by default, applies
 // or rolls back database migrations with `migrate up` and `migrate down`
 // (and only then), runs a
-// one-off refresh with the `fetch` subcommand, drives the agent hand-off
-// mechanism with the `stage` subcommand, converts an application's
+// one-off refresh with the `fetch` subcommand, converts an application's
 // drafted documents to PDF with the `export` subcommand, or bulk-creates
 // companies from a YAML seed file with the `import` subcommand. Mostly not
 // unit tested per this project's testing decisions -- verified manually.
@@ -13,7 +12,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -38,7 +36,6 @@ import (
 	"github.com/dklassen/swamp/jobboard/greenhouse"
 	"github.com/dklassen/swamp/jobboard/lever"
 	"github.com/dklassen/swamp/seed"
-	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
 	"github.com/dklassen/swamp/tui"
@@ -124,8 +121,6 @@ func runCommand(rf runFlags) error {
 	switch rf.command {
 	case cmdFetch:
 		return runFetch(db)
-	case cmdStage:
-		return runStage(db, documentsStore, rf.stage, rf.postingID)
 	case cmdExport:
 		return runExport(db, documentsStore, rf.applicationID)
 	case cmdImport:
@@ -229,16 +224,6 @@ func newSyncer(db store.Store) *sync.Syncer {
 	}, sync.DefaultConfig())
 }
 
-// newStage builds the agent hand-off Stage, able to read application
-// forms from every board that supports it (Greenhouse; see #167 for Ashby
-// and Lever) under the same fetch timeout as a sync.
-func newStage(db store.Store, d *documents.Store) *stage.Stage {
-	drafting := service.NewDraftingService(db, d, map[string]service.FormFetcher{
-		jobboard.Greenhouse: greenhouse.NewClient(),
-	}, service.FormConfig{FetchTimeout: sync.DefaultConfig().FetchTimeout})
-	return stage.New(service.NewCompanyService(db), service.NewPostingService(db), service.NewDocumentService(db, d), service.NewScoringService(db, d), drafting)
-}
-
 // runImport bulk-creates companies from a YAML seed file (see the seed
 // package for its shape). Each entry is validated against its source's
 // real API before being saved, so a bad row is reported and skipped
@@ -310,32 +295,6 @@ func reportFetch(stdout, stderr io.Writer, results []sync.Result) int {
 	summary := sync.Summarize(results)
 	_, _ = fmt.Fprintln(stderr, summary)
 	return len(summary.Failed)
-}
-
-// runStage drives the agent hand-off mechanism: `stage list` prints
-// eligible postings as a JSON array, `stage prepare <posting-id>` commits
-// to one and prints the result as a JSON object. See the stage package
-// for what each does.
-func runStage(db store.Store, d *documents.Store, action stageAction, postingID int64) error {
-	st := newStage(db, d)
-	ctx := context.Background()
-
-	switch action {
-	case stageList:
-		candidates, err := st.List(ctx)
-		if err != nil {
-			return fmt.Errorf("stage list: %w", err)
-		}
-		return printJSON(candidates)
-	case stagePrepare:
-		prepared, err := st.Prepare(ctx, postingID)
-		if err != nil {
-			return fmt.Errorf("stage prepare: %w", err)
-		}
-		return printJSON(prepared)
-	default:
-		return fmt.Errorf("stage: unknown action %q", action)
-	}
 }
 
 // runMCPServe runs swamp's agent hand-off mechanism as an MCP server over
@@ -466,15 +425,6 @@ func reviewSummary(review document.Review, hasReview bool) string {
 		return "flagged: " + review.Notes
 	}
 	return "passed"
-}
-
-func printJSON(v any) error {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		return fmt.Errorf("encode json: %w", err)
-	}
-	return nil
 }
 
 func openPlain(dbPath string) (*sql.DB, error) {

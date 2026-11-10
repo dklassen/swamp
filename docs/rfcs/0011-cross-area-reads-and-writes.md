@@ -12,7 +12,7 @@ This RFC proposes:
 
 1. **SQL may cross areas; Go types may not.** A query may read any table. Its result is the owning area's own type, built only from pure types. This is already how `SearchPostings` and `scoring.Pending` work.
 2. **Use-case packages sit above the areas.** A use-case package may import several areas. It owns the rule that spans them, and runs the areas' steps in one `store.InTx`. Areas expose single-area steps that take a `store.Tx`.
-3. **The use-case packages mostly exist already.** `sync` already owns companies' and postings' lifecycle, and `stage` already composes what the agent sees. Only the active-applications view needs a new home.
+3. **Use cases that span areas are service methods.** `sync` owns companies' and postings' lifecycle, and the services in `internal/service` compose what the agent and the TUI read and write. Only the active-applications view needs a new home.
 
 ## Problem
 
@@ -85,7 +85,7 @@ The layers, from the bottom:
 1. pure packages
 2. `store`
 3. areas
-4. use-case packages
+4. use-case packages: the services in `internal/service`, and `sync`
 5. `tui`, `cmd/swamp`, `mcpserver`
 
 An area never imports another area or a use-case package. A use-case package may import any area and other use-case packages. Nothing imports `tui`, `cmd/swamp` or `mcpserver`.
@@ -96,9 +96,9 @@ An area never imports another area or a use-case package. A use-case package may
 | Reopen a posting and restore its applications | `sync` | Same |
 | Ingest a posting and create its markup row | `sync` | Only caller |
 | Delete a company and close its postings | `sync` | `sync` already owns company lifecycle (`Syncer.CreateCompany`, `AddCompany`). Today `tui` calls `store.SoftDeleteCompany` directly; it would call `sync` instead, as it does to create one |
-| The active-applications view (`ApplicationView`) | a new use-case package, `pursuit` (Q1) | Both `tui` and `stage` read it, and it combines applications, postings, companies and document records |
+| The active-applications view (`ApplicationView`) | a new use-case package, `pursuit` (Q1) | Both `tui` and the MCP server read it, and it combines applications, postings, companies and document records |
 
-`stage` is already a use-case package: it composes what the agent reads and writes. It stays one, and it reads the view from `pursuit` rather than building its own.
+A use case that spans areas is a service method, so `tui`, `cmd/swamp` and `mcpserver` hold no rule of their own. There is no `stage` package: what the agent reads and writes is a service call, and `mcpserver` owns only the agent's JSON shapes, page sizes, cursors and sort orders.
 
 ## Options considered
 

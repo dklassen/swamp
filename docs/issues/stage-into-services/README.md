@@ -12,8 +12,8 @@
 | 6 | [Starting to draft a posting is one DraftingService call](06-prepare.md) | - | #495 | merged | 2, 3, 4, 5, 12 |
 | 7 | [The drafting queue is one DraftingService query](07-drafting-queue.md) | - | #496 | merged | 2, 12 |
 | 8 | [Companies with their open counts are CompanyService's](08-companies-with-open-counts.md) | - | #493 | merged | none |
-| 9 | [Scoring checks the profile; canonical files come from DocumentService](09-profile-and-canonical-files.md) | - | #497 | in review | 2 |
-| 10 | [What's left of stage moves under mcpserver](10-stage-into-mcpserver.md) | - | - | planned | 1-9 |
+| 9 | [Scoring checks the profile; canonical files come from DocumentService](09-profile-and-canonical-files.md) | - | #497 | merged | 2 |
+| 10 | [What's left of stage moves under mcpserver](10-stage-into-mcpserver.md) | - | #498 | in review | 1-9 |
 | 11 | [A posting's application form is fetched when the posting lands](11-forms-with-postings.md) | - | - | planned | 4, 6 |
 | 12 | [The latest review of each document type is a repository read](12-latest-reviews.md) | - | #492 | merged | none |
 
@@ -49,6 +49,8 @@
 - Step 7 merges the queue in Go rather than one SQL query, with the reviews of every application in one batch query (Bob, 2026-11-10): the interested and started halves follow different rules, so one query would be a UNION repeating the company-list filters. Started applications not marked interested are ordered by company name, then application ID, dropping the status-since tie-break, which cost a history read per application. `PostingService.Interested` went with it, having no other caller.
 - Step 9: `documents.Store` reads the profile and canonical resume (`ReadProfile`, `ReadCanonicalResume`), and both `ScoringService` and `DocumentService` call it, since neither may call the other; `NewScoringService` takes the store as a plain parameter (Bob, 2026-11-10). `DocumentService.Profile` and `CanonicalResume` are two methods, not one over an `iota` kind, since nothing switches on which file it is. They return a `CanonicalFile` with `Exists`, not `store.ErrNotFound`: a missing file is a state the skill acts on, and the tool still names its path (Bob, 2026-11-10).
 - Step 9: `ScoringService.Pending` takes the profile hash on every call plus a `rescore` flag, replacing the empty rescore hash that meant none, since it now checks the profile either way. The flag picks which postings are listed against one profile, not a second intent.
+- Step 10: `stage`'s leftovers go into `mcpserver` itself, not a subpackage for the JSON shapes (Bob, 2026-11-10): the step removes a layer, and a subpackage would put one back. Each `stage` method folds into its tool handler, so the option types between them go, and the shapes are unexported.
+- Step 10: five tools still return `any`. Schema inference panics on `posting.OptionalTime`, which embeds `time.Time`, whose schema is a string where an embedded struct's must be an object; and enums that marshal as names would be advertised as integers. Typing them needs schema overrides for those types, as `documentInputSchema` does for `document.Type`: not in this step.
 
 ## Open
 
