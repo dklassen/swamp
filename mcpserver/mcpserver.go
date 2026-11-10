@@ -25,6 +25,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/stage"
 	"github.com/dklassen/swamp/sync"
 )
@@ -76,7 +77,7 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "write_document",
-		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have. Refuses, writing nothing, an application that doesn't exist or that the user deleted, or (given ReplacesVersion) a document that changed since it was read; the error says what to do instead.",
+		Description: "Write drafted cover letter or resume content to the path stage_prepare resolved for an application, the same effect writing the file directly would have. Refuses, writing nothing, an application that doesn't exist or that the user deleted, or a document that changed since ReplacesVersion was read; the error says what to do instead.",
 		InputSchema: documentInputSchema[writeDocumentInput](),
 	}, writeDocumentHandler(st))
 
@@ -312,12 +313,10 @@ func recordScoresHandler(st *stage.Stage) mcp.ToolHandlerFor[recordScoresInput, 
 }
 
 type writeDocumentInput struct {
-	ApplicationID int64         `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
-	DocumentType  document.Type `json:"DocumentType" jsonschema:"the document type: one of the keys of stage_prepare's Documents"`
-	Content       string        `json:"Content" jsonschema:"the full document content to write, replacing whatever is there"`
-	// A pointer so an empty value is refused rather than taken for omitted,
-	// which writes unconditionally.
-	ReplacesVersion *string `json:"ReplacesVersion,omitempty" jsonschema:"the Version this write replaces: from the read_document or stage_prepare you drafted from, which is no_document_yet when the document doesn't exist yet; the write is refused if the document changed since. Omit only when the user asked to overwrite regardless"`
+	ApplicationID   int64         `json:"ApplicationID" jsonschema:"the application id, from stage_prepare's ApplicationID field"`
+	DocumentType    document.Type `json:"DocumentType" jsonschema:"the document type: one of the keys of stage_prepare's Documents"`
+	Content         string        `json:"Content" jsonschema:"the full document content to write, replacing whatever is there"`
+	ReplacesVersion string        `json:"ReplacesVersion" jsonschema:"the Version this write replaces: from the read_document or stage_prepare you drafted from, which is no_document_yet when the document doesn't exist yet; the write is refused if the document changed since. To overwrite on the user's say-so, read_document first and pass its Version"`
 }
 
 type writeDocumentOutput struct {
@@ -329,7 +328,7 @@ func writeDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[writeDocumentInput
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in writeDocumentInput) (*mcp.CallToolResult, writeDocumentOutput, error) {
 		path, err := st.WriteDocument(ctx, in.ApplicationID, in.DocumentType, in.Content, in.ReplacesVersion)
 		if errors.Is(err, documents.ErrChanged) {
-			if *in.ReplacesVersion == stage.NoDocumentYet {
+			if in.ReplacesVersion == service.NoDocumentYet {
 				return nil, writeDocumentOutput{}, fmt.Errorf("write_document: application %d already has a %s, written since you saw it missing, so nothing was written; read it with read_document and ask the user before replacing it", in.ApplicationID, in.DocumentType)
 			}
 			return nil, writeDocumentOutput{}, fmt.Errorf("write_document: application %d's %s changed since you read it, so nothing was written; read it again with read_document, apply your changes to what's there now, and pass its Version as ReplacesVersion", in.ApplicationID, in.DocumentType)
@@ -341,21 +340,21 @@ func writeDocumentHandler(st *stage.Stage) mcp.ToolHandlerFor[writeDocumentInput
 	}
 }
 
-// documentToolError rewords stage's errors for a document the agent can't
+// documentToolError rewords the errors for a document the agent can't
 // use into what to do next; consequence says what the call didn't do, if
 // anything. An agent may hold an ID from long ago, so "deleted" and
 // "never existed" get different advice.
 func documentToolError(tool string, applicationID int64, documentType document.Type, consequence string, err error) error {
-	var deleted *stage.ApplicationDeletedError
+	var deleted *service.ApplicationDeletedError
 	switch {
 	case errors.As(err, &deleted):
 		return fmt.Errorf("%s: application %d was deleted by the user%s; ask the user whether to start again before calling stage_prepare with PostingID %d, which starts a fresh application", tool, applicationID, consequence, deleted.PostingID)
-	case errors.Is(err, stage.ErrApplicationNotFound):
+	case errors.Is(err, service.ErrApplicationNotFound):
 		return fmt.Errorf("%s: there is no application %d%s; get the ApplicationID from stage_prepare for the posting you are drafting", tool, applicationID, consequence)
-	case errors.Is(err, stage.ErrDocumentNotWritten):
+	case errors.Is(err, service.ErrDocumentNotWritten):
 		return fmt.Errorf("%s: application %d has no %s yet; draft one and save it with write_document", tool, applicationID, documentType)
-	case errors.Is(err, stage.ErrEmptyReplacesVersion):
-		return fmt.Errorf("%s: ReplacesVersion is empty%s; pass %q if you expect no document yet, or the Version stage_prepare or read_document gave you", tool, consequence, stage.NoDocumentYet)
+	case errors.Is(err, service.ErrNoVersion):
+		return fmt.Errorf("%s: ReplacesVersion is empty%s; pass %q if you expect no document yet, or the Version stage_prepare or read_document gave you", tool, consequence, service.NoDocumentYet)
 	default:
 		return fmt.Errorf("%s: %w", tool, err)
 	}

@@ -137,7 +137,7 @@ func TestApplicationService_Active_IncludesTheLatestReviewPerDocument(t *testing
 	if err != nil {
 		t.Fatalf("Review (second): %v", err)
 	}
-	if _, err := s.Docs.Write(app.ID, document.CoverLetter, "draft two"); err != nil {
+	if _, err := s.Docs.Write(app.ID, document.CoverLetter, "draft two", ""); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
@@ -180,7 +180,7 @@ func TestApplicationService_Active_ReviewsOnlyOfTheDocumentOnDisk(t *testing.T) 
 				t.Fatalf("Review: %v", err)
 			}
 			if tt.onDisk != "" {
-				if _, err := s.Docs.Write(app.ID, document.CoverLetter, tt.onDisk); err != nil {
+				if _, err := s.Docs.Write(app.ID, document.CoverLetter, tt.onDisk, ""); err != nil {
 					t.Fatalf("Write: %v", err)
 				}
 			}

@@ -83,7 +83,7 @@ func TestDocumentReviewFormModel_SaveKeys_SaveTheReview(t *testing.T) {
 			acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 			stored := mustCreateApplication(t, s, mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer").ID)
 			docs := s.Docs
-			if _, err := docs.Write(stored.ID, document.CoverLetter, "a draft"); err != nil {
+			if _, err := docs.Write(stored.ID, document.CoverLetter, "a draft", ""); err != nil {
 				t.Fatalf("Write: %v", err)
 			}
 			m := newDocumentReviewFormModel(s.Documents, docs, message.DocumentReview{ApplicationID: stored.ID, DocumentType: message.DocumentCoverLetter, Content: "a draft"}, testReviewSize)
@@ -236,7 +236,7 @@ func TestDocumentReviewFormModel_DocumentChanged_ReloadsWithTheDiff(t *testing.T
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			docs := documents.NewStore(t.TempDir())
-			if _, err := docs.Write(testReviewDocument.ApplicationID, document.CoverLetter, "Rewritten meanwhile\n"); err != nil {
+			if _, err := docs.Write(testReviewDocument.ApplicationID, document.CoverLetter, "Rewritten meanwhile\n", ""); err != nil {
 				t.Fatalf("Write: %v", err)
 			}
 			opened := testReviewDocument
@@ -283,7 +283,7 @@ func TestApp_ReviewSavedOfAnUnchangedDocument_DoesNotWarn(t *testing.T) {
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := screens.documents.Write(application.ID, document.CoverLetter, "# What you reviewed"); err != nil {
+	if _, err := screens.documents.Write(application.ID, document.CoverLetter, "# What you reviewed", ""); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
@@ -318,7 +318,7 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	path, err := screens.documents.Write(application.ID, document.CoverLetter, "Dear team,\nWhat you reviewed\n")
+	path, err := screens.documents.Write(application.ID, document.CoverLetter, "Dear team,\nWhat you reviewed\n", "")
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -375,7 +375,7 @@ func TestApp_ReviewOfADocumentDeletedMeanwhile_SavesNothingAndSaysSo(t *testing.
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	path, err := screens.documents.Write(application.ID, document.CoverLetter, "a draft")
+	path, err := screens.documents.Write(application.ID, document.CoverLetter, "a draft", "")
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -419,14 +419,14 @@ func TestApp_ReviewOfADocumentTheAgentRewrote_SaysWhoAndWhen(t *testing.T) {
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	if _, err := screens.documents.Write(application.ID, document.CoverLetter, "What you reviewed\n"); err != nil {
+	if _, err := screens.documents.Write(application.ID, document.CoverLetter, "What you reviewed\n", ""); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
 	app = openPostingDetail(t, app)
 	app = sendKeyAndApply(t, app, runeKey('r'))
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // cover letter
-	if _, err := screens.documents.Write(application.ID, document.CoverLetter, "Rewritten by the agent\n"); err != nil {
+	if _, err := screens.documents.Write(application.ID, document.CoverLetter, "Rewritten by the agent\n", document.ContentSHA256("What you reviewed\n")); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	if err := s.Documents.RecordWrite(ctx, application.ID, document.CoverLetter, "Rewritten by the agent\n", document.SourceWriteDocument); err != nil {
@@ -466,7 +466,7 @@ func TestApp_ReviewOfADocumentChangedOutsideSwamp_DoesNotNameTheLastWriter(t *te
 	if err != nil {
 		t.Fatalf("application.Create: %v", err)
 	}
-	path, err := screens.documents.Write(application.ID, document.CoverLetter, "The agent's draft\n")
+	path, err := screens.documents.Write(application.ID, document.CoverLetter, "The agent's draft\n", "")
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}

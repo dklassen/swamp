@@ -20,6 +20,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/stage"
@@ -221,9 +222,10 @@ func TestWriteDocument_WritesContentToTheResolvedPath(t *testing.T) {
 			content := "content for " + tc.documentType
 
 			got := callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
-				"ApplicationID": prepared.ApplicationID,
-				"DocumentType":  tc.documentType,
-				"Content":       content,
+				"ReplacesVersion": service.NoDocumentYet,
+				"ApplicationID":   prepared.ApplicationID,
+				"DocumentType":    tc.documentType,
+				"Content":         content,
 			})
 
 			if diff := cmp.Diff(tc.wantPath, got.Path); diff != "" {
@@ -258,9 +260,10 @@ func TestWriteDocument_RejectsInvalidDocumentType(t *testing.T) {
 	res, err := cs.CallTool(context.Background(), &mcp.CallToolParams{
 		Name: "write_document",
 		Arguments: map[string]any{
-			"ApplicationID": prepared.ApplicationID,
-			"DocumentType":  "resumeee",
-			"Content":       "whatever",
+			"ApplicationID":   prepared.ApplicationID,
+			"DocumentType":    "resumeee",
+			"Content":         "whatever",
+			"ReplacesVersion": service.NoDocumentYet,
 		},
 	})
 	if err != nil {
@@ -300,9 +303,10 @@ func TestWriteDocument_UnknownApplication_WritesNothing(t *testing.T) {
 	cs := connectClient(t, srv)
 
 	got := callToolError(t, cs, "write_document", map[string]any{
-		"ApplicationID": 999,
-		"DocumentType":  "cover_letter",
-		"Content":       "a draft",
+		"ReplacesVersion": service.NoDocumentYet,
+		"ApplicationID":   999,
+		"DocumentType":    "cover_letter",
+		"Content":         "a draft",
 	})
 
 	want := "write_document: there is no application 999, so nothing was written; get the ApplicationID from stage_prepare for the posting you are drafting"
@@ -336,9 +340,10 @@ func TestWriteDocument_DeletedApplication_WritesNothing(t *testing.T) {
 	}
 
 	got := callToolError(t, cs, "write_document", map[string]any{
-		"ApplicationID": prepared.ApplicationID,
-		"DocumentType":  "cover_letter",
-		"Content":       "a draft",
+		"ReplacesVersion": service.NoDocumentYet,
+		"ApplicationID":   prepared.ApplicationID,
+		"DocumentType":    "cover_letter",
+		"Content":         "a draft",
 	})
 
 	want := fmt.Sprintf("write_document: application %d was deleted by the user, so nothing was written; ask the user whether to start again before calling stage_prepare with PostingID %d, which starts a fresh application", prepared.ApplicationID, posting.ID)
@@ -469,9 +474,10 @@ func TestReadDocument_ReturnsWrittenContent(t *testing.T) {
 			t.Parallel()
 			content := "draft of " + tc.documentType
 			callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
-				"ApplicationID": prepared.ApplicationID,
-				"DocumentType":  tc.documentType,
-				"Content":       content,
+				"ReplacesVersion": service.NoDocumentYet,
+				"ApplicationID":   prepared.ApplicationID,
+				"DocumentType":    tc.documentType,
+				"Content":         content,
 			})
 
 			got := callTool[readDocumentOutput](t, cs, "read_document", map[string]any{
@@ -552,9 +558,10 @@ func TestReadDocument_DeletedApplication_SaysSo(t *testing.T) {
 	cs := connectClient(t, srv)
 	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 	callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
-		"ApplicationID": prepared.ApplicationID,
-		"DocumentType":  "cover_letter",
-		"Content":       "a draft",
+		"ReplacesVersion": service.NoDocumentYet,
+		"ApplicationID":   prepared.ApplicationID,
+		"DocumentType":    "cover_letter",
+		"Content":         "a draft",
 	})
 	if _, err := s.Applications.Delete(context.Background(), prepared.ApplicationID); err != nil {
 		t.Fatalf("application.Delete: %v", err)
@@ -991,7 +998,7 @@ func TestSearchPostings_AdvertisesEnums(t *testing.T) {
 
 // TestWriteDocument_ReplacesVersion: an agent passes the Version of what it
 // read, so a draft the user edited since isn't silently replaced (RFC
-// 0007, H2). Omitting it still writes unconditionally.
+// 0007, H2).
 func TestWriteDocument_ReplacesVersion(t *testing.T) {
 	t.Parallel()
 
@@ -999,10 +1006,9 @@ func TestWriteDocument_ReplacesVersion(t *testing.T) {
 	tests := []struct {
 		name      string
 		onDisk    string // empty: no document yet
-		expected  any    // nil: argument omitted
+		expected  string
 		wantError string // empty: the write succeeds
 	}{
-		{name: "omitted", onDisk: edited, expected: nil},
 		{name: "matches", onDisk: edited, expected: document.ContentSHA256(edited)},
 		{name: "changed since read", onDisk: edited, expected: document.ContentSHA256("what the agent read"), wantError: "changed since you read it"},
 		{name: "no document yet, still absent", expected: "no_document_yet"},
@@ -1026,12 +1032,10 @@ func TestWriteDocument_ReplacesVersion(t *testing.T) {
 			}
 
 			args := map[string]any{
-				"ApplicationID": prepared.ApplicationID,
-				"DocumentType":  "cover_letter",
-				"Content":       "the agent's draft",
-			}
-			if tt.expected != nil {
-				args["ReplacesVersion"] = tt.expected
+				"ApplicationID":   prepared.ApplicationID,
+				"DocumentType":    "cover_letter",
+				"Content":         "the agent's draft",
+				"ReplacesVersion": tt.expected,
 			}
 
 			want := "the agent's draft"
@@ -1058,8 +1062,42 @@ func TestWriteDocument_ReplacesVersion(t *testing.T) {
 	}
 }
 
-// An empty ReplacesVersion is easy to mistake for an omitted one, which writes
-// unconditionally, so it's refused: "no_document_yet" says so instead.
+// ReplacesVersion is required, so a draft can't overwrite a document the
+// agent never read: to overwrite on the user's say-so, it reads first.
+func TestWriteDocument_OmittedReplacesVersion_IsRefused(t *testing.T) {
+	t.Parallel()
+
+	srv, s, _ := newTestServer(t)
+	company := mustCreateCompany(t, s, "Acme")
+	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Senior Data Engineer")
+	mustMarkInterested(t, s, posting.ID)
+	cs := connectClient(t, srv)
+	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
+	path := prepared.Documents[document.CoverLetter].Path
+	if err := os.WriteFile(path, []byte("edited by the user"), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
+	}
+
+	msg := callToolError(t, cs, "write_document", map[string]any{
+		"ApplicationID": prepared.ApplicationID,
+		"DocumentType":  "cover_letter",
+		"Content":       "the agent's draft",
+	})
+
+	if !strings.Contains(msg, "ReplacesVersion") {
+		t.Errorf("error %q doesn't name ReplacesVersion", msg)
+	}
+	onDisk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if string(onDisk) != "edited by the user" {
+		t.Errorf("file content = %q, want the user's edit kept", onDisk)
+	}
+}
+
+// An empty ReplacesVersion says nothing about what the agent read, so it's
+// refused: "no_document_yet" says there was no document.
 func TestWriteDocument_EmptyReplacesVersion_IsRefused(t *testing.T) {
 	t.Parallel()
 
@@ -1089,7 +1127,7 @@ func TestWriteDocument_EmptyReplacesVersion_IsRefused(t *testing.T) {
 
 // TestStagePrepare_DocumentsCarryVersion: what an agent passes to
 // write_document as ReplacesVersion when it drafts from stage_prepare,
-// stage.NoDocumentYet for a document that doesn't exist yet.
+// service.NoDocumentYet for a document that doesn't exist yet.
 func TestStagePrepare_DocumentsCarryVersion(t *testing.T) {
 	t.Parallel()
 
@@ -1100,9 +1138,10 @@ func TestStagePrepare_DocumentsCarryVersion(t *testing.T) {
 	cs := connectClient(t, srv)
 	prepared := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
 	callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
-		"ApplicationID": prepared.ApplicationID,
-		"DocumentType":  "cover_letter",
-		"Content":       "a draft",
+		"ReplacesVersion": service.NoDocumentYet,
+		"ApplicationID":   prepared.ApplicationID,
+		"DocumentType":    "cover_letter",
+		"Content":         "a draft",
 	})
 
 	got := callTool[stage.Prepared](t, cs, "stage_prepare", map[string]any{"PostingID": posting.ID})
@@ -1110,8 +1149,8 @@ func TestStagePrepare_DocumentsCarryVersion(t *testing.T) {
 	if want := document.ContentSHA256("a draft"); got.Documents[document.CoverLetter].Version != want {
 		t.Errorf("cover letter Version = %q, want %q", got.Documents[document.CoverLetter].Version, want)
 	}
-	if got := got.Documents[document.Resume].Version; got != stage.NoDocumentYet {
-		t.Errorf("resume Version = %q, want %q (never written)", got, stage.NoDocumentYet)
+	if got := got.Documents[document.Resume].Version; got != service.NoDocumentYet {
+		t.Errorf("resume Version = %q, want %q (never written)", got, service.NoDocumentYet)
 	}
 }
 
@@ -1133,9 +1172,10 @@ func TestWriteDocument_IsRecordedAndReachesTheChangeLog(t *testing.T) {
 		t.Fatalf("Latest: %v", err)
 	}
 	callTool[writeDocumentOutput](t, cs, "write_document", map[string]any{
-		"ApplicationID": prepared.ApplicationID,
-		"DocumentType":  "cover_letter",
-		"Content":       "a draft",
+		"ReplacesVersion": service.NoDocumentYet,
+		"ApplicationID":   prepared.ApplicationID,
+		"DocumentType":    "cover_letter",
+		"Content":         "a draft",
 	})
 
 	write, err := s.Documents.LatestWrite(ctx, prepared.ApplicationID, document.CoverLetter)
@@ -1480,7 +1520,7 @@ func TestOldVersionArgumentNames_AreRefused(t *testing.T) {
 		tool string
 		args map[string]any
 	}{
-		{"write_document", map[string]any{"ApplicationID": prepared.ApplicationID, "DocumentType": "cover_letter", "Content": "a draft", "ExpectedSHA256": "no_document_yet"}},
+		{"write_document", map[string]any{"ApplicationID": prepared.ApplicationID, "DocumentType": "cover_letter", "Content": "a draft", "ReplacesVersion": service.NoDocumentYet, "ExpectedSHA256": "no_document_yet"}},
 		{"list_pending_postings", map[string]any{"ProfileSHA256": profile}},
 		{"record_scores", map[string]any{"Model": "claude-opus-5-5", "ProfileSHA256": profile, "Scores": []any{}}},
 	}

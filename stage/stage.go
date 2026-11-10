@@ -18,6 +18,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
@@ -124,7 +125,7 @@ func preparedPosting(p posting.Posting) PreparedPosting {
 
 // Document is one document's resolved path and whether it already exists
 // on disk, so an agent can tell a partially-generated application apart
-// from a fresh one. Version is the version on disk (NoDocumentYet when it
+// from a fresh one. Version is the version on disk (service.NoDocumentYet when it
 // doesn't exist), which write_document takes back as ReplacesVersion.
 type Document struct {
 	Path    string `json:"Path"`
@@ -211,13 +212,13 @@ type postingService interface {
 }
 
 type applicationService interface {
-	GetIncludingDeleted(ctx context.Context, applicationID int64) (*application.Application, error)
 	Active(ctx context.Context, order application.Order) ([]posting.ActiveApplication, error)
 }
 
 type documentService interface {
 	LatestReviews(ctx context.Context, applicationID int64) (map[document.Type]document.Review, error)
-	RecordWrite(ctx context.Context, applicationID int64, documentType document.Type, content string, source document.Source) error
+	Write(ctx context.Context, applicationID int64, documentType document.Type, content, version string, source document.Source) (string, error)
+	Read(ctx context.Context, applicationID int64, documentType document.Type) (path, content string, err error)
 }
 
 type scoringService interface {
@@ -412,7 +413,7 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 			return nil, fmt.Errorf("stage: hash %s: %w", documentType, err)
 		}
 		if sha == "" {
-			sha = NoDocumentYet
+			sha = service.NoDocumentYet
 		}
 		preparedDocuments[documentType] = Document{Path: doc.Path, Exists: doc.Exists, Version: sha}
 	}
