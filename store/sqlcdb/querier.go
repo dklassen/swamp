@@ -70,6 +70,9 @@ type Querier interface {
 	GetPostingBySourceAndSourceID(ctx context.Context, arg GetPostingBySourceAndSourceIDParams) (Posting, error)
 	GetPostingContentSHA256(ctx context.Context, id int64) (string, error)
 	GetPostingMarkup(ctx context.Context, postingID int64) (PostingMarkup, error)
+	// The company is read whether or not it was deleted, so the caller can
+	// name it when refusing.
+	GetPostingWithCompany(ctx context.Context, id int64) (GetPostingWithCompanyRow, error)
 	// Whether the posting already has a score that a new one would only repeat:
 	// on the same content, against the same profile, from the same model.
 	HasRepeatScore(ctx context.Context, arg HasRepeatScoreParams) (bool, error)

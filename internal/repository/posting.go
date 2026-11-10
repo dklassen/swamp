@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/dklassen/swamp/internal/domain/application"
+	"github.com/dklassen/swamp/internal/domain/company"
 	domain "github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/store/sqlcdb"
@@ -120,6 +121,22 @@ func (repository *PostingRepository) Get(ctx context.Context, r store.Runner, id
 	return readPosting(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.Posting, error) {
 		return q.GetPosting(ctx, id)
 	})
+}
+
+// GetWithCompany returns the posting and its company, deleted or not.
+func (repository *PostingRepository) GetWithCompany(ctx context.Context, r store.Runner, id int64) (*domain.Posting, *company.Company, error) {
+	row, err := store.Read(ctx, r, func(q *sqlcdb.Queries) (sqlcdb.GetPostingWithCompanyRow, error) {
+		return q.GetPostingWithCompany(ctx, id)
+	})
+	if err != nil {
+		return nil, nil, err
+	}
+	p, err := FromPostingRow(row.Posting)
+	if err != nil {
+		return nil, nil, err
+	}
+	c := FromCompanyRow(row.Company)
+	return &p, &c, nil
 }
 
 // GetMany returns the postings with the given ids that exist, in no order.

@@ -26,6 +26,7 @@ var ErrPostingClosed = errors.New("application: posting is closed")
 
 type postingViewer interface {
 	Get(ctx context.Context, r store.Runner, id int64) (*posting.Posting, error)
+	GetWithCompany(ctx context.Context, r store.Runner, id int64) (*posting.Posting, *company.Company, error)
 	GetMany(ctx context.Context, r store.Runner, ids []int64) ([]posting.Posting, error)
 	GetBySource(ctx context.Context, r store.Runner, source, sourceID string) (*posting.Posting, error)
 	ListInterested(ctx context.Context, r store.Runner, excluding []application.Status) ([]posting.Interested, error)
@@ -78,10 +79,6 @@ type formWriter interface {
 	Save(ctx context.Context, r store.Runner, postingID int64, formJSON string) error
 }
 
-type postingCompanyViewer interface {
-	GetIncludingDeleted(ctx context.Context, r store.Runner, id int64) (*company.Company, error)
-}
-
 type postingApplicationViewer interface {
 	GetByPostingID(ctx context.Context, r store.Runner, postingID int64) (*application.Application, error)
 }
@@ -111,7 +108,6 @@ type PostingService struct {
 	applicationWriter        postingApplicationWriter
 	applicationHistoryViewer postingApplicationHistoryViewer
 	applicationHistoryWriter applicationHistoryWriter
-	companyViewer            postingCompanyViewer
 	formFetchers             map[string]FormFetcher
 	formConfig               FormConfig
 }
@@ -141,7 +137,6 @@ func NewPostingService(db store.Store, formFetchers map[string]FormFetcher, form
 		applicationWriter:        applications,
 		applicationHistoryViewer: applicationHistory,
 		applicationHistoryWriter: applicationHistory,
-		companyViewer:            &repository.CompanyRepository{},
 		formFetchers:             formFetchers,
 		formConfig:               formConfig,
 	}
@@ -230,11 +225,7 @@ func (e *CompanyDeletedError) Error() string {
 // deleted company is refused with CompanyDeletedError, as search leaves it
 // out.
 func (service *PostingService) GetWithCompany(ctx context.Context, postingID int64) (*posting.Posting, *company.Company, error) {
-	p, err := service.postingViewer.Get(ctx, service.db, postingID)
-	if err != nil {
-		return nil, nil, err
-	}
-	c, err := service.companyViewer.GetIncludingDeleted(ctx, service.db, p.CompanyID)
+	p, c, err := service.postingViewer.GetWithCompany(ctx, service.db, postingID)
 	if err != nil {
 		return nil, nil, err
 	}
