@@ -192,8 +192,7 @@ type searchFilters struct {
 	Terms               []string
 }
 
-// Out is 'any': searchMatch carries application.Status, whose MarshalJSON
-// writes a string where schema inference would see an integer.
+// Out is 'any' for the reason listPostingsHandler gives.
 func searchPostingsHandler(postings postingService) mcp.ToolHandlerFor[searchPostingsInput, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in searchPostingsInput) (*mcp.CallToolResult, any, error) {
 		result, err := searchPostings(ctx, postings, in)

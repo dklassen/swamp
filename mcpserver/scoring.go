@@ -39,6 +39,7 @@ type readPostingInput struct {
 	PostingID int64 `json:"PostingID" jsonschema:"the posting's id, from search_postings' Posting.ID field"`
 }
 
+// Out is 'any' for the reason listPostingsHandler gives.
 func readPostingHandler(postings postingService) mcp.ToolHandlerFor[readPostingInput, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in readPostingInput) (*mcp.CallToolResult, any, error) {
 		p, c, err := postings.GetWithCompany(ctx, in.PostingID)
@@ -107,6 +108,7 @@ type pendingFilters struct {
 	ProfileVersion string
 }
 
+// Out is 'any' for the reason listPostingsHandler gives.
 func listPendingPostingsHandler(scores scoringService) mcp.ToolHandlerFor[listPendingPostingsInput, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in listPendingPostingsInput) (*mcp.CallToolResult, any, error) {
 		filters := pendingFilters{Rescore: in.Rescore}

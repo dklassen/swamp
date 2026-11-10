@@ -148,6 +148,10 @@ type listPostingsOutput struct {
 	Postings []candidate
 }
 
+// Out is 'any', skipping schema inference, which panics on posting.OptionalTime:
+// it embeds time.Time, whose schema is a string where inference wants an
+// embedded struct's to be an object. Enums that marshal as names, such as
+// application.Status, would be advertised as integers besides.
 func listPostingsHandler(drafting draftingService) mcp.ToolHandlerFor[listPostingsInput, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, _ listPostingsInput) (*mcp.CallToolResult, any, error) {
 		queue, err := drafting.Queue(ctx)
@@ -171,6 +175,7 @@ type stagePrepareInput struct {
 	PostingID int64 `json:"PostingID" jsonschema:"the posting's id, from list_postings' Posting.ID field"`
 }
 
+// Out is 'any' for the reason listPostingsHandler gives.
 func stagePrepareHandler(drafting draftingService) mcp.ToolHandlerFor[stagePrepareInput, any] {
 	return func(ctx context.Context, _ *mcp.CallToolRequest, in stagePrepareInput) (*mcp.CallToolResult, any, error) {
 		p, err := drafting.Prepare(ctx, in.PostingID)
