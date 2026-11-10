@@ -13,6 +13,19 @@ import (
 	"github.com/dklassen/swamp/store"
 )
 
+// ErrProfileChanged is the error for a profile hash that isn't the
+// profile's now: it changed since, or was never read.
+var ErrProfileChanged = errors.New("scoring: the profile isn't the version given")
+
+// NoProfileError is the error for scoring with no profile at Path.
+type NoProfileError struct {
+	Path string
+}
+
+func (e *NoProfileError) Error() string {
+	return fmt.Sprintf("scoring: there's no profile at %s to score against", e.Path)
+}
+
 type scoreViewer interface {
 	Pending(ctx context.Context, r store.Runner, rescoreProfileSHA256 string, beforeID int64, limit int) (*score.PendingPostingsPage, error)
 	HasRepeat(ctx context.Context, r store.Runner, postingID int64, contentSHA256, profileSHA256, model string) (bool, error)
@@ -138,19 +151,6 @@ func (service *ScoringService) check(ctx context.Context, tx store.Tx, provenanc
 		return score.Repeat, false, nil
 	}
 	return 0, true, nil
-}
-
-// ErrProfileChanged is the error for a profile hash that isn't the
-// profile's now: it changed since, or was never read.
-var ErrProfileChanged = errors.New("scoring: the profile isn't the version given")
-
-// NoProfileError is the error for scoring with no profile at Path.
-type NoProfileError struct {
-	Path string
-}
-
-func (e *NoProfileError) Error() string {
-	return fmt.Sprintf("scoring: there's no profile at %s to score against", e.Path)
 }
 
 // requireProfile returns why scores can't be judged against the profile
