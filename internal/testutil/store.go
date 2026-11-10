@@ -68,6 +68,7 @@ type TestApp struct {
 	Documents    *service.DocumentService
 	Docs         *documents.Store
 	Scores       *service.ScoringService
+	Drafting     *service.DraftingService
 	Changes      *service.ChangeLog
 }
 
@@ -85,6 +86,7 @@ func NewTestApp(t *testing.T) TestApp {
 		Applications: service.NewApplicationService(db, docs),
 		Documents:    service.NewDocumentService(db, docs),
 		Scores:       service.NewScoringService(db),
+		Drafting:     service.NewDraftingService(db, docs),
 		Changes:      service.NewChangeLog(db),
 	}
 }
