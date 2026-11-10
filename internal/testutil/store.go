@@ -3,6 +3,7 @@
 package testutil
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -127,4 +128,15 @@ func MustApplyTo(t *testing.T, s TestApp, postingID int64) application.Applicati
 		t.Fatalf("ApplyTo: %v", err)
 	}
 	return *app
+}
+
+// MustWriteFile writes content to path as the user would, by hand.
+func MustWriteFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o750); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
 }

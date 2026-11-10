@@ -546,3 +546,43 @@ func TestDocumentService_Read_NotWrittenYet(t *testing.T) {
 		t.Errorf("Read = %v, want service.ErrDocumentNotWritten", err)
 	}
 }
+
+// canonicalFiles are the user-maintained files, each with its reader and
+// where it lives.
+var canonicalFiles = []struct {
+	name string
+	read func(*service.DocumentService) (*service.CanonicalFile, error)
+	path func(*documents.Store) string
+}{
+	{"profile", (*service.DocumentService).Profile, (*documents.Store).ProfilePath},
+	{"canonical resume", (*service.DocumentService).CanonicalResume, (*documents.Store).CanonicalResumePath},
+}
+
+func TestDocumentService_CanonicalFiles(t *testing.T) {
+	t.Parallel()
+	for _, tc := range canonicalFiles {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			path := tc.path(s.Docs)
+
+			missing, err := tc.read(s.Documents)
+			if err != nil {
+				t.Fatalf("read before it exists: %v", err)
+			}
+			if diff := cmp.Diff(&service.CanonicalFile{Path: path}, missing); diff != "" {
+				t.Errorf("missing file (-want +got):\n%s", diff)
+			}
+
+			testutil.MustWriteFile(t, path, "# Me")
+			got, err := tc.read(s.Documents)
+			if err != nil {
+				t.Fatalf("read: %v", err)
+			}
+			want := &service.CanonicalFile{Path: path, Exists: true, Content: "# Me", Version: document.ContentSHA256("# Me")}
+			if diff := cmp.Diff(want, got); diff != "" {
+				t.Errorf("present file (-want +got):\n%s", diff)
+			}
+		})
+	}
+}

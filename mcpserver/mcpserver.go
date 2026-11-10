@@ -11,8 +11,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
 	"reflect"
 	"strings"
 
@@ -30,12 +28,13 @@ import (
 	"github.com/dklassen/swamp/sync"
 )
 
-// New builds an MCP server exposing st and d's operations as tools, plus
+// New builds an MCP server exposing st's operations and docs' canonical
+// files as tools, plus
 // add_company via syncer (which also checks new slugs against their board). The
 // returned server has no active session yet -- connect it to a transport
 // (Server.Run for a single stdio-style session, or mount a
 // StreamableHTTPHandler for concurrent HTTP sessions) to start serving.
-func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
+func New(st *stage.Stage, docs canonicalFiles, syncer *sync.Syncer) *mcp.Server {
 	server := mcp.NewServer(&mcp.Implementation{Name: "swamp", Version: "v0.1.0"}, nil)
 
 	mcp.AddTool(server, &mcp.Tool{
@@ -90,12 +89,12 @@ func New(st *stage.Stage, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_canonical_resume",
 		Description: "Read the user's canonical resume: their maintained, best-version resume in markdown, the baseline to tailor for each posting instead of writing a resume from scratch. Read-only; the user maintains it.",
-	}, readCanonicalHandler("read_canonical_resume", d.CanonicalResumePath()))
+	}, readCanonicalHandler("read_canonical_resume", docs.CanonicalResume))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "read_profile",
 		Description: "Read the user's profile reference: their real background, experience, skills and voice/style notes in markdown, the source every draft comes from. Read-only; the user maintains it.",
-	}, readCanonicalHandler("read_profile", d.ProfilePath()))
+	}, readCanonicalHandler("read_profile", docs.Profile))
 
 	mcp.AddTool(server, &mcp.Tool{
 		Name:        "add_company",
@@ -392,19 +391,21 @@ type readCanonicalOutput struct {
 	Version string `json:"Version"`
 }
 
-// readCanonicalHandler serves the user-maintained file at path, read-only.
-// A missing file is an expected state (the user hasn't set one up), so it's
-// Exists: false rather than a tool error; the skill decides what to do.
-func readCanonicalHandler(tool, path string) mcp.ToolHandlerFor[readCanonicalInput, readCanonicalOutput] {
+type canonicalFiles interface {
+	Profile() (*service.CanonicalFile, error)
+	CanonicalResume() (*service.CanonicalFile, error)
+}
+
+// readCanonicalHandler serves the user-maintained file read returns,
+// read-only. A missing file is Exists: false rather than a tool error; the
+// skill decides what to do.
+func readCanonicalHandler(tool string, read func() (*service.CanonicalFile, error)) mcp.ToolHandlerFor[readCanonicalInput, readCanonicalOutput] {
 	return func(_ context.Context, _ *mcp.CallToolRequest, _ readCanonicalInput) (*mcp.CallToolResult, readCanonicalOutput, error) {
-		content, err := os.ReadFile(path)
-		if errors.Is(err, fs.ErrNotExist) {
-			return nil, readCanonicalOutput{Path: path}, nil
-		}
+		file, err := read()
 		if err != nil {
-			return nil, readCanonicalOutput{}, fmt.Errorf("%s: read %s: %w", tool, path, err)
+			return nil, readCanonicalOutput{}, fmt.Errorf("%s: %w", tool, err)
 		}
-		return nil, readCanonicalOutput{Path: path, Exists: true, Content: string(content), Version: document.ContentSHA256(string(content))}, nil
+		return nil, readCanonicalOutput{Path: file.Path, Exists: file.Exists, Content: file.Content, Version: file.Version}, nil
 	}
 }
 
