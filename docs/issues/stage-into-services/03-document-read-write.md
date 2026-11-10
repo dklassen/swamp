@@ -6,29 +6,26 @@ depends_on: [2]
 
 ## Problem
 
-`stage.WriteDocument` and `stage.ReadDocument` (`stage/document.go:67`, `:98`) hold rules that belong to documents:
+`stage.WriteDocument` and `stage.ReadDocument` held rules that belong to documents:
 
-- **The application check.** A document may be touched only for an application that exists and isn't deleted (`application`, `:47`), since folders are keyed by ID and a write for an unused ID would land in the next application's folder.
-- **The version check.** A write carrying a `replacesVersion` happens only if the document is still that version, and `NoDocumentYet` means the document must still be absent.
-- **Write then record.** The file is written, then `RecordWrite` records it as `SourceWriteDocument`.
-- **The read.** It goes straight to `os.ReadFile`.
+- **The application check.** A document may be touched only for an application that exists and isn't deleted, since folders are keyed by ID and a write for an unused ID would land in the next application's folder.
+- **The version check.** A write carrying a `replacesVersion` happened only if the document was still that version, and `NoDocumentYet` meant it must still be absent. Without one, the write overwrote whatever was there.
+- **Write then record.** The file was written, then `RecordWrite` recorded it as `SourceWriteDocument`.
+- **The read.** It went straight to `os.ReadFile`.
 
-The errors live in `stage` (`ErrApplicationNotFound`, `ApplicationDeletedError`, `ErrDocumentNotWritten`, `ErrEmptyReplacesVersion`, `NoDocumentYet`), so `mcpserver` maps errors from a package that isn't the one deciding them.
+The errors lived in `stage` (`ErrApplicationNotFound`, `ApplicationDeletedError`, `ErrDocumentNotWritten`, `ErrEmptyReplacesVersion`, `NoDocumentYet`), so `mcpserver` matched errors from a package that wasn't the one deciding them.
 
 ## Change
 
-- `DocumentService.Write(ctx, applicationID, documentType, content, replacesVersion, source)` and `DocumentService.Read(ctx, applicationID, documentType)`, with `stage`'s application check, version check and record-after-write.
-- The errors and `NoDocumentYet` move with them, to `internal/service` or `internal/domain/document`. `mcpserver.documentToolError` matches the new ones; its messages don't change.
+- `DocumentService.Write(ctx, applicationID, documentType, content, version, source)` and `DocumentService.Read(ctx, applicationID, documentType)`, with the application check (`requireApplication`), the version check and the record after the write.
+- A write always names the version the caller read (`NoDocumentYet` for none), and a document changed since is refused with `documents.ErrChanged`. There's no unconditional write: its only use was the user asking to overwrite, which a caller does by reading first. `documents.Store.Write` takes the version too, and `WriteIfUnchanged` goes.
+- The errors and `NoDocumentYet` move to `internal/service`; `ErrEmptyReplacesVersion` becomes `ErrNoVersion`. `mcpserver.documentToolError` matches them, with the same messages.
+- `write_document`'s `ReplacesVersion` is required, a plain string. The apply-to-posting skill says to read first to overwrite on the user's say-so.
 - `stage.WriteDocument` and `stage.ReadDocument` call through, until step 10 removes them.
-
-## Decide before starting
-
-- **`replacesVersion` stays `*string`?** nil writes unconditionally, `NoDocumentYet` expects none, "" is refused. The pointer distinguishes "not given" from "given empty", which `ErrEmptyReplacesVersion` uses, so it earns its keep under AGENTS.md's rule. Keep it unless a caller shows otherwise.
-- **Where the errors live**: `service` (beside the method) or `domain/document` (if anything outside the service needs to match them without importing it).
 
 ## Acceptance criteria
 
-- [ ] Service tests for: an unknown application, a deleted one (the error names its posting), a stale `replacesVersion`, `NoDocumentYet` over an existing document, an empty `replacesVersion`, and a write recorded with its source. Each written and run one at a time, moved from `stage/stage_test.go`'s document tests.
-- [ ] `stage/document.go` holds no rule of its own.
-- [ ] `write_document` and `read_document` errors in `mcpserver_test.go` unchanged.
-- [ ] Verification checklist clean.
+- [x] Service tests, each watched fail first: a write is made and recorded with its source; an unknown application and a deleted one (naming its posting) are refused for writes and reads; the version read, another version, `NoDocumentYet` with and without a document, and an empty version; a read returns the document and its path, and `ErrDocumentNotWritten` for none.
+- [x] `stage/document.go` holds no rule of its own.
+- [x] `write_document` and `read_document` errors in `mcpserver_test.go` unchanged, except that omitting `ReplacesVersion` is now refused (`TestWriteDocument_OmittedReplacesVersion_IsRefused`).
+- [x] Verification checklist clean.
