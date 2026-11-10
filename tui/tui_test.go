@@ -108,7 +108,7 @@ func newAppOn(s testutil.TestApp, syncer *sync.Syncer, docs *documents.Store) *A
 // together as cmd/swamp does.
 func newAppWithScreensOn(s testutil.TestApp, syncer *sync.Syncer, docs *documents.Store, opts ...Option) (*App, *Screens) {
 	router := model.NewMsgRouter()
-	screens := NewScreens(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, syncer, docs)
+	screens := NewScreens(s.Companies, s.Postings, s.Forms, s.Applications, s.Documents, s.Scores, syncer, docs)
 	if err := router.Register(screens); err != nil {
 		panic(err)
 	}

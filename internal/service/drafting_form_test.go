@@ -77,9 +77,9 @@ func TestDraftingService_Prepare_NoStoredForm_FetchesAndStoresIt(t *testing.T) {
 	if !fetcher.deadline {
 		t.Error("the fetch had no deadline, want it bounded by the fetch timeout")
 	}
-	stored, err := f.app.Postings.Form(t.Context(), p.ID)
+	stored, err := f.app.Forms.Get(t.Context(), p.ID)
 	if err != nil {
-		t.Fatalf("Form: %v", err)
+		t.Fatalf("Get: %v", err)
 	}
 	if diff := cmp.Diff(&fetchedForm, stored); diff != "" {
 		t.Errorf("stored form (-want +got):\n%s", diff)
@@ -97,8 +97,8 @@ func TestDraftingService_Prepare_StoredForm_IsNeverFetchedAgain(t *testing.T) {
 			fetcher := &fakeFormFetcher{form: fetchedForm}
 			f := newFormFixture(t, fetcher)
 			p := f.posting(t, source)
-			if err := f.app.Postings.SaveForm(t.Context(), p.ID, stored); err != nil {
-				t.Fatalf("SaveForm: %v", err)
+			if err := f.app.Forms.Save(t.Context(), p.ID, stored); err != nil {
+				t.Fatalf("Save: %v", err)
 			}
 
 			got, err := f.drafting.Prepare(t.Context(), p.ID)

@@ -21,7 +21,7 @@ func newBareApp(t *testing.T) (*App, *Screens) {
 func newFakesApp(t *testing.T, form, edit *stackedFake) *App {
 	t.Helper()
 	router := model.NewMsgRouter()
-	screens := NewScreens(nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
+	screens := NewScreens(nil, nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
 	fakes := Opens(map[message.Screen]func(message.None) StackScreen{
 		message.ScreenCompanyForm: func(message.None) StackScreen { return form },
 		message.ScreenCompanyEdit: func(message.None) StackScreen { return edit },
@@ -108,7 +108,7 @@ func TestApp_Nav_ReplaceWithNothingPushed_IsReported(t *testing.T) {
 func TestApp_Nav_ToAScreenMissingFromTheTables_IsReported(t *testing.T) {
 	t.Parallel()
 	router := model.NewMsgRouter()
-	screens := NewScreens(nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
+	screens := NewScreens(nil, nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
 	noForm := Opens(map[message.Screen]func(message.None) StackScreen{})
 	app := New(router, NewNavigation(screens.Tabs()), NewStack(), []Table{noForm})
 	home := app.onScreen()

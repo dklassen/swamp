@@ -26,7 +26,7 @@ import (
 // fetch (Ashby, Lever); stage_prepare returns what's saved here the same
 // way it returns a fetched Greenhouse form.
 type applicationFormModel struct {
-	postings    *service.PostingService
+	forms       *service.FormService
 	application message.Application
 	// previous is the stored form being edited, so questions the user
 	// didn't change keep the Type and Options the text doesn't show.
@@ -52,11 +52,11 @@ type applicationFormModel struct {
 
 // newApplicationFormModel opens on app, sized to size. The stored form
 // comes with Init. The width is fixed at construction.
-func newApplicationFormModel(postings *service.PostingService, app message.Application, size message.ContentSize) *applicationFormModel {
+func newApplicationFormModel(forms *service.FormService, app message.Application, size message.ContentSize) *applicationFormModel {
 	ta := textarea.New()
 	ta.SetWidth(size.Width)
 	ta.Focus()
-	m := &applicationFormModel{postings: postings, application: app, textarea: ta, width: size.Width, instance: message.NewScreenInstance()}
+	m := &applicationFormModel{forms: forms, application: app, textarea: ta, width: size.Width, instance: message.NewScreenInstance()}
 	m.setHeight(size.Rows)
 	return m
 }
@@ -80,7 +80,7 @@ func (m *applicationFormModel) Routes() []*model.Route {
 }
 
 func (m *applicationFormModel) Init() tea.Cmd {
-	return loadApplicationForm(m.postings, m.src(), m.application.PostingID)
+	return loadApplicationForm(m.forms, m.src(), m.application.PostingID)
 }
 
 // Update has nothing to do: everything the form handles is registered.
@@ -181,7 +181,7 @@ func (m *applicationFormModel) keyPressed(msg tea.KeyPressMsg) tea.Cmd {
 			return nil
 		}
 		m.saving = true
-		return saveApplicationForm(m.postings, m.src(), m.application.PostingID, form)
+		return saveApplicationForm(m.forms, m.src(), m.application.PostingID, form)
 	}
 	var cmd tea.Cmd
 	m.textarea, cmd = m.textarea.Update(msg)
@@ -215,7 +215,7 @@ func (m *applicationFormModel) View() tea.View {
 
 // loadApplicationForm reads postingID's stored form, fetched or entered by
 // hand. A posting with none reads as an empty form.
-func loadApplicationForm(postings *service.PostingService, src message.Source, postingID int64) tea.Cmd {
+func loadApplicationForm(forms *service.FormService, src message.Source, postingID int64) tea.Cmd {
 	subject := message.Subject{Type: message.TypePosting, ID: postingID}
 	return func() tea.Msg {
 		read := func(form jobboard.ApplicationForm) tea.Msg {
@@ -224,7 +224,7 @@ func loadApplicationForm(postings *service.PostingService, src message.Source, p
 		fail := func(err error) tea.Msg {
 			return message.New(src, subject, message.OpNone, time.Now().UTC(), model.ErrorOf(err))
 		}
-		stored, err := postings.Form(context.Background(), postingID)
+		stored, err := forms.Get(context.Background(), postingID)
 		if errors.Is(err, store.ErrNotFound) {
 			return read(jobboard.ApplicationForm{})
 		}
@@ -238,13 +238,13 @@ func loadApplicationForm(postings *service.PostingService, src message.Source, p
 // saveApplicationForm stores form as postingID's application form, where
 // stage_prepare reads it (#168, #184). It reports a Ran rather than a
 // Changed, since no other screen shows the form.
-func saveApplicationForm(postings *service.PostingService, src message.Source, postingID int64, form jobboard.ApplicationForm) tea.Cmd {
+func saveApplicationForm(forms *service.FormService, src message.Source, postingID int64, form jobboard.ApplicationForm) tea.Cmd {
 	subject := message.Subject{Type: message.TypePosting, ID: postingID}
 	return func() tea.Msg {
 		fail := func(err error) tea.Msg {
 			return message.New(src, subject, message.OpUpdated, time.Now().UTC(), model.ErrorOf(err))
 		}
-		if err := postings.SaveForm(context.Background(), postingID, form); err != nil {
+		if err := forms.Save(context.Background(), postingID, form); err != nil {
 			return fail(err)
 		}
 		return message.New(src, subject, message.OpNone, time.Now().UTC(), message.Ran[message.ApplicationForm]{Value: applicationFormSnapshot(form)})

@@ -18,8 +18,8 @@ var testFormApplication = message.Application{ID: 7, PostingID: 5, Status: messa
 
 // formOn is a form opened on testFormApplication whose stored form has
 // been read as stored.
-func formOn(postings *service.PostingService, stored message.ApplicationForm) *applicationFormModel {
-	m := newApplicationFormModel(postings, testFormApplication, message.ContentSize{Width: 80, Rows: 20})
+func formOn(forms *service.FormService, stored message.ApplicationForm) *applicationFormModel {
+	m := newApplicationFormModel(forms, testFormApplication, message.ContentSize{Width: 80, Rows: 20})
 	m.formRead(formReadBy(m.Instance(), stored))
 	return m
 }
@@ -144,7 +144,7 @@ func TestApplicationFormModel_DiscardPrompt(t *testing.T) {
 			t.Parallel()
 
 			// A service on no database fails every write.
-			m := formOn(service.NewPostingService(store.Store{}), message.ApplicationForm{})
+			m := formOn(service.NewFormService(store.Store{}), message.ApplicationForm{})
 			m.textarea.InsertString("Why us? *\n")
 			typed := m.textarea.Value()
 			m.keyPressed(tea.KeyPressMsg{Code: tea.KeyEsc})

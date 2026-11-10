@@ -26,6 +26,7 @@ type Screens struct {
 
 	companies    *service.CompanyService
 	postings     *service.PostingService
+	forms        *service.FormService
 	applications *service.ApplicationService
 	documentSvc  *service.DocumentService
 	scores       *service.ScoringService
@@ -68,6 +69,7 @@ const defaultExportDir = "~/Desktop"
 func NewScreens(
 	companies *service.CompanyService,
 	postings *service.PostingService,
+	forms *service.FormService,
 	applications *service.ApplicationService,
 	documentService *service.DocumentService,
 	scores *service.ScoringService,
@@ -81,6 +83,7 @@ func NewScreens(
 		allPostings:           newAllPostingsModel(postings),
 		companies:             companies,
 		postings:              postings,
+		forms:                 forms,
 		applications:          applications,
 		documentSvc:           documentService,
 		scores:                scores,
@@ -139,7 +142,7 @@ func (s *Screens) Tables() []Table {
 				return newDocumentReviewSelectModel(s.documents, a)
 			},
 			message.ScreenApplicationForm: func(a message.Application) StackScreen {
-				return newApplicationFormModel(s.postings, a, s.sized)
+				return newApplicationFormModel(s.forms, a, s.sized)
 			},
 		}),
 		Opens(map[message.Screen]func(message.DocumentReview) StackScreen{
