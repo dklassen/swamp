@@ -244,7 +244,7 @@ func applicationDetailWith(t *testing.T) (*applicationDetailModel, *model.MsgRou
 	p := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	app := mustCreateApplication(t, s, p.ID)
 	docs := s.Docs
-	if _, err := docs.Write(app.ID, document.Resume, "# Draft\n"); err != nil {
+	if _, err := docs.Write(app.ID, document.Resume, "# Draft\n", ""); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	if _, err := createReview(context.Background(), s, app.ID, document.Resume, "# Draft\n", document.Passed, "reads well"); err != nil {

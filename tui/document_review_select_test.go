@@ -20,7 +20,7 @@ var testReviewApplication = message.Application{ID: 1, PostingID: 5, Status: mes
 func reviewPickerWithCoverLetter(t *testing.T, content string) *documentReviewSelectModel {
 	t.Helper()
 	docs := documents.NewStore(t.TempDir())
-	if _, err := docs.Write(testReviewApplication.ID, document.CoverLetter, content); err != nil {
+	if _, err := docs.Write(testReviewApplication.ID, document.CoverLetter, content, ""); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	return newDocumentReviewSelectModel(docs, testReviewApplication)

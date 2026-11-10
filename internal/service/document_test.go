@@ -5,13 +5,18 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"io/fs"
+	"os"
 	"slices"
 	"testing"
 
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/document"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/store"
 )
@@ -171,7 +176,7 @@ func TestDocumentService_LatestReviews_OnlyOfTheDocumentOnDisk(t *testing.T) {
 				t.Fatalf("Review: %v", err)
 			}
 			if tt.onDisk != "" {
-				if _, err := s.Docs.Write(app.ID, document.CoverLetter, tt.onDisk); err != nil {
+				if _, err := s.Docs.Write(app.ID, document.CoverLetter, tt.onDisk, ""); err != nil {
 					t.Fatalf("Write: %v", err)
 				}
 			}
@@ -347,5 +352,206 @@ func TestDocumentService_GetManyExports_LeavesOutMissing(t *testing.T) {
 	}
 	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b document.Export) bool { return a.ID < b.ID })); diff != "" {
 		t.Errorf("GetManyExports (-want +got):\n%s", diff)
+	}
+}
+
+func TestDocumentService_Write_WritesAndRecordsTheWrite(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+
+	path, err := s.Documents.Write(ctx, app.ID, document.CoverLetter, "a draft", service.NoDocumentYet, document.SourceWriteDocument)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	onDisk, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile(%s): %v", path, err)
+	}
+	if string(onDisk) != "a draft" {
+		t.Errorf("document at %s = %q, want %q", path, onDisk, "a draft")
+	}
+	write, err := s.Documents.LatestWrite(ctx, app.ID, document.CoverLetter)
+	if err != nil {
+		t.Fatalf("LatestWrite: %v", err)
+	}
+	if write.Source != document.SourceWriteDocument || write.ContentSHA256 != document.ContentSHA256("a draft") {
+		t.Errorf("recorded write = %+v, want the draft, as %v", write, document.SourceWriteDocument)
+	}
+}
+
+// notLive is each way an application ID can have no live application,
+// for the tests that its documents are refused.
+var notLive = []struct {
+	name string
+	// applicationID is the application to use, given the one set up.
+	applicationID func(t *testing.T, s testutil.TestApp, app application.Application) int64
+	// refused checks the error.
+	refused func(t *testing.T, err error, app application.Application)
+}{
+	{
+		name:          "never handed out",
+		applicationID: func(_ *testing.T, _ testutil.TestApp, app application.Application) int64 { return app.ID + 1 },
+		refused: func(t *testing.T, err error, _ application.Application) {
+			t.Helper()
+			if !errors.Is(err, service.ErrApplicationNotFound) {
+				t.Fatalf("err = %v, want service.ErrApplicationNotFound", err)
+			}
+		},
+	},
+	{
+		name: "deleted",
+		applicationID: func(t *testing.T, s testutil.TestApp, app application.Application) int64 {
+			t.Helper()
+			if _, err := s.Applications.Delete(context.Background(), app.ID); err != nil {
+				t.Fatalf("Delete: %v", err)
+			}
+			return app.ID
+		},
+		refused: func(t *testing.T, err error, app application.Application) {
+			t.Helper()
+			var deleted *service.ApplicationDeletedError
+			if !errors.As(err, &deleted) || deleted.PostingID != app.PostingID {
+				t.Fatalf("err = %v, want an ApplicationDeletedError naming posting %d", err, app.PostingID)
+			}
+		},
+	},
+}
+
+// Documents are kept by application ID alone, so a write for an ID with
+// no live application would leave a draft for whichever gets that ID.
+func TestDocumentService_Write_RefusesAnApplicationThatIsntLive(t *testing.T) {
+	t.Parallel()
+	for _, tt := range notLive {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			ctx := context.Background()
+			app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+			id := tt.applicationID(t, s, app)
+
+			_, err := s.Documents.Write(ctx, id, document.CoverLetter, "a draft", service.NoDocumentYet, document.SourceWriteDocument)
+
+			tt.refused(t, err, app)
+			if _, err := s.Documents.LatestWrite(ctx, id, document.CoverLetter); !errors.Is(err, store.ErrNotFound) {
+				t.Errorf("LatestWrite = %v, want store.ErrNotFound: nothing recorded", err)
+			}
+			path, err := s.Docs.Path(id, document.CoverLetter)
+			if err != nil {
+				t.Fatalf("Path: %v", err)
+			}
+			if _, err := os.Stat(path); !errors.Is(err, fs.ErrNotExist) {
+				t.Errorf("Stat(%s) = %v, want no document written", path, err)
+			}
+		})
+	}
+}
+
+// A read is refused the same way, even of a document written before the
+// application was deleted.
+func TestDocumentService_Read_RefusesAnApplicationThatIsntLive(t *testing.T) {
+	t.Parallel()
+	for _, tt := range notLive {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			ctx := context.Background()
+			app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+			if _, err := s.Documents.Write(ctx, app.ID, document.CoverLetter, "a draft", service.NoDocumentYet, document.SourceWriteDocument); err != nil {
+				t.Fatalf("Write: %v", err)
+			}
+			id := tt.applicationID(t, s, app)
+
+			_, _, err := s.Documents.Read(ctx, id, document.CoverLetter)
+
+			tt.refused(t, err, app)
+		})
+	}
+}
+
+// A write with replacesVersion goes ahead only while the document is that
+// version, so a draft can't silently replace one written meanwhile.
+func TestDocumentService_Write_ReplacesVersion(t *testing.T) {
+	t.Parallel()
+	const existing = "the draft on disk"
+	tests := []struct {
+		name string
+		// onDisk is the document before the write; "" is none.
+		onDisk          string
+		replacesVersion string
+		wantErr         error
+	}{
+		{name: "the version read", onDisk: existing, replacesVersion: document.ContentSHA256(existing)},
+		{name: "another version", onDisk: existing, replacesVersion: document.ContentSHA256("what was read"), wantErr: documents.ErrChanged},
+		{name: "none read, none there", onDisk: "", replacesVersion: service.NoDocumentYet},
+		{name: "none read, one there", onDisk: existing, replacesVersion: service.NoDocumentYet, wantErr: documents.ErrChanged},
+		{name: "no version given", onDisk: existing, replacesVersion: "", wantErr: service.ErrNoVersion},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			s := testutil.NewTestApp(t)
+			ctx := context.Background()
+			app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+			if tt.onDisk != "" {
+				if _, err := s.Documents.Write(ctx, app.ID, document.CoverLetter, tt.onDisk, service.NoDocumentYet, document.SourceEditor); err != nil {
+					t.Fatalf("Write (existing): %v", err)
+				}
+			}
+
+			_, err := s.Documents.Write(ctx, app.ID, document.CoverLetter, "a revision", tt.replacesVersion, document.SourceWriteDocument)
+
+			if !errors.Is(err, tt.wantErr) {
+				t.Fatalf("Write = %v, want %v", err, tt.wantErr)
+			}
+			want := "a revision"
+			if tt.wantErr != nil {
+				want = tt.onDisk
+			}
+			path, err := s.Docs.Path(app.ID, document.CoverLetter)
+			if err != nil {
+				t.Fatalf("Path: %v", err)
+			}
+			got, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatalf("ReadFile: %v", err)
+			}
+			if string(got) != want {
+				t.Errorf("document after Write = %q, want %q", got, want)
+			}
+		})
+	}
+}
+
+func TestDocumentService_Read_ReturnsTheDocumentAndItsPath(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	ctx := context.Background()
+	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+	written, err := s.Documents.Write(ctx, app.ID, document.CoverLetter, "a draft", service.NoDocumentYet, document.SourceWriteDocument)
+	if err != nil {
+		t.Fatalf("Write: %v", err)
+	}
+
+	path, content, err := s.Documents.Read(ctx, app.ID, document.CoverLetter)
+	if err != nil {
+		t.Fatalf("Read: %v", err)
+	}
+	if path != written || content != "a draft" {
+		t.Errorf("Read = %q, %q; want %q, %q", path, content, written, "a draft")
+	}
+}
+
+func TestDocumentService_Read_NotWrittenYet(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	app := testutil.MustApplyTo(t, s, testutil.MustIngestPosting(t, s, "job-1", "Software Engineer").ID)
+
+	_, _, err := s.Documents.Read(context.Background(), app.ID, document.CoverLetter)
+
+	if !errors.Is(err, service.ErrDocumentNotWritten) {
+		t.Errorf("Read = %v, want service.ErrDocumentNotWritten", err)
 	}
 }

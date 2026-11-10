@@ -4,8 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
+	"os"
 
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/repository"
 	"github.com/dklassen/swamp/store"
@@ -39,6 +42,10 @@ type writeRecorder interface {
 	Insert(ctx context.Context, r store.Runner, applicationID int64, documentType document.Type, content string, source document.Source) error
 }
 
+type documentApplicationViewer interface {
+	GetByIDIncludingDeleted(ctx context.Context, r store.Runner, id int64) (*application.Application, error)
+}
+
 type DocumentService struct {
 	db             store.Store
 	documents      *documents.Store
@@ -48,6 +55,7 @@ type DocumentService struct {
 	exportRecorder exportRecorder
 	writeViewer    writeViewer
 	writeRecorder  writeRecorder
+	applications   documentApplicationViewer
 }
 
 func NewDocumentService(db store.Store, docs *documents.Store) *DocumentService {
@@ -63,6 +71,7 @@ func NewDocumentService(db store.Store, docs *documents.Store) *DocumentService 
 		exportRecorder: exports,
 		writeViewer:    writes,
 		writeRecorder:  writes,
+		applications:   &repository.ApplicationRepository{},
 	}
 }
 
@@ -181,4 +190,95 @@ func (service *DocumentService) LatestWrite(ctx context.Context, applicationID i
 // order. An id with no write is left out.
 func (service *DocumentService) GetManyWrites(ctx context.Context, ids []int64) ([]document.Write, error) {
 	return service.writeViewer.GetMany(ctx, service.db, ids)
+}
+
+// NoDocumentYet is the version of a document that doesn't exist: Write's
+// version when the caller read none.
+const NoDocumentYet = "no_document_yet"
+
+// ErrApplicationNotFound is Write and Read's error for an application ID
+// that was never handed out.
+var ErrApplicationNotFound = errors.New("document: application not found")
+
+// ErrDocumentNotWritten is Read's error for a live application whose
+// document hasn't been written yet.
+var ErrDocumentNotWritten = errors.New("document: not written yet")
+
+// ErrNoVersion is Write's error for an empty version, which says nothing
+// about what the caller read.
+var ErrNoVersion = errors.New("document: no version given")
+
+// ApplicationDeletedError is Write and Read's error for an application the
+// user deleted. PostingID is the posting it was for.
+type ApplicationDeletedError struct {
+	ApplicationID int64
+	PostingID     int64
+}
+
+func (e *ApplicationDeletedError) Error() string {
+	return fmt.Sprintf("document: application %d (posting %d) was deleted", e.ApplicationID, e.PostingID)
+}
+
+// Write replaces applicationID's documentType document with content,
+// records the write as source's, and returns its path. version is the
+// version the caller read (NoDocumentYet for none); a document that has
+// changed since is refused with documents.ErrChanged.
+func (service *DocumentService) Write(ctx context.Context, applicationID int64, documentType document.Type, content, version string, source document.Source) (string, error) {
+	if version == "" {
+		return "", ErrNoVersion
+	}
+	if err := service.requireApplication(ctx, applicationID); err != nil {
+		return "", err
+	}
+	read := version
+	if version == NoDocumentYet {
+		read = ""
+	}
+	path, err := service.documents.Write(applicationID, documentType, content, read)
+	if err != nil {
+		return "", fmt.Errorf("document: write %s: %w", documentType, err)
+	}
+	// A file write is invisible to the database; recording it is how other
+	// processes learn of it.
+	if err := service.writeRecorder.Insert(ctx, service.db, applicationID, documentType, content, source); err != nil {
+		return "", fmt.Errorf("document: %s was written to %s, but recording the write failed: %w", documentType, path, err)
+	}
+	return path, nil
+}
+
+// requireApplication returns why applicationID's documents can't be
+// touched, or nil. Documents are kept by application ID alone, so a write
+// for an ID with no live application would leave a draft for whichever
+// gets that ID next.
+func (service *DocumentService) requireApplication(ctx context.Context, applicationID int64) error {
+	app, err := service.applications.GetByIDIncludingDeleted(ctx, service.db, applicationID)
+	if errors.Is(err, store.ErrNotFound) {
+		return fmt.Errorf("%w: %d", ErrApplicationNotFound, applicationID)
+	}
+	if err != nil {
+		return fmt.Errorf("document: get application %d: %w", applicationID, err)
+	}
+	if !app.DeletedAt.IsZero() {
+		return &ApplicationDeletedError{ApplicationID: applicationID, PostingID: app.PostingID}
+	}
+	return nil
+}
+
+// Read returns applicationID's documentType document and its path.
+func (service *DocumentService) Read(ctx context.Context, applicationID int64, documentType document.Type) (path, content string, err error) {
+	if err := service.requireApplication(ctx, applicationID); err != nil {
+		return "", "", err
+	}
+	path, err = service.documents.Path(applicationID, documentType)
+	if err != nil {
+		return "", "", fmt.Errorf("document: %w", err)
+	}
+	b, err := os.ReadFile(path)
+	if errors.Is(err, fs.ErrNotExist) {
+		return "", "", fmt.Errorf("%w: application %d %s", ErrDocumentNotWritten, applicationID, documentType)
+	}
+	if err != nil {
+		return "", "", fmt.Errorf("document: read %s: %w", path, err)
+	}
+	return path, string(b), nil
 }

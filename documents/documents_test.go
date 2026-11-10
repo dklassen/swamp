@@ -131,7 +131,7 @@ func TestStore_Write_CreatesTheDocumentAndItsDir(t *testing.T) {
 
 	s := NewStore(t.TempDir())
 	for _, documentType := range document.Types() {
-		got, err := s.Write(5, documentType, "# Draft\n")
+		got, err := s.Write(5, documentType, "# Draft\n", "")
 		if err != nil {
 			t.Fatalf("Write(%s): %v", documentType, err)
 		}
@@ -167,7 +167,7 @@ func TestStore_Write_ReaderNeverSeesAPartialDocument(t *testing.T) {
 
 	s := NewStore(t.TempDir())
 	versions := []string{strings.Repeat("a", 1<<20), strings.Repeat("b", 1<<20)}
-	p, err := s.Write(1, document.CoverLetter, versions[0])
+	p, err := s.Write(1, document.CoverLetter, versions[0], "")
 	if err != nil {
 		t.Fatalf("Write: %v", err)
 	}
@@ -176,11 +176,13 @@ func TestStore_Write_ReaderNeverSeesAPartialDocument(t *testing.T) {
 	writeErr := make(chan error, 1)
 	go func() {
 		defer close(done)
+		previous := versions[0]
 		for i := range 200 {
-			if _, err := s.Write(1, document.CoverLetter, versions[i%2]); err != nil {
+			if _, err := s.Write(1, document.CoverLetter, versions[i%2], document.ContentSHA256(previous)); err != nil {
 				writeErr <- err
 				return
 			}
+			previous = versions[i%2]
 		}
 	}()
 
@@ -219,7 +221,7 @@ func TestStore_Write_FailedWriteLeavesNoTemporaryFile(t *testing.T) {
 		t.Fatalf("MkdirAll: %v", err)
 	}
 
-	if _, err := s.Write(1, document.CoverLetter, "# Draft\n"); err == nil {
+	if _, err := s.Write(1, document.CoverLetter, "# Draft\n", ""); err == nil {
 		t.Fatal("Write succeeded, want an error (a directory is in the document's place)")
 	}
 
@@ -246,7 +248,7 @@ func TestStore_SHA256(t *testing.T) {
 		t.Errorf("SHA256 with no document = %q, want empty", got)
 	}
 
-	if _, err := s.Write(1, document.CoverLetter, "# Draft\n"); err != nil {
+	if _, err := s.Write(1, document.CoverLetter, "# Draft\n", ""); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	got, err = s.SHA256(1, document.CoverLetter)
@@ -259,7 +261,7 @@ func TestStore_SHA256(t *testing.T) {
 	}
 }
 
-func TestStore_WriteIfUnchanged(t *testing.T) {
+func TestStore_Write_RefusesAChangedDocument(t *testing.T) {
 	t.Parallel()
 
 	const existing = "# Edited by the user\n"
@@ -280,24 +282,24 @@ func TestStore_WriteIfUnchanged(t *testing.T) {
 
 			s := NewStore(t.TempDir())
 			if tt.onDisk != "" {
-				if _, err := s.Write(1, document.CoverLetter, tt.onDisk); err != nil {
+				if _, err := s.Write(1, document.CoverLetter, tt.onDisk, ""); err != nil {
 					t.Fatalf("Write: %v", err)
 				}
 			}
 
-			p, err := s.WriteIfUnchanged(1, document.CoverLetter, "# New draft\n", tt.expected)
+			p, err := s.Write(1, document.CoverLetter, "# New draft\n", tt.expected)
 
 			want := "# New draft\n"
 			if tt.wantErr {
 				if !errors.Is(err, ErrChanged) {
-					t.Fatalf("WriteIfUnchanged error = %v, want ErrChanged", err)
+					t.Fatalf("Write error = %v, want ErrChanged", err)
 				}
 				want = tt.onDisk
 				if p, err = s.Path(1, document.CoverLetter); err != nil {
 					t.Fatalf("Path: %v", err)
 				}
 			} else if err != nil {
-				t.Fatalf("WriteIfUnchanged: %v", err)
+				t.Fatalf("Write: %v", err)
 			}
 			content, err := os.ReadFile(p)
 			if err != nil {

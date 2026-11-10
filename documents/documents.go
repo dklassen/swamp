@@ -87,42 +87,38 @@ func (s *Store) Path(applicationID int64, documentType document.Type) (string, e
 	return path(applicationDir(s.base, applicationID), documentType), nil
 }
 
+// ErrChanged is Write's error when the document on disk isn't the version
+// the caller read.
+var ErrChanged = errors.New("documents: document changed since it was read")
+
 // Write replaces applicationID's documentType document with content,
 // creating the application's directory if needed, and returns its path.
+// It's refused with ErrChanged unless the document on disk is still
+// readSHA256, the version the caller read (see document.ContentSHA256);
+// an empty readSHA256 says there was none, so a fresh draft can't replace
+// one that appeared meanwhile. The check runs just before the rename; a
+// write landing between the two still wins.
 //
 // The content goes to a temporary file in the same directory, which is
 // then renamed over the document. Another process reading the document
 // (an export, a review, documents.Current) sees the old version or the
 // new one, never an empty or partial file, and a failed write leaves the
 // old version as it was.
-func (s *Store) Write(applicationID int64, documentType document.Type, content string) (string, error) {
-	return s.write(applicationID, documentType, content, nil)
-}
-
-// ErrChanged is WriteIfUnchanged's error when the document on disk isn't
-// the version the caller expected.
-var ErrChanged = errors.New("documents: document changed since it was read")
-
-// WriteIfUnchanged is Write, refused with ErrChanged unless the document
-// on disk still has expectedSHA256 (see document.ContentSHA256). An empty
-// expectedSHA256 expects no document, so a fresh draft can't replace one
-// that appeared in the meantime. The check runs just before
-// the rename; a write landing between the two still wins.
-func (s *Store) WriteIfUnchanged(applicationID int64, documentType document.Type, content, expectedSHA256 string) (string, error) {
+func (s *Store) Write(applicationID int64, documentType document.Type, content, readSHA256 string) (string, error) {
 	return s.write(applicationID, documentType, content, func() error {
 		got, err := s.SHA256(applicationID, documentType)
 		if err != nil {
 			return err
 		}
-		if got != expectedSHA256 {
+		if got != readSHA256 {
 			return ErrChanged
 		}
 		return nil
 	})
 }
 
-// write is Write, with check (if any) run once the new content is ready
-// to rename into place, so the window between them stays small.
+// write is Write, with check run once the new content is ready to rename
+// into place, so the window between them stays small.
 func (s *Store) write(applicationID int64, documentType document.Type, content string, check func() error) (string, error) {
 	p, err := s.Path(applicationID, documentType)
 	if err != nil {
@@ -140,11 +136,9 @@ func (s *Store) write(applicationID int64, documentType document.Type, content s
 		_ = os.Remove(tmp.Name())
 		return "", err
 	}
-	if check != nil {
-		if err := check(); err != nil {
-			_ = os.Remove(tmp.Name())
-			return "", err
-		}
+	if err := check(); err != nil {
+		_ = os.Remove(tmp.Name())
+		return "", err
 	}
 	if err := os.Rename(tmp.Name(), p); err != nil {
 		_ = os.Remove(tmp.Name())

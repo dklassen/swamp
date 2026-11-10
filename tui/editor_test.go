@@ -73,7 +73,7 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	posting := mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
 	target := mustCreateApplication(t, s, posting.ID)
 	docs := s.Docs
-	if _, err := docs.Write(target.ID, document.Resume, "# Draft\n"); err != nil {
+	if _, err := docs.Write(target.ID, document.Resume, "# Draft\n", ""); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	if _, err := createReview(context.Background(), s, target.ID, document.Resume, "# Draft\n", document.Passed, ""); err != nil {
@@ -86,7 +86,7 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 		t.Fatalf("application detail before the edit doesn't show [PASSED]:\n%s", view)
 	}
 
-	if _, err := docs.Write(target.ID, document.Resume, "# Edited in $EDITOR\n"); err != nil {
+	if _, err := docs.Write(target.ID, document.Resume, "# Edited in $EDITOR\n", document.ContentSHA256("# Draft\n")); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 	app = applyCmd(t, app, editorClosed(t, app, s, screens, target.ID, document.Resume, document.ContentSHA256("# Draft\n")))
@@ -128,7 +128,7 @@ func TestApp_EditorClosedAfterAChange_RecordsTheWrite(t *testing.T) {
 	ctx := context.Background()
 	app, s, screens, target := deleteTestAppWithScreens(t) // resume drafted as "# Draft\n"
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if _, err := screens.documents.Write(target.ID, document.Resume, "# Edited\n"); err != nil {
+	if _, err := screens.documents.Write(target.ID, document.Resume, "# Edited\n", document.ContentSHA256("# Draft\n")); err != nil {
 		t.Fatalf("Write: %v", err)
 	}
 
