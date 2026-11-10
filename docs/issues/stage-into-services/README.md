@@ -9,8 +9,8 @@
 | 3 | [Document reads and writes go through DocumentService](03-document-read-write.md) | - | #488 | merged | 2 |
 | 4 | [Application forms are PostingService's](04-application-forms.md) | - | #489 | merged | none |
 | 5 | [A posting at a deleted company is refused in one place](05-posting-at-live-company.md) | - | #490 | merged | none |
-| 6 | [Starting to draft a posting is one DraftingService call](06-prepare.md) | - | - | planned | 2, 3, 4, 5, 12 |
-| 7 | [The drafting queue is one DraftingService query](07-drafting-queue.md) | - | - | planned | 2, 12 |
+| 6 | [Starting to draft a posting is one DraftingService call](06-prepare.md) | - | #495 | merged | 2, 3, 4, 5, 12 |
+| 7 | [The drafting queue is one DraftingService query](07-drafting-queue.md) | - | #496 | in review | 2, 12 |
 | 8 | [Companies with their open counts are CompanyService's](08-companies-with-open-counts.md) | - | #493 | merged | none |
 | 9 | [Scoring checks the profile; canonical files come from DocumentService](09-profile-and-canonical-files.md) | - | - | planned | 2 |
 | 10 | [What's left of stage moves under mcpserver](10-stage-into-mcpserver.md) | - | - | planned | 1-9 |
@@ -46,6 +46,7 @@
 - `CurrentForm` and the form fetchers move from `PostingService` to `DraftingService` in step 6 (Bob, 2026-11-10), replacing step 4's placement: starting to draft is its only caller. Step 11 assumed `PostingService` holds the fetchers, so it's revisited after step 6.
 - Names: `DraftingService.Prepare` (step 6), matching `stage_prepare` and `Prepared`, and `DraftingService.Queue` (step 7). Step 12's `Latest` is one SQL query, not the per-type loop moved into the repository (Bob, 2026-11-10).
 - Step 8 moves the TUI's company list onto the new `CompanyService` query in the same PR, since it makes the same two reads (Bob, 2026-11-10).
+- Step 7 merges the queue in Go rather than one SQL query, with the reviews of every application in one batch query (Bob, 2026-11-10): the interested and started halves follow different rules, so one query would be a UNION repeating the company-list filters. Started applications not marked interested are ordered by company name, then application ID, dropping the status-since tie-break, which cost a history read per application. `PostingService.Interested` went with it, having no other caller.
 
 ## Open
 
