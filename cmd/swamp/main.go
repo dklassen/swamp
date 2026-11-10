@@ -155,7 +155,7 @@ func runTUI(db store.Store, documentsStore *documents.Store, dbPath, origin stri
 	}
 	companies := service.NewCompanyService(db)
 	postings := service.NewPostingService(db)
-	forms := service.NewFormService(db)
+	forms := service.NewFormService(db, nil, service.FormConfig{})
 	applications := service.NewApplicationService(db, documentsStore)
 	documentService := service.NewDocumentService(db, documentsStore)
 	scores := service.NewScoringService(db, documentsStore)

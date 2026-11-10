@@ -5,23 +5,12 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"time"
 
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
-
-// FormFetcher reads a posting's application form from its board.
-type FormFetcher interface {
-	FetchApplicationForm(ctx context.Context, boardToken, jobID string) (jobboard.ApplicationForm, error)
-}
-
-// FormConfig bounds each form fetch by FetchTimeout.
-type FormConfig struct {
-	FetchTimeout time.Duration
-}
 
 // FormRead is a posting's current application form. A failed fetch isn't
 // an error, since drafting goes ahead without the form: FetchError says
