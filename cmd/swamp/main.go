@@ -13,7 +13,6 @@ package main
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -124,8 +123,6 @@ func runCommand(rf runFlags) error {
 	switch rf.command {
 	case cmdFetch:
 		return runFetch(db)
-	case cmdStage:
-		return runStage(db, documentsStore, rf.stage, rf.postingID)
 	case cmdExport:
 		return runExport(db, documentsStore, rf.applicationID)
 	case cmdImport:
@@ -312,32 +309,6 @@ func reportFetch(stdout, stderr io.Writer, results []sync.Result) int {
 	return len(summary.Failed)
 }
 
-// runStage drives the agent hand-off mechanism: `stage list` prints
-// eligible postings as a JSON array, `stage prepare <posting-id>` commits
-// to one and prints the result as a JSON object. See the stage package
-// for what each does.
-func runStage(db store.Store, d *documents.Store, action stageAction, postingID int64) error {
-	st := newStage(db, d)
-	ctx := context.Background()
-
-	switch action {
-	case stageList:
-		candidates, err := st.List(ctx)
-		if err != nil {
-			return fmt.Errorf("stage list: %w", err)
-		}
-		return printJSON(candidates)
-	case stagePrepare:
-		prepared, err := st.Prepare(ctx, postingID)
-		if err != nil {
-			return fmt.Errorf("stage prepare: %w", err)
-		}
-		return printJSON(prepared)
-	default:
-		return fmt.Errorf("stage: unknown action %q", action)
-	}
-}
-
 // runMCPServe runs swamp's agent hand-off mechanism as an MCP server over
 // the Streamable HTTP transport rather than one-off CLI calls -- needed
 // when the caller (an MCP-capable Claude host) is running somewhere that
@@ -466,15 +437,6 @@ func reviewSummary(review document.Review, hasReview bool) string {
 		return "flagged: " + review.Notes
 	}
 	return "passed"
-}
-
-func printJSON(v any) error {
-	enc := json.NewEncoder(os.Stdout)
-	enc.SetIndent("", "  ")
-	if err := enc.Encode(v); err != nil {
-		return fmt.Errorf("encode json: %w", err)
-	}
-	return nil
 }
 
 func openPlain(dbPath string) (*sql.DB, error) {

@@ -116,8 +116,6 @@ everyone gets the same version. Tasks that read the database use
 ```text
 swamp [--mcp]                  run the TUI, optionally with the MCP server in-process
 swamp migrate up|down          apply pending migrations, or roll back the newest
-swamp stage list               print postings eligible for hand-off
-swamp stage prepare <posting-id>
 swamp export <application-id>  convert an application's documents to PDF
 swamp mcp-serve                run the MCP server alone
 ```
