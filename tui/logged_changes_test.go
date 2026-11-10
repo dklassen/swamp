@@ -34,6 +34,7 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 		s                                   testutil.TestApp
 		writer                              store.Store
 		companyID, postingID, applicationID int64
+		profile                             string
 	}
 	tests := []struct {
 		name  string
@@ -90,7 +91,7 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 			if err != nil {
 				return err
 			}
-			_, err = service.NewScoringService(f.writer).Record(ctx, score.Provenance{Model: "claude-sonnet-5", ProfileSHA256: "profile"}, []score.Entry{{PostingID: p.ID, Score: 4, Reason: "fits", ContentSHA256: p.ContentSHA256}})
+			_, err = service.NewScoringService(f.writer, f.s.Docs).Record(ctx, score.Provenance{Model: "claude-sonnet-5", ProfileSHA256: f.profile}, []score.Entry{{PostingID: p.ID, Score: 4, Reason: "fits", ContentSHA256: p.ContentSHA256}})
 			return err
 		}, func(ctx context.Context, f fixture, row change.Event) (tea.Msg, error) {
 			scores, err := f.s.Scores.ForPosting(ctx, f.postingID)
@@ -153,7 +154,7 @@ func TestChangeReader_AnotherProcessesWrite_IsTheChangedForItsTable(t *testing.T
 			}
 			p := testutil.MustIngestPostingFor(t, s, acme.ID, "job-1", "Engineer")
 			app := testutil.MustApplyTo(t, s, p.ID)
-			f := fixture{s: s, writer: testutil.OpenStore(t, s.Path, mcp.Process), companyID: acme.ID, postingID: p.ID, applicationID: app.ID}
+			f := fixture{s: s, writer: testutil.OpenStore(t, s.Path, mcp.Process), companyID: acme.ID, postingID: p.ID, applicationID: app.ID, profile: testutil.MustWriteProfile(t, s, "# Me")}
 			since, err := s.Changes.Latest(ctx)
 			if err != nil {
 				t.Fatalf("Latest: %v", err)

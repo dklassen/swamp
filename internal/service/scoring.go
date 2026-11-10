@@ -4,7 +4,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 
+	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/score"
 	"github.com/dklassen/swamp/internal/repository"
 	"github.com/dklassen/swamp/store"
@@ -27,15 +30,17 @@ type scoringPostingViewer interface {
 
 type ScoringService struct {
 	db            store.Store
+	documents     *documents.Store
 	scoreViewer   scoreViewer
 	scoreRecorder scoreRecorder
 	postingViewer scoringPostingViewer
 }
 
-func NewScoringService(db store.Store) *ScoringService {
+func NewScoringService(db store.Store, docs *documents.Store) *ScoringService {
 	scores := &repository.ScoreRepository{}
 	return &ScoringService{
 		db:            db,
+		documents:     docs,
 		scoreViewer:   scores,
 		scoreRecorder: scores,
 		postingViewer: &repository.PostingRepository{},
@@ -63,14 +68,17 @@ func (service *ScoringService) GetMany(ctx context.Context, ids []int64) ([]scor
 
 // Record records entries as scores from provenance, all together or not
 // at all: a failing write undoes the whole batch. An entry that can't be
-// recorded is refused, and the result says why. A call with no model or
-// profile hash records nothing.
+// recorded is refused, and the result says why. A call with no model, or
+// whose profile hash isn't the profile's now, records nothing.
 func (service *ScoringService) Record(ctx context.Context, provenance score.Provenance, entries []score.Entry) (*score.RecordResult, error) {
 	switch {
 	case provenance.Model == "":
 		return nil, errors.New("scoring: record scores: model is required")
 	case provenance.ProfileSHA256 == "":
 		return nil, errors.New("scoring: record scores: profile hash is required")
+	}
+	if err := service.requireProfile(provenance.ProfileSHA256); err != nil {
+		return nil, err
 	}
 	var result score.RecordResult
 	err := store.InTx(ctx, service.db, func(tx store.Tx) error {
@@ -122,4 +130,33 @@ func (service *ScoringService) check(ctx context.Context, tx store.Tx, provenanc
 		return score.Repeat, false, nil
 	}
 	return 0, true, nil
+}
+
+// ErrProfileChanged is the error for a profile hash that isn't the
+// profile's now: it changed since, or was never read.
+var ErrProfileChanged = errors.New("scoring: the profile isn't the version given")
+
+// NoProfileError is the error for scoring with no profile at Path.
+type NoProfileError struct {
+	Path string
+}
+
+func (e *NoProfileError) Error() string {
+	return fmt.Sprintf("scoring: there's no profile at %s to score against", e.Path)
+}
+
+// requireProfile returns why scores can't be judged against the profile
+// with profileSHA256, or nil when it's the profile now.
+func (service *ScoringService) requireProfile(profileSHA256 string) error {
+	content, err := service.documents.ReadProfile()
+	if errors.Is(err, fs.ErrNotExist) {
+		return &NoProfileError{Path: service.documents.ProfilePath()}
+	}
+	if err != nil {
+		return fmt.Errorf("scoring: read profile: %w", err)
+	}
+	if document.ContentSHA256(content) != profileSHA256 {
+		return ErrProfileChanged
+	}
+	return nil
 }

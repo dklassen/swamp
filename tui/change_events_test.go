@@ -574,7 +574,7 @@ func servicesAs(t *testing.T, s testutil.TestApp, origin string) testutil.TestAp
 		Postings:     service.NewPostingService(db),
 		Applications: service.NewApplicationService(db, s.Docs),
 		Documents:    service.NewDocumentService(db, s.Docs),
-		Scores:       service.NewScoringService(db),
+		Scores:       service.NewScoringService(db, s.Docs),
 		Changes:      service.NewChangeLog(db),
 	}
 }

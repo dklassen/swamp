@@ -1332,7 +1332,7 @@ func TestListPendingPostings_SaysWhyEachIsPending(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme")
 	fresh := mustUpsertPosting(t, s, acme.ID, "job-1", "Fresh")
 	scored := mustUpsertPosting(t, s, acme.ID, "job-2", "Scored before the profile changed")
-	oldProfile := document.ContentSHA256("# Me")
+	oldProfile := mustWriteProfile(t, d, "# Me")
 	if _, err := recordScores(ctx, s, score.Provenance{Model: "claude-opus-5-5", ProfileSHA256: oldProfile}, []score.Entry{
 		{PostingID: scored.ID, Score: 3, Reason: "ok", ContentSHA256: scored.ContentSHA256},
 	}); err != nil {

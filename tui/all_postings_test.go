@@ -691,10 +691,11 @@ func TestAllPostings_NoMatches_SaysWhatWasSearched(t *testing.T) {
 // testProfile is the profile every score in these tests is against.
 const testProfile = "p"
 
-// mustScore records fit for p against testProfile.
+// mustScore records fit for p against testProfile, written as the profile
+// now.
 func mustScore(t *testing.T, s testutil.TestApp, p posting.Posting, fit int) {
 	t.Helper()
-	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-opus-5-5", ProfileSHA256: testProfile}, []score.Entry{
+	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-opus-5-5", ProfileSHA256: testutil.MustWriteProfile(t, s, testProfile)}, []score.Entry{
 		{PostingID: p.ID, Score: fit, Reason: "reason", ContentSHA256: p.ContentSHA256},
 	}); err != nil {
 		t.Fatalf("recordScores: %v", err)
@@ -802,12 +803,12 @@ func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	p := mustUpsertPosting(t, s, acme.ID, "1", "Platform Engineer")
-	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: testProfile}, []score.Entry{
+	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: testutil.MustWriteProfile(t, s, testProfile)}, []score.Entry{
 		{PostingID: p.ID, Score: 2, Reason: "first look", ContentSHA256: p.ContentSHA256},
 	}); err != nil {
 		t.Fatalf("recordScores: %v", err)
 	}
-	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-opus-5-5", ClientName: "claude-code", ClientVersion: "2.4.1", ProfileSHA256: "edited p"}, []score.Entry{
+	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-opus-5-5", ClientName: "claude-code", ClientVersion: "2.4.1", ProfileSHA256: testutil.MustWriteProfile(t, s, "edited p")}, []score.Entry{
 		{PostingID: p.ID, Score: 4, Reason: "Go and Kafka, remote", ContentSHA256: p.ContentSHA256},
 	}); err != nil {
 		t.Fatalf("recordScores: %v", err)
@@ -827,7 +828,7 @@ func TestPostingDetail_ShowsTheScoresAndFollowsNewOnes(t *testing.T) {
 		t.Errorf("the current score isn't above the earlier one:\n%s", view)
 	}
 
-	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-opus-5-5", ProfileSHA256: "rewritten p"}, []score.Entry{
+	if _, err := recordScores(context.Background(), s, score.Provenance{Model: "claude-opus-5-5", ProfileSHA256: testutil.MustWriteProfile(t, s, "rewritten p")}, []score.Entry{
 		{PostingID: p.ID, Score: 5, Reason: "after the rewrite", ContentSHA256: p.ContentSHA256},
 	}); err != nil {
 		t.Fatalf("recordScores: %v", err)

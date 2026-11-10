@@ -162,7 +162,7 @@ func runTUI(db store.Store, documentsStore *documents.Store, dbPath, origin stri
 	postings := service.NewPostingService(db)
 	applications := service.NewApplicationService(db, documentsStore)
 	documentService := service.NewDocumentService(db, documentsStore)
-	scores := service.NewScoringService(db)
+	scores := service.NewScoringService(db, documentsStore)
 	router := model.NewMsgRouter()
 	screens := tui.NewScreens(companies, postings, applications, documentService, scores, syncer, documentsStore)
 	if err := router.Register(screens); err != nil {
@@ -236,7 +236,7 @@ func newStage(db store.Store, d *documents.Store) *stage.Stage {
 	drafting := service.NewDraftingService(db, d, map[string]service.FormFetcher{
 		jobboard.Greenhouse: greenhouse.NewClient(),
 	}, service.FormConfig{FetchTimeout: sync.DefaultConfig().FetchTimeout})
-	return stage.New(service.NewCompanyService(db), service.NewPostingService(db), service.NewDocumentService(db, d), service.NewScoringService(db), drafting, d)
+	return stage.New(service.NewCompanyService(db), service.NewPostingService(db), service.NewDocumentService(db, d), service.NewScoringService(db, d), drafting, d)
 }
 
 // runImport bulk-creates companies from a YAML seed file (see the seed

@@ -11,6 +11,7 @@ import (
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/company"
+	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/jobboard"
@@ -86,7 +87,7 @@ func NewTestApp(t *testing.T) TestApp {
 		Postings:     service.NewPostingService(db),
 		Applications: service.NewApplicationService(db, docs),
 		Documents:    service.NewDocumentService(db, docs),
-		Scores:       service.NewScoringService(db),
+		Scores:       service.NewScoringService(db, docs),
 		Drafting:     service.NewDraftingService(db, docs, nil, service.FormConfig{}),
 		Changes:      service.NewChangeLog(db),
 	}
@@ -139,4 +140,11 @@ func MustWriteFile(t *testing.T, path, content string) {
 	if err := os.WriteFile(path, []byte(content), 0o600); err != nil {
 		t.Fatalf("write %s: %v", path, err)
 	}
+}
+
+// MustWriteProfile writes the user's profile and returns its version.
+func MustWriteProfile(t *testing.T, s TestApp, content string) string {
+	t.Helper()
+	MustWriteFile(t, s.Docs.ProfilePath(), content)
+	return document.ContentSHA256(content)
 }
