@@ -30,22 +30,15 @@ type FullPosting struct {
 	Version            string                `json:"Version"`
 }
 
-// ReadPosting returns posting id in full. A posting at a company the user
-// deleted is refused, as search leaves it out.
+// ReadPosting returns posting id in full, refusing one at a deleted
+// company (service.CompanyDeletedError).
 func (st *Stage) ReadPosting(ctx context.Context, id int64) (*FullPosting, error) {
-	posting, err := st.postings.Get(ctx, id)
+	posting, company, err := st.postings.GetWithCompany(ctx, id)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, fmt.Errorf("stage: no posting %d: %w", id, err)
 	}
 	if err != nil {
-		return nil, fmt.Errorf("stage: get posting %d: %w", id, err)
-	}
-	company, err := st.companies.GetIncludingDeleted(ctx, posting.CompanyID)
-	if err != nil {
-		return nil, fmt.Errorf("stage: get company: %w", err)
-	}
-	if company.DeletedAt != nil {
-		return nil, fmt.Errorf("stage: posting %d is at %s, which was deleted", id, company.Name)
+		return nil, fmt.Errorf("stage: %w", err)
 	}
 	return &FullPosting{
 		ID:                 posting.ID,

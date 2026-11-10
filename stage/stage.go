@@ -195,12 +195,12 @@ type Prepared struct {
 
 type companyService interface {
 	Get(ctx context.Context, id int64) (*company.Company, error)
-	GetIncludingDeleted(ctx context.Context, id int64) (*company.Company, error)
 	ListActive(ctx context.Context) ([]company.Company, error)
 }
 
 type postingService interface {
 	Get(ctx context.Context, postingID int64) (*posting.Posting, error)
+	GetWithCompany(ctx context.Context, postingID int64) (*posting.Posting, *company.Company, error)
 	Search(ctx context.Context, search posting.Search) (*posting.SearchPage, error)
 	Interested(ctx context.Context) ([]posting.Interested, error)
 	CountOpenByCompany(ctx context.Context) (map[int64]int, error)

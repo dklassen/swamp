@@ -974,3 +974,55 @@ func TestPostingService_AllPostings_WithoutQueryIsTheOpenCounts(t *testing.T) {
 		t.Errorf("WithoutQuery = %d, Open counts add up to %d; want them equal and not 0", got.WithoutQuery, open)
 	}
 }
+
+func TestPostingService_GetWithCompany_LiveCompany_ReturnsBoth(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	acme := testutil.MustAddCompany(t, s, "Acme")
+	p := testutil.MustIngestPostingFor(t, s, acme.ID, "job-1", "Engineer")
+
+	gotPosting, gotCompany, err := s.Postings.GetWithCompany(t.Context(), p.ID)
+	if err != nil {
+		t.Fatalf("GetWithCompany: %v", err)
+	}
+	if diff := cmp.Diff(&p, gotPosting); diff != "" {
+		t.Errorf("posting (-want +got):\n%s", diff)
+	}
+	if diff := cmp.Diff(&acme, gotCompany); diff != "" {
+		t.Errorf("company (-want +got):\n%s", diff)
+	}
+}
+
+// Search leaves out postings at deleted companies, so reading one is
+// refused too.
+func TestPostingService_GetWithCompany_DeletedCompany_IsRefused(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+	gone := testutil.MustAddCompany(t, s, "Gone")
+	p := testutil.MustIngestPostingFor(t, s, gone.ID, "job-1", "Engineer")
+	if _, err := s.Companies.Delete(t.Context(), gone.ID); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	gotPosting, gotCompany, err := s.Postings.GetWithCompany(t.Context(), p.ID)
+	var deleted *service.CompanyDeletedError
+	if !errors.As(err, &deleted) {
+		t.Fatalf("GetWithCompany: err = %v, want a *service.CompanyDeletedError", err)
+	}
+	want := &service.CompanyDeletedError{PostingID: p.ID, CompanyName: gone.Name}
+	if diff := cmp.Diff(want, deleted); diff != "" {
+		t.Errorf("error (-want +got):\n%s", diff)
+	}
+	if gotPosting != nil || gotCompany != nil {
+		t.Errorf("posting %+v, company %+v; want neither", gotPosting, gotCompany)
+	}
+}
+
+func TestPostingService_GetWithCompany_UnknownPosting_ReturnsErrNotFound(t *testing.T) {
+	t.Parallel()
+	s := testutil.NewTestApp(t)
+
+	if _, _, err := s.Postings.GetWithCompany(t.Context(), 999); !errors.Is(err, store.ErrNotFound) {
+		t.Fatalf("GetWithCompany(999): err = %v, want store.ErrNotFound", err)
+	}
+}

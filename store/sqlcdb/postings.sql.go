@@ -227,6 +227,61 @@ func (q *Queries) GetPostingBySourceAndSourceID(ctx context.Context, arg GetPost
 	return i, err
 }
 
+const getPostingWithCompany = `-- name: GetPostingWithCompany :one
+SELECT postings.id, postings.company_id, postings.source, postings.source_id, postings.title, postings.department, postings.team, postings.location, postings.employment_type, postings.workplace_type, postings.description_html, postings.description_text, postings.job_url, postings.application_url, postings.published_at, postings.raw_payload, postings.listing_status, postings.first_seen_at, postings.last_seen_at, postings.created_at, postings.updated_at, postings.content_sha256, companies.id, companies.name, companies.source, companies.source_ref, companies.deleted_at, companies.created_at, companies.updated_at, companies.description, companies.last_fetched_at, companies.sync_lease_token, companies.sync_lease_at
+FROM postings
+JOIN companies ON companies.id = postings.company_id
+WHERE postings.id = ?
+`
+
+type GetPostingWithCompanyRow struct {
+	Posting Posting `json:"posting"`
+	Company Company `json:"company"`
+}
+
+// The company is read whether or not it was deleted, so the caller can
+// name it when refusing.
+func (q *Queries) GetPostingWithCompany(ctx context.Context, id int64) (GetPostingWithCompanyRow, error) {
+	row := q.db.QueryRowContext(ctx, getPostingWithCompany, id)
+	var i GetPostingWithCompanyRow
+	err := row.Scan(
+		&i.Posting.ID,
+		&i.Posting.CompanyID,
+		&i.Posting.Source,
+		&i.Posting.SourceID,
+		&i.Posting.Title,
+		&i.Posting.Department,
+		&i.Posting.Team,
+		&i.Posting.Location,
+		&i.Posting.EmploymentType,
+		&i.Posting.WorkplaceType,
+		&i.Posting.DescriptionHtml,
+		&i.Posting.DescriptionText,
+		&i.Posting.JobUrl,
+		&i.Posting.ApplicationUrl,
+		&i.Posting.PublishedAt,
+		&i.Posting.RawPayload,
+		&i.Posting.ListingStatus,
+		&i.Posting.FirstSeenAt,
+		&i.Posting.LastSeenAt,
+		&i.Posting.CreatedAt,
+		&i.Posting.UpdatedAt,
+		&i.Posting.ContentSha256,
+		&i.Company.ID,
+		&i.Company.Name,
+		&i.Company.Source,
+		&i.Company.SourceRef,
+		&i.Company.DeletedAt,
+		&i.Company.CreatedAt,
+		&i.Company.UpdatedAt,
+		&i.Company.Description,
+		&i.Company.LastFetchedAt,
+		&i.Company.SyncLeaseToken,
+		&i.Company.SyncLeaseAt,
+	)
+	return i, err
+}
+
 const listDistinctDepartmentsForCompany = `-- name: ListDistinctDepartmentsForCompany :many
 SELECT DISTINCT department FROM postings
 WHERE company_id = ? AND department != ''
