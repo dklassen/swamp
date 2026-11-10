@@ -49,7 +49,7 @@ func newTestServer(t *testing.T) (*mcp.Server, testutil.TestApp, *documents.Stor
 		"acme": {{SourceID: "job-1", Title: "Engineer"}, {SourceID: "job-2", Title: "Designer"}},
 	}}
 	syncer := swampsync.New(s.Companies, s.Postings, map[string]swampsync.PostingFetcher{jobboard.Ashby: fetcher}, swampsync.DefaultConfig())
-	return New(stage.New(s.Companies, s.Postings, s.Documents, s.Scores, s.Drafting, d), d, syncer), s, d
+	return New(stage.New(s.Companies, s.Postings, s.Documents, s.Scores, s.Drafting), s.Documents, syncer), s, d
 }
 
 // connectClient wires an in-process MCP client to srv over an in-memory
@@ -1332,7 +1332,7 @@ func TestListPendingPostings_SaysWhyEachIsPending(t *testing.T) {
 	acme := mustCreateCompany(t, s, "Acme")
 	fresh := mustUpsertPosting(t, s, acme.ID, "job-1", "Fresh")
 	scored := mustUpsertPosting(t, s, acme.ID, "job-2", "Scored before the profile changed")
-	oldProfile := document.ContentSHA256("# Me")
+	oldProfile := mustWriteProfile(t, d, "# Me")
 	if _, err := recordScores(ctx, s, score.Provenance{Model: "claude-opus-5-5", ProfileSHA256: oldProfile}, []score.Entry{
 		{PostingID: scored.ID, Score: 3, Reason: "ok", ContentSHA256: scored.ContentSHA256},
 	}); err != nil {

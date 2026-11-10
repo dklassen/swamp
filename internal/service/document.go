@@ -256,3 +256,34 @@ func (service *DocumentService) Read(ctx context.Context, applicationID int64, d
 	}
 	return path, string(b), nil
 }
+
+// CanonicalFile is one of the user-maintained files every application
+// draws on. Exists is false when the user hasn't written it, an expected
+// state rather than an error.
+type CanonicalFile struct {
+	Path    string
+	Exists  bool
+	Content string
+	Version string
+}
+
+// Profile returns the user's profile.
+func (service *DocumentService) Profile() (*CanonicalFile, error) {
+	return canonicalFile(service.documents.ProfilePath(), service.documents.ReadProfile)
+}
+
+// CanonicalResume returns the user's canonical resume.
+func (service *DocumentService) CanonicalResume() (*CanonicalFile, error) {
+	return canonicalFile(service.documents.CanonicalResumePath(), service.documents.ReadCanonicalResume)
+}
+
+func canonicalFile(path string, read func() (string, error)) (*CanonicalFile, error) {
+	content, err := read()
+	if errors.Is(err, fs.ErrNotExist) {
+		return &CanonicalFile{Path: path}, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("document: read %s: %w", path, err)
+	}
+	return &CanonicalFile{Path: path, Exists: true, Content: content, Version: document.ContentSHA256(content)}, nil
+}

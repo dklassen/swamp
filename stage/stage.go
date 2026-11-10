@@ -11,7 +11,6 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/company"
 	"github.com/dklassen/swamp/internal/domain/document"
@@ -198,7 +197,7 @@ type draftingService interface {
 }
 
 type scoringService interface {
-	Pending(ctx context.Context, rescoreProfileSHA256 string, beforeID int64, limit int) (*score.PendingPostingsPage, error)
+	Pending(ctx context.Context, profileSHA256 string, rescore bool, beforeID int64, limit int) (*score.PendingPostingsPage, error)
 	Record(ctx context.Context, provenance score.Provenance, entries []score.Entry) (*score.RecordResult, error)
 }
 
@@ -211,17 +210,15 @@ type Stage struct {
 	docs      documentService
 	scores    scoringService
 	drafting  draftingService
-	documents *documents.Store
 }
 
-func New(companies companyService, postings postingService, docs documentService, scores scoringService, drafting draftingService, d *documents.Store) *Stage {
+func New(companies companyService, postings postingService, docs documentService, scores scoringService, drafting draftingService) *Stage {
 	return &Stage{
 		companies: companies,
 		postings:  postings,
 		docs:      docs,
 		scores:    scores,
 		drafting:  drafting,
-		documents: d,
 	}
 }
 

@@ -22,7 +22,7 @@ A score must name the profile it was judged against, and that profile must be `p
 
 ## Acceptance criteria
 
-- [ ] Service tests: a stale profile hash records nothing and lists nothing, a missing profile is refused, the current one works.
-- [ ] `read_profile`'s and `read_canonical_resume`'s outputs unchanged, `Exists: false` included.
-- [ ] `list_pending_postings` and `record_scores` error messages unchanged.
-- [ ] Verification checklist clean.
+- [x] Service tests: a stale profile hash records nothing and lists nothing, a missing profile is refused, the current one works.
+- [x] `read_profile`'s and `read_canonical_resume`'s outputs unchanged, `Exists: false` included.
+- [x] `list_pending_postings` and `record_scores` error messages unchanged.
+- [x] Verification checklist clean.

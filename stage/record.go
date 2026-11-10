@@ -2,7 +2,6 @@ package stage
 
 import (
 	"context"
-	"fmt"
 
 	"github.com/dklassen/swamp/internal/domain/score"
 )
@@ -41,9 +40,6 @@ type RefusedEntry struct {
 // RecordScores records the agent's scores against the profile it read, in
 // one transaction. A stale profile hash records nothing.
 func (st *Stage) RecordScores(ctx context.Context, opts RecordOptions) (*RecordResult, error) {
-	if err := st.checkProfile(opts.ProfileVersion); err != nil {
-		return nil, err
-	}
 	entries := make([]score.Entry, len(opts.Scores))
 	for i, s := range opts.Scores {
 		entries[i] = score.Entry{PostingID: s.PostingID, Score: s.Score, Reason: s.Reason, ContentSHA256: s.PostingVersion}
@@ -56,7 +52,7 @@ func (st *Stage) RecordScores(ctx context.Context, opts RecordOptions) (*RecordR
 	}
 	recorded, err := st.scores.Record(ctx, provenance, entries)
 	if err != nil {
-		return nil, fmt.Errorf("stage: %w", err)
+		return nil, scoringError(err)
 	}
 	result := RecordResult{Recorded: append([]int64{}, recorded.Recorded...), Refused: make([]RefusedEntry, len(recorded.Refused))}
 	for i, r := range recorded.Refused {

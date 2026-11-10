@@ -408,7 +408,7 @@ func TestSearch_ScoreDescPagesBestFitFirst(t *testing.T) {
 	low := mustUpsertPosting(t, s, acme.ID, "1", "Low")
 	high := mustUpsertPosting(t, s, acme.ID, "2", "High")
 	unscored := mustUpsertPosting(t, s, acme.ID, "3", "Unscored")
-	if _, err := recordScores(ctx, s, score.Provenance{Model: "m", ProfileSHA256: "p"}, []score.Entry{
+	if _, err := recordScores(ctx, s, score.Provenance{Model: "m", ProfileSHA256: testutil.MustWriteProfile(t, s, "p")}, []score.Entry{
 		{PostingID: low.ID, Score: 2, Reason: "weak", ContentSHA256: low.ContentSHA256},
 		{PostingID: high.ID, Score: 5, Reason: "strong", ContentSHA256: high.ContentSHA256},
 	}); err != nil {

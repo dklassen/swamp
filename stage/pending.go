@@ -4,13 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/fs"
-	"os"
 
 	"github.com/dklassen/swamp/cursor"
-	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
+	"github.com/dklassen/swamp/internal/service"
 )
 
 // pendingSort names list_pending_postings' one order in its cursors, so a
@@ -64,9 +62,6 @@ type pendingFilters struct {
 
 // PendingPostings returns one page of the postings still to score.
 func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (*PendingResult, error) {
-	if err := st.checkProfile(opts.ProfileVersion); err != nil {
-		return nil, err
-	}
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = defaultSearchLimit
@@ -74,9 +69,8 @@ func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (*Pen
 	limit = min(limit, maxSearchLimit)
 
 	filters := pendingFilters{Rescore: opts.Rescore}
-	var rescoreProfile string
 	if opts.Rescore {
-		filters.ProfileVersion, rescoreProfile = opts.ProfileVersion, opts.ProfileVersion
+		filters.ProfileVersion = opts.ProfileVersion
 	}
 	fingerprint := cursor.Fingerprint(filters)
 	var beforeID int64
@@ -88,9 +82,9 @@ func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (*Pen
 		beforeID = key.ID
 	}
 
-	page, err := st.scores.Pending(ctx, rescoreProfile, beforeID, limit)
+	page, err := st.scores.Pending(ctx, opts.ProfileVersion, opts.Rescore, beforeID, limit)
 	if err != nil {
-		return nil, fmt.Errorf("stage: %w", err)
+		return nil, scoringError(err)
 	}
 	result := PendingResult{Postings: make([]PendingMatch, len(page.Postings)), Total: page.Total}
 	for i, p := range page.Postings {
@@ -113,19 +107,15 @@ func (st *Stage) PendingPostings(ctx context.Context, opts PendingOptions) (*Pen
 	return &result, nil
 }
 
-// checkProfile refuses a profile hash that isn't profile.md's now, so a
-// score can't claim a profile the agent didn't read.
-func (st *Stage) checkProfile(sha256 string) error {
-	path := st.documents.ProfilePath()
-	content, err := os.ReadFile(path)
-	if errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("stage: there's no profile at %s to score against", path)
-	}
-	if err != nil {
-		return fmt.Errorf("stage: read profile: %w", err)
-	}
-	if document.ContentSHA256(string(content)) != sha256 {
+// scoringError says what to do about a profile the scores can't be judged
+// against.
+func scoringError(err error) error {
+	var missing *service.NoProfileError
+	switch {
+	case errors.As(err, &missing):
+		return fmt.Errorf("stage: there's no profile at %s to score against", missing.Path)
+	case errors.Is(err, service.ErrProfileChanged):
 		return errors.New("stage: the profile isn't the version you gave (it changed, or wasn't read): call read_profile and pass its Version")
 	}
-	return nil
+	return fmt.Errorf("stage: %w", err)
 }

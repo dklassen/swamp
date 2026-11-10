@@ -219,3 +219,23 @@ func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
+
+// ReadProfile returns the profile's content, or an fs.ErrNotExist error
+// when the user hasn't written one.
+func (s *Store) ReadProfile() (string, error) {
+	return readFile(s.ProfilePath())
+}
+
+// ReadCanonicalResume returns the canonical resume's content, or an
+// fs.ErrNotExist error when the user hasn't written one.
+func (s *Store) ReadCanonicalResume() (string, error) {
+	return readFile(s.CanonicalResumePath())
+}
+
+func readFile(path string) (string, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return "", err
+	}
+	return string(content), nil
+}

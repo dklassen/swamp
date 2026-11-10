@@ -13,6 +13,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 
 	"github.com/dklassen/swamp/documents"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/mcpserver"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
@@ -24,7 +25,7 @@ const readHeaderTimeout = 10 * time.Second
 // mcpHandler serves Swamp's MCP tools over Streamable HTTP. See runMCPServe
 // for why localhost protection is off.
 func mcpHandler(db store.Store, d *documents.Store, syncer *sync.Syncer) http.Handler {
-	return streamableHandler(mcpserver.New(newStage(db, d), d, syncer))
+	return streamableHandler(mcpserver.New(newStage(db, d), service.NewDocumentService(db, d), syncer))
 }
 
 // streamableHandler serves server over Streamable HTTP.
@@ -68,7 +69,7 @@ func startMCP(dbPath string, d *documents.Store, ln net.Listener, logger *slog.L
 	// Cancelled on stop: an agent's open stream never goes idle, so
 	// Shutdown would otherwise wait out its whole deadline.
 	base, cancelRequests := context.WithCancel(context.Background())
-	server := mcpserver.New(newStage(db, d), d, syncer)
+	server := mcpserver.New(newStage(db, d), service.NewDocumentService(db, d), syncer)
 	server.AddReceivingMiddleware(releaseTerminalOnPanic(release))
 	srv := &http.Server{
 		Handler:           streamableHandler(server),

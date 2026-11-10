@@ -761,7 +761,7 @@ func TestPostingService_AllPostings_PagesInOrder(t *testing.T) {
 			scored := func(i, value int) score.Entry {
 				return score.Entry{PostingID: postings[i].ID, Score: value, Reason: "fit", ContentSHA256: postings[i].ContentSHA256}
 			}
-			if _, err := s.Scores.Record(ctx, score.Provenance{Model: "m", ProfileSHA256: "p"}, []score.Entry{scored(0, 3), scored(1, 5), scored(3, 3)}); err != nil {
+			if _, err := s.Scores.Record(ctx, score.Provenance{Model: "m", ProfileSHA256: testutil.MustWriteProfile(t, s, "p")}, []score.Entry{scored(0, 3), scored(1, 5), scored(3, 3)}); err != nil {
 				t.Fatalf("Record: %v", err)
 			}
 

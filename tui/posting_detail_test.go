@@ -253,7 +253,7 @@ func detailWith(t *testing.T) (*postingDetailModel, *model.MsgRouter) {
 	if _, err := createReview(ctx, s, app.ID, document.CoverLetter, "Dear Acme", document.Flagged, "say why Acme"); err != nil {
 		t.Fatalf("Review: %v", err)
 	}
-	if _, err := recordScores(ctx, s, score.Provenance{Model: "claude", ProfileSHA256: "def"}, []score.Entry{{PostingID: p.ID, Score: 4, Reason: "fits", ContentSHA256: p.ContentSHA256}}); err != nil {
+	if _, err := recordScores(ctx, s, score.Provenance{Model: "claude", ProfileSHA256: testutil.MustWriteProfile(t, s, "def")}, []score.Entry{{PostingID: p.ID, Score: 4, Reason: "fits", ContentSHA256: p.ContentSHA256}}); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
 	m := newPostingDetailModel(s.Postings, s.Documents, s.Scores, docs, message.PostingDetail{Posting: message.Posting{ID: p.ID}}, message.ContentSize{Width: 100, Rows: 60})

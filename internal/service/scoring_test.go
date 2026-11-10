@@ -2,6 +2,7 @@ package service_test
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"testing"
@@ -9,9 +10,11 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/google/go-cmp/cmp/cmpopts"
 
+	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/internal/testutil"
 	"github.com/dklassen/swamp/jobboard"
 )
@@ -26,7 +29,7 @@ func TestScoringService_Record_RecordsValidEntriesAndRefusesTheRest(t *testing.T
 	stale := testutil.MustIngestPostingFor(t, s, acme.ID, "2", "Stale")
 	other := testutil.MustIngestPostingFor(t, s, acme.ID, "3", "Other")
 	repeat := testutil.MustIngestPostingFor(t, s, acme.ID, "4", "Already scored")
-	provenance := score.Provenance{Model: "claude-opus-5-5", ClientName: "claude-code", ClientVersion: "2.4.1", ProfileSHA256: "profile"}
+	provenance := score.Provenance{Model: "claude-opus-5-5", ClientName: "claude-code", ClientVersion: "2.4.1", ProfileSHA256: testutil.MustWriteProfile(t, s, "# Me")}
 	if _, err := scoring.Record(ctx, provenance, []score.Entry{{PostingID: repeat.ID, Score: 2, Reason: "first", ContentSHA256: repeat.ContentSHA256}}); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
@@ -78,11 +81,12 @@ func TestScoringService_Record_AnotherModelOrProfileIsntARepeat(t *testing.T) {
 	p := testutil.MustIngestPosting(t, s, "1", "Role")
 	entry := []score.Entry{{PostingID: p.ID, Score: 3, Reason: "ok", ContentSHA256: p.ContentSHA256}}
 
-	for _, provenance := range []score.Provenance{
-		{Model: "claude-opus-5-5", ProfileSHA256: "profile"},
-		{Model: "claude-sonnet-5", ProfileSHA256: "profile"},
-		{Model: "claude-opus-5-5", ProfileSHA256: "edited profile"},
+	for _, by := range []struct{ model, profile string }{
+		{"claude-opus-5-5", "# Me"},
+		{"claude-sonnet-5", "# Me"},
+		{"claude-opus-5-5", "# Me, edited"},
 	} {
+		provenance := score.Provenance{Model: by.model, ProfileSHA256: testutil.MustWriteProfile(t, s, by.profile)}
 		result, err := scoring.Record(ctx, provenance, entry)
 		if err != nil {
 			t.Fatalf("Record: %v", err)
@@ -115,10 +119,11 @@ func TestScoringService_Record_RefusesACallWithNoModelOrProfile(t *testing.T) {
 	}
 }
 
-// pendingReasons is every pending posting, by ID, with why.
-func pendingReasons(t *testing.T, s testutil.TestApp, rescoreProfile string) (map[int64]score.PendingReason, int) {
+// pendingReasons is every posting pending against profile, written as the
+// profile now, by ID, with why.
+func pendingReasons(t *testing.T, s testutil.TestApp, profile string, rescore bool) (map[int64]score.PendingReason, int) {
 	t.Helper()
-	page, err := s.Scores.Pending(context.Background(), rescoreProfile, 0, 100)
+	page, err := s.Scores.Pending(context.Background(), testutil.MustWriteProfile(t, s, profile), rescore, 0, 100)
 	if err != nil {
 		t.Fatalf("Pending: %v", err)
 	}
@@ -129,10 +134,11 @@ func pendingReasons(t *testing.T, s testutil.TestApp, rescoreProfile string) (ma
 	return got, page.Total
 }
 
-// mustRecordScore scores p's current content against profile.
+// mustRecordScore scores p's current content against profile, written as
+// the profile now.
 func mustRecordScore(t *testing.T, s testutil.TestApp, p posting.Posting, profile string) {
 	t.Helper()
-	result, err := s.Scores.Record(context.Background(), score.Provenance{Model: "model", ProfileSHA256: profile},
+	result, err := s.Scores.Record(context.Background(), score.Provenance{Model: "model", ProfileSHA256: testutil.MustWriteProfile(t, s, profile)},
 		[]score.Entry{{PostingID: p.ID, Score: 3, Reason: "fixture", ContentSHA256: p.ContentSHA256}})
 	if err != nil || len(result.Recorded) != 1 {
 		t.Fatalf("Record: result %+v, err %v", result, err)
@@ -192,16 +198,17 @@ func TestScoringService_Pending(t *testing.T) {
 	ingestIn(acme.ID, "2", "Changed", "Rewritten")
 
 	tests := []struct {
-		name           string
-		rescoreProfile string
-		want           map[int64]score.PendingReason
+		name    string
+		profile string
+		rescore bool
+		want    map[int64]score.PendingReason
 	}{
-		{"default: no score on the current content", "", map[int64]score.PendingReason{fresh.ID: score.PendingNew, changed.ID: score.PendingChanged, shown.ID: score.PendingNew}},
-		{"rescore against a new profile", "new profile", map[int64]score.PendingReason{fresh.ID: score.PendingNew, changed.ID: score.PendingChanged, current.ID: score.PendingRescore, shown.ID: score.PendingNew}},
-		{"rescore against the profile already used", "old profile", map[int64]score.PendingReason{fresh.ID: score.PendingNew, changed.ID: score.PendingChanged, shown.ID: score.PendingNew}},
+		{"default: no score on the current content", "old profile", false, map[int64]score.PendingReason{fresh.ID: score.PendingNew, changed.ID: score.PendingChanged, shown.ID: score.PendingNew}},
+		{"rescore against a new profile", "new profile", true, map[int64]score.PendingReason{fresh.ID: score.PendingNew, changed.ID: score.PendingChanged, current.ID: score.PendingRescore, shown.ID: score.PendingNew}},
+		{"rescore against the profile already used", "old profile", true, map[int64]score.PendingReason{fresh.ID: score.PendingNew, changed.ID: score.PendingChanged, shown.ID: score.PendingNew}},
 	}
 	for _, tt := range tests {
-		got, total := pendingReasons(t, s, tt.rescoreProfile)
+		got, total := pendingReasons(t, s, tt.profile, tt.rescore)
 		if diff := cmp.Diff(tt.want, got); diff != "" {
 			t.Errorf("%s: pending postings and why (-want +got):\n%s", tt.name, diff)
 		}
@@ -224,7 +231,7 @@ func TestScoringService_Pending_ARescoreResumes(t *testing.T) {
 
 	mustRecordScore(t, s, done, "new profile")
 
-	got, _ := pendingReasons(t, s, "new profile")
+	got, _ := pendingReasons(t, s, "new profile", true)
 	if diff := cmp.Diff(map[int64]score.PendingReason{left.ID: score.PendingRescore}, got); diff != "" {
 		t.Errorf("rescore pending (-want +got):\n%s", diff)
 	}
@@ -243,9 +250,10 @@ func TestScoringService_Pending_Pages(t *testing.T) {
 
 	var got [][]int64
 	var hasMore []bool
+	profile := testutil.MustWriteProfile(t, s, "# Me")
 	var before int64
 	for range 3 {
-		page, err := scoring.Pending(ctx, "", before, 2)
+		page, err := scoring.Pending(ctx, profile, false, before, 2)
 		if err != nil {
 			t.Fatalf("Pending: %v", err)
 		}
@@ -276,15 +284,17 @@ func TestScoringService_ForPosting_NewestFirstWithWhatProducedThem(t *testing.T)
 	acme := testutil.MustAddCompany(t, s, "Acme")
 	p := testutil.MustIngestPostingFor(t, s, acme.ID, "1", "Role")
 	other := testutil.MustIngestPostingFor(t, s, acme.ID, "2", "Other")
-	first := score.Provenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: "profile"}
-	second := score.Provenance{Model: "claude-opus-5-5", ClientName: "claude-code", ClientVersion: "2.4.1", ProfileSHA256: "edited profile"}
+	first := score.Provenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: document.ContentSHA256("# Me")}
+	second := score.Provenance{Model: "claude-opus-5-5", ClientName: "claude-code", ClientVersion: "2.4.1", ProfileSHA256: document.ContentSHA256("# Me, edited")}
 	for _, r := range []struct {
+		profile    string
 		provenance score.Provenance
 		entries    []score.Entry
 	}{
-		{first, []score.Entry{{PostingID: p.ID, Score: 2, Reason: "first look", ContentSHA256: p.ContentSHA256}, {PostingID: other.ID, Score: 1, Reason: "not this one", ContentSHA256: other.ContentSHA256}}},
-		{second, []score.Entry{{PostingID: p.ID, Score: 4, Reason: "after the edit", ContentSHA256: p.ContentSHA256}}},
+		{"# Me", first, []score.Entry{{PostingID: p.ID, Score: 2, Reason: "first look", ContentSHA256: p.ContentSHA256}, {PostingID: other.ID, Score: 1, Reason: "not this one", ContentSHA256: other.ContentSHA256}}},
+		{"# Me, edited", second, []score.Entry{{PostingID: p.ID, Score: 4, Reason: "after the edit", ContentSHA256: p.ContentSHA256}}},
 	} {
+		testutil.MustWriteProfile(t, s, r.profile)
 		if _, err := scoring.Record(ctx, r.provenance, r.entries); err != nil {
 			t.Fatalf("Record: %v", err)
 		}
@@ -320,7 +330,7 @@ func TestScoringService_GetMany_NamesEachScoresPostingLeavesOutMissing(t *testin
 	acme := testutil.MustAddCompany(t, s, "Acme")
 	p := testutil.MustIngestPostingFor(t, s, acme.ID, "1", "Role")
 	other := testutil.MustIngestPostingFor(t, s, acme.ID, "2", "Other")
-	provenance := score.Provenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: "profile"}
+	provenance := score.Provenance{Model: "claude-sonnet-5", ClientName: "claude-code", ClientVersion: "2.4.0", ProfileSHA256: testutil.MustWriteProfile(t, s, "# Me")}
 	if _, err := s.Scores.Record(ctx, provenance, []score.Entry{{PostingID: p.ID, Score: 2, Reason: "first look", ContentSHA256: p.ContentSHA256}, {PostingID: other.ID, Score: 1, Reason: "not this one", ContentSHA256: other.ContentSHA256}}); err != nil {
 		t.Fatalf("Record: %v", err)
 	}
@@ -346,5 +356,54 @@ func TestScoringService_GetMany_NamesEachScoresPostingLeavesOutMissing(t *testin
 	}
 	if diff := cmp.Diff(want, got, cmpopts.SortSlices(func(a, b score.Score) bool { return a.ID < b.ID })); diff != "" {
 		t.Errorf("GetMany (-want +got):\n%s", diff)
+	}
+}
+
+// A score names the profile it was judged against, which must be the
+// profile as it is now.
+func TestScoringService_Record_RefusesAProfileThatIsntTheCurrentOne(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	p := testutil.MustIngestPosting(t, s, "1", "Role")
+	entry := []score.Entry{{PostingID: p.ID, Score: 3, Reason: "ok", ContentSHA256: p.ContentSHA256}}
+	provenance := score.Provenance{Model: "claude-opus-5-5", ProfileSHA256: document.ContentSHA256("# Me")}
+
+	var missing *service.NoProfileError
+	if _, err := s.Scores.Record(ctx, provenance, entry); !errors.As(err, &missing) || missing.Path != s.Docs.ProfilePath() {
+		t.Errorf("Record with no profile: err %v, want a NoProfileError naming %s", err, s.Docs.ProfilePath())
+	}
+	testutil.MustWriteProfile(t, s, "# Me, edited since")
+	if _, err := s.Scores.Record(ctx, provenance, entry); !errors.Is(err, service.ErrProfileChanged) {
+		t.Errorf("Record with a stale profile: err %v, want ErrProfileChanged", err)
+	}
+	scores, err := s.Scores.ForPosting(ctx, p.ID)
+	if err != nil {
+		t.Fatalf("ForPosting: %v", err)
+	}
+	if len(scores) != 0 {
+		t.Errorf("stored %+v, want no scores", scores)
+	}
+}
+
+// Postings are listed for scoring against the profile as it is now.
+func TestScoringService_Pending_RefusesAProfileThatIsntTheCurrentOne(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	s := testutil.NewTestApp(t)
+	testutil.MustIngestPosting(t, s, "1", "Role")
+	profile := document.ContentSHA256("# Me")
+
+	for _, rescore := range []bool{false, true} {
+		var missing *service.NoProfileError
+		if _, err := s.Scores.Pending(ctx, profile, rescore, 0, 100); !errors.As(err, &missing) || missing.Path != s.Docs.ProfilePath() {
+			t.Errorf("rescore %t, no profile: err %v, want a NoProfileError naming %s", rescore, err, s.Docs.ProfilePath())
+		}
+	}
+	testutil.MustWriteProfile(t, s, "# Me, edited since")
+	for _, rescore := range []bool{false, true} {
+		if _, err := s.Scores.Pending(ctx, profile, rescore, 0, 100); !errors.Is(err, service.ErrProfileChanged) {
+			t.Errorf("rescore %t, stale profile: err %v, want ErrProfileChanged", rescore, err)
+		}
 	}
 }
