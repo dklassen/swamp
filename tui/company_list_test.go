@@ -23,7 +23,7 @@ import (
 // width by rows.
 func companyListOf(t *testing.T, companies []company.Company, openPostings map[int64]int, width, rows int) *companyListModel {
 	t.Helper()
-	m := newCompanyListModel(nil, nil)
+	m := newCompanyListModel(nil)
 	m.companiesRead(companiesReadOf(companies, openPostings))
 	m.resize(message.New(message.Source{}, message.Subject{}, message.OpNone, time.Now().UTC(),
 		message.Signal[message.ContentSize]{Value: message.ContentSize{Width: width, Rows: rows}}))
@@ -74,7 +74,7 @@ func TestCompanyListModel_Init_ReadsTheCompaniesAndTheirOpenPostings(t *testing.
 	globex := mustCreateCompany(t, s, "Globex", jobboard.Ashby, "globex")
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	mustUpsertPosting(t, s, acme.ID, "job-1", "Engineer")
-	m := newCompanyListModel(s.Companies, s.Postings)
+	m := newCompanyListModel(s.Companies)
 
 	msg := m.Init()()
 
@@ -306,7 +306,7 @@ func assertHandlersFailOnWrongMessage(t *testing.T, c model.Routable) {
 
 func TestCompanyListModel_Handlers_FailOnTheWrongMessage(t *testing.T) {
 	t.Parallel()
-	assertHandlersFailOnWrongMessage(t, newCompanyListModel(nil, nil))
+	assertHandlersFailOnWrongMessage(t, newCompanyListModel(nil))
 }
 
 func TestCompanyListModel_ClampCursor(t *testing.T) {
@@ -849,7 +849,7 @@ func TestCompanyListModel_View_InfoBoxIsAsWideAsTheTable(t *testing.T) {
 func TestCompanyListModel_ReloadsOnGainingFocus(t *testing.T) {
 	t.Parallel()
 
-	other := newCompanyListModel(nil, nil).Instance()
+	other := newCompanyListModel(nil).Instance()
 	tests := []struct {
 		name       string
 		before     func(m *companyListModel) message.ScreenInstance
@@ -865,7 +865,7 @@ func TestCompanyListModel_ReloadsOnGainingFocus(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			s := testutil.NewTestApp(t)
-			m := newCompanyListModel(s.Companies, s.Postings)
+			m := newCompanyListModel(s.Companies)
 			r := model.NewMsgRouter()
 			if err := r.Register(m); err != nil {
 				t.Fatalf("Register: %v", err)
@@ -906,7 +906,7 @@ func TestCompanyListModel_ReloadsAfterASync(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			s := testutil.NewTestApp(t)
-			m := newCompanyListModel(s.Companies, s.Postings)
+			m := newCompanyListModel(s.Companies)
 			r := model.NewMsgRouter()
 			if err := r.Register(m); err != nil {
 				t.Fatalf("Register: %v", err)
@@ -935,7 +935,7 @@ func TestCompanyListModel_TakesKeysOnlyWhileFocused(t *testing.T) {
 		wantCursor int
 	}{
 		{name: "the list in focus", focused: func(m *companyListModel) message.ScreenInstance { return m.Instance() }, wantCursor: 1},
-		{name: "another component in focus", focused: func(*companyListModel) message.ScreenInstance { return newCompanyListModel(nil, nil).Instance() }, wantCursor: 0},
+		{name: "another component in focus", focused: func(*companyListModel) message.ScreenInstance { return newCompanyListModel(nil).Instance() }, wantCursor: 0},
 		{name: "nothing in focus", focused: func(*companyListModel) message.ScreenInstance { return 0 }, wantCursor: 0},
 	}
 	for _, tt := range tests {
@@ -964,7 +964,7 @@ func TestCompanyListModel_PostingsChangedElsewhere_ReadsAgainOnceAtATime(t *test
 
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	m := newCompanyListModel(s.Companies, s.Postings)
+	m := newCompanyListModel(s.Companies)
 	r := model.NewMsgRouter()
 	if err := r.Register(m); err != nil {
 		t.Fatalf("Register: %v", err)
@@ -999,7 +999,7 @@ func TestCompanyListModel_AFailedRead_DoesntStopTheNext(t *testing.T) {
 
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	m := newCompanyListModel(s.Companies, s.Postings)
+	m := newCompanyListModel(s.Companies)
 	r := model.NewMsgRouter()
 	if err := r.Register(m); err != nil {
 		t.Fatalf("Register: %v", err)

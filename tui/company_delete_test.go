@@ -153,7 +153,7 @@ func TestCompanyListModel_DeleteConfirmation_Y_DeletesOnce(t *testing.T) {
 
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	m := newCompanyListModel(s.Companies, nil)
+	m := newCompanyListModel(s.Companies)
 	m.companiesRead(companiesReadOf([]company.Company{acme}, nil))
 	press(t, m, runeKey('d'))
 	from := message.Source{Instance: m.confirm.instance}

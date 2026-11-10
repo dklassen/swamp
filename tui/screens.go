@@ -77,7 +77,7 @@ func NewScreens(
 	return &Screens{
 		instance:              message.NewScreenInstance(),
 		activeApplicationList: newActiveApplicationListModel(applications, documentService, docs),
-		companyList:           newCompanyListModel(companies, postings),
+		companyList:           newCompanyListModel(companies),
 		allPostings:           newAllPostingsModel(postings),
 		companies:             companies,
 		postings:              postings,
