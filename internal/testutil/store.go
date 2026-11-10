@@ -81,7 +81,7 @@ func NewTestApp(t *testing.T) TestApp {
 		Store:        db,
 		Docs:         docs,
 		Companies:    service.NewCompanyService(db),
-		Postings:     service.NewPostingService(db),
+		Postings:     service.NewPostingService(db, nil, service.FormConfig{}),
 		Applications: service.NewApplicationService(db, docs),
 		Documents:    service.NewDocumentService(db, docs),
 		Scores:       service.NewScoringService(db),

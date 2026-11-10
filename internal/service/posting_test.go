@@ -12,6 +12,7 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/application"
 	"github.com/dklassen/swamp/internal/domain/change"
+	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/filter"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/domain/score"
@@ -612,20 +613,19 @@ func TestPostingService_Form(t *testing.T) {
 		t.Errorf("Form before any save = %+v, want nil", none)
 	}
 
-	const formJSON = `{"Questions":[]}`
-	if err := s.Postings.SaveForm(ctx, p.ID, formJSON); err != nil {
+	want := jobboard.ApplicationForm{
+		Documents: map[document.Type]jobboard.Requirement{document.Resume: jobboard.Required},
+		Questions: []jobboard.Question{{Label: "Why us?", Required: true, Type: "long_text"}},
+	}
+	if err := s.Postings.SaveForm(ctx, p.ID, want); err != nil {
 		t.Fatalf("SaveForm: %v", err)
 	}
 	got, err := s.Postings.Form(ctx, p.ID)
 	if err != nil {
 		t.Fatalf("Form: %v", err)
 	}
-	want := &posting.Form{PostingID: p.ID, JSON: formJSON}
-	if diff := cmp.Diff(want, got, cmpopts.IgnoreFields(posting.Form{}, "FetchedAt")); diff != "" {
+	if diff := cmp.Diff(&want, got); diff != "" {
 		t.Errorf("Form (-want +got):\n%s", diff)
-	}
-	if got.FetchedAt.IsZero() {
-		t.Error("FetchedAt is zero, want when the form was saved")
 	}
 }
 

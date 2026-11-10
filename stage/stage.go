@@ -205,8 +205,7 @@ type postingService interface {
 	Interested(ctx context.Context) ([]posting.Interested, error)
 	CountOpenByCompany(ctx context.Context) (map[int64]int, error)
 	Markup(ctx context.Context, postingID int64) (*posting.Markup, error)
-	Form(ctx context.Context, postingID int64) (*posting.Form, error)
-	SaveForm(ctx context.Context, postingID int64, formJSON string) error
+	CurrentForm(ctx context.Context, p posting.Posting, c company.Company) (*service.FormRead, error)
 	Application(ctx context.Context, postingID int64) (*application.Application, error)
 	ApplyTo(ctx context.Context, postingID int64) (*application.Application, error)
 }
@@ -236,31 +235,17 @@ type Stage struct {
 	docs         documentService
 	scores       scoringService
 	documents    *documents.Store
-	// forms reads application forms, by company source (#168).
-	forms        map[string]FormFetcher
-	fetchTimeout time.Duration
-	// now is the clock deciding whether a stored form is stale; tests
-	// move it forward.
-	now func() time.Time
 }
 
-// Option configures a Stage.
-type Option func(*Stage)
-
-func New(companies companyService, postings postingService, applications applicationService, docs documentService, scores scoringService, d *documents.Store, opts ...Option) *Stage {
-	st := &Stage{
+func New(companies companyService, postings postingService, applications applicationService, docs documentService, scores scoringService, d *documents.Store) *Stage {
+	return &Stage{
 		companies:    companies,
 		postings:     postings,
 		applications: applications,
 		docs:         docs,
 		scores:       scores,
 		documents:    d,
-		now:          time.Now,
 	}
-	for _, opt := range opts {
-		opt(st)
-	}
-	return st
 }
 
 // List returns the postings an agent can draft for: interested,
@@ -392,9 +377,9 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 	}
 	status := st.documents.Status(app.ID)
 
-	form, formErr, err := st.applicationForm(ctx, *posting, *company)
+	form, err := st.postings.CurrentForm(ctx, *posting, *company)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("stage: application form: %w", err)
 	}
 
 	reviews, err := st.docs.LatestReviews(ctx, app.ID)
@@ -425,8 +410,8 @@ func (st *Stage) Prepare(ctx context.Context, postingID int64) (*Prepared, error
 		Documents:            preparedDocuments,
 		ApplicationNotes:     app.Notes,
 		LatestReviews:        latestReviewsForJSON(reviews),
-		ApplicationForm:      form,
-		ApplicationFormError: formErr,
+		ApplicationForm:      form.Form,
+		ApplicationFormError: form.FetchError,
 	}, nil
 }
 

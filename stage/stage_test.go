@@ -30,9 +30,9 @@ func newTestStage(t *testing.T) (*Stage, testutil.TestApp, *documents.Store) {
 	return stageOn(s, d), s, d
 }
 
-// stageOn is a Stage on s's services and d, configured by opts.
-func stageOn(s testutil.TestApp, d *documents.Store, opts ...Option) *Stage {
-	return New(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, d, opts...)
+// stageOn is a Stage on s's services and d.
+func stageOn(s testutil.TestApp, d *documents.Store) *Stage {
+	return New(s.Companies, s.Postings, s.Applications, s.Documents, s.Scores, d)
 }
 
 func mustCreateCompany(t *testing.T, s testutil.TestApp, name string) company.Company {

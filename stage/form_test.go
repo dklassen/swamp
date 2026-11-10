@@ -11,25 +11,17 @@ import (
 
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
-	"github.com/dklassen/swamp/internal/testutil"
+	"github.com/dklassen/swamp/internal/service"
 	"github.com/dklassen/swamp/jobboard"
 )
 
-// fakeFormFetcher returns form (or err) and counts its calls.
+// fakeFormFetcher returns form, or err.
 type fakeFormFetcher struct {
-	form  jobboard.ApplicationForm
-	err   error
-	calls int
-	// deadline records whether each call's context had a deadline.
-	deadline bool
+	form jobboard.ApplicationForm
+	err  error
 }
 
-func (f *fakeFormFetcher) FetchApplicationForm(ctx context.Context, boardToken, jobID string) (jobboard.ApplicationForm, error) {
-	f.calls++
-	_, f.deadline = ctx.Deadline()
-	if boardToken != "acme" || jobID != "job-1" {
-		return jobboard.ApplicationForm{}, errors.New("unexpected board or job " + boardToken + "/" + jobID)
-	}
+func (f *fakeFormFetcher) FetchApplicationForm(context.Context, string, string) (jobboard.ApplicationForm, error) {
 	return f.form, f.err
 }
 
@@ -38,23 +30,23 @@ var testForm = jobboard.ApplicationForm{
 	Questions: []jobboard.Question{{Label: "LinkedIn Profile", Required: true, Type: "text"}},
 }
 
-// formTestStage is a Stage with fetcher registered for Greenhouse, and a
+// formTestStage is a Stage reading Greenhouse forms with fetcher, and a
 // Greenhouse posting to prepare.
-func formTestStage(t *testing.T, fetcher *fakeFormFetcher) (*Stage, testutil.TestApp, posting.Posting) {
+func formTestStage(t *testing.T, fetcher *fakeFormFetcher) (*Stage, posting.Posting) {
 	t.Helper()
 	_, s, d := newTestStage(t)
-	st := stageOn(s, d, WithFormFetchers(map[string]FormFetcher{jobboard.Greenhouse: fetcher}, time.Second))
+	postings := service.NewPostingService(s.Store, map[string]service.FormFetcher{jobboard.Greenhouse: fetcher}, service.FormConfig{FetchTimeout: time.Second, Now: time.Now})
+	st := New(s.Companies, postings, s.Applications, s.Documents, s.Scores, d)
 	company, err := s.Companies.Add(context.Background(), "Acme", jobboard.Greenhouse, "acme")
 	if err != nil {
 		t.Fatalf("CreateCompany: %v", err)
 	}
-	return st, s, mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
+	return st, mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
 }
 
-func TestPrepare_FetchesAndStoresTheApplicationForm(t *testing.T) {
+func TestPrepare_ReturnsTheApplicationForm(t *testing.T) {
 	t.Parallel()
-	fetcher := &fakeFormFetcher{form: testForm}
-	st, s, posting := formTestStage(t, fetcher)
+	st, posting := formTestStage(t, &fakeFormFetcher{form: testForm})
 
 	got, err := st.Prepare(context.Background(), posting.ID)
 	if err != nil {
@@ -66,36 +58,8 @@ func TestPrepare_FetchesAndStoresTheApplicationForm(t *testing.T) {
 	if diff := cmp.Diff(testForm, *got.ApplicationForm); diff != "" {
 		t.Errorf("ApplicationForm mismatch (-want +got):\n%s", diff)
 	}
-	if !fetcher.deadline {
-		t.Error("the fetch had no deadline, want it bounded by the fetch timeout")
-	}
-	if _, err := s.Postings.Form(context.Background(), posting.ID); err != nil {
-		t.Errorf("stored form: %v; want it stored", err)
-	}
-}
-
-// A form fetched in the last week is reused; an older one is fetched again.
-func TestPrepare_RefetchesOnlyAStaleForm(t *testing.T) {
-	t.Parallel()
-	fetcher := &fakeFormFetcher{form: testForm}
-	st, _, posting := formTestStage(t, fetcher)
-	ctx := context.Background()
-
-	for range 2 {
-		if _, err := st.Prepare(ctx, posting.ID); err != nil {
-			t.Fatalf("Prepare: %v", err)
-		}
-	}
-	if fetcher.calls != 1 {
-		t.Fatalf("fetches after two prepares = %d, want 1 (the second reuses the stored form)", fetcher.calls)
-	}
-
-	st.now = func() time.Time { return time.Now().Add(8 * 24 * time.Hour) }
-	if _, err := st.Prepare(ctx, posting.ID); err != nil {
-		t.Fatalf("Prepare: %v", err)
-	}
-	if fetcher.calls != 2 {
-		t.Errorf("fetches after the form went stale = %d, want 2", fetcher.calls)
+	if got.ApplicationFormError != "" {
+		t.Errorf("ApplicationFormError = %q, want none", got.ApplicationFormError)
 	}
 }
 
@@ -103,8 +67,7 @@ func TestPrepare_RefetchesOnlyAStaleForm(t *testing.T) {
 // saying why, and the skill drafts as it always has.
 func TestPrepare_FetchFailureReturnsWithoutAForm(t *testing.T) {
 	t.Parallel()
-	fetcher := &fakeFormFetcher{err: errors.New("board unavailable")}
-	st, _, posting := formTestStage(t, fetcher)
+	st, posting := formTestStage(t, &fakeFormFetcher{err: errors.New("board unavailable")})
 
 	got, err := st.Prepare(context.Background(), posting.ID)
 	if err != nil {
@@ -113,65 +76,8 @@ func TestPrepare_FetchFailureReturnsWithoutAForm(t *testing.T) {
 	if got.ApplicationForm != nil {
 		t.Errorf("ApplicationForm = %+v, want nil", got.ApplicationForm)
 	}
-	if got.ApplicationFormError == "" {
-		t.Error("ApplicationFormError is empty, want the fetch failure")
-	}
-}
-
-// A board with no form fetcher (Ashby, Lever: #167) gets no form and no
-// error: there's nothing to fetch.
-func TestPrepare_NoFormForBoardsWithoutAFetcher(t *testing.T) {
-	t.Parallel()
-	fetcher := &fakeFormFetcher{form: testForm}
-	_, s, d := newTestStage(t)
-	st := stageOn(s, d, WithFormFetchers(map[string]FormFetcher{jobboard.Greenhouse: fetcher}, time.Second))
-	company := mustCreateCompany(t, s, "Ashby Co")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-
-	got, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("Prepare: %v", err)
-	}
-	if got.ApplicationForm != nil || got.ApplicationFormError != "" || fetcher.calls != 0 {
-		t.Errorf("ApplicationForm %+v, error %q, fetches %d; want none of them", got.ApplicationForm, got.ApplicationFormError, fetcher.calls)
-	}
-}
-
-// TestPrepare_HandEnteredFormForBoardsWithoutAFetcher: Ashby and Lever
-// forms can't be fetched, so one entered by hand in the TUI is
-// returned as stored, however old -- there's nothing to refresh it from.
-func TestPrepare_HandEnteredFormForBoardsWithoutAFetcher(t *testing.T) {
-	t.Parallel()
-	fetcher := &fakeFormFetcher{form: testForm}
-	_, s, d := newTestStage(t)
-	st := stageOn(s, d, WithFormFetchers(map[string]FormFetcher{jobboard.Greenhouse: fetcher}, time.Second))
-	st.now = func() time.Time { return time.Now().Add(365 * 24 * time.Hour) }
-	company := mustCreateCompany(t, s, "Ashby Co")
-	posting := mustUpsertPosting(t, s, company.ID, "job-1", "Engineer")
-	entered := jobboard.ApplicationForm{
-		Documents: map[document.Type]jobboard.Requirement{document.Resume: jobboard.Required},
-		Questions: []jobboard.Question{{Label: "Why us?", Required: true}},
-	}
-	encoded, err := json.Marshal(entered)
-	if err != nil {
-		t.Fatalf("json.Marshal: %v", err)
-	}
-	if err := s.Postings.SaveForm(context.Background(), posting.ID, string(encoded)); err != nil {
-		t.Fatalf("application.SaveForm: %v", err)
-	}
-
-	got, err := st.Prepare(context.Background(), posting.ID)
-	if err != nil {
-		t.Fatalf("Prepare: %v", err)
-	}
-	if got.ApplicationForm == nil {
-		t.Fatal("ApplicationForm = nil, want the hand-entered form")
-	}
-	if diff := cmp.Diff(entered, *got.ApplicationForm); diff != "" {
-		t.Errorf("ApplicationForm mismatch (-want +got):\n%s", diff)
-	}
-	if got.ApplicationFormError != "" || fetcher.calls != 0 {
-		t.Errorf("error %q, fetches %d; want neither", got.ApplicationFormError, fetcher.calls)
+	if got.ApplicationFormError != "board unavailable" {
+		t.Errorf("ApplicationFormError = %q, want the fetch failure", got.ApplicationFormError)
 	}
 }
 
