@@ -69,14 +69,6 @@ type markupWriter interface {
 	SetNotes(ctx context.Context, r store.Runner, postingID int64, notes string) (*posting.Markup, error)
 }
 
-type formViewer interface {
-	Get(ctx context.Context, r store.Runner, postingID int64) (*posting.Form, error)
-}
-
-type formWriter interface {
-	Save(ctx context.Context, r store.Runner, postingID int64, formJSON string) error
-}
-
 type postingApplicationViewer interface {
 	GetByPostingID(ctx context.Context, r store.Runner, postingID int64) (*application.Application, error)
 }
@@ -348,14 +340,6 @@ func (service *PostingService) Form(ctx context.Context, postingID int64) (*jobb
 		return nil, err
 	}
 	return decodeForm(stored)
-}
-
-func decodeForm(stored *posting.Form) (*jobboard.ApplicationForm, error) {
-	var form jobboard.ApplicationForm
-	if err := json.Unmarshal([]byte(stored.JSON), &form); err != nil {
-		return nil, fmt.Errorf("decode stored application form: %w", err)
-	}
-	return &form, nil
 }
 
 // ApplyTo starts an application for a posting and records its
