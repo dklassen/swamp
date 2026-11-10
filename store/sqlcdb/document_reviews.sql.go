@@ -205,3 +205,56 @@ func (q *Queries) ListLatestDocumentReviews(ctx context.Context, applicationID i
 	}
 	return items, nil
 }
+
+const listLatestDocumentReviewsForApplications = `-- name: ListLatestDocumentReviewsForApplications :many
+SELECT id, application_id, document_type, cycle, content_snapshot, content_sha256, outcome, notes, created_at FROM document_reviews
+WHERE document_reviews.application_id IN (/*SLICE:application_ids*/?)
+  AND cycle = (
+    SELECT MAX(latest.cycle) FROM document_reviews AS latest
+    WHERE latest.application_id = document_reviews.application_id
+      AND latest.document_type = document_reviews.document_type
+  )
+`
+
+func (q *Queries) ListLatestDocumentReviewsForApplications(ctx context.Context, applicationIds []int64) ([]DocumentReview, error) {
+	query := listLatestDocumentReviewsForApplications
+	var queryParams []interface{}
+	if len(applicationIds) > 0 {
+		for _, v := range applicationIds {
+			queryParams = append(queryParams, v)
+		}
+		query = strings.Replace(query, "/*SLICE:application_ids*/?", strings.Repeat(",?", len(applicationIds))[1:], 1)
+	} else {
+		query = strings.Replace(query, "/*SLICE:application_ids*/?", "NULL", 1)
+	}
+	rows, err := q.db.QueryContext(ctx, query, queryParams...)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []DocumentReview
+	for rows.Next() {
+		var i DocumentReview
+		if err := rows.Scan(
+			&i.ID,
+			&i.ApplicationID,
+			&i.DocumentType,
+			&i.Cycle,
+			&i.ContentSnapshot,
+			&i.ContentSha256,
+			&i.Outcome,
+			&i.Notes,
+			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}

@@ -95,8 +95,7 @@ ORDER BY location;
 -- company's posting list shows (open, company not deleted, let through by
 -- its filters, matched as the SearchPostings queries match them), joined with
 -- their company name and -- if one has been started -- their
--- application's id and status. Feeds the stage package's discovery of
--- work for the external-agent hand-off mechanism (see stage.List).
+-- application's id and status. Feeds DraftingService.Queue.
 --
 -- sqlc.embed(postings) for the always-present side (postings is inner-
 -- joined via posting_markup, never nullable here) -- same reasoning as

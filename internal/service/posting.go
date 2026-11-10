@@ -29,7 +29,6 @@ type postingViewer interface {
 	GetWithCompany(ctx context.Context, r store.Runner, id int64) (*posting.Posting, *company.Company, error)
 	GetMany(ctx context.Context, r store.Runner, ids []int64) ([]posting.Posting, error)
 	GetBySource(ctx context.Context, r store.Runner, source, sourceID string) (*posting.Posting, error)
-	ListInterested(ctx context.Context, r store.Runner, excluding []application.Status) ([]posting.Interested, error)
 	ListByCompany(ctx context.Context, r store.Runner, companyID int64) ([]posting.Posting, error)
 }
 
@@ -257,12 +256,6 @@ func (service *PostingService) ListByCompany(ctx context.Context, companyID int6
 // alone. No IDs is a no-op.
 func (service *PostingService) MarkSeen(ctx context.Context, ids []int64) error {
 	return service.postingWriter.MarkSeen(ctx, service.db, ids)
-}
-
-// Interested returns the postings the user is interested in and hasn't
-// archived, leaving out those whose application is at a dead end.
-func (service *PostingService) Interested(ctx context.Context) ([]posting.Interested, error) {
-	return service.postingViewer.ListInterested(ctx, service.db, application.Terminal())
 }
 
 // Application returns the posting's live application, or

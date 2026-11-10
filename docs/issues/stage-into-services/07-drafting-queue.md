@@ -31,7 +31,7 @@ That's business logic spread over three services, and it costs queries:
 
 ## Acceptance criteria
 
-- [ ] Service tests, one behaviour at a time, moved from `stage/stage_test.go`'s `List` tests: interested shown; archived left out; started-not-interested shown after interested; terminal left out; fully drafted and unflagged left out; fully drafted with a current flagged review shown; a flag on an earlier draft doesn't count.
-- [ ] No service call per queue entry in the service or in `stage`.
-- [ ] `list_postings`' JSON in `mcpserver_test.go` unchanged.
-- [ ] Verification checklist clean.
+- [x] Service tests, one behaviour at a time, moved from `stage/stage_test.go`'s `List` tests: interested shown; archived left out; started-not-interested shown after interested; terminal left out; fully drafted and unflagged left out; fully drafted with a current flagged review shown; a flag on an earlier draft doesn't count.
+- [x] No service call per queue entry in the service or in `stage`.
+- [x] `list_postings`' JSON in `mcpserver_test.go` unchanged.
+- [x] Verification checklist clean.
