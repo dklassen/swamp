@@ -14,9 +14,9 @@
 | 8 | [Companies with their open counts are CompanyService's](08-companies-with-open-counts.md) | - | #493 | merged | none |
 | 9 | [Scoring checks the profile; canonical files come from DocumentService](09-profile-and-canonical-files.md) | - | #497 | merged | 2 |
 | 10 | [What's left of stage moves under mcpserver](10-stage-into-mcpserver.md) | - | #498 | merged | 1-9 |
-| 11 | [Application forms have their own FormService](11-form-service.md) | - | #500 | in review | 6 |
+| 11 | [Application forms have their own FormService](11-form-service.md) | - | #500 | merged | 6 |
 | 12 | [The latest review of each document type is a repository read](12-latest-reviews.md) | - | #492 | merged | none |
-| 13 | [Syncing a company fetches the forms its open postings lack](13-form-job.md) | - | - | planned | 11 |
+| 13 | [Syncing a company fetches the forms its open postings lack](13-form-job.md) | - | #501 | in review | 11 |
 | 14 | [Starting to draft reads the stored form](14-drafting-reads-forms.md) | - | - | planned | 13 |
 
 ## Next
@@ -56,6 +56,8 @@
 - Application forms are their own concern, not drafting's (Bob, 2026-11-10): one job downloads postings, one downloads and stores the forms a board has, and a form can be made by hand and linked to a posting. So they get a `FormService` holding storing, reading and fetching (step 11 starts it), and drafting only reads the stored form (step 14).
 - Sync fetches forms, not drafting (Bob, 2026-11-10, step 13): each company sync, once its postings are written, fetches the form of each open posting that has none. That one rule covers new postings, retries a failed fetch on the next sync, and backfills postings stored before step 13 in a one-off burst.
 - Form fetches run after the lease is released, up to 4 at a time (Bob, 2026-11-10, step 13): the largest Greenhouse company has hundreds of open postings, each form its own request under a 30-second timeout, which can't fit in the 5-minute lease. Two syncs of a company may then fetch the same form; the job's write stores only where none exists, so the cost is a wasted request, not a lost form.
+- Step 13 reports form fetches as counts only, `FormsFetched` and `FormsFailed` (Bob, 2026-11-10): a failed one is retried next sync, so how many failed is what tells whether something's wrong.
+- Step 13: a failed board fetch of a form is counted, but a failed database write of one is returned as the sync's error, since the board isn't at fault. The fetches' bound is a channel of slots and a `sync.WaitGroup`, not `errgroup`, which is only an indirect dependency.
 - A stored form isn't refetched when sync reports its posting updated (Bob, 2026-11-10), keeping step 4's rule and a form saved by hand.
 
 ## Open

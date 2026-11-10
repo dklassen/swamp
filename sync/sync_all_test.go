@@ -29,7 +29,7 @@ func TestSyncAll_OneCompanyFailsFetch_OthersStillProcessed(t *testing.T) {
 		},
 	}
 
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, s.Forms, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 	results, err := syncer.SyncAll(ctx)
 	if err != nil {
 		t.Fatalf("SyncAll: %v", err)
@@ -69,7 +69,7 @@ func TestSyncResults_CarryCompanyName(t *testing.T) {
 		postings:  map[string][]jobboard.Posting{"acme": {samplePosting("job-1", "Engineer", "Engineering", "Remote")}},
 		errBoards: map[string]error{"globex": errors.New("connection refused")},
 	}
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, s.Forms, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
 	one, err := syncer.SyncCompany(ctx, acme.ID)
 	if err != nil {

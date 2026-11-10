@@ -240,7 +240,7 @@ func TestCompanyFormModel_Enter_BoardRejectsSourceRef_NoCompanyCreated(t *testin
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	syncer := sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{
+	syncer := sync.New(s.Companies, s.Postings, s.Forms, map[string]sync.PostingFetcher{
 		jobboard.Ashby: &fakeFetcher{errBoards: map[string]error{"acmee": errors.New("404 not found")}},
 	}, sync.DefaultConfig())
 	m := newCompanyFormModel(syncer)
@@ -276,7 +276,7 @@ func newFormTestSyncer(s testutil.TestApp) *sync.Syncer {
 	for _, src := range companySources {
 		fetchers[src] = &fakeFetcher{}
 	}
-	return sync.New(s.Companies, s.Postings, fetchers, sync.DefaultConfig())
+	return sync.New(s.Companies, s.Postings, s.Forms, fetchers, sync.DefaultConfig())
 }
 
 func TestCompanyFormModel_WhileBoardCheckInFlight(t *testing.T) {

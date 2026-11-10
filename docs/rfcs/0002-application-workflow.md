@@ -130,13 +130,14 @@ The final scope depends on what phase 0 finds. The expected projects are:
 ### Phase 2: Match what each form asks for (M)
 
 1. **Store each posting's application requirements (Greenhouse).**
-   - **What:** when you commit to a posting (`stage_prepare`), fetch its form and store:
+   - **What:** store each open posting's form:
      - whether the resume and cover letter are required, optional or absent;
      - the custom questions (label, required, field type, options).
 
      `stage_prepare` returns these, and the skill drafts only what's needed.
 
-   - **Why at commit time:** one extra request per posting you apply to, instead of one for every posting on every sync.
+   - **When:** each company sync, once its postings are written and its lease released, fetches the form of each open posting that has none, four at a time. A failed fetch is counted in the sync's result and tried again next sync. A stored form, fetched or saved by hand, is never replaced by a fetch, and `stage_prepare` fetches one still missing.
+   - **Why at sync, not commit time:** Swamp knows what a posting asks for before you commit to it. It's one request per posting, not one per posting per sync, since only a posting without a form is fetched; the board's postings list doesn't carry the questions. Outside the lease, because a large board's first sync is hundreds of requests.
 2. **"Answers" document type.**
    - **What:** `answers.md`, next to the cover letter and resume, with one section per question. It gets the same read/write tools, review loop and staleness check.
 3. **Reusable standard answers.**
@@ -197,7 +198,7 @@ Order of operations for the projects above. Each task is **one branch / issue / 
 
 **D1 — `documents` type-dispatch refactor (RFC 0004).** `documents` gains the type→document accessor (and, per RFC 0004, the single `CurrentReviews` owner); optionally co-land its small siblings (RFC 0003's option-3 contract test, RFC 0005's presence method). *Why first:* it is the change that makes adding a third document type (D3) cheap — doing D3 without it touches six dispatch sites by hand. Deps: none. **Strongly recommended before D3.** **M**.
 
-**D2 — Greenhouse application requirements (phase 2.1, the keystone).** Add the Greenhouse job-detail call with `?questions=true` (the client today only does `/jobs?content=true`, `greenhouse/client.go:87`), parse it, and at `stage_prepare` time store whether the cover letter/resume is required, optional, or absent plus the custom questions (label, required, field type, options); `stage_prepare` returns them so the skill drafts only what's needed. *Done:* committing to a Greenhouse posting stores its requirements + questions and the skill reads them back to draft only what is asked. Deps: A2 (it decides the API-vs-manual-entry shape). **M**.
+**D2 — Greenhouse application requirements (phase 2.1, the keystone).** Add the Greenhouse job-detail call with `?questions=true` (the client today only does `/jobs?content=true`, `greenhouse/client.go:87`), parse it, and store whether the cover letter/resume is required, optional, or absent plus the custom questions (label, required, field type, options), fetched by each sync for open postings without a form (phase 2 item 1); `stage_prepare` returns them so the skill drafts only what's needed. *Done:* committing to a Greenhouse posting stores its requirements + questions and the skill reads them back to draft only what is asked. Deps: A2 (it decides the API-vs-manual-entry shape). **M**.
 
 **D3 — `answers.md` document type (phase 2.2).** A third document type beside the cover letter and resume, one section per question, with the same read/write tools, the same review loop (passed/flagged), and the same staleness check. *Done:* the answers document round-trips — written, reviewed, and re-checked for staleness when its content changes. Deps: D1 (strongly recommended), D2 (for the question set to draft against). **M**.
 

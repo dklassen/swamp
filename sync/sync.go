@@ -46,7 +46,11 @@ type Result struct {
 	Updated  int
 	Closed   int
 	Reopened int
-	Err      error
+	// FormsFetched and FormsFailed count the application forms fetched
+	// for open postings that had none; a failed one is tried again next sync.
+	FormsFetched int
+	FormsFailed  int
+	Err          error
 }
 
 // ErrSyncInProgress is SyncCompany's error when another sync of the same
@@ -93,11 +97,17 @@ type postingService interface {
 	Reopen(ctx context.Context, postingID int64) error
 }
 
+// formService fetches the application forms a company's open postings lack.
+type formService interface {
+	FetchMissing(ctx context.Context, c company.Company) (*service.FormFetch, error)
+}
+
 // Syncer routes each company to the PostingFetcher for its source
 // (company.Source, e.g. jobboard.Ashby or jobboard.Greenhouse) -- see SyncCompany.
 type Syncer struct {
 	companies companyService
 	postings  postingService
+	forms     formService
 	fetchers  map[string]PostingFetcher
 	cfg       Config
 
@@ -111,11 +121,11 @@ type Syncer struct {
 // New returns a Syncer. A zero cfg.LeaseTimeout takes DefaultConfig's:
 // unlike a zero FetchTimeout, which fails every fetch loudly, a zero lease
 // timeout would silently let a second sync take over a live one's lease.
-func New(companies companyService, postings postingService, fetchers map[string]PostingFetcher, cfg Config) *Syncer {
+func New(companies companyService, postings postingService, forms formService, fetchers map[string]PostingFetcher, cfg Config) *Syncer {
 	if cfg.LeaseTimeout <= 0 {
 		cfg.LeaseTimeout = DefaultConfig().LeaseTimeout
 	}
-	return &Syncer{companies: companies, postings: postings, fetchers: fetchers, cfg: cfg}
+	return &Syncer{companies: companies, postings: postings, forms: forms, fetchers: fetchers, cfg: cfg}
 }
 
 // fetch is the one place Syncer calls a board: it gives up after

@@ -94,7 +94,21 @@ func TestSyncing_RefreshReportingBack_StopsTheSpinnerAndSaysHowItWent(t *testing
 		{
 			name:       "synced",
 			outcome:    func(m *model.Syncing) tea.Msg { return synced(m, 0, acmeAndGlobex[0], 0) },
-			wantStatus: []string{"Acme: fetched 0, created 0, updated 0, closed 0, reopened 0"},
+			wantStatus: []string{"Acme: fetched 0, created 0, updated 0, closed 0, reopened 0, forms 0"},
+		},
+		{
+			name: "synced, fetching forms",
+			outcome: func(m *model.Syncing) tea.Msg {
+				return reported(m, acmeAndGlobex[0], message.SyncReport{Fetched: 4, Created: 3, FormsFetched: 3})
+			},
+			wantStatus: []string{"Acme: fetched 4, created 3, updated 0, closed 0, reopened 0, forms 3"},
+		},
+		{
+			name: "synced, some forms failing",
+			outcome: func(m *model.Syncing) tea.Msg {
+				return reported(m, acmeAndGlobex[0], message.SyncReport{Fetched: 4, Created: 3, FormsFetched: 1, FormsFailed: 2})
+			},
+			wantStatus: []string{"Acme: fetched 4, created 3, updated 0, closed 0, reopened 0, forms 1 (2 failed)"},
 		},
 		{
 			name:       "syncing elsewhere",
@@ -183,6 +197,12 @@ func messagesOf(cmd tea.Cmd) []tea.Msg {
 func synced(m *model.Syncing, runID int, c message.Company, code message.ErrorCode) tea.Msg {
 	return message.New(message.Source{Instance: m.Instance()}, message.Subject{Type: message.TypeCompany, ID: c.ID}, message.OpNone, time.Now().UTC(),
 		message.Ran[message.SyncReport]{Value: message.SyncReport{RunID: runID, Code: code}})
+}
+
+// reported is c's refresh, from m, reporting report.
+func reported(m *model.Syncing, c message.Company, report message.SyncReport) tea.Msg {
+	return message.New(message.Source{Instance: m.Instance()}, message.Subject{Type: message.TypeCompany, ID: c.ID}, message.OpNone, time.Now().UTC(),
+		message.Ran[message.SyncReport]{Value: report})
 }
 
 // The summary is the line `swamp fetch` prints, and the report has the

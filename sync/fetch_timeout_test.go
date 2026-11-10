@@ -58,7 +58,7 @@ func TestSyncer_FetchesTimeOut(t *testing.T) {
 
 			s := testutil.NewTestApp(t)
 			acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-			syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: hangingFetcher{}}, Config{FetchTimeout: timeout})
+			syncer := New(s.Companies, s.Postings, s.Forms, map[string]PostingFetcher{jobboard.Ashby: hangingFetcher{}}, Config{FetchTimeout: timeout})
 
 			start := time.Now()
 			err := tt.fetch(context.Background(), syncer, acme.ID)
@@ -84,7 +84,7 @@ func TestSyncAll_HungBoardFailsOnlyItsOwnCompany(t *testing.T) {
 	s := testutil.NewTestApp(t)
 	hung := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
 	healthy := mustCreateCompany(t, s, "Globex", jobboard.Lever, "globex")
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{
+	syncer := New(s.Companies, s.Postings, s.Forms, map[string]PostingFetcher{
 		jobboard.Ashby: hangingFetcher{},
 		jobboard.Lever: &fakeFetcher{postings: map[string][]jobboard.Posting{
 			"globex": {samplePosting("job-1", "Engineer", "Engineering", "Remote")},
@@ -136,7 +136,7 @@ func TestSyncCompany_CancelledAfterFetch_WritesComplete(t *testing.T) {
 		samplePosting("job-1", "Engineer", "Engineering", "Remote"),
 		samplePosting("job-2", "Designer", "Design", "Remote"),
 	}}
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, s.Forms, map[string]PostingFetcher{jobboard.Ashby: fetcher}, DefaultConfig())
 
 	result, err := syncer.SyncCompany(ctx, acme.ID)
 	if err != nil {
@@ -161,7 +161,7 @@ func TestSyncCompany_CancelledDuringFetch_AbortsWithoutWriting(t *testing.T) {
 	t.Parallel()
 	s := testutil.NewTestApp(t)
 	acme := mustCreateCompany(t, s, "Acme", jobboard.Ashby, "acme")
-	syncer := New(s.Companies, s.Postings, map[string]PostingFetcher{jobboard.Ashby: hangingFetcher{}}, DefaultConfig())
+	syncer := New(s.Companies, s.Postings, s.Forms, map[string]PostingFetcher{jobboard.Ashby: hangingFetcher{}}, DefaultConfig())
 
 	ctx, cancel := context.WithCancel(context.Background())
 	time.AfterFunc(20*time.Millisecond, cancel)

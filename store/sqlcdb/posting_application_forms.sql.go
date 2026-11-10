@@ -21,6 +21,76 @@ func (q *Queries) GetPostingApplicationForm(ctx context.Context, postingID int64
 	return i, err
 }
 
+const insertPostingApplicationForm = `-- name: InsertPostingApplicationForm :exec
+INSERT INTO posting_application_forms (posting_id, form)
+VALUES (?, ?)
+ON CONFLICT (posting_id) DO NOTHING
+`
+
+type InsertPostingApplicationFormParams struct {
+	PostingID int64  `json:"posting_id"`
+	Form      string `json:"form"`
+}
+
+// Leaves a stored form in place.
+func (q *Queries) InsertPostingApplicationForm(ctx context.Context, arg InsertPostingApplicationFormParams) error {
+	_, err := q.db.ExecContext(ctx, insertPostingApplicationForm, arg.PostingID, arg.Form)
+	return err
+}
+
+const listOpenPostingsWithoutForm = `-- name: ListOpenPostingsWithoutForm :many
+SELECT id, company_id, source, source_id, title, department, team, location, employment_type, workplace_type, description_html, description_text, job_url, application_url, published_at, raw_payload, listing_status, first_seen_at, last_seen_at, created_at, updated_at, content_sha256 FROM postings
+WHERE company_id = ? AND listing_status = 'open'
+  AND NOT EXISTS (SELECT 1 FROM posting_application_forms WHERE posting_application_forms.posting_id = postings.id)
+ORDER BY id
+`
+
+func (q *Queries) ListOpenPostingsWithoutForm(ctx context.Context, companyID int64) ([]Posting, error) {
+	rows, err := q.db.QueryContext(ctx, listOpenPostingsWithoutForm, companyID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var items []Posting
+	for rows.Next() {
+		var i Posting
+		if err := rows.Scan(
+			&i.ID,
+			&i.CompanyID,
+			&i.Source,
+			&i.SourceID,
+			&i.Title,
+			&i.Department,
+			&i.Team,
+			&i.Location,
+			&i.EmploymentType,
+			&i.WorkplaceType,
+			&i.DescriptionHtml,
+			&i.DescriptionText,
+			&i.JobUrl,
+			&i.ApplicationUrl,
+			&i.PublishedAt,
+			&i.RawPayload,
+			&i.ListingStatus,
+			&i.FirstSeenAt,
+			&i.LastSeenAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ContentSha256,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Close(); err != nil {
+		return nil, err
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const savePostingApplicationForm = `-- name: SavePostingApplicationForm :exec
 INSERT INTO posting_application_forms (posting_id, form)
 VALUES (?, ?)

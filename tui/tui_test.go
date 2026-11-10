@@ -139,7 +139,7 @@ func applicationsTabOf(app *App) *activeApplicationListModel {
 }
 
 func newTestSyncer(s testutil.TestApp, postings map[string][]jobboard.Posting) *sync.Syncer {
-	return sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{jobboard.Ashby: &fakeFetcher{postings: postings}}, sync.DefaultConfig())
+	return sync.New(s.Companies, s.Postings, s.Forms, map[string]sync.PostingFetcher{jobboard.Ashby: &fakeFetcher{postings: postings}}, sync.DefaultConfig())
 }
 
 // mustDoc is status.Doc(documentType), failing the test on an error.

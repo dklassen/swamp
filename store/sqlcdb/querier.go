@@ -76,6 +76,8 @@ type Querier interface {
 	// Whether the posting already has a score that a new one would only repeat:
 	// on the same content, against the same profile, from the same model.
 	HasRepeatScore(ctx context.Context, arg HasRepeatScoreParams) (bool, error)
+	// Leaves a stored form in place.
+	InsertPostingApplicationForm(ctx context.Context, arg InsertPostingApplicationFormParams) error
 	// When the application entered its current status: every status write
 	// records a row (#162), so the newest is the current status's.
 	LatestApplicationStatusChange(ctx context.Context, applicationID int64) (ApplicationStatusHistory, error)
@@ -156,6 +158,7 @@ type Querier interface {
 	// What store.SoftDeleteCompany closes: a deleted company is never synced
 	// again, so nothing else would ever close these (#178).
 	ListOpenPostingIDsByCompany(ctx context.Context, companyID int64) ([]int64, error)
+	ListOpenPostingsWithoutForm(ctx context.Context, companyID int64) ([]Posting, error)
 	// One page of the pending postings, newest first (by posting ID, as the
 	// all-postings view shows them) before an optional cursor, with how many
 	// there are in all.

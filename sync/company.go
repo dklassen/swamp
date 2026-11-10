@@ -62,7 +62,12 @@ func toIngestedFields(p jobboard.Posting) posting.IngestedFields {
 //
 // Every write is conditional and safe to repeat, so the next clean sync
 // finishes the job.
-func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result *Result, err error) {
+//
+// After a clean sync releases the lease, SyncCompany fetches the
+// application forms the company's open postings lack. That's a request
+// per posting, which a large board's first sync can't fit in the lease. A
+// failed form fetch is counted in Result, not returned.
+func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (*Result, error) {
 	company, err := s.companies.Get(ctx, companyID)
 	if err != nil {
 		return nil, fmt.Errorf("sync: get company: %w", err)
@@ -72,6 +77,21 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result *Resu
 		return nil, fmt.Errorf("sync: unsupported source %q", company.Source)
 	}
 
+	result, err := s.syncLeased(ctx, *company, fetcher)
+	if err != nil {
+		return nil, err
+	}
+	forms, err := s.forms.FetchMissing(ctx, *company)
+	if err != nil {
+		return nil, fmt.Errorf("sync: fetch forms: %w", err)
+	}
+	result.FormsFetched, result.FormsFailed = forms.Fetched, forms.Failed
+	return result, nil
+}
+
+// syncLeased is syncHeld under the company's sync lease.
+func (s *Syncer) syncLeased(ctx context.Context, company company.Company, fetcher PostingFetcher) (result *Result, err error) {
+	companyID := company.ID
 	token := rand.Text()
 	taken, err := s.companies.AcquireSyncLease(ctx, companyID, token, s.cfg.LeaseTimeout)
 	if err != nil {
@@ -91,7 +111,7 @@ func (s *Syncer) SyncCompany(ctx context.Context, companyID int64) (result *Resu
 		}
 	}()
 
-	held, err := s.syncHeld(ctx, *company, fetcher, Result{CompanyID: companyID, Name: company.Name})
+	held, err := s.syncHeld(ctx, company, fetcher, Result{CompanyID: companyID, Name: company.Name})
 	if err != nil {
 		return nil, err
 	}

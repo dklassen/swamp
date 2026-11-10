@@ -255,7 +255,7 @@ func TestApp_SubmitForm_BoardRejectsSourceRef_StaysOnFormToRetry(t *testing.T) {
 	t.Parallel()
 
 	s := testutil.NewTestApp(t)
-	syncer := sync.New(s.Companies, s.Postings, map[string]sync.PostingFetcher{
+	syncer := sync.New(s.Companies, s.Postings, s.Forms, map[string]sync.PostingFetcher{
 		jobboard.Ashby: &fakeFetcher{errBoards: map[string]error{"acmee": errors.New("404 not found")}},
 	}, sync.DefaultConfig())
 	app := newTestApp(t, s, syncer)
