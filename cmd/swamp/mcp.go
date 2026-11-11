@@ -14,8 +14,6 @@ import (
 
 	"github.com/dklassen/swamp/documents"
 	"github.com/dklassen/swamp/internal/service"
-	"github.com/dklassen/swamp/jobboard"
-	"github.com/dklassen/swamp/jobboard/greenhouse"
 	"github.com/dklassen/swamp/mcpserver"
 	"github.com/dklassen/swamp/store"
 	"github.com/dklassen/swamp/sync"
@@ -30,13 +28,9 @@ func mcpHandler(db store.Store, d *documents.Store, syncer *sync.Syncer) http.Ha
 	return streamableHandler(newMCPServer(db, d, syncer))
 }
 
-// newMCPServer builds the MCP server over db and d, reading application forms
-// from every board that supports it (Greenhouse) under a sync's fetch timeout.
+// newMCPServer builds the MCP server over db and d.
 func newMCPServer(db store.Store, d *documents.Store, syncer *sync.Syncer) *mcp.Server {
-	drafting := service.NewDraftingService(db, d, map[string]service.FormFetcher{
-		jobboard.Greenhouse: greenhouse.NewClient(),
-	}, service.FormConfig{FetchTimeout: sync.DefaultConfig().FetchTimeout})
-	return mcpserver.New(service.NewCompanyService(db), service.NewPostingService(db), service.NewDocumentService(db, d), service.NewScoringService(db, d), drafting, syncer)
+	return mcpserver.New(service.NewCompanyService(db), service.NewPostingService(db), service.NewDocumentService(db, d), service.NewScoringService(db, d), service.NewDraftingService(db, d), syncer)
 }
 
 // streamableHandler serves server over Streamable HTTP.

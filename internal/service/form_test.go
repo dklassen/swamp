@@ -17,6 +17,11 @@ import (
 	"github.com/dklassen/swamp/store"
 )
 
+var fetchedForm = jobboard.ApplicationForm{
+	Documents: map[document.Type]jobboard.Requirement{document.Resume: jobboard.Required, document.CoverLetter: jobboard.Optional},
+	Questions: []jobboard.Question{{Label: "LinkedIn Profile", Required: true, Type: "text"}},
+}
+
 // boardForms is a board's forms by job ID, recording each fetch as
 // "board/job". during, if set, runs inside each fetch.
 type boardForms struct {

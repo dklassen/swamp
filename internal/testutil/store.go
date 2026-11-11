@@ -89,7 +89,7 @@ func NewTestApp(t *testing.T) TestApp {
 		Applications: service.NewApplicationService(db, docs),
 		Documents:    service.NewDocumentService(db, docs),
 		Scores:       service.NewScoringService(db, docs),
-		Drafting:     service.NewDraftingService(db, docs, nil, service.FormConfig{}),
+		Drafting:     service.NewDraftingService(db, docs),
 		Forms:        service.NewFormService(db, nil, service.FormConfig{}),
 		Changes:      service.NewChangeLog(db),
 	}
