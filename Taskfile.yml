@@ -20,6 +20,17 @@ tasks:
     cmds:
       - go tool golangci-lint run ./...
 
+  deadcode:
+    desc: Fail, listing them, if any functions are unreachable from main or any test
+    cmds:
+      # deadcode exits 0 even when it finds something.
+      - |
+        out=$(go tool deadcode -test ./...)
+        if [ -n "$out" ]; then
+          echo "$out"
+          exit 1
+        fi
+
   vuln:
     desc: Report known vulnerabilities in code swamp calls
     cmds:
