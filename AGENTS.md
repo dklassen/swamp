@@ -595,7 +595,7 @@ Lint checks formatting too, with the formatters in `.golangci.yml` (gofumpt, gci
   - `task hooks:install` — point git at `.githooks/` (run once per clone; `core.hooksPath` itself can't be version-controlled).
   - `task build` — build the `swamp` binary to `./bin/swamp`.
   - `task test` — `go test ./...`.
-  - `task deadcode` — fails on any function unreachable from `main` or any test (CI runs it). golangci-lint's `unused` sees only unexported code; this covers exported functions nothing calls. Delete what it lists rather than adding a caller.
+  - `task deadcode` — fails on any function `main` doesn't reach, so code only tests call counts as dead (CI runs it). `internal/testutil` is exempt, but fails if no test calls a helper there. golangci-lint's `unused` sees only unexported code. Delete what it lists, or move a test-only helper into a `_test.go` file, rather than adding a caller.
   - `task vuln` — govulncheck: fails when code swamp calls has a known vulnerability (CI runs it). Vulnerabilities only in imported packages are reported but don't fail it.
 - **go.mod**: don't fight `go mod tidy`/`go get` when they strip the `toolchain` line — that's intentional (Go 1.21+ auto-selects a compatible toolchain from the `go` directive's minimum version). Don't re-add an explicit `toolchain` pin.
 - **golangci-lint** findings get fixed properly (explicitly discarding/asserting on errors, etc.), not suppressed via exclude rules or `//nolint`, unless there's a specific documented justification.
