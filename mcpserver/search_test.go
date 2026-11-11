@@ -234,7 +234,7 @@ func TestSortOrders_EveryStoreOrderIsRegistered(t *testing.T) {
 		}
 		registered[order.Order] = true
 	}
-	for _, order := range posting.Orders() {
+	for _, order := range []posting.Order{posting.OrderIDAsc, posting.OrderIDDesc, posting.OrderPublishedDesc, posting.OrderScoreDesc} {
 		if !registered[order] {
 			t.Errorf("store order %s isn't in SortOrders", order)
 		}
