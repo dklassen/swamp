@@ -433,15 +433,15 @@ func TestRoute_TwoFilters_BothMustPass(t *testing.T) {
 		event companyChanged
 		want  int
 	}{
-		{name: "both pass", event: message.Deleted(message.Source{}, 7, time.Time{}, message.Company{ID: 7}), want: 1},
-		{name: "only About passes", event: message.Created(message.Source{}, 7, time.Time{}, message.Company{ID: 7}), want: 0},
-		{name: "only OnOp passes", event: message.Deleted(message.Source{}, 8, time.Time{}, message.Company{ID: 8}), want: 0},
+		{name: "both pass", event: message.Created(message.Source{Instance: 1}, 7, time.Time{}, message.Company{ID: 7}), want: 1},
+		{name: "only About passes", event: message.Created(message.Source{Instance: 2}, 7, time.Time{}, message.Company{ID: 7}), want: 0},
+		{name: "only From passes", event: message.Created(message.Source{Instance: 1}, 8, time.Time{}, message.Company{ID: 8}), want: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 			got := 0
-			route := model.Always(func(companyChanged) tea.Cmd { got++; return nil }, model.About(message.TypeCompany, 7), model.OnOp(message.OpDeleted))
+			route := model.Always(func(companyChanged) tea.Cmd { got++; return nil }, model.About(message.TypeCompany, 7), model.From(1))
 
 			route.Handle(tt.event)
 
@@ -476,36 +476,5 @@ func TestMsgRouter_Register_RefusesAFilterOnAMessageWithoutMeta(t *testing.T) {
 	r.Dispatch(message.Created(message.Source{}, 7, time.Time{}, message.Company{ID: 7}))
 	if got != 0 {
 		t.Errorf("deliveries to the owner's other route = %d, want 0: Register should register none of its routes", got)
-	}
-}
-
-// A request has no Op, so OnOp never passes one, even when asked for
-// OpNone.
-func TestRoute_OnOp_PassesOnlyThoseOps(t *testing.T) {
-	t.Parallel()
-
-	tests := []struct {
-		name string
-		ops  []message.Op
-		op   message.Op
-		want int
-	}{
-		{name: "one of them", ops: []message.Op{message.OpCreated, message.OpDeleted}, op: message.OpDeleted, want: 1},
-		{name: "another op", ops: []message.Op{message.OpCreated, message.OpDeleted}, op: message.OpUpdated, want: 0},
-		{name: "no op", ops: []message.Op{message.OpCreated}, op: message.OpNone, want: 0},
-		{name: "no op, asked for", ops: []message.Op{message.OpNone}, op: message.OpNone, want: 0},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
-			got := 0
-			route := model.Always(func(companyChanged) tea.Cmd { got++; return nil }, model.OnOp(tt.ops...))
-
-			route.Handle(message.New(message.Source{}, message.Subject{}, tt.op, time.Time{}, message.Changed[message.Company]{}))
-
-			if got != tt.want {
-				t.Errorf("deliveries of a %v event to OnOp(%v) = %d, want %d", tt.op, tt.ops, got, tt.want)
-			}
-		})
 	}
 }
