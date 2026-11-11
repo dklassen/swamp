@@ -11,6 +11,7 @@ import (
 	"github.com/dklassen/swamp/internal/domain/document"
 	"github.com/dklassen/swamp/internal/domain/posting"
 	"github.com/dklassen/swamp/internal/repository"
+	"github.com/dklassen/swamp/jobboard"
 	"github.com/dklassen/swamp/store"
 )
 
@@ -45,15 +46,9 @@ type DraftingService struct {
 	reviewViewer             draftingReviewViewer
 	markupViewer             draftingMarkupViewer
 	formViewer               formViewer
-	formWriter               formWriter
-	formFetchers             map[string]FormFetcher
-	formConfig               FormConfig
 }
 
-// NewDraftingService reads application forms with formFetchers, keyed by
-// source, each fetch bounded by formConfig.
-func NewDraftingService(db store.Store, docs *documents.Store, formFetchers map[string]FormFetcher, formConfig FormConfig) *DraftingService {
-	forms := &repository.PostingForms{}
+func NewDraftingService(db store.Store, docs *documents.Store) *DraftingService {
 	return &DraftingService{
 		db:                       db,
 		documents:                docs,
@@ -62,10 +57,7 @@ func NewDraftingService(db store.Store, docs *documents.Store, formFetchers map[
 		applicationHistoryWriter: &repository.ApplicationHistoryRepository{},
 		reviewViewer:             &repository.DocumentReviewRepository{},
 		markupViewer:             &repository.PostingMarkupRepository{},
-		formViewer:               forms,
-		formWriter:               forms,
-		formFetchers:             formFetchers,
-		formConfig:               formConfig,
+		formViewer:               &repository.PostingForms{},
 	}
 }
 
@@ -87,7 +79,8 @@ type Prepared struct {
 	// LatestReviews holds each type's latest review while it describes
 	// the document on disk.
 	LatestReviews map[document.Type]document.Review
-	Form          FormRead
+	// Form is the posting's stored application form, nil when it has none.
+	Form *jobboard.ApplicationForm
 }
 
 // Prepare starts drafting a posting, or resumes it: it returns the
@@ -117,7 +110,12 @@ func (service *DraftingService) Prepare(ctx context.Context, postingID int64) (*
 			return err
 		}
 		prepared.Posting, prepared.Company, prepared.Application = *p, *c, *app
-		return nil
+		form, err := service.storedForm(ctx, tx, postingID)
+		if errors.Is(err, store.ErrNotFound) {
+			return nil
+		}
+		prepared.Form = form
+		return err
 	})
 	if err != nil {
 		return nil, fmt.Errorf("drafting: prepare posting %d: %w", postingID, err)
@@ -156,12 +154,13 @@ func (service *DraftingService) Prepare(ctx context.Context, postingID int64) (*
 			prepared.LatestReviews[documentType] = review
 		}
 	}
-
-	// Outside the transaction: a board fetch mustn't hold the write lock.
-	form, err := service.currentForm(ctx, prepared.Posting, prepared.Company)
-	if err != nil {
-		return nil, fmt.Errorf("drafting: application form: %w", err)
-	}
-	prepared.Form = *form
 	return &prepared, nil
+}
+
+func (service *DraftingService) storedForm(ctx context.Context, r store.Runner, postingID int64) (*jobboard.ApplicationForm, error) {
+	stored, err := service.formViewer.Get(ctx, r, postingID)
+	if err != nil {
+		return nil, err
+	}
+	return decodeForm(stored)
 }

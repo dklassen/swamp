@@ -73,7 +73,6 @@ func TestStagePrepare_JSONShape(t *testing.T) {
 	cs := connectClient(t, srv)
 
 	got := callTool[map[string]json.RawMessage](t, cs, "stage_prepare", map[string]any{"PostingID": p.ID})
-	// ApplicationFormError is omitted when empty.
 	wantTop := []string{"ApplicationForm", "ApplicationID", "ApplicationNotes", "CompanyName", "Documents", "LatestReviews", "Posting"}
 	if diff := cmp.Diff(wantTop, keys(got)); diff != "" {
 		t.Errorf("top-level keys (-want +got):\n%s", diff)
@@ -133,7 +132,7 @@ var testForm = jobboard.ApplicationForm{
 // Go-side rename has to fail a test rather than silently change it.
 func TestStagePrepare_FormJSON(t *testing.T) {
 	t.Parallel()
-	cs := newDraftingServer(t, fakeDrafting{prepared: &service.Prepared{Form: service.FormRead{Form: &testForm}}})
+	cs := newDraftingServer(t, fakeDrafting{prepared: &service.Prepared{Form: &testForm}})
 
 	got := callTool[map[string]json.RawMessage](t, cs, "stage_prepare", map[string]any{"PostingID": 7})["ApplicationForm"]
 	want := `{"Documents":{"cover_letter":"optional","resume":"required"},"Questions":[{"Label":"LinkedIn Profile","Required":true,"Type":"text"}]}`
@@ -146,13 +145,11 @@ func TestStagePrepare_ReturnsWhatDraftingPrepared(t *testing.T) {
 	t.Parallel()
 	reviewedAt := time.Date(2026, 11, 10, 9, 0, 0, 0, time.UTC)
 	tests := []struct {
-		name          string
-		form          service.FormRead
-		wantForm      *jobboard.ApplicationForm
-		wantFormError string
+		name string
+		form *jobboard.ApplicationForm
 	}{
-		{name: "form read", form: service.FormRead{Form: &testForm}, wantForm: &testForm},
-		{name: "fetch failed", form: service.FormRead{FetchError: "board unavailable"}, wantFormError: "board unavailable"},
+		{name: "form stored", form: &testForm},
+		{name: "none stored"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -180,10 +177,9 @@ func TestStagePrepare_ReturnsWhatDraftingPrepared(t *testing.T) {
 					document.CoverLetter: {Path: "/docs/11/cover_letter.md", Exists: true, Version: "abc"},
 					document.Resume:      {Path: "/docs/11/resume.md", Version: service.NoDocumentYet},
 				},
-				ApplicationNotes:     "referred by a friend",
-				LatestReviews:        map[document.Type]latestReview{document.CoverLetter: {Outcome: document.Flagged, Notes: "too generic", Cycle: 2, CreatedAt: reviewedAt}},
-				ApplicationForm:      tt.wantForm,
-				ApplicationFormError: tt.wantFormError,
+				ApplicationNotes: "referred by a friend",
+				LatestReviews:    map[document.Type]latestReview{document.CoverLetter: {Outcome: document.Flagged, Notes: "too generic", Cycle: 2, CreatedAt: reviewedAt}},
+				ApplicationForm:  tt.form,
 			}
 			if diff := cmp.Diff(asJSON(t, want), got); diff != "" {
 				t.Errorf("stage_prepare (-want +got):\n%s", diff)

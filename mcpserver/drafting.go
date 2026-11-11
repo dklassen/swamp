@@ -134,10 +134,9 @@ type stagePrepareOutput struct {
 	Documents        map[document.Type]preparedDocument `json:"Documents"`
 	ApplicationNotes string                             `json:"ApplicationNotes"`
 	LatestReviews    map[document.Type]latestReview     `json:"LatestReviews"`
-	// ApplicationForm is null when the board has no way to read it or the
-	// fetch failed; the agent then drafts both documents.
-	ApplicationForm      *jobboard.ApplicationForm `json:"ApplicationForm"`
-	ApplicationFormError string                    `json:"ApplicationFormError,omitempty"`
+	// ApplicationForm is null when none is stored; the agent then drafts
+	// both documents.
+	ApplicationForm *jobboard.ApplicationForm `json:"ApplicationForm"`
 }
 
 type listPostingsInput struct{}
@@ -187,14 +186,13 @@ func stagePrepareHandler(drafting draftingService) mcp.ToolHandlerFor[stagePrepa
 			documents[documentType] = preparedDocument{Path: doc.Path, Exists: doc.Exists, Version: doc.Version}
 		}
 		return nil, stagePrepareOutput{
-			Posting:              preparedPostingOf(p.Posting),
-			CompanyName:          p.Company.Name,
-			ApplicationID:        p.Application.ID,
-			Documents:            documents,
-			ApplicationNotes:     p.Application.Notes,
-			LatestReviews:        latestReviewsOf(p.LatestReviews),
-			ApplicationForm:      p.Form.Form,
-			ApplicationFormError: p.Form.FetchError,
+			Posting:          preparedPostingOf(p.Posting),
+			CompanyName:      p.Company.Name,
+			ApplicationID:    p.Application.ID,
+			Documents:        documents,
+			ApplicationNotes: p.Application.Notes,
+			LatestReviews:    latestReviewsOf(p.LatestReviews),
+			ApplicationForm:  p.Form,
 		}, nil
 	}
 }
