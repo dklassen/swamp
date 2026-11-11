@@ -101,7 +101,7 @@ doesn't exist). Use those names as `DocumentType` with `read_document` and
 on the host running the server, not something to open or write yourself.
 
 Its `ApplicationForm` is what the posting's application form asks for, when
-Swamp has it: fetched from Greenhouse, or entered by hand in the TUI for
+Swamp has it: fetched from Greenhouse when the company syncs, or entered by hand in the TUI for
 Ashby and Lever postings (application detail, `f`). It's `null` when Swamp
 has neither:
 
@@ -111,8 +111,6 @@ has neither:
   `Label`, `Required`, `Type` and, for a select, its `Options`. A question
   entered by hand has an empty `Type` and no `Options`: treat it as free
   text.
-- If `ApplicationFormError` is set, the form couldn't be read: say so, and
-  carry on as if it were `null`.
 
 If a document already exists, check `LatestReviews` first:
 

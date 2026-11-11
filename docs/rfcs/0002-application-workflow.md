@@ -136,7 +136,7 @@ The final scope depends on what phase 0 finds. The expected projects are:
 
      `stage_prepare` returns these, and the skill drafts only what's needed.
 
-   - **When:** each company sync, once its postings are written and its lease released, fetches the form of each open posting that has none, four at a time. A failed fetch is counted in the sync's result and tried again next sync. A stored form, fetched or saved by hand, is never replaced by a fetch, and `stage_prepare` fetches one still missing.
+   - **When:** each company sync, once its postings are written and its lease released, fetches the form of each open posting that has none, four at a time. A failed fetch is counted in the sync's result and tried again next sync. A stored form, fetched or saved by hand, is never replaced by a fetch. `stage_prepare` only reads the stored form, so a posting whose form isn't fetched yet is drafted without one.
    - **Why at sync, not commit time:** Swamp knows what a posting asks for before you commit to it. It's one request per posting, not one per posting per sync, since only a posting without a form is fetched; the board's postings list doesn't carry the questions. Outside the lease, because a large board's first sync is hundreds of requests.
 2. **"Answers" document type.**
    - **What:** `answers.md`, next to the cover letter and resume, with one section per question. It gets the same read/write tools, review loop and staleness check.
