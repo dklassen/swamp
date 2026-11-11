@@ -118,8 +118,8 @@ func TestApp_CompanyList_PasteWithSearchClosed_IsNotACommand(t *testing.T) {
 	if cmd != nil {
 		t.Errorf("paste returned a command (%T), want none", cmd())
 	}
-	if app.onScreen() != message.ScreenCompanyList {
-		t.Errorf("screen = %v, want the company list", app.onScreen())
+	if onScreen(app) != message.ScreenCompanyList {
+		t.Errorf("screen = %v, want the company list", onScreen(app))
 	}
 }
 
@@ -134,8 +134,8 @@ func TestApp_ActiveApplications_PasteIntoSearch_FiltersByIt(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.onScreen() != message.ScreenApplicationDetail || shownDetail(app).Posting.Title != "Engineer 07" {
-		t.Fatalf("after paste, enter, enter: screen %v showing %q, want application detail for Engineer 07", app.onScreen(), shownDetail(app).Posting.Title)
+	if onScreen(app) != message.ScreenApplicationDetail || shownDetail(app).Posting.Title != "Engineer 07" {
+		t.Fatalf("after paste, enter, enter: screen %v showing %q, want application detail for Engineer 07", onScreen(app), shownDetail(app).Posting.Title)
 	}
 }
 

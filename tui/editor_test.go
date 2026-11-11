@@ -44,8 +44,8 @@ func TestEditorCommand_EditorUnset_ReturnsError(t *testing.T) {
 func onApplicationDetail(t *testing.T, app *App) *applicationDetailModel {
 	t.Helper()
 	d := app.applicationDetail()
-	if d == nil || app.onScreen() != message.ScreenApplicationDetail {
-		t.Fatalf("screen = %v, want application detail", app.onScreen())
+	if d == nil || onScreen(app) != message.ScreenApplicationDetail {
+		t.Fatalf("screen = %v, want application detail", onScreen(app))
 	}
 	return d
 }
@@ -96,8 +96,8 @@ func TestApp_EditorClosed_ReloadsTheApplicationsReviews(t *testing.T) {
 	}
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
-	if app.onScreen() != message.ScreenActiveApplications {
-		t.Fatalf("screen after esc = %v, want the home list", app.onScreen())
+	if onScreen(app) != message.ScreenActiveApplications {
+		t.Fatalf("screen after esc = %v, want the home list", onScreen(app))
 	}
 	if view := viewText(app); strings.Contains(view, "R:✓") {
 		t.Errorf("home list row still shows the resume as passed:\n%s", view)

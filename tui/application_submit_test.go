@@ -72,13 +72,13 @@ func submitTestApp(t *testing.T, applicationURL, jobURL string) submitFixture {
 func startSubmit(t *testing.T, app *App) *App {
 	t.Helper()
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.onScreen() != message.ScreenApplicationDetail {
-		t.Fatalf("screen after enter = %v, want application detail", app.onScreen())
+	if onScreen(app) != message.ScreenApplicationDetail {
+		t.Fatalf("screen after enter = %v, want application detail", onScreen(app))
 	}
 	app, cmd := sendKey(app, runeKey('S'))
 	app = applyCmd(t, app, cmd)
-	if app.onScreen() != message.ScreenApplicationSubmit {
-		t.Fatalf("screen after S = %v, want the submit screen", app.onScreen())
+	if onScreen(app) != message.ScreenApplicationSubmit {
+		t.Fatalf("screen after S = %v, want the submit screen", onScreen(app))
 	}
 	return app
 }
@@ -115,8 +115,8 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 	if got.Status != application.Submitted {
 		t.Errorf("status after confirming = %s, want %s", got.Status, application.Submitted)
 	}
-	if app.onScreen() != message.ScreenApplicationDetail {
-		t.Errorf("screen after confirming = %v, want back on application detail", app.onScreen())
+	if onScreen(app) != message.ScreenApplicationDetail {
+		t.Errorf("screen after confirming = %v, want back on application detail", onScreen(app))
 	}
 	if want := "Marked Engineer submitted"; app.status != want {
 		t.Errorf("status line = %q, want %q", app.status, want)
@@ -127,8 +127,8 @@ func TestSubmitFlow_OpensApplyLinkExportsAndMarksSubmittedOnConfirm(t *testing.T
 	}
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
-	if app.onScreen() != message.ScreenActiveApplications {
-		t.Fatalf("screen after esc = %v, want the home screen", app.onScreen())
+	if onScreen(app) != message.ScreenActiveApplications {
+		t.Fatalf("screen after esc = %v, want the home screen", onScreen(app))
 	}
 	if view := viewText(app); !strings.Contains(view, label) {
 		t.Errorf("home list = %q, want the new status %q", view, label)
@@ -153,8 +153,8 @@ func TestSubmitFlow_DecliningLeavesStatusUnchanged(t *testing.T) {
 			if got.Status != application.Started {
 				t.Errorf("status = %s, want it left at %s", got.Status, application.Started)
 			}
-			if app.onScreen() != message.ScreenApplicationDetail {
-				t.Errorf("screen = %v, want back on application detail", app.onScreen())
+			if onScreen(app) != message.ScreenApplicationDetail {
+				t.Errorf("screen = %v, want back on application detail", onScreen(app))
 			}
 		})
 	}
@@ -174,14 +174,14 @@ func TestSubmitFlow_SaveResolvingAfterReentry_KeepsReopenedScreenOpen(t *testing
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc}) // back to application detail, save still in flight
 	app, cmd := sendKey(app, runeKey('S'))
 	app = applyCmd(t, app, cmd)
-	if app.onScreen() != message.ScreenApplicationSubmit {
-		t.Fatalf("screen after S again = %v, want the submit screen", app.onScreen())
+	if onScreen(app) != message.ScreenApplicationSubmit {
+		t.Fatalf("screen after S again = %v, want the submit screen", onScreen(app))
 	}
 
 	app = applyCmd(t, app, saveCmd)
 
-	if app.onScreen() != message.ScreenApplicationSubmit {
-		t.Errorf("screen after the earlier instance's save result = %v, want the submit screen (the reopened one stays open)", app.onScreen())
+	if onScreen(app) != message.ScreenApplicationSubmit {
+		t.Errorf("screen after the earlier instance's save result = %v, want the submit screen (the reopened one stays open)", onScreen(app))
 	}
 }
 
@@ -196,8 +196,8 @@ func TestSubmitFlow_ExportsToTheDirectoryJustExportedTo(t *testing.T) {
 	app = sendKeyAndApply(t, app, runeKey('e'))
 	pushed[*applicationExportModel](t, app).textinput.SetValue(dest)
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.onScreen() != message.ScreenActiveApplications {
-		t.Fatalf("screen after export = %v, want the home screen", app.onScreen())
+	if onScreen(app) != message.ScreenActiveApplications {
+		t.Fatalf("screen after export = %v, want the home screen", onScreen(app))
 	}
 	app = startSubmit(t, app)
 

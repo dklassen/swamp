@@ -335,8 +335,8 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 	}
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
-	if app.onScreen() != message.ScreenDocumentReviewForm {
-		t.Fatalf("screen after saving a changed document = %v, want still the review form", app.onScreen())
+	if onScreen(app) != message.ScreenDocumentReviewForm {
+		t.Fatalf("screen after saving a changed document = %v, want still the review form", onScreen(app))
 	}
 	changes, err := s.Changes.After(context.Background(), since)
 	if err != nil {
@@ -356,7 +356,7 @@ func TestApp_ReviewOfADocumentThatChanged_ReloadsWithTheDiffInsteadOfSaving(t *t
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: 's', Mod: tea.ModCtrl})
 
-	if app.onScreen() == message.ScreenDocumentReviewForm {
+	if onScreen(app) == message.ScreenDocumentReviewForm {
 		t.Fatal("second save left the form open, want the review saved")
 	}
 	reviews, err := s.Documents.LatestReviews(context.Background(), application.ID)

@@ -126,6 +126,12 @@ func tabKinds() []message.Screen {
 	return kinds
 }
 
+// onScreen is the kind of the screen on top.
+func onScreen(app *App) message.Screen {
+	path := app.path()
+	return path[len(path)-1]
+}
+
 func companiesTabOf(app *App) *companyListModel {
 	return app.screen(message.ScreenCompanyList).(*companyListModel)
 }
