@@ -30,8 +30,8 @@ func TestApp_PostingList_R_RefreshesTheCompany(t *testing.T) {
 	board["acme"] = append(board["acme"], jobboard.Posting{SourceID: "job-3", Title: "Analyst"})
 
 	app = sendKeyAndApply(t, app, runeKey('r'))
-	if app.onScreen() != message.ScreenCompanyPostings {
-		t.Fatalf("screen after r = %v, want the posting list", app.onScreen())
+	if onScreen(app) != message.ScreenCompanyPostings {
+		t.Fatalf("screen after r = %v, want the posting list", onScreen(app))
 	}
 	var titles []string
 	for _, p := range openList(t, app).list.Listings {

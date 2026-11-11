@@ -116,12 +116,6 @@ func (a *App) path() []message.Screen {
 	return append([]message.Screen{a.nav.Tab()}, a.stack.Kinds()...)
 }
 
-// onScreen is the kind of the screen on top.
-func (a *App) onScreen() message.Screen {
-	path := a.path()
-	return path[len(path)-1]
-}
-
 // screen is the open screen of kind, or nil if none is.
 func (a *App) screen(kind message.Screen) StackScreen {
 	if s := a.nav.Screen(kind); s != nil {

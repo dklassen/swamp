@@ -142,8 +142,8 @@ func TestApp_Screens_BreadcrumbReplacesTheTitle(t *testing.T) {
 			app, s := newFullTestApp(t)
 			app, _ = sendKey(app, tea.WindowSizeMsg{Width: 100, Height: 24})
 			app = clearBanner(sc.open(t, app, s))
-			if app.onScreen() != sc.screen {
-				t.Fatalf("screen = %v, want %v", app.onScreen(), sc.screen)
+			if onScreen(app) != sc.screen {
+				t.Fatalf("screen = %v, want %v", onScreen(app), sc.screen)
 			}
 			lines := viewLines(app)
 			if got := strings.TrimSpace(lines[2]); got == formerTitle(app) {

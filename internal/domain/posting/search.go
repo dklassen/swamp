@@ -108,15 +108,6 @@ func (o Order) String() string {
 	return orderNames[o]
 }
 
-// Orders returns every sort order, in const order.
-func Orders() []Order {
-	orders := make([]Order, len(orderNames))
-	for i := range orderNames {
-		orders[i] = Order(i)
-	}
-	return orders
-}
-
 // SearchPage is one page of a search's results.
 type SearchPage struct {
 	Listings []Listing

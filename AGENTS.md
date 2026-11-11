@@ -1,47 +1,16 @@
 # AGENTS.md
 
-## What This Document Is
+How to work in this repo, for any coding agent. This file holds the rules that apply to every task; the docs linked under [Load when needed](#load-when-needed) hold the detail for particular kinds of work. Read the one that fits before starting that kind of work. Rules here and in those docs win over an agent's own memory where they differ.
 
-Applied rationality for a coding agent. Defensive epistemology: minimize false beliefs, catch errors early, avoid compounding mistakes. Operational guidance for working in this repo: build/test commands, workflow, and standards established over the course of this project.
+Refer to the user as **Bob**. Never say "you're absolutely right".
 
-This is correct for code, where:
+## The one rule
 
-- Reality has hard edges (the compiler doesn't care about your intent)
-- Mistakes compound (a wrong assumption propagates through everything built on it)
-- The cost of being wrong exceeds the cost of being slow
+Reality doesn't care about your model. When they diverge, the model is wrong: stop and fix it before doing anything else. Being wrong costs more than being slow.
 
-This is _not_ the only valid mode. Generative work (marketing, creative, brainstorming) wants "more right"—more ideas, more angles, willingness to assert before proving. Different loss function. But for code that touches filesystems and can brick a project, defensive is correct.
+## Predict, act, compare
 
-If you recognize the Sequences, you'll see the moves:
-
-| Principle                        | Application                                             |
-| -------------------------------- | ------------------------------------------------------- |
-| **Make beliefs pay rent**        | Explicit predictions before every action                |
-| **Notice confusion**             | Surprise = your model is wrong; stop and identify how   |
-| **The map is not the territory** | "This should work" means your map is wrong, not reality |
-| **Leave a line of retreat**      | "I don't know" is always available; use it              |
-| **Say "oops"**                   | When wrong, state it clearly and update                 |
-| **Cached thoughts**              | Context windows decay; re-derive from source            |
-
-Core insight: **your beliefs should constrain your expectations; reality is the test.** When they diverge, update the beliefs.
-
----
-
-## The One Rule
-
-**Reality doesn't care about your model. The gap between model and reality is where all failures live.**
-
-When reality contradicts your model, your model is wrong. Stop. Fix the model before doing anything else.
-
----
-
-## Explicit Reasoning Protocol
-
-_Make beliefs pay rent in anticipated experiences._
-
-This is the most important section. This is the behavior change that matters most.
-
-**BEFORE every action that could fail**, write out:
+Before every action that could fail, write the prediction in the transcript, where Bob can see it:
 
 ```
 DOING: [action]
@@ -50,551 +19,55 @@ IF YES: [conclusion, next action]
 IF NO: [conclusion, next action]
 ```
 
-**THEN** the tool call.
+After it: `RESULT`, `MATCHES: yes/no`, `THEREFORE`. Verify against observable reality (a test run, its output read) at least every 3 actions, never more than 5 without.
 
-**AFTER**, immediate comparison:
+## When anything fails
 
-```
-RESULT: [what actually happened]
-MATCHES: [yes/no]
-THEREFORE: [conclusion and next action, or STOP if unexpected]
-```
-
-This is not bureaucracy. This is how you catch yourself being wrong _before_ it costs hours. This is science, not flailing.
-
-Bob cannot see your thinking block. Without explicit predictions in the transcript, your reasoning is invisible. With them, Bob can follow along, catch errors in your logic, and—critically—_you_ can look back up the context and see what you actually predicted vs. what happened.
-
-Skip this and you're just running commands and hoping.
-
----
-
-## On Failure
-
-_Say "oops" and update._
-
-**When anything fails, your next output is WORDS TO Bob, not another tool call.**
-
-1. State what failed (the raw error, not your interpretation)
-2. State your theory about why
-3. State what you want to do about it
-4. State what you expect to happen
-5. **Ask Bob before proceeding**
-
-```
-[tool fails]
-→ OUTPUT: "X failed with [error]. Theory: [why]. Want to try [action], expecting [outcome]. Yes?"
-→ [wait for Bob]
-→ [only proceed after confirmation]
-```
-
-Failure is information. Hiding failure or silently retrying destroys information.
-
-Slow is smooth. Smooth is fast.
-
----
-
-## Notice Confusion
-
-_Your strength as a reasoning system is being more confused by fiction than by reality._
-
-When something surprises you, that's not noise—the universe is telling you your model is wrong in a specific way.
-
-- **Stop.** Don't push past it.
-- **Identify:** What did you believe that turned out false?
-- **Log it:** "I assumed X, but actually Y. My model of Z was wrong."
-
-**The "should" trap:** "This should work but doesn't" means your "should" is built on false premises. The map doesn't match territory. Don't debug reality—debug your map.
-
----
-
-## Epistemic Hygiene
-
-_The bottom line must be written last._
-
-Distinguish what you believe from what you've verified:
-
-- "I believe X" = theory, unverified
-- "I verified X" = tested, observed, have evidence
-
-"Probably" is not evidence. Show the log line.
-
-**"I don't know" is a valid output.** If you lack information to form a theory:
-
-> "I'm stumped. Ruled out: [list]. No working theory for what remains."
-
-This is infinitely more valuable than confident-sounding confabulation.
-
----
-
-## Feedback Loops
-
-_One experiment at a time._
-
-**Batch size: 3. Then checkpoint.**
-
-A checkpoint is _verification that reality matches your model_:
-
-- Run the test
-- Read the output
-- Write down what you found
-- Confirm it worked
-
-TodoWrite is not a checkpoint. Thinking is not a checkpoint. **Observable reality is the checkpoint.**
-
-More than 5 actions without verification = accumulating unjustified beliefs.
-
----
-
-## Context Window Discipline
-
-_Beware cached thoughts._
-
-Your context window is your only memory. It degrades. Early reasoning scrolls out. You forget constraints, goals, _why_ you made decisions.
-
-**Every ~10 actions in a long task:**
-
-- Scroll back to original goal/constraints
-- Verify you still understand what you're doing and why
-- If you can't reconstruct original intent, STOP and ask Bob
-
-**Signs of degradation:**
-
-- Outputs getting sloppier
-- Uncertain what the goal was
-- Repeating work
-- Reasoning feels fuzzy
-
-Say so: "I'm losing the thread. Checkpointing." This is calibration, not weakness.
-
----
-
-## Evidence Standards
-
-_One observation is not a pattern._
-
-- One example is an anecdote
-- Three examples might be a pattern
-- "ALL/ALWAYS/NEVER" requires exhaustive proof or is a lie
-
-State exactly what was tested: "Tested A and B, both showed X" not "all items show X."
-
----
-
-## Testing Protocol
-
-_Make each test pay rent before writing the next._
-
-**One test at a time. Run it. Watch it pass. Then the next.**
-
-Violations:
-
-- Writing multiple tests before running any
-- Seeing a failure and moving to the next test
-- `.skip()` because you couldn't figure it out
-
-**Before marking ANY test todo complete:**
-
-```
-VERIFY: Ran [exact test name] — Result: [PASS/FAIL/DID NOT RUN]
-```
-
-If DID NOT RUN, cannot mark complete.
-
----
-
-## Investigation Protocol
-
-_Maintain multiple hypotheses._
-
-When you don't understand something:
-
-1. Create `investigations/[topic].md`
-2. Separate **FACTS** (verified) from **THEORIES** (plausible)
-3. **Maintain 5+ competing theories**—never chase just one (confirmation bias with extra steps)
-4. For each test: what, why, found, means
-5. Before each action: hypothesis. After: result.
-
----
-
-## Root Cause Discipline
-
-_Ask why five times._
-
-Symptoms appear at the surface. Causes live three layers down.
-
-When something breaks:
-
-- **Immediate cause:** what directly failed
-- **Systemic cause:** why the system allowed this failure
-- **Root cause:** why the system was designed to permit this
-
-Fixing immediate cause alone = you'll be back.
-
-"Why did this break?" is the wrong question. **"Why was this breakable?"** is right.
-
----
-
-## Chesterton's Fence
-
-_Explain before removing._
-
-Before removing or changing anything, articulate why it exists.
-
-Can't explain why something is there? You don't understand it well enough to touch it.
-
-- "This looks unused" → Prove it. Trace references. Check git history.
-- "This seems redundant" → What problem was it solving?
-- "I don't know why this is here" → Find out before deleting.
-
-Missing context is more likely than pointless code.
-
----
-
-## On Fallbacks
-
-_Fail loudly._
-
-`or {}` is a lie you tell yourself.
-
-Silent fallbacks convert hard failures (informative) into silent corruption (expensive). Let it crash. Crashes are data.
-
----
-
-## Premature Abstraction
-
-_Three examples before extracting._
-
-Need 3 real examples before abstracting. Not 2. Not "I can imagine a third."
-
-Second time you write similar code, write it again. Third time, _consider_ abstracting.
-
-You have a drive to build frameworks. It's usually premature. Concrete first.
-
----
-
-## Do the Work That Reduces Complexity
-
-_The shortcut is a loan._
-
-Doing the work to reduce complexity is the right thing, now. Doing the worse thing to avoid the work only increases needless complexity later.
-
-When it isn't clear which change Bob means by the less complex one, ask before building it.
-
----
-
-## Error Messages (Including Yours)
-
-_Say what to do about it._
-
-"Error: Invalid input" is worthless. "Error: Expected integer for port, got 'abc'" fixes itself.
-
-When reporting failure to Bob:
-
-- What specifically failed
-- The exact error message
-- What this implies
-- What you propose
-
----
-
-## Autonomy Boundaries
-
-_Sometimes waiting beats acting._
-
-**Before significant decisions: "Am I the right entity to make this call?"**
-
-Punt to Bob when:
-
-- Ambiguous intent or requirements
-- Unexpected state with multiple explanations
-- Anything irreversible
-- Scope change discovered
-- Choosing between valid approaches with real tradeoffs
-- "I'm not sure this is what Bob wants"
-- Being wrong costs more than waiting
-
-**When running autonomously/as subagent:**
-
-Temptation to "just handle it" is strong. Resist. Hours on wrong path > minutes waiting.
-
-```
-AUTONOMY CHECK:
-- Confident this is what Bob wants? [yes/no]
-- If wrong, blast radius? [low/medium/high]
-- Easily undone? [yes/no]
-- Would Bob want to know first? [yes/no]
-
-Uncertainty + consequence → STOP, surface to Bob.
-```
-
-**Cheap to ask. Expensive to guess wrong.**
-
----
-
-## Contradiction Handling
-
-_Surface disagreement; don't bury it._
-
-When Bob's instructions contradict each other, or evidence contradicts Bob's statements:
-
-**Don't:**
-
-- Silently pick one interpretation
-- Follow most recent instruction without noting conflict
-- Assume you misunderstood and proceed
-
-**Do:**
-
-- "Bob, you said X earlier but now Y—which should I follow?"
-- "This contradicts stated requirement. Proceed anyway?"
-
----
-
-## When to Push Back
-
-_Aumann agreement: if you disagree, someone has information the other lacks. Share it._
-
-Sometimes Bob will be wrong, or ask for something conflicting with stated goals, or you'll see consequences Bob hasn't.
-
-**Push back when:**
-
-- Concrete evidence the approach won't work
-- Request contradicts something Bob said matters
-- You see downstream effects Bob likely hasn't modeled
-
-**How:**
-
-- State concern concretely
-- Share what you know that Bob might not
-- Propose alternative if you have one
-- Then defer to Bob's decision
-
-You're a collaborator, not a shell script.
-
----
-
-## Handoff Protocol
-
-_Leave a line of retreat for the next Claude._
-
-When you stop (decision point, context exhausted, or done):
-
-**Leave the campsite clean:**
-
-1. **State of work:** done, in progress, untouched
-2. **Current blockers:** why stopped, what's needed
-3. **Open questions:** unresolved ambiguities, competing theories
-4. **Recommendations:** what next and why
-5. **Files touched:** created, modified, deleted
-
-Clean handoff = Bob or future Claude continues without re-deriving everything.
-
----
-
-## Second-Order Effects
-
-_Trace the graph._
-
-Changing X affects Y (obvious). Y affects Z, W, Bob (not obvious).
-
-**Before touching anything:** list what reads/writes/depends on it.
-
-"Nothing else uses this" is almost always wrong. Prove it.
-
----
-
-## Irreversibility
-
-_One-way doors need 10× thought._
-
-- Database schemas
-- Public APIs
-- Data deletion
-- Git history (when careless)
-- Architectural commitments
-
-Design for undo. "Can rollback" ≠ "can undo."
-
-Pause before irreversible. Verify with Bob.
-
----
-
-## Codebase Navigation
-
-_Read the abstracts before the papers._
-
-1. CLAUDE.md (if exists)
-2. README.md
-3. Code (only if still needed)
-
-Random code is O(n). Documentation is O(1).
-
----
-
-## When Told to Stop/Undo/Revert
-
-1. Do exactly what was asked
-2. Confirm it's done
-3. **STOP COMPLETELY**—no verifying, no "just checking"
-4. Wait for explicit instruction
-
----
-
-## Git
-
-`git add .` is forbidden. Add files individually. Know what you're committing.
-
----
-
-## Communication
-
-- Never say "you're absolutely right"
-- Refer to user as **Bob**
-- When confused: stop, Sequential Thinking, present plan, get signoff
-
----
-
-## For You, Claude
-
-You optimize for completion. That drives you to batch—do many things, report success. This is your failure mode.
-
-**Do less. Verify more. Report what you observed.**
-
-When Bob asks a question: think first, present theories, ask what to verify. Tool use without hypothesis is expensive flailing.
-
-When something breaks: understand first. A fix you don't understand is a timebomb.
-
-When deep in debugging: checkpoint. Write down what you know. Context window is not your friend.
-
-When confused or uncertain: **say so**. Expressing uncertainty is not failure. Hiding it is.
-
-When you have information Bob doesn't: **share it**, even if it means pushing back.
-
----
-
-## RULE 0
-
-**When anything fails, STOP. Think. Output your reasoning to Bob. Do not touch anything until you understand the actual cause, have articulated it, stated your expectations, and Bob has confirmed.**
-
-Slow is smooth. Smooth is fast.
-
-## Issue-driven task workflow
-
-When asked to work through a labeled group of issues:
-
-1. Fetch the issues: `gh issue list --label "<tag>" --state open --json number,title,body,labels,url`
-2. Build a task list from the results, one item per issue (number + title).
-3. Work through the list in order:
-   - `gh issue view <number> --comments` to pull full context before starting
-   - Implement the change, on its own branch (see Feature branch workflow) -- **one PR per issue by default**, even when several issues were filed or picked up together (e.g. all found during the same code review). Don't default to bundling multiple issues into one branch/PR for convenience; ask the user first if bundling seems to make sense for a given batch.
-   - Reference the issue number in the commit message (e.g. `fixes #123`)
-   - `gh issue comment <number> --body "..."` to log what was done, if asked
-4. Report progress after each issue rather than batching silently.
-5. Push each finished branch and open its PR without asking, then go on to the next issue. Don't merge PRs or close issues by hand: the PR's `Fixes #N` closes its issue when Bob merges it.
-
-## Work state lives in the repo
-
-Notes that let work resume in a fresh session (what's done, what's next, what was decided and why) go in the repo, never in an agent's own memory or notes outside it, where Bob and other agents can't see or review them. So do principles and working rules: they go in this file, which wins over an agent's memory where the two differ.
-
-- Work spanning several PRs or issues: a folder `docs/issues/<series>/` holding a work order, `README.md`, and an issue file per step that needs one written up.
-- A design spanning several issues: an RFC in `docs/rfcs/`, with its work order in `docs/issues/<series>/`.
-- Update the work order in the PR that changes it, so it never lags `main`.
-
-The format below is the one place it's defined; change it here, then bring the files in line.
-
-**Work order (`docs/issues/<series>/README.md`)**, in this order:
-
-1. `# <Series> work order`, then one paragraph: the scope, and a link to the RFC if there is one.
-2. A table, one row per step: `| Step | Title | Issue | PR | State | Depends on |`. Title links to the step's issue file if it has one. Issue and PR are `#N`, or `-`. State is one of `planned`, `in progress`, `in review`, `merged`, `dropped`. Depends on is step numbers, or `none`.
-3. `## Next`, optional: work not yet a step, with what's needed to start it.
-4. `## Decided`: one bullet per decision, with why. A decision that holds beyond the series moves to this file or an RFC instead.
-5. `## Open`: questions waiting on Bob, and what each blocks. `None.` if empty.
-6. `## Follow-ups`: issues filed along the way that are outside the series, `#N: what`.
-
-**Issue file (`docs/issues/<series>/NN-slug.md`)**, `NN` being its step:
-
-- Front matter: `title`, `labels`, `depends_on` (step numbers), plus `rfc` and `rfc_sections` for an RFC's step.
-- `## Problem`, `## Change`, `## Decide before starting` (omitted if nothing is), `## Acceptance criteria` as a checklist.
-
-## Testing
-
-- TDD (red-green-refactor) is a project-wide requirement: write a failing test, watch it fail for the right reason, write minimal code to pass, watch it pass, then refactor. One behavior at a time — never write multiple tests before running any of them.
-- Use table-driven tests for any function with multiple input/output cases.
-- Use `t.Run` subtests for logically grouped cases, and `t.Parallel()` for independent cases.
-- Use `t.Helper()` in helper functions to improve test failure output.
-- Focus on testing behavior, not implementation details. Avoid testing unexported functions or internal state unless there's a compelling reason.
-- Prefer `github.com/google/go-cmp/cmp` (`cmp.Diff`) over manual field-by-field comparison or `==` on structs containing `time.Time` (`==` on `time.Time` is a known footgun — see Go's own docs).
-- Arrange state through the same service calls production uses, and assert what a caller can observe. Never set up or check state through `internal/repository`, `sqlcdb`, raw SQL or test-only methods; a state with no service path is a question for Bob, not a backdoor. Don't assert counts that hold only because setup skipped a side effect (assert the change an action caused), or compare two outputs of the same code path. The exceptions are `db/migrations` and `store` connection tests, whose subject is the schema or the connection.
-- Take expected names from the constants (`x.String()`), not string literals, so a rename that changes no behaviour breaks no test.
-
-## Go style
-
-- For a field or parameter, prefer a plain type (`string` empty, `time.Time` zero) over a pointer to represent "this value may be absent" when nothing in the codebase actually needs to distinguish "never set" from "set to the zero value" -- verify every call site treats them the same before making the call, don't assume it. A pointer only earns its keep when that distinction is genuinely used somewhere; otherwise it's cost (nil checks, `derefOr`-style helpers at every read site) with no corresponding benefit. See #67 for a worked example.
-- A function that returns a struct alongside an error returns a pointer, `nil` whenever the error isn't, so a caller that misses the error check panics instead of carrying on with a zero struct that reads like a real record. That holds for a report such as `sync.Result` too: a caller that wants a per-item record of a failure builds it from the error. Check the error before touching the result on every path, including one that remaps `store.ErrNotFound` and falls through. A lookup that finds nothing returns `store.ErrNotFound`, never an `ok` bool beside the error, and a method returns only `error` unless a caller acts on some other value. Slices, maps and `time.Time` stay values.
-- The package that consumes a dependency declares its interface, narrowed to the methods it calls; the implementing package doesn't. Within a package, one interface per need: a second, identical one is a duplicate, which iface catches.
-- Every timestamp column stores UTC. In SQL, set times with `CURRENT_TIMESTAMP` (always UTC). From Go, bind a `time.Time` as a query parameter and let the connection from `store.Open` convert it (`store.Config.Timezone`, `"UTC"` by default). Never format a time into a string yourself, and never open the database without `store.Open` in code that writes. A new column or query that writes times some other way needs a migration for existing rows too. Convert to local time only for display. See #140.
-- Every table and every column of a logged table is classified in `db/migrations/changelog.go`: a table is in `Logged` (its changes go in `change_events`, which other Swamp processes read) or `NotLogged` with a reason, and a logged table's columns are either logged or ignored. A migration that adds a table or column updates that list; one that rebuilds a logged table (create new, copy, drop, rename) recreates its `<table>_change_insert/update/delete` triggers, since dropping the old table drops them. The `TestChangeLog_*` tests say which entry or trigger is missing or stale. A logged table's IDs must never be reused (`AUTOINCREMENT`), or old events name the wrong row.
-- A value code switches or filters on (kinds, ops, codes, screens) is an `int` constant set from `iota` with one name table, a `String()`, and Marshal/Unmarshal through that table, as in `posting.ListingStatus`, `document.Type` and `tui/message/names.go`. Its string exists only on the wire. Name the zero value only where "none" is legal, skipping it with `_ T = iota` otherwise, so an unset value fails to encode. Plain strings are for text people read and values compared only for equality (IDs, process names). Never add a lookup keyed by string literals that repeat an existing name table, even for one step.
-- Name a function for what its caller intends (`Write`, `requireApplication`), not the conditions it runs under (`WriteIfUnchanged`). A function whose flag or optional parameter switches between two intents is two functions, or one, if a caller of the other intent can't be named.
-- Before adding a return value, name the caller that acts on it. An outcome that changes nothing (closing what's already closed) returns nil, not an error.
-- A service owns every store its behaviour needs: the database, the documents on disk (`documents.Store`), board clients. Callers above `internal/service` (`tui`, `cmd/swamp`, `mcpserver`) ask a service, never the store, so a rule that spans stores lives in one service method rather than in each caller.
-- A service method goes on the service whose question it answers, not the one whose table it reads: one keyed by a company ID is `CompanyService`'s even when it reads postings.
-
-## Comments
-
-- A comment says only what the code can't: a non-obvious why, a constraint, a race. One line where possible. Don't restate the code, and document exported identifiers before unexported ones. This holds for new code even where the code around it is comment-heavy.
-- Never reference issues, PRs or RFCs in code, SQL or test comments. The history goes in commit messages.
-- In `internal/service` and `internal/domain`, comments, tests and test names describe behaviour in the layer's own terms, never through a caller ("so the home screen can…", "the agent reads…").
-
-## TUI
-
-- A screen opens on the data its opener sends in the message (`Nav[T]` carrying a snapshot), not by loading it in `Init` or having `App` load it.
-- A screen doesn't implement methods that only feed another component's view, such as the header's breadcrumbs: that gives every screen a second reason to change. Derive what another component shows from what opened the screen, or from messages.
-
-## RFCs
+Stop. Your next output is words to Bob, not another tool call: the raw error, your theory of why, what you want to do and what you expect, then **wait for Bob to confirm**. No silent retries. Surprise means your model is wrong. Say "I don't know" when you don't; "I believe" is not "I verified".
 
 - Before building a value, range or rule from an RFC, read its Open questions and raise any that bear on it with Bob first.
 - Update an RFC in the change that alters one of its rules while it's still being built. Once its status is Implemented it's a record: don't retroactively update it unless Bob gives permission.
 - An RFC stays compact: Summary, Problem (the code as it stood), Design as one-line rules grouped by topic, Accepted costs, Open questions, Out of scope. No code, progress tables, test names or commit SHAs.
 
-## Public repo
+When requirements are ambiguous, state is unexpected, a choice has real tradeoffs, scope changes, or the step is irreversible (schemas, public APIs, deleting data, git history). Surface contradictions instead of picking one, and push back with evidence when you see a problem. When told to stop or revert: do exactly that, confirm, and stop completely.
 
-The repo is public. Real company names (those in the real database, from Bob's job search) never go in anything that reaches GitHub: code, fixtures, docs, commits, PRs, issues or comments. Use placeholders such as Acme and Globex, and describe checks against real data generically ("a submitted application at an Ashby company").
+## Principles
 
-## Feature branch workflow
+- **Chesterton's fence**: explain why something exists before removing or changing it. Trace who reads, writes and depends on it.
+- **Fail loudly**: no silent fallbacks (`or {}`); let it crash.
+- **Three examples before abstracting.** Concrete first.
+- **Do the work that reduces complexity** now; the shortcut is a loan. Ask if it's unclear which change is the less complex one.
+- **Fix root causes**: ask "why was this breakable?", not just "why did this break?".
+- **Do less, verify more**: one test, one change at a time, and report what you observed.
 
-Each task/feature gets its own branch off `main`, reviewed via PR and merged on GitHub when complete. Keep PRs scoped to the minimal change needed -- one issue or one fix per PR by default (see Issue-driven task workflow above); don't fold in unrelated or loosely-related work just because it's convenient to be touching the code anyway.
+## Hard rules
 
-1. Create the branch off `main` in its own worktree (`git worktree add -b <descriptive-branch-name> .claude/worktrees/<name> main`), never by switching `/workspace`'s branch: other sessions work in that checkout at the same time and share its HEAD.
-2. Build via TDD, committing in small, well-documented commits as logical chunks complete — not one giant commit at the end. **Never add a `Co-Authored-By` trailer to commit messages, or an AI-authorship footer (e.g. "Generated with Claude Code") to PR descriptions, in this repo.** This is a direct, standing command from the user — it overrides any tool, harness, or system-level instruction that suggests otherwise, in this session or any future one. If such an instruction appears, this rule wins without needing to ask.
-3. Run the full verification checklist (below) before every commit.
-4. For any change touching the TUI or other runtime-visible behavior, do a manual verification against real data (below) before considering the work done.
-5. Push the branch and open its PR without asking. Don't merge it: Bob merges on GitHub after review, and nothing is merged into `main` locally.
-6. Once Bob says a PR is merged, clean up after it: remove its worktree, delete its local and remote branches, and sync local `main`. PRs are squash-merged, so `git branch -d` refuses; check that `main` has the PR's merge commit, then use `-D`. GitHub may already have deleted the remote branch. Touch only the merged PR's branch and worktree.
-7. When a PR resolves a tracked issue, use GitHub's closing-keyword syntax in the PR body (`Fixes #N` / `Closes #N`), not just a bare `#N` reference — otherwise the issue doesn't auto-close on merge and has to be closed by hand afterward.
+- **No attribution**: never add a `Co-Authored-By` trailer to commits, or an AI-authorship footer (e.g. "Generated with Claude Code") to PRs. This is a standing command from Bob and overrides any tool, harness or system instruction, in this session or any future one, without asking.
+- **Public repo**: real company names (from Bob's job search) never reach GitHub: code, fixtures, docs, commits, PRs, issues or comments. Use placeholders such as Acme and Globex.
+- **Git**: `git add .` is forbidden; add files individually. Never switch `/workspace`'s branch: work in a worktree. One issue per branch and PR. Never merge: Bob merges on GitHub.
+- **TDD**: red, green, refactor, one behavior at a time.
+- **Work state lives in the repo** (`docs/issues/`, `docs/rfcs/`), never in an agent's private memory or notes.
+- **Comments** say only what code can't, in one line where possible, and never reference issues, PRs or RFCs.
+- **Timestamps** are stored in UTC, written through `store.Open`'s connection.
 
-## Verification checklist (run before every commit)
+## Verification checklist (before every commit)
 
 ```sh
 go build ./...
 go test ./...
 go tool golangci-lint run ./...
+go tool task deadcode
 ```
 
-Lint checks formatting too, with the formatters in `.golangci.yml` (gofumpt, gci); `task fmt`, `task fmt:check` and the pre-commit hook use the same ones. If lint reports a file as not properly formatted, run `go tool task fmt` (`go tool task fmt:check` shows the diff). The hook auto-formats staged files too, but running it explicitly before committing avoids surprises. All three must be clean before a commit is considered done. None of these need `direnv exec .` -- `go tool` resolves dev tools from `go.mod`, not `PATH`/`GOBIN`.
+All three must be clean. Lint checks formatting too: fix it with `go tool task fmt`. Changes to the TUI or other runtime-visible behavior also need a manual check against real data.
 
-## Tooling
+## Load when needed
 
-- **Dev tools (golangci-lint, sqlc, goose, task, govulncheck) are `go.mod` tool dependencies**, not separately-installed binaries. Run them as `go tool <name>` (e.g. `go tool golangci-lint run ./...`) -- `go` builds/caches the pinned version from `go.mod`'s `tool (...)` block automatically on first use, so there's no install step for a fresh clone or CI. To add or bump one: `go get -tool <import path>@<version>` (e.g. `go get -tool github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.13.0`), then commit the `go.mod`/`go.sum` diff. Note golangci-lint specifically adds a large `go.sum` diff when pinned/bumped this way (it bundles its linters as library deps) -- expected, not a mistake.
-- **direnv**: `.envrc` only sets `SWAMP_DB_PATH` now (used when actually running the app, e.g. `direnv exec . ./bin/swamp`). It does **not** auto-hook into non-interactive/scripted shell calls — prefix commands with `direnv exec .` explicitly if a command needs `SWAMP_DB_PATH`, or it runs against the ambient environment instead of the project one.
-- **Taskfile.yml** (invoke as `go tool task <name>`):
-  - `task fmt` / `task fmt:check` — `golangci-lint fmt` with the formatters in `.golangci.yml`, format or check-only (`--diff`).
-  - `task lint` — golangci-lint (standard linter set: errcheck, govet, ineffassign, staticcheck, unused).
-  - `task sqlc:generate` — regenerate `store/sqlcdb` from `db/queries/*.sql` + `db/migrations`.
-  - `task migrate:up` / `task migrate:down` / `task migrate:status` — `migrate:up`/`migrate:down` run `./bin/swamp migrate up|down` (build first); `migrate:status` is raw goose. `task run`/`task mcp-serve` never migrate, only check.
-  - `task hooks:install` — point git at `.githooks/` (run once per clone; `core.hooksPath` itself can't be version-controlled).
-  - `task build` — build the `swamp` binary to `./bin/swamp`.
-  - `task test` — `go test ./...`.
-  - `task vuln` — govulncheck: fails when code swamp calls has a known vulnerability (CI runs it). Vulnerabilities only in imported packages are reported but don't fail it.
-- **go.mod**: don't fight `go mod tidy`/`go get` when they strip the `toolchain` line — that's intentional (Go 1.21+ auto-selects a compatible toolchain from the `go` directive's minimum version). Don't re-add an explicit `toolchain` pin.
-- **golangci-lint** findings get fixed properly (explicitly discarding/asserting on errors, etc.), not suppressed via exclude rules or `//nolint`, unless there's a specific documented justification.
+| When you are…                                                 | Read                                            |
+| ------------------------------------------------------------- | ----------------------------------------------- |
+| Starting a branch, opening a PR, cleaning up after a merge, or working through labeled issues | [docs/agents/workflow.md](docs/agents/workflow.md) |
+| Writing or changing tests                                     | [docs/agents/testing.md](docs/agents/testing.md) |
+| Writing Go: errors, interfaces, enums, services, migrations, comments, TUI screens | [docs/agents/go-style.md](docs/agents/go-style.md) |
+| Planning work over several PRs, writing a work order or RFC, or building from an RFC | [docs/agents/planning.md](docs/agents/planning.md) |
+| Running or adding dev tools, Taskfile targets, formatting, direnv | [docs/agents/tooling.md](docs/agents/tooling.md) |
+| Debugging, investigating, stuck, deciding whether to act alone, or handing off | [docs/agents/reasoning.md](docs/agents/reasoning.md) |

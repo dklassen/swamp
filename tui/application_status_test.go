@@ -179,8 +179,8 @@ func TestStatusPicker_SaveFails_ShowsWhyAndStaysOpen(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	if app.onScreen() != message.ScreenApplicationStatus {
-		t.Errorf("screen = %v, want the status picker, still open", app.onScreen())
+	if onScreen(app) != message.ScreenApplicationStatus {
+		t.Errorf("screen = %v, want the status picker, still open", onScreen(app))
 	}
 	if app.err == nil {
 		t.Error("err = nil, want why the save failed")

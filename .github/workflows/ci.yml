@@ -24,6 +24,15 @@ jobs:
           go-version-file: go.mod
       - run: go tool task lint
 
+  deadcode:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - run: go tool task deadcode
+
   vuln:
     runs-on: ubuntu-latest
     steps:
