@@ -25,9 +25,7 @@ After it: `RESULT`, `MATCHES: yes/no`, `THEREFORE`. Verify against observable re
 
 Stop. Your next output is words to Bob, not another tool call: the raw error, your theory of why, what you want to do and what you expect, then **wait for Bob to confirm**. No silent retries. Surprise means your model is wrong. Say "I don't know" when you don't; "I believe" is not "I verified".
 
-- Before building a value, range or rule from an RFC, read its Open questions and raise any that bear on it with Bob first.
-- Update an RFC in the change that alters one of its rules while it's still being built. Once its status is Implemented it's a record: don't retroactively update it unless Bob gives permission.
-- An RFC stays compact: Summary, Problem (the code as it stood), Design as one-line rules grouped by topic, Accepted costs, Open questions, Out of scope. No code, progress tables, test names or commit SHAs.
+## Ask Bob first
 
 When requirements are ambiguous, state is unexpected, a choice has real tradeoffs, scope changes, or the step is irreversible (schemas, public APIs, deleting data, git history). Surface contradictions instead of picking one, and push back with evidence when you see a problem. When told to stop or revert: do exactly that, confirm, and stop completely.
 
@@ -59,7 +57,7 @@ go tool golangci-lint run ./...
 go tool task deadcode
 ```
 
-All three must be clean. Lint checks formatting too: fix it with `go tool task fmt`. Changes to the TUI or other runtime-visible behavior also need a manual check against real data.
+All four must be clean. Lint checks formatting too: fix it with `go tool task fmt`. Changes to the TUI or other runtime-visible behavior also need a manual check against real data.
 
 ## Load when needed
 
