@@ -17,7 +17,7 @@
 | 11 | [Application forms have their own FormService](11-form-service.md) | - | #500 | merged | 6 |
 | 12 | [The latest review of each document type is a repository read](12-latest-reviews.md) | - | #492 | merged | none |
 | 13 | [Syncing a company fetches the forms its open postings lack](13-form-job.md) | - | #501 | merged | 11 |
-| 14 | [Starting to draft reads the stored form](14-drafting-reads-forms.md) | - | #502 | in review | 13 |
+| 14 | [Starting to draft reads the stored form](14-drafting-reads-forms.md) | - | #502 | merged | 13 |
 
 ## Next
 
