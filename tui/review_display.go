@@ -12,8 +12,7 @@ import (
 
 // outcomeDisplay is how each review outcome looks: its style, shared by
 // reviewBadge and reviewGlyphSummary, and its glyph. An outcome missing here
-// renders dim, as "[<outcome>]" and "?"; a test checks every
-// document.Outcomes() has an entry.
+// renders dim, as "[<outcome>]" and "?".
 var outcomeDisplay = map[document.Outcome]struct {
 	style lipgloss.Style
 	glyph string

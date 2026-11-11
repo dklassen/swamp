@@ -30,25 +30,8 @@ type Client struct {
 	baseURL    string
 }
 
-type Option func(*Client)
-
-func WithBaseURL(baseURL string) Option {
-	return func(c *Client) { c.baseURL = baseURL }
-}
-
-func WithHTTPClient(httpClient *http.Client) Option {
-	return func(c *Client) { c.httpClient = httpClient }
-}
-
-func NewClient(opts ...Option) *Client {
-	c := &Client{
-		httpClient: http.DefaultClient,
-		baseURL:    defaultBaseURL,
-	}
-	for _, opt := range opts {
-		opt(c)
-	}
-	return c
+func NewClient() *Client {
+	return &Client{httpClient: http.DefaultClient, baseURL: defaultBaseURL}
 }
 
 // categories holds the fields Lever groups under a posting's

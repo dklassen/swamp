@@ -90,12 +90,12 @@ func TestApp_Nav_ReplaceWithNothingPushed_IsReported(t *testing.T) {
 	t.Parallel()
 	form := newStackedFake()
 	app := newFakesApp(t, form, newStackedFake())
-	home := app.onScreen()
+	home := onScreen(app)
 
 	app, cmd := sendKey(app, message.Replace(message.Source{Instance: app.focused()}, message.ScreenCompanyForm, message.Subject{}, message.None{})())
 
-	if app.onScreen() != home {
-		t.Errorf("screen = %v, want %v left up", app.onScreen(), home)
+	if onScreen(app) != home {
+		t.Errorf("screen = %v, want %v left up", onScreen(app), home)
 	}
 	if cmd == nil {
 		t.Fatal("no command, want an Error")
@@ -111,13 +111,13 @@ func TestApp_Nav_ToAScreenMissingFromTheTables_IsReported(t *testing.T) {
 	screens := NewScreens(nil, nil, nil, nil, nil, nil, nil, documents.NewStore(t.TempDir()))
 	noForm := Opens(map[message.Screen]func(message.None) StackScreen{})
 	app := New(router, NewNavigation(screens.Tabs()), NewStack(), []Table{noForm})
-	home := app.onScreen()
+	home := onScreen(app)
 	from := message.Source{Instance: app.focused()}
 
 	app, cmd := sendKey(app, message.Push(from, message.ScreenCompanyForm, message.Subject{}, message.None{})())
 
-	if app.onScreen() != home {
-		t.Errorf("screen = %v, want %v left up", app.onScreen(), home)
+	if onScreen(app) != home {
+		t.Errorf("screen = %v, want %v left up", onScreen(app), home)
 	}
 	if cmd == nil {
 		t.Fatal("no command, want an Error")
@@ -130,7 +130,7 @@ func TestApp_Nav_ToAScreenMissingFromTheTables_IsReported(t *testing.T) {
 func TestApp_Nav_ReplaceOntoAScreenInTheTables_OpensIt(t *testing.T) {
 	t.Parallel()
 	app, _ := newBareApp(t)
-	home := app.onScreen()
+	home := onScreen(app)
 	app, _ = sendKey(app, message.Push(message.Source{Instance: app.focused()}, message.ScreenCompanyForm, message.Subject{}, message.None{})())
 	from := message.Source{Instance: app.focused()}
 

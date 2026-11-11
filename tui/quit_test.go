@@ -50,7 +50,7 @@ func TestApp_CtrlC_QuitsFromAnyScreen(t *testing.T) {
 			app := newTestApp(t, s, newTestSyncer(s, nil))
 			app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 30})
 			app = tt.open(t, app)
-			on := app.onScreen()
+			on := onScreen(app)
 
 			_, cmd := sendKey(app, tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
 

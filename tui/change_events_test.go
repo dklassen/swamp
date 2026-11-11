@@ -90,8 +90,8 @@ func TestApp_CompanyListReload_KeepsTheCursorOnTheSameCompany(t *testing.T) {
 	}
 	app := newTestApp(t, s, newTestSyncer(s, nil), WithChangeReader(newTestChangeReader(s)))
 	app, _ = sendKey(app, tea.KeyPressMsg{Code: tea.KeyTab})
-	if app.onScreen() != message.ScreenCompanyList {
-		t.Fatalf("screen after c = %v, want the company list", app.onScreen())
+	if onScreen(app) != message.ScreenCompanyList {
+		t.Fatalf("screen after c = %v, want the company list", onScreen(app))
 	}
 	companies := companiesTabOf(app).companies
 	app, _ = sendKey(app, runeKey('j'))
@@ -191,8 +191,8 @@ func TestApp_ApplicationDeletedElsewhere_GoesBackAndSaysSo(t *testing.T) {
 
 	app = readChangeLog(t, app)
 
-	if app.onScreen() != message.ScreenActiveApplications {
-		t.Errorf("screen = %v, want the home list", app.onScreen())
+	if onScreen(app) != message.ScreenActiveApplications {
+		t.Errorf("screen = %v, want the home list", onScreen(app))
 	}
 	if !strings.Contains(viewText(app), "was deleted") {
 		t.Errorf("the home list doesn't say the application was deleted:\n%s", viewText(app))
@@ -249,8 +249,8 @@ func TestApp_PostingDetailFromApplicationDetail_ReloadKeepsThePosting(t *testing
 	app, _ = sendKey(app, tea.WindowSizeMsg{Width: 120, Height: 40})
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter}) // home -> application detail
 	app = sendKeyAndApply(t, app, runeKey('p'))                        // -> posting detail
-	if app.onScreen() != message.ScreenPostingDetail {
-		t.Fatalf("screen after p = %v, want posting detail", app.onScreen())
+	if onScreen(app) != message.ScreenPostingDetail {
+		t.Fatalf("screen after p = %v, want posting detail", onScreen(app))
 	}
 
 	stored := storedPosting(t, s, p.ID)
@@ -301,8 +301,8 @@ func TestApp_ChangesWhileAFormIsOpen_LeaveItAlone(t *testing.T) {
 	ctx := context.Background()
 	app, s, target := deleteTestApp(t, withTestChangeReader)
 	app = sendKeyAndApply(t, app, runeKey('s'))
-	if app.onScreen() != message.ScreenApplicationStatus {
-		t.Fatalf("screen after s = %v, want the status form", app.onScreen())
+	if onScreen(app) != message.ScreenApplicationStatus {
+		t.Fatalf("screen after s = %v, want the status form", onScreen(app))
 	}
 	app, _ = sendKey(app, runeKey('j'))
 	cursor := statusPicker(t, app).cursor
@@ -316,8 +316,8 @@ func TestApp_ChangesWhileAFormIsOpen_LeaveItAlone(t *testing.T) {
 	}
 
 	app = readChangeLog(t, app)
-	if app.onScreen() != message.ScreenApplicationStatus || statusPicker(t, app).cursor != cursor {
-		t.Fatalf("the status form changed under you: screen %v, cursor %d (was %d)", app.onScreen(), statusPicker(t, app).cursor, cursor)
+	if onScreen(app) != message.ScreenApplicationStatus || statusPicker(t, app).cursor != cursor {
+		t.Fatalf("the status form changed under you: screen %v, cursor %d (was %d)", onScreen(app), statusPicker(t, app).cursor, cursor)
 	}
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
@@ -348,8 +348,8 @@ func TestApp_EnteringApplicationDetail_ShowsAChangeMadeBeforeIt(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
 
-	if app.onScreen() != message.ScreenApplicationDetail {
-		t.Fatalf("screen = %v, want application detail", app.onScreen())
+	if onScreen(app) != message.ScreenApplicationDetail {
+		t.Fatalf("screen = %v, want application detail", onScreen(app))
 	}
 	if view := viewText(app); !strings.Contains(view, "Interviewing") {
 		t.Errorf("application detail doesn't show the status changed before entering it:\n%s", view)
@@ -373,8 +373,8 @@ func TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere(t *testing.T) {
 	}
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEnter})
-	if app.onScreen() != message.ScreenApplicationDetail {
-		t.Fatalf("screen = %v, want application detail", app.onScreen())
+	if onScreen(app) != message.ScreenApplicationDetail {
+		t.Fatalf("screen = %v, want application detail", onScreen(app))
 	}
 	other := first
 	if shownDetail(app).Application.ID == first.ID {
@@ -387,8 +387,8 @@ func TestApp_ReturningToTheHomeList_ShowsAChangeClearedElsewhere(t *testing.T) {
 
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyEsc})
 
-	if app.onScreen() != message.ScreenActiveApplications {
-		t.Fatalf("screen = %v, want the home list", app.onScreen())
+	if onScreen(app) != message.ScreenActiveApplications {
+		t.Fatalf("screen = %v, want the home list", onScreen(app))
 	}
 	if view := viewText(app); !strings.Contains(view, "Interviewing") {
 		t.Errorf("the home list doesn't show the change made while on application detail:\n%s", view)
@@ -403,8 +403,8 @@ func TestApp_TabBackToTheHomeList_ShowsAChangeClearedOnTheCompanyList(t *testing
 
 	app, s, target := deleteTestApp(t, withTestChangeReader)
 	app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
-	if app.onScreen() != message.ScreenCompanyList {
-		t.Fatalf("screen = %v, want the company list", app.onScreen())
+	if onScreen(app) != message.ScreenCompanyList {
+		t.Fatalf("screen = %v, want the company list", onScreen(app))
 	}
 	if err := setInterviewingIn(context.Background(), s, target.PostingID); err != nil {
 		t.Fatalf("application.UpdateStatus: %v", err)
@@ -415,8 +415,8 @@ func TestApp_TabBackToTheHomeList_ShowsAChangeClearedOnTheCompanyList(t *testing
 		app = sendKeyAndApply(t, app, tea.KeyPressMsg{Code: tea.KeyTab})
 	}
 
-	if app.onScreen() != message.ScreenActiveApplications {
-		t.Fatalf("screen = %v, want the home list", app.onScreen())
+	if onScreen(app) != message.ScreenActiveApplications {
+		t.Fatalf("screen = %v, want the home list", onScreen(app))
 	}
 	if view := viewText(app); !strings.Contains(view, "Interviewing") {
 		t.Errorf("the home list doesn't show the change made while on the company list:\n%s", view)

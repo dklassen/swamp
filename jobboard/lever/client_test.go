@@ -15,6 +15,11 @@ import (
 	"github.com/dklassen/swamp/jobboard"
 )
 
+// newTestClient is a client of the board at baseURL, such as an httptest server.
+func newTestClient(baseURL string) *Client {
+	return &Client{httpClient: http.DefaultClient, baseURL: baseURL}
+}
+
 func newTestServer(t *testing.T, fixturePath string) *httptest.Server {
 	t.Helper()
 	body, err := os.ReadFile(fixturePath)
@@ -35,7 +40,7 @@ func TestFetchPostings_ReturnsPostingsFromFixture(t *testing.T) {
 	t.Parallel()
 
 	server := newTestServer(t, "testdata/postings.json")
-	client := NewClient(WithBaseURL(server.URL))
+	client := newTestClient(server.URL)
 
 	postings, err := client.FetchPostings(context.Background(), "acme")
 	if err != nil {
@@ -75,7 +80,7 @@ func TestFetchPostings_MissingDepartment_LeavesItEmpty(t *testing.T) {
 	t.Parallel()
 
 	server := newTestServer(t, "testdata/postings.json")
-	client := NewClient(WithBaseURL(server.URL))
+	client := newTestClient(server.URL)
 
 	postings, err := client.FetchPostings(context.Background(), "acme")
 	if err != nil {
@@ -93,7 +98,7 @@ func TestFetchPostings_RawPayloadMatchesOriginalJSON(t *testing.T) {
 	t.Parallel()
 
 	server := newTestServer(t, "testdata/postings.json")
-	client := NewClient(WithBaseURL(server.URL))
+	client := newTestClient(server.URL)
 
 	postings, err := client.FetchPostings(context.Background(), "acme")
 	if err != nil {
@@ -126,7 +131,7 @@ func TestFetchPostings_NonOKStatus_ReturnsError(t *testing.T) {
 		w.WriteHeader(http.StatusNotFound)
 	}))
 	t.Cleanup(server.Close)
-	client := NewClient(WithBaseURL(server.URL))
+	client := newTestClient(server.URL)
 
 	_, err := client.FetchPostings(context.Background(), "does-not-exist")
 	if err == nil {

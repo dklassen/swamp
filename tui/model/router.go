@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"slices"
 
 	tea "charm.land/bubbletea/v2"
 
@@ -179,14 +178,6 @@ func About(typ message.Type, id int64) Filter {
 // From passes events that screen instance asked for.
 func From(instance message.ScreenInstance) Filter {
 	return func(m message.Meta) bool { return m.Source.Instance == instance }
-}
-
-// OnOp passes events with one of ops, never one with OpNone, since that's
-// a request rather than something that happened.
-func OnOp(ops ...message.Op) Filter {
-	return func(m message.Meta) bool {
-		return m.Op != message.OpNone && slices.Contains(ops, m.Op)
-	}
 }
 
 type event interface{ Metadata() message.Meta }
