@@ -36,10 +36,6 @@ func WithBaseURL(baseURL string) Option {
 	return func(c *Client) { c.baseURL = baseURL }
 }
 
-func WithHTTPClient(httpClient *http.Client) Option {
-	return func(c *Client) { c.httpClient = httpClient }
-}
-
 func NewClient(opts ...Option) *Client {
 	c := &Client{
 		httpClient: http.DefaultClient,
