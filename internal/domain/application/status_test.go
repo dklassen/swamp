@@ -43,9 +43,8 @@ func TestStatus_MarshalJSON_UsesDBStringNotIntValue(t *testing.T) {
 func TestParseStatus_UnknownValue_ReturnsError(t *testing.T) {
 	t.Parallel()
 
-	// "applied" was removed from the valid set by the 00002 migration
-	// (see db/migrations/00002_split_application_from_posting.sql) --
-	// still a good example of a value that must not parse.
+	// "applied" was removed from the valid set when applications split from
+	// postings -- still a good example of a value that must not parse.
 	if _, err := ParseStatus("applied"); err == nil {
 		t.Fatal("ParseStatus(\"applied\") = nil error, want error (not a valid status)")
 	}

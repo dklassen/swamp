@@ -4,8 +4,8 @@
 -- application" action. status is supplied explicitly by the caller
 -- (store.CreateApplication passes applicationstatus.Started.String())
 -- rather than relying on a DB default -- the initial value is the
--- application's decision, not the schema's (see db/migrations/00004_...,
--- PR #17 review). notes still relies on its own column default ('').
+-- application's decision, not the schema's. notes still relies on its own
+-- column default ('').
 INSERT INTO applications (posting_id, status)
 VALUES (?, ?)
 RETURNING *;

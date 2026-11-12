@@ -31,8 +31,8 @@ type Querier interface {
 	// application" action. status is supplied explicitly by the caller
 	// (store.CreateApplication passes applicationstatus.Started.String())
 	// rather than relying on a DB default -- the initial value is the
-	// application's decision, not the schema's (see db/migrations/00004_...,
-	// PR #17 review). notes still relies on its own column default ('').
+	// application's decision, not the schema's. notes still relies on its own
+	// column default ('').
 	CreateApplication(ctx context.Context, arg CreateApplicationParams) (Application, error)
 	// Written only by store.recordApplicationStatus, inside the same
 	// transaction as the status change it records (#162).
