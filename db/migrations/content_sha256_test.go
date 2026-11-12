@@ -3,7 +3,7 @@ package migrations
 import (
 	"testing"
 
-	"github.com/dklassen/swamp/contenthash"
+	"github.com/dklassen/swamp/internal/domain/posting"
 )
 
 // TestPostingContentSHA256_BackfillsExistingPostings: postings stored
@@ -15,7 +15,7 @@ func TestPostingContentSHA256_BackfillsExistingPostings(t *testing.T) {
 	if _, err := sqlDB.Exec(`INSERT INTO companies (name, source, source_ref) VALUES ('Acme', 'ashby', 'acme')`); err != nil {
 		t.Fatalf("insert company: %v", err)
 	}
-	postings := []contenthash.Posting{
+	postings := []posting.IngestedFields{
 		{Title: "Engineer", Department: "Platform", Location: "Dublin", WorkplaceType: "Hybrid", DescriptionText: "Build things."},
 		{Title: "Designer"},
 	}
@@ -36,7 +36,7 @@ func TestPostingContentSHA256_BackfillsExistingPostings(t *testing.T) {
 		if err := sqlDB.QueryRow(`SELECT content_sha256 FROM postings WHERE source_id = ?`, i).Scan(&got); err != nil {
 			t.Fatalf("read hash: %v", err)
 		}
-		if want := contenthash.Of(p); got != want {
+		if want := posting.ContentSHA256(p); got != want {
 			t.Errorf("posting %q: content_sha256 = %q, want %q", p.Title, got, want)
 		}
 	}

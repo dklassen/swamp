@@ -60,3 +60,35 @@ func TestPosting_MarshalJSON_KeepsEveryField(t *testing.T) {
 		}
 	}
 }
+
+func TestContentSHA256_EveryFieldChangesTheHash(t *testing.T) {
+	t.Parallel()
+
+	base := posting.IngestedFields{Title: "Engineer", Department: "Platform", Location: "Dublin", WorkplaceType: "Hybrid", DescriptionText: "Build things."}
+	tests := []struct {
+		name    string
+		changed posting.IngestedFields
+	}{
+		{"title", posting.IngestedFields{Title: "Engineer II", Department: "Platform", Location: "Dublin", WorkplaceType: "Hybrid", DescriptionText: "Build things."}},
+		{"department", posting.IngestedFields{Title: "Engineer", Department: "Data", Location: "Dublin", WorkplaceType: "Hybrid", DescriptionText: "Build things."}},
+		{"location", posting.IngestedFields{Title: "Engineer", Department: "Platform", Location: "Cork", WorkplaceType: "Hybrid", DescriptionText: "Build things."}},
+		{"workplace type", posting.IngestedFields{Title: "Engineer", Department: "Platform", Location: "Dublin", WorkplaceType: "Remote", DescriptionText: "Build things."}},
+		{"description", posting.IngestedFields{Title: "Engineer", Department: "Platform", Location: "Dublin", WorkplaceType: "Hybrid", DescriptionText: "Build other things."}},
+		// The same text split differently between fields is other content.
+		{"a field boundary", posting.IngestedFields{Title: "EngineerP", Department: "latform", Location: "Dublin", WorkplaceType: "Hybrid", DescriptionText: "Build things."}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			if posting.ContentSHA256(base) == posting.ContentSHA256(tt.changed) {
+				t.Errorf("changing the %s left the hash at %s", tt.name, posting.ContentSHA256(base))
+			}
+		})
+	}
+	if same := base; posting.ContentSHA256(same) != posting.ContentSHA256(base) {
+		t.Error("the same content hashed differently")
+	}
+	if got := len(posting.ContentSHA256(base)); got != 64 {
+		t.Errorf("hash %q is %d characters, want 64 hex", posting.ContentSHA256(base), got)
+	}
+}

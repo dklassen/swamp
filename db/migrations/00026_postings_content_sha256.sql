@@ -1,7 +1,7 @@
 -- +goose Up
 -- +goose StatementBegin
 
--- The version of the content the agent reads (contenthash.Of), so a fit
+-- The version of the content the agent reads (posting.ContentSHA256), so a fit
 -- score can be tied to what was scored. '' until 00027 fills
 -- in existing rows; IngestPosting sets it from then on.
 ALTER TABLE postings ADD COLUMN content_sha256 TEXT NOT NULL DEFAULT '';

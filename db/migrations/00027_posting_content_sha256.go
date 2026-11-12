@@ -2,10 +2,10 @@ package migrations
 
 import (
 	"context"
+	"crypto/sha256"
 	"database/sql"
+	"encoding/hex"
 	"fmt"
-
-	"github.com/dklassen/swamp/contenthash"
 )
 
 // Fills in content_sha256 for postings stored before 00026. In Go because
@@ -38,16 +38,27 @@ func postingHashes(ctx context.Context, tx *sql.Tx) (map[int64]string, error) {
 	hashes := map[int64]string{}
 	for rows.Next() {
 		var id int64
-		var p contenthash.Posting
-		if err := rows.Scan(&id, &p.Title, &p.Department, &p.Location, &p.WorkplaceType, &p.DescriptionText); err != nil {
+		var title, department, location, workplaceType, descriptionText string
+		if err := rows.Scan(&id, &title, &department, &location, &workplaceType, &descriptionText); err != nil {
 			return nil, fmt.Errorf("read posting: %w", err)
 		}
-		hashes[id] = contenthash.Of(p)
+		hashes[id] = contentSHA256(title, department, location, workplaceType, descriptionText)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("read postings: %w", err)
 	}
 	return hashes, nil
+}
+
+// contentSHA256 is the hex SHA-256 of the length-prefixed fields, as
+// posting.ContentSHA256 computed it when this migration was written.
+func contentSHA256(fields ...string) string {
+	var content []byte
+	for _, field := range fields {
+		content = fmt.Appendf(content, "%d:%s", len(field), field)
+	}
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
 }
 
 func downPostingContentSHA256(ctx context.Context, tx *sql.Tx) error {
