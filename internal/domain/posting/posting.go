@@ -2,9 +2,10 @@
 package posting
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"fmt"
 	"time"
-
-	"github.com/dklassen/swamp/contenthash"
 )
 
 // IngestedFields is a posting's content as ingested from its source --
@@ -61,7 +62,15 @@ type Posting struct {
 	UpdatedAt     time.Time     `json:"UpdatedAt"`
 }
 
-// ContentSHA256 is contenthash.Of the fields the agent reads.
+// ContentSHA256 is the hex SHA-256 of the fields the agent reads, so a fit
+// score is tied to what it scored. A field it doesn't read is left out, so
+// a change to one doesn't ask for a rescore. Each field is prefixed with
+// its length, so moving text from one field to the next changes the hash.
 func ContentSHA256(f IngestedFields) string {
-	return contenthash.Of(contenthash.Posting{Title: f.Title, Department: f.Department, Location: f.Location, WorkplaceType: f.WorkplaceType, DescriptionText: f.DescriptionText})
+	var content []byte
+	for _, field := range []string{f.Title, f.Department, f.Location, f.WorkplaceType, f.DescriptionText} {
+		content = fmt.Appendf(content, "%d:%s", len(field), field)
+	}
+	sum := sha256.Sum256(content)
+	return hex.EncodeToString(sum[:])
 }
