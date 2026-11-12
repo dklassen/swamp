@@ -27,4 +27,5 @@ The format below is the one place it's defined; change it here, then bring the f
 ## RFCs
 
 - Before building a value, range or rule from an RFC, read its Open questions and raise any that bear on it with Bob first.
-- Update the RFC in the change that alters one of its rules. It stays compact: Summary, Problem (the code as it stood), Design as one-line rules grouped by topic, Accepted costs, Open questions, Out of scope. No code, progress tables, test names or commit SHAs.
+- Update an RFC in the change that alters one of its rules while it's still being built. Once its status is Implemented it's a record: don't retroactively update it unless Bob gives permission.
+- An RFC stays compact: Summary, Problem (the code as it stood), Design as one-line rules grouped by topic, Accepted costs, Open questions, Out of scope. No code, progress tables, test names or commit SHAs.
