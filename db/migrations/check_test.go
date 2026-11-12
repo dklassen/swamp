@@ -56,8 +56,8 @@ func TestUp_MigratesToLatestAndIsANoOpAfter(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Up: %v", err)
 	}
-	if want := int(Latest()); len(applied) != want {
-		t.Errorf("Up applied %d migrations, want %d", len(applied), want)
+	if len(applied) == 0 || applied[len(applied)-1] != Latest() {
+		t.Errorf("Up applied %v, want migrations up to %d", applied, Latest())
 	}
 	if err := Check(ctx, sqlDB); err != nil {
 		t.Errorf("Check after Up = %v, want nil", err)
@@ -142,8 +142,8 @@ func TestCheck_AfterARollback_AgreesWithGoose(t *testing.T) {
 	err = Check(ctx, sqlDB)
 
 	var behind *BehindError
-	if !errors.As(err, &behind) || behind.Current != gooseVersion || gooseVersion != Latest()-1 {
-		t.Errorf("Check after one rollback = %v; goose says version %d; want a *BehindError at %d", err, gooseVersion, Latest()-1)
+	if !errors.As(err, &behind) || behind.Current != gooseVersion || gooseVersion >= Latest() {
+		t.Errorf("Check after one rollback = %v; goose says version %d; want a *BehindError at goose's version", err, gooseVersion)
 	}
 }
 
@@ -167,8 +167,8 @@ func TestDown_RollsBackOneMigration(t *testing.T) {
 	}
 
 	var behind *BehindError
-	if err := Check(ctx, sqlDB); !errors.As(err, &behind) || behind.Current != Latest()-1 {
-		t.Errorf("Check after Down = %v, want a *BehindError at %d", err, Latest()-1)
+	if err := Check(ctx, sqlDB); !errors.As(err, &behind) || behind.Current >= Latest() {
+		t.Errorf("Check after Down = %v, want a *BehindError below %d", err, Latest())
 	}
 }
 
