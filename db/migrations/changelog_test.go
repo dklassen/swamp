@@ -15,7 +15,7 @@ import (
 func TestChangeLog_EveryTableIsClassified(t *testing.T) {
 	t.Parallel()
 
-	sqlDB := migrated(t)
+	sqlDB := migrateTo(t, Latest())
 	rows, err := sqlDB.Query(`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
 	if err != nil {
 		t.Fatalf("list tables: %v", err)
@@ -45,7 +45,7 @@ func TestChangeLog_EveryTableIsClassified(t *testing.T) {
 func TestChangeLog_EveryListedTableExists(t *testing.T) {
 	t.Parallel()
 
-	sqlDB := migrated(t)
+	sqlDB := migrateTo(t, Latest())
 	listed := make([]string, 0, len(Logged)+len(NotLogged))
 	for name := range Logged {
 		listed = append(listed, name)
@@ -70,7 +70,7 @@ func TestChangeLog_EveryListedTableExists(t *testing.T) {
 func TestChangeLog_EveryColumnOfALoggedTableIsClassified(t *testing.T) {
 	t.Parallel()
 
-	sqlDB := migrated(t)
+	sqlDB := migrateTo(t, Latest())
 	for table, logged := range Logged {
 		listed := map[string]int{logged.Key: 1}
 		for _, c := range append(append([]string{}, logged.Columns...), logged.Ignored...) {
@@ -101,7 +101,7 @@ func TestChangeLog_EveryColumnOfALoggedTableIsClassified(t *testing.T) {
 func TestChangeLog_TriggersMatchTheList(t *testing.T) {
 	t.Parallel()
 
-	sqlDB := migrated(t)
+	sqlDB := migrateTo(t, Latest())
 	ref := regexp.MustCompile(`\b(?:NEW|OLD)\.(\w+)`)
 	refs := func(sql string) []string {
 		seen := map[string]bool{}

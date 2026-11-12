@@ -21,7 +21,7 @@ func insertPosting(t *testing.T, sqlDB *sql.DB) {
 func TestPostingScores_InsertingAScoreLogsOneEvent(t *testing.T) {
 	t.Parallel()
 
-	sqlDB := migrated(t)
+	sqlDB := migrateTo(t, Latest())
 	insertPosting(t, sqlDB)
 	res, err := sqlDB.Exec(`INSERT INTO posting_scores (posting_id, score, reason, content_sha256, profile_sha256, model)
 		VALUES (1, 4, 'Go, remote', 'content', 'profile', 'claude-opus-5-5')`)
