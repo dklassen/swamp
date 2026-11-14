@@ -128,8 +128,8 @@ default `assets/`), which is gitignored, so they never get committed:
 
 | File | What it is | Template |
 | --- | --- | --- |
-| `assets/canonical/profile.md` | Your background: experience, skills, framing options, and voice/style notes. The source every draft comes from. **Required**: the skill stops without it. | `docs/canonical/profile.md.example` |
-| `assets/canonical/resume.md` | Your best-version resume in markdown. The skill tailors it for each posting (reorders, trims, rephrases) instead of writing a resume from scratch. **Optional**: without it, resumes are drafted from the profile alone. | `docs/canonical/resume.md.example` |
+| `assets/canonical/profile.md` | Your background: experience, skills, framing options, and voice/style notes. The source every draft comes from. **Required**: the skill stops without it. | `examples/profile.md.example` |
+| `assets/canonical/resume.md` | Your best-version resume in markdown. The skill tailors it for each posting (reorders, trims, rephrases) instead of writing a resume from scratch. **Optional**: without it, resumes are drafted from the profile alone. | `examples/resume.md.example` |
 
 The `score-postings` skill scores postings' fit against the profile alone,
 and stops without it too.
@@ -138,8 +138,8 @@ To set them up:
 
 ```sh
 mkdir -p assets/canonical
-cp docs/canonical/profile.md.example assets/canonical/profile.md
-cp docs/canonical/resume.md.example assets/canonical/resume.md
+cp examples/profile.md.example assets/canonical/profile.md
+cp examples/resume.md.example assets/canonical/resume.md
 ```
 
 Then replace the placeholder text with your own. If you set
@@ -195,8 +195,7 @@ go tool golangci-lint run ./...
 go tool task fmt:check
 ```
 
-Run `go tool task --list` for everything else. Design decisions live in
-[`docs/rfcs/`](docs/rfcs/), and [`AGENTS.md`](AGENTS.md) covers the
-project's conventions for humans and coding agents alike.
+Run `go tool task --list` for everything else. [`AGENTS.md`](AGENTS.md)
+covers the project's conventions for humans and coding agents alike.
 
 Happy hunting. 🐊
