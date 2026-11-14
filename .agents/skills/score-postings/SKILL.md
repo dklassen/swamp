@@ -26,7 +26,7 @@ Call `read_profile`, and keep its `Version`: every other call takes it as
 `ProfileVersion`.
 
 **If `Exists` is false, stop and tell the user** (the README says how to
-set it up, from `docs/canonical/profile.md.example`). A score is a
+set it up, from `examples/profile.md.example`). A score is a
 judgment against the user's real background; without the profile there's
 nothing to judge against.
 

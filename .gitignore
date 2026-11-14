@@ -25,3 +25,7 @@
 # The user's own tracked companies: real employer names stay out of this
 # public repo. See seed/data/companies.example.yaml for the format.
 seed/data/companies.yaml
+
+# Local work tracking (issues, RFCs, work orders); never committed.
+/docs/*
+!/docs/.gitkeep

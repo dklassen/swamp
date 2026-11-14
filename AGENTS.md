@@ -44,7 +44,7 @@ When requirements are ambiguous, state is unexpected, a choice has real tradeoff
 - **Public repo**: real company names (from Bob's job search) never reach GitHub: code, fixtures, docs, commits, PRs, issues or comments. Use placeholders such as Acme and Globex.
 - **Git**: `git add .` is forbidden; add files individually. Never switch `/workspace`'s branch: work in a worktree. One issue per branch and PR. Never merge: Bob merges on GitHub.
 - **TDD**: red, green, refactor, one behavior at a time.
-- **Work state lives in the repo** (`docs/issues/`, `docs/rfcs/`), never in an agent's private memory or notes.
+- **Work state lives in the checkout's gitignored `docs/`** (`docs/issues/`, `docs/rfcs/`), never in an agent's private memory or notes.
 - **Comments** say only what code can't, in one line where possible, and never reference issues, PRs or RFCs.
 - **Timestamps** are stored in UTC, written through `store.Open`'s connection.
 
@@ -63,9 +63,9 @@ All four must be clean. Lint checks formatting too: fix it with `go tool task fm
 
 | When you are…                                                 | Read                                            |
 | ------------------------------------------------------------- | ----------------------------------------------- |
-| Starting a branch, opening a PR, cleaning up after a merge, or working through labeled issues | [docs/agents/workflow.md](docs/agents/workflow.md) |
-| Writing or changing tests                                     | [docs/agents/testing.md](docs/agents/testing.md) |
-| Writing Go: errors, interfaces, enums, services, migrations, comments, TUI screens | [docs/agents/go-style.md](docs/agents/go-style.md) |
-| Planning work over several PRs, writing a work order or RFC, or building from an RFC | [docs/agents/planning.md](docs/agents/planning.md) |
-| Running or adding dev tools, Taskfile targets, formatting, direnv | [docs/agents/tooling.md](docs/agents/tooling.md) |
-| Debugging, investigating, stuck, deciding whether to act alone, or handing off | [docs/agents/reasoning.md](docs/agents/reasoning.md) |
+| Starting a branch, opening a PR, cleaning up after a merge, or working through labeled issues | [agents/workflow.md](agents/workflow.md) |
+| Writing or changing tests                                     | [agents/testing.md](agents/testing.md) |
+| Writing Go: errors, interfaces, enums, services, migrations, comments, TUI screens | [agents/go-style.md](agents/go-style.md) |
+| Planning work over several PRs, writing a work order or RFC, or building from an RFC | [agents/planning.md](agents/planning.md) |
+| Running or adding dev tools, Taskfile targets, formatting, direnv | [agents/tooling.md](agents/tooling.md) |
+| Debugging, investigating, stuck, deciding whether to act alone, or handing off | [agents/reasoning.md](agents/reasoning.md) |

@@ -133,7 +133,7 @@ whatever guidance is actually in it rather than assuming its structure in
 advance; it's the user's document and may change.
 
 **If `Exists` is false, stop and tell the user** (the README says how to
-set it up, from `docs/canonical/profile.md.example`) rather than drafting
+set it up, from `examples/profile.md.example`) rather than drafting
 from general knowledge or assumptions about their background. The entire
 point of this step is that the draft comes from real, user-provided
 material -- a cover letter written without it isn't a shortcut, it's a
@@ -143,7 +143,7 @@ different (and much worse) task.
 a resume. It's the user's maintained, best-version resume: the baseline
 you tailor, not something to rewrite. If `Exists` is false, carry on
 drafting the resume from the profile alone, and tell the user that
-setting one up (from `docs/canonical/resume.md.example`) would give
+setting one up (from `examples/resume.md.example`) would give
 steadier resumes.
 
 ## 4. Draft the documents
