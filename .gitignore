@@ -27,4 +27,5 @@
 seed/data/companies.yaml
 
 # Local work tracking (issues, RFCs, work orders); never committed.
-/docs/
+/docs/*
+!/docs/.gitkeep
